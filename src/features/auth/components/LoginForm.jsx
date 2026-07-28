@@ -1,0 +1,118 @@
+import { useState } from 'react'
+import Icon from '../../../components/ui/Icon.jsx'
+
+function LoginForm() {
+  const [showPassword, setShowPassword] = useState(false)
+  const [submitted, setSubmitted] = useState(false)
+
+  function handleSubmit(event) {
+    event.preventDefault()
+    setSubmitted(true)
+  }
+
+  return (
+    <form className="login-form mt-10 flex flex-col gap-7" onSubmit={handleSubmit}>
+      <div>
+        <label className="mb-2.5 block text-sm font-semibold text-slate-200" htmlFor="email">
+          Email address
+        </label>
+        <div className="group relative">
+          <Icon
+            className="pointer-events-none absolute left-5 top-1/2 size-6 -translate-y-1/2 text-violet-400 transition-colors group-focus-within:text-violet-600"
+            name="mail"
+          />
+          <input
+            className="auth-input h-16 w-full rounded-2xl border border-white/30 bg-slate-100/95 pl-14 pr-5 text-base text-slate-900 shadow-inner outline-none transition placeholder:text-slate-500 hover:bg-white focus:border-violet-400 focus:bg-white focus:ring-4 focus:ring-violet-500/15"
+            id="email"
+            name="email"
+            type="email"
+            autoComplete="email"
+            placeholder="you@company.com"
+            required
+          />
+        </div>
+      </div>
+
+      <div>
+        <div className="mb-2.5 flex items-center justify-between gap-4">
+          <label className="text-sm font-semibold text-slate-200" htmlFor="password">
+            Password
+          </label>
+          <button
+            className="rounded text-sm font-semibold text-violet-300 transition hover:text-fuchsia-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+            type="button"
+          >
+            Forgot password?
+          </button>
+        </div>
+        <div className="group relative">
+          <Icon
+            className="pointer-events-none absolute left-5 top-1/2 size-6 -translate-y-1/2 text-violet-400 transition-colors group-focus-within:text-violet-600"
+            name="lock"
+          />
+          <input
+            className="auth-input h-16 w-full rounded-2xl border border-white/30 bg-slate-100/95 pl-14 pr-14 text-base text-slate-900 shadow-inner outline-none transition placeholder:text-slate-500 hover:bg-white focus:border-violet-400 focus:bg-white focus:ring-4 focus:ring-violet-500/15"
+            id="password"
+            name="password"
+            type={showPassword ? 'text' : 'password'}
+            autoComplete="current-password"
+            placeholder="Enter your password"
+            minLength={8}
+            required
+          />
+          <button
+            className="absolute right-5 top-1/2 -translate-y-1/2 rounded-md p-1 text-slate-400 transition hover:text-violet-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
+            type="button"
+            onClick={() => setShowPassword((value) => !value)}
+            aria-label={showPassword ? 'Hide password' : 'Show password'}
+            aria-pressed={showPassword}
+          >
+            <Icon name={showPassword ? 'eyeOff' : 'eye'} />
+          </button>
+        </div>
+      </div>
+
+      <label className="flex w-fit cursor-pointer items-center gap-3 text-sm text-slate-300">
+        <input
+          className="peer size-4 appearance-none rounded border border-slate-500 bg-transparent transition checked:border-violet-500 checked:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#10152a]"
+          name="remember"
+          type="checkbox"
+        />
+        <span className="relative">
+          Remember my email
+          <svg
+            className="pointer-events-none absolute -left-[1.42rem] top-1/2 hidden size-3 -translate-y-1/2 text-white peer-checked:block"
+            viewBox="0 0 12 12"
+            fill="none"
+            aria-hidden="true"
+          >
+            <path d="m2.5 6 2.2 2.2 4.8-5" stroke="currentColor" strokeWidth="1.6" />
+          </svg>
+        </span>
+      </label>
+
+      <button
+        className="auth-submit group flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-500 px-5 text-base font-bold text-white shadow-xl shadow-violet-950/30 transition hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-fuchsia-950/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#10152a] active:translate-y-0"
+        type="submit"
+      >
+        Sign in
+        <Icon
+          className="size-5 transition-transform group-hover:translate-x-1"
+          name="arrow"
+        />
+      </button>
+
+      {submitted && (
+        <p
+          className="rounded-xl border border-violet-400/20 bg-violet-400/10 px-4 py-3 text-center text-sm text-violet-200"
+          role="status"
+        >
+          Login UI is ready. Authentication will be connected when the backend details are
+          available.
+        </p>
+      )}
+    </form>
+  )
+}
+
+export default LoginForm
