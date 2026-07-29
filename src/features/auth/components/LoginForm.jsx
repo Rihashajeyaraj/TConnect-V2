@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { Link } from 'react-router-dom'
 import Icon from '../../../components/ui/Icon.jsx'
 
 function LoginForm() {
@@ -38,12 +39,12 @@ function LoginForm() {
           <label className="text-sm font-semibold text-slate-200" htmlFor="password">
             Password
           </label>
-          <button
+          <Link
             className="rounded text-sm font-semibold text-violet-300 transition hover:text-fuchsia-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400"
-            type="button"
+            to="/forgot-password"
           >
             Forgot password?
-          </button>
+          </Link>
         </div>
         <div className="group relative">
           <Icon
