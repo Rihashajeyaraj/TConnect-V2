@@ -74,15 +74,14 @@ function LoginForm() {
       </div>
 
       <label className="flex w-fit cursor-pointer items-center gap-3 text-sm text-slate-300">
-        <input
-          className="peer size-4 appearance-none rounded border border-slate-500 bg-transparent transition checked:border-violet-500 checked:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#10152a]"
-          name="remember"
-          type="checkbox"
-        />
-        <span className="relative">
-          Remember my email
+        <span className="relative grid size-4 shrink-0 place-items-center">
+          <input
+            className="peer col-span-full row-span-full size-4 appearance-none rounded border border-slate-600 bg-[#1e2238] transition checked:border-violet-400 checked:bg-violet-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#10152a]"
+            name="remember"
+            type="checkbox"
+          />
           <svg
-            className="pointer-events-none absolute -left-[1.42rem] top-1/2 hidden size-3 -translate-y-1/2 text-white peer-checked:block"
+            className="pointer-events-none col-span-full row-span-full hidden size-3 text-white peer-checked:block"
             viewBox="0 0 12 12"
             fill="none"
             aria-hidden="true"
@@ -90,6 +89,7 @@ function LoginForm() {
             <path d="m2.5 6 2.2 2.2 4.8-5" stroke="currentColor" strokeWidth="1.6" />
           </svg>
         </span>
+        <span>Remember my email</span>
       </label>
 
       <button
