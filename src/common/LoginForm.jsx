@@ -1,14 +1,18 @@
 import { useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import Icon from '../components/Icon.jsx'
 
 function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [submitted, setSubmitted] = useState(false)
+  const navigate = useNavigate()
 
   function handleSubmit(event) {
     event.preventDefault()
     setSubmitted(true)
+    setTimeout(() => {
+      navigate('/ceo')
+    }, 800)
   }
 
   return (
