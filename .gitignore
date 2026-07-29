@@ -16,3 +16,9 @@ yarn-error.log*
 pnpm-debug.log*
 
 uploads
+.venv/
+
+# Ignore temporary helper scripts and Python cache
+scripts/
+__pycache__/
+*.pyc
