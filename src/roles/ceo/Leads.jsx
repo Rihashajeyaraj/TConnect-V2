@@ -93,15 +93,15 @@ function Leads() {
           <p className="mt-1 text-xs font-semibold text-slate-400">Home &gt; Leads</p>
         </div>
         <div className="flex flex-wrap items-center gap-3">
-          <button className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 transition">
-            <Upload className="size-4 text-slate-500" />
+          <button className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]">
+            <Upload className="size-4 text-slate-550" />
             Import Leads
           </button>
-          <button className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-bold text-slate-700 hover:bg-slate-50 transition">
-            <Download className="size-4 text-slate-500" />
+          <button className="flex items-center gap-1.5 rounded-full border border-slate-200 bg-white px-5 py-2.5 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]">
+            <Download className="size-4 text-slate-550" />
             Export
           </button>
-          <button className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition">
+          <button className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] px-5 py-2.5 text-sm font-semibold text-blue-950 shadow-md shadow-blue-500/25 border border-white/20 hover:from-[#95B6FF] hover:to-[#2563EB] hover:shadow-lg hover:shadow-blue-500/35 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]">
             <Plus className="size-4" />
             Add Lead
           </button>
@@ -178,11 +178,11 @@ function Leads() {
             <option value="David Brown">David Brown</option>
           </select>
 
-          <button className="flex h-10 items-center justify-center rounded-xl border border-slate-200 px-3 text-xs font-bold text-slate-600 hover:bg-slate-50">
+          <button className="flex h-10 items-center justify-center rounded-full border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-600 hover:bg-slate-50 transition active:scale-[0.98]">
             More Filters
           </button>
           
-          <button className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-500 hover:bg-slate-50">
+          <button className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-500 hover:bg-slate-50 transition active:scale-[0.98]">
             <RefreshCw className="size-4" />
           </button>
         </div>
@@ -261,7 +261,7 @@ function Leads() {
           <span>Showing 1 to {filteredLeads.length} of 1,520 entries</span>
           <div className="flex items-center gap-1">
             <button className="rounded border border-slate-200 bg-white px-2 py-1 hover:bg-slate-50">&lt;&lt;</button>
-            <button className="rounded bg-blue-600 px-3 py-1 text-white shadow-sm">1</button>
+            <button className="rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] px-3.5 py-1 text-blue-950 font-extrabold shadow-md shadow-blue-500/20 border border-white/25">1</button>
             <button className="rounded border border-slate-200 bg-white px-3 py-1 hover:bg-slate-50">2</button>
             <button className="rounded border border-slate-200 bg-white px-3 py-1 hover:bg-slate-50">3</button>
             <span className="px-1 text-slate-400">...</span>

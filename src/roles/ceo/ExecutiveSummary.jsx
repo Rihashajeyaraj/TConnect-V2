@@ -91,7 +91,7 @@ function ExecutiveSummary() {
         <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Projected Q3 Revenue</p>
           <div className="flex items-center gap-2">
-            <span className="text-3xl font-extrabold text-slate-900">$1.92M</span>
+            <span className="text-3xl font-extrabold text-slate-900">₹1.92M</span>
             <span className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-2 py-0.5">
               Forecast
             </span>
@@ -133,7 +133,7 @@ function ExecutiveSummary() {
                 tick={{ fontSize: 11, fontWeight: 600 }}
                 axisLine={false}
                 tickLine={false}
-                tickFormatter={(value) => `$${(value / 1000).toFixed(0)}k`}
+                tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`}
               />
               <Tooltip />
               {/* Actual revenue */}
@@ -158,7 +158,7 @@ function ExecutiveSummary() {
         <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col justify-between">
           <div>
             <h3 className="text-lg font-bold text-slate-900">Revenue by Product Line</h3>
-            <p className="text-xs font-semibold text-slate-400">Segmentation of the total $2.48M current revenue</p>
+            <p className="text-xs font-semibold text-slate-400">Segmentation of the total ₹2.48M current revenue</p>
           </div>
           <div className="h-64 relative flex items-center justify-center my-4">
             <ResponsiveContainer width="100%" height="100%">
@@ -191,7 +191,7 @@ function ExecutiveSummary() {
                   <span className="size-2.5 rounded-full" style={{ backgroundColor: prod.color }} />
                   <span>{prod.name}</span>
                 </div>
-                <span className="text-slate-900">${(prod.value / 1000).toFixed(0)}k</span>
+                <span className="text-slate-900">₹{(prod.value / 1000).toFixed(0)}k</span>
               </div>
             ))}
           </div>

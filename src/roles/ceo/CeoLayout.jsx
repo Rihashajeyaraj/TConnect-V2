@@ -34,7 +34,7 @@ const navItems = [
   { label: 'Customer', icon: Users, path: '/ceo/customer' },
   { label: 'Visits', icon: CalendarIcon, path: '/ceo/visits' },
   { label: 'Follow-ups', icon: MessageSquare, path: '/ceo/followups' },
-  { label: 'Opportunities', icon: GitBranch, path: '/ceo/opportunities' },
+  { label: 'Sales Pipeline', icon: GitBranch, path: '/ceo/opportunities' },
   { label: 'Employee', icon: UserCheck, path: '/ceo/employee' },
   { label: 'Attendance', icon: Clock, path: '/ceo/attendance' },
   { label: 'Leave Management', icon: CalendarDays, path: '/ceo/leaves' },
@@ -69,10 +69,19 @@ function CeoLayout() {
   const location = useLocation()
   const navigate = useNavigate()
 
+
+
   // Sync state with pages using custom window event
   const dispatchStateUpdate = () => {
     window.dispatchEvent(new Event('tc_state_update'))
   }
+
+  const currentDate = new Date().toLocaleDateString('en-US', {
+    weekday: 'long',
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  })
 
   // Handle global search filtering
   useEffect(() => {
@@ -103,7 +112,7 @@ function CeoLayout() {
     const savedOpps = JSON.parse(localStorage.getItem('tc_opportunities')) || []
     savedOpps.forEach(opp => {
       if (opp.company.toLowerCase().includes(query)) {
-        results.push({ type: 'opportunity', title: `Deal: ${opp.company}`, path: '/ceo/opportunities', desc: `Value: $${opp.value.toLocaleString()} (${opp.stage})` })
+        results.push({ type: 'opportunity', title: `Deal: ${opp.company}`, path: '/ceo/opportunities', desc: `Value: ₹${opp.value.toLocaleString()} (${opp.stage})` })
       }
     })
 
@@ -138,7 +147,7 @@ function CeoLayout() {
         email: `${leadName.toLowerCase().replace(' ', '')}@${companyName.toLowerCase().replace(' ', '')}.com`,
         phone: leadPhone || '+91 99999 88888',
         location: 'Chennai',
-        value: '$0k',
+        value: '₹0',
         color: 'bg-blue-500',
       }
       localStorage.setItem('tc_customers', JSON.stringify([newCust, ...savedCustomers]))
@@ -208,7 +217,7 @@ function CeoLayout() {
   }
 
   const mockNotifications = [
-    { id: 1, title: 'Big Deal Won!', desc: 'Global Corp moved to Won ($250k)', time: '5m ago', read: false },
+    { id: 1, title: 'Big Deal Won!', desc: 'Global Corp moved to Won (₹2.5L)', time: '5m ago', read: false },
     { id: 2, title: 'New Lead Assigned', desc: 'Next Gen Tech assigned to Mary Jane', time: '1h ago', read: false },
     { id: 3, title: 'Weekly Reports Ready', desc: 'Sales performance reports are compiled', time: '5h ago', read: true },
   ]
@@ -229,28 +238,40 @@ function CeoLayout() {
         } ${sidebarOpen ? 'translate-x-0' : 'max-lg:-translate-x-full'}`}
       >
         {/* Branding header */}
-        <div className="flex h-16 items-center gap-3 border-b border-slate-200/80 px-5 shrink-0">
-          <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/25">
-            <svg
-              className="size-5"
-              viewBox="0 0 36 36"
-              fill="none"
-              xmlns="http://www.w3.org/2000/svg"
-              aria-hidden="true"
-            >
-              <path
-                d="M8.8 6.5h18.4c1.4 0 2.2 1.6 1.4 2.7l-6.2 8.1h4.1c1.5 0 2.2 1.8 1.2 2.8L15.1 32c-1.2 1.1-3.1 0-2.7-1.6l2.3-9H8.9c-1.3 0-2.1-1.5-1.4-2.6l4.8-7.1H8.8c-1.4 0-2.2-1.7-1.3-2.8l.1-.1c.3-.4.7-.7 1.2-.7V6.5Z"
-                fill="currentColor"
-              />
-            </svg>
-          </span>
-          {!isSidebarCollapsed && (
-            <div className="animate-in fade-in duration-300">
-              <p className="m-0 text-md font-extrabold tracking-tight text-slate-900">
-                Twite<span className="text-blue-600">Connect</span>
-              </p>
-            </div>
-          )}
+        <div className="flex h-16 items-center justify-between border-b border-slate-200/80 px-4 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-blue-600 text-white shadow-md shadow-blue-500/25">
+              <svg
+                className="size-5"
+                viewBox="0 0 36 36"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <path
+                  d="M8.8 6.5h18.4c1.4 0 2.2 1.6 1.4 2.7l-6.2 8.1h4.1c1.5 0 2.2 1.8 1.2 2.8L15.1 32c-1.2 1.1-3.1 0-2.7-1.6l2.3-9H8.9c-1.3 0-2.1-1.5-1.4-2.6l4.8-7.1H8.8c-1.4 0-2.2-1.7-1.3-2.8l.1-.1c.3-.4.7-.7 1.2-.7V6.5Z"
+                  fill="currentColor"
+                />
+              </svg>
+            </span>
+            {!isSidebarCollapsed && (
+              <div className="animate-in fade-in duration-300">
+                <p className="m-0 text-md font-extrabold tracking-tight text-slate-900">
+                  Twite<span className="text-blue-600">Connect</span>
+                </p>
+              </div>
+            )}
+          </div>
+          
+          {/* Collapse toggle (Desktop only, at the top) */}
+          <button
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            className="hidden lg:grid size-7 place-items-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition shrink-0 ml-2"
+            title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+          >
+            {isSidebarCollapsed ? <ChevronRight className="size-4.5" /> : <ChevronLeft className="size-4.5" />}
+          </button>
+
           <button
             className="ml-auto rounded-lg p-1 text-slate-400 hover:bg-slate-50 hover:text-slate-600 lg:hidden"
             onClick={() => setSidebarOpen(false)}
@@ -272,26 +293,18 @@ function CeoLayout() {
                 title={isSidebarCollapsed ? item.label : ''}
                 className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition-all group ${
                   isActive
-                    ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/15'
+                    ? 'bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] text-blue-950 shadow-md shadow-blue-500/20 border border-[#93b3f2]/30'
                     : 'text-slate-600 hover:bg-slate-50 hover:text-slate-900'
                 }`}
               >
-                <Icon className={`size-5 shrink-0 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-slate-600'}`} />
+                <Icon className={`size-5 shrink-0 ${isActive ? 'text-blue-950' : 'text-slate-400 group-hover:text-slate-600'}`} />
                 {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
               </Link>
             )
           })}
         </nav>
 
-        {/* Collapse toggle (Desktop only) */}
-        <div className="hidden lg:flex shrink-0 p-3 border-t border-slate-100 justify-center">
-          <button
-            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="flex items-center justify-center p-2 rounded-xl bg-slate-50 text-slate-400 hover:text-slate-700 hover:bg-slate-100 w-full transition"
-          >
-            {isSidebarCollapsed ? <ChevronRight className="size-5" /> : <span className="flex items-center gap-2 text-xs font-bold"><ChevronLeft className="size-4" /> Minimize Sidebar</span>}
-          </button>
-        </div>
+
 
         {/* User profile section */}
         <div className="border-t border-slate-200/80 p-4 shrink-0">
@@ -330,6 +343,22 @@ function CeoLayout() {
             >
               <Menu className="size-5" />
             </button>
+
+            {/* CEO Badge (Top) & Date (Bottom) with Pulsing Radar Light */}
+            <div className="hidden items-center gap-3 border-r border-slate-200 pr-4 mr-2 shrink-0 lg:flex">
+              <span className="relative flex size-2.5 shrink-0">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full size-2.5 bg-blue-600"></span>
+              </span>
+              <div className="flex flex-col justify-center">
+                <span className="text-base font-extrabold tracking-wider text-blue-600 uppercase leading-none">
+                  CEO
+                </span>
+                <span className="text-xs font-semibold text-slate-500 mt-1 leading-none">
+                  {currentDate}
+                </span>
+              </div>
+            </div>
 
             {/* Global Search Bar (Matching ceo.png, now interactive!) */}
             <div className="relative hidden w-72 sm:block md:w-96">
@@ -379,7 +408,7 @@ function CeoLayout() {
             {/* Quick Action Button (now interactive) */}
             <button
               onClick={() => setQuickActionOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2 text-sm font-bold text-white shadow-md shadow-blue-500/20 transition hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98]"
+              className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] px-5 py-2.5 text-sm font-semibold text-blue-950 shadow-md shadow-blue-500/25 border border-white/20 hover:from-[#95B6FF] hover:to-[#2563EB] hover:shadow-lg hover:shadow-blue-500/35 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]"
             >
               <Plus className="size-4" />
               Quick Action
@@ -461,14 +490,19 @@ function CeoLayout() {
             {/* Profile Dropdown */}
             <div className="relative">
               <button
-                className="flex items-center gap-2 rounded-xl p-1 text-sm text-slate-700 transition hover:bg-slate-50"
+                className="flex items-center gap-2 rounded-xl p-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
                 onClick={() => setProfileOpen(!profileOpen)}
               >
-                <span className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-500 text-xs font-bold text-white shadow-sm">
+                <span className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-500 text-xs font-bold text-white shadow-sm shrink-0">
                   JD
                 </span>
-                <span className="hidden text-sm font-semibold text-slate-700 sm:block">John Doe</span>
-                <ChevronDown className={`size-4 text-slate-400 transition ${profileOpen ? 'rotate-180' : ''}`} />
+                <div className="hidden text-left sm:block">
+                  <p className="m-0 text-xs font-bold text-slate-900 leading-none">John Doe</p>
+                  <span className="mt-1 inline-block rounded-full bg-blue-50 border border-blue-100 px-1.5 py-0.2 text-[8px] font-extrabold text-blue-700 leading-none">
+                    CEO
+                  </span>
+                </div>
+                <ChevronDown className={`size-4 text-slate-450 transition ${profileOpen ? 'rotate-180' : ''}`} />
               </button>
 
               {profileOpen && (
@@ -498,8 +532,14 @@ function CeoLayout() {
         </header>
 
         {/* Dynamic Page Content */}
-        <main className="flex-1 overflow-y-auto p-6 sm:p-8 bg-[#F5F8FC]">
-          <Outlet />
+        <main className="flex-1 overflow-y-auto p-6 sm:p-8 bg-[#F5F8FC] relative">
+          {/* Glowing Ambient Background Shades */}
+          <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-[35rem] h-[35rem] rounded-full bg-blue-300/10 blur-[100px] pointer-events-none z-0" />
+          <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-[35rem] h-[35rem] rounded-full bg-indigo-300/10 blur-[100px] pointer-events-none z-0" />
+          
+          <div className="relative z-10">
+            <Outlet />
+          </div>
         </main>
 
         {/* Footer */}
@@ -610,7 +650,7 @@ function CeoLayout() {
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="mb-1.5 block text-xs font-bold text-slate-700 uppercase">Deal Value ($)</label>
+                      <label className="mb-1.5 block text-xs font-bold text-slate-700 uppercase">Deal Value (₹)</label>
                       <input
                         type="number"
                         required
@@ -655,7 +695,7 @@ function CeoLayout() {
 
               <button
                 type="submit"
-                className="w-full h-10 mt-4 rounded-xl bg-blue-600 text-sm font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700"
+                className="w-full h-11 mt-4 rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] text-sm font-extrabold tracking-tight text-blue-950 shadow-md shadow-blue-500/25 border border-white/20 hover:from-[#95B6FF] hover:to-[#2563EB] hover:shadow-lg hover:shadow-blue-500/35 transition-all duration-300 active:scale-[0.98]"
               >
                 Log Entry
               </button>

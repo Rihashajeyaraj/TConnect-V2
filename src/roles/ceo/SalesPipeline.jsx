@@ -159,7 +159,7 @@ function SalesPipeline() {
         </div>
         <button
           onClick={() => setModalOpen(true)}
-          className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-blue-500/20 transition hover:bg-blue-700 hover:scale-[1.02] active:scale-[0.98] self-start md:self-center"
+          className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] px-5 py-2.5 text-sm font-semibold text-blue-950 shadow-md shadow-blue-500/25 border border-white/20 hover:from-[#95B6FF] hover:to-[#2563EB] hover:shadow-lg hover:shadow-blue-500/35 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98] self-start md:self-center"
         >
           <Plus className="size-4" />
           Add Opportunity
@@ -173,7 +173,7 @@ function SalesPipeline() {
             <DollarSign className="size-6" />
           </span>
           <div>
-            <p className="text-2xl font-extrabold text-slate-900">${totalPipelineValue.toLocaleString()}</p>
+            <p className="text-2xl font-extrabold text-slate-900">₹{totalPipelineValue.toLocaleString()}</p>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Pipeline Value</p>
           </div>
         </div>
@@ -193,7 +193,7 @@ function SalesPipeline() {
             <TrendingUp className="size-6" />
           </span>
           <div>
-            <p className="text-2xl font-extrabold text-slate-900">${avgDealSize.toLocaleString()}</p>
+            <p className="text-2xl font-extrabold text-slate-900">₹{avgDealSize.toLocaleString()}</p>
             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Average Deal Size</p>
           </div>
         </div>
@@ -235,7 +235,7 @@ function SalesPipeline() {
                   <span className="text-xs font-bold text-slate-400">{stageOpps.length}</span>
                 </div>
                 <span className="text-xs font-extrabold text-slate-500">
-                  ${(columnTotalValue / 1000).toFixed(0)}k
+                  ₹{(columnTotalValue / 1000).toFixed(0)}k
                 </span>
               </div>
 
@@ -266,7 +266,7 @@ function SalesPipeline() {
                       </p>
                       <p className="flex items-center justify-between">
                         <span>Value:</span>
-                        <span className="font-bold text-slate-900">${opp.value.toLocaleString()}</span>
+                        <span className="font-bold text-slate-900">₹{opp.value.toLocaleString()}</span>
                       </p>
                       <p className="flex items-center justify-between">
                         <span>Win Prob:</span>
@@ -356,7 +356,7 @@ function SalesPipeline() {
                 </div>
                 <div>
                   <label className="mb-1.5 block text-xs font-bold text-slate-700 uppercase" htmlFor="value">
-                    Deal Value ($)
+                    Deal Value (₹)
                   </label>
                   <input
                     type="number"
@@ -418,7 +418,7 @@ function SalesPipeline() {
 
               <button
                 type="submit"
-                className="mt-2 flex h-10 w-full items-center justify-center gap-1.5 rounded-xl bg-blue-600 text-sm font-bold text-white shadow-md shadow-blue-500/20 transition hover:bg-blue-700"
+                className="mt-2 flex h-11 w-full items-center justify-center gap-1.5 rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] text-sm font-extrabold tracking-tight text-blue-950 shadow-md shadow-blue-500/25 border border-white/20 hover:from-[#95B6FF] hover:to-[#2563EB] hover:shadow-lg hover:shadow-blue-500/35 transition-all duration-300 active:scale-[0.98]"
               >
                 Create Deal
               </button>

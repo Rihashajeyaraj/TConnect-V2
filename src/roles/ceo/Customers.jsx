@@ -2,17 +2,30 @@ import { useState, useEffect } from 'react'
 import { Users, Search, Download, Plus, Mail, Phone, MapPin } from 'lucide-react'
 
 const initialCustomers = [
-  { id: '1', name: 'ABC Pvt Ltd', contact: 'John Doe', email: 'john@abcpvt.com', phone: '+91 98765 43210', location: 'Chennai', value: '$120k', color: 'bg-blue-500' },
-  { id: '2', name: 'Tech Solutions', contact: 'Mary Jane', email: 'mary@techsolutions.com', phone: '+91 87654 32109', location: 'Bangalore', value: '$85k', color: 'bg-emerald-500' },
-  { id: '3', name: 'Global Corp', contact: 'Robert Smith', email: 'robert@globalcorp.com', phone: '+91 76543 21098', location: 'Mumbai', value: '$450k', color: 'bg-purple-500' },
-  { id: '4', name: 'Prime Systems', contact: 'David Brown', email: 'david@primesystems.com', phone: '+91 65432 10987', location: 'Hyderabad', value: '$65k', color: 'bg-orange-500' },
-  { id: '5', name: 'Vertex Systems', contact: 'David Brown', email: 'david@vertex.com', phone: '+91 21098 76543', location: 'Delhi', value: '$95k', color: 'bg-indigo-500' },
+  { id: '1', name: 'ABC Pvt Ltd', contact: 'John Doe', email: 'john@abcpvt.com', phone: '+91 98765 43210', location: 'Chennai', value: '₹1,20,000', color: 'bg-blue-500' },
+  { id: '2', name: 'Tech Solutions', contact: 'Mary Jane', email: 'mary@techsolutions.com', phone: '+91 87654 32109', location: 'Bangalore', value: '₹85,000', color: 'bg-emerald-500' },
+  { id: '3', name: 'Global Corp', contact: 'Robert Smith', email: 'robert@globalcorp.com', phone: '+91 76543 21098', location: 'Mumbai', value: '₹4,50,000', color: 'bg-purple-500' },
+  { id: '4', name: 'Prime Systems', contact: 'David Brown', email: 'david@primesystems.com', phone: '+91 65432 10987', location: 'Hyderabad', value: '₹65,000', color: 'bg-orange-500' },
+  { id: '5', name: 'Vertex Systems', contact: 'David Brown', email: 'david@vertex.com', phone: '+91 21098 76543', location: 'Delhi', value: '₹95,000', color: 'bg-indigo-500' },
 ]
 
 function Customers() {
   const [customers, setCustomers] = useState(() => {
     const saved = localStorage.getItem('tc_customers')
-    if (saved) return JSON.parse(saved)
+    if (saved) {
+      const data = JSON.parse(saved)
+      const migrated = data.map(c => {
+        if (typeof c.value === 'string' && c.value.startsWith('$')) {
+          // Convert $120k -> ₹1,20,000
+          const numeric = c.value.replace('$', '').replace('k', '')
+          const numValue = parseFloat(numeric)
+          return { ...c, value: `₹${(numValue * 1000).toLocaleString('en-IN')}` }
+        }
+        return c
+      })
+      localStorage.setItem('tc_customers', JSON.stringify(migrated))
+      return migrated
+    }
     localStorage.setItem('tc_customers', JSON.stringify(initialCustomers))
     return initialCustomers
   })
@@ -20,7 +33,18 @@ function Customers() {
   useEffect(() => {
     const handleUpdate = () => {
       const saved = localStorage.getItem('tc_customers')
-      if (saved) setCustomers(JSON.parse(saved))
+      if (saved) {
+        const data = JSON.parse(saved)
+        const migrated = data.map(c => {
+          if (typeof c.value === 'string' && c.value.startsWith('$')) {
+            const numeric = c.value.replace('$', '').replace('k', '')
+            const numValue = parseFloat(numeric)
+            return { ...c, value: `₹${(numValue * 1000).toLocaleString('en-IN')}` }
+          }
+          return c
+        })
+        setCustomers(migrated)
+      }
     }
     window.addEventListener('tc_state_update', handleUpdate)
     return () => window.removeEventListener('tc_state_update', handleUpdate)
@@ -36,7 +60,7 @@ function Customers() {
           <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Customer Database</h2>
           <p className="mt-1 text-xs font-semibold text-slate-400">Home &gt; Customers</p>
         </div>
-        <button className="flex items-center gap-1.5 rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-md shadow-blue-500/20 hover:bg-blue-700 transition">
+        <button className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] px-5 py-2.5 text-sm font-semibold text-blue-950 shadow-md shadow-blue-500/25 border border-white/20 hover:from-[#95B6FF] hover:to-[#2563EB] hover:shadow-lg hover:shadow-blue-500/35 transition-all duration-300 active:scale-[0.98]">
           <Plus className="size-4" /> Add Customer
         </button>
       </div>
