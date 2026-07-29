@@ -1,5 +1,5 @@
-import BrandMark from '../../../components/brand/BrandMark.jsx'
-import Icon from '../../../components/ui/Icon.jsx'
+import BrandMark from '../components/BrandMark.jsx'
+import Icon from '../components/Icon.jsx'
 
 const highlights = [
   {

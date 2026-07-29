@@ -1,9 +1,9 @@
-import BrandMark from '../../../components/brand/BrandMark.jsx'
-import loginBackground from '../../../assets/login-background.png'
-import BrandPanel from '../components/BrandPanel.jsx'
-import ForgotPasswordForm from '../components/ForgotPasswordForm.jsx'
+import BrandMark from '../components/BrandMark.jsx'
+import loginBackground from '../assets/login-background.png'
+import BrandPanel from './BrandPanel.jsx'
+import LoginForm from './LoginForm.jsx'
 
-function ForgotPasswordPage() {
+function LoginPage() {
   return (
     <main
       className="login-page relative min-h-screen overflow-hidden bg-slate-950 bg-cover bg-center p-0 lg:grid lg:grid-cols-[minmax(0,1fr)_minmax(35rem,44rem)] lg:gap-[clamp(2rem,4vw,5rem)] lg:bg-[position:center] lg:p-6 lg:pl-[clamp(3rem,4.2vw,5rem)] lg:pr-[clamp(2rem,3.5vw,4.5rem)]"
@@ -47,17 +47,21 @@ function ForgotPasswordPage() {
           </div>
 
           <h1 className="m-0 text-center text-4xl font-black tracking-[-0.045em] text-white sm:text-5xl">
-            Forgot <span className="text-fuchsia-400">Password?</span>
+            Welcome <span className="text-fuchsia-400">Back.</span>
           </h1>
           <p className="mb-0 mt-3 text-center text-base leading-7 text-slate-400">
-            Enter your email and we&apos;ll send you a reset link.
+            Sign in to continue to your workspace.
           </p>
 
-          <ForgotPasswordForm />
+          <LoginForm />
+
+          <p className="login-footer mb-0 mt-10 text-center text-xs leading-5 text-slate-500">
+            Secure access to your TConnect workspace
+          </p>
         </div>
       </section>
     </main>
   )
 }
 
-export default ForgotPasswordPage
+export default LoginPage
