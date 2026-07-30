@@ -60,7 +60,7 @@ function Customers() {
           <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Customer Database</h2>
           <p className="mt-1 text-xs font-semibold text-slate-400">Home &gt; Customers</p>
         </div>
-        <button className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] px-5 py-2.5 text-sm font-semibold text-blue-950 shadow-md shadow-blue-500/25 border border-white/20 hover:from-[#95B6FF] hover:to-[#2563EB] hover:shadow-lg hover:shadow-blue-500/35 transition-all duration-300 active:scale-[0.98]">
+        <button className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] px-5 py-2.5 text-sm font-bold text-black border border-[#2563EB]/40 shadow-[0_8px_20px_-3px_rgba(59,130,246,0.3),inset_0_1.5px_0_rgba(255,255,255,0.45)] hover:from-[#95B6FF] hover:to-[#2563EB] hover:shadow-[0_12px_24px_-3px_rgba(59,130,246,0.4),inset_0_1.5px_0_rgba(255,255,255,0.5)] transition-all duration-300 active:scale-[0.98]">
           <Plus className="size-4" /> Add Customer
         </button>
       </div>

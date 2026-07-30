@@ -101,7 +101,7 @@ function Leads() {
             <Download className="size-4 text-slate-550" />
             Export
           </button>
-          <button className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] px-5 py-2.5 text-sm font-semibold text-blue-950 shadow-md shadow-blue-500/25 border border-white/20 hover:from-[#95B6FF] hover:to-[#2563EB] hover:shadow-lg hover:shadow-blue-500/35 transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]">
+          <button className="flex items-center gap-1.5 rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] px-5 py-2.5 text-sm font-bold text-black border border-[#2563EB]/40 shadow-[0_8px_20px_-3px_rgba(59,130,246,0.3),inset_0_1.5px_0_rgba(255,255,255,0.45)] hover:from-[#95B6FF] hover:to-[#2563EB] hover:shadow-[0_12px_24px_-3px_rgba(59,130,246,0.4),inset_0_1.5px_0_rgba(255,255,255,0.5)] transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]">
             <Plus className="size-4" />
             Add Lead
           </button>
@@ -261,7 +261,7 @@ function Leads() {
           <span>Showing 1 to {filteredLeads.length} of 1,520 entries</span>
           <div className="flex items-center gap-1">
             <button className="rounded border border-slate-200 bg-white px-2 py-1 hover:bg-slate-50">&lt;&lt;</button>
-            <button className="rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] px-3.5 py-1 text-blue-950 font-extrabold shadow-md shadow-blue-500/20 border border-white/25">1</button>
+            <button className="rounded-full bg-gradient-to-r from-[#A8C2FF] to-[#3B82F6] px-3.5 py-1 text-black font-bold shadow-[0_4px_10px_rgba(59,130,246,0.25),inset_0_1px_0_rgba(255,255,255,0.4)] border border-[#2563EB]/40">1</button>
             <button className="rounded border border-slate-200 bg-white px-3 py-1 hover:bg-slate-50">2</button>
             <button className="rounded border border-slate-200 bg-white px-3 py-1 hover:bg-slate-50">3</button>
             <span className="px-1 text-slate-400">...</span>

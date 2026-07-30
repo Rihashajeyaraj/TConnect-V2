@@ -1,15 +1,15 @@
 @import "tailwindcss";
 
 @theme {
-  --font-sans: "Inter", sans-serif;
+  --font-sans: "Poppins", sans-serif;
 }
 
 * {
-  font-family: "Inter", sans-serif !important;
+  font-family: "Poppins", sans-serif !important;
 }
 
 :root {
-  font-family: "Inter", sans-serif;
+  font-family: "Poppins", sans-serif;
   color: #f8fafc;
   background: #0a1020;
   font-synthesis: none;
