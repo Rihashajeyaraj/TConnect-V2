@@ -1,13 +1,16 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useToast } from './ToastContext.jsx'
 import Icon from '../components/Icon.jsx'
 
 function ForgotPasswordForm() {
+  const { showToast } = useToast()
   const [submitted, setSubmitted] = useState(false)
 
   function handleSubmit(event) {
     event.preventDefault()
     setSubmitted(true)
+    showToast('Password reset link sent to your email!', 'success')
   }
 
   if (submitted) {

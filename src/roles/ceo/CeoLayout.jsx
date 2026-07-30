@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom'
+import { useToast } from '../../common/ToastContext.jsx'
 import {
   LayoutDashboard,
   Target,
@@ -31,19 +32,18 @@ import {
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/ceo' },
   { label: 'Leads', icon: Target, path: '/ceo/leads' },
-  { label: 'Customer', icon: Users, path: '/ceo/customer' },
+  { label: 'Customer', icon: UserCheck, path: '/ceo/customer' },
   { label: 'Visits', icon: CalendarIcon, path: '/ceo/visits' },
   { label: 'Follow-ups', icon: MessageSquare, path: '/ceo/followups' },
   { label: 'Sales Pipeline', icon: GitBranch, path: '/ceo/opportunities' },
-  { label: 'Employee', icon: UserCheck, path: '/ceo/employee' },
-  { label: 'Attendance', icon: Clock, path: '/ceo/attendance' },
-  { label: 'Leave Management', icon: CalendarDays, path: '/ceo/leaves' },
+  { label: 'HRMS', icon: Users, path: '/ceo/hrms' },
   { label: 'Expenses', icon: DollarSign, path: '/ceo/expenses' },
   { label: 'Reports', icon: FileText, path: '/ceo/reports' },
   { label: 'Settings', icon: Settings, path: '/ceo/settings' },
 ]
 
 function CeoLayout() {
+  const { showToast } = useToast()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -124,6 +124,10 @@ function CeoLayout() {
     e.preventDefault()
 
     if (actionType === 'lead') {
+      if (!leadName || !companyName) {
+        showToast('Please fill out all required fields!', 'error')
+        return
+      }
       const savedLeads = JSON.parse(localStorage.getItem('tc_leads')) || []
       const newLead = {
         id: Date.now().toString(),
@@ -156,7 +160,12 @@ function CeoLayout() {
       setLeadName('')
       setCompanyName('')
       setLeadPhone('')
+      showToast(`Lead for ${companyName} created successfully!`, 'success')
     } else {
+      if (!companyName || !oppValue) {
+        showToast('Please fill out all required fields!', 'error')
+        return
+      }
       const savedOpps = JSON.parse(localStorage.getItem('tc_opportunities')) || []
       const newOpp = {
         id: Date.now().toString(),
@@ -173,6 +182,7 @@ function CeoLayout() {
       setCompanyName('')
       setOppValue('')
       setOppStage('Lead')
+      showToast(`Opportunity for ${companyName} created successfully!`, 'success')
     }
 
     dispatchStateUpdate()
@@ -181,6 +191,7 @@ function CeoLayout() {
 
   // Handle Sign Out
   const handleSignOut = () => {
+    showToast('Logged out successfully', 'info')
     navigate('/')
   }
 

@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
+import { useToast } from './ToastContext.jsx'
 import Icon from '../components/Icon.jsx'
 
 function LoginForm() {
+  const { showToast } = useToast()
   const [showPassword, setShowPassword] = useState(false)
   const [submitted, setSubmitted] = useState(false)
   const navigate = useNavigate()
@@ -10,6 +12,7 @@ function LoginForm() {
   function handleSubmit(event) {
     event.preventDefault()
     setSubmitted(true)
+    showToast('Successfully logged in!', 'success')
     setTimeout(() => {
       navigate('/ceo')
     }, 800)

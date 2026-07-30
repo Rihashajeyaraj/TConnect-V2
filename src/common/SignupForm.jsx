@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useToast } from './ToastContext.jsx'
 import Icon from '../components/Icon.jsx'
 
 function SignupForm() {
+  const { showToast } = useToast()
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [submitted, setSubmitted] = useState(false)
@@ -10,6 +12,7 @@ function SignupForm() {
   function handleSubmit(event) {
     event.preventDefault()
     setSubmitted(true)
+    showToast('Verification link sent! Please check your email.', 'success')
   }
 
   return (

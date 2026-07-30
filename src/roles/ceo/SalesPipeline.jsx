@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useToast } from '../../common/ToastContext.jsx'
 import {
   Briefcase,
   Plus,
@@ -37,6 +38,7 @@ const STAGE_COLORS = {
 }
 
 function SalesPipeline() {
+  const { showToast } = useToast()
   const [opportunities, setOpportunities] = useState(() => {
     const saved = localStorage.getItem('tc_opportunities')
     if (saved) return JSON.parse(saved)
@@ -86,6 +88,11 @@ function SalesPipeline() {
     e.preventDefault()
     if (!draggingId) return
 
+    const targetOpp = opportunities.find(o => o.id === draggingId)
+    if (targetOpp) {
+      showToast(`Deal "${targetOpp.company}" moved to "${stage}".`, 'success')
+    }
+
     updateOpps(
       opportunities.map((opp) => {
         if (opp.id === draggingId) {
@@ -107,7 +114,10 @@ function SalesPipeline() {
 
   function handleAddOpportunity(e) {
     e.preventDefault()
-    if (!newCompany || !newValue) return
+    if (!newCompany || !newValue) {
+      showToast('Please enter a valid company and deal value.', 'error')
+      return
+    }
 
     const newOpp = {
       id: Date.now().toString(),
@@ -127,9 +137,14 @@ function SalesPipeline() {
     setNewStage('Lead')
     setNewProb(30)
     setModalOpen(false)
+    showToast(`Opportunity for "${newCompany}" created successfully!`, 'success')
   }
 
   function handleDelete(id) {
+    const targetOpp = opportunities.find(o => o.id === id)
+    if (targetOpp) {
+      showToast(`Deal "${targetOpp.company}" has been removed.`, 'warning')
+    }
     updateOpps(opportunities.filter((opp) => opp.id !== id))
   }
 
