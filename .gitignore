@@ -1,2 +1,41 @@
-venv
+# Node.js / Vite Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Python / FastAPI Backend
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Environments
 .env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Editor / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
