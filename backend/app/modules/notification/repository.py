@@ -1,5 +1,5 @@
 from typing import List, Optional, Dict, Any
-from app.database.supabase import get_supabase_client
+from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
 from app.core.logger import logger
@@ -9,7 +9,7 @@ _in_memory_notifications: List[Dict[str, Any]] = []
 
 class NotificationRepository:
     def __init__(self):
-        self.supabase = get_supabase_client()
+        self.supabase = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
 
     def get_user_notifications(self, user_id: str) -> List[Dict[str, Any]]:

@@ -11,6 +11,8 @@ class EmployeeModel(BaseModel):
     last_name: str
     email: str
     phone: Optional[str] = None
+    address: Optional[str] = None
+    documents: Optional[str] = None  # URL or JSON array string of uploaded employee documents
     department: str
     designation: str
     role: str = "Sales Executive"

@@ -13,6 +13,7 @@ def get_service() -> ReportsService:
 
 
 @router.get("/dashboard-kpis", response_model=StandardResponse)
+@router.get("/summary", response_model=StandardResponse)
 async def get_dashboard_kpis(
     user_payload: dict = Depends(get_current_user_payload),
     rbac: None = Depends(CanViewReports),
@@ -23,4 +24,18 @@ async def get_dashboard_kpis(
     return StandardResponse.success_response(
         data=kpis,
         message="Dashboard KPI metrics retrieved successfully"
+    )
+
+
+@router.get("/saved", response_model=StandardResponse)
+async def get_saved_reports(
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewReports),
+    service: ReportsService = Depends(get_service)
+):
+    """Retrieve saved analytical reports."""
+    reports = service.get_saved_reports() if hasattr(service, "get_saved_reports") else []
+    return StandardResponse.success_response(
+        data=reports,
+        message="Saved reports retrieved successfully"
     )

@@ -10,8 +10,10 @@ class AttendanceLogModel(BaseModel):
     clock_out_time: Optional[str] = None
     clock_in_lat: Optional[float] = None
     clock_in_lng: Optional[float] = None
+    location_name: Optional[str] = None  # Visit location name/address
     status: str = "PRESENT"
     notes: Optional[str] = None
+    remarks: Optional[str] = None  # Sales executive remarks on location visit
     created_at: Optional[datetime] = None
 
 

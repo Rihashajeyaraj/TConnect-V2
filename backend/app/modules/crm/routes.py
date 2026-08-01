@@ -54,3 +54,20 @@ async def get_lead(
         data=lead,
         message="Lead details retrieved successfully"
     )
+
+
+@router.put("/leads/{lead_id}", response_model=StandardResponse)
+async def update_lead(
+    lead_id: str,
+    data: LeadUpdate,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageLeads),
+    service: CRMService = Depends(get_service)
+):
+    """Update lead details."""
+    updated = service.update_lead(lead_id, data)
+    return StandardResponse.success_response(
+        data=updated,
+        message="Lead details updated successfully"
+    )
+

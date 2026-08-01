@@ -6,20 +6,25 @@ class VisitCreate(BaseModel):
     title: str
     customer_id: str
     purpose: str
+    location_name: Optional[str] = None
     scheduled_time: Optional[str] = None
     notes: Optional[str] = None
+    remarks: Optional[str] = None
 
 
 class VisitCheckIn(BaseModel):
     latitude: float
     longitude: float
+    location_name: Optional[str] = None
     check_in_notes: Optional[str] = None
+    remarks: Optional[str] = None
 
 
 class VisitCheckOut(BaseModel):
     latitude: float
     longitude: float
     summary_notes: Optional[str] = None
+    remarks: Optional[str] = None
 
 
 class VisitResponse(BaseModel):
@@ -33,4 +38,6 @@ class VisitResponse(BaseModel):
     check_out_time: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    location_name: Optional[str] = None
     notes: Optional[str] = None
+    remarks: Optional[str] = None

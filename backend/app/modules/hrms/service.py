@@ -20,3 +20,11 @@ class HRMSService:
         if not emp:
             raise NotFoundException(resource="Employee", identifier=emp_id)
         return emp
+
+    def update_employee(self, emp_id: str, data: EmployeeUpdate) -> Dict[str, Any]:
+        payload = data.model_dump(exclude_unset=True)
+        return self.repo.update_employee(emp_id, payload)
+
+    def delete_employee(self, emp_id: str) -> bool:
+        """Delete employee from HRMS and Supabase Auth."""
+        return self.repo.delete_employee(emp_id)

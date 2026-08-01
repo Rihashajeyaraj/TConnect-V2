@@ -31,6 +31,7 @@ import {
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/ceo' },
+  { label: 'User Management', icon: UserCheck, path: '/ceo/users' },
   { label: 'Leads', icon: Target, path: '/ceo/leads' },
   { label: 'Customer', icon: UserCheck, path: '/ceo/customer' },
   { label: 'Visits', icon: CalendarIcon, path: '/ceo/visits' },

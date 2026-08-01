@@ -1,5 +1,6 @@
 from typing import List, Optional, Dict, Any
-from app.database.supabase import get_supabase_client
+import uuid
+from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
 from app.core.logger import logger
@@ -9,7 +10,7 @@ _in_memory_visits: List[Dict[str, Any]] = []
 
 class VisitRepository:
     def __init__(self):
-        self.supabase = get_supabase_client()
+        self.supabase = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
 
     def get_all_visits(self) -> List[Dict[str, Any]]:
@@ -27,7 +28,8 @@ class VisitRepository:
         return _in_memory_visits
 
     def create_visit(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        data["id"] = data.get("id") or f"visit_{len(_in_memory_visits)+1:03d}"
+        data["id"] = data.get("id") or str(uuid.uuid4())
+        data["visit_id"] = data.get("visit_id") or data["id"]
         try:
             res = self.helper.table(SchemaEnum.VISIT, "visits").insert(data).execute()
             if res.data:

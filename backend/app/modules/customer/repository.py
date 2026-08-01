@@ -1,5 +1,6 @@
 from typing import List, Optional, Dict, Any
-from app.database.supabase import get_supabase_client
+import uuid
+from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
 from app.core.logger import logger
@@ -9,7 +10,7 @@ _in_memory_customers: List[Dict[str, Any]] = []
 
 class CustomerRepository:
     def __init__(self):
-        self.supabase = get_supabase_client()
+        self.supabase = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
 
     def get_all_customers(self) -> List[Dict[str, Any]]:
@@ -27,7 +28,8 @@ class CustomerRepository:
         return _in_memory_customers
 
     def create_customer(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        data["id"] = data.get("id") or f"cust_{len(_in_memory_customers)+1:03d}"
+        data["id"] = data.get("id") or str(uuid.uuid4())
+        data["customer_id"] = data.get("customer_id") or data["id"]
         try:
             res = self.helper.table(SchemaEnum.CUSTOMER, "accounts").insert(data).execute()
             if res.data:
@@ -49,3 +51,24 @@ class CustomerRepository:
             if str(cust.get("id")) == str(cust_id):
                 return cust
         return None
+
+    def update_customer(self, cust_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        for payload in [updates, {k: v for k, v in updates.items() if v is not None}]:
+            try:
+                res = self.helper.table(SchemaEnum.CUSTOMER, "accounts").update(payload).eq("id", cust_id).execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            except Exception:
+                try:
+                    res = self.supabase.table("customers").update(payload).eq("id", cust_id).execute()
+                    if res.data and len(res.data) > 0:
+                        return res.data[0]
+                except Exception as e:
+                    logger.warning(f"Customer update attempt failed: {e}")
+
+        for cust in _in_memory_customers:
+            if str(cust.get("id")) == str(cust_id):
+                cust.update(updates)
+                return cust
+        return updates
+

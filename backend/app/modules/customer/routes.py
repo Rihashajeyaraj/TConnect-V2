@@ -13,6 +13,7 @@ def get_service() -> CustomerService:
 
 
 @router.get("", response_model=StandardResponse)
+@router.get("/customers", response_model=StandardResponse)
 async def list_customers(
     user_payload: dict = Depends(get_current_user_payload),
     rbac: None = Depends(CanViewCustomers),
@@ -27,6 +28,7 @@ async def list_customers(
 
 
 @router.post("", response_model=StandardResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/customers", response_model=StandardResponse, status_code=status.HTTP_201_CREATED)
 async def create_customer(
     data: CustomerCreate,
     user_payload: dict = Depends(get_current_user_payload),
@@ -42,6 +44,7 @@ async def create_customer(
 
 
 @router.get("/{cust_id}", response_model=StandardResponse)
+@router.get("/customers/{cust_id}", response_model=StandardResponse)
 async def get_customer(
     cust_id: str,
     user_payload: dict = Depends(get_current_user_payload),
@@ -54,3 +57,22 @@ async def get_customer(
         data=cust,
         message="Customer details retrieved successfully"
     )
+
+
+@router.put("/{cust_id}", response_model=StandardResponse)
+@router.put("/customers/{cust_id}", response_model=StandardResponse)
+async def update_customer(
+    cust_id: str,
+    data: CustomerUpdate,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageCustomers),
+    service: CustomerService = Depends(get_service)
+):
+    """Update customer contact details."""
+    updated = service.update_customer(cust_id, data)
+    return StandardResponse.success_response(
+        data=updated,
+        message="Customer updated successfully"
+    )
+
+

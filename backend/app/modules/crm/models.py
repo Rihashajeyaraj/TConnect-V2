@@ -12,5 +12,6 @@ class LeadModel(BaseModel):
     contact_phone: Optional[str] = None
     status: str = "NEW"
     source: Optional[str] = None
+    address: Optional[str] = None
     assigned_to: Optional[str] = None
     created_at: Optional[datetime] = None

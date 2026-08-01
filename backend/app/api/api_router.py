@@ -10,6 +10,7 @@ from app.modules.pipeline.routes import router as pipeline_router
 from app.modules.notification.routes import router as notification_router
 from app.modules.reports.routes import router as reports_router
 from app.modules.settings.routes import router as settings_router
+from app.modules.users.routes import router as users_router
 from app.modules.audit.routes import router as audit_router
 from app.modules.db_test.routes import router as db_test_router
 
@@ -19,8 +20,11 @@ api_router = APIRouter()
 api_router.include_router(auth_router)
 api_router.include_router(db_test_router)
 api_router.include_router(hrms_router)
+api_router.include_router(hrms_router, prefix="/employees", tags=["Employee Onboarding"])
+api_router.include_router(users_router)
 api_router.include_router(crm_router)
 api_router.include_router(customer_router)
+api_router.include_router(customer_router, prefix="/customer")
 api_router.include_router(visit_router)
 api_router.include_router(attendance_router)
 api_router.include_router(expense_router)

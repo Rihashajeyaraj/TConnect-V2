@@ -14,5 +14,7 @@ class VisitModel(BaseModel):
     check_out_time: Optional[datetime] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    location_name: Optional[str] = None  # Location / Site address visited
     notes: Optional[str] = None
+    remarks: Optional[str] = None  # Executive remarks after visit
     created_at: Optional[datetime] = None

@@ -1,0 +1,311 @@
+import { useState } from 'react'
+import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom'
+import { useToast } from '../../common/ToastContext.jsx'
+import {
+  LayoutDashboard,
+  Building2,
+  Users,
+  ShieldCheck,
+  UserCheck2,
+  FileText,
+  Settings,
+  Menu,
+  X,
+  LogOut,
+  ChevronDown,
+  Bell,
+  CheckCheck,
+  Info,
+  Clock,
+  UserPlus,
+  MapPin,
+  ShieldAlert,
+} from 'lucide-react'
+
+const navItems = [
+  { label: 'Dashboard', icon: LayoutDashboard, path: '/admin' },
+  { label: 'Company Overview', icon: Building2, path: '/admin/company' },
+  { label: 'User Management', icon: Users, path: '/admin/users' },
+  { label: 'Role Management', icon: ShieldCheck, path: '/admin/roles' },
+  { label: 'HRMS', icon: UserCheck2, path: '/admin/hrms' },
+  { label: 'Reports & Analytics', icon: FileText, path: '/admin/reports' },
+  { label: 'Settings', icon: Settings, path: '/admin/settings' },
+]
+
+const initialNotifications = [
+  {
+    id: 'n1',
+    title: 'New Account Creation',
+    message: 'New Sales Executive account created for Arun Kumar.',
+    time: '10 mins ago',
+    type: 'user',
+    read: false,
+    icon: UserPlus,
+    color: 'text-blue-600 bg-blue-50 border-blue-200',
+  },
+  {
+    id: 'n2',
+    title: 'Field Representative Check-In',
+    message: 'John Doe logged check-in at Client Site - Guindy, Chennai.',
+    time: '25 mins ago',
+    type: 'visit',
+    read: false,
+    icon: MapPin,
+    color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
+  },
+  {
+    id: 'n3',
+    title: 'System Security Audit Log',
+    message: 'Role permissions matrix updated for Sales Manager role.',
+    time: '2 hours ago',
+    type: 'security',
+    read: false,
+    icon: ShieldAlert,
+    color: 'text-purple-600 bg-purple-50 border-purple-200',
+  },
+  {
+    id: 'n4',
+    title: 'Leave Request Pending',
+    message: 'Mary Jane submitted Casual Leave request for 10 May 2026.',
+    time: '1 day ago',
+    type: 'hrms',
+    read: true,
+    icon: Clock,
+    color: 'text-amber-600 bg-amber-50 border-amber-200',
+  },
+]
+
+function AdminLayout() {
+  const { showToast } = useToast()
+  const [sidebarOpen, setSidebarOpen] = useState(false)
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [notificationsOpen, setNotificationsOpen] = useState(false)
+  const [notifications, setNotifications] = useState(initialNotifications)
+  const [selectedNotif, setSelectedNotif] = useState(null)
+
+  const location = useLocation()
+  const navigate = useNavigate()
+
+  const unreadCount = notifications.filter((n) => !n.read).length
+
+  const handleLogout = () => {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    showToast('Logged out successfully', 'info')
+    navigate('/')
+  }
+
+  const handleMarkAllRead = () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+    showToast('All notifications marked as read', 'info')
+  }
+
+  const handleSelectNotif = (notif) => {
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n))
+    )
+    setSelectedNotif(notif)
+    setNotificationsOpen(false)
+  }
+
+  return (
+    <div className="min-h-screen bg-slate-100/70 text-slate-900 flex flex-col font-sans">
+      {/* Top Header */}
+      <header className="h-16 bg-white border-b border-slate-200/90 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setSidebarOpen(!sidebarOpen)}
+            className="lg:hidden p-2 rounded-xl text-slate-500 hover:bg-slate-100 hover:text-slate-900 cursor-pointer"
+          >
+            {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+          </button>
+          <Link to="/admin" className="flex items-center gap-2.5 font-extrabold text-xl text-blue-600">
+            <span className="bg-blue-600 text-white px-2.5 py-1 rounded-xl text-sm shadow-md shadow-blue-600/30">TC</span>
+            <span className="text-slate-900 tracking-tight">TConnect Admin</span>
+          </Link>
+        </div>
+
+        <div className="flex items-center gap-3">
+          {/* Notification Bell Dropdown Button */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setNotificationsOpen(!notificationsOpen)
+                setProfileOpen(false)
+              }}
+              className="relative p-2.5 rounded-xl border border-slate-200/80 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-blue-600 transition cursor-pointer"
+              title="System Alerts & Notifications"
+            >
+              <Bell className="w-5 h-5" />
+              {unreadCount > 0 && (
+                <span className="absolute -top-1 -right-1 size-5 rounded-full bg-rose-600 text-white font-extrabold text-[10px] flex items-center justify-center border-2 border-white shadow-xs animate-pulse">
+                  {unreadCount}
+                </span>
+              )}
+            </button>
+
+            {/* Notification Dropdown Popover */}
+            {notificationsOpen && (
+              <div className="absolute right-0 mt-2 w-80 sm:w-96 bg-white border border-slate-200 rounded-2xl shadow-2xl py-2 z-50 animate-in fade-in duration-150">
+                <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Bell className="w-4 h-4 text-blue-600" />
+                    <span className="font-extrabold text-slate-900 text-xs">System Notifications</span>
+                    {unreadCount > 0 && (
+                      <span className="bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                        {unreadCount} New
+                      </span>
+                    )}
+                  </div>
+                  {unreadCount > 0 && (
+                    <button
+                      onClick={handleMarkAllRead}
+                      className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1 cursor-pointer"
+                    >
+                      <CheckCheck className="w-3.5 h-3.5" /> Mark all read
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-80 overflow-y-auto divide-y divide-slate-100">
+                  {notifications.map((n) => {
+                    const NotifIcon = n.icon
+                    return (
+                      <div
+                        key={n.id}
+                        onClick={() => handleSelectNotif(n)}
+                        className={`p-3.5 flex items-start gap-3 hover:bg-slate-50 transition cursor-pointer ${
+                          !n.read ? 'bg-blue-50/40 font-semibold' : ''
+                        }`}
+                      >
+                        <span className={`p-2 rounded-xl border shrink-0 ${n.color}`}>
+                          <NotifIcon className="w-4 h-4" />
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between">
+                            <p className="text-xs font-extrabold text-slate-900 truncate">{n.title}</p>
+                            <span className="text-[10px] text-slate-400 font-medium">{n.time}</span>
+                          </div>
+                          <p className="text-[11px] text-slate-600 mt-0.5 line-clamp-2">{n.message}</p>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+
+                <div className="p-2 border-t border-slate-100 text-center bg-slate-50 rounded-b-2xl">
+                  <p className="text-[10px] font-bold text-slate-500">Showing recent administrative notifications</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* System Admin User Profile Dropdown */}
+          <div className="relative">
+            <button
+              onClick={() => {
+                setProfileOpen(!profileOpen)
+                setNotificationsOpen(false)
+              }}
+              className="flex items-center gap-2.5 p-1.5 px-3 rounded-xl hover:bg-slate-100 transition-colors border border-slate-200/60 cursor-pointer"
+            >
+              <div className="w-8 h-8 rounded-xl bg-blue-600 text-white font-black text-xs flex items-center justify-center shadow-md shadow-blue-600/20">
+                AD
+              </div>
+              <span className="hidden md:inline font-bold text-xs text-slate-800">System Admin</span>
+              <ChevronDown className="w-3.5 h-3.5 text-slate-400" />
+            </button>
+
+            {profileOpen && (
+              <div className="absolute right-0 mt-2 w-52 bg-white border border-slate-200/90 rounded-2xl shadow-2xl py-2 z-50">
+                <div className="px-4 py-2 border-b border-slate-100">
+                  <p className="text-xs font-bold text-slate-900">System Admin</p>
+                  <p className="text-[11px] text-slate-500">admin@tconnect.com</p>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className="w-full text-left px-4 py-2.5 text-xs text-rose-600 font-bold hover:bg-rose-50 flex items-center gap-2 cursor-pointer"
+                >
+                  <LogOut className="w-4 h-4" /> Log out
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
+      <div className="flex flex-1">
+        {/* Sidebar Navigation */}
+        <aside
+          className={`fixed inset-y-0 left-0 z-20 w-64 bg-white border-r border-slate-200/90 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 ${
+            sidebarOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+        >
+          <div className="p-3 border-b border-slate-100 bg-slate-50/80 font-bold text-[11px] uppercase tracking-wider text-blue-600 px-4">
+            Module Navigation
+          </div>
+          <div className="p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-4rem)]">
+            {navItems.map((item) => {
+              const Icon = item.icon
+              const isActive = location.pathname === item.path
+              return (
+                <Link
+                  key={item.path}
+                  to={item.path}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold text-xs transition-all ${
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-md shadow-blue-600/30'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-blue-600'
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : 'text-blue-600'}`} />
+                  <span>{item.label}</span>
+                </Link>
+              )
+            })}
+          </div>
+        </aside>
+
+        {/* Main Content Area */}
+        <main className="flex-1 p-4 lg:p-8 overflow-y-auto bg-slate-100/70">
+          <Outlet />
+        </main>
+      </div>
+
+      {/* Selected Notification Detail Modal */}
+      {selectedNotif && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-slate-200 shadow-2xl">
+            <h3 className="font-extrabold text-slate-900 text-base flex items-center justify-between">
+              <span className="flex items-center gap-2">
+                <Info className="w-5 h-5 text-blue-600" />
+                Notification Details
+              </span>
+              <button onClick={() => setSelectedNotif(null)} className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer">
+                ✕
+              </button>
+            </h3>
+            <div className="space-y-3 text-xs text-slate-700">
+              <div>
+                <p className="font-bold text-slate-900 text-sm">{selectedNotif.title}</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">{selectedNotif.time}</p>
+              </div>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl font-medium text-slate-800">
+                {selectedNotif.message}
+              </div>
+            </div>
+            <button
+              onClick={() => setSelectedNotif(null)}
+              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs cursor-pointer"
+            >
+              Dismiss
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+export default AdminLayout

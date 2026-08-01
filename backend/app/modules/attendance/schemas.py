@@ -5,13 +5,16 @@ from pydantic import BaseModel
 class ClockInRequest(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    location_name: Optional[str] = None
     notes: Optional[str] = None
+    remarks: Optional[str] = None
 
 
 class ClockOutRequest(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     summary: Optional[str] = None
+    remarks: Optional[str] = None
 
 
 class LeaveCreate(BaseModel):
@@ -26,5 +29,7 @@ class AttendanceResponse(BaseModel):
     user_id: str
     clock_in_time: str
     clock_out_time: Optional[str] = None
+    location_name: Optional[str] = None
     status: str
     notes: Optional[str] = None
+    remarks: Optional[str] = None

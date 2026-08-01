@@ -7,13 +7,11 @@ class OpportunityCreate(BaseModel):
     customer_name: str
     expected_revenue: float
     stage: Optional[str] = "QUALIFICATION"
-    probability: Optional[int] = 20
     expected_closing_date: Optional[str] = None
 
 
 class OpportunityUpdateStage(BaseModel):
     stage: str
-    probability: Optional[int] = None
     notes: Optional[str] = None
 
 
@@ -23,5 +21,4 @@ class OpportunityResponse(BaseModel):
     customer_name: str
     expected_revenue: float
     stage: str
-    probability: int
     owner_id: Optional[str] = None

@@ -21,3 +21,8 @@ class CustomerService:
         if not cust:
             raise NotFoundException(resource="Customer", identifier=cust_id)
         return cust
+
+    def update_customer(self, cust_id: str, data: CustomerUpdate) -> Dict[str, Any]:
+        payload = data.model_dump(exclude_unset=True)
+        return self.repo.update_customer(cust_id, payload)
+

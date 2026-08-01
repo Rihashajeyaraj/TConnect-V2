@@ -54,3 +54,35 @@ async def get_employee(
         data=emp,
         message="Employee details retrieved successfully"
     )
+
+
+@router.put("/employees/{emp_id}", response_model=StandardResponse)
+async def update_employee(
+    emp_id: str,
+    data: EmployeeUpdate,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageEmployees),
+    service: HRMSService = Depends(get_service)
+):
+    """Update employee profile."""
+    updated = service.update_employee(emp_id, data)
+    return StandardResponse.success_response(
+        data=updated,
+        message="Employee profile updated successfully"
+    )
+
+
+@router.delete("/employees/{emp_id}", response_model=StandardResponse)
+async def delete_employee(
+    emp_id: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageEmployees),
+    service: HRMSService = Depends(get_service)
+):
+    """Delete employee profile."""
+    service.delete_employee(emp_id)
+    return StandardResponse.success_response(
+        data={"deleted": True},
+        message="Employee profile deleted successfully"
+    )
+

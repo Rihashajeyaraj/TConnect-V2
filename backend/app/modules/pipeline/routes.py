@@ -43,6 +43,7 @@ async def create_opportunity(
 
 
 @router.put("/opportunities/{opp_id}/stage", response_model=StandardResponse)
+@router.patch("/opportunities/{opp_id}/stage", response_model=StandardResponse)
 async def update_opportunity_stage(
     opp_id: str,
     data: OpportunityUpdateStage,

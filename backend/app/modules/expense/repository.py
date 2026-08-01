@@ -1,15 +1,14 @@
 from typing import List, Optional, Dict, Any
-from app.database.supabase import get_supabase_client
+import uuid
+from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
 from app.core.logger import logger
 
-_in_memory_expenses: List[Dict[str, Any]] = []
-
 
 class ExpenseRepository:
     def __init__(self):
-        self.supabase = get_supabase_client()
+        self.supabase = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
 
     def get_all_expenses(self) -> List[Dict[str, Any]]:
@@ -23,29 +22,29 @@ class ExpenseRepository:
                 if res.data is not None:
                     return res.data
             except Exception as e:
-                logger.warning(f"Using memory fallback for expenses: {e}")
-        return _in_memory_expenses
+                logger.warning(f"Supabase expenses fetch notice: {e}")
+        return []
 
     def create_expense(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        data["id"] = data.get("id") or f"exp_{len(_in_memory_expenses)+1:03d}"
+        data["id"] = data.get("id") or str(uuid.uuid4())
+        data["expense_id"] = data.get("expense_id") or data["id"]
         try:
             res = self.helper.table(SchemaEnum.EXPENSE, "claims").insert(data).execute()
-            if res.data:
+            if res.data and len(res.data) > 0:
                 return res.data[0]
         except Exception:
             try:
                 res = self.supabase.table("expenses").insert(data).execute()
-                if res.data:
+                if res.data and len(res.data) > 0:
                     return res.data[0]
             except Exception as e:
-                logger.warning(f"Stored expense in memory fallback: {e}")
+                logger.warning(f"Supabase expense insert notice: {e}")
 
-        _in_memory_expenses.append(data)
         return data
 
     def get_expense_by_id(self, exp_id: str) -> Optional[Dict[str, Any]]:
         expenses = self.get_all_expenses()
         for e in expenses:
-            if str(e.get("id")) == str(exp_id):
+            if str(e.get("expense_id")) == str(exp_id) or str(e.get("id")) == str(exp_id):
                 return e
         return None

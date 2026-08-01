@@ -21,3 +21,8 @@ class CRMService:
         if not lead:
             raise NotFoundException(resource="Lead", identifier=lead_id)
         return lead
+
+    def update_lead(self, lead_id: str, data: LeadUpdate) -> Dict[str, Any]:
+        payload = data.model_dump(exclude_unset=True)
+        return self.repo.update_lead(lead_id, payload)
+
