@@ -8,13 +8,27 @@ class CRMService:
     def __init__(self, repo: CRMRepository = None):
         self.repo = repo or CRMRepository()
 
-    def list_leads(self) -> List[Dict[str, Any]]:
-        return self.repo.get_all_leads()
+    def list_leads(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        return self.repo.get_all_leads(user_payload)
 
-    def create_lead(self, data: LeadCreate) -> Dict[str, Any]:
-        payload = data.model_dump()
-        payload["status"] = "NEW"
-        return self.repo.create_lead(payload)
+    def create_lead(self, data: LeadCreate, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        payload = data.model_dump(exclude_unset=False)
+        if not payload.get("status"):
+            payload["status"] = "New"
+
+        user_email = str((user_payload or {}).get("email") or "").lower().strip()
+        user_name = str((user_payload or {}).get("name") or (user_payload or {}).get("full_name") or "")
+        user_emp_code = str((user_payload or {}).get("employee_code") or (user_payload or {}).get("employee_id") or "")
+
+        if user_email and not payload.get("assigned_to_email"):
+            payload["assigned_to_email"] = user_email
+        if user_name and not payload.get("assigned_to"):
+            payload["assigned_to"] = user_name
+        if user_emp_code and not payload.get("employee_code"):
+            payload["employee_code"] = user_emp_code
+
+        payload["created_by_email"] = user_email
+        return self.repo.create_lead(payload, user_payload)
 
     def get_lead(self, lead_id: str) -> Dict[str, Any]:
         lead = self.repo.get_lead_by_id(lead_id)
@@ -25,4 +39,7 @@ class CRMService:
     def update_lead(self, lead_id: str, data: LeadUpdate) -> Dict[str, Any]:
         payload = data.model_dump(exclude_unset=True)
         return self.repo.update_lead(lead_id, payload)
+
+    def get_team_leads(self, user_payload: Dict[str, Any] = None, params: Dict[str, Any] = None) -> Dict[str, Any]:
+        return self.repo.get_team_leads(user_payload, params)
 

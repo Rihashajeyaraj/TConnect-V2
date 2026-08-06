@@ -12,14 +12,14 @@ async def get_current_user_payload(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme)
 ) -> dict:
     if not credentials or not credentials.credentials:
-        return {"role": "Admin", "email": "admin@tconnect.com", "sub": "dev-admin-id"}
+        raise UnauthorizedException("Authentication token is missing. Please log in with valid credentials.")
     
     token = credentials.credentials
     try:
         payload = verify_supabase_jwt(token)
         return payload
-    except Exception:
-        return {"role": "Admin", "email": "admin@tconnect.com", "sub": "dev-admin-id"}
+    except Exception as e:
+        raise UnauthorizedException(f"Invalid or expired JWT authentication token: {str(e)}")
 
 
 class RequireRoles:

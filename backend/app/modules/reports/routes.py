@@ -3,7 +3,7 @@ from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
 from app.modules.reports.schemas import DashboardSummaryResponse
 from app.modules.reports.service import ReportsService
-from app.modules.reports.permissions import CanViewReports
+from app.modules.reports.permissions import CanViewReports, CanViewSalesDashboard
 
 router = APIRouter(prefix="/reports", tags=["Reports & Dashboards"])
 
@@ -24,6 +24,20 @@ async def get_dashboard_kpis(
     return StandardResponse.success_response(
         data=kpis,
         message="Dashboard KPI metrics retrieved successfully"
+    )
+
+
+@router.get("/sales-dashboard", response_model=StandardResponse)
+async def get_sales_dashboard(
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewSalesDashboard),
+    service: ReportsService = Depends(get_service)
+):
+    """Retrieve full Sales Executive Dashboard KPIs filtered by logged-in executive."""
+    data = service.get_sales_dashboard(user_payload)
+    return StandardResponse.success_response(
+        data=data,
+        message="Sales dashboard data retrieved successfully"
     )
 
 

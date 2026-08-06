@@ -126,7 +126,108 @@ function UserManagement() {
   const [editingUser, setEditingUser] = useState(null)
   const [showCredentialsModal, setShowCredentialsModal] = useState(null)
 
-  // Fetch users from backend / Supabase
+  // Sales Executive Assignment Modal State
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [selectedManagerId, setSelectedManagerId] = useState('')
+  const [selectedExecIds, setSelectedExecIds] = useState([])
+  const [assigning, setAssigning] = useState(false)
+
+  // Derived lists
+  const salesManagers = users.filter((u) => {
+    const r = (u.role || '').toLowerCase()
+    return r.includes('manager') || r.includes('admin') || r.includes('ceo')
+  })
+
+  const salesExecutives = users.filter((u) => {
+    const r = (u.role || '').toLowerCase()
+    return r.includes('executive') || r.includes('specialist') || r.includes('sales')
+  })
+
+  const handleManagerSelect = (mId) => {
+    setSelectedManagerId(mId)
+    const targetManager = users.find((u) => String(u.id) === String(mId))
+    if (targetManager) {
+      const mEmail = (targetManager.email || '').toLowerCase()
+      const mCode = (targetManager.employee_code || targetManager.id || '').toLowerCase()
+      const currentlyAssigned = salesExecutives
+        .filter((e) => {
+          const rEmail = (e.reporting_manager_email || '').toLowerCase()
+          const rId = String(e.reporting_manager_id || '').toLowerCase()
+          return rEmail === mEmail || rId === mCode || rId === String(mId).toLowerCase()
+        })
+        .map((e) => String(e.id))
+      setSelectedExecIds(currentlyAssigned)
+    } else {
+      setSelectedExecIds([])
+    }
+  }
+
+  const handleToggleExecSelection = (execId) => {
+    const strId = String(execId)
+    if (selectedExecIds.includes(strId)) {
+      setSelectedExecIds((prev) => prev.filter((id) => id !== strId))
+    } else {
+      setSelectedExecIds((prev) => [...prev, strId])
+    }
+  }
+
+  const handleSaveAssignments = async (e) => {
+    e.preventDefault()
+    if (!selectedManagerId) {
+      showToast('Please select a Sales Manager first!', 'error')
+      return
+    }
+
+    setAssigning(true)
+    const managerObj = users.find((u) => String(u.id) === String(selectedManagerId))
+    const mName = managerObj?.name || 'Sales Manager'
+    const mEmail = managerObj?.email || ''
+    const mId = managerObj?.id || selectedManagerId
+
+    try {
+      await userAPI.assignManager({
+        manager_id: selectedManagerId,
+        executive_ids: selectedExecIds,
+      })
+
+      // Update local state reactively
+      setUsers((prev) =>
+        prev.map((u) => {
+          if (selectedExecIds.includes(String(u.id))) {
+            return {
+              ...u,
+              reporting_manager_id: mId,
+              reporting_manager_name: mName,
+              reporting_manager_email: mEmail,
+            }
+          } else if (u.reporting_manager_id === mId || u.reporting_manager_email === mEmail) {
+            return {
+              ...u,
+              reporting_manager_id: null,
+              reporting_manager_name: null,
+              reporting_manager_email: null,
+            }
+          }
+          return u
+        })
+      )
+
+      try {
+        const assignMap = JSON.parse(localStorage.getItem('tc_manager_assignments') || '{}')
+        assignMap[mId] = selectedExecIds
+        localStorage.setItem('tc_manager_assignments', JSON.stringify(assignMap))
+      } catch (err) {}
+
+      showToast(`Assigned ${selectedExecIds.length} Sales Executives to ${mName}!`, 'success')
+      setShowAssignModal(false)
+    } catch (err) {
+      showToast(err?.message || 'Failed to save assignments on backend', 'error')
+    } finally {
+      setAssigning(false)
+    }
+  }
+
+  // Fetch users from backend / Supabase and sync with localStorage
   useEffect(() => {
     async function loadUsers() {
       try {
@@ -135,11 +236,23 @@ function UserManagement() {
           setUsers(res.data)
         }
       } catch (err) {
-        console.warn('Using default initial users list:', err)
+        const saved = localStorage.getItem('tc_app_users')
+        if (saved) {
+          try {
+            setUsers(JSON.parse(saved))
+          } catch (e) {}
+        }
       }
     }
     loadUsers()
   }, [])
+
+  // Sync users list to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('tc_app_users', JSON.stringify(users))
+    } catch (e) {}
+  }, [users])
 
   const handleOpenEditModal = (user) => {
     setEditingUser({ ...user })
@@ -186,7 +299,7 @@ function UserManagement() {
     const created = {
       id: `usr_${Date.now()}`,
       first_name: newUser.first_name || fullName.split(' ')[0],
-      last_name: newUser.last_name || (' '.join(fullName.split(' ').slice(1))),
+      last_name: newUser.last_name || fullName.split(' ').slice(1).join(' '),
       name: fullName,
       gender: newUser.gender || 'Male',
       date_of_birth: newUser.date_of_birth,
@@ -326,12 +439,20 @@ function UserManagement() {
             Create portal access emails and passwords for Sales Managers and Executives to log into their portals.
           </p>
         </div>
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
-        >
-          <Plus className="w-4 h-4" /> Create New Employee Account
-        </button>
+        <div className="flex flex-wrap items-center gap-2">
+          <button
+            onClick={() => setShowAssignModal(true)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+          >
+            <UserCheck className="w-4 h-4" /> Assign Sales Executives
+          </button>
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+          >
+            <Plus className="w-4 h-4" /> Create New Employee Account
+          </button>
+        </div>
       </div>
 
       {/* KPI Stats Panel */}
@@ -425,6 +546,7 @@ function UserManagement() {
                 <th className="p-4">User Details</th>
                 <th className="p-4">Access Email</th>
                 <th className="p-4">Role</th>
+                <th className="p-4">Reporting Manager</th>
                 <th className="p-4">Department</th>
                 <th className="p-4">Status</th>
                 <th className="p-4 text-center">Portal Access</th>
@@ -469,6 +591,17 @@ function UserManagement() {
                       <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-extrabold ${ROLE_BADGE_CLASSES[user.role] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
                         {user.role}
                       </span>
+                    </td>
+
+                    {/* Reporting Manager */}
+                    <td className="p-4 text-slate-700 font-bold text-xs">
+                      {user.reporting_manager_name ? (
+                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
+                          👤 {user.reporting_manager_name}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-medium text-[11px]">Unassigned</span>
+                      )}
                     </td>
 
                     {/* Department */}
@@ -911,6 +1044,134 @@ function UserManagement() {
             >
               Close Access Keys
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Sales Executives to Sales Manager Modal */}
+      {showAssignModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 border border-slate-200 shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                  <UserCheck className="w-5 h-5 text-emerald-600" /> Assign Sales Executives to Manager
+                </h3>
+                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                  Select a Sales Manager and check off the Sales Executives assigned to report to them.
+                </p>
+              </div>
+              <button onClick={() => setShowAssignModal(false)} className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1">
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAssignments} className="space-y-4 text-xs">
+              {/* Select Sales Manager */}
+              <div>
+                <label className="block text-slate-800 font-extrabold mb-1.5">
+                  1. Select Target Sales Manager <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={selectedManagerId}
+                  onChange={(e) => handleManagerSelect(e.target.value)}
+                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-emerald-600 bg-slate-50"
+                  required
+                >
+                  <option value="">-- Choose Sales Manager --</option>
+                  {salesManagers.map((m) => (
+                    <option key={m.id} value={m.id}>
+                      👤 {m.name} ({m.email}) [{m.role}]
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Select Sales Executives Checklist */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-slate-800 font-extrabold">
+                    2. Select Assigned Sales Executives ({selectedExecIds.length} selected)
+                  </label>
+                  {salesExecutives.length > 0 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedExecIds.length === salesExecutives.length) {
+                          setSelectedExecIds([])
+                        } else {
+                          setSelectedExecIds(salesExecutives.map((e) => String(e.id)))
+                        }
+                      }}
+                      className="text-[11px] font-bold text-emerald-600 hover:underline cursor-pointer"
+                    >
+                      {selectedExecIds.length === salesExecutives.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                  )}
+                </div>
+
+                <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1.5 bg-slate-50">
+                  {salesExecutives.length === 0 ? (
+                    <p className="text-slate-400 font-medium py-3 text-center">No Sales Executives available.</p>
+                  ) : (
+                    salesExecutives.map((exec) => {
+                      const isChecked = selectedExecIds.includes(String(exec.id))
+                      const currManager = exec.reporting_manager_name || 'Unassigned'
+                      return (
+                        <label
+                          key={exec.id}
+                          className={`flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer ${
+                            isChecked
+                              ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 shadow-xs'
+                              : 'bg-white border-slate-200 hover:bg-slate-100/70 text-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0">
+                            <input
+                              type="checkbox"
+                              checked={isChecked}
+                              onChange={() => handleToggleExecSelection(exec.id)}
+                              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 shrink-0"
+                            />
+                            <div className="min-w-0">
+                              <p className="font-extrabold text-xs text-slate-900 truncate">{exec.name}</p>
+                              <p className="text-[10px] text-slate-500 truncate">{exec.email}</p>
+                            </div>
+                          </div>
+                          <span
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                              currManager !== 'Unassigned'
+                                ? 'bg-blue-100 text-blue-800'
+                                : 'bg-slate-200 text-slate-600'
+                            }`}
+                          >
+                            {currManager !== 'Unassigned' ? `Reports to: ${currManager}` : 'Unassigned'}
+                          </span>
+                        </label>
+                      )
+                    })
+                  )}
+                </div>
+              </div>
+
+              {/* Action buttons */}
+              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowAssignModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={assigning || !selectedManagerId}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs shadow-md transition cursor-pointer disabled:opacity-50"
+                >
+                  {assigning ? 'Saving Assignment...' : 'Save Executive Assignment'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

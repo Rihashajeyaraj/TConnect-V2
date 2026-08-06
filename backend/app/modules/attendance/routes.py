@@ -18,8 +18,8 @@ async def get_attendance_logs(
     rbac: None = Depends(CanViewAttendance),
     service: AttendanceService = Depends(get_service)
 ):
-    """Retrieve attendance logs."""
-    logs = service.list_logs()
+    """Retrieve attendance logs filtered by authenticated user."""
+    logs = service.list_logs(user_payload)
     return StandardResponse.success_response(
         data=logs,
         message="Attendance logs retrieved successfully"

@@ -1,0 +1,185 @@
+import React from 'react'
+import {
+  Filter,
+  UserCheck,
+  Calendar,
+  Search,
+  RotateCcw,
+  CheckCircle2,
+  SlidersHorizontal,
+  X,
+  Sparkles,
+} from 'lucide-react'
+import { useManagerFilter } from './ManagerFilterContext.jsx'
+
+export const SALES_EXECUTIVES_LIST = [
+  { id: 'all', name: 'All Sales Executives' },
+  { id: 'Ashwini E', name: 'Ashwini E (EMP-101)' },
+  { id: 'Suresh Raina', name: 'Suresh Raina (EMP-106)' },
+  { id: 'Vikram Singh', name: 'Vikram Singh (EMP-103)' },
+  { id: 'Abi hastro', name: 'Abi hastro (EMP-104)' },
+  { id: 'Ananya Roy', name: 'Ananya Roy (EMP-105)' },
+  { id: 'Karthik Raja', name: 'Karthik Raja (EMP-102)' },
+]
+
+export default function ManagerGlobalFilterBar() {
+  const {
+    filters,
+    setExecutive,
+    setDateRange,
+    setFromDate,
+    setToDate,
+    setStatus,
+    setSearchKeyword,
+    resetFilters,
+  } = useManagerFilter()
+
+  // Calculate Active Filters Count
+  let activeCount = 0
+  if (filters.selectedExecutive !== 'All') activeCount++
+  if (filters.dateRange !== 'all') activeCount++
+  if (filters.statusFilter !== 'All') activeCount++
+  if (filters.searchKeyword.trim() !== '') activeCount++
+
+  return (
+    <div className="bg-[#fffdf5] border border-amber-300 rounded-3xl p-4 shadow-sm mb-6 space-y-3">
+      {/* Top Header Row */}
+      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-amber-200/80 pb-2.5">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-xl bg-[#c2410c] text-white flex items-center justify-center font-bold shadow-2xs">
+            <Filter size={15} />
+          </div>
+          <div>
+            <h3 className="text-xs font-black text-slate-900 flex items-center gap-2">
+              Sales Manager Team Filter System
+              {activeCount > 0 && (
+                <span className="px-2 py-0.5 rounded-full bg-[#c2410c] text-white text-[10px] font-black shadow-2xs">
+                  {activeCount} Filter{activeCount > 1 ? 's' : ''} Active
+                </span>
+              )}
+            </h3>
+            <p className="text-[10px] font-semibold text-slate-500">
+              Filter applies across Dashboard, Leads, Field Visits, Expenses, Customers, Team Reports & HRMS.
+            </p>
+          </div>
+        </div>
+
+        {/* Reset Button */}
+        {activeCount > 0 && (
+          <button
+            onClick={resetFilters}
+            className="px-3 py-1 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 font-black text-[11px] flex items-center gap-1.5 transition cursor-pointer border border-amber-300"
+          >
+            <RotateCcw size={13} /> Reset Filters
+          </button>
+        )}
+      </div>
+
+      {/* Filter Controls Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-semibold">
+        {/* 1. REQUIRED: Sales Executive Filter */}
+        <div className="space-y-1">
+          <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider flex items-center gap-1">
+            <UserCheck size={13} className="text-[#c2410c]" /> Required: Sales Executive
+          </label>
+          <select
+            value={filters.selectedExecutive}
+            onChange={(e) => setExecutive(e.target.value)}
+            className="w-full h-9 bg-white border border-amber-300 rounded-xl px-3 text-xs font-black text-slate-900 focus:outline-none focus:border-[#c2410c] shadow-2xs cursor-pointer"
+          >
+            {SALES_EXECUTIVES_LIST.map((se) => (
+              <option key={se.id} value={se.id === 'all' ? 'All' : se.id}>
+                {se.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        {/* 2. Date Range Filter */}
+        <div className="space-y-1">
+          <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider flex items-center gap-1">
+            <Calendar size={13} className="text-[#c2410c]" /> Date Period
+          </label>
+          <select
+            value={filters.dateRange}
+            onChange={(e) => setDateRange(e.target.value)}
+            className="w-full h-9 bg-white border border-amber-300 rounded-xl px-3 text-xs font-black text-slate-900 focus:outline-none focus:border-[#c2410c] shadow-2xs cursor-pointer"
+          >
+            <option value="all">All Time</option>
+            <option value="today">Today</option>
+            <option value="yesterday">Yesterday</option>
+            <option value="week">This Week</option>
+            <option value="month">This Month</option>
+            <option value="custom">Custom Date Range</option>
+          </select>
+        </div>
+
+        {/* 3. Status Filter */}
+        <div className="space-y-1">
+          <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider flex items-center gap-1">
+            <SlidersHorizontal size={13} className="text-[#c2410c]" /> Status Filter
+          </label>
+          <select
+            value={filters.statusFilter}
+            onChange={(e) => setStatus(e.target.value)}
+            className="w-full h-9 bg-white border border-amber-300 rounded-xl px-3 text-xs font-black text-slate-900 focus:outline-none focus:border-[#c2410c] shadow-2xs cursor-pointer"
+          >
+            <option value="All">All Statuses</option>
+            <option value="Active">Active / Approved / Completed</option>
+            <option value="Pending">Pending / In Progress</option>
+            <option value="Hot">Hot Leads / High Priority</option>
+          </select>
+        </div>
+
+        {/* 4. Instant Search Keyword */}
+        <div className="space-y-1">
+          <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider flex items-center gap-1">
+            <Search size={13} className="text-[#c2410c]" /> Instant Search
+          </label>
+          <div className="relative">
+            <input
+              type="text"
+              placeholder="Search keyword, name, ID..."
+              value={filters.searchKeyword}
+              onChange={(e) => setSearchKeyword(e.target.value)}
+              className="w-full h-9 bg-white border border-amber-300 rounded-xl pl-8 pr-7 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#c2410c] shadow-2xs"
+            />
+            <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
+            {filters.searchKeyword && (
+              <button
+                onClick={() => setSearchKeyword('')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X size={13} />
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Custom Date Pickers (Shown if dateRange === 'custom') */}
+      {filters.dateRange === 'custom' && (
+        <div className="flex items-center gap-3 pt-2 border-t border-amber-200/60 flex-wrap text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black text-amber-950">From Date:</span>
+            <input
+              type="date"
+              value={filters.fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="h-8 bg-white border border-amber-300 rounded-lg px-2 text-xs font-bold focus:outline-none"
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-[10px] font-black text-amber-950">To Date:</span>
+            <input
+              type="date"
+              value={filters.toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="h-8 bg-white border border-amber-300 rounded-lg px-2 text-xs font-bold focus:outline-none"
+            />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

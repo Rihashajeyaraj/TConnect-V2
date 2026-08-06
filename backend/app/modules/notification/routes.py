@@ -19,11 +19,26 @@ async def list_user_notifications(
     service: NotificationService = Depends(get_service)
 ):
     """Get all notifications for the current authenticated user."""
-    user_id = user_payload.get("sub", "user_001")
-    notifications = service.list_user_notifications(user_id)
+    user_id = user_payload.get("sub") or user_payload.get("user_id") or ""
+    notifications = service.list_user_notifications(user_id, user_payload)
     return StandardResponse.success_response(
         data=notifications,
         message="User notifications retrieved successfully"
+    )
+
+
+@router.get("/unread-count", response_model=StandardResponse)
+async def get_unread_count(
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewNotifications),
+    service: NotificationService = Depends(get_service)
+):
+    """Get total unread notifications count for the current user."""
+    user_id = user_payload.get("sub") or user_payload.get("user_id") or ""
+    count = service.get_unread_count(user_id, user_payload)
+    return StandardResponse.success_response(
+        data={"unread_count": count},
+        message="Unread notification count retrieved successfully"
     )
 
 
@@ -35,7 +50,7 @@ async def send_notification(
     service: NotificationService = Depends(get_service)
 ):
     """Send an in-app notification to a user."""
-    notif = service.create_notification(data)
+    notif = service.create_notification(data, sender_payload=user_payload)
     return StandardResponse.success_response(
         data=notif,
         message="Notification sent successfully"

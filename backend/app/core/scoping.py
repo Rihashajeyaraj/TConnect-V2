@@ -1,0 +1,164 @@
+from typing import Dict, Any, Optional, Set
+from app.modules.users.repository import UserRepository
+from app.core.logger import logger
+
+
+def get_allowed_user_identifiers(user_payload: Dict[str, Any] = None) -> Optional[Dict[str, Set[str]]]:
+    """
+    Centralized data access scoping resolver.
+    
+    Returns:
+      - None: Admin / Super Admin / CEO -> Unrestricted access to ALL records.
+      - Dict with sets of allowed 'emails', 'codes', 'ids', 'names':
+          - Sales Manager: Allowed to view records belonging to themselves AND any assigned Sales Executive.
+          - Sales Executive: Allowed to view ONLY their own records.
+    """
+    if not user_payload:
+        return None
+
+    user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "").strip()
+    user_email = str(user_payload.get("email") or "").lower().strip()
+    user_role = str(user_payload.get("role") or "").strip()
+    user_emp_code = str(user_payload.get("employee_code") or user_payload.get("employee_id") or "").strip()
+
+    role_lower = user_role.lower()
+
+    # 1. Admin / Super Admin / CEO -> Unrestricted Access
+    if any(r in role_lower for r in ["admin", "super admin", "system admin", "ceo", "founder"]):
+        return None
+
+    # Base allowed sets (always includes the logged-in user's own credentials)
+    allowed_emails: Set[str] = {user_email} if user_email else set()
+    allowed_codes: Set[str] = {user_emp_code} if user_emp_code else set()
+    allowed_ids: Set[str] = {user_id} if user_id else set()
+    allowed_names: Set[str] = set()
+
+    # Extract user's name if present in token
+    meta = user_payload.get("user_metadata") or {}
+    user_name = str(meta.get("full_name") or user_payload.get("name") or "").lower().strip()
+    if user_name:
+        allowed_names.add(user_name)
+
+    # 2. Sales Manager -> Include assigned Sales Executives
+    if "manager" in role_lower:
+        try:
+            repo = UserRepository()
+            all_users = repo.get_all_users()
+
+            for u in all_users:
+                r_id = str(u.get("reporting_manager_id") or "").strip()
+                r_email = str(u.get("reporting_manager_email") or "").lower().strip()
+
+                is_assigned = (
+                    (user_id and r_id == user_id)
+                    or (user_emp_code and r_id == user_emp_code)
+                    or (user_email and r_email == user_email)
+                )
+
+                if is_assigned:
+                    exec_email = str(u.get("email") or "").lower().strip()
+                    exec_code = str(u.get("employee_code") or u.get("employee_id") or "").strip()
+                    exec_id = str(u.get("id") or u.get("auth_user_id") or "").strip()
+                    exec_name = str(u.get("name") or u.get("full_name") or "").lower().strip()
+
+                    if exec_email:
+                        allowed_emails.add(exec_email)
+                    if exec_code:
+                        allowed_codes.add(exec_code)
+                    if exec_id:
+                        allowed_ids.add(exec_id)
+                    if exec_name:
+                        allowed_names.add(exec_name)
+        except Exception as e:
+            logger.warning(f"Error resolving manager assigned team: {e}")
+
+    return {
+        "emails": allowed_emails,
+        "codes": allowed_codes,
+        "ids": allowed_ids,
+        "names": allowed_names,
+    }
+
+
+def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[str]]]) -> bool:
+    """
+    Check if a data record matches the allowed user identifiers.
+    If allowed is None, record is universally accessible (Admin mode).
+    """
+    if allowed is None or not isinstance(item, dict):
+        return True
+
+    allowed_emails = allowed.get("emails", set())
+    allowed_codes = allowed.get("codes", set())
+    allowed_ids = allowed.get("ids", set())
+    allowed_names = allowed.get("names", set())
+
+    # Extract all emails on record (assigned, creator, employee, reporting manager)
+    emails_to_check = {
+        str(item.get("assigned_to_email") or "").lower().strip(),
+        str(item.get("assignedToEmail") or "").lower().strip(),
+        str(item.get("executive_email") or "").lower().strip(),
+        str(item.get("executiveEmail") or "").lower().strip(),
+        str(item.get("employee_email") or "").lower().strip(),
+        str(item.get("email") or "").lower().strip(),
+        str(item.get("owner_email") or "").lower().strip(),
+        str(item.get("created_by_email") or "").lower().strip(),
+        str(item.get("reporting_manager_email") or "").lower().strip(),
+    } - {""}
+
+    # Extract IDs / Codes on record
+    codes_to_check = {
+        str(item.get("employee_id") or "").strip(),
+        str(item.get("employee_code") or "").strip(),
+        str(item.get("emp_code") or "").strip(),
+        str(item.get("visitor_id") or "").strip(),
+        str(item.get("user_id") or "").strip(),
+        str(item.get("created_by") or "").strip(),
+        str(item.get("reporting_manager_id") or "").strip(),
+    } - {""}
+
+    # Extract Names on record
+    names_to_check = {
+        str(item.get("assigned_to") or "").lower().strip(),
+        str(item.get("assignedTo") or "").lower().strip(),
+        str(item.get("executive") or "").lower().strip(),
+        str(item.get("executiveName") or "").lower().strip(),
+        str(item.get("employee_name") or "").lower().strip(),
+        str(item.get("created_by_name") or "").lower().strip(),
+        str(item.get("reporting_manager_name") or "").lower().strip(),
+    } - {""}
+
+    # Parse metadata tags embedded in notes/description (e.g. "Email: xyz | EMP: 123")
+    notes_raw = str(item.get("notes") or item.get("description") or item.get("remarks") or "")
+    if notes_raw and "|" in notes_raw:
+        for part in notes_raw.split("|"):
+            p_strip = part.strip()
+            if "Email:" in p_strip:
+                emails_to_check.add(p_strip.split("Email:")[-1].strip().lower())
+            elif "EMP:" in p_strip:
+                codes_to_check.add(p_strip.split("EMP:")[-1].strip())
+            elif "Manager:" in p_strip:
+                emails_to_check.add(p_strip.split("Manager:")[-1].strip().lower())
+            elif "AssignedTo:" in p_strip:
+                names_to_check.add(p_strip.split("AssignedTo:")[-1].strip().lower())
+
+    # Check Email match
+    for email in emails_to_check:
+        if email in allowed_emails:
+            return True
+
+    # Check Code / ID match
+    for code in codes_to_check:
+        if code in allowed_codes or code in allowed_ids:
+            return True
+
+    # Check Name match
+    for name in names_to_check:
+        if name in allowed_names or any(an in name for an in allowed_names if len(an) >= 3):
+            return True
+
+    # Fallback: If item has no identifiable owner metadata at all, allow access so newly created records don't vanish
+    if not emails_to_check and not codes_to_check and not names_to_check:
+        return True
+
+    return False

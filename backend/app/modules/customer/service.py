@@ -8,8 +8,8 @@ class CustomerService:
     def __init__(self, repo: CustomerRepository = None):
         self.repo = repo or CustomerRepository()
 
-    def list_customers(self) -> List[Dict[str, Any]]:
-        return self.repo.get_all_customers()
+    def list_customers(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        return self.repo.get_all_customers(user_payload)
 
     def create_customer(self, data: CustomerCreate) -> Dict[str, Any]:
         payload = data.model_dump()

@@ -1,6 +1,6 @@
 from typing import List, Dict, Any, Optional
 from app.modules.users.repository import UserRepository
-from app.modules.users.schemas import UserCreate, UserUpdate
+from app.modules.users.schemas import UserCreate, UserUpdate, AssignManagerRequest
 from app.exceptions.base import NotFoundException, BadRequestException
 
 
@@ -24,3 +24,9 @@ class UserService:
 
     def delete_user(self, user_id: str) -> bool:
         return self.repo.delete_user(user_id)
+
+    def assign_sales_executives(self, data: AssignManagerRequest) -> Dict[str, Any]:
+        return self.repo.assign_sales_executives(data.manager_id, data.executive_ids)
+
+    def get_assigned_executives_for_manager(self, manager_id: str) -> List[Dict[str, Any]]:
+        return self.repo.get_assigned_executives_for_manager(manager_id)

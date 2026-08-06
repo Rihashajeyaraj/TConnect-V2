@@ -18,11 +18,49 @@ async def list_leads(
     rbac: None = Depends(CanViewLeads),
     service: CRMService = Depends(get_service)
 ):
-    """Retrieve all CRM leads."""
-    leads = service.list_leads()
+    """Retrieve leads filtered by authenticated user."""
+    leads = service.list_leads(user_payload)
     return StandardResponse.success_response(
         data=leads,
         message="Leads list retrieved successfully"
+    )
+
+
+@router.get("/team-leads", response_model=StandardResponse)
+async def list_team_leads(
+    manager_id: str = None,
+    sales_executive_id: str = None,
+    priority: str = None,
+    status: str = None,
+    category: str = None,
+    search: str = None,
+    from_date: str = None,
+    to_date: str = None,
+    page: int = 1,
+    limit: int = 50,
+    sort: str = "created_at_desc",
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewLeads),
+    service: CRMService = Depends(get_service)
+):
+    """Retrieve team leads & summary metrics belonging to logged-in Sales Manager."""
+    params = {
+        "manager_id": manager_id,
+        "sales_executive_id": sales_executive_id,
+        "priority": priority,
+        "status": status,
+        "category": category,
+        "search": search,
+        "from_date": from_date,
+        "to_date": to_date,
+        "page": page,
+        "limit": limit,
+        "sort": sort,
+    }
+    team_data = service.get_team_leads(user_payload, params)
+    return StandardResponse.success_response(
+        data=team_data,
+        message="Team lead reports retrieved successfully"
     )
 
 
@@ -34,7 +72,7 @@ async def create_lead(
     service: CRMService = Depends(get_service)
 ):
     """Create a new CRM lead."""
-    lead = service.create_lead(data)
+    lead = service.create_lead(data, user_payload)
     return StandardResponse.success_response(
         data=lead,
         message="Lead created successfully"

@@ -4,9 +4,9 @@ import datetime
 from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
+from app.exceptions.base import BadRequestException, NotFoundException
 from app.core.logger import logger
 
-# No mock data — all users are read from Supabase Auth admin.list_users()
 _in_memory_users: List[Dict[str, Any]] = []
 
 
@@ -43,9 +43,12 @@ class UserRepository:
                             "phone": meta.get("phone") or "+91 99999 00000",
                             "role": meta.get("role") or "Sales Executive",
                             "dept": meta.get("dept") or meta.get("department") or "Sales & Business Development",
-                            "status": "Active",
+                            "status": meta.get("status") or "Active",
                             "lastLogin": "Recently",
-                            "accessPassword": "Set via Supabase Auth"
+                            "accessPassword": "Set via Supabase Auth",
+                            "reporting_manager_id": meta.get("reporting_manager_id"),
+                            "reporting_manager_name": meta.get("reporting_manager_name"),
+                            "reporting_manager_email": meta.get("reporting_manager_email"),
                         })
                 logger.info(f"UserRepository: loaded {len(auth_users_list)} users from Supabase Auth")
         except Exception as auth_err:
@@ -69,6 +72,9 @@ class UserRepository:
                             "status": emp.get("status", "Active"),
                             "lastLogin": "Recently",
                             "accessPassword": emp.get("accessPassword") or emp.get("password", "TConnect2026#"),
+                            "reporting_manager_id": emp.get("reporting_manager_id"),
+                            "reporting_manager_name": emp.get("reporting_manager_name"),
+                            "reporting_manager_email": emp.get("reporting_manager_email"),
                         })
         except Exception as e:
             logger.debug(f"Supabase users lookup fallback: {e}")
@@ -85,7 +91,6 @@ class UserRepository:
     def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a user in Supabase Auth AND sync them to the HRMS employee portal.
-        This is the single source of truth for user + employee creation from admin.
         """
         user_id = str(uuid.uuid4())
         first_name = user_data.get("first_name") or user_data.get("name", "User").split(" ")[0]
@@ -94,7 +99,6 @@ class UserRepository:
         )
         full_name = f"{first_name} {last_name}".strip()
 
-        # Generate a persistent, unique employee code
         emp_code = user_data.get("employee_code") or _generate_employee_code()
         role = user_data.get("role", "Sales Executive")
         dept = user_data.get("dept") or user_data.get("department", "Sales & Business Development")
@@ -104,6 +108,10 @@ class UserRepository:
         gender = user_data.get("gender", "Male")
         dob = user_data.get("date_of_birth")
         emergency_contact = user_data.get("emergency_contact")
+
+        reporting_manager_id = user_data.get("reporting_manager_id")
+        reporting_manager_name = user_data.get("reporting_manager_name")
+        reporting_manager_email = user_data.get("reporting_manager_email")
 
         new_user = {
             "id": user_id,
@@ -121,6 +129,9 @@ class UserRepository:
             "lastLogin": "Just now",
             "accessPassword": password,
             "employee_code": emp_code,
+            "reporting_manager_id": reporting_manager_id,
+            "reporting_manager_name": reporting_manager_name,
+            "reporting_manager_email": reporting_manager_email,
         }
 
         # ── Step 1: Create user in Supabase Auth (auth.users) ──────────────────
@@ -134,8 +145,6 @@ class UserRepository:
                     "password": password,
                     "email_confirm": True,
                     "user_metadata": {
-                        # Store all identity fields in metadata so HRMS
-                        # get_all_employees() can read them without a DB query
                         "role": role,
                         "full_name": full_name,
                         "first_name": first_name,
@@ -146,7 +155,11 @@ class UserRepository:
                         "gender": gender,
                         "date_of_birth": dob,
                         "emergency_contact": emergency_contact,
-                        "employee_code": emp_code,    # ← critical: persisted in auth
+                        "employee_code": emp_code,
+                        "status": new_user["status"],
+                        "reporting_manager_id": reporting_manager_id,
+                        "reporting_manager_name": reporting_manager_name,
+                        "reporting_manager_email": reporting_manager_email,
                     }
                 })
                 if auth_res and hasattr(auth_res, "user") and auth_res.user:
@@ -157,8 +170,6 @@ class UserRepository:
             logger.warning(f"Supabase Auth create_user notice for {email}: {auth_err}")
 
         # ── Step 2: Sync to HRMS module (hrms.employees) ───────────────────────
-        # Delegate to HRMSRepository so the HRMS portal immediately shows the employee.
-        # Import here (not at top) to avoid circular import between users ↔ hrms modules.
         try:
             from app.modules.hrms.repository import HRMSRepository
             hrms_repo = HRMSRepository()
@@ -182,6 +193,9 @@ class UserRepository:
                 "status": new_user["status"],
                 "password": password,
                 "company_id": user_data.get("company_id", "TC-001"),
+                "reporting_manager_id": reporting_manager_id,
+                "reporting_manager_name": reporting_manager_name,
+                "reporting_manager_email": reporting_manager_email,
             }
             hrms_record = hrms_repo.sync_employee_from_user(hrms_payload)
             logger.info(f"✅ HRMS employee record synced for {email} (emp_code: {emp_code})")
@@ -189,24 +203,13 @@ class UserRepository:
         except Exception as hrms_err:
             logger.warning(f"HRMS sync notice for {email}: {hrms_err}")
 
-        # Step 2 complete -- HRMS sync is the authoritative employee record.
-        # NOTE: There is NO Step 3 sync to public.users or organization.users.
-        # public.users does not exist in this project. All identity is managed
-        # by Supabase Auth (auth.users). The application reads identity from
-        # auth.users via admin.list_users() and from hrms.employees for
-        # HR-specific data. Adding a sync to a non-existent table would cause
-        # a silent PGRST205 error on every user creation.
-
-        # Store in local memory as fallback (allows GET /users to return the
-        # newly created user even before the DB write is confirmed)
         _in_memory_users.insert(0, new_user)
-
         return new_user
 
     def update_user(self, user_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         target = None
         for idx, u in enumerate(_in_memory_users):
-            if u["id"] == user_id:
+            if u["id"] == user_id or u.get("email") == updates.get("email"):
                 _in_memory_users[idx].update({k: v for k, v in updates.items() if v is not None})
                 target = _in_memory_users[idx]
                 break
@@ -222,6 +225,9 @@ class UserRepository:
                 "status": updates.get("status", "Active"),
                 "lastLogin": "Just now",
                 "accessPassword": updates.get("accessPassword") or updates.get("password", "TConnect2026#"),
+                "reporting_manager_id": updates.get("reporting_manager_id"),
+                "reporting_manager_name": updates.get("reporting_manager_name"),
+                "reporting_manager_email": updates.get("reporting_manager_email"),
             }
             _in_memory_users.insert(0, target)
 
@@ -231,10 +237,9 @@ class UserRepository:
             auth_admin = getattr(admin_client, "auth", None)
             if auth_admin and hasattr(auth_admin, "admin") and updates:
                 meta_update = {}
-                if updates.get("role"):
-                    meta_update["role"] = updates["role"]
-                if updates.get("dept") or updates.get("department"):
-                    meta_update["dept"] = updates.get("dept") or updates.get("department")
+                for k in ["role", "dept", "department", "status", "reporting_manager_id", "reporting_manager_name", "reporting_manager_email"]:
+                    if updates.get(k) is not None:
+                        meta_update[k] = updates[k]
                 if updates.get("name"):
                     meta_update["full_name"] = updates["name"]
                 if meta_update:
@@ -242,7 +247,7 @@ class UserRepository:
         except Exception as meta_err:
             logger.debug(f"Auth metadata update notice: {meta_err}")
 
-        # Sync update to hrms.employees (authoritative HR table)
+        # Sync update to hrms.employees
         try:
             db_updates = {
                 "first_name": target["name"].split(" ")[0],
@@ -251,12 +256,12 @@ class UserRepository:
                 "designation": target.get("role"),
                 "role": target.get("role"),
                 "status": target["status"],
+                "reporting_manager_id": target.get("reporting_manager_id"),
+                "reporting_manager_name": target.get("reporting_manager_name"),
+                "reporting_manager_email": target.get("reporting_manager_email"),
             }
             self.client.schema("hrms").table("employees").update(db_updates).eq("employee_id", user_id).execute()
         except Exception as hrms_err:
-            # public.employees (the normalised base table with incompatible schema)
-            # is intentionally NOT used as a fallback here. It previously had the
-            # broken employees_user_id_fkey pointing to non-existent public.users.
             logger.warning(f"hrms.employees update notice for {user_id}: {hrms_err}")
 
         return target
@@ -265,7 +270,6 @@ class UserRepository:
         global _in_memory_users
         _in_memory_users = [u for u in _in_memory_users if u["id"] != user_id]
 
-        # Delete from Supabase Auth
         try:
             admin_client = get_supabase_admin_client() or self.client
             auth_admin = getattr(admin_client, "auth", None)
@@ -275,7 +279,6 @@ class UserRepository:
         except Exception as auth_del_err:
             logger.warning(f"Auth delete notice for {user_id}: {auth_del_err}")
 
-        # Delete from hrms.employees
         try:
             self.client.schema("hrms").table("employees").delete().eq("employee_id", user_id).execute()
             logger.info(f"✅ Deleted employee {user_id} from hrms.employees")
@@ -286,3 +289,93 @@ class UserRepository:
                 logger.warning(f"Supabase employee delete fallback: {err}")
 
         return True
+
+    def assign_sales_executives(self, manager_id: str, executive_ids: List[str]) -> Dict[str, Any]:
+        """
+        Assign one or more Sales Executives to a Sales Manager.
+        Only Admin/Super Admin/CEO can invoke this.
+        Updates reporting_manager_id, reporting_manager_name, reporting_manager_email
+        and sends real-time notifications to BOTH manager and executive.
+        """
+        all_users = self.get_all_users()
+        manager = None
+        for u in all_users:
+            if str(u.get("id")) == str(manager_id) or str(u.get("user_id")) == str(manager_id) or str(u.get("employee_id")) == str(manager_id):
+                manager = u
+                break
+
+        if not manager:
+            raise BadRequestException(f"Target Sales Manager with ID '{manager_id}' not found.")
+
+        m_id = str(manager.get("id") or manager.get("user_id") or manager.get("employee_id"))
+        m_name = str(manager.get("name") or manager.get("full_name") or "Sales Manager")
+        m_email = str(manager.get("email") or "").lower().strip()
+
+        from app.modules.notification.repository import NotificationRepository
+        notif_repo = NotificationRepository()
+
+        assigned_execs = []
+        for exec_id in executive_ids:
+            # Find executive target details for notification
+            exec_user = None
+            for u in all_users:
+                if str(u.get("id")) == str(exec_id) or str(u.get("user_id")) == str(exec_id) or str(u.get("employee_id")) == str(exec_id):
+                    exec_user = u
+                    break
+
+            exec_name = str(exec_user.get("name") or exec_user.get("full_name") or "Sales Executive") if exec_user else "Sales Executive"
+            exec_email = str(exec_user.get("email") or "").lower().strip() if exec_user else ""
+
+            updates = {
+                "reporting_manager_id": m_id,
+                "reporting_manager_name": m_name,
+                "reporting_manager_email": m_email,
+            }
+            self.update_user(exec_id, updates)
+            assigned_execs.append(exec_id)
+
+            # Send notifications to BOTH Manager & Executive
+            try:
+                # 1. Notification to Sales Executive
+                notif_repo.create_notification({
+                    "recipient_id": exec_id,
+                    "recipient_email": exec_email,
+                    "employee_id": exec_id,
+                    "recipient_role": "Sales Executive",
+                    "title": "Reporting Manager Assigned",
+                    "message": f"You have been assigned to Sales Manager {m_name} ({m_email}). All your leads, field visits, and reports are now managed by {m_name}.",
+                    "type": "ASSIGNMENT"
+                })
+
+                # 2. Notification to Sales Manager
+                notif_repo.create_notification({
+                    "recipient_id": m_id,
+                    "recipient_email": m_email,
+                    "employee_id": m_id,
+                    "recipient_role": "Sales Manager",
+                    "title": "New Sales Executive Assigned",
+                    "message": f"Sales Executive {exec_name} ({exec_email}) has been assigned to your team under your direct management.",
+                    "type": "ASSIGNMENT"
+                })
+            except Exception as notif_err:
+                logger.warning(f"Assignment notification failed for exec '{exec_id}': {notif_err}")
+
+        logger.info(f"Assigned {len(assigned_execs)} executives to manager {m_name} ({m_email})")
+        return {
+            "manager_id": m_id,
+            "manager_name": m_name,
+            "manager_email": m_email,
+            "assigned_executive_ids": assigned_execs,
+            "count": len(assigned_execs)
+        }
+
+    def get_assigned_executives_for_manager(self, manager_id: str) -> List[Dict[str, Any]]:
+        all_users = self.get_all_users()
+        m_clean = str(manager_id).lower().strip()
+        assigned = []
+        for u in all_users:
+            r_id = str(u.get("reporting_manager_id") or "").lower().strip()
+            r_email = str(u.get("reporting_manager_email") or "").lower().strip()
+            if r_id == m_clean or r_email == m_clean or m_clean in (r_id, r_email):
+                assigned.append(u)
+        return assigned

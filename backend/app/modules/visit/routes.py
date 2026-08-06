@@ -18,11 +18,49 @@ async def list_visits(
     rbac: None = Depends(CanViewVisits),
     service: VisitService = Depends(get_service)
 ):
-    """Retrieve all scheduled or completed field visits."""
-    visits = service.list_visits()
+    """Retrieve scheduled or completed field visits filtered by logged-in executive."""
+    visits = service.list_visits(user_payload)
     return StandardResponse.success_response(
         data=visits,
         message="Visits list retrieved successfully"
+    )
+
+
+@router.get("/team-audit", response_model=StandardResponse)
+async def list_team_audit_visits(
+    manager_id: str = None,
+    sales_executive_id: str = None,
+    visit_status: str = None,
+    lead_status: str = None,
+    priority: str = None,
+    search: str = None,
+    from_date: str = None,
+    to_date: str = None,
+    page: int = 1,
+    limit: int = 50,
+    sort: str = "created_at_desc",
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewVisits),
+    service: VisitService = Depends(get_service)
+):
+    """Retrieve team field visit audit records & summary metrics belonging to logged-in Sales Manager."""
+    params = {
+        "manager_id": manager_id,
+        "sales_executive_id": sales_executive_id,
+        "visit_status": visit_status,
+        "lead_status": lead_status,
+        "priority": priority,
+        "search": search,
+        "from_date": from_date,
+        "to_date": to_date,
+        "page": page,
+        "limit": limit,
+        "sort": sort,
+    }
+    audit_data = service.get_team_audit_visits(user_payload, params)
+    return StandardResponse.success_response(
+        data=audit_data,
+        message="Team field visit audit retrieved successfully"
     )
 
 
@@ -34,8 +72,7 @@ async def create_visit(
     service: VisitService = Depends(get_service)
 ):
     """Schedule a new field visit."""
-    visitor_id = user_payload.get("sub", "user_001")
-    visit = service.create_visit(data, visitor_id)
+    visit = service.create_visit(data, user_payload)
     return StandardResponse.success_response(
         data=visit,
         message="Visit scheduled successfully"
@@ -71,4 +108,20 @@ async def check_out_visit(
     return StandardResponse.success_response(
         data=visit,
         message="Checked out of visit successfully"
+    )
+
+
+@router.put("/{visit_id}/complete", response_model=StandardResponse)
+async def complete_visit(
+    visit_id: str,
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanRecordVisits),
+    service: VisitService = Depends(get_service)
+):
+    """Submit complete SE Visit Completion Form."""
+    visit = service.complete_visit(visit_id, data)
+    return StandardResponse.success_response(
+        data=visit,
+        message="Visit completion form submitted successfully"
     )

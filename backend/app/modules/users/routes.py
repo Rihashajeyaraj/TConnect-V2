@@ -1,15 +1,22 @@
 from fastapi import APIRouter, Depends, status
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
-from app.modules.users.schemas import UserCreate, UserUpdate, UserResponse
+from app.modules.users.schemas import UserCreate, UserUpdate, UserResponse, AssignManagerRequest
 from app.modules.users.service import UserService
 from app.modules.settings.permissions import CanManageSettings
+from app.exceptions.base import ForbiddenException
 
 router = APIRouter(prefix="/users", tags=["User Account Management"])
 
 
 def get_service() -> UserService:
     return UserService()
+
+
+def _require_admin_or_superadmin(user_payload: dict):
+    role = str(user_payload.get("role") or "").strip().lower()
+    if role not in ("admin", "super admin", "system admin", "ceo", "ceo / founder"):
+        raise ForbiddenException("Only Admin or Super Admin can assign Sales Executives to a Sales Manager.")
 
 
 @router.get("", response_model=StandardResponse)
@@ -22,6 +29,35 @@ async def get_all_users(
     return StandardResponse.success_response(
         data=users_list,
         message="System user accounts retrieved successfully"
+    )
+
+
+@router.post("/assign-manager", response_model=StandardResponse)
+async def assign_sales_executives(
+    data: AssignManagerRequest,
+    user_payload: dict = Depends(get_current_user_payload),
+    service: UserService = Depends(get_service)
+):
+    """Assign one or more Sales Executives to a Sales Manager (Admin / Super Admin only)."""
+    _require_admin_or_superadmin(user_payload)
+    res = service.assign_sales_executives(data)
+    return StandardResponse.success_response(
+        data=res,
+        message=f"Successfully assigned {res.get('count', 0)} Sales Executives to Sales Manager {res.get('manager_name')}."
+    )
+
+
+@router.get("/manager-team/{manager_id}", response_model=StandardResponse)
+async def get_assigned_executives(
+    manager_id: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    service: UserService = Depends(get_service)
+):
+    """Get all Sales Executives assigned to a specific Sales Manager."""
+    execs = service.get_assigned_executives_for_manager(manager_id)
+    return StandardResponse.success_response(
+        data=execs,
+        message="Assigned Sales Executives retrieved successfully"
     )
 
 
@@ -63,9 +99,9 @@ async def delete_user(
     rbac: None = Depends(CanManageSettings),
     service: UserService = Depends(get_service)
 ):
-    """Delete an employee user portal account."""
+    """Delete employee user account."""
     service.delete_user(user_id)
     return StandardResponse.success_response(
-        data={"user_id": user_id},
-        message="User account deleted successfully"
+        data={"id": user_id},
+        message="Employee user account deleted successfully"
     )

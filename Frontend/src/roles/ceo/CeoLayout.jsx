@@ -29,9 +29,13 @@ import {
   CheckCircle,
 } from 'lucide-react'
 
+import useCurrentUser from '../../hooks/useCurrentUser.js'
+import { clearUserCache } from '../../utils/userScope.js'
+import { formatDate } from '../../utils/dateUtils.js'
+
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/ceo' },
-  { label: 'User Management', icon: UserCheck, path: '/ceo/users' },
+  { label: 'Admin Management', icon: UserCheck, path: '/ceo/users' },
   { label: 'Leads', icon: Target, path: '/ceo/leads' },
   { label: 'Customer', icon: UserCheck, path: '/ceo/customer' },
   { label: 'Visits', icon: CalendarIcon, path: '/ceo/visits' },
@@ -45,6 +49,7 @@ const navItems = [
 
 function CeoLayout() {
   const { showToast } = useToast()
+  const currentUser = useCurrentUser()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
@@ -192,8 +197,9 @@ function CeoLayout() {
 
   // Handle Sign Out
   const handleSignOut = () => {
+    clearUserCache()
     showToast('Logged out successfully', 'info')
-    navigate('/')
+    window.location.href = '/'
   }
 
   const activeNav = navItems.find((item) => location.pathname === item.path)
@@ -322,12 +328,12 @@ function CeoLayout() {
         <div className="border-t border-slate-200/80 p-4 shrink-0">
           <div className={`flex items-center gap-3 rounded-xl bg-slate-50 p-2.5 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
             <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-500 text-sm font-bold text-white shadow-sm">
-              JD
+              {currentUser.initials || 'CEO'}
             </span>
             {!isSidebarCollapsed && (
               <div className="flex-1 overflow-hidden animate-in fade-in duration-150">
-                <p className="m-0 text-xs font-bold text-slate-950 truncate">John Doe</p>
-                <p className="m-0 text-[0.65rem] font-medium text-slate-500 truncate">CEO & Founder</p>
+                <p className="m-0 text-xs font-bold text-slate-950 truncate">{currentUser.name || 'CEO / Founder'}</p>
+                <p className="m-0 text-[0.65rem] font-medium text-slate-500 truncate">{currentUser.email || 'ceo@tconnect.com'}</p>
               </div>
             )}
             {!isSidebarCollapsed && (
@@ -495,17 +501,15 @@ function CeoLayout() {
             {/* Profile Dropdown */}
             <div className="relative">
               <button
-                className="flex items-center gap-2 rounded-xl p-1.5 text-sm text-slate-700 transition hover:bg-slate-50"
+                className="flex items-center gap-2 rounded-xl p-1.5 text-sm text-slate-700 transition hover:bg-slate-50 cursor-pointer"
                 onClick={() => setProfileOpen(!profileOpen)}
               >
                 <span className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-blue-600 to-indigo-500 text-xs font-bold text-white shadow-sm shrink-0">
-                  JD
+                  {currentUser.initials || 'CEO'}
                 </span>
                 <div className="hidden text-left sm:block">
-                  <p className="m-0 text-xs font-bold text-slate-900 leading-none">John Doe</p>
-                  <span className="mt-1 inline-block rounded-full bg-blue-50 border border-blue-100 px-1.5 py-0.2 text-[8px] font-extrabold text-blue-700 leading-none">
-                    CEO
-                  </span>
+                  <p className="m-0 text-xs font-bold text-slate-900 leading-none">{currentUser.name || 'CEO'}</p>
+                  <p className="text-[10px] text-blue-600 font-semibold truncate max-w-[140px] leading-tight mt-0.5">{currentUser.email}</p>
                 </div>
                 <ChevronDown className={`size-4 text-slate-450 transition ${profileOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -513,10 +517,17 @@ function CeoLayout() {
               {profileOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
-                  <div className="absolute right-0 top-full z-50 mt-2.5 w-52 rounded-2xl border border-slate-100 bg-white p-2 shadow-xl ring-1 ring-slate-950/5">
+                  <div className="absolute right-0 top-full z-50 mt-2.5 w-60 rounded-2xl border border-slate-100 bg-white p-2 shadow-xl ring-1 ring-slate-950/5">
+                    <div className="px-3 py-2 border-b border-slate-100 mb-1">
+                      <p className="text-xs font-bold text-slate-900">{currentUser.name || 'CEO / Founder'}</p>
+                      <p className="text-[11px] font-semibold text-blue-600 truncate">{currentUser.email || 'ceo@tconnect.com'}</p>
+                      <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[9px] font-extrabold uppercase">
+                        {currentUser.role || 'CEO'}
+                      </span>
+                    </div>
                     <Link
                       to="/ceo/settings"
-                      className="flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
+                      className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
                       onClick={() => setProfileOpen(false)}
                     >
                       <Settings className="size-4 text-slate-400" />
@@ -524,7 +535,7 @@ function CeoLayout() {
                     </Link>
                     <button
                       onClick={handleSignOut}
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-500 transition hover:bg-red-50 hover:text-red-600"
+                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-500 transition hover:bg-red-50 hover:text-red-600 cursor-pointer"
                     >
                       <LogOut className="size-4" />
                       Sign out

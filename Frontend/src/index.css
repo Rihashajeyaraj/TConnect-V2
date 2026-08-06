@@ -1,17 +1,7 @@
 @import "tailwindcss";
 
-@theme {
-  --font-sans: "Poppins", sans-serif;
-}
-
-* {
-  font-family: "Poppins", sans-serif !important;
-}
-
 :root {
   font-family: "Poppins", sans-serif;
-  color: #f8fafc;
-  background: #0a1020;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
@@ -25,13 +15,16 @@
 html {
   min-width: 320px;
   min-height: 100%;
-  background: #0a1020;
+  overflow-x: hidden;
 }
 
 body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background-color: #f8fafc;
+  color: #0f172a;
+  overflow-x: hidden;
 }
 
 button,
@@ -43,9 +36,63 @@ button {
   cursor: pointer;
 }
 
-::selection {
-  color: #ffffff;
-  background: #7c3aed;
+/* Responsive Scrollbar & Mobile Touch Enhancements */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(100, 116, 139, 0.6);
+}
+
+/* Ensure smooth touch scrolling on mobile iOS & Android */
+.overflow-x-auto,
+.overflow-y-auto {
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Prevent layout shift and overflow on mobile devices */
+img,
+svg,
+video,
+canvas {
+  max-width: 100%;
+  height: auto;
+}
+
+/* Table responsive safety */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* Mobile Touch Tap Targets & Spacing */
+@media (max-width: 640px) {
+
+  button,
+  input,
+  select,
+  textarea,
+  a {
+    touch-action: manipulation;
+  }
+}
+
+/* ── Auth pages dark background (login, signup, forgot-password) ── */
+main.min-h-screen.bg-slate-900,
+main[class*="bg-slate-9"] {
+  background: #0a1020 !important;
+  color: #f8fafc !important;
 }
 
 @media (min-width: 1024px) and (max-height: 800px) {
@@ -74,7 +121,7 @@ button {
     height: 3rem;
   }
 
-  .brand-panel .brand-mark-badge > svg {
+  .brand-panel .brand-mark-badge>svg {
     width: 1.875rem;
     height: 1.875rem;
   }
@@ -102,13 +149,13 @@ button {
     border-radius: 1rem;
   }
 
-  .feature-card > span {
+  .feature-card>span {
     width: 2.5rem;
     height: 2.5rem;
     margin-bottom: 0.75rem;
   }
 
-  .feature-card > span > svg {
+  .feature-card>span>svg {
     width: 1.375rem;
     height: 1.375rem;
   }
@@ -128,7 +175,7 @@ button {
     transform: translateY(0.75rem);
   }
 
-  .login-content > h1 {
+  .login-content>h1 {
     font-size: 2.25rem;
     line-height: 1;
   }
@@ -139,7 +186,7 @@ button {
     margin-bottom: 1.25rem;
   }
 
-  .login-emblem > svg {
+  .login-emblem>svg {
     width: 2rem;
     height: 2rem;
   }

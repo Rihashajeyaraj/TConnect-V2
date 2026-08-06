@@ -19,8 +19,8 @@ async def list_customers(
     rbac: None = Depends(CanViewCustomers),
     service: CustomerService = Depends(get_service)
 ):
-    """List all customer accounts."""
-    customers = service.list_customers()
+    """List customer accounts filtered by authenticated user."""
+    customers = service.list_customers(user_payload)
     return StandardResponse.success_response(
         data=customers,
         message="Customers list retrieved successfully"

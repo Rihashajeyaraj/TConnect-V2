@@ -13,15 +13,24 @@ export function getStoredUser() {
     const saved = localStorage.getItem('user')
     if (saved) {
       const parsed = JSON.parse(saved)
+      const email = (parsed.email || '').toLowerCase().trim()
+      const emailPrefix = email ? email.split('@')[0] : 'user'
+      const sanitizedId = email ? email.replace(/[^a-zA-Z0-9]/g, '_') : 'user_default'
+
       return {
-        ...parsed,
+        id: parsed.id || parsed.user_id || parsed.sub || `usr_${sanitizedId}`,
+        user_id: parsed.user_id || parsed.id || parsed.sub || `usr_${sanitizedId}`,
+        employee_id: parsed.employee_id || parsed.employee_code || `EMP-${emailPrefix.toUpperCase()}`,
+        employee_code: parsed.employee_code || parsed.employee_id || `EMP-${emailPrefix.toUpperCase()}`,
+        email: email,
+        name: parsed.name || parsed.full_name || emailPrefix || 'User',
+        full_name: parsed.full_name || parsed.name || emailPrefix || 'User',
         role: normalizeRole(parsed.role),
-        email: parsed.email || '',
-        name: parsed.name || parsed.email?.split('@')[0] || 'User',
+        designation: parsed.designation || 'Sales Executive',
       }
     }
   } catch (e) {}
-  return { email: '', name: 'User', role: '' }
+  return { id: '', user_id: '', employee_id: '', employee_code: '', email: '', name: 'User', full_name: 'User', role: '', designation: '' }
 }
 
 export function useCurrentUser() {

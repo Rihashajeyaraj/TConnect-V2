@@ -8,8 +8,8 @@ class PipelineService:
     def __init__(self, repo: PipelineRepository = None):
         self.repo = repo or PipelineRepository()
 
-    def list_opportunities(self) -> List[Dict[str, Any]]:
-        return self.repo.get_all_opportunities()
+    def list_opportunities(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        return self.repo.get_all_opportunities(user_payload)
 
     def create_opportunity(self, data: OpportunityCreate, owner_id: str) -> Dict[str, Any]:
         payload = data.model_dump()

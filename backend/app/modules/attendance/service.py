@@ -8,8 +8,8 @@ class AttendanceService:
     def __init__(self, repo: AttendanceRepository = None):
         self.repo = repo or AttendanceRepository()
 
-    def list_logs(self) -> List[Dict[str, Any]]:
-        return self.repo.get_all_logs()
+    def list_logs(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        return self.repo.get_all_logs(user_payload)
 
     def clock_in(self, user_id: str, data: ClockInRequest) -> Dict[str, Any]:
         payload = {

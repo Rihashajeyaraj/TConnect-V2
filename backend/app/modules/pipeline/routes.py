@@ -18,8 +18,8 @@ async def list_opportunities(
     rbac: None = Depends(CanViewPipeline),
     service: PipelineService = Depends(get_service)
 ):
-    """Retrieve all sales pipeline opportunities."""
-    opportunities = service.list_opportunities()
+    """Retrieve sales pipeline opportunities filtered by authenticated user."""
+    opportunities = service.list_opportunities(user_payload)
     return StandardResponse.success_response(
         data=opportunities,
         message="Opportunities list retrieved successfully"

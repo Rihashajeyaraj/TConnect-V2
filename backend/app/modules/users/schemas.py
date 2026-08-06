@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, EmailStr
 
 
@@ -17,6 +17,9 @@ class UserCreate(BaseModel):
     department: Optional[str] = "Sales & Business Development"
     employee_code: Optional[str] = None
     status: Optional[str] = "Active"
+    reporting_manager_id: Optional[str] = None
+    reporting_manager_name: Optional[str] = None
+    reporting_manager_email: Optional[str] = None
 
 
 class UserUpdate(BaseModel):
@@ -29,6 +32,9 @@ class UserUpdate(BaseModel):
     dept: Optional[str] = None
     department: Optional[str] = None
     status: Optional[str] = None
+    reporting_manager_id: Optional[str] = None
+    reporting_manager_name: Optional[str] = None
+    reporting_manager_email: Optional[str] = None
 
 
 class UserResponse(BaseModel):
@@ -41,3 +47,11 @@ class UserResponse(BaseModel):
     status: str
     lastLogin: Optional[str] = "Recently"
     accessPassword: Optional[str] = None
+    reporting_manager_id: Optional[str] = None
+    reporting_manager_name: Optional[str] = None
+    reporting_manager_email: Optional[str] = None
+
+
+class AssignManagerRequest(BaseModel):
+    manager_id: str
+    executive_ids: List[str]
