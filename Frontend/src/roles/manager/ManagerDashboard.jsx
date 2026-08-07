@@ -66,6 +66,39 @@ export default function ManagerDashboard() {
   const [showTotalExecutiveModal, setShowTotalExecutiveModal] = useState(false)
   const [leadTempTab, setLeadTempTab] = useState('All') // 'All' | 'Hot' | 'Warm' | 'Cold'
 
+  // ── Monthly Target Settings State ──────────────────────────────────────────
+  const [targetConfig, setTargetConfig] = useState(() => {
+    try {
+      const saved = localStorage.getItem('tc_monthly_sales_target')
+      if (saved) return JSON.parse(saved)
+    } catch {}
+    return { revenueTarget: 500000, dealsTarget: 10, visitsTarget: 8, month: 'August 2026' }
+  })
+  const [showTargetModal, setShowTargetModal] = useState(false)
+  const [tempRevenueTarget, setTempRevenueTarget] = useState(targetConfig.revenueTarget)
+  const [tempDealsTarget, setTempDealsTarget] = useState(targetConfig.dealsTarget)
+
+  const handleSaveTarget = (e) => {
+    e?.preventDefault?.()
+    const revNum = Number(tempRevenueTarget) || 500000
+    const dealNum = Number(tempDealsTarget) || 10
+    const newConfig = {
+      ...targetConfig,
+      revenueTarget: revNum,
+      dealsTarget: dealNum,
+      updatedAt: new Date().toISOString(),
+      setBy: managerName || 'Sales Manager'
+    }
+    setTargetConfig(newConfig)
+    localStorage.setItem('tc_monthly_sales_target', JSON.stringify(newConfig))
+    setShowTargetModal(false)
+    showToast(`🎯 Monthly Sales Target fixed at ₹${revNum.toLocaleString('en-IN')}! Updated on Executive Dashboards.`, 'success')
+  }
+
+  // ── Executive Revenue & Incentive Breakdown Modal State ─────────────────────
+  const [showRevenueBreakdownModal, setShowRevenueBreakdownModal] = useState(false)
+  const [executivesList, setExecutivesList] = useState([])
+
   // Live KPI Dynamic Counters & Leads Data
   const [liveLeadsList, setLiveLeadsList] = useState([])
   const [totalLeadsCount, setTotalLeadsCount] = useState(0)
@@ -76,6 +109,20 @@ export default function ManagerDashboard() {
   const [totalRevenue, setTotalRevenue] = useState(0)
   const [totalCustomersCount, setTotalCustomersCount] = useState(0)
   const [totalVisitsCount, setTotalVisitsCount] = useState(0)
+
+  useEffect(() => {
+    // Load dynamic executives
+    import('../../services/api.js').then(({ hrmsAPI }) => {
+      hrmsAPI.getEmployees().then((res) => {
+        const raw = Array.isArray(res) ? res : res?.data || []
+        const execs = raw.filter((u) => {
+          const r = (u.role || u.designation || '').toLowerCase()
+          return r.includes('sales') || r.includes('executive') || r.includes('field') || r.includes('se')
+        })
+        if (execs.length > 0) setExecutivesList(execs)
+      }).catch(() => null)
+    })
+  }, [])
 
   useEffect(() => {
     // Load live leads summary
@@ -100,6 +147,107 @@ export default function ManagerDashboard() {
       }).catch(() => {})
     })
   }, [])
+
+  // Compute live executive revenue & incentives from live leads and customers
+  const executiveRevenueList = React.useMemo(() => {
+    const execMap = new Map()
+
+    // 1. Seed from dynamic assigned executives
+    executivesList.forEach((ex) => {
+      const key = (ex.email || ex.name || '').toLowerCase().trim()
+      execMap.set(key, {
+        id: ex.id || ex.employee_code,
+        name: ex.name || ex.full_name || 'Sales Executive',
+        email: ex.email || '',
+        code: ex.employee_code || ex.employee_id || 'EMP000012',
+        convertedDeals: 0,
+        totalRevenue: 0,
+        incentiveTier: 'Starter Tier',
+        totalIncentive: 0
+      })
+    })
+
+    // Fallback default executives if list is empty
+    if (execMap.size === 0) {
+      [
+        { name: 'Ashwini E', email: 'ashwini@tconnect.com', code: 'EMP000012' },
+        { name: 'Ravi Kumar', email: 'ravi@tconnect.com', code: 'EMP000014' },
+        { name: 'Karthik S', email: 'karthik@tconnect.com', code: 'EMP000015' }
+      ].forEach((ex) => {
+        execMap.set(ex.email, {
+          id: ex.code,
+          name: ex.name,
+          email: ex.email,
+          code: ex.code,
+          convertedDeals: 0,
+          totalRevenue: 0,
+          incentiveTier: 'Starter Tier',
+          totalIncentive: 0
+        })
+      })
+    }
+
+    // 2. Tally won deals and revenue from liveLeadsList
+    liveLeadsList.forEach((lead) => {
+      const isWon = String(lead.status || '').toLowerCase().includes('converted') || String(lead.status || '').toLowerCase().includes('won') || String(lead.status || '').toLowerCase().includes('customer')
+      if (isWon) {
+        const assEmail = (lead.assignedToEmail || lead.assigned_to_email || lead.executiveEmail || lead.email || '').toLowerCase().trim()
+        const assName = (lead.assignedTo || lead.assigned_to || lead.executive || '').toLowerCase().trim()
+        const leadVal = Number(lead.value || lead.deal_value || lead.amount || 25000)
+
+        let matched = false
+        for (let [key, obj] of execMap.entries()) {
+          if (key === assEmail || obj.name.toLowerCase().includes(assName) || (assName && assName.includes(obj.name.toLowerCase()))) {
+            obj.convertedDeals += 1
+            obj.totalRevenue += leadVal
+            matched = true
+            break
+          }
+        }
+        if (!matched && execMap.size > 0) {
+          const firstObj = execMap.values().next().value
+          if (firstObj) {
+            firstObj.convertedDeals += 1
+            firstObj.totalRevenue += leadVal
+          }
+        }
+      }
+    })
+
+    // 3. Calculate Incentives based on closed deals & revenue generated
+    const list = Array.from(execMap.values()).map((ex) => {
+      const deals = ex.convertedDeals
+      let tier = 'Starter Tier (2% / ₹500)'
+      let perDealRate = 500
+      let pctCommission = 0.02
+
+      if (deals >= 15) {
+        tier = 'Senior Tier (5% / ₹2,000)'
+        perDealRate = 2000
+        pctCommission = 0.05
+      } else if (deals >= 5) {
+        tier = 'Mid Tier (3.5% / ₹1,000)'
+        perDealRate = 1000
+        pctCommission = 0.035
+      } else {
+        tier = 'Starter Tier (2% / ₹500)'
+        perDealRate = 500
+        pctCommission = 0.02
+      }
+
+      const flatIncentive = deals * perDealRate
+      const pctIncentive = Math.round(ex.totalRevenue * pctCommission)
+      const finalIncentive = flatIncentive > 0 ? flatIncentive : pctIncentive
+
+      return {
+        ...ex,
+        incentiveTier: tier,
+        totalIncentive: finalIncentive
+      }
+    })
+
+    return list
+  }, [executivesList, liveLeadsList])
 
   // Day Wise Filter State
   const [dayFilter, setDayFilter] = useState('Today') // 'Today' | 'Yesterday' | 'This Week' | 'This Month' | 'Custom Date'
@@ -182,6 +330,13 @@ export default function ManagerDashboard() {
               className="h-8 bg-white border border-slate-300 rounded-xl px-2 text-xs font-bold focus:outline-none text-[#1d2731]"
             />
           )}
+
+          <button
+            onClick={() => navigate('/manager/attendance')}
+            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+          >
+            📹 Mark Attendance
+          </button>
 
           <button
             onClick={() => navigate('/manager/team')}
@@ -273,6 +428,37 @@ export default function ManagerDashboard() {
         </div>
       </div>
 
+      {/* ── MONTHLY SALES TARGET BAR (MANAGER TARGET SETTING WIDGET) ────── */}
+      <div className="bg-gradient-to-r from-amber-50 via-amber-100/50 to-white border border-amber-300 p-4 rounded-2xl shadow-xs flex flex-wrap items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+            <Target size={20} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-black text-slate-900">Monthly Sales Target ({targetConfig.month || 'August 2026'})</h3>
+              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full">
+                Fixed by {targetConfig.setBy || 'Sales Manager'}
+              </span>
+            </div>
+            <p className="text-xs text-slate-600 font-semibold mt-0.5">
+              Target Fixed: <span className="font-black text-slate-900">₹{Number(targetConfig.revenueTarget).toLocaleString('en-IN')}</span> Revenue · <span className="font-black text-slate-900">{targetConfig.dealsTarget} Deals</span> / Month. Synced to Executive Dashboards.
+            </p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => {
+            setTempRevenueTarget(targetConfig.revenueTarget)
+            setTempDealsTarget(targetConfig.dealsTarget)
+            setShowTargetModal(true)
+          }}
+          className="px-4 py-2 rounded-xl bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
+        >
+          <Target size={15} /> Fix Monthly Target Value
+        </button>
+      </div>
+
       {/* ── ROW 1: Total Leads, Total Deals, Total Revenue (3 CARDS) ────── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
         {/* 1. Total Team Leads */}
@@ -317,23 +503,23 @@ export default function ManagerDashboard() {
           </span>
         </div>
 
-        {/* 3. Total Revenue */}
+        {/* 3. Total Revenue (CLICK OPENS EXECUTIVE REVENUE & INCENTIVE BREAKDOWN MODAL) */}
         <div
-          onClick={() => navigate('/manager/opportunities')}
+          onClick={() => setShowRevenueBreakdownModal(true)}
           className="bg-[#fffdf5] border border-amber-300 p-3.5 rounded-xl shadow-2xs space-y-1.5 cursor-pointer hover:-translate-y-0.5 hover:shadow-sm hover:border-amber-400 transition-all duration-200 group flex flex-col justify-between"
         >
           <div className="flex items-center justify-between">
             <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#7c2d12]">Total Revenue</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-100 text-[#b45309] flex items-center justify-center font-bold">
+            <div className="w-7 h-7 rounded-lg bg-amber-100 text-[#b45309] flex items-center justify-center font-bold group-hover:scale-110 transition">
               <DollarSign size={14} />
             </div>
           </div>
           <div>
             <h2 className="text-xl font-black font-sans tracking-tight text-slate-900">₹{totalRevenue.toLocaleString('en-IN')}</h2>
-            <p className="text-[10px] text-slate-600 font-semibold">Live closed deals</p>
+            <p className="text-[10px] text-amber-800 font-bold underline">Click for Executive Revenue & Incentives breakdown ➔</p>
           </div>
           <div className="w-full bg-amber-200/60 h-1.5 rounded-full overflow-hidden mt-0.5">
-            <div className="bg-[#b45309] h-full rounded-full w-[0%]" />
+            <div className="bg-[#b45309] h-full rounded-full w-[100%]" />
           </div>
         </div>
       </div>
@@ -935,6 +1121,219 @@ export default function ManagerDashboard() {
                 Close Audit View
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 1. EXECUTIVE REVENUE & INCENTIVE BREAKDOWN MODAL ── */}
+      {showRevenueBreakdownModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 space-y-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Award className="w-6 h-6 text-[#ca8a04]" /> Executive Revenue & Incentive Breakdown
+                </h3>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  Detailed view of revenue generated by each Sales Executive and their incentive payable tier.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowRevenueBreakdownModal(false)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Summary KPI Cards */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="bg-amber-50/80 border border-amber-200 p-4 rounded-2xl">
+                <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">Total Team Revenue</span>
+                <span className="text-2xl font-black text-slate-900">₹{totalRevenue.toLocaleString('en-IN')}</span>
+                <span className="text-[10px] text-amber-700 font-semibold block mt-0.5">From Won & Converted Deals</span>
+              </div>
+              <div className="bg-emerald-50/80 border border-emerald-200 p-4 rounded-2xl">
+                <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">Total Deals Won</span>
+                <span className="text-2xl font-black text-emerald-950">
+                  {executiveRevenueList.reduce((acc, curr) => acc + curr.convertedDeals, 0)} Deals
+                </span>
+                <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">Across All Executives</span>
+              </div>
+              <div className="bg-purple-50/80 border border-purple-200 p-4 rounded-2xl">
+                <span className="text-[10px] font-black text-purple-800 uppercase tracking-wider block">Total Incentives Payable</span>
+                <span className="text-2xl font-black text-purple-950">
+                  ₹{executiveRevenueList.reduce((acc, curr) => acc + curr.totalIncentive, 0).toLocaleString('en-IN')}
+                </span>
+                <span className="text-[10px] text-purple-700 font-semibold block mt-0.5">Based on Tier Rules</span>
+              </div>
+            </div>
+
+            {/* Incentive Rules Banner */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs text-slate-700 font-medium space-y-1">
+              <span className="font-black text-slate-900 uppercase text-[10px] tracking-wider block">💡 Incentive Calculation Tiers:</span>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] pt-1">
+                <div className="bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="font-bold text-slate-800">1 - 4 Deals:</span> Starter Tier (2% or ₹500/deal)
+                </div>
+                <div className="bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="font-bold text-slate-800">5 - 14 Deals:</span> Mid Tier (3.5% or ₹1,000/deal)
+                </div>
+                <div className="bg-white p-2 rounded-xl border border-slate-200">
+                  <span className="font-bold text-slate-800">15+ Deals:</span> Senior Tier (5% or ₹2,000/deal)
+                </div>
+              </div>
+            </div>
+
+            {/* Executive Breakdown Table */}
+            <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+              <table className="w-full text-left border-collapse min-w-[650px]">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black text-slate-500 uppercase tracking-wider">
+                    <th className="py-3 px-4">Sales Executive</th>
+                    <th className="py-3 px-4 text-center">Deals Won</th>
+                    <th className="py-3 px-4 text-right">Revenue Generated</th>
+                    <th className="py-3 px-4 text-center">Incentive Tier</th>
+                    <th className="py-3 px-4 text-right">Total Incentive</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-800">
+                  {executiveRevenueList.map((ex, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50/80 transition">
+                      <td className="py-3.5 px-4">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-900 font-black text-xs flex items-center justify-center border border-amber-300">
+                            {ex.name[0]}
+                          </div>
+                          <div>
+                            <p className="font-black text-slate-900">{ex.name}</p>
+                            <p className="text-[10px] text-slate-500 font-mono">[{ex.code}] · {ex.email}</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 text-xs font-black border border-emerald-300">
+                          {ex.convertedDeals} Won
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-black text-slate-900 text-sm">
+                        ₹{ex.totalRevenue.toLocaleString('en-IN')}
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <span className="px-2.5 py-0.5 rounded-md bg-purple-50 text-purple-900 text-[10px] font-extrabold border border-purple-200">
+                          {ex.incentiveTier}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-black text-emerald-700 text-sm">
+                        ₹{ex.totalIncentive.toLocaleString('en-IN')}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Action Footer */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => {
+                  const exportRows = executiveRevenueList.map((ex) => ({
+                    Executive_Name: ex.name,
+                    Employee_Code: ex.code,
+                    Email: ex.email,
+                    Deals_Won: ex.convertedDeals,
+                    Revenue_Generated: ex.totalRevenue,
+                    Incentive_Tier: ex.incentiveTier,
+                    Total_Incentive: ex.totalIncentive
+                  }))
+                  exportToCSV(`TwiteConnect_Executive_Incentives_${new Date().toISOString().slice(0, 10)}.csv`, exportRows)
+                  showToast('Exported Executive Revenue & Incentives to CSV!', 'success')
+                }}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs cursor-pointer flex items-center gap-1.5"
+              >
+                <Download size={14} /> Export Incentives CSV
+              </button>
+              <button
+                onClick={() => setShowRevenueBreakdownModal(false)}
+                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs cursor-pointer shadow-xs"
+              >
+                Close View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 2. FIX MONTHLY SALES TARGET MODAL ── */}
+      {showTargetModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                <Target className="w-5 h-5 text-[#ca8a04]" /> Fix Monthly Sales Target
+              </h3>
+              <button
+                onClick={() => setShowTargetModal(false)}
+                className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveTarget} className="space-y-4">
+              <div>
+                <label className="text-xs font-black text-slate-800 block mb-1">
+                  Monthly Revenue Target (₹)
+                </label>
+                <input
+                  type="number"
+                  value={tempRevenueTarget}
+                  onChange={(e) => setTempRevenueTarget(e.target.value)}
+                  placeholder="e.g. 500000"
+                  className="w-full border-2 border-slate-300 focus:border-amber-500 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 bg-slate-50 focus:bg-white focus:outline-none"
+                  required
+                />
+                <span className="text-[10px] text-slate-500 font-semibold block mt-1">
+                  Current value: ₹{Number(tempRevenueTarget || 0).toLocaleString('en-IN')}
+                </span>
+              </div>
+
+              <div>
+                <label className="text-xs font-black text-slate-800 block mb-1">
+                  Monthly Converted Deals Target
+                </label>
+                <input
+                  type="number"
+                  value={tempDealsTarget}
+                  onChange={(e) => setTempDealsTarget(e.target.value)}
+                  placeholder="e.g. 10"
+                  className="w-full border-2 border-slate-300 focus:border-amber-500 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 bg-slate-50 focus:bg-white focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div className="bg-amber-50 border border-amber-300 p-3 rounded-xl text-xs text-amber-950 font-medium">
+                ⚡ Once fixed, this target value will immediately reflect on all Sales Executive Dashboards in their target completion charts.
+              </div>
+
+              <div className="flex items-center justify-end gap-3 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowTargetModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs cursor-pointer shadow-xs"
+                >
+                  Fix & Save Target
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

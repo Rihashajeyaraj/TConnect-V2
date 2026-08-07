@@ -25,7 +25,6 @@ import { useToast } from "../../common/ToastContext.jsx";
 import { formatDate } from "../../utils/dateUtils.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
-import ProximityClientAlert from "./ProximityClientAlert.jsx";
 
 export default function ClientLog() {
   const { showToast } = useToast();
@@ -482,13 +481,6 @@ export default function ClientLog() {
 
   return (
     <div className="space-y-5 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-6">
-      {/* ── REAL-TIME PROXIMITY CLIENT ROUTE ALERT ───────────────────────── */}
-      <ProximityClientAlert
-        onScheduleVisit={(newVis) => {
-          setVisitList((prev) => [newVis, ...prev]);
-        }}
-      />
-
       {/* ── Top Banner & Toggle Buttons Bar ───────────────────────────────── */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">

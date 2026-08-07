@@ -27,6 +27,67 @@ body {
   overflow-x: hidden;
 }
 
+/* ── ADMIN PORTAL PALETTE THEME ────────────────────────────────────────── */
+:root {
+  --admin-crimson: #8B2635;
+  --admin-crimson-dark: #721F2B;
+  --admin-cream: #E5DDD0;
+  --admin-cream-light: #F4EFEA;
+  --admin-slate: #4A5D6E;
+  --admin-navy: #1F2D3A;
+  --admin-dark: #121921;
+}
+
+.bg-admin-crimson { background-color: #8B2635; }
+.bg-admin-crimson-dark { background-color: #721F2B; }
+.hover\:bg-admin-crimson:hover { background-color: #8B2635; }
+.hover\:bg-admin-crimson-dark:hover { background-color: #721F2B; }
+.text-admin-crimson { color: #8B2635; }
+.border-admin-crimson { border-color: #8B2635; }
+
+.bg-admin-cream { background-color: #E5DDD0; }
+.bg-admin-cream-light { background-color: #F4EFEA; }
+.text-admin-cream { color: #E5DDD0; }
+.border-admin-cream { border-color: #E5DDD0; }
+
+.bg-admin-slate { background-color: #4A5D6E; }
+.text-admin-slate { color: #4A5D6E; }
+
+.bg-admin-navy { background-color: #1F2D3A; }
+.border-admin-navy { border-color: #2D3E4F; }
+.text-admin-navy { color: #1F2D3A; }
+
+.bg-admin-dark { background-color: #121921; }
+.border-admin-dark { border-color: #1A2430; }
+.text-admin-dark { color: #121921; }
+
+/* ── CEO PORTAL PALETTE THEME ───────────────────────────────────────────── */
+:root {
+  --ceo-black: #111111;
+  --ceo-maroon: #540000;
+  --ceo-teal: #004749;
+  --ceo-gold: #b09b72;
+  --ceo-lightgray: #ededed;
+  --ceo-darkgray: #cccccc;
+}
+
+.bg-ceo-black { background-color: #111111; }
+.bg-ceo-maroon { background-color: #540000; }
+.bg-ceo-teal { background-color: #004749; }
+.bg-ceo-gold { background-color: #b09b72; }
+.bg-ceo-lightgray { background-color: #ededed; }
+.bg-ceo-darkgray { background-color: #cccccc; }
+
+.text-ceo-gold { color: #b09b72; }
+.text-ceo-teal { color: #004749; }
+.text-ceo-maroon { color: #540000; }
+.text-ceo-black { color: #111111; }
+
+.border-ceo-gold { border-color: #b09b72; }
+.border-ceo-teal { border-color: #004749; }
+.border-ceo-maroon { border-color: #540000; }
+.border-ceo-darkgray { border-color: #cccccc; }
+
 button,
 input {
   font: inherit;

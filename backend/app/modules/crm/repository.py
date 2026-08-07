@@ -33,12 +33,54 @@ class CRMRepository:
         if not leads:
             leads = _in_memory_leads
 
+        # Enrich leads with user metadata from UserRepository & embedded notes tags
+        user_map = {}
+        try:
+            from app.modules.users.repository import UserRepository
+            users = UserRepository().get_all_users()
+            for u in users:
+                uid = str(u.get("id") or u.get("auth_user_id") or u.get("user_id") or "").strip()
+                if uid:
+                    user_map[uid] = u
+        except Exception:
+            pass
+
+        enriched_leads = []
+        for l in leads:
+            row = dict(l)
+            notes_str = str(row.get("notes") or row.get("remarks") or "")
+            if notes_str and "|" in notes_str:
+                for part in notes_str.split("|"):
+                    p_strip = part.strip()
+                    if "Product:" in p_strip:
+                        row["product_name"] = p_strip.split("Product:")[-1].strip()
+                        row["product"] = p_strip.split("Product:")[-1].strip()
+                    elif "Email:" in p_strip:
+                        row["assigned_to_email"] = p_strip.split("Email:")[-1].strip().lower()
+                    elif "EMP:" in p_strip:
+                        row["employee_code"] = p_strip.split("EMP:")[-1].strip()
+                    elif "Manager:" in p_strip:
+                        row["reporting_manager_email"] = p_strip.split("Manager:")[-1].strip().lower()
+                    elif "AssignedTo:" in p_strip:
+                        row["assigned_to"] = p_strip.split("AssignedTo:")[-1].strip()
+
+            a_to = str(row.get("assigned_to") or "").strip()
+            c_by = str(row.get("created_by") or "").strip()
+            matched_user = user_map.get(a_to) or user_map.get(c_by)
+            if matched_user:
+                row["assigned_to_email"] = row.get("assigned_to_email") or str(matched_user.get("email") or "").lower().strip()
+                row["assigned_to"] = row.get("assigned_to") or str(matched_user.get("name") or matched_user.get("full_name") or "")
+                row["employee_code"] = row.get("employee_code") or str(matched_user.get("employee_code") or matched_user.get("employee_id") or "")
+                row["reporting_manager_email"] = row.get("reporting_manager_email") or str(matched_user.get("reporting_manager_email") or "").lower().strip()
+
+            enriched_leads.append(row)
+
         from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
         allowed = get_allowed_user_identifiers(user_payload)
         if allowed is not None:
-            leads = [l for l in leads if is_record_accessible(l, allowed)]
+            enriched_leads = [l for l in enriched_leads if is_record_accessible(l, allowed)]
 
-        return leads
+        return enriched_leads
 
     def create_lead(self, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         lead_id = data.get("id") or data.get("lead_id") or str(uuid.uuid4())
@@ -48,20 +90,22 @@ class CRMRepository:
         assigned_to_email = str(data.get("assigned_to_email") or data.get("assignedToEmail") or (user_payload or {}).get("email") or "executive@tconnect.com").lower().strip()
         employee_code = str(data.get("employee_code") or data.get("employee_id") or (user_payload or {}).get("employee_code") or "EMP-101").strip()
 
-        # Resolve user's reporting manager email
+        # Resolve user UUID & reporting manager from UserRepository
+        assigned_user_id = None
         mgr_email = ""
-        if assigned_to_email or employee_code:
-            try:
-                from app.modules.users.repository import UserRepository
-                all_u = UserRepository().get_all_users()
-                for u in all_u:
-                    e_mail = str(u.get("email") or "").lower().strip()
-                    e_code = str(u.get("employee_code") or u.get("employee_id") or "").strip()
-                    if (assigned_to_email and e_mail == assigned_to_email) or (employee_code and e_code == employee_code):
-                        mgr_email = str(u.get("reporting_manager_email") or "").lower().strip()
-                        break
-            except Exception:
-                pass
+        try:
+            from app.modules.users.repository import UserRepository
+            all_u = UserRepository().get_all_users()
+            for u in all_u:
+                e_mail = str(u.get("email") or "").lower().strip()
+                e_code = str(u.get("employee_code") or u.get("employee_id") or "").strip()
+                u_name = str(u.get("name") or u.get("full_name") or "").lower().strip()
+                if (assigned_to_email and e_mail == assigned_to_email) or (employee_code and e_code == employee_code) or (assigned_to_raw and u_name == assigned_to_raw.lower().strip()):
+                    assigned_user_id = str(u.get("id") or u.get("auth_user_id") or u.get("user_id") or "")
+                    mgr_email = str(u.get("reporting_manager_email") or "").lower().strip()
+                    break
+        except Exception:
+            pass
 
         company_val = str(data.get("company_name") or data.get("company") or data.get("title") or "Prospect Client")
         person_val = str(data.get("contact_person") or data.get("contact_name") or data.get("person") or data.get("name") or "Point of Contact")
@@ -70,13 +114,13 @@ class CRMRepository:
         city_val = str(data.get("city") or "Chennai")
         val_str = str(data.get("expected_value") or data.get("value") or "450000").replace("₹", "").replace(",", "").strip()
 
+        product_val = str(data.get("product_name") or data.get("product") or data.get("productRequirement") or "TwiteConnect CRM").strip()
+
         notes_raw = str(data.get("notes") or data.get("remarks") or "New lead added")
-        full_notes = f"{notes_raw} | AssignedTo: {assigned_to_raw} | Email: {assigned_to_email} | EMP: {employee_code} | Manager: {mgr_email}"
+        full_notes = f"{notes_raw} | Product: {product_val} | AssignedTo: {assigned_to_raw} | Email: {assigned_to_email} | EMP: {employee_code} | Manager: {mgr_email}"
 
         # assigned_to in Supabase is UUID column!
-        assigned_to_uuid = None
-        if isinstance(assigned_to_raw, str) and len(assigned_to_raw) == 36 and "-" in assigned_to_raw:
-            assigned_to_uuid = assigned_to_raw
+        assigned_to_uuid = assigned_user_id if (assigned_user_id and len(assigned_user_id) == 36 and "-" in assigned_user_id) else None
 
         payload = {
             "lead_id": lead_id,
@@ -93,6 +137,7 @@ class CRMRepository:
             "notes": full_notes,
             "remarks": full_notes,
             "assigned_to": assigned_to_uuid,
+            "created_by": assigned_to_uuid,
             "is_active": True,
         }
         if val_str.isdigit():
@@ -108,6 +153,8 @@ class CRMRepository:
                 out_lead = res.data[0]
                 out_lead["company"] = company_val
                 out_lead["person"] = person_val
+                out_lead["product"] = product_val
+                out_lead["product_name"] = product_val
                 out_lead["assigned_to"] = assigned_to_raw
                 out_lead["assigned_to_email"] = assigned_to_email
                 out_lead["employee_code"] = employee_code

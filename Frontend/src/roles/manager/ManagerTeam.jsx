@@ -1,3 +1,4 @@
+// Sales Manager Team & Reports Module
 import React, { useState, useEffect } from 'react'
 import {
   Users,
@@ -29,8 +30,9 @@ import {
   Table,
   Eye,
   X,
+  XCircle,
 } from 'lucide-react'
-import { hrmsAPI } from '../../services/api.js'
+import { hrmsAPI, reportAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 
 const DEFAULT_EOD_REPORTS = []
@@ -57,6 +59,30 @@ export default function ManagerTeam() {
   const [reports, setReports] = useState([])
   const [executives, setExecutives] = useState([])
   const [loading, setLoading] = useState(true)
+
+  // Team Leave & Permission Requests State
+  const [teamLeaveRequests, setTeamLeaveRequests] = useState([])
+
+  useEffect(() => {
+    attendanceAPI.getLeaveRequests()
+      .then((res) => {
+        const raw = Array.isArray(res) ? res : (res?.data || [])
+        if (Array.isArray(raw)) setTeamLeaveRequests(raw)
+      })
+      .catch(() => null)
+  }, [])
+
+  const handleUpdateLeaveStatus = async (reqId, newStatus) => {
+    const comment = ackComments[reqId] || `Leave request ${newStatus.toLowerCase()} by Sales Manager.`
+    setTeamLeaveRequests((prev) => prev.map((r) => (r.id === reqId || r.leave_id === reqId ? { ...r, status: newStatus, manager_comment: comment } : r)))
+
+    try {
+      await attendanceAPI.updateLeaveStatus(reqId, { status: newStatus, comment })
+      showToast(`Leave / Permission request ${newStatus} successfully!`, newStatus === "Approved" ? "success" : "info")
+    } catch (err) {
+      showToast(`Notice: Status updated locally.`, "info")
+    }
+  }
 
   const getStoredUser = () => {
     try {
@@ -216,9 +242,15 @@ export default function ManagerTeam() {
     }
   }
 
-  const fetchReports = () => {
+  const fetchReports = async () => {
     setLoading(true)
     let combined = []
+
+    try {
+      const apiRes = await reportAPI.getEODReports()
+      const apiData = Array.isArray(apiRes) ? apiRes : (apiRes?.data || [])
+      if (Array.isArray(apiData)) combined = [...combined, ...apiData]
+    } catch (e) { console.error("Error fetching reports", e) }
 
     const keys = ['tc_eod_reports', 'tc_se_daily_reports', 'tc_daily_work_reports']
     keys.forEach((k) => {
@@ -252,16 +284,18 @@ export default function ManagerTeam() {
     setExpandedCards((prev) => ({ ...prev, [id]: !prev[id] }))
   }
 
-  const handleAcknowledgeReport = (id) => {
+  const handleAcknowledgeReport = async (id) => {
     const comment = ackComments[id] || 'Report acknowledged by Sales Manager.'
-    const updated = reports.map((r) => (r.id === id ? { ...r, managerAck: true, managerComment: comment } : r))
+    const updated = reports.map((r) => (r.id === id ? { ...r, managerAck: true, managerComment: comment, status: 'Acknowledged' } : r))
     setReports(updated)
 
     try {
+      await reportAPI.acknowledgeEODReport(id, { comment })
       localStorage.setItem('tc_eod_reports', JSON.stringify(updated))
-    } catch (e) { }
-
-    showToast(`Acknowledged Daily Work Report for ${id}!`, 'success')
+      showToast(`Acknowledged Daily Work Report for ${id}!`, 'success')
+    } catch (e) {
+      showToast(`Error acknowledging report: ${e.message}`, 'error')
+    }
   }
 
   // Filtering Calculation
@@ -284,8 +318,30 @@ export default function ManagerTeam() {
     }
 
     let matchesDate = true
-    if (selectedDateFilter === 'Custom Date' && customDateInput) {
-      matchesDate = (r.date || '').includes(customDateInput)
+    const reportDateStr = (r.date || r.submittedAt || '').trim()
+    const today = new Date()
+    const todayISO = today.toISOString().split('T')[0]
+    
+    const yesterday = new Date(today)
+    yesterday.setDate(yesterday.getDate() - 1)
+    const yesterdayISO = yesterday.toISOString().split('T')[0]
+
+    if (selectedDateFilter === 'Today') {
+      matchesDate = reportDateStr.includes(todayISO) || reportDateStr === 'Today' || reportDateStr.includes(today.toLocaleDateString('en-GB'))
+    } else if (selectedDateFilter === 'Yesterday') {
+      matchesDate = reportDateStr.includes(yesterdayISO) || reportDateStr === 'Yesterday' || reportDateStr.includes(yesterday.toLocaleDateString('en-GB'))
+    } else if (selectedDateFilter === 'This Week') {
+      const sevenDaysAgo = new Date(today)
+      sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7)
+      try {
+        const rDateObj = new Date(reportDateStr)
+        matchesDate = !isNaN(rDateObj.getTime()) && rDateObj >= sevenDaysAgo
+      } catch { matchesDate = true }
+    } else if (selectedDateFilter === 'This Month') {
+      const curMonth = today.toISOString().slice(0, 7)
+      matchesDate = reportDateStr.includes(curMonth) || reportDateStr.includes('August')
+    } else if (selectedDateFilter === 'Custom Date' && customDateInput) {
+      matchesDate = reportDateStr.includes(customDateInput)
     }
 
     return matchesSearch && matchesStatus && matchesSE && matchesDate
@@ -434,46 +490,64 @@ export default function ManagerTeam() {
           </div>
         </div>
 
-        {/* Date Wise Multi-Filter Bar */}
-        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100 text-xs">
-          {/* Date Wise Filter */}
-          <div className="flex items-center gap-1.5 bg-[#fffdf5] border border-amber-300 rounded-xl px-3 py-1.5 font-extrabold text-amber-900">
-            <Calendar size={15} className="text-[#ca8a04]" />
-            <span>Date Filter:</span>
-            <select
-              value={selectedDateFilter}
-              onChange={(e) => setSelectedDateFilter(e.target.value)}
-              className="bg-transparent text-amber-950 focus:outline-none cursor-pointer font-black"
-            >
-              <option value="All">All Dates</option>
-              <option value="Today">Today</option>
-              <option value="Yesterday">Yesterday</option>
-              <option value="This Week">This Week</option>
-              <option value="This Month">This Month</option>
-              <option value="Custom Date">Custom Date</option>
-            </select>
+        {/* Linear Date Toggle Bar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-slate-100 text-xs">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-slate-600 font-black uppercase text-[10px] tracking-wider flex items-center gap-1">
+              <Calendar size={14} className="text-[#ca8a04]" /> Date Filter:
+            </span>
+            
+            <div className="flex flex-wrap items-center gap-1 bg-slate-100/90 p-1 rounded-2xl border border-slate-200 shadow-2xs">
+              {[
+                { key: 'All', label: 'All Dates' },
+                { key: 'Today', label: 'Today' },
+                { key: 'Yesterday', label: 'Yesterday' },
+                { key: 'This Week', label: 'This Week' },
+                { key: 'This Month', label: 'This Month' },
+                { key: 'Custom Date', label: 'Custom Date' },
+              ].map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setSelectedDateFilter(item.key)}
+                  className={`px-3 py-1 rounded-xl font-extrabold text-xs transition cursor-pointer active:scale-95 ${
+                    selectedDateFilter === item.key
+                      ? 'bg-[#ca8a04] text-white shadow-2xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
 
-          {selectedDateFilter === 'Custom Date' && (
-            <input
-              type="date"
-              value={customDateInput}
-              onChange={(e) => setCustomDateInput(e.target.value)}
-              className="h-8 bg-white border border-amber-300 rounded-lg px-2 text-xs font-bold focus:outline-none"
-            />
-          )}
-          {/* Status Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 font-bold">
-            <span className="text-slate-500">Status:</span>
-            <select
-              value={selectedStatus}
-              onChange={(e) => setSelectedStatus(e.target.value)}
-              className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold"
-            >
-              <option value="All">All Statuses</option>
-              <option value="Submitted">Submitted EOD</option>
-              <option value="Pending">Pending EOD</option>
-            </select>
+          <div className="flex items-center gap-3">
+            {selectedDateFilter === 'Custom Date' && (
+              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 px-3 py-1 rounded-xl">
+                <span className="text-[11px] font-bold text-amber-950">Select Date:</span>
+                <input
+                  type="date"
+                  value={customDateInput}
+                  onChange={(e) => setCustomDateInput(e.target.value)}
+                  className="h-7 bg-white border border-amber-300 rounded-lg px-2 text-xs font-bold focus:outline-none text-slate-900"
+                />
+              </div>
+            )}
+
+            {/* Status Filter */}
+            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 font-bold">
+              <span className="text-slate-500">Status:</span>
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold"
+              >
+                <option value="All">All Statuses</option>
+                <option value="Submitted">Submitted EOD</option>
+                <option value="Pending">Pending EOD</option>
+              </select>
+            </div>
           </div>
 
           {/* Reset Filters Button */}
@@ -863,7 +937,114 @@ export default function ManagerTeam() {
         </div>
       )}
 
-      {/* ── VIEW REPORT MODAL FOR TABLE VIEW (SPACIOUS & ELEGANT) ───────────────── */}
+      {/* ── TEAM LEAVE & PERMISSION REQUESTS SECTION ───────────────────────────────────── */}
+      <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-xs">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+          <div>
+            <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+              <Calendar className="w-6 h-6 text-amber-600" /> Team Leave & Permission Requests
+            </h2>
+            <p className="text-xs font-semibold text-slate-500 mt-0.5">
+              Review, Approve, or Reject Leave & Permission requests submitted by your assigned Sales Executives.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              attendanceAPI.getLeaveRequests().then((res) => {
+                const raw = Array.isArray(res) ? res : (res?.data || [])
+                if (Array.isArray(raw)) setTeamLeaveRequests(raw)
+              })
+            }}
+            className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 font-extrabold text-xs transition cursor-pointer flex items-center gap-1.5"
+          >
+            <RefreshCw size={14} /> Refresh Requests
+          </button>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs font-bold text-slate-800 min-w-[850px]">
+            <thead>
+              <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-700">
+                <th className="px-4 py-3.5">Executive Name</th>
+                <th className="px-4 py-3.5">Request Type</th>
+                <th className="px-4 py-3.5">Date & Slot</th>
+                <th className="px-4 py-3.5">Reason</th>
+                <th className="px-4 py-3.5">Current Status</th>
+                <th className="px-4 py-3.5 text-right">Approve / Reject Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-200">
+              {teamLeaveRequests.length === 0 ? (
+                <tr>
+                  <td colSpan="6" className="text-center py-10 text-slate-500 font-bold text-sm bg-slate-50/50">
+                    No leave or permission requests currently pending for your team.
+                  </td>
+                </tr>
+              ) : (
+                teamLeaveRequests.map((req, idx) => (
+                  <tr key={req.id || idx} className="hover:bg-amber-50/40 transition-colors">
+                    <td className="px-4 py-3.5 font-black text-slate-900 text-sm">
+                      {req.executive_name || req.executive || "Sales Executive"}
+                      <div className="text-[10px] text-slate-400 font-extrabold font-mono">[{req.employee_code || "EMP000012"}]</div>
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black border ${
+                        req.leave_type?.includes("Half")
+                          ? "bg-amber-100 text-amber-950 border-amber-300"
+                          : req.leave_type?.includes("Permission")
+                            ? "bg-sky-100 text-sky-950 border-sky-300"
+                            : "bg-emerald-100 text-emerald-950 border-emerald-300"
+                      }`}>
+                        {req.leave_type || "Leave Request"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5 font-mono text-slate-900">
+                      <div>{req.from_date || req.date}</div>
+                      <div className="text-[10px] text-slate-500 font-extrabold">{req.time_slot || req.duration || "Full Day"}</div>
+                    </td>
+                    <td className="px-4 py-3.5 max-w-[200px] text-slate-800 font-semibold truncate">
+                      {req.raw_reason || req.reason?.split("|")[0]?.trim() || req.reason}
+                    </td>
+                    <td className="px-4 py-3.5">
+                      <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black border ${
+                        req.status?.toLowerCase() === "approved" || req.status?.toLowerCase().includes("approv")
+                          ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                          : req.status?.toLowerCase() === "rejected" || req.status?.toLowerCase().includes("reject")
+                            ? "bg-rose-100 text-rose-900 border-rose-300"
+                            : "bg-amber-100 text-amber-950 border-amber-300"
+                      }`}>
+                        {req.status?.toLowerCase() === "approved" || req.status?.toLowerCase().includes("approv")
+                          ? "✅ Approved"
+                          : req.status?.toLowerCase() === "rejected" || req.status?.toLowerCase().includes("reject")
+                            ? "❌ Rejected"
+                            : "⏳ Pending"}
+                      </span>
+                    </td>
+                    <td className="px-4 py-3.5 text-right space-y-1">
+                      <div className="flex items-center justify-end gap-2">
+                        <button
+                          onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Approved")}
+                          disabled={req.status === "Approved"}
+                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
+                        >
+                          <CheckCircle2 size={14} /> Approve
+                        </button>
+                        <button
+                          onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Rejected")}
+                          disabled={req.status === "Rejected"}
+                          className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
+                        >
+                          <XCircle size={14} /> Reject
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
       {selectedReportModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 lg:p-7 space-y-6 shadow-2xl my-auto animate-in fade-in zoom-in duration-150">

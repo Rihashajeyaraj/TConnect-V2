@@ -5,6 +5,7 @@ import {
   Phone,
   Mail,
   MapPin,
+  Navigation,
   Eye,
   User,
   UserCheck,
@@ -186,6 +187,8 @@ export default function Leads() {
             phone: l.mobile || l.contact_phone || "",
             email: l.email || l.contact_email || "",
             city: l.city || "Chennai",
+            product: l.product_name || l.product || "TwiteConnect CRM",
+            product_name: l.product_name || l.product || "TwiteConnect CRM",
             category: l.category || "Warm",
             priority: l.priority || "Medium",
             status: statusMap[rawStatus] || l.status || "New",
@@ -262,7 +265,45 @@ export default function Leads() {
     source: "Field Research (SE)",
     targetList: "Leads", // "Leads" | "Opportunities"
     notes: "",
+    latitude: 13.0067,
+    longitude: 80.2570,
+    landmark: "",
+    full_address: "",
   });
+
+  const handleUseCurrentGps = () => {
+    if (!navigator.geolocation) {
+      showToast("Geolocation is not supported by your browser.", "error");
+      return;
+    }
+    showToast("📍 Fetching live GPS position...", "info");
+    navigator.geolocation.getCurrentPosition(
+      async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        let addr = addForm.city || "Adyar IT Corridor, Chennai";
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}`);
+          const data = await res.json();
+          if (data && data.display_name) {
+            addr = data.display_name;
+          }
+        } catch {}
+
+        setAddForm((prev) => ({
+          ...prev,
+          latitude: Number(latitude.toFixed(6)),
+          longitude: Number(longitude.toFixed(6)),
+          full_address: addr,
+          city: addr.split(",")[0] || prev.city,
+        }));
+        showToast("✅ GPS Coordinates & Address captured successfully!", "success");
+      },
+      (err) => {
+        showToast(`Unable to fetch GPS: ${err.message}`, "error");
+      },
+      { enableHighAccuracy: true, timeout: 10000 }
+    );
+  };
 
   // Sync state to localStorage
   useEffect(() => {
@@ -355,6 +396,8 @@ export default function Leads() {
       return;
     }
 
+    const selectedProd = addForm.product?.trim() || "TwiteConnect CRM";
+
     const payload = {
       company_name: addForm.company.trim(),
       company: addForm.company.trim(),
@@ -364,6 +407,8 @@ export default function Leads() {
       phone: addForm.phone.trim(),
       email: addForm.email.trim() || `${addForm.company.toLowerCase().replace(/\s+/g, '')}@example.com`,
       city: addForm.city.trim() || "Chennai",
+      product_name: selectedProd,
+      product: selectedProd,
       category: addForm.category,
       priority: addForm.priority,
       value: addForm.value || "₹4,50,000",
@@ -397,6 +442,8 @@ export default function Leads() {
       phone: addForm.phone.trim(),
       email: payload.email,
       city: payload.city,
+      product: selectedProd,
+      product_name: selectedProd,
       assignedTo: userName,
       assignedToEmail: userEmail,
       category: addForm.category,
@@ -408,7 +455,7 @@ export default function Leads() {
       customerId: null,
       createdAt: formatDate(new Date()),
       executiveRemarks: [
-        { note: `Lead created by ${userName} via ${addForm.source || 'Field Research'}.`, date: "Just now", author: userName }
+        { note: `Lead created by ${userName} via ${addForm.source || 'Field Research'}. Requirement: ${selectedProd}`, date: "Just now", author: userName }
       ],
     };
 
@@ -441,7 +488,13 @@ export default function Leads() {
 
       showToast(`🎯 Opportunity "${addForm.company}" saved to Supabase & Opportunity List!`, "success");
     } else {
-      setAllLeads((prev) => [newLeadObj, ...prev]);
+      setAllLeads((prev) => {
+        const updated = [newLeadObj, ...prev];
+        try {
+          localStorage.setItem("tc_sm_leads", JSON.stringify(updated));
+        } catch (err) {}
+        return updated;
+      });
       showToast(`✨ New Lead "${addForm.company}" saved to Supabase & Lead Pipeline!`, "success");
     }
 
@@ -460,34 +513,6 @@ export default function Leads() {
       notes: "",
     });
     setIsAddModalOpen(false);
-
-    // Persist Lead directly into Supabase via Backend API
-    crmAPI.createLead({
-      id: newLeadObj.id,
-      company_name: newLeadObj.company,
-      contact_person: newLeadObj.person,
-      mobile: newLeadObj.phone,
-      email: newLeadObj.email,
-      city: newLeadObj.city,
-      category: newLeadObj.category,
-      priority: newLeadObj.priority,
-      value: newLeadObj.value,
-      notes: newLeadObj.notes,
-      assigned_to: userName,
-      assigned_to_email: userEmail
-    }).then((savedLead) => {
-      // Backfill canonical Lead ID from Supabase
-      if (savedLead && (savedLead.lead_number || savedLead.lead_id)) {
-        setAllLeads((prev) => prev.map((l) =>
-          l.id === tempId
-            ? { ...l, leadNumber: savedLead.lead_number || localLeadNum, id: savedLead.lead_id || tempId }
-            : l
-        ));
-      }
-      console.log("✅ Lead saved in Supabase:", savedLead);
-    }).catch((err) => {
-      console.warn("API lead creation warning:", err);
-    });
 
     // Send notification to Sales Manager
     try {
@@ -1299,12 +1324,25 @@ export default function Leads() {
                           )}
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 space-y-0.5 text-xs">
-                        <div className="flex items-center gap-1.5 text-slate-800 font-bold">
-                          <Phone size={13} className="text-blue-600 shrink-0" /> {lead.phone}
+                      <td className="py-3.5 px-4 space-y-0.5 text-xs max-w-[220px]">
+                        <div className="flex items-center gap-1.5 text-slate-800 font-bold truncate">
+                          <Phone size={13} className="text-blue-600 shrink-0" /> <span className="truncate">{lead.phone}</span>
                         </div>
-                        <div className="flex items-center gap-1.5 text-slate-500">
-                          <MapPin size={13} className="text-red-500 shrink-0" /> {lead.city}
+                        <div className="flex items-center gap-1.5 text-slate-500 truncate">
+                          <MapPin size={13} className="text-red-500 shrink-0" />
+                          {String(lead.city || lead.address || "").startsWith("http") ? (
+                            <a
+                              href={lead.city || lead.address}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs font-bold text-blue-600 hover:text-blue-800 underline truncate max-w-full inline-flex items-center gap-1"
+                            >
+                              <span className="truncate">📍 View Google Maps</span>
+                              <ExternalLink size={11} className="shrink-0" />
+                            </a>
+                          ) : (
+                            <span className="truncate text-xs font-semibold text-slate-700">{lead.city || lead.address || 'Location Not Specified'}</span>
+                          )}
                         </div>
                       </td>
                       <td className="py-3.5 px-4">
@@ -1423,28 +1461,44 @@ export default function Leads() {
                       </div>
                     </div>
 
-                    <div className="space-y-2 mt-3.5 text-xs sm:text-sm font-semibold text-slate-600">
-                      <div className="flex items-center gap-2">
+                    <div className="space-y-2 mt-3.5 text-xs sm:text-sm font-semibold text-slate-600 min-w-0">
+                      <div className="flex items-center gap-2 min-w-0">
                         <Phone className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span>{lead.phone}</span>
+                        <span className="truncate">{lead.phone}</span>
                       </div>
-                      <div className="flex items-center gap-2 truncate">
+                      <div className="flex items-center gap-2 min-w-0">
                         <Mail className="w-4 h-4 text-emerald-600 shrink-0" />
                         <span className="truncate">{lead.email}</span>
                       </div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 min-w-0">
                         <MapPin className="w-4 h-4 text-red-500 shrink-0" />
-                        <span>{lead.city}</span>
+                        {String(lead.city || lead.address || "").startsWith("http") ? (
+                          <a
+                            href={lead.city || lead.address}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-xs font-bold text-blue-600 hover:text-blue-800 underline truncate max-w-full inline-flex items-center gap-1"
+                          >
+                            <span className="truncate">📍 View Google Maps Location</span>
+                            <ExternalLink size={12} className="shrink-0" />
+                          </a>
+                        ) : (
+                          <span className="truncate text-xs font-semibold text-slate-700">{lead.city || lead.address || 'Location Not Specified'}</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 text-slate-800 font-bold bg-amber-50/80 border border-amber-300 px-3 py-1.5 rounded-xl text-xs min-w-0">
+                        <Zap className="w-4 h-4 text-amber-600 shrink-0" />
+                        <span className="truncate">Product Requirement: <strong className="text-amber-950 font-black">{lead.product || lead.product_name || 'TwiteConnect CRM'}</strong></span>
                       </div>
                     </div>
 
                     {/* Remarks / Notes */}
                     {lead.notes && (
-                      <div className="mt-3.5 p-3 bg-amber-50/80 border border-amber-200 rounded-2xl text-xs font-semibold text-amber-950 leading-relaxed">
+                      <div className="mt-3.5 p-3 bg-amber-50/80 border border-amber-200 rounded-2xl text-xs font-semibold text-amber-950 leading-relaxed break-words min-w-0">
                         <span className="text-[10px] sm:text-xs font-extrabold text-amber-800 block uppercase tracking-wider mb-0.5">
                           Remarks / Notes:
                         </span>
-                        {lead.notes}
+                        <p className="break-words font-semibold text-slate-800">{lead.notes}</p>
                       </div>
                     )}
                   </div>
@@ -2136,6 +2190,71 @@ export default function Leads() {
                     onChange={(e) => setAddForm({ ...addForm, city: e.target.value })}
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
                   />
+                </div>
+              </div>
+
+              {/* ── 📍 GPS LOCATION CAPTURE WIDGET ── */}
+              <div className="bg-blue-50/80 border-2 border-blue-200 rounded-3xl p-4.5 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-blue-600" />
+                    <label className="text-xs font-black text-blue-950 uppercase tracking-wider block">
+                      Exact Client GPS Coordinates (*Required for Radar Map)
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleUseCurrentGps}
+                    className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                  >
+                    <Navigation size={13} /> Use Current GPS Location
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="text-slate-600 font-bold block mb-1">Latitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={addForm.latitude || 13.0067}
+                      onChange={(e) => setAddForm({ ...addForm, latitude: Number(e.target.value) })}
+                      className="w-full border border-blue-200 rounded-xl px-3 py-2 text-xs font-mono font-bold bg-white text-slate-900 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-600 font-bold block mb-1">Longitude</label>
+                    <input
+                      type="number"
+                      step="any"
+                      value={addForm.longitude || 80.2570}
+                      onChange={(e) => setAddForm({ ...addForm, longitude: Number(e.target.value) })}
+                      className="w-full border border-blue-200 rounded-xl px-3 py-2 text-xs font-mono font-bold bg-white text-slate-900 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                  <div>
+                    <label className="text-slate-600 font-bold block mb-1">Landmark (Optional)</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Near Tidel Park Gate 2"
+                      value={addForm.landmark || ''}
+                      onChange={(e) => setAddForm({ ...addForm, landmark: e.target.value })}
+                      className="w-full border border-blue-200 rounded-xl px-3 py-2 text-xs font-semibold bg-white text-slate-900 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-slate-600 font-bold block mb-1">Full GPS Address</label>
+                    <input
+                      type="text"
+                      placeholder="Captured full street address"
+                      value={addForm.full_address || addForm.city || ''}
+                      onChange={(e) => setAddForm({ ...addForm, full_address: e.target.value })}
+                      className="w-full border border-blue-200 rounded-xl px-3 py-2 text-xs font-semibold bg-white text-slate-900 focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
                 </div>
               </div>
 

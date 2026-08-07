@@ -256,6 +256,7 @@ export default function SalesLayout() {
 
   const menus = [
     { title: "Dashboard", icon: LayoutDashboard, path: "/sales/dashboard" },
+    { title: "Smart Map", icon: MapPin, path: "/sales/map" },
     { title: "Leads", icon: Users, path: "/sales/leads" },
     { title: "Customers", icon: UserCheck, path: "/sales/customers" },
     { title: "Client Log", icon: ClipboardList, path: "/sales/client-log" },
@@ -436,9 +437,33 @@ export default function SalesLayout() {
         </header>
 
         {/* Page Content Container */}
-        <main className="flex-1 p-3 sm:p-5 lg:p-6 overflow-y-auto min-w-0">
+        <main className="flex-1 p-3 sm:p-5 lg:p-6 overflow-y-auto min-w-0 pb-20 md:pb-6">
           <Outlet />
         </main>
+
+        {/* ── Mobile Bottom Navigation Dock ────────────────────────── */}
+        <div className="md:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 px-2 py-1.5 flex items-center justify-around shadow-lg">
+          <NavLink to="/sales/dashboard" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-teal-600' : 'text-slate-500'}`}>
+            <LayoutDashboard size={18} />
+            <span>Home</span>
+          </NavLink>
+          <NavLink to="/sales/map" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-teal-600' : 'text-slate-500'}`}>
+            <MapPin size={18} />
+            <span>Map</span>
+          </NavLink>
+          <NavLink to="/sales/attendance" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-teal-600' : 'text-slate-500'}`}>
+            <MapPinned size={18} />
+            <span>Attendance</span>
+          </NavLink>
+          <NavLink to="/sales/leads" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-teal-600' : 'text-slate-500'}`}>
+            <Users size={18} />
+            <span>Leads</span>
+          </NavLink>
+          <NavLink to="/sales/hrms" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-teal-600' : 'text-slate-500'}`}>
+            <ShieldCheck size={18} />
+            <span>HRMS</span>
+          </NavLink>
+        </div>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════

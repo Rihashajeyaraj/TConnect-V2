@@ -37,14 +37,16 @@ import {
 } from 'lucide-react'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { useToast } from '../../common/ToastContext.jsx'
+import { attendanceAPI } from '../../services/api.js'
+import { calculateWorkHours } from '../sales/Attendance.jsx'
 
 const NAV_ITEMS = [
-  { key: 'leave',       label: 'My Leave',            icon: CalendarOff    },
+  { key: 'dashboard',   label: 'My Dashboard',        icon: LayoutDashboard },
   { key: 'team_leave',  label: 'Team Leave Approval', icon: UserCheck      },
-  { key: 'reports',     label: 'EOD Reports Reviewed',icon: ClipboardList  },
-  { key: 'calendar',   label: 'Holiday Calendar',    icon: CalendarDays   },
-  { key: 'handbook',   label: 'Manager Handbook',    icon: BookOpen       },
-  { key: 'activity',   label: 'Activity Logs',       icon: Activity       },
+  { key: 'leave',       label: 'My Leave',            icon: CalendarOff    },
+  { key: 'calendar',    label: 'Holiday Calendar',    icon: CalendarDays   },
+  { key: 'handbook',    label: 'Manager Handbook',    icon: BookOpen       },
+  { key: 'activity',    label: 'Activity Logs',       icon: Activity       },
 ]
 
 const HOLIDAYS = [
@@ -123,7 +125,29 @@ export default function ManagerHrms() {
   const managerName  = currentUser.name || currentUser.full_name || 'Sales Manager'
   const managerEmail = (currentUser.email || '').toLowerCase().trim()
   const empCode      = currentUser.employee_code || currentUser.employee_id || 'MGR-001'
-  const [activeSection, setActiveSection] = useState('leave')
+  const [activeSection, setActiveSection] = useState('dashboard')
+
+  // ── Attendance State for My Dashboard ─────────────────────────────────────
+  const [realAttendanceLogs, setRealAttendanceLogs] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("tc_attendance_logs") || "[]");
+      return Array.isArray(saved) ? saved : [];
+    } catch {
+      return [];
+    }
+  });
+  const [reportFilterMode, setReportFilterMode] = useState("THIS MONTH");
+  const [customDateFilter, setCustomDateFilter] = useState("");
+
+  useEffect(() => {
+    attendanceAPI.getLogs()
+      .then((res) => {
+        if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
+          setRealAttendanceLogs(res.data);
+        }
+      })
+      .catch(() => null);
+  }, []);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const getArr = (key) => { try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] } }
@@ -278,93 +302,173 @@ export default function ManagerHrms() {
 
       {/* ── MAIN CONTENT AREA ────────────────────────────────────────────── */}
 
-      {/* 1. DASHBOARD */}
+      {/* 1. MY DASHBOARD */}
       {activeSection === 'dashboard' && (
-        <div className="space-y-5 max-w-5xl">
+        <div className="space-y-6 max-w-5xl">
           <div>
-            <h2 className="text-2xl font-black text-slate-900">{managerName}'s Manager Dashboard</h2>
+            <h2 className="text-2xl font-black text-slate-900">{managerName}'s HR Dashboard</h2>
             <p className="text-slate-500 text-sm mt-0.5 font-semibold">Employee Code: <strong>{empCode}</strong> · Sales Manager ✅ Active</p>
           </div>
 
-          {/* KPI STAT CARDS */}
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-            {dashStats.map(({ label, value, icon: Icon, color }) => (
-              <div key={label} className={`bg-white rounded-2xl p-4 border border-${color}-200 shadow-xs`}>
-                <div className="flex items-start justify-between">
-                  <div>
-                    <p className={`text-[10px] font-black uppercase tracking-wider text-${color}-700`}>{label}</p>
-                    <h2 className={`text-3xl font-black mt-1 text-${color}-700`}>{value}</h2>
-                  </div>
-                  <div className={`w-9 h-9 rounded-xl bg-${color}-50 text-${color}-700 flex items-center justify-center shrink-0`}>
-                    <Icon size={18} />
-                  </div>
-                </div>
+          {/* ── 1. LEAVE SUMMARY CARDS (ALLOWED, USED, REMAINING) ── */}
+          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+            <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+              <CalendarOff className="w-5 h-5 text-[#b45309]" /> My Leave Summary (2026)
+            </h3>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 text-center space-y-1">
+                <span className="text-xs font-black text-blue-800 uppercase tracking-wider block">Leave Allowed</span>
+                <div className="text-4xl font-black text-blue-600">47 Days</div>
               </div>
-            ))}
-          </div>
 
-          {/* MANAGER PROFILE DETAILS */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-4">
-            <h3 className="text-sm font-black text-slate-900 border-b border-slate-100 pb-2">Manager HR Record</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-              {[
-                { label: 'Full Name',       value: managerName,                    icon: Briefcase },
-                { label: 'Official Email',  value: managerEmail || 'manager@tconnect.com', icon: Mail },
-                { label: 'Employee Code',   value: empCode,                         icon: Award   },
-                { label: 'Department',      value: 'Sales & Business Development',  icon: Building2 },
-                { label: 'Reporting To',    value: 'Regional Sales Director (MD)',  icon: ShieldCheck },
-                { label: 'Office Location', value: 'HQ Corporate Office, Chennai',  icon: MapPin  },
-                { label: 'Phone',           value: '+91 98765 00099',               icon: PhoneCall },
-                { label: 'Team Size',       value: '4 Sales Executives',            icon: Users   },
-              ].map(({ label, value, icon: Icon }) => (
-                <div key={label} className="p-3 bg-slate-50 border border-slate-100 rounded-2xl flex items-center gap-2.5">
-                  <Icon size={14} className="text-[#b45309] shrink-0" />
-                  <div>
-                    <span className="text-[10px] font-black text-slate-400 uppercase block">{label}</span>
-                    <span className="font-extrabold text-slate-900">{value}</span>
-                  </div>
-                </div>
-              ))}
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center space-y-1">
+                <span className="text-xs font-black text-amber-800 uppercase tracking-wider block">Leave Used</span>
+                <div className="text-4xl font-black text-amber-600">9 Days</div>
+              </div>
+
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 text-center space-y-1">
+                <span className="text-xs font-black text-emerald-800 uppercase tracking-wider block">Remaining Leave</span>
+                <div className="text-4xl font-black text-emerald-600">38 Days</div>
+              </div>
             </div>
-          </div>
 
-          {/* LEAVE BALANCE OVERVIEW */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-3">
-            <h3 className="text-sm font-black text-slate-900 border-b border-slate-100 pb-2">My Leave Balance (2026)</h3>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {/* Leave Type Breakdown */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
               {LEAVE_BALANCE.map((lb) => (
-                <div key={lb.type} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1.5">
+                <div key={lb.type} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
                   <span className="text-[10px] font-black text-slate-500 uppercase block">{lb.type}</span>
                   <div className="flex items-end justify-between">
-                    <span className="text-2xl font-black text-slate-900">{lb.remaining}</span>
-                    <span className="text-[10px] text-slate-400 font-semibold">/ {lb.total}</span>
+                    <span className="text-xl font-black text-slate-900">{lb.remaining}</span>
+                    <span className="text-[10px] text-slate-400 font-semibold">/ {lb.total} left</span>
                   </div>
                   <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                    <div className="h-full rounded-full bg-[#b45309] transition-all" style={{ width: `${Math.round((lb.remaining / lb.total) * 100)}%` }} />
+                    <div className="h-full rounded-full bg-[#b45309]" style={{ width: `${Math.round((lb.remaining / lb.total) * 100)}%` }} />
                   </div>
-                  <span className="text-[10px] text-slate-400">{lb.used} used</span>
+                  <span className="text-[10px] text-slate-400">{lb.used} days used</span>
                 </div>
               ))}
             </div>
           </div>
 
-          {/* PENDING TEAM LEAVE REQUESTS PREVIEW */}
-          {teamLeaveRequests.filter((r) => r.status === 'Pending').length > 0 && (
-            <div className="bg-amber-50 border border-amber-300 rounded-2xl p-4 space-y-2">
-              <div className="flex items-center gap-2">
-                <AlertCircle size={16} className="text-amber-700" />
-                <h3 className="text-sm font-black text-amber-900">
-                  {teamLeaveRequests.filter((r) => r.status === 'Pending').length} Pending Team Leave Request(s) Awaiting Your Approval
-                </h3>
+          {/* ── 2. ATTENDANCE HISTORY TABLE WITH TODAY | TOMORROW | THIS MONTH | CUSTOM TOGGLES ── */}
+          <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-xs space-y-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-900">Attendance History</h3>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">Live check-in, check-out, locations, remarks, and work duration.</p>
               </div>
+
               <button
-                onClick={() => setActiveSection('team_leave')}
-                className="text-xs font-extrabold text-amber-900 bg-amber-200 hover:bg-amber-300 px-3 py-1.5 rounded-xl transition cursor-pointer"
+                type="button"
+                onClick={() => window.location.href = "/manager/attendance"}
+                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
               >
-                Go to Team Leave Approval →
+                📹 Mark Attendance Now
               </button>
             </div>
-          )}
+
+            {/* Filter Toggle Controls: TODAY | YESTERDAY | THIS MONTH | CUSTOM */}
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-0.5 bg-slate-100/80 p-0.5 rounded-lg border border-slate-200/80 flex-wrap">
+                {["TODAY", "YESTERDAY", "THIS MONTH", "CUSTOM"].map((mode) => (
+                  <button
+                    key={mode}
+                    type="button"
+                    onClick={() => setReportFilterMode(mode)}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${
+                      reportFilterMode === mode ? "bg-[#0b3c5d] text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
+                    }`}
+                  >
+                    {mode === "CUSTOM" ? "CUSTOM DATE" : mode}
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom Date Input */}
+              {reportFilterMode === "CUSTOM" && (
+                <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-1 bg-white text-xs font-bold text-slate-700">
+                  <span className="text-slate-400 font-medium">Select Target Date:</span>
+                  <input
+                    type="date"
+                    value={customDateFilter}
+                    onChange={(e) => setCustomDateFilter(e.target.value)}
+                    className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
+                  />
+                </div>
+              )}
+            </div>
+
+            {/* Attendance History Table */}
+            <div className="overflow-x-auto">
+              {(() => {
+                const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+                const todayISO = new Date().toISOString().slice(0, 10);
+
+                const yesterdayObj = new Date();
+                yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+                const yesterdayStr = yesterdayObj.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+                const yesterdayISO = yesterdayObj.toISOString().slice(0, 10);
+
+                const filteredLogs = realAttendanceLogs.filter((log) => {
+                  const dStr = String(log.date || log.attendance_date || "");
+                  if (reportFilterMode === "TODAY") {
+                    return dStr.includes(todayStr) || dStr.includes(todayISO);
+                  }
+                  if (reportFilterMode === "YESTERDAY") {
+                    return dStr.includes(yesterdayStr) || dStr.includes(yesterdayISO);
+                  }
+                  if (reportFilterMode === "CUSTOM" && customDateFilter) {
+                    return dStr.includes(customDateFilter);
+                  }
+                  // THIS MONTH (Default)
+                  return true;
+                });
+
+                if (filteredLogs.length === 0) {
+                  return (
+                    <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-500 space-y-2">
+                      <p className="font-extrabold text-slate-700 text-sm">No attendance history logged for this filter mode ({reportFilterMode}).</p>
+                      <p>Switch filter to <b>THIS MONTH</b> or mark a new check-in with camera!</p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <table className="w-full text-left font-semibold text-xs text-slate-800">
+                    <thead className="border-b border-slate-200 text-slate-400 font-black text-[10px] uppercase tracking-wider bg-slate-50">
+                      <tr>
+                        <th className="py-3 px-4">DATE</th>
+                        <th className="py-3 px-4">LOGIN TIME</th>
+                        <th className="py-3 px-4">LOGOUT TIME</th>
+                        <th className="py-3 px-4 min-w-[200px]">LOGIN LOCATION</th>
+                        <th className="py-3 px-4 min-w-[200px]">LOGOUT LOCATION</th>
+                        <th className="py-3 px-4 min-w-[160px]">REMARKS</th>
+                        <th className="py-3 px-4">DURATION</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {filteredLogs.map((row, idx) => (
+                        <tr key={idx} className="hover:bg-slate-50/80 transition">
+                          <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{row.date || row.attendance_date}</td>
+                          <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.loginTime || row.check_in_time || "—"}</td>
+                          <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.logoutTime || row.check_out_time || "—"}</td>
+                          <td className="py-4 px-4 text-slate-600 font-semibold text-[11px] leading-snug">{row.loginLocation || row.check_in_address || "—"}</td>
+                          <td className="py-4 px-4 text-slate-600 font-semibold text-[11px] leading-snug">{row.logoutLocation || row.check_out_address || "—"}</td>
+                          <td className="py-4 px-4 text-teal-700 font-bold text-xs truncate max-w-[180px]">{row.remarks || row.notes || "—"}</td>
+                          <td className="py-4 px-4 font-black text-slate-900 whitespace-nowrap">
+                            {calculateWorkHours(row.loginTime || row.check_in_time, row.logoutTime || row.check_out_time) !== "—"
+                              ? calculateWorkHours(row.loginTime || row.check_in_time, row.logoutTime || row.check_out_time)
+                              : (row.workHours && row.workHours !== "9:46:13" ? row.workHours : "—")}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+          </div>
         </div>
       )}
 

@@ -110,8 +110,16 @@ export const hrmsAPI = {
 
 export const attendanceAPI = {
   getLogs: () => request('/attendance'),
+  getEnrollmentStatus: (empId = '', email = '') => request(`/attendance/enrollment-status?employee_id=${empId}&email=${email}`),
+  enroll: (data) => request('/attendance/enroll', { method: 'POST', body: JSON.stringify(data) }),
+  verifyLiveness: (data) => request('/attendance/verify-liveness', { method: 'POST', body: JSON.stringify(data) }),
+  matchFace: (data) => request('/attendance/match-face', { method: 'POST', body: JSON.stringify(data) }),
   clockIn: (data) => request('/attendance/clock-in', { method: 'POST', body: JSON.stringify(data) }),
   clockOut: (data) => request('/attendance/clock-out', { method: 'POST', body: JSON.stringify(data) }),
+  submitLeaveRequest: (data) => request('/attendance/leave', { method: 'POST', body: JSON.stringify(data) }),
+  getLeaveRequests: () => request('/attendance/leave'),
+  updateLeaveStatus: (requestId, statusStr, comment) =>
+    request(`/attendance/leave/${requestId}/status`, { method: 'POST', body: JSON.stringify({ status: statusStr, comment }) }),
 }
 
 export const visitAPI = {
@@ -155,6 +163,10 @@ export const reportAPI = {
   getSummary: () => request('/reports/summary'),
   getSavedReports: () => request('/reports/saved'),
   getSalesDashboard: () => request('/reports/sales-dashboard'),
+  submitEODReport: (data) => request('/reports/eod', { method: 'POST', body: JSON.stringify(data) }),
+  getEODReports: () => request('/reports/eod'),
+  acknowledgeEODReport: (id, data) => request(`/reports/eod/${id}/acknowledge`, { method: 'POST', body: JSON.stringify(data) }),
+  getCeoDashboard: () => request('/reports/ceo-dashboard'),
 }
 
 export const dashboardAPI = {
@@ -186,6 +198,17 @@ export const userAPI = {
 export const settingsAPI = {
   getSettings: () => request('/settings/business'),
   updateSettings: (data) => request('/settings/business', { method: 'PUT', body: JSON.stringify(data) }),
+}
+
+export const spatialAPI = {
+  getNearby: (lat, lng, radius = 2000, entityType = 'all') =>
+    request(`/spatial/nearby?lat=${lat}&lng=${lng}&radius=${radius}&entity_type=${entityType}`),
+  optimizeRoute: (lat, lng, waypoints) =>
+    request('/spatial/route-optimize', { method: 'POST', body: JSON.stringify({ lat, lng, waypoints }) }),
+  checkGeofence: (lat, lng, thresholdMeters = 450) =>
+    request('/spatial/geofence-check', { method: 'POST', body: JSON.stringify({ lat, lng, geofence_threshold_meters: thresholdMeters }) }),
+  updateLocation: (data) =>
+    request('/spatial/update-location', { method: 'POST', body: JSON.stringify(data) }),
 }
 
 export const usersAPI = userAPI

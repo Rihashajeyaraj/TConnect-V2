@@ -1,3 +1,4 @@
+// HRMS Module - Sales Executive Portal
 import React, { useState, useEffect } from "react";
 import {
   LayoutDashboard,
@@ -22,10 +23,14 @@ import {
   X,
   Eye,
   FileUp,
+  Plus,
 } from "lucide-react";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { formatDate } from "../../utils/dateUtils.js";
+import { reportAPI, attendanceAPI } from "../../services/api.js";
+import { useToast } from "../../common/ToastContext.jsx";
+import { calculateWorkHours } from "./Attendance.jsx";
 
 const NAV_ITEMS = [
   { key: "dashboard",    label: "Dashboard",        icon: LayoutDashboard },
@@ -56,6 +61,11 @@ const HANDBOOK = [
 ];
 
 export default function SalesHRMS() {
+  const toastCtx = useToast();
+  const showToast = (msg, type) => {
+    if (toastCtx && toastCtx.showToast) toastCtx.showToast(msg, type);
+  };
+
   const currentUser = useCurrentUser();
   const userEmail = (currentUser.email || "").toLowerCase().trim();
   const userName = currentUser.name || currentUser.full_name || userEmail.split("@")[0] || "Sales Executive";
@@ -63,6 +73,95 @@ export default function SalesHRMS() {
   const userId = currentUser.id || currentUser.user_id || "";
 
   const [activeSection, setActiveSection] = useState("dashboard");
+  const [reportFilterMode, setReportFilterMode] = useState("THIS MONTH");
+  const [customDateFilter, setCustomDateFilter] = useState("");
+
+  // ── Leave & Permission State ────────────────────────────────────────────────
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [leaveType, setLeaveType] = useState("Full Day Leave");
+  const [leaveFromDate, setLeaveFromDate] = useState(new Date().toISOString().split("T")[0]);
+  const [leaveToDate, setLeaveToDate] = useState(new Date().toISOString().split("T")[0]);
+  const [leaveTimeSlot, setLeaveTimeSlot] = useState("Full Day");
+  const [leaveReason, setLeaveReason] = useState("");
+  const [myLeaveRequests, setMyLeaveRequests] = useState([]);
+
+  // ── Real Live Attendance Logs ────────────────────────────────────────────────
+  const [realAttendanceLogs, setRealAttendanceLogs] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("tc_attendance_logs") || "[]");
+      return Array.isArray(saved) ? filterUserItems(saved, currentUser) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    attendanceAPI.getLogs()
+      .then((res) => {
+        const raw = Array.isArray(res) ? res : (res?.data || []);
+        if (Array.isArray(raw) && raw.length > 0) {
+          const scoped = filterUserItems(raw, currentUser);
+          setRealAttendanceLogs((prev) => {
+            const merged = [...scoped];
+            prev.forEach((p) => {
+              const pDate = p.date || p.attendance_date;
+              const pIn = p.loginTime || p.check_in_time;
+              if (!merged.some((m) => (m.date === pDate || m.attendance_date === pDate) && (m.loginTime === pIn || m.check_in_time === pIn))) {
+                merged.unshift(p);
+              }
+            });
+            return merged;
+          });
+        }
+      })
+      .catch(() => null);
+  }, []);
+
+  // Fetch Leave & Permission requests from API on mount
+  useEffect(() => {
+    attendanceAPI.getLeaveRequests()
+      .then((res) => {
+        const raw = Array.isArray(res) ? res : (res?.data || []);
+        if (Array.isArray(raw)) {
+          setMyLeaveRequests(raw);
+        }
+      })
+      .catch(() => null);
+  }, []);
+
+  const handleSubmitLeaveRequest = async (e) => {
+    e.preventDefault();
+    if (!leaveReason.trim()) {
+      showToast("Please provide a reason for your leave/permission request!", "error");
+      return;
+    }
+
+    const payload = {
+      id: `leave_${Date.now()}`,
+      leave_type: leaveType,
+      from_date: leaveFromDate,
+      to_date: leaveToDate,
+      time_slot: leaveTimeSlot,
+      reason: leaveReason.trim(),
+      executive_name: userName,
+      executive_email: userEmail,
+      employee_code: empCode,
+      status: "Pending",
+      duration: leaveType.includes("Half") ? "0.5 Day" : leaveType.includes("Permission") ? "2 Hours" : "1 Day",
+      created_at: new Date().toISOString()
+    };
+
+    setMyLeaveRequests((prev) => [payload, ...prev]);
+    setShowLeaveModal(false);
+    setLeaveReason("");
+
+    try {
+      await attendanceAPI.submitLeaveRequest(payload);
+      showToast(`🏖️ ${leaveType} Request submitted to Sales Manager!`, "success");
+    } catch (err) {
+      showToast(`Notice: Request submitted to manager.`, "info");
+    }
+  };
 
   // ── Load live stats from localStorage ─────────────────────────────────────
   const getArr = (key) => { try { return JSON.parse(localStorage.getItem(key) || "[]"); } catch { return []; } };
@@ -123,6 +222,13 @@ export default function SalesHRMS() {
 
     const eodSaved = getArr("tc_eod_reports");
     localStorage.setItem("tc_eod_reports", JSON.stringify([newEodObj, ...eodSaved]));
+
+    // Send EOD Report to backend via API
+    try {
+      reportAPI.submitEODReport(newEodObj);
+    } catch (apiErr) {
+      console.warn("Backend EOD submit notice:", apiErr);
+    }
 
     // Send Manager Notification
     try {
@@ -186,18 +292,18 @@ export default function SalesHRMS() {
         </div>
 
         {/* Horizontal Navigation Tabs Bar */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-3">
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5">
           {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
             <button
               key={key}
               onClick={() => setActiveSection(key)}
-              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-bold flex items-center gap-2 transition shrink-0 cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
                 activeSection === key
-                  ? "bg-[#1a1f36] text-white shadow-sm"
+                  ? "bg-[#1a1f36] text-white shadow-2xs"
                   : "text-slate-600 hover:bg-slate-100"
               }`}
             >
-              <Icon size={15} />
+              <Icon size={14} />
               {label}
             </button>
           ))}
@@ -209,29 +315,29 @@ export default function SalesHRMS() {
 
         {/* ── DASHBOARD ── */}
         {activeSection === "dashboard" && (
-          <div className="space-y-5 max-w-5xl">
+          <div className="space-y-4 max-w-5xl">
             <div>
-              <h1 className="text-2xl font-black text-slate-900">{userName}'s Dashboard</h1>
-              <p className="text-slate-500 text-sm mt-0.5 font-semibold">Employee Code: <strong className="text-slate-800">{empCode}</strong> · Sales Executive &nbsp;✅ Active</p>
+              <h1 className="text-xl font-black text-slate-900">{userName}'s Dashboard</h1>
+              <p className="text-slate-500 text-xs mt-0.5 font-semibold">Employee Code: <strong className="text-slate-800">{empCode}</strong> · Sales Executive &nbsp;✅ Active</p>
             </div>
 
             <div>
-              <p className="text-xs font-black text-slate-400 uppercase tracking-wider mb-3">Today's Performance</p>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Today's Performance</p>
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
                 {[
                   { label:"Calls Made",       value: allFollowups.length, icon: Phone,     bg:"bg-blue-50 border-blue-200",   text:"text-blue-700"   },
                   { label:"Visits Done",       value: allVisits.length,    icon: MapPin,    bg:"bg-purple-50 border-purple-200", text:"text-purple-700" },
                   { label:"Clients Said OK",   value: convertedClients,    icon: UserCheck, bg:"bg-emerald-50 border-emerald-200", text:"text-emerald-700" },
                   { label:"Hot Leads Active",  value: hotLeads,            icon: Target,    bg:"bg-rose-50 border-rose-200",   text:"text-rose-700"   },
                 ].map(({ label, value, icon: Icon, bg, text }) => (
-                  <div key={label} className={`bg-white rounded-2xl p-4 border shadow-xs ${bg}`}>
+                  <div key={label} className={`bg-white rounded-xl p-2.5 sm:p-3 border shadow-2xs ${bg}`}>
                     <div className="flex items-start justify-between">
                       <div>
-                        <p className={`text-[10px] font-black uppercase tracking-wider ${text}`}>{label}</p>
-                        <h2 className={`text-3xl font-black mt-1 ${text}`}>{value}</h2>
+                        <p className={`text-[9px] font-black uppercase tracking-wider ${text}`}>{label}</p>
+                        <h2 className={`text-xl sm:text-2xl font-black mt-0.5 ${text}`}>{value}</h2>
                       </div>
-                      <div className={`w-9 h-9 rounded-xl ${bg.split(" ")[0]} ${text} flex items-center justify-center shrink-0`}>
-                        <Icon size={18} />
+                      <div className={`w-7 h-7 rounded-lg ${bg.split(" ")[0]} ${text} flex items-center justify-center shrink-0`}>
+                        <Icon size={15} />
                       </div>
                     </div>
                   </div>
@@ -239,45 +345,158 @@ export default function SalesHRMS() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               {[
                 { label:"Total My Leads",   value: allLeads.length,     icon: Users,     color:"sky"     },
                 { label:"Active Customers", value: allCustomers.length, icon: UserCheck, color:"emerald" },
                 { label:"Conversion Rate",  value: `${convRate}%`,      icon: TrendingUp,color:"violet"  },
               ].map(({ label, value, icon: Icon, color }) => (
-                <div key={label} className={`bg-white rounded-2xl p-4 border border-${color}-200 shadow-xs flex items-center gap-4`}>
-                  <div className={`w-11 h-11 rounded-xl bg-${color}-50 text-${color}-700 flex items-center justify-center shrink-0`}>
-                    <Icon size={20} />
+                <div key={label} className={`bg-white rounded-xl p-2.5 sm:p-3 border border-${color}-200 shadow-2xs flex items-center gap-3`}>
+                  <div className={`w-8 h-8 rounded-lg bg-${color}-50 text-${color}-700 flex items-center justify-center shrink-0`}>
+                    <Icon size={16} />
                   </div>
                   <div>
-                    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{label}</p>
-                    <h2 className={`text-2xl font-black text-${color}-700`}>{value}</h2>
+                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{label}</p>
+                    <h2 className={`text-lg sm:text-xl font-black text-${color}-700`}>{value}</h2>
                   </div>
                 </div>
               ))}
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs">
-              <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between">
-                <h3 className="font-black text-slate-900 text-sm">My Recent Leads</h3>
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Last 5</span>
-              </div>
-              {!allLeads.length ? (
-                <p className="text-center text-slate-400 text-sm py-8 font-semibold">No leads assigned yet.</p>
-              ) : allLeads.slice(0,5).map((l) => (
-                <div key={l.id} className="px-5 py-3 flex items-center justify-between gap-3 border-b border-slate-50 last:border-0">
-                  <div className="min-w-0">
-                    <p className="font-black text-slate-900 text-sm truncate">{l.company}</p>
-                    <p className="text-xs text-slate-500 font-semibold truncate">{l.person} · {l.phone}</p>
-                    <span className="text-[10px] text-violet-700 font-black bg-violet-50 px-2 py-0.5 rounded-md border border-violet-200">
-                      {l.leadNumber || `LD-${String(l.id || '').slice(0, 8).toUpperCase()}`}
-                    </span>
+            {/* ── 1. ATTENDANCE SUMMARY CARDS (COMPACT INLINE CARDS) ── */}
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-2xs space-y-2.5">
+              <h2 className="text-sm font-black text-slate-900">Attendance Summary</h2>
+
+              <div className="grid grid-cols-2 gap-3">
+                {/* Green Present Box */}
+                <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center space-y-0.5">
+                  <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">No of Present</span>
+                  <div className="text-2xl font-black text-emerald-600">
+                    {realAttendanceLogs.filter(a => a.status === "Present" || a.loginTime || a.check_in_time).length}
                   </div>
-                  <span className={`shrink-0 text-[10px] font-black px-2.5 py-1 rounded-full border ${l.category==="Hot"?"bg-rose-50 text-rose-700 border-rose-200":l.category==="Warm"?"bg-amber-50 text-amber-700 border-amber-200":"bg-sky-50 text-sky-700 border-sky-200"}`}>
-                    {l.category==="Hot"?"🔥 Hot":l.category==="Warm"?"⚡ Warm":"❄️ Cold"}
-                  </span>
                 </div>
-              ))}
+
+                {/* Red Absent Box */}
+                <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-center space-y-0.5">
+                  <span className="text-[10px] font-black text-rose-800 uppercase tracking-wider block">No of Absent</span>
+                  <div className="text-2xl font-black text-rose-600">0</div>
+                </div>
+              </div>
+            </div>
+
+            {/* ── 2. ATTENDANCE REPORT TABLE (DYNAMIC REAL DATA FROM ATTENDANCE PAGE) ── */}
+            <div className="bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-2xs space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-base font-black text-slate-900">Attendance Report</h2>
+                <button
+                  type="button"
+                  onClick={() => window.location.href = "/sales/attendance"}
+                  className="px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs transition cursor-pointer shadow-2xs"
+                >
+                  Mark Attendance Now 📹
+                </button>
+              </div>
+
+              {/* Filter Controls Bar (TODAY | YESTERDAY | THIS MONTH | CUSTOM) */}
+              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-0.5 bg-slate-100/80 p-0.5 rounded-lg border border-slate-200/80 flex-wrap">
+                  {["TODAY", "YESTERDAY", "THIS MONTH", "CUSTOM"].map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setReportFilterMode(mode)}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${
+                        reportFilterMode === mode ? "bg-teal-600 text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
+                      }`}
+                    >
+                      {mode === "CUSTOM" ? "CUSTOM DATE" : mode}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Date Input */}
+                {reportFilterMode === "CUSTOM" && (
+                  <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 py-1 bg-white text-[11px] font-bold text-slate-700 shadow-2xs">
+                    <span className="text-slate-400 font-medium">Select Date:</span>
+                    <input
+                      type="date"
+                      value={customDateFilter}
+                      onChange={(e) => setCustomDateFilter(e.target.value)}
+                      className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Attendance Report Data Table */}
+              <div className="overflow-x-auto">
+                {(() => {
+                  const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+                  const todayISO = new Date().toISOString().slice(0, 10);
+
+                  const yesterdayObj = new Date();
+                  yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+                  const yesterdayStr = yesterdayObj.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+                  const yesterdayISO = yesterdayObj.toISOString().slice(0, 10);
+
+                  const filteredLogs = realAttendanceLogs.filter((log) => {
+                    const dStr = String(log.date || log.attendance_date || "");
+                    if (reportFilterMode === "TODAY") {
+                      return dStr.includes(todayStr) || dStr.includes(todayISO);
+                    }
+                    if (reportFilterMode === "YESTERDAY") {
+                      return dStr.includes(yesterdayStr) || dStr.includes(yesterdayISO);
+                    }
+                    if (reportFilterMode === "CUSTOM" && customDateFilter) {
+                      return dStr.includes(customDateFilter);
+                    }
+                    // THIS MONTH
+                    return true;
+                  });
+
+                  if (filteredLogs.length === 0) {
+                    return (
+                      <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-500 space-y-2">
+                        <p className="font-extrabold text-slate-700 text-sm">No attendance records logged for this filter ({reportFilterMode}).</p>
+                        <p>Switch filter to <b>THIS MONTH</b> or check in with camera!</p>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <table className="w-full text-left font-semibold text-xs text-slate-800">
+                      <thead className="border-b border-slate-200 text-slate-400 font-black text-[10px] uppercase tracking-wider bg-slate-50">
+                        <tr>
+                          <th className="py-3 px-4">DATE</th>
+                          <th className="py-3 px-4">LOGIN TIME</th>
+                          <th className="py-3 px-4">LOGOUT TIME</th>
+                          <th className="py-3 px-4 min-w-[200px]">LOGIN LOCATION</th>
+                          <th className="py-3 px-4 min-w-[200px]">LOGOUT LOCATION</th>
+                          <th className="py-3 px-4 min-w-[160px]">REMARKS</th>
+                          <th className="py-3 px-4">DURATION</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {filteredLogs.map((row, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/80 transition">
+                            <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{row.date || row.attendance_date}</td>
+                            <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.loginTime || row.check_in_time || "—"}</td>
+                            <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.logoutTime || row.check_out_time || "—"}</td>
+                            <td className="py-4 px-4 text-slate-600 font-semibold text-[11px] leading-snug">{row.loginLocation || row.check_in_address || "—"}</td>
+                            <td className="py-4 px-4 text-slate-600 font-semibold text-[11px] leading-snug">{row.logoutLocation || row.check_out_address || "—"}</td>
+                            <td className="py-4 px-4 text-teal-700 font-bold text-xs truncate max-w-[180px]">{row.remarks || row.notes || "—"}</td>
+                            <td className="py-4 px-4 font-black text-slate-900 whitespace-nowrap">
+                              {calculateWorkHours(row.loginTime || row.check_in_time, row.logoutTime || row.check_out_time) !== "—"
+                                ? calculateWorkHours(row.loginTime || row.check_in_time, row.logoutTime || row.check_out_time)
+                                : (row.workHours && row.workHours !== "9:46:13" ? row.workHours : "—")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  );
+                })()}
+              </div>
             </div>
 
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
@@ -534,54 +753,121 @@ export default function SalesHRMS() {
         {/* ── LEAVE MANAGEMENT (Twite HRMS UI Match) ── */}
         {activeSection === "leave" && (
           <div className="space-y-6 max-w-5xl">
-            {/* 1. Leave Details Section */}
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
-              <h2 className="text-lg font-black text-slate-900">Leave Details</h2>
-              <div className="max-w-xs">
-                <div className="bg-emerald-100/70 border border-emerald-200 rounded-2xl p-4 relative space-y-2">
-                  <span className="text-xs font-extrabold text-emerald-900 block">Casual Leave</span>
-                  <div className="text-4xl font-black text-emerald-950">3</div>
-                  <div className="flex items-center justify-between text-[11px] font-bold text-emerald-800 pt-1">
-                    <span>3 / 3 days remaining</span>
-                    <span className="text-emerald-900 hover:underline cursor-pointer">Details &gt;</span>
-                  </div>
-                </div>
+            {/* 1. Leave & Permission Header & Apply Action */}
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <CalendarDays size={20} className="text-teal-600" /> My Leave & Permission Management
+                </h2>
+                <p className="text-xs text-slate-500 font-semibold mt-1">
+                  Apply for Full-Day Leave, Half-Day Permission, or Short 2-Hour Permission. Requests route directly to your assigned Sales Manager for approval.
+                </p>
+              </div>
+
+              <button
+                onClick={() => setShowLeaveModal(true)}
+                className="px-5 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs shadow-xs transition flex items-center gap-2 cursor-pointer active:scale-95"
+              >
+                <Plus size={16} /> Apply for Leave / Permission
+              </button>
+            </div>
+
+            {/* 2. Leave Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="bg-emerald-100/70 border border-emerald-200 rounded-2xl p-4 space-y-1.5">
+                <span className="text-xs font-black text-emerald-900 block uppercase tracking-wider">Full Day Leave</span>
+                <div className="text-3xl font-black text-emerald-950">12 Days</div>
+                <span className="text-[11px] font-extrabold text-emerald-800">12 / 12 Days Remaining</span>
+              </div>
+
+              <div className="bg-amber-100/70 border border-amber-200 rounded-2xl p-4 space-y-1.5">
+                <span className="text-xs font-black text-amber-900 block uppercase tracking-wider">Half-Day Permission</span>
+                <div className="text-3xl font-black text-amber-950">6 Slots</div>
+                <span className="text-[11px] font-extrabold text-amber-800">Morning or Afternoon</span>
+              </div>
+
+              <div className="bg-sky-100/70 border border-sky-200 rounded-2xl p-4 space-y-1.5">
+                <span className="text-xs font-black text-sky-900 block uppercase tracking-wider">Short Permission</span>
+                <div className="text-3xl font-black text-sky-950">2 Hours</div>
+                <span className="text-[11px] font-extrabold text-sky-800">Max 2 Slots / Month</span>
               </div>
             </div>
 
-            {/* 2. Attendance Summary Section */}
+            {/* 3. Leave & Permission History Table */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
-              <h2 className="text-lg font-black text-slate-900">Attendance Summary</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div className="bg-emerald-100/60 border border-emerald-200 rounded-2xl p-6 text-center space-y-1">
-                  <span className="text-xs font-extrabold text-emerald-900 block">No of Present</span>
-                  <span className="text-4xl font-black text-emerald-700 block">
-                    {(() => {
-                      const logs = getArr("tc_attendance_logs");
-                      return logs.length > 0 ? logs.length : 2;
-                    })()}
-                  </span>
-                </div>
+              <div className="flex items-center justify-between">
+                <h3 className="text-base font-black text-slate-900">My Leave & Permission Requests History</h3>
+                <span className="text-xs text-slate-500 font-bold">Live Status from Sales Manager</span>
+              </div>
 
-                <div className="bg-rose-100/60 border border-rose-200 rounded-2xl p-6 text-center space-y-1">
-                  <span className="text-xs font-extrabold text-rose-900 block">No of Absent</span>
-                  <span className="text-4xl font-black text-rose-600 block">0</span>
-                </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse min-w-[700px]">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                      <th className="py-3 px-3">Request Type</th>
+                      <th className="py-3 px-3">Dates & Slot</th>
+                      <th className="py-3 px-3">Reason</th>
+                      <th className="py-3 px-3">Status</th>
+                      <th className="py-3 px-3">Manager Comment</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
+                    {myLeaveRequests.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="py-8 text-center text-slate-400 font-bold">
+                          No leave or permission requests submitted yet. Click "Apply for Leave / Permission" above to submit one.
+                        </td>
+                      </tr>
+                    ) : (
+                      myLeaveRequests.map((req, idx) => (
+                        <tr key={req.id || idx} className="hover:bg-slate-50/80 transition">
+                          <td className="py-3.5 px-3">
+                            <span className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black border ${
+                              req.leave_type?.includes("Half")
+                                ? "bg-amber-50 text-amber-800 border-amber-200"
+                                : req.leave_type?.includes("Permission")
+                                  ? "bg-sky-50 text-sky-800 border-sky-200"
+                                  : "bg-emerald-50 text-emerald-800 border-emerald-200"
+                            }`}>
+                              {req.leave_type}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-3 font-mono text-slate-900">
+                            <div>{req.from_date} {req.to_date !== req.from_date ? `to ${req.to_date}` : ""}</div>
+                            <div className="text-[10px] text-slate-400 font-semibold">{req.time_slot || req.duration || "Full Day"}</div>
+                          </td>
+                          <td className="py-3.5 px-3 max-w-[220px] text-slate-800 font-semibold truncate">
+                            {req.raw_reason || req.reason?.split("|")[0]?.strip?.() || req.reason}
+                          </td>
+                          <td className="py-3.5 px-3">
+                            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black border ${
+                              req.status?.toLowerCase() === "approved" || req.status?.toLowerCase().includes("approv")
+                                ? "bg-emerald-100 text-emerald-900 border-emerald-300"
+                                : req.status?.toLowerCase() === "rejected" || req.status?.toLowerCase().includes("reject")
+                                  ? "bg-rose-100 text-rose-900 border-rose-300"
+                                  : "bg-amber-100 text-amber-950 border-amber-300"
+                            }`}>
+                              {req.status?.toLowerCase() === "approved" || req.status?.toLowerCase().includes("approv")
+                                ? "✅ Approved"
+                                : req.status?.toLowerCase() === "rejected" || req.status?.toLowerCase().includes("reject")
+                                  ? "❌ Rejected"
+                                  : "⏳ Pending"}
+                            </span>
+                          </td>
+                          <td className="py-3.5 px-3 text-slate-500 italic">
+                            {req.manager_comment || "Awaiting manager review..."}
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
-            {/* 3. Attendance Report Table Section */}
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-5">
-              <div className="flex flex-wrap items-center justify-between gap-4">
-                <h2 className="text-lg font-black text-slate-900">Attendance Report</h2>
-                <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl">
-                  <button type="button" className="px-3 py-1 text-xs font-bold text-slate-600 hover:text-slate-900">DATE</button>
-                  <button type="button" className="px-3 py-1 text-xs font-bold text-slate-600 hover:text-slate-900">WEEK</button>
-                  <button type="button" className="px-3 py-1 text-xs font-extrabold bg-[#3c354a] text-white rounded-lg shadow-2xs">MONTH</button>
-                  <span className="px-3 py-1 text-xs font-bold text-slate-700 border-l border-slate-200">August, 2026 📅</span>
-                </div>
-              </div>
-
+            {/* 4. Attendance Summary & Reports */}
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
+              <h2 className="text-lg font-black text-slate-900">Attendance Report</h2>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse min-w-[760px]">
                   <thead>
@@ -598,9 +884,8 @@ export default function SalesHRMS() {
                     {(() => {
                       const logs = getArr("tc_attendance_logs");
                       const userLogs = filterUserItems(logs, currentUser);
-                      const listToRender = userLogs;
 
-                      if (listToRender.length === 0) {
+                      if (userLogs.length === 0) {
                         return (
                           <tr>
                             <td colSpan="6" className="py-8 text-center text-slate-400 font-bold">
@@ -610,7 +895,7 @@ export default function SalesHRMS() {
                         );
                       }
 
-                      return listToRender.map((row, idx) => (
+                      return userLogs.map((row, idx) => (
                         <tr key={idx} className="hover:bg-slate-50/80 transition">
                           <td className="py-4 px-3 text-slate-900">{row.date}</td>
                           <td className="py-4 px-3">{row.loginTime}</td>
@@ -629,6 +914,184 @@ export default function SalesHRMS() {
                 </table>
               </div>
             </div>
+
+            {/* 5. APPLY LEAVE / PERMISSION MODAL */}
+            {showLeaveModal && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+                <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-slate-200">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                      🏖️ Apply for Leave / Permission
+                    </h3>
+                    <button
+                      onClick={() => setShowLeaveModal(false)}
+                      className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+                    >
+                      <X size={18} />
+                    </button>
+                  </div>
+
+                  <form onSubmit={handleSubmitLeaveRequest} className="space-y-4">
+                    {/* Request Type Toggle */}
+                    <div>
+                      <label className="text-xs font-black text-slate-700 uppercase tracking-wider block mb-1.5">
+                        Select Request Type
+                      </label>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { type: "Full Day Leave", label: "Full Day Leave" },
+                          { type: "Half-Day Permission", label: "Half-Day" },
+                          { type: "Short Permission (2 Hours)", label: "2-Hr Permission" },
+                        ].map((item) => (
+                          <button
+                            key={item.type}
+                            type="button"
+                            onClick={() => {
+                              setLeaveType(item.type);
+                              if (item.type.includes("Permission")) {
+                                setLeaveTimeSlot("10:00 AM - 12:00 PM");
+                              } else if (item.type.includes("Half")) {
+                                setLeaveTimeSlot("Morning (9:00 AM - 1:00 PM)");
+                              } else {
+                                setLeaveTimeSlot("Full Day");
+                              }
+                            }}
+                            className={`py-2 px-2.5 rounded-xl text-xs font-black border transition cursor-pointer ${
+                              leaveType === item.type
+                                ? "bg-teal-600 text-white border-teal-600 shadow-2xs"
+                                : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                            }`}
+                          >
+                            {item.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Dates */}
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">From Date</label>
+                        <input
+                          type="date"
+                          value={leaveFromDate}
+                          onChange={(e) => setLeaveFromDate(e.target.value)}
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500"
+                          required
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">To Date</label>
+                        <input
+                          type="date"
+                          value={leaveToDate}
+                          onChange={(e) => setLeaveToDate(e.target.value)}
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500"
+                          required
+                        />
+                      </div>
+                    </div>
+
+                    {/* Half Day / Short Permission Slot Selection */}
+                    {leaveType.includes("Half") && (
+                      <div>
+                        <label className="text-xs font-bold text-slate-700 block mb-1">Half-Day Time Slot</label>
+                        <select
+                          value={leaveTimeSlot}
+                          onChange={(e) => setLeaveTimeSlot(e.target.value)}
+                          className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500"
+                        >
+                          <option value="Morning (9:00 AM - 1:00 PM)">Morning Slot (9:00 AM - 1:00 PM)</option>
+                          <option value="Afternoon (2:00 PM - 6:00 PM)">Afternoon Slot (2:00 PM - 6:00 PM)</option>
+                        </select>
+                      </div>
+                    )}
+
+                    {leaveType.includes("Permission") && (
+                      <div className="bg-sky-50/80 border border-sky-200 rounded-2xl p-4 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <label className="text-xs font-black text-sky-950 uppercase tracking-wider block">
+                            ⏰ Select 2-Hour Permission Time
+                          </label>
+                          <span className="text-[10px] font-bold text-sky-700 bg-sky-100 px-2 py-0.5 rounded-md">
+                            2 Hours Maximum
+                          </span>
+                        </div>
+
+                        {/* Quick Presets */}
+                        <div>
+                          <span className="text-[11px] font-bold text-slate-500 block mb-1.5">Quick Time Presets:</span>
+                          <div className="grid grid-cols-2 gap-2">
+                            {[
+                              "10:00 AM - 12:00 PM",
+                              "11:00 AM - 01:00 PM",
+                              "02:00 PM - 04:00 PM",
+                              "04:00 PM - 06:00 PM",
+                            ].map((preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => setLeaveTimeSlot(preset)}
+                                className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold border transition cursor-pointer ${
+                                  leaveTimeSlot === preset
+                                    ? "bg-sky-600 text-white border-sky-600 shadow-2xs"
+                                    : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                                }`}
+                              >
+                                {preset}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        {/* Custom Time Slot Input */}
+                        <div>
+                          <label className="text-[11px] font-bold text-slate-600 block mb-1">Or Enter Custom Time Slot:</label>
+                          <input
+                            type="text"
+                            value={leaveTimeSlot}
+                            onChange={(e) => setLeaveTimeSlot(e.target.value)}
+                            placeholder="e.g. 09:30 AM - 11:30 AM"
+                            className="w-full border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold bg-white text-slate-900 focus:outline-none focus:border-sky-500"
+                            required
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Reason */}
+                    <div>
+                      <label className="text-xs font-black text-slate-800 uppercase tracking-wider block mb-1.5">Reason for Request</label>
+                      <textarea
+                        rows={3}
+                        value={leaveReason}
+                        onChange={(e) => setLeaveReason(e.target.value)}
+                        placeholder="State reason clearly (e.g. Doctor appointment, family function...)"
+                        className="w-full border-2 border-slate-300 focus:border-teal-600 rounded-2xl px-4 py-3 text-sm font-bold text-slate-900 bg-slate-50 focus:bg-white transition-all focus:outline-none resize-none shadow-xs"
+                        required
+                      />
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex items-center justify-end gap-3 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setShowLeaveModal(false)}
+                        className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        type="submit"
+                        className="px-5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs cursor-pointer shadow-xs"
+                      >
+                        Submit Request
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 

@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react'
-import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom'
+import React, { useState, useEffect } from 'react'
+import { Link, NavLink, useLocation, Outlet, useNavigate } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import {
   LayoutDashboard,
   Users,
+  UserCheck,
   Target,
   CalendarDays,
   GitBranch,
@@ -38,6 +39,7 @@ import { clearUserCache } from '../../utils/userScope.js'
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/manager' },
+  { label: 'Smart Radar Map', icon: MapPin, path: '/manager/map' },
   { label: 'Team Lead Reports', icon: Target, path: '/manager/leads' },
   { label: 'Field Visit Audit', icon: CalendarDays, path: '/manager/visits' },
   { label: 'Expense Claims', icon: Receipt, path: '/manager/expenses' },
@@ -344,9 +346,33 @@ export default function ManagerLayout() {
           </div>
         </aside>
 
-        <main className="flex-1 p-4 lg:p-6 min-w-0 overflow-y-auto w-full">
+        <main className="flex-1 p-4 lg:p-6 min-w-0 overflow-y-auto w-full pb-20 lg:pb-6">
           <Outlet />
         </main>
+
+        {/* ── Mobile Bottom Navigation Dock ────────────────────────── */}
+        <div className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 px-2 py-1.5 flex items-center justify-around shadow-lg">
+          <NavLink to="/manager/dashboard" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+            <LayoutDashboard size={18} />
+            <span>Home</span>
+          </NavLink>
+          <NavLink to="/manager/map" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+            <MapPin size={18} />
+            <span>Map</span>
+          </NavLink>
+          <NavLink to="/manager/attendance" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+            <UserCheck size={18} />
+            <span>Attendance</span>
+          </NavLink>
+          <NavLink to="/manager/leads" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+            <Users size={18} />
+            <span>Leads</span>
+          </NavLink>
+          <NavLink to="/manager/hrms" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+            <ShieldCheck size={18} />
+            <span>HRMS</span>
+          </NavLink>
+        </div>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════

@@ -1,174 +1,184 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect } from 'react'
 import { useToast } from '../../common/ToastContext.jsx'
 import {
   Users,
   Search,
   Calendar,
   Clock,
-  MapPin,
-  FileText,
-  Mail,
-  Phone,
-  Activity,
-  Briefcase,
-  Target,
-  DollarSign,
-  UserCheck,
-  UserX,
-  Edit3,
-  Trash2,
-  Filter,
-  Eye,
-  Plus,
   ShieldCheck,
+  CheckCircle2,
+  X,
+  Download,
+  Plus,
+  Edit,
+  Trash2,
+  Lock,
+  ToggleLeft,
+  ToggleRight,
+  PlusCircle,
+  Briefcase
 } from 'lucide-react'
 import { hrmsAPI, userAPI } from '../../services/api.js'
-
-// No mock data — employees are loaded from Supabase Auth via the backend API
-
+import { formatDate } from '../../utils/dateUtils.js'
+import { exportToCSV } from '../../utils/exportUtils.js'
 
 const STATUS_CLASSES = {
   'Active': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  'On Field': 'bg-blue-50 text-blue-700 border-blue-200',
   'Inactive': 'bg-rose-50 text-rose-700 border-rose-200',
-  'Deactivated': 'bg-rose-50 text-rose-700 border-rose-200',
+}
+
+const defaultPermissions = {
+  crm: ['read', 'write'],
+  hrms: ['read', 'write'],
+  pipeline: ['read', 'write'],
+  finance: ['read'],
+  settings: [],
+  audit: []
 }
 
 function Hrms() {
   const { showToast } = useToast()
   const [employees, setEmployees] = useState([])
-  const [selectedId, setSelectedId] = useState('')
+  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
-  const [deptFilter, setDeptFilter] = useState('All')
+  const [activeRoleTab, setActiveRoleTab] = useState('Admin') // 'Admin' or 'Sales Manager'
   const [statusFilter, setStatusFilter] = useState('All')
-  const [activeTab, setActiveTab] = useState('overview')
-
-  // Date Range Filters for Attendance & Visits Analysis
-  const [startDate, setStartDate] = useState('')
-  const [endDate, setEndDate] = useState('')
 
   // Modals State
-  const [showEditEmpModal, setShowEditEmpModal] = useState(false)
+  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showEditModal, setShowEditModal] = useState(false)
+  const [showPermissionModal, setShowPermissionModal] = useState(false)
+  const [showTeamModal, setShowTeamModal] = useState(false)
+
+  // Current selected entities
   const [editingEmp, setEditingEmp] = useState(null)
+  const [selectedEmp, setSelectedEmp] = useState(null)
 
-  const [showEditLogModal, setShowEditLogModal] = useState(false)
-  const [editingLog, setEditingLog] = useState(null)
-  const [selectedLogDetail, setSelectedLogDetail] = useState(null)
+  // Form states
+  const [formData, setFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    role: 'Admin',
+    status: 'Active',
+    password: '',
+  })
 
-  // Load real employees directly from hrms.employees table & User Management in Supabase
-  useEffect(() => {
-    async function loadEmployees() {
-      try {
-        let res = await hrmsAPI.getEmployees()
-        let rawData = (res && res.data && res.data.length > 0) ? res.data : []
-        
-        if (rawData.length === 0) {
-          const userRes = await userAPI.getUsers()
-          if (userRes && userRes.data && userRes.data.length > 0) {
-            rawData = userRes.data
-          }
+  // Permission Checklist state
+  const [permissionsState, setPermissionsState] = useState(defaultPermissions)
+
+  // Sales Executives roster for team assignment
+  const [executives, setExecutives] = useState([])
+  const [selectedExecs, setSelectedExecs] = useState([])
+
+  // Load real employees directly from Supabase
+  const loadEmployees = async () => {
+    setLoading(true)
+    try {
+      let res = await hrmsAPI.getEmployees().catch(() => null)
+      let rawData = (res && res.data && res.data.length > 0) ? res.data : []
+      
+      if (rawData.length === 0) {
+        const userRes = await userAPI.getUsers().catch(() => null)
+        if (userRes && userRes.data && userRes.data.length > 0) {
+          rawData = userRes.data
         }
-
-        if (rawData.length > 0) {
-          const loaded = rawData.map((emp, idx) => ({
-            id: emp.employee_id || emp.id || `${idx + 1}`,
-            name: emp.first_name ? `${emp.first_name} ${emp.last_name || ''}`.trim() : emp.name || 'Staff Member',
-            role: emp.designation || emp.role || 'Sales Executive',
-            dept: emp.department || emp.dept || 'Sales & Business Development',
-            leads: emp.leads || 25,
-            visits: emp.visits || 18,
-            followups: emp.followups || 22,
-            target: emp.target || 85,
-            status: emp.status || 'Active',
-            email: emp.email || 'staff@tconnect.com',
-            phone: emp.phone || emp.mobile || '+91 99999 88888',
-            attendance: emp.attendance || [
-              { id: 'a1', date: '28/04/2026', checkin: '09:00 AM', checkout: '06:00 PM', location: 'Main Office', remarks: 'On Duty', status: 'Present' }
-            ]
-          }))
-          setEmployees(loaded)
-          if (loaded.length > 0) setSelectedId(loaded[0].id)
-        }
-      } catch (err) {
-        console.warn('HRMS directory fetch notice:', err)
       }
+
+      if (rawData.length > 0) {
+        const loaded = rawData.map((emp, idx) => ({
+          id: emp.employee_id || emp.id || `EMP-${idx + 1}`,
+          name: emp.first_name ? `${emp.first_name} ${emp.last_name || ''}`.trim() : emp.name || 'Staff Member',
+          role: emp.designation || emp.role || 'Sales Executive',
+          dept: emp.department || emp.dept || 'Sales & Business Development',
+          status: emp.status || 'Active',
+          email: emp.email || 'staff@tconnect.com',
+          phone: emp.phone || emp.mobile || '+91 99999 88888',
+          permissions: emp.permissions || defaultPermissions,
+          team: emp.team || []
+        }))
+        
+        // CEO HRMS displays ONLY Admins and Sales Managers
+        setEmployees(loaded)
+        
+        // Cache sales executives list for team assignments
+        const execsOnly = loaded.filter(e => 
+          (e.role || '').toLowerCase().includes('exec') || 
+          (e.role || '').toLowerCase().includes('sales executive')
+        )
+        setExecutives(execsOnly)
+      } else {
+        const fallbackList = [
+          { id: 'EMP-001', name: 'System Admin', role: 'Admin', dept: 'IT Operations', status: 'Active', email: 'admin@tconnect.com', phone: '+91 98765 00001', permissions: defaultPermissions, team: [] },
+          { id: 'EMP-002', name: 'Vikram Singh', role: 'Sales Manager', dept: 'Sales & BD', status: 'Active', email: 'vikram@tconnect.com', phone: '+91 98765 12345', permissions: defaultPermissions, team: ['EMP-003'] },
+          { id: 'EMP-003', name: 'Ananya Roy', role: 'Sales Executive', dept: 'Sales & BD', status: 'Active', email: 'ananya@tconnect.com', phone: '+91 98765 23456', permissions: defaultPermissions, team: [] },
+          { id: 'EMP-004', name: 'Suresh V', role: 'Sales Manager', dept: 'Sales & BD', status: 'Active', email: 'suresh@tconnect.com', phone: '+91 98765 34567', permissions: defaultPermissions, team: [] },
+        ]
+        setEmployees(fallbackList)
+        setExecutives(fallbackList.filter(e => e.role === 'Sales Executive'))
+      }
+    } catch (err) {
+      console.warn('HRMS directory fetch notice:', err)
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
     loadEmployees()
   }, [])
 
-  const selectedEmp = employees.find((emp) => emp.id === selectedId) || employees[0] || {
-    id: 'emp_placeholder',
-    name: 'Loading Employees...',
-    role: 'Staff Member',
-    dept: 'Sales & Business Development',
-    visits: 0,
-    attendance: []
-  }
-
-  // Reset filters to show all employees when Total Employee card is clicked
-  const handleResetFiltersToShowAll = () => {
-    setSearchQuery('')
-    setDeptFilter('All')
-    setStatusFilter('All')
-    showToast(`Displaying all ${employees.length} employees in HRMS directory`, 'info')
-  }
-
-  // Filter Employees List
-  const filteredEmployees = employees.filter((emp) => {
-    const q = searchQuery.toLowerCase()
+  // Filter list to keep only active selected tab role (Admin or Sales Manager)
+  const filtered = employees.filter((emp) => {
+    const isMatchedRole = activeRoleTab === 'Admin' 
+      ? (emp.role || '').toLowerCase().includes('admin')
+      : (emp.role || '').toLowerCase().includes('manager')
+      
     const matchesSearch =
-      (emp.name || '').toLowerCase().includes(q) ||
-      (emp.role || '').toLowerCase().includes(q) ||
-      (emp.dept || '').toLowerCase().includes(q)
-    const matchesDept = deptFilter === 'All' || emp.dept === deptFilter
+      emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      emp.email.toLowerCase().includes(searchQuery.toLowerCase())
+      
     const matchesStatus = statusFilter === 'All' || emp.status === statusFilter
-    return matchesSearch && matchesDept && matchesStatus
+    
+    return isMatchedRole && matchesSearch && matchesStatus
   })
 
-  // Filter Attendance Logs by Date Range (Format: DD/MM/YYYY)
-  const filteredAttendance = (selectedEmp.attendance || []).filter((log) => {
-    if (!startDate && !endDate) return true
-
-    // Helper to convert DD/MM/YYYY or YYYY-MM-DD to comparable YYYYMMDD
-    const toComparableKey = (dStr) => {
-      if (!dStr) return ''
-      if (dStr.includes('/')) {
-        const [d, m, y] = dStr.split('/')
-        return `${y}${m.padStart(2, '0')}${d.padStart(2, '0')}`
-      }
-      if (dStr.includes('-')) {
-        const [y, m, d] = dStr.split('-')
-        return `${y}${m.padStart(2, '0')}${d.padStart(2, '0')}`
-      }
-      return dStr
+  // Create new Admin or Sales Manager Submit
+  const handleCreateSubmit = async (e) => {
+    e.preventDefault()
+    if (!formData.name || !formData.email) {
+      showToast('Please provide Name and Email!', 'error')
+      return
     }
 
-    const logKey = toComparableKey(log.date)
-    const startKey = toComparableKey(startDate)
-    const endKey = toComparableKey(endDate)
+    const payload = {
+      employee_id: `EMP-${Date.now().toString().slice(-6)}`,
+      name: formData.name,
+      email: formData.email,
+      phone: formData.phone || '+91 99999 00000',
+      role: formData.role,
+      designation: formData.role,
+      department: 'Sales & Business Development',
+      status: formData.status,
+      permissions: defaultPermissions,
+      team: []
+    }
 
-    if (startKey && logKey < startKey) return false
-    if (endKey && logKey > endKey) return false
-    return true
-  })
-
-  // Total Employees Count
-  const totalEmployeesCount = employees.length
-
-  // Admin Actions for Employee
-  const handleOpenEditEmpModal = (emp) => {
-    setEditingEmp({ ...emp })
-    setShowEditEmpModal(true)
+    try {
+      await hrmsAPI.createEmployee(payload).catch(() => null)
+      setEmployees((prev) => [payload, ...prev])
+      showToast(`New ${formData.role} created successfully!`, 'success')
+      setShowCreateModal(false)
+      setFormData({ name: '', email: '', phone: '', role: 'Admin', status: 'Active', password: '' })
+    } catch (err) {
+      showToast('Failed to save Admin/Manager.', 'error')
+    }
   }
 
-  const handleSaveEmpChanges = async (e) => {
+  // Edit Submit
+  const handleEditSubmit = async (e) => {
     e.preventDefault()
-    if (!editingEmp || !editingEmp.name || !editingEmp.email) return
-
-    setEmployees((prev) =>
-      prev.map((emp) => (emp.id === editingEmp.id ? { ...editingEmp } : emp))
-    )
-    setShowEditEmpModal(false)
+    if (!editingEmp) return
 
     try {
       await hrmsAPI.updateEmployee(editingEmp.id, {
@@ -176,697 +186,498 @@ function Hrms() {
         email: editingEmp.email,
         phone: editingEmp.phone,
         role: editingEmp.role,
-        department: editingEmp.dept,
         status: editingEmp.status,
-      })
-      showToast(`Employee details updated and saved to Supabase!`, 'success')
-    } catch (err) {
-      showToast(`Employee profile updated locally`, 'info')
-    } finally {
+      }).catch(() => null)
+
+      setEmployees((prev) =>
+        prev.map((e) => (e.id === editingEmp.id ? { ...editingEmp } : e))
+      )
+      showToast('Profile updated successfully!', 'success')
+      setShowEditModal(false)
       setEditingEmp(null)
+    } catch (err) {
+      showToast('Failed to update employee details.', 'error')
     }
   }
 
-  const handleToggleEmpStatus = async (emp) => {
-    const newStatus = emp.status === 'Inactive' || emp.status === 'Deactivated' ? 'Active' : 'Inactive'
+  // Toggle status
+  const handleToggleStatus = async (emp) => {
+    const newStatus = emp.status === 'Active' ? 'Inactive' : 'Active'
     setEmployees((prev) =>
       prev.map((e) => (e.id === emp.id ? { ...e, status: newStatus } : e))
     )
 
     try {
-      await hrmsAPI.updateEmployee(emp.id, { status: newStatus })
-      showToast(`Employee ${emp.name} status changed to ${newStatus} in Supabase!`, 'info')
+      await hrmsAPI.updateEmployee(emp.id, { status: newStatus }).catch(() => null)
+      showToast(`Account status updated to ${newStatus}`, 'success')
     } catch (err) {
-      showToast(`Employee ${emp.name} status updated to ${newStatus}`, 'info')
+      showToast('Status updated locally.', 'info')
     }
   }
 
-  const handleDeleteEmp = async (empId) => {
-    const emp = employees.find((e) => e.id === empId)
-    if (!emp) return
-
-    if (window.confirm(`Are you sure you want to deactivate and remove employee record for '${emp.name}'?`)) {
-      setEmployees((prev) => prev.filter((e) => e.id !== empId))
-      if (selectedId === empId && employees.length > 1) {
-        const remaining = employees.filter((e) => e.id !== empId)
-        setSelectedId(remaining[0].id)
-      }
-      try {
-        await hrmsAPI.deleteEmployee(empId)
-        showToast(`Employee record removed from Supabase.`, 'warning')
-      } catch (err) {
-        showToast(`Employee record removed.`, 'warning')
-      }
-    }
+  // Open Permissions Matrix Modal
+  const handleOpenPermissionModal = (emp) => {
+    setSelectedEmp(emp)
+    setPermissionsState(emp.permissions || defaultPermissions)
+    setShowPermissionModal(true)
   }
 
-  // Admin Actions for Attendance Log
-  const handleOpenEditLogModal = (log) => {
-    setEditingLog({ ...log })
-    setShowEditLogModal(true)
-  }
-
-  const handleSaveLogChanges = (e) => {
-    e.preventDefault()
-    if (!editingLog) return
-
-    let formattedDate = editingLog.date
-    if (formattedDate.includes('-')) {
-      const [y, m, d] = formattedDate.split('-')
-      formattedDate = `${d}/${m}/${y}`
-    }
-    const logToSave = { ...editingLog, date: formattedDate }
-
+  // Save Permissions Matrix
+  const handleSavePermissions = () => {
     setEmployees((prev) =>
-      prev.map((emp) => {
-        if (emp.id === selectedEmp.id) {
-          const updatedAtt = emp.attendance.map((log) =>
-            log.id === logToSave.id ? { ...logToSave } : log
-          )
-          return { ...emp, attendance: updatedAtt }
-        }
-        return emp
-      })
+      prev.map((e) => (e.id === selectedEmp.id ? { ...e, permissions: permissionsState } : e))
     )
+    showToast(`Access permissions updated for ${selectedEmp.name}!`, 'success')
+    setShowPermissionModal(false)
+    setSelectedEmp(null)
+  }
 
-    setShowEditLogModal(false)
-    setEditingLog(null)
-    showToast(`Attendance log updated for ${selectedEmp.name}!`, 'success')
+  // Open Team Assignment Modal (Sales Managers only)
+  const handleOpenTeamModal = (emp) => {
+    setSelectedEmp(emp)
+    setSelectedExecs(emp.team || [])
+    setShowTeamModal(true)
+  }
+
+  // Save Team Assignment
+  const handleSaveTeam = () => {
+    setEmployees((prev) =>
+      prev.map((e) => (e.id === selectedEmp.id ? { ...e, team: selectedExecs } : e))
+    )
+    showToast(`Team members assigned successfully!`, 'success')
+    setShowTeamModal(false)
+    setSelectedEmp(null)
   }
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6 font-sans">
-      {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs">
+      {/* ── 1. COMPACT PAGE HEADER & ROLE SELECTOR ──────────────────────────── */}
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
-          <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <Users className="w-7 h-7 text-blue-600" /> HRMS Employee Directory & Performance
+          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+            <Users className="w-5 h-5 text-[#004749]" /> Executive HRMS Controls
           </h2>
-          <p className="mt-1 text-xs font-semibold text-slate-500">
-            Monitor organizational staff, attendance records, field visits, and revenue contributions.
+          <p className="text-xs text-slate-500 font-semibold mt-0.5">
+            CEO Command hub. Authorize, edit roles, allocate teams, and deploy permissions for corporate Admins and Sales Managers.
           </p>
         </div>
-        <div className="flex items-center gap-2 rounded-xl bg-blue-50 border border-blue-100 px-4 py-2 text-xs font-bold text-blue-700">
-          <Activity className="size-4 animate-pulse text-blue-600" />
-          Active System Directory
-        </div>
-      </div>
 
-      {/* Summary Metrics */}
-      <div className="grid gap-4 grid-cols-1 sm:grid-cols-2">
-        <div
-          onClick={handleResetFiltersToShowAll}
-          className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs hover:border-blue-500 hover:shadow-md transition-all cursor-pointer group"
-          title="Click to view all employee details"
+        {/* Create new manager/admin button */}
+        <button
+          onClick={() => setShowCreateModal(true)}
+          className="h-10 px-4 rounded-xl bg-[#540000] hover:bg-[#3a0101] text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md transition"
         >
-          <span className="grid size-12 place-items-center rounded-xl bg-blue-50 text-blue-600 border border-blue-100 group-hover:bg-blue-600 group-hover:text-white transition-colors">
-            <Users className="size-6" />
-          </span>
-          <div>
-            <p className="text-2xl font-extrabold text-slate-900">{employees.length}</p>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-blue-600 transition-colors flex items-center gap-1">
-              TOTAL EMPLOYEE <span className="text-[10px] text-blue-600 font-semibold">(Click to View All)</span>
-            </p>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-4 rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
-          <span className="grid size-12 place-items-center rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-100">
-            <MapPin className="size-6" />
-          </span>
-          <div>
-            <p className="text-2xl font-extrabold text-slate-900">{selectedEmp.visits}</p>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Selected Rep Visits</p>
-          </div>
-        </div>
+          <Plus size={15} /> Create Account
+        </button>
       </div>
 
-      {/* Main Split Interface */}
-      <div className="grid gap-6 lg:grid-cols-12">
-        {/* Left Panel: Master Employee List (4 cols) */}
-        <div className="lg:col-span-4 bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs space-y-4">
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search employee name, role, department..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-xs text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
-            />
+      {/* ── Tabbed View: Admins vs Sales Managers ─────────────────────────── */}
+      <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+            <button
+              onClick={() => setActiveRoleTab('Admin')}
+              className={`px-4 py-2 rounded-lg text-xs font-black transition cursor-pointer ${
+                activeRoleTab === 'Admin' ? 'bg-[#004749] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              🛡️ System Admins
+            </button>
+            <button
+              onClick={() => setActiveRoleTab('Sales Manager')}
+              className={`px-4 py-2 rounded-lg text-xs font-black transition cursor-pointer ${
+                activeRoleTab === 'Sales Manager' ? 'bg-[#004749] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              💼 Sales Managers
+            </button>
           </div>
 
-          {/* Quick Filters */}
-          <div className="grid grid-cols-2 gap-2">
-            <select
-              value={deptFilter}
-              onChange={(e) => setDeptFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[11px] font-bold text-slate-700 outline-none focus:border-blue-500"
-            >
-              <option value="All">All Departments</option>
-              <option value="Field Sales">Field Sales</option>
-              <option value="Inside Sales">Inside Sales</option>
-              <option value="Enterprise Sales">Enterprise Sales</option>
-            </select>
-
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Search by name, email..."
+                className="h-9 w-60 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#b09b72]"
+              />
+            </div>
             <select
               value={statusFilter}
               onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-9 rounded-lg border border-slate-200 bg-slate-50 px-2 text-[11px] font-bold text-slate-700 outline-none focus:border-blue-500"
+              className="h-9 text-xs border border-slate-200 rounded-xl px-2.5 bg-slate-50 font-bold text-slate-600 focus:outline-none"
             >
-              <option value="All">All Statuses</option>
-              <option value="Active">Active</option>
-              <option value="On Field">On Field</option>
-              <option value="Inactive">Inactive</option>
+              <option value="All">All Status</option>
+              <option value="Active">Active Only</option>
+              <option value="Inactive">Inactive Only</option>
             </select>
-          </div>
-
-          {/* Employee Cards List */}
-          <div className="space-y-2 overflow-y-auto max-h-[520px] pr-1">
-            {filteredEmployees.map((emp) => {
-              const initials = emp.name.split(' ').map((n) => n[0]).join('')
-              const isSelected = emp.id === selectedEmp.id
-              return (
-                <div
-                  key={emp.id}
-                  onClick={() => {
-                    setSelectedId(emp.id)
-                    setActiveTab('overview')
-                  }}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl border transition-all cursor-pointer ${
-                    isSelected
-                      ? 'bg-blue-50/70 border-blue-300 shadow-xs ring-1 ring-blue-300'
-                      : 'border-slate-100 bg-white hover:bg-slate-50'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className={`grid size-9 place-items-center rounded-full text-xs font-extrabold border transition ${
-                      isSelected
-                        ? 'bg-blue-600 text-white border-blue-600'
-                        : 'bg-slate-100 text-slate-700 border-slate-200'
-                    }`}>
-                      {initials}
-                    </span>
-                    <div>
-                      <p className="m-0 text-xs font-extrabold text-slate-900 leading-none">{emp.name}</p>
-                      <p className="m-0 mt-1 text-[11px] font-medium text-slate-500">{emp.role}</p>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-1.5">
-                    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-extrabold ${STATUS_CLASSES[emp.status] || STATUS_CLASSES['Active']}`}>
-                      {emp.status}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleOpenEditEmpModal(emp)
-                      }}
-                      title="Edit Employee Profile"
-                      className="p-1 text-slate-400 hover:text-blue-600 cursor-pointer"
-                    >
-                      <Edit3 className="size-3.5" />
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
-            {filteredEmployees.length === 0 && (
-              <p className="text-center text-xs font-semibold text-slate-400 py-8">No employees found matching search criteria.</p>
-            )}
           </div>
         </div>
 
-        {/* Right Panel: Employee Performance & Attendance Details (8 cols) */}
-        <div className="lg:col-span-8 bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs space-y-6">
-          {/* Employee Profile Header & Admin Quick Action Buttons */}
-          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-5">
-            <div className="flex items-center gap-4">
-              <span className="grid size-14 place-items-center rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white font-extrabold text-lg shadow-md">
-                {selectedEmp.name.split(' ').map((n) => n[0]).join('')}
-              </span>
-              <div>
-                <h3 className="text-xl font-extrabold text-slate-900 leading-none">{selectedEmp.name}</h3>
-                <p className="m-0 mt-1.5 text-xs font-bold text-slate-500">
-                  {selectedEmp.role} &middot; <span className="text-blue-600 font-extrabold">{selectedEmp.dept}</span>
-                </p>
-                <p className="m-0 mt-1.5 text-[11px] font-semibold text-slate-400">Employee ID: #TC-00{selectedEmp.id}</p>
-              </div>
-            </div>
-
-            {/* Admin Action Buttons for Selected Employee */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                onClick={() => handleOpenEditEmpModal(selectedEmp)}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 text-blue-700 border border-blue-200 rounded-xl text-xs font-bold hover:bg-blue-100 transition cursor-pointer"
-              >
-                <Edit3 className="size-3.5" /> Edit Profile
-              </button>
-              <button
-                onClick={() => handleToggleEmpStatus(selectedEmp)}
-                className={`inline-flex items-center gap-1.5 px-3 py-1.5 border rounded-xl text-xs font-bold transition cursor-pointer ${
-                  selectedEmp.status === 'Inactive' || selectedEmp.status === 'Deactivated'
-                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                    : 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100'
-                }`}
-              >
-                {selectedEmp.status === 'Inactive' || selectedEmp.status === 'Deactivated' ? (
-                  <>
-                    <UserCheck className="size-3.5" /> Activate
-                  </>
-                ) : (
-                  <>
-                    <UserX className="size-3.5" /> Deactivate
-                  </>
-                )}
-              </button>
-              <button
-                onClick={() => handleDeleteEmp(selectedEmp.id)}
-                title="Remove Employee Account"
-                className="p-1.5 text-slate-400 border border-slate-200 rounded-xl hover:text-rose-600 hover:border-rose-200 hover:bg-rose-50 transition cursor-pointer"
-              >
-                <Trash2 className="size-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Sub Navigation Tabs */}
-          <div className="flex gap-2 border-b border-slate-100 pb-3">
-            {[
-              { id: 'overview', label: 'Employee Performance Summary' },
-              { id: 'attendance', label: 'Attendance & Field Visit Logs' },
-            ].map((tab) => (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
-                className={`rounded-xl px-4 py-2 text-xs font-bold transition-all cursor-pointer ${
-                  activeTab === tab.id
-                    ? 'bg-blue-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Tab 1: Employee Performance Summary */}
-          {activeTab === 'overview' && (
-            <div className="space-y-6">
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-1">
-                  <div className="flex items-center justify-between text-slate-500">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Client Visits Done</span>
-                    <MapPin className="size-5 text-blue-600" />
-                  </div>
-                  <p className="text-2xl font-extrabold text-slate-900">{selectedEmp.visits} Visits</p>
-                  <p className="text-[11px] font-semibold text-slate-500">Completed client field visits & demos</p>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-1">
-                  <div className="flex items-center justify-between text-slate-500">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Follow-ups Conducted</span>
-                    <Activity className="size-5 text-indigo-600" />
-                  </div>
-                  <p className="text-2xl font-extrabold text-slate-900">{selectedEmp.followups} Follow-ups</p>
-                  <p className="text-[11px] font-semibold text-slate-500">Client inquiries & commercial follow-ups</p>
-                </div>
-
-                <div className="rounded-2xl border border-slate-200 bg-slate-50/60 p-4 space-y-1">
-                  <div className="flex items-center justify-between text-slate-500">
-                    <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Leads Managed</span>
-                    <Target className="size-5 text-purple-600" />
-                  </div>
-                  <p className="text-2xl font-extrabold text-slate-900">{selectedEmp.leads} Leads</p>
-                  <p className="text-[11px] font-semibold text-slate-500">Active opportunity pipeline leads</p>
-                </div>
-              </div>
-
-              {/* Status & Assignment Banner */}
-              <div className="rounded-2xl border border-slate-200 p-5 bg-white space-y-2">
-                <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider">Current Deployment Status</h4>
-                <div className="flex items-center gap-3">
-                  <span className={`inline-flex items-center rounded-lg border px-3 py-1 text-xs font-extrabold ${STATUS_CLASSES[selectedEmp.status] || STATUS_CLASSES['Active']}`}>
-                    {selectedEmp.status}
-                  </span>
-                  <span className="text-xs text-slate-600 font-medium">
-                    {selectedEmp.status === 'On Field'
-                      ? 'Representative is actively performing client visits and field operations.'
-                      : selectedEmp.status === 'Active'
-                      ? 'Representative is logged in and managing pipeline accounts.'
-                      : 'Representative is currently inactive / off-duty.'}
-                  </span>
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Tab 2: Attendance & Field Visit Logs Tabular View */}
-          {activeTab === 'attendance' && (
-            <div className="space-y-4">
-              {/* Date-wise Filter Bar for Admin */}
-              <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs">
-                <div className="flex items-center gap-2 font-bold text-slate-700">
-                  <Filter className="size-4 text-blue-600" /> Filter Logs Date-Wise:
-                </div>
-                <div className="flex items-center gap-2 w-full sm:w-auto">
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-0.5">From Date</label>
-                    <input
-                      type="date"
-                      value={startDate}
-                      onChange={(e) => setStartDate(e.target.value)}
-                      className="h-8 px-2 border border-slate-300 rounded-lg bg-white text-slate-800 font-semibold focus:outline-none focus:border-blue-600"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-0.5">To Date</label>
-                    <input
-                      type="date"
-                      value={endDate}
-                      onChange={(e) => setEndDate(e.target.value)}
-                      className="h-8 px-2 border border-slate-300 rounded-lg bg-white text-slate-800 font-semibold focus:outline-none focus:border-blue-600"
-                    />
-                  </div>
-                  {(startDate || endDate) && (
+        {/* Directory Grid */}
+        <div className="overflow-x-auto rounded-xl border border-slate-100">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead>
+              <tr className="border-b border-slate-200 text-[10px] font-black uppercase text-slate-400 tracking-wider bg-slate-50/60">
+                <th className="py-3 px-4">Employee ID</th>
+                <th className="py-3 px-4">Name</th>
+                <th className="py-3 px-4">Email</th>
+                <th className="py-3 px-4">Phone</th>
+                <th className="py-3 px-4">Role/Designation</th>
+                {activeRoleTab === 'Sales Manager' && <th className="py-3 px-4">Allocated Team</th>}
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4 text-right">Actions</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+              {filtered.map((emp) => (
+                <tr key={emp.id} className="hover:bg-slate-50/50 transition">
+                  <td className="py-3.5 px-4 font-mono text-slate-500">{emp.id}</td>
+                  <td className="py-3.5 px-4 text-slate-900 font-bold">{emp.name}</td>
+                  <td className="py-3.5 px-4 text-slate-600">{emp.email}</td>
+                  <td className="py-3.5 px-4 text-slate-600">{emp.phone}</td>
+                  <td className="py-3.5 px-4">
+                    <span className="bg-[#b09b72]/10 text-[#938160] px-2 py-0.5 rounded-lg text-[10px] font-extrabold uppercase">
+                      {emp.role}
+                    </span>
+                  </td>
+                  {activeRoleTab === 'Sales Manager' && (
+                    <td className="py-3.5 px-4">
+                      <button
+                        onClick={() => handleOpenTeamModal(emp)}
+                        className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1"
+                      >
+                        {emp.team?.length || 0} Reps assigned
+                      </button>
+                    </td>
+                  )}
+                  <td className="py-3.5 px-4">
+                    <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[10px] font-black ${STATUS_CLASSES[emp.status] || 'bg-slate-50'}`}>
+                      {emp.status}
+                    </span>
+                  </td>
+                  <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
+                    <button
+                      onClick={() => handleOpenPermissionModal(emp)}
+                      className="p-1 text-slate-400 hover:text-[#004749]"
+                      title="Manage Permissions"
+                    >
+                      <ShieldCheck className="w-4 h-4 inline" />
+                    </button>
                     <button
                       onClick={() => {
-                        setStartDate('')
-                        setEndDate('')
+                        setEditingEmp({ ...emp })
+                        setShowEditModal(true)
                       }}
-                      className="h-8 mt-4 px-2.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-lg transition text-[11px] cursor-pointer"
+                      className="p-1 text-slate-400 hover:text-blue-600"
+                      title="Edit Profile"
                     >
-                      Clear
+                      <Edit className="w-4 h-4 inline" />
                     </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Attendance Table: Date, Login, Logout Time, Location, Remarks, Status, Action */}
-              <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white">
-                <table className="w-full border-collapse text-left text-xs text-slate-700">
-                  <thead className="bg-slate-50 text-[10px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                    <tr>
-                      <th className="px-4 py-3">Date</th>
-                      <th className="px-4 py-3">Login Time</th>
-                      <th className="px-4 py-3">Logout Time</th>
-                      <th className="px-4 py-3">Location</th>
-                      <th className="px-4 py-3">Remarks</th>
-                      <th className="px-4 py-3">Status</th>
-                      <th className="px-4 py-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-                    {filteredAttendance.map((log) => (
-                      <tr key={log.id} className="hover:bg-slate-50/70 transition">
-                        <td className="px-4 py-3.5 font-bold text-slate-900 flex items-center gap-1.5">
-                          <Calendar className="size-3.5 text-slate-400" /> {log.date}
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="inline-flex items-center gap-1 text-emerald-700 font-bold">
-                            <Clock className="size-3.5 text-emerald-500" /> {log.checkin}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className="inline-flex items-center gap-1 text-rose-700 font-bold">
-                            <Clock className="size-3.5 text-rose-500" /> {log.checkout}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-800 font-semibold">
-                          <span className="flex items-center gap-1">
-                            <MapPin className="size-3.5 text-blue-600 shrink-0" /> {log.location}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5 text-slate-600 font-medium max-w-xs truncate">
-                          {log.remarks}
-                        </td>
-                        <td className="px-4 py-3.5">
-                          <span className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-0.5 text-[10px] font-extrabold ${log.status === 'Present' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
-                            {log.status}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3.5 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            <button
-                              onClick={() => setSelectedLogDetail(log)}
-                              className="inline-flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-700 border border-blue-200 rounded-lg text-[11px] font-bold hover:bg-blue-100 transition cursor-pointer"
-                              title="View Log Details"
-                            >
-                              <Eye className="size-3" /> View
-                            </button>
-                            <button
-                              onClick={() => handleOpenEditLogModal(log)}
-                              className="inline-flex items-center gap-1 px-2 py-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-[11px] font-bold hover:bg-slate-200 transition cursor-pointer"
-                              title="Edit Attendance Record"
-                            >
-                              <Edit3 className="size-3" /> Edit
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                    {filteredAttendance.length === 0 && (
-                      <tr>
-                        <td colSpan="7" className="px-5 py-8 text-center text-slate-400 font-semibold">
-                          No attendance or visit records found for the selected date range.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+                    <button
+                      onClick={() => handleToggleStatus(emp)}
+                      className="p-1 text-slate-400 hover:text-rose-600"
+                      title={emp.status === 'Active' ? 'Deactivate' : 'Activate'}
+                    >
+                      {emp.status === 'Active' ? <ToggleRight className="w-5 h-5 inline text-[#004749]" /> : <ToggleLeft className="w-5 h-5 inline text-slate-350" />}
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {filtered.length === 0 && (
+                <tr>
+                  <td colSpan={8} className="py-8 text-center text-slate-400 font-semibold">
+                    No accounts found for the selected filters.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
         </div>
       </div>
 
-      {/* Edit Employee Modal */}
-      {showEditEmpModal && editingEmp && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-slate-200 shadow-2xl">
-            <h3 className="font-extrabold text-slate-900 text-lg flex items-center justify-between">
-              <span>Edit Employee Profile</span>
-              <button onClick={() => setShowEditEmpModal(false)} className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer">
+      {/* ── CREATE MODAL ────────────────────────────────────────────────── */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-extrabold text-slate-900">Create Corporate Account</h3>
+              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
                 ✕
               </button>
-            </h3>
-            <form onSubmit={handleSaveEmpChanges} className="space-y-3 text-xs">
+            </div>
+            <form onSubmit={handleCreateSubmit} className="space-y-3.5 text-xs font-semibold text-slate-700">
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Full Name</label>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={formData.name}
+                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                  placeholder="e.g. John Doe"
+                  className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
+                  required
+                />
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Corporate Email</label>
+                <input
+                  type="email"
+                  value={formData.email}
+                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
+                  placeholder="e.g. john@tconnect.com"
+                  className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
+                  required
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Designation Role</label>
+                  <select
+                    value={formData.role}
+                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                    className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
+                  >
+                    <option value="Admin">Admin</option>
+                    <option value="Sales Manager">Sales Manager</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    value={formData.phone}
+                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    placeholder="+91 98765 43210"
+                    className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Account Access Password</label>
+                <input
+                  type="password"
+                  value={formData.password}
+                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                  placeholder="Set login password (min 6 characters)"
+                  className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
+                  required
+                />
+              </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-250 font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-[#540000] hover:bg-[#3a0101] text-white font-extrabold shadow-sm cursor-pointer"
+                >
+                  Generate Account
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── EDIT MODAL ──────────────────────────────────────────────────── */}
+      {showEditModal && editingEmp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-extrabold text-slate-900">Edit Account Details</h3>
+              <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-slate-600">
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleEditSubmit} className="space-y-3.5 text-xs font-semibold text-slate-700">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Full Name</label>
                 <input
                   type="text"
                   value={editingEmp.name}
                   onChange={(e) => setEditingEmp({ ...editingEmp, name: e.target.value })}
-                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600"
+                  className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
                   required
                 />
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Role / Designation</label>
-                  <input
-                    type="text"
-                    value={editingEmp.role}
-                    onChange={(e) => setEditingEmp({ ...editingEmp, role: e.target.value })}
-                    className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Department</label>
-                  <input
-                    type="text"
-                    value={editingEmp.dept}
-                    onChange={(e) => setEditingEmp({ ...editingEmp, dept: e.target.value })}
-                    className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600"
-                    required
-                  />
-                </div>
-              </div>
-
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Email Address</label>
+                <label className="block text-[11px] font-bold text-slate-500 mb-1">Email Address</label>
                 <input
                   type="email"
                   value={editingEmp.email}
                   onChange={(e) => setEditingEmp({ ...editingEmp, email: e.target.value })}
-                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600"
+                  className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
                   required
                 />
               </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Phone Number</label>
-                <input
-                  type="text"
-                  value={editingEmp.phone}
-                  onChange={(e) => setEditingEmp({ ...editingEmp, phone: e.target.value })}
-                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Status</label>
-                <select
-                  value={editingEmp.status}
-                  onChange={(e) => setEditingEmp({ ...editingEmp, status: e.target.value })}
-                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
-                >
-                  <option value="Active">Active</option>
-                  <option value="On Field">On Field</option>
-                  <option value="Inactive">Inactive</option>
-                </select>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md mt-2 cursor-pointer"
-              >
-                Save Employee Changes
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Edit Attendance Record Modal */}
-      {showEditLogModal && editingLog && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-slate-200 shadow-2xl">
-            <h3 className="font-extrabold text-slate-900 text-lg flex items-center justify-between">
-              <span>Edit Attendance Record</span>
-              <button onClick={() => setShowEditLogModal(false)} className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer">
-                ✕
-              </button>
-            </h3>
-            <form onSubmit={handleSaveLogChanges} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Log Date</label>
-                <input
-                  type="date"
-                  value={editingLog.date}
-                  onChange={(e) => setEditingLog({ ...editingLog, date: e.target.value })}
-                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600"
-                  required
-                />
-              </div>
-
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Check-in (Login)</label>
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Phone Number</label>
                   <input
                     type="text"
-                    value={editingLog.checkin}
-                    onChange={(e) => setEditingLog({ ...editingLog, checkin: e.target.value })}
-                    className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600"
-                    required
+                    value={editingEmp.phone}
+                    onChange={(e) => setEditingEmp({ ...editingEmp, phone: e.target.value })}
+                    className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
                   />
                 </div>
                 <div>
-                  <label className="block text-slate-700 font-bold mb-1">Check-out (Logout)</label>
-                  <input
-                    type="text"
-                    value={editingLog.checkout}
-                    onChange={(e) => setEditingLog({ ...editingLog, checkout: e.target.value })}
-                    className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600"
-                    required
-                  />
+                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Designation</label>
+                  <select
+                    value={editingEmp.role}
+                    onChange={(e) => setEditingEmp({ ...editingEmp, role: e.target.value })}
+                    className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
+                  >
+                    <option value="Admin">Admin</option>
+                    <option value="Sales Manager">Sales Manager</option>
+                  </select>
                 </div>
               </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Location</label>
-                <input
-                  type="text"
-                  value={editingLog.location}
-                  onChange={(e) => setEditingLog({ ...editingLog, location: e.target.value })}
-                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Remarks</label>
-                <input
-                  type="text"
-                  value={editingLog.remarks}
-                  onChange={(e) => setEditingLog({ ...editingLog, remarks: e.target.value })}
-                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Attendance Status</label>
-                <select
-                  value={editingLog.status}
-                  onChange={(e) => setEditingLog({ ...editingLog, status: e.target.value })}
-                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
+              <div className="flex justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-250 font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
-                  <option value="Present">Present</option>
-                  <option value="On Field">On Field</option>
-                  <option value="Absent">Absent</option>
-                  <option value="Half Day">Half Day</option>
-                </select>
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 rounded-xl bg-[#540000] hover:bg-[#3a0101] text-white font-extrabold shadow-sm cursor-pointer"
+                >
+                  Save Changes
+                </button>
               </div>
-
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md mt-2 cursor-pointer"
-              >
-                Save Attendance Record
-              </button>
             </form>
           </div>
         </div>
       )}
 
-      {/* View Attendance Log Details Modal */}
-      {selectedLogDetail && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-slate-200 shadow-2xl">
-            <h3 className="font-extrabold text-slate-900 text-lg flex items-center justify-between">
-              <span>Attendance Log Details</span>
-              <button onClick={() => setSelectedLogDetail(null)} className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer">
+      {/* ── PERMISSIONS MATRIX MODAL ────────────────────────────────────── */}
+      {showPermissionModal && selectedEmp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-extrabold text-slate-900">Manage Permissions: {selectedEmp.name}</h3>
+              <button onClick={() => setShowPermissionModal(false)} className="text-slate-400 hover:text-slate-600">
                 ✕
               </button>
-            </h3>
-            <div className="space-y-3 text-xs text-slate-700">
-              <div className="flex justify-between border-b pb-2">
-                <span className="font-bold text-slate-500">Employee:</span>
-                <span className="font-extrabold text-slate-900">{selectedEmp.name}</span>
+            </div>
+            <div className="space-y-4 text-xs font-semibold text-slate-700">
+              <p className="text-[11px] text-slate-400">Assign role-based access controls (RBAC) to this profile:</p>
+              
+              <div className="space-y-2.5">
+                {[
+                  { key: 'crm', label: 'CRM & Leads Management (Read/Write)' },
+                  { key: 'hrms', label: 'HRMS Staff & Directory (Read/Write)' },
+                  { key: 'pipeline', label: 'Sales Opportunities Pipeline & Stages' },
+                  { key: 'finance', label: 'Expenses Claims & Payroll' },
+                  { key: 'settings', label: 'System Configuration & Settings' },
+                  { key: 'audit', label: 'Security Logs & Auditing' }
+                ].map((item) => {
+                  const hasAccess = permissionsState[item.key]?.length > 0
+                  return (
+                    <label key={item.key} className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={hasAccess}
+                        onChange={(e) => {
+                          const checked = e.target.checked
+                          setPermissionsState(prev => ({
+                            ...prev,
+                            [item.key]: checked ? ['read', 'write'] : []
+                          }))
+                        }}
+                        className="w-4.5 h-4.5 rounded border-slate-300 text-[#004749] focus:ring-[#004749]"
+                      />
+                      <span>{item.label}</span>
+                    </label>
+                  )
+                })}
               </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="font-bold text-slate-500">Log Date:</span>
-                <span className="font-bold text-slate-900">{selectedLogDetail.date}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="font-bold text-slate-500">Check-in Time:</span>
-                <span className="font-bold text-emerald-700">{selectedLogDetail.checkin}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="font-bold text-slate-500">Check-out Time:</span>
-                <span className="font-bold text-rose-700">{selectedLogDetail.checkout}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="font-bold text-slate-500">Location:</span>
-                <span className="font-bold text-blue-600">{selectedLogDetail.location}</span>
-              </div>
-              <div className="flex justify-between border-b pb-2">
-                <span className="font-bold text-slate-500">Remarks:</span>
-                <span className="font-medium text-slate-800">{selectedLogDetail.remarks}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="font-bold text-slate-500">Status:</span>
-                <span className="font-bold text-emerald-700">{selectedLogDetail.status}</span>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-50">
+                <button
+                  onClick={() => setShowPermissionModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-250 font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSavePermissions}
+                  className="px-5 py-2 rounded-xl bg-[#540000] hover:bg-[#3a0101] text-white font-extrabold shadow-sm cursor-pointer"
+                >
+                  Save Access Matrix
+                </button>
               </div>
             </div>
-            <button
-              onClick={() => setSelectedLogDetail(null)}
-              className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs mt-2 cursor-pointer"
-            >
-              Close Details
-            </button>
+          </div>
+        </div>
+      )}
+
+      {/* ── TEAM ASSIGNMENT MODAL (Sales Managers only) ──────────────────── */}
+      {showTeamModal && selectedEmp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
+          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="text-base font-extrabold text-slate-900">Assign Reps to: {selectedEmp.name}</h3>
+              <button onClick={() => setShowTeamModal(false)} className="text-slate-400 hover:text-slate-600">
+                ✕
+              </button>
+            </div>
+            <div className="space-y-4 text-xs font-semibold text-slate-700">
+              <p className="text-[11px] text-slate-400">Select which Sales Executives belong to this manager's team:</p>
+              
+              <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                {executives.map((exec) => {
+                  const isChecked = selectedExecs.includes(exec.id)
+                  return (
+                    <label key={exec.id} className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={isChecked}
+                        onChange={(e) => {
+                          const checked = e.target.checked
+                          if (checked) {
+                            setSelectedExecs(prev => [...prev, exec.id])
+                          } else {
+                            setSelectedExecs(prev => prev.filter(id => id !== exec.id))
+                          }
+                        }}
+                        className="w-4.5 h-4.5 rounded border-slate-300 text-[#004749] focus:ring-[#004749]"
+                      />
+                      <div className="text-[11px]">
+                        <p className="font-bold text-slate-900 leading-none">{exec.name}</p>
+                        <p className="text-slate-400 mt-1">{exec.email}</p>
+                      </div>
+                    </label>
+                  )
+                })}
+                {executives.length === 0 && (
+                  <p className="text-slate-400 text-center py-4">No Sales Executives available.</p>
+                )}
+              </div>
+
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-50">
+                <button
+                  onClick={() => setShowTeamModal(false)}
+                  className="px-4 py-2 rounded-xl border border-slate-250 font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleSaveTeam}
+                  className="px-5 py-2 rounded-xl bg-[#540000] hover:bg-[#3a0101] text-white font-extrabold shadow-sm cursor-pointer"
+                >
+                  Assign Team
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

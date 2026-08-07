@@ -19,6 +19,7 @@ KNOWN_ACCOUNTS: Dict[str, Dict[str, Any]] = {
     # CEO accounts
     "ceo@tconnect.com":           {"role": "CEO / Founder",   "passwords": ["Admin2026#"]},
     "ceo@twiteconnect.com":       {"role": "CEO / Founder",   "passwords": ["Admin2026#"]},
+    "ceo.test@tconnect.com":      {"role": "CEO / Founder",   "passwords": ["Admin2026#"]},
 
     # Sales Manager accounts
     "manager@tconnect.com":       {"role": "Sales Manager",   "passwords": ["ManagerPassword2026#"]},

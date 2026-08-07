@@ -99,7 +99,7 @@ export default function Expenses() {
       const savedVisits = JSON.parse(localStorage.getItem("tc_sales_visits") || "[]");
       setVisitsList(filterUserItems(savedVisits, currentUser));
     } catch (err) {}
-  }, [currentUser]);
+  }, [userEmail]);
 
   // Persistent Expense State
   const [expenseList, setExpenseList] = useState(() => {

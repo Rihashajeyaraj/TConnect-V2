@@ -57,6 +57,7 @@ import ClientLog from './roles/sales/ClientLog.jsx'
 import Leads from './roles/sales/Leads.jsx'
 import Notifications from './roles/sales/Notifications.jsx'
 import Todo from './roles/sales/Todo.jsx'
+import SmartClientMap from './roles/sales/SmartClientMap.jsx'
 
 const SALES_ROLES = [
   'sales', 'executive', 'Sales Executive',
@@ -87,7 +88,7 @@ function App() {
               <Route path="opportunities" element={<CeoSalesPipeline />} />
               <Route path="hrms" element={<CeoHrms />} />
               <Route path="employee" element={<CeoHrms />} />
-              <Route path="attendance" element={<CeoAttendance />} />
+              <Route path="attendance" element={<Attendance />} />
               <Route path="leaves" element={<CeoLeaves />} />
               <Route path="expenses" element={<CeoExpenses />} />
               <Route path="reports" element={<CeoReports />} />
@@ -103,6 +104,7 @@ function App() {
               <Route path="users" element={<UserManagement />} />
               <Route path="roles" element={<RoleManagement />} />
               <Route path="hrms" element={<CeoHrms />} />
+              <Route path="attendance" element={<Attendance />} />
               <Route path="reports" element={<CeoReports />} />
               <Route path="audit" element={<AuditLogs />} />
               <Route path="settings" element={
@@ -119,11 +121,12 @@ function App() {
             <Route path="/manager" element={<ManagerLayout />}>
               <Route index element={<ManagerDashboard />} />
               <Route path="dashboard" element={<ManagerDashboard />} />
+              <Route path="map" element={<SmartClientMap />} />
               <Route path="team" element={<ManagerTeam />} />
               <Route path="leads" element={<ManagerLeads />} />
               <Route path="customers" element={<ManagerCustomers />} />
               <Route path="visits" element={<ManagerVisits />} />
-              <Route path="attendance" element={<ManagerAttendance />} />
+              <Route path="attendance" element={<Attendance />} />
               <Route path="followups" element={<ManagerFollowups />} />
               <Route path="opportunities" element={<ManagerOpportunities />} />
               <Route path="expenses" element={<ManagerExpenses />} />
@@ -141,6 +144,7 @@ function App() {
             <Route path="/sales" element={<SalesLayout />}>
               <Route index element={<Dashboard />} />
               <Route path="dashboard" element={<Dashboard />} />
+              <Route path="map" element={<SmartClientMap />} />
               <Route path="attendance" element={<Attendance />} />
               <Route path="customers" element={<Customers />} />
               <Route path="client-log" element={<ClientLog />} />
