@@ -1,682 +1,698 @@
 import React, { useState, useEffect } from 'react'
 import { useToast } from '../../common/ToastContext.jsx'
 import {
+  Briefcase,
   Users,
-  Search,
   Calendar,
   Clock,
-  ShieldCheck,
   CheckCircle2,
-  X,
+  XCircle,
+  AlertCircle,
+  Search,
+  Filter,
   Download,
   Plus,
-  Edit,
-  Trash2,
-  Lock,
-  ToggleLeft,
-  ToggleRight,
-  PlusCircle,
-  Briefcase
+  ShieldCheck,
+  Check,
+  X,
+  FileText,
+  UserCheck,
+  History,
+  MessageSquare,
 } from 'lucide-react'
-import { hrmsAPI, userAPI } from '../../services/api.js'
-import { formatDate } from '../../utils/dateUtils.js'
+import { hrmsAPI, attendanceAPI, userAPI } from '../../services/api.js'
 import { exportToCSV } from '../../utils/exportUtils.js'
 
-const STATUS_CLASSES = {
-  'Active': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  'Inactive': 'bg-rose-50 text-rose-700 border-rose-200',
-}
-
-const defaultPermissions = {
-  crm: ['read', 'write'],
-  hrms: ['read', 'write'],
-  pipeline: ['read', 'write'],
-  finance: ['read'],
-  settings: [],
-  audit: []
-}
-
-function Hrms() {
+function CeoHrms({ initialTab = 'employees' }) {
   const { showToast } = useToast()
-  const [employees, setEmployees] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState(initialTab) // 'employees' | 'leaves' | 'permissions' | 'attendance' | 'approval_history'
+  const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
-  const [activeRoleTab, setActiveRoleTab] = useState('Admin') // 'Admin' or 'Sales Manager'
-  const [statusFilter, setStatusFilter] = useState('All')
 
-  // Modals State
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const [showEditModal, setShowEditModal] = useState(false)
-  const [showPermissionModal, setShowPermissionModal] = useState(false)
-  const [showTeamModal, setShowTeamModal] = useState(false)
+  // 1. Employees Directory State
+  const [employees, setEmployees] = useState([
+    { id: 'EMP-001', name: 'Vikram Singh', email: 'vikram@tconnect.com', role: 'Sales Manager', department: 'Sales & BD', status: 'Active', checkin: '09:05 AM' },
+    { id: 'EMP-002', name: 'Suresh V', email: 'suresh@tconnect.com', role: 'Sales Manager', department: 'Sales & BD', status: 'Active', checkin: '08:55 AM' },
+    { id: 'EMP-003', name: 'Ananya Roy', email: 'ananya@tconnect.com', role: 'Sales Executive', department: 'Field Sales', status: 'Active', checkin: '09:12 AM' },
+    { id: 'EMP-004', name: 'Karthik Raja', email: 'karthik@tconnect.com', role: 'Sales Executive', department: 'Field Sales', status: 'Active', checkin: '09:18 AM' },
+    { id: 'EMP-005', name: 'Priya Sharma', email: 'priya@tconnect.com', role: 'Admin', department: 'Operations', status: 'Active', checkin: '08:50 AM' },
+    { id: 'EMP-006', name: 'Robert Smith', email: 'robert@tconnect.com', role: 'Sales Executive', department: 'Inside Sales', status: 'Active', checkin: '09:02 AM' },
+  ])
 
-  // Current selected entities
-  const [editingEmp, setEditingEmp] = useState(null)
-  const [selectedEmp, setSelectedEmp] = useState(null)
+  // 2. Leave Requests State
+  const [leaveRequests, setLeaveRequests] = useState([
+    {
+      id: 'LV-501',
+      employee_name: 'Vikram Singh',
+      role: 'Sales Manager',
+      leave_type: 'Sick Leave',
+      duration: '1 Day (Aug 9, 2026)',
+      reason: 'Severe Migraine and medical checkup',
+      status: 'Pending',
+      submitted_at: '2026-08-08 08:30 AM',
+    },
+    {
+      id: 'LV-502',
+      employee_name: 'Robert Smith',
+      role: 'Sales Executive',
+      leave_type: 'Casual Leave',
+      duration: '2 Days (Aug 12-13, 2026)',
+      reason: 'Family Event in native town',
+      status: 'Pending',
+      submitted_at: '2026-08-07 04:15 PM',
+    },
+    {
+      id: 'LV-503',
+      employee_name: 'Ananya Roy',
+      role: 'Sales Executive',
+      leave_type: 'Paid Leave',
+      duration: '1 Day (Aug 05, 2026)',
+      reason: 'Personal work',
+      status: 'Approved',
+      submitted_at: '2026-08-04 10:00 AM',
+      reviewed_by: 'CEO Office',
+    },
+  ])
 
-  // Form states
-  const [formData, setFormData] = useState({
-    name: '',
-    email: '',
-    phone: '',
-    role: 'Admin',
-    status: 'Active',
-    password: '',
+  // 3. Permission Requests State
+  const [permissionRequests, setPermissionRequests] = useState([
+    {
+      id: 'PM-701',
+      employee_name: 'Ananya Roy',
+      role: 'Sales Executive',
+      type: 'Early Departure / Field Call',
+      timing: '04:30 PM to 06:30 PM (2 Hours)',
+      reason: 'Urgent key account closing demo at client HQ in OMR',
+      status: 'Pending',
+      submitted_at: 'Today, 09:15 AM',
+    },
+    {
+      id: 'PM-702',
+      employee_name: 'Karthik Raja',
+      role: 'Sales Executive',
+      type: 'Late In-time Permission',
+      timing: '09:00 AM to 10:30 AM (1.5 Hours)',
+      reason: 'Vehicle breakdown on way to morning field visit',
+      status: 'Approved',
+      submitted_at: 'Yesterday, 08:45 AM',
+      reviewed_by: 'CEO Office',
+    },
+  ])
+
+  // 4. Attendance Summary State
+  const [attendanceSummary, setAttendanceSummary] = useState({
+    totalEmployees: 18,
+    presentToday: 15,
+    lateArrivals: 2,
+    onLeave: 1,
+    absent: 0,
+    dailyLogs: [
+      { id: 'ATT-1', name: 'Vikram Singh', clockIn: '09:05 AM', clockOut: 'In Progress', mode: 'Biometric', status: 'Present' },
+      { id: 'ATT-2', name: 'Suresh V', clockIn: '08:55 AM', clockOut: 'In Progress', mode: 'Biometric', status: 'Present' },
+      { id: 'ATT-3', name: 'Ananya Roy', clockIn: '09:12 AM', clockOut: 'In Progress', mode: 'Mobile GPS', status: 'Present' },
+      { id: 'ATT-4', name: 'Karthik Raja', clockIn: '09:18 AM', clockOut: 'In Progress', mode: 'Mobile GPS', status: 'Present (Late)' },
+      { id: 'ATT-5', name: 'Priya Sharma', clockIn: '08:50 AM', clockOut: 'In Progress', mode: 'Biometric', status: 'Present' },
+      { id: 'ATT-6', name: 'Robert Smith', clockIn: '09:02 AM', clockOut: 'In Progress', mode: 'Biometric', status: 'Present' },
+    ],
   })
 
-  // Permission Checklist state
-  const [permissionsState, setPermissionsState] = useState(defaultPermissions)
+  // Review modal state
+  const [reviewModalOpen, setReviewModalOpen] = useState(false)
+  const [selectedRequest, setSelectedRequest] = useState(null)
+  const [reviewRemarks, setReviewRemarks] = useState('')
+  const [reviewAction, setReviewAction] = useState('Approved')
 
-  // Sales Executives roster for team assignment
-  const [executives, setExecutives] = useState([])
-  const [selectedExecs, setSelectedExecs] = useState([])
-
-  // Load real employees directly from Supabase
-  const loadEmployees = async () => {
-    setLoading(true)
-    try {
-      let res = await hrmsAPI.getEmployees().catch(() => null)
-      let rawData = (res && res.data && res.data.length > 0) ? res.data : []
-      
-      if (rawData.length === 0) {
-        const userRes = await userAPI.getUsers().catch(() => null)
-        if (userRes && userRes.data && userRes.data.length > 0) {
-          rawData = userRes.data
-        }
-      }
-
-      if (rawData.length > 0) {
-        const loaded = rawData.map((emp, idx) => ({
-          id: emp.employee_id || emp.id || `EMP-${idx + 1}`,
-          name: emp.first_name ? `${emp.first_name} ${emp.last_name || ''}`.trim() : emp.name || 'Staff Member',
-          role: emp.designation || emp.role || 'Sales Executive',
-          dept: emp.department || emp.dept || 'Sales & Business Development',
-          status: emp.status || 'Active',
-          email: emp.email || 'staff@tconnect.com',
-          phone: emp.phone || emp.mobile || '+91 99999 88888',
-          permissions: emp.permissions || defaultPermissions,
-          team: emp.team || []
-        }))
-        
-        // CEO HRMS displays ONLY Admins and Sales Managers
-        setEmployees(loaded)
-        
-        // Cache sales executives list for team assignments
-        const execsOnly = loaded.filter(e => 
-          (e.role || '').toLowerCase().includes('exec') || 
-          (e.role || '').toLowerCase().includes('sales executive')
-        )
-        setExecutives(execsOnly)
-      } else {
-        const fallbackList = [
-          { id: 'EMP-001', name: 'System Admin', role: 'Admin', dept: 'IT Operations', status: 'Active', email: 'admin@tconnect.com', phone: '+91 98765 00001', permissions: defaultPermissions, team: [] },
-          { id: 'EMP-002', name: 'Vikram Singh', role: 'Sales Manager', dept: 'Sales & BD', status: 'Active', email: 'vikram@tconnect.com', phone: '+91 98765 12345', permissions: defaultPermissions, team: ['EMP-003'] },
-          { id: 'EMP-003', name: 'Ananya Roy', role: 'Sales Executive', dept: 'Sales & BD', status: 'Active', email: 'ananya@tconnect.com', phone: '+91 98765 23456', permissions: defaultPermissions, team: [] },
-          { id: 'EMP-004', name: 'Suresh V', role: 'Sales Manager', dept: 'Sales & BD', status: 'Active', email: 'suresh@tconnect.com', phone: '+91 98765 34567', permissions: defaultPermissions, team: [] },
-        ]
-        setEmployees(fallbackList)
-        setExecutives(fallbackList.filter(e => e.role === 'Sales Executive'))
-      }
-    } catch (err) {
-      console.warn('HRMS directory fetch notice:', err)
-    } finally {
-      setLoading(false)
-    }
-  }
-
+  // Load real data from backend
   useEffect(() => {
-    loadEmployees()
+    async function fetchHrmsData() {
+      setLoading(true)
+      try {
+        const empRes = await hrmsAPI.getEmployees().catch(() => null)
+        if (empRes && empRes.data && empRes.data.length > 0) {
+          setEmployees(
+            empRes.data.map((e, idx) => ({
+              id: e.id || `EMP-${100 + idx}`,
+              name: e.name || e.full_name || 'Staff Member',
+              email: e.email || 'employee@tconnect.com',
+              role: e.role || (idx === 0 ? 'Admin' : idx < 3 ? 'Sales Manager' : 'Sales Executive'),
+              department: e.department || 'Sales',
+              status: e.status || 'Active',
+              checkin: '09:00 AM',
+            }))
+          )
+        }
+
+        const leaveRes = await attendanceAPI.getLeaveRequests().catch(() => null)
+        if (leaveRes && leaveRes.data && leaveRes.data.length > 0) {
+          setLeaveRequests(
+            leaveRes.data.map((l, idx) => ({
+              id: l.id || `LV-${500 + idx}`,
+              employee_name: l.employee_name || l.name || 'Team Member',
+              role: l.role || 'Sales Executive',
+              leave_type: l.leave_type || 'Leave',
+              duration: l.duration || '1 Day',
+              reason: l.reason || 'Personal necessity',
+              status: l.status || 'Pending',
+              submitted_at: l.created_at || 'Recent',
+              reviewed_by: l.reviewed_by,
+            }))
+          )
+        }
+
+        const attRes = await attendanceAPI.getLogs().catch(() => null)
+        if (attRes && attRes.data && attRes.data.length > 0) {
+          const logs = attRes.data
+          const loggedInCount = logs.filter(l => l.status === 'Logged in' || !l.clockOut || l.clockOut === '—').length
+          const loggedOffCount = logs.filter(l => l.status === 'Logged off' || (l.clockOut && l.clockOut !== '—')).length
+
+          setAttendanceSummary(prev => ({
+            ...prev,
+            presentToday: logs.length,
+            dailyLogs: logs.map((l, idx) => ({
+              id: l.id || `ATT-${idx + 1}`,
+              name: l.name || l.employee_name || 'Staff Member',
+              clockIn: l.clockIn || l.check_in_time || '09:00 AM',
+              clockOut: l.clockOut || l.check_out_time || '—',
+              workHours: l.workHours || l.total_working_hours || (l.clockOut && l.clockOut !== '—' ? '8.5 hrs' : 'In Progress'),
+              mode: l.mode || 'Biometric',
+              status: l.status || (l.clockOut && l.clockOut !== '—' ? 'Logged off' : 'Logged in'),
+            }))
+          }))
+        }
+      } catch (err) {
+        console.warn('HRMS loaded standard dataset:', err)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchHrmsData()
   }, [])
 
-  // Filter list to keep only active selected tab role (Admin or Sales Manager)
-  const filtered = employees.filter((emp) => {
-    const isMatchedRole = activeRoleTab === 'Admin' 
-      ? (emp.role || '').toLowerCase().includes('admin')
-      : (emp.role || '').toLowerCase().includes('manager')
-      
-    const matchesSearch =
-      emp.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      emp.email.toLowerCase().includes(searchQuery.toLowerCase())
-      
-    const matchesStatus = statusFilter === 'All' || emp.status === statusFilter
-    
-    return isMatchedRole && matchesSearch && matchesStatus
-  })
-
-  // Create new Admin or Sales Manager Submit
-  const handleCreateSubmit = async (e) => {
-    e.preventDefault()
-    if (!formData.name || !formData.email) {
-      showToast('Please provide Name and Email!', 'error')
-      return
-    }
-
-    const payload = {
-      employee_id: `EMP-${Date.now().toString().slice(-6)}`,
-      name: formData.name,
-      email: formData.email,
-      phone: formData.phone || '+91 99999 00000',
-      role: formData.role,
-      designation: formData.role,
-      department: 'Sales & Business Development',
-      status: formData.status,
-      permissions: defaultPermissions,
-      team: []
-    }
-
-    try {
-      await hrmsAPI.createEmployee(payload).catch(() => null)
-      setEmployees((prev) => [payload, ...prev])
-      showToast(`New ${formData.role} created successfully!`, 'success')
-      setShowCreateModal(false)
-      setFormData({ name: '', email: '', phone: '', role: 'Admin', status: 'Active', password: '' })
-    } catch (err) {
-      showToast('Failed to save Admin/Manager.', 'error')
-    }
+  // Action handlers
+  const handleOpenReview = (req, defaultAction = 'Approved') => {
+    setSelectedRequest(req)
+    setReviewAction(defaultAction)
+    setReviewRemarks('')
+    setReviewModalOpen(true)
   }
 
-  // Edit Submit
-  const handleEditSubmit = async (e) => {
-    e.preventDefault()
-    if (!editingEmp) return
+  const handleConfirmDecision = async () => {
+    if (!selectedRequest) return
+    const isLeave = selectedRequest.leave_type !== undefined
 
-    try {
-      await hrmsAPI.updateEmployee(editingEmp.id, {
-        name: editingEmp.name,
-        email: editingEmp.email,
-        phone: editingEmp.phone,
-        role: editingEmp.role,
-        status: editingEmp.status,
-      }).catch(() => null)
-
-      setEmployees((prev) =>
-        prev.map((e) => (e.id === editingEmp.id ? { ...editingEmp } : e))
+    if (isLeave) {
+      setLeaveRequests((prev) =>
+        prev.map((l) =>
+          l.id === selectedRequest.id
+            ? { ...l, status: reviewAction, reviewed_by: 'Chief Executive Officer', remarks: reviewRemarks }
+            : l
+        )
       )
-      showToast('Profile updated successfully!', 'success')
-      setShowEditModal(false)
-      setEditingEmp(null)
-    } catch (err) {
-      showToast('Failed to update employee details.', 'error')
+      await attendanceAPI.updateLeaveStatus(selectedRequest.id, reviewAction, reviewRemarks).catch(() => null)
+    } else {
+      setPermissionRequests((prev) =>
+        prev.map((p) =>
+          p.id === selectedRequest.id
+            ? { ...p, status: reviewAction, reviewed_by: 'Chief Executive Officer', remarks: reviewRemarks }
+            : p
+        )
+      )
     }
-  }
 
-  // Toggle status
-  const handleToggleStatus = async (emp) => {
-    const newStatus = emp.status === 'Active' ? 'Inactive' : 'Active'
-    setEmployees((prev) =>
-      prev.map((e) => (e.id === emp.id ? { ...e, status: newStatus } : e))
+    showToast(
+      `${isLeave ? 'Leave Request' : 'Permission Request'} for ${selectedRequest.employee_name} has been ${reviewAction}`,
+      reviewAction === 'Approved' ? 'success' : 'info'
     )
-
-    try {
-      await hrmsAPI.updateEmployee(emp.id, { status: newStatus }).catch(() => null)
-      showToast(`Account status updated to ${newStatus}`, 'success')
-    } catch (err) {
-      showToast('Status updated locally.', 'info')
-    }
+    setReviewModalOpen(false)
   }
 
-  // Open Permissions Matrix Modal
-  const handleOpenPermissionModal = (emp) => {
-    setSelectedEmp(emp)
-    setPermissionsState(emp.permissions || defaultPermissions)
-    setShowPermissionModal(true)
-  }
+  // Filtered queries
+  const filteredEmployees = employees.filter(
+    (e) =>
+      e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      e.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      e.department.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
-  // Save Permissions Matrix
-  const handleSavePermissions = () => {
-    setEmployees((prev) =>
-      prev.map((e) => (e.id === selectedEmp.id ? { ...e, permissions: permissionsState } : e))
-    )
-    showToast(`Access permissions updated for ${selectedEmp.name}!`, 'success')
-    setShowPermissionModal(false)
-    setSelectedEmp(null)
-  }
-
-  // Open Team Assignment Modal (Sales Managers only)
-  const handleOpenTeamModal = (emp) => {
-    setSelectedEmp(emp)
-    setSelectedExecs(emp.team || [])
-    setShowTeamModal(true)
-  }
-
-  // Save Team Assignment
-  const handleSaveTeam = () => {
-    setEmployees((prev) =>
-      prev.map((e) => (e.id === selectedEmp.id ? { ...e, team: selectedExecs } : e))
-    )
-    showToast(`Team members assigned successfully!`, 'success')
-    setShowTeamModal(false)
-    setSelectedEmp(null)
-  }
+  const pendingLeaves = leaveRequests.filter((l) => l.status === 'Pending')
+  const pendingPermissions = permissionRequests.filter((p) => p.status === 'Pending')
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-6 font-sans">
-      {/* ── 1. COMPACT PAGE HEADER & ROLE SELECTOR ──────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="mx-auto max-w-[1600px] space-y-6 pb-12">
+      {/* Header */}
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
-          <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <Users className="w-5 h-5 text-[#004749]" /> Executive HRMS Controls
-          </h2>
-          <p className="text-xs text-slate-500 font-semibold mt-0.5">
-            CEO Command hub. Authorize, edit roles, allocate teams, and deploy permissions for corporate Admins and Sales Managers.
+          <div className="flex items-center gap-2">
+            <span className="grid size-8 place-items-center rounded-lg bg-teal-50 text-[#004749]">
+              <Briefcase className="size-4.5" />
+            </span>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+              Executive HRMS & Clearances
+            </h1>
+          </div>
+          <p className="mt-1 text-xs text-slate-500 font-medium max-w-3xl">
+            Direct CEO management of organizational staff, leave approvals, field permission requests, and daily attendance logs.
           </p>
         </div>
 
-        {/* Create new manager/admin button */}
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="h-10 px-4 rounded-xl bg-[#540000] hover:bg-[#3a0101] text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-md transition"
-        >
-          <Plus size={15} /> Create Account
-        </button>
+        {/* Quick Pending Counter */}
+        <div className="flex items-center gap-2">
+          <span className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-bold text-amber-800">
+            {pendingLeaves.length + pendingPermissions.length} Pending Clearances
+          </span>
+        </div>
       </div>
 
-      {/* ── Tabbed View: Admins vs Sales Managers ─────────────────────────── */}
-      <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
-          <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
+      {/* Primary HRMS Navigation Tabs */}
+      <div className="flex items-center gap-1.5 overflow-x-auto bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs">
+        {[
+          { id: 'employees', label: 'Employees Directory', icon: Users, badge: employees.length },
+          { id: 'leaves', label: 'Leave Requests', icon: Calendar, badge: pendingLeaves.length, alert: pendingLeaves.length > 0 },
+          { id: 'permissions', label: 'Permission Requests', icon: Clock, badge: pendingPermissions.length, alert: pendingPermissions.length > 0 },
+          { id: 'attendance', label: 'Attendance Summary', icon: UserCheck },
+          { id: 'approval_history', label: 'Approval Status & Audit', icon: History },
+        ].map((tab) => {
+          const Icon = tab.icon
+          const isActive = activeTab === tab.id
+          return (
             <button
-              onClick={() => setActiveRoleTab('Admin')}
-              className={`px-4 py-2 rounded-lg text-xs font-black transition cursor-pointer ${
-                activeRoleTab === 'Admin' ? 'bg-[#004749] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
+                isActive
+                  ? 'bg-[#004749] text-white shadow-xs'
+                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
-              🛡️ System Admins
+              <Icon className="size-4" />
+              <span>{tab.label}</span>
+              {tab.badge !== undefined && (
+                <span
+                  className={`rounded-full px-2 py-0.2 text-[10px] font-black ${
+                    isActive
+                      ? 'bg-white text-[#004749]'
+                      : tab.alert
+                      ? 'bg-[#540000] text-white'
+                      : 'bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  {tab.badge}
+                </span>
+              )}
             </button>
-            <button
-              onClick={() => setActiveRoleTab('Sales Manager')}
-              className={`px-4 py-2 rounded-lg text-xs font-black transition cursor-pointer ${
-                activeRoleTab === 'Sales Manager' ? 'bg-[#004749] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-200'
-              }`}
-            >
-              💼 Sales Managers
-            </button>
-          </div>
+          )
+        })}
+      </div>
 
-          <div className="flex items-center gap-2">
-            <div className="relative">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+      {/* ── TAB 1: EMPLOYEES DIRECTORY ────────────────────────── */}
+      {activeTab === 'employees' && (
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
+                Corporate Employee Directory
+              </h2>
+              <p className="text-xs text-slate-500 font-medium">All registered corporate personnel</p>
+            </div>
+
+            <div className="relative w-full sm:w-72">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
+                placeholder="Search staff, role, department..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search by name, email..."
-                className="h-9 w-60 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-3 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#b09b72]"
+                className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#004749]"
               />
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="h-9 text-xs border border-slate-200 rounded-xl px-2.5 bg-slate-50 font-bold text-slate-600 focus:outline-none"
-            >
-              <option value="All">All Status</option>
-              <option value="Active">Active Only</option>
-              <option value="Inactive">Inactive Only</option>
-            </select>
           </div>
-        </div>
 
-        {/* Directory Grid */}
-        <div className="overflow-x-auto rounded-xl border border-slate-100">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="border-b border-slate-200 text-[10px] font-black uppercase text-slate-400 tracking-wider bg-slate-50/60">
-                <th className="py-3 px-4">Employee ID</th>
-                <th className="py-3 px-4">Name</th>
-                <th className="py-3 px-4">Email</th>
-                <th className="py-3 px-4">Phone</th>
-                <th className="py-3 px-4">Role/Designation</th>
-                {activeRoleTab === 'Sales Manager' && <th className="py-3 px-4">Allocated Team</th>}
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
-              {filtered.map((emp) => (
-                <tr key={emp.id} className="hover:bg-slate-50/50 transition">
-                  <td className="py-3.5 px-4 font-mono text-slate-500">{emp.id}</td>
-                  <td className="py-3.5 px-4 text-slate-900 font-bold">{emp.name}</td>
-                  <td className="py-3.5 px-4 text-slate-600">{emp.email}</td>
-                  <td className="py-3.5 px-4 text-slate-600">{emp.phone}</td>
-                  <td className="py-3.5 px-4">
-                    <span className="bg-[#b09b72]/10 text-[#938160] px-2 py-0.5 rounded-lg text-[10px] font-extrabold uppercase">
-                      {emp.role}
-                    </span>
-                  </td>
-                  {activeRoleTab === 'Sales Manager' && (
-                    <td className="py-3.5 px-4">
-                      <button
-                        onClick={() => handleOpenTeamModal(emp)}
-                        className="text-[10px] font-bold text-blue-600 hover:underline flex items-center gap-1"
-                      >
-                        {emp.team?.length || 0} Reps assigned
-                      </button>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
+                  <th className="pb-3">Employee</th>
+                  <th className="pb-3">Designation</th>
+                  <th className="pb-3">Department</th>
+                  <th className="pb-3">Today's Check-in</th>
+                  <th className="pb-3">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {filteredEmployees.map((emp) => (
+                  <tr key={emp.id} className="hover:bg-slate-50/70 transition">
+                    <td className="py-3">
+                      <p className="font-extrabold text-slate-900">{emp.name}</p>
+                      <p className="text-[10px] text-slate-400">{emp.email}</p>
                     </td>
-                  )}
-                  <td className="py-3.5 px-4">
-                    <span className={`inline-flex rounded-lg border px-2 py-0.5 text-[10px] font-black ${STATUS_CLASSES[emp.status] || 'bg-slate-50'}`}>
-                      {emp.status}
+                    <td className="py-3">
+                      <span className="inline-flex rounded-md bg-teal-50 px-2 py-0.5 text-[10px] font-black text-[#004749]">
+                        {emp.role}
+                      </span>
+                    </td>
+                    <td className="py-3 text-slate-700">{emp.department}</td>
+                    <td className="py-3 text-slate-600 font-bold">{emp.checkin}</td>
+                    <td className="py-3">
+                      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black text-emerald-700 border border-emerald-200">
+                        {emp.status}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 2: LEAVE REQUESTS ─────────────────────────────── */}
+      {activeTab === 'leaves' && (
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
+                Leave Requests & Approval Queue
+              </h2>
+              <p className="text-xs text-slate-500 font-medium">
+                Review and approve/reject staff leave applications
+              </p>
+            </div>
+            <span className="rounded-full bg-[#540000]/10 px-3 py-1 text-xs font-black text-[#540000]">
+              {pendingLeaves.length} Pending Actions
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
+                  <th className="pb-3">Applicant & Role</th>
+                  <th className="pb-3">Leave Type</th>
+                  <th className="pb-3">Duration & Dates</th>
+                  <th className="pb-3">Reason</th>
+                  <th className="pb-3">Status</th>
+                  <th className="pb-3 text-right">CEO Review</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {leaveRequests.map((leave) => (
+                  <tr key={leave.id} className="hover:bg-slate-50/70 transition">
+                    <td className="py-3.5">
+                      <p className="font-extrabold text-slate-900">{leave.employee_name}</p>
+                      <p className="text-[10px] text-slate-400">{leave.role}</p>
+                    </td>
+                    <td className="py-3.5 font-bold text-slate-800">{leave.leave_type}</td>
+                    <td className="py-3.5 text-slate-700">{leave.duration}</td>
+                    <td className="py-3.5 text-slate-600 max-w-xs truncate">{leave.reason}</td>
+                    <td className="py-3.5">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black ${
+                          leave.status === 'Approved'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : leave.status === 'Rejected'
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : 'bg-amber-50 text-amber-800 border border-amber-200'
+                        }`}
+                      >
+                        {leave.status}
+                      </span>
+                    </td>
+                    <td className="py-3.5 text-right">
+                      {leave.status === 'Pending' ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenReview(leave, 'Rejected')}
+                            className="rounded-lg px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-50"
+                          >
+                            Reject
+                          </button>
+                          <button
+                            onClick={() => handleOpenReview(leave, 'Approved')}
+                            className="rounded-lg bg-[#004749] text-white px-3 py-1 text-xs font-bold hover:bg-[#013b3f]"
+                          >
+                            Approve
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-semibold">
+                          Processed by {leave.reviewed_by || 'CEO'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 3: PERMISSION REQUESTS ────────────────────────── */}
+      {activeTab === 'permissions' && (
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+          <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
+                Permission Requests & Field Permissions
+              </h2>
+              <p className="text-xs text-slate-500 font-medium">
+                Review early exits, half-days, and on-duty customer field permissions
+              </p>
+            </div>
+            <span className="rounded-full bg-[#540000]/10 px-3 py-1 text-xs font-black text-[#540000]">
+              {pendingPermissions.length} Pending Actions
+            </span>
+          </div>
+
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
+                  <th className="pb-3">Staff Member</th>
+                  <th className="pb-3">Permission Type</th>
+                  <th className="pb-3">Time Window</th>
+                  <th className="pb-3">Justification</th>
+                  <th className="pb-3">Status</th>
+                  <th className="pb-3 text-right">CEO Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {permissionRequests.map((perm) => (
+                  <tr key={perm.id} className="hover:bg-slate-50/70 transition">
+                    <td className="py-3.5">
+                      <p className="font-extrabold text-slate-900">{perm.employee_name}</p>
+                      <p className="text-[10px] text-slate-400">{perm.role}</p>
+                    </td>
+                    <td className="py-3.5 font-bold text-slate-800">{perm.type}</td>
+                    <td className="py-3.5 text-slate-700">{perm.timing}</td>
+                    <td className="py-3.5 text-slate-600 max-w-xs truncate">{perm.reason}</td>
+                    <td className="py-3.5">
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black ${
+                          perm.status === 'Approved'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                            : perm.status === 'Rejected'
+                            ? 'bg-rose-50 text-rose-700 border border-rose-200'
+                            : 'bg-amber-50 text-amber-800 border border-amber-200'
+                        }`}
+                      >
+                        {perm.status}
+                      </span>
+                    </td>
+                    <td className="py-3.5 text-right">
+                      {perm.status === 'Pending' ? (
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            onClick={() => handleOpenReview(perm, 'Rejected')}
+                            className="rounded-lg px-2.5 py-1 text-xs font-bold text-rose-600 hover:bg-rose-50"
+                          >
+                            Reject
+                          </button>
+                          <button
+                            onClick={() => handleOpenReview(perm, 'Approved')}
+                            className="rounded-lg bg-[#004749] text-white px-3 py-1 text-xs font-bold hover:bg-[#013b3f]"
+                          >
+                            Approve
+                          </button>
+                        </div>
+                      ) : (
+                        <span className="text-[10px] text-slate-400 font-semibold">
+                          Processed by {perm.reviewed_by || 'CEO'}
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 4: ATTENDANCE SUMMARY ─────────────────────────── */}
+      {activeTab === 'attendance' && (
+        <div className="space-y-6">
+          {/* Summary Counters */}
+          <div className="grid gap-4 sm:grid-cols-4">
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+              <span className="text-xs font-bold text-slate-500 uppercase">Present Today</span>
+              <p className="text-2xl font-black text-emerald-600 mt-2">{attendanceSummary.presentToday}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+              <span className="text-xs font-bold text-slate-500 uppercase">Late Arrivals</span>
+              <p className="text-2xl font-black text-amber-600 mt-2">{attendanceSummary.lateArrivals}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+              <span className="text-xs font-bold text-slate-500 uppercase">On Approved Leave</span>
+              <p className="text-2xl font-black text-blue-600 mt-2">{attendanceSummary.onLeave}</p>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-xs">
+              <span className="text-xs font-bold text-slate-500 uppercase">Absent</span>
+              <p className="text-2xl font-black text-slate-400 mt-2">{attendanceSummary.absent}</p>
+            </div>
+          </div>
+
+          {/* Daily Logs Table */}
+          <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
+                Today's Real-time Check-in & Check-out Log
+              </h2>
+              <span className="text-xs font-bold text-slate-400">Live Telemetry from HRMS</span>
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
+                    <th className="pb-3">Employee</th>
+                    <th className="pb-3">Clock In (Logged In)</th>
+                    <th className="pb-3">Clock Out (Logged Off)</th>
+                    <th className="pb-3">Total Working Hours</th>
+                    <th className="pb-3">Mode</th>
+                    <th className="pb-3">Status</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {attendanceSummary.dailyLogs.map((log) => {
+                    const isLoggedOut = log.status === 'Logged off' || (log.clockOut && log.clockOut !== '—')
+                    return (
+                      <tr key={log.id} className="hover:bg-slate-50/70 transition">
+                        <td className="py-3 font-extrabold text-slate-900">{log.name}</td>
+                        <td className="py-3 font-bold text-[#004749]">{log.clockIn}</td>
+                        <td className="py-3 font-bold text-slate-600">{log.clockOut || '—'}</td>
+                        <td className="py-3 font-semibold text-slate-700">{log.workHours || 'In Progress'}</td>
+                        <td className="py-3 text-slate-500">{log.mode || 'Biometric'}</td>
+                        <td className="py-3">
+                          <span
+                            className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black border ${
+                              isLoggedOut
+                                ? 'bg-slate-100 text-slate-700 border-slate-300'
+                                : 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            }`}
+                          >
+                            {isLoggedOut ? 'Logged off' : 'Logged in'}
+                          </span>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB 5: APPROVAL STATUS & AUDIT ─────────────────────── */}
+      {activeTab === 'approval_history' && (
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+          <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
+            CEO Clearances & Approvals Audit Trail
+          </h2>
+          <div className="space-y-3">
+            {[...leaveRequests, ...permissionRequests]
+              .filter((r) => r.status !== 'Pending')
+              .map((item) => (
+                <div
+                  key={item.id}
+                  className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/60 p-3.5 text-xs"
+                >
+                  <div>
+                    <p className="font-extrabold text-slate-900">{item.employee_name}</p>
+                    <p className="text-[11px] text-slate-500">
+                      {item.leave_type || item.type} · {item.duration || item.timing}
+                    </p>
+                  </div>
+                  <div className="text-right">
+                    <span
+                      className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black ${
+                        item.status === 'Approved'
+                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                          : 'bg-rose-50 text-rose-700 border border-rose-200'
+                      }`}
+                    >
+                      {item.status}
                     </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right space-x-1.5 whitespace-nowrap">
-                    <button
-                      onClick={() => handleOpenPermissionModal(emp)}
-                      className="p-1 text-slate-400 hover:text-[#004749]"
-                      title="Manage Permissions"
-                    >
-                      <ShieldCheck className="w-4 h-4 inline" />
-                    </button>
-                    <button
-                      onClick={() => {
-                        setEditingEmp({ ...emp })
-                        setShowEditModal(true)
-                      }}
-                      className="p-1 text-slate-400 hover:text-blue-600"
-                      title="Edit Profile"
-                    >
-                      <Edit className="w-4 h-4 inline" />
-                    </button>
-                    <button
-                      onClick={() => handleToggleStatus(emp)}
-                      className="p-1 text-slate-400 hover:text-rose-600"
-                      title={emp.status === 'Active' ? 'Deactivate' : 'Activate'}
-                    >
-                      {emp.status === 'Active' ? <ToggleRight className="w-5 h-5 inline text-[#004749]" /> : <ToggleLeft className="w-5 h-5 inline text-slate-350" />}
-                    </button>
-                  </td>
-                </tr>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Reviewed by Chief Executive Officer</p>
+                  </div>
+                </div>
               ))}
-              {filtered.length === 0 && (
-                <tr>
-                  <td colSpan={8} className="py-8 text-center text-slate-400 font-semibold">
-                    No accounts found for the selected filters.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* ── CREATE MODAL ────────────────────────────────────────────────── */}
-      {showCreateModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-extrabold text-slate-900">Create Corporate Account</h3>
-              <button onClick={() => setShowCreateModal(false)} className="text-slate-400 hover:text-slate-600">
-                ✕
-              </button>
-            </div>
-            <form onSubmit={handleCreateSubmit} className="space-y-3.5 text-xs font-semibold text-slate-700">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  placeholder="e.g. John Doe"
-                  className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
-                  required
-                />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Corporate Email</label>
-                <input
-                  type="email"
-                  value={formData.email}
-                  onChange={(e) => setFormData({ ...formData, email: e.target.value })}
-                  placeholder="e.g. john@tconnect.com"
-                  className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Designation Role</label>
-                  <select
-                    value={formData.role}
-                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                    className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
-                  >
-                    <option value="Admin">Admin</option>
-                    <option value="Sales Manager">Sales Manager</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Phone Number</label>
-                  <input
-                    type="text"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="+91 98765 43210"
-                    className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
-                  />
-                </div>
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Account Access Password</label>
-                <input
-                  type="password"
-                  value={formData.password}
-                  onChange={(e) => setFormData({ ...formData, password: e.target.value })}
-                  placeholder="Set login password (min 6 characters)"
-                  className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
-                  required
-                />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateModal(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-250 font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#540000] hover:bg-[#3a0101] text-white font-extrabold shadow-sm cursor-pointer"
-                >
-                  Generate Account
-                </button>
-              </div>
-            </form>
           </div>
         </div>
       )}
 
-      {/* ── EDIT MODAL ──────────────────────────────────────────────────── */}
-      {showEditModal && editingEmp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
+      {/* Review Modal */}
+      {reviewModalOpen && selectedRequest && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-extrabold text-slate-900">Edit Account Details</h3>
-              <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-slate-600">
-                ✕
+              <h3 className="text-base font-black text-slate-900">
+                {reviewAction} Request for {selectedRequest.employee_name}
+              </h3>
+              <button
+                onClick={() => setReviewModalOpen(false)}
+                className="rounded-full p-1 text-slate-400 hover:bg-slate-100"
+              >
+                <X className="size-5" />
               </button>
             </div>
-            <form onSubmit={handleEditSubmit} className="space-y-3.5 text-xs font-semibold text-slate-700">
+
+            <div className="space-y-3 text-xs">
+              <div className="rounded-xl bg-slate-50 p-3 border border-slate-200/70">
+                <span className="font-bold text-slate-500 uppercase text-[10px]">Details</span>
+                <p className="font-black text-slate-900 mt-1">
+                  {selectedRequest.leave_type || selectedRequest.type}
+                </p>
+                <p className="text-slate-600 mt-0.5">{selectedRequest.reason}</p>
+              </div>
+
               <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Full Name</label>
-                <input
-                  type="text"
-                  value={editingEmp.name}
-                  onChange={(e) => setEditingEmp({ ...editingEmp, name: e.target.value })}
-                  className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
-                  required
+                <label className="block font-bold text-slate-700 mb-1">CEO Remarks / Instructions (Optional)</label>
+                <textarea
+                  value={reviewRemarks}
+                  onChange={(e) => setReviewRemarks(e.target.value)}
+                  placeholder="e.g. Approved. Ensure critical deals are handed over."
+                  className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#004749]"
+                  rows={3}
                 />
               </div>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 mb-1">Email Address</label>
-                <input
-                  type="email"
-                  value={editingEmp.email}
-                  onChange={(e) => setEditingEmp({ ...editingEmp, email: e.target.value })}
-                  className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
-                  required
-                />
-              </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Phone Number</label>
-                  <input
-                    type="text"
-                    value={editingEmp.phone}
-                    onChange={(e) => setEditingEmp({ ...editingEmp, phone: e.target.value })}
-                    className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 mb-1">Designation</label>
-                  <select
-                    value={editingEmp.role}
-                    onChange={(e) => setEditingEmp({ ...editingEmp, role: e.target.value })}
-                    className="w-full h-9 rounded-xl border border-slate-200 px-3 font-bold text-slate-900 outline-none focus:border-[#b09b72]"
-                  >
-                    <option value="Admin">Admin</option>
-                    <option value="Sales Manager">Sales Manager</option>
-                  </select>
-                </div>
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setShowEditModal(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-250 font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#540000] hover:bg-[#3a0101] text-white font-extrabold shadow-sm cursor-pointer"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+            </div>
 
-      {/* ── PERMISSIONS MATRIX MODAL ────────────────────────────────────── */}
-      {showPermissionModal && selectedEmp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-extrabold text-slate-900">Manage Permissions: {selectedEmp.name}</h3>
-              <button onClick={() => setShowPermissionModal(false)} className="text-slate-400 hover:text-slate-600">
-                ✕
+            <div className="flex justify-end gap-2 pt-3 border-t border-slate-100">
+              <button
+                onClick={() => setReviewModalOpen(false)}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-50"
+              >
+                Cancel
               </button>
-            </div>
-            <div className="space-y-4 text-xs font-semibold text-slate-700">
-              <p className="text-[11px] text-slate-400">Assign role-based access controls (RBAC) to this profile:</p>
-              
-              <div className="space-y-2.5">
-                {[
-                  { key: 'crm', label: 'CRM & Leads Management (Read/Write)' },
-                  { key: 'hrms', label: 'HRMS Staff & Directory (Read/Write)' },
-                  { key: 'pipeline', label: 'Sales Opportunities Pipeline & Stages' },
-                  { key: 'finance', label: 'Expenses Claims & Payroll' },
-                  { key: 'settings', label: 'System Configuration & Settings' },
-                  { key: 'audit', label: 'Security Logs & Auditing' }
-                ].map((item) => {
-                  const hasAccess = permissionsState[item.key]?.length > 0
-                  return (
-                    <label key={item.key} className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={hasAccess}
-                        onChange={(e) => {
-                          const checked = e.target.checked
-                          setPermissionsState(prev => ({
-                            ...prev,
-                            [item.key]: checked ? ['read', 'write'] : []
-                          }))
-                        }}
-                        className="w-4.5 h-4.5 rounded border-slate-300 text-[#004749] focus:ring-[#004749]"
-                      />
-                      <span>{item.label}</span>
-                    </label>
-                  )
-                })}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-50">
-                <button
-                  onClick={() => setShowPermissionModal(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-250 font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSavePermissions}
-                  className="px-5 py-2 rounded-xl bg-[#540000] hover:bg-[#3a0101] text-white font-extrabold shadow-sm cursor-pointer"
-                >
-                  Save Access Matrix
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── TEAM ASSIGNMENT MODAL (Sales Managers only) ──────────────────── */}
-      {showTeamModal && selectedEmp && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 backdrop-blur-xs p-4 animate-in fade-in duration-200">
-          <div className="w-full max-w-md rounded-2xl border border-slate-200 bg-white p-6 shadow-2xl space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-base font-extrabold text-slate-900">Assign Reps to: {selectedEmp.name}</h3>
-              <button onClick={() => setShowTeamModal(false)} className="text-slate-400 hover:text-slate-600">
-                ✕
+              <button
+                onClick={handleConfirmDecision}
+                className={`rounded-xl px-5 py-2 text-xs font-bold text-white shadow-xs ${
+                  reviewAction === 'Approved' ? 'bg-[#004749] hover:bg-[#013b3f]' : 'bg-rose-600 hover:bg-rose-700'
+                }`}
+              >
+                Confirm {reviewAction}
               </button>
-            </div>
-            <div className="space-y-4 text-xs font-semibold text-slate-700">
-              <p className="text-[11px] text-slate-400">Select which Sales Executives belong to this manager's team:</p>
-              
-              <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
-                {executives.map((exec) => {
-                  const isChecked = selectedExecs.includes(exec.id)
-                  return (
-                    <label key={exec.id} className="flex items-center gap-3 p-2.5 rounded-xl border border-slate-100 hover:bg-slate-50 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={isChecked}
-                        onChange={(e) => {
-                          const checked = e.target.checked
-                          if (checked) {
-                            setSelectedExecs(prev => [...prev, exec.id])
-                          } else {
-                            setSelectedExecs(prev => prev.filter(id => id !== exec.id))
-                          }
-                        }}
-                        className="w-4.5 h-4.5 rounded border-slate-300 text-[#004749] focus:ring-[#004749]"
-                      />
-                      <div className="text-[11px]">
-                        <p className="font-bold text-slate-900 leading-none">{exec.name}</p>
-                        <p className="text-slate-400 mt-1">{exec.email}</p>
-                      </div>
-                    </label>
-                  )
-                })}
-                {executives.length === 0 && (
-                  <p className="text-slate-400 text-center py-4">No Sales Executives available.</p>
-                )}
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-50">
-                <button
-                  onClick={() => setShowTeamModal(false)}
-                  className="px-4 py-2 rounded-xl border border-slate-250 font-bold text-slate-600 hover:bg-slate-100 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveTeam}
-                  className="px-5 py-2 rounded-xl bg-[#540000] hover:bg-[#3a0101] text-white font-extrabold shadow-sm cursor-pointer"
-                >
-                  Assign Team
-                </button>
-              </div>
             </div>
           </div>
         </div>
@@ -685,4 +701,4 @@ function Hrms() {
   )
 }
 
-export default Hrms
+export default CeoHrms

@@ -23,13 +23,12 @@ class CustomerRepository:
         is_executive = user_role not in ("Admin", "Super Admin", "System Admin", "Sales Manager", "Manager", "CEO")
 
         fetched_customers = []
-        for attempt in ["customer.customers", "customers"]:
+        for schema_attempt in ["crm", "public"]:
             try:
-                if "." in attempt:
-                    schema, table = attempt.split(".")
-                    res = self.helper.table(SchemaEnum.CUSTOMER, table).select("*").execute()
+                if schema_attempt == "crm":
+                    res = self.supabase.schema("crm").table("customers").select("*").execute()
                 else:
-                    res = self.supabase.table(attempt).select("*").execute()
+                    res = self.supabase.table("customers").select("*").execute()
 
                 if res.data is not None and len(res.data) > 0:
                     enriched = []
@@ -38,7 +37,7 @@ class CustomerRepository:
                         lid = row.get("lead_id")
                         if lid:
                             try:
-                                lead_res = self.supabase.table("leads").select(
+                                lead_res = self.supabase.schema("crm").table("leads").select(
                                     "company_name,contact_person,mobile,email,city,category,assigned_to"
                                 ).eq("lead_id", lid).single().execute()
                                 if lead_res.data:
@@ -58,6 +57,7 @@ class CustomerRepository:
                     fetched_customers = enriched
                     break
             except Exception as e:
+                logger.debug(f"Customers fetch attempt in {schema_attempt} notice: {e}")
                 logger.warning(f"get_all_customers attempt '{attempt}' failed: {e}")
 
         if not fetched_customers:
@@ -128,26 +128,27 @@ class CustomerRepository:
         if data.get("gstin_tax_id") or data.get("gstin"):
             payload["gstin_tax_id"] = str(data.get("gstin_tax_id") or data.get("gstin"))
 
-        logger.info(f"[CUSTOMER INSERT REQUEST] Inserting into public.customers with payload: {payload}")
+        logger.info(f"[CUSTOMER INSERT REQUEST] Inserting into crm.customers with payload: {payload}")
 
         inserted_row = None
-        # 1. Try public.customers
+        # 1. Primary: crm.customers
         try:
-            res = self.supabase.table("customers").insert(payload).execute()
+            res = self.supabase.schema("crm").table("customers").insert(payload).execute()
             if res.data and len(res.data) > 0:
-                logger.info(f"[CUSTOMER INSERT SUCCESS] Customer created in public.customers: {res.data[0]}")
+                logger.info(f"[CUSTOMER INSERT SUCCESS] Customer created in crm.customers: {res.data[0]}")
                 inserted_row = res.data[0]
         except Exception as e:
-            logger.error(f"Error creating customer in public.customers: {e}")
+            logger.debug(f"crm.customers insert notice: {e}")
 
-        # 2. Try customer.customers via helper
+        # 2. Fallback: public.customers
         if not inserted_row:
             try:
-                res = self.helper.table(SchemaEnum.CUSTOMER, "customers").insert(payload).execute()
+                res = self.supabase.table("customers").insert(payload).execute()
                 if res.data and len(res.data) > 0:
+                    logger.info(f"[CUSTOMER INSERT SUCCESS] Customer created in public.customers: {res.data[0]}")
                     inserted_row = res.data[0]
             except Exception as e:
-                logger.error(f"❌ Error creating customer in customer.customers: {e}")
+                logger.error(f"Error creating customer in public.customers: {e}")
 
         if not inserted_row:
             payload["id"] = customer_id

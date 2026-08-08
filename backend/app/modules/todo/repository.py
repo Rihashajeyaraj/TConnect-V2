@@ -20,20 +20,30 @@ class TodoRepository:
 
     def get_user_todos(self, user_id: str) -> List[Dict[str, Any]]:
         try:
-            res = self.supabase.table("todos").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(50).execute()
+            res = self.supabase.schema("system").table("todos").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(50).execute()
             if res.data is not None:
                 return res.data
-        except Exception as e:
-            logger.debug(f"Supabase todos fetch notice: {e}")
+        except Exception:
+            try:
+                res = self.supabase.table("todos").select("*").eq("user_id", user_id).order("created_at", desc=True).limit(50).execute()
+                if res.data is not None:
+                    return res.data
+            except Exception as e:
+                logger.debug(f"todos fetch notice: {e}")
         return _in_memory_todos
 
     def get_all_todos(self) -> List[Dict[str, Any]]:
         try:
-            res = self.supabase.table("todos").select("*").order("created_at", desc=True).limit(50).execute()
+            res = self.supabase.schema("system").table("todos").select("*").order("created_at", desc=True).limit(50).execute()
             if res.data is not None:
                 return res.data
-        except Exception as e:
-            logger.debug(f"Supabase todos fetch notice: {e}")
+        except Exception:
+            try:
+                res = self.supabase.table("todos").select("*").order("created_at", desc=True).limit(50).execute()
+                if res.data is not None:
+                    return res.data
+            except Exception as e:
+                logger.debug(f"todos fetch notice: {e}")
         return _in_memory_todos
 
     def create_todo(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -41,21 +51,31 @@ class TodoRepository:
         data["is_completed"] = data.get("is_completed", False)
         data["created_at"] = datetime.now().isoformat()
         try:
-            res = self.supabase.table("todos").insert(data).execute()
+            res = self.supabase.schema("system").table("todos").insert(data).execute()
             if res.data:
                 return res.data[0]
-        except Exception as e:
-            logger.debug(f"Supabase todo insert notice: {e}")
+        except Exception:
+            try:
+                res = self.supabase.table("todos").insert(data).execute()
+                if res.data:
+                    return res.data[0]
+            except Exception as e:
+                logger.debug(f"todo insert notice: {e}")
         _in_memory_todos.insert(0, data)
         return data
 
     def update_todo(self, todo_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         try:
-            res = self.supabase.table("todos").update(updates).eq("id", todo_id).execute()
+            res = self.supabase.schema("system").table("todos").update(updates).eq("id", todo_id).execute()
             if res.data:
                 return res.data[0]
-        except Exception as e:
-            logger.debug(f"Supabase todo update notice: {e}")
+        except Exception:
+            try:
+                res = self.supabase.table("todos").update(updates).eq("id", todo_id).execute()
+                if res.data:
+                    return res.data[0]
+            except Exception as e:
+                logger.debug(f"todo update notice: {e}")
         for todo in _in_memory_todos:
             if todo["id"] == todo_id:
                 todo.update(updates)
@@ -64,10 +84,14 @@ class TodoRepository:
 
     def delete_todo(self, todo_id: str) -> bool:
         try:
-            self.supabase.table("todos").delete().eq("id", todo_id).execute()
+            self.supabase.schema("system").table("todos").delete().eq("id", todo_id).execute()
             return True
-        except Exception as e:
-            logger.debug(f"Supabase todo delete notice: {e}")
+        except Exception:
+            try:
+                self.supabase.table("todos").delete().eq("id", todo_id).execute()
+                return True
+            except Exception as e:
+                logger.debug(f"todo delete notice: {e}")
         global _in_memory_todos
         _in_memory_todos = [t for t in _in_memory_todos if t["id"] != todo_id]
         return True

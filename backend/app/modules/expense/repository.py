@@ -21,23 +21,24 @@ class ExpenseRepository:
         is_executive = user_role not in ("Admin", "Super Admin", "System Admin", "Sales Manager", "Manager", "CEO")
 
         claims = []
-        # Primary: try public.expenses
+        # Primary: try finance.expenses
         try:
-            res = self.supabase.table("expenses").select("*").execute()
+            res = self.supabase.schema("finance").table("expenses").select("*").execute()
             if res.data is not None:
                 claims = res.data
-                logger.info(f"Fetched {len(claims)} expenses from public.expenses")
+                logger.info(f"Fetched {len(claims)} expenses from finance.expenses")
         except Exception as e:
-            logger.warning(f"public.expenses fetch failed: {e}")
+            logger.debug(f"finance.expenses fetch notice: {e}")
 
-        # Fallback: try schema helper
+        # Fallback: try public.expenses
         if not claims:
             try:
-                res = self.helper.table(SchemaEnum.EXPENSE, "claims").select("*").execute()
+                res = self.supabase.table("expenses").select("*").execute()
                 if res.data is not None:
                     claims = res.data
+                    logger.info(f"Fetched {len(claims)} expenses from public.expenses")
             except Exception as e:
-                logger.warning(f"expense.claims fetch failed: {e}")
+                logger.warning(f"public.expenses fetch failed: {e}")
 
         from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
         allowed = get_allowed_user_identifiers(user_payload)
@@ -108,9 +109,23 @@ class ExpenseRepository:
         except Exception as notif_err:
             logger.warning(f"Failed dispatching expense notification to manager: {notif_err}")
 
-        logger.info(f"[EXPENSE INSERT REQUEST] Inserting into public.expenses with payload: {payload}")
+        logger.info(f"[EXPENSE INSERT REQUEST] Inserting into finance.expenses with payload: {payload}")
 
-        # 1. Try public.expenses
+        # 1. Primary: finance.expenses
+        try:
+            res = self.supabase.schema("finance").table("expenses").insert(payload).execute()
+            if res.data and len(res.data) > 0:
+                logger.info(f"[EXPENSE INSERT SUCCESS] Expense created in finance.expenses: {res.data[0]}")
+                out_exp = res.data[0]
+                out_exp["employee_name"] = emp_name
+                out_exp["employee_phone"] = emp_phone
+                out_exp["assigned_to_email"] = user_email
+                out_exp["reporting_manager_email"] = mgr_email
+                return out_exp
+        except Exception as e:
+            logger.debug(f"finance.expenses insert notice: {e}")
+
+        # 2. Fallback: public.expenses
         try:
             res = self.supabase.table("expenses").insert(payload).execute()
             if res.data and len(res.data) > 0:
@@ -124,26 +139,22 @@ class ExpenseRepository:
         except Exception as e:
             logger.error(f"Error creating expense in public.expenses: {e}")
 
-        # 2. Fallback: try expense.claims schema
-        try:
-            res = self.helper.table(SchemaEnum.EXPENSE, "claims").insert(payload).execute()
-            if res.data and len(res.data) > 0:
-                logger.info(f"Expense persisted in expense.claims: {res.data[0].get('id')}")
-                return res.data[0]
-        except Exception as e:
-            logger.error(f"expense.claims insert failed: {e}")
-
         # 3. In-memory fallback
         logger.warning(f"Expense {expense_id} saved in-memory only (Supabase unavailable)")
         return payload
 
     def get_expense_by_id(self, exp_id: str) -> Optional[Dict[str, Any]]:
         try:
-            res = self.supabase.table("expenses").select("*").eq("id", exp_id).execute()
+            res = self.supabase.schema("finance").table("expenses").select("*").eq("id", exp_id).execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
         except Exception:
-            pass
+            try:
+                res = self.supabase.table("expenses").select("*").eq("id", exp_id).execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            except Exception:
+                pass
 
         expenses = self.get_all_expenses()
         for e in expenses:
@@ -165,14 +176,16 @@ class ExpenseRepository:
         }
 
         try:
-            res = self.supabase.table("expenses").update(payload).eq("id", exp_id).execute()
+            res = self.supabase.schema("finance").table("expenses").update(payload).eq("id", exp_id).execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
-        except Exception as e:
-            logger.warning(f"public.expenses update failed: {e}")
-
-        try:
-            res = self.helper.table(SchemaEnum.EXPENSE, "claims").update(payload).eq("id", exp_id).execute()
+        except Exception:
+            try:
+                res = self.supabase.table("expenses").update(payload).eq("id", exp_id).execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            except Exception as e:
+                logger.warning(f"expenses update failed: {e}")
             if res.data and len(res.data) > 0:
                 return res.data[0]
         except Exception as e:

@@ -369,8 +369,8 @@ export default function Attendance() {
         logoutTime: "—",
         loginLocation: currentLocation,
         logoutLocation: "—",
-        workHours: "—",
-        status: "Present",
+        workHours: "In Progress",
+        status: "Logged in",
         latitude: gpsCoords.lat,
         longitude: gpsCoords.lng,
         verifiedByFace: true,
@@ -381,8 +381,8 @@ export default function Attendance() {
       setAttendanceLogs(updatedLogs);
 
       setSuccessModalData({
-        title: "Check-In Successful",
-        type: "Check-In",
+        title: "Logged in successfully!",
+        type: "Check-In (Logged In)",
         employee: userName,
         empId: userEmpCode,
         time: nowStr,
@@ -391,7 +391,7 @@ export default function Attendance() {
         remarks: userRemarks,
       });
 
-      showToast(`✅ Check-In Successful at ${nowStr}! Synced to Supabase.`, "success");
+      showToast(`✅ Logged in successfully at ${nowStr}! Synced to HRMS.`, "success");
     } else {
       // LOGOUT
       const updatedLogs = [...attendanceLogs];
@@ -414,6 +414,7 @@ export default function Attendance() {
         updatedLogs[0].logoutTime = nowStr;
         updatedLogs[0].logoutLocation = currentLocation;
         updatedLogs[0].workHours = calcHours;
+        updatedLogs[0].status = "Logged off";
         updatedLogs[0].remarks = userRemarks;
       } else {
         updatedLogs.unshift({
@@ -423,7 +424,7 @@ export default function Attendance() {
           loginLocation: currentLocation,
           logoutLocation: currentLocation,
           workHours: calcHours,
-          status: "Present",
+          status: "Logged off",
           latitude: gpsCoords.lat,
           longitude: gpsCoords.lng,
           verifiedByFace: true,
@@ -434,8 +435,8 @@ export default function Attendance() {
       setAttendanceLogs(updatedLogs);
 
       setSuccessModalData({
-        title: "Check-Out Successful",
-        type: "Check-Out",
+        title: "Logged off successfully!",
+        type: "Check-Out (Logged Off)",
         employee: userName,
         empId: userEmpCode,
         time: nowStr,
@@ -445,7 +446,7 @@ export default function Attendance() {
         remarks: userRemarks,
       });
 
-      showToast(`🔴 Check-Out Successful at ${nowStr}! Synced to Supabase.`, "info");
+      showToast(`🔴 Logged off successfully at ${nowStr}! Synced to HRMS.`, "info");
     }
 
     setPunchRemarks("");

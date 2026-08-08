@@ -21,7 +21,7 @@ class PipelineRepository:
 
         opportunities = []
         try:
-            res = self.helper.table(SchemaEnum.PIPELINE, "opportunities").select("*").execute()
+            res = self.supabase.schema("crm").table("opportunities").select("*").execute()
             if res.data is not None:
                 opportunities = res.data
         except Exception:
@@ -43,7 +43,7 @@ class PipelineRepository:
         data["id"] = data.get("id") or str(uuid.uuid4())
         data["opportunity_id"] = data.get("opportunity_id") or data["id"]
         try:
-            res = self.helper.table(SchemaEnum.PIPELINE, "opportunities").insert(data).execute()
+            res = self.supabase.schema("crm").table("opportunities").insert(data).execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
         except Exception:

@@ -3,47 +3,39 @@ import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import {
   LayoutDashboard,
-  Target,
+  TrendingUp,
   Users,
-  Calendar as CalendarIcon,
-  MessageSquare,
-  GitBranch,
-  UserCheck,
-  Clock,
-  CalendarDays,
+  Users2,
+  Briefcase,
   DollarSign,
   FileText,
+  Bell,
   Settings,
   Menu,
   X,
   LogOut,
-  ChevronDown,
-  Search,
-  Plus,
-  Bell,
   ChevronLeft,
   ChevronRight,
-  User,
-  PlusCircle,
-  Briefcase,
-  CheckCircle,
+  Search,
+  Calendar as CalendarIcon,
+  Shield,
+  Activity,
+  CheckCircle2,
 } from 'lucide-react'
 
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { clearUserCache } from '../../utils/userScope.js'
-import { formatDate } from '../../utils/dateUtils.js'
 
+// Exactly the 9 requested CEO main navigation items
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/ceo' },
-  { label: 'Admin Management', icon: UserCheck, path: '/ceo/users' },
-  { label: 'Leads', icon: Target, path: '/ceo/leads' },
-  { label: 'Customer', icon: UserCheck, path: '/ceo/customer' },
-  { label: 'Visits', icon: CalendarIcon, path: '/ceo/visits' },
-  { label: 'Follow-ups', icon: MessageSquare, path: '/ceo/followups' },
-  { label: 'Sales Pipeline', icon: GitBranch, path: '/ceo/opportunities' },
-  { label: 'HRMS', icon: Users, path: '/ceo/hrms' },
-  { label: 'Expenses', icon: DollarSign, path: '/ceo/expenses' },
+  { label: 'Sales Overview', icon: TrendingUp, path: '/ceo/sales-overview' },
+  { label: 'Customers', icon: Users, path: '/ceo/customers' },
+  { label: 'Team Management', icon: Users2, path: '/ceo/team-management' },
+  { label: 'HRMS', icon: Briefcase, path: '/ceo/hrms' },
+  { label: 'Revenue & Finance', icon: DollarSign, path: '/ceo/revenue-finance' },
   { label: 'Reports', icon: FileText, path: '/ceo/reports' },
+  { label: 'Notifications', icon: Bell, path: '/ceo/notifications', badge: '3' },
   { label: 'Settings', icon: Settings, path: '/ceo/settings' },
 ]
 
@@ -52,35 +44,13 @@ function CeoLayout() {
   const currentUser = useCurrentUser()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
-  const [profileOpen, setProfileOpen] = useState(false)
-  const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const [calendarOpen, setCalendarOpen] = useState(false)
-  const [quickActionOpen, setQuickActionOpen] = useState(false)
-  
-  // Search state
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [showSearchResults, setShowSearchResults] = useState(false)
-
-  // Quick Action form state
-  const [actionType, setActionType] = useState('lead') // lead or opportunity
-  const [leadName, setLeadName] = useState('')
-  const [companyName, setCompanyName] = useState('')
-  const [leadPhone, setLeadPhone] = useState('')
-  const [leadSource, setLeadSource] = useState('Website')
-  const [leadAssigned, setLeadAssigned] = useState('John Doe')
-  const [oppValue, setOppValue] = useState('')
-  const [oppStage, setOppStage] = useState('Lead')
+  const [calendarOpen, setCalendarOpen] = useState(false)
 
   const location = useLocation()
   const navigate = useNavigate()
-
-
-
-  // Sync state with pages using custom window event
-  const dispatchStateUpdate = () => {
-    window.dispatchEvent(new Event('tc_state_update'))
-  }
 
   const currentDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -89,9 +59,9 @@ function CeoLayout() {
     day: 'numeric',
   })
 
-  // Handle global search filtering
+  // Global search filtering
   useEffect(() => {
-    if (searchQuery.trim().length === 0) {
+    if (!searchQuery.trim()) {
       setSearchResults([])
       return
     }
@@ -99,101 +69,34 @@ function CeoLayout() {
     const query = searchQuery.toLowerCase()
     const results = []
 
-    // Search pages
-    navItems.forEach(item => {
+    // Search nav pages
+    navItems.forEach((item) => {
       if (item.label.toLowerCase().includes(query)) {
-        results.push({ type: 'page', title: `Go to ${item.label}`, path: item.path, desc: 'Sidebar Menu Page' })
+        results.push({ type: 'page', title: `Go to ${item.label}`, path: item.path, desc: 'Executive Navigation' })
       }
     })
 
-    // Search leads from localStorage
-    const savedLeads = JSON.parse(localStorage.getItem('tc_leads')) || []
-    savedLeads.forEach(lead => {
-      if (lead.name.toLowerCase().includes(query) || lead.company.toLowerCase().includes(query)) {
-        results.push({ type: 'lead', title: lead.name, path: '/ceo/leads', desc: `Lead at ${lead.company}` })
-      }
-    })
+    // Search leads/opportunities from localStorage if present
+    try {
+      const savedLeads = JSON.parse(localStorage.getItem('tc_leads')) || []
+      savedLeads.forEach((lead) => {
+        if ((lead.name || '').toLowerCase().includes(query) || (lead.company || '').toLowerCase().includes(query)) {
+          results.push({ type: 'lead', title: lead.name || lead.company, path: '/ceo/sales-overview', desc: `Lead at ${lead.company}` })
+        }
+      })
 
-    // Search opportunities
-    const savedOpps = JSON.parse(localStorage.getItem('tc_opportunities')) || []
-    savedOpps.forEach(opp => {
-      if (opp.company.toLowerCase().includes(query)) {
-        results.push({ type: 'opportunity', title: `Deal: ${opp.company}`, path: '/ceo/opportunities', desc: `Value: ₹${opp.value.toLocaleString()} (${opp.stage})` })
-      }
-    })
+      const savedOpps = JSON.parse(localStorage.getItem('tc_opportunities')) || []
+      savedOpps.forEach((opp) => {
+        if ((opp.company || '').toLowerCase().includes(query)) {
+          results.push({ type: 'opportunity', title: `Deal: ${opp.company}`, path: '/ceo/sales-overview', desc: `Value: ₹${(opp.value || 0).toLocaleString()} (${opp.stage})` })
+        }
+      })
+    } catch {
+      // ignore parse errors
+    }
 
     setSearchResults(results)
   }, [searchQuery])
-
-  // Handle Quick Action submissions
-  const handleQuickActionSubmit = (e) => {
-    e.preventDefault()
-
-    if (actionType === 'lead') {
-      if (!leadName || !companyName) {
-        showToast('Please fill out all required fields!', 'error')
-        return
-      }
-      const savedLeads = JSON.parse(localStorage.getItem('tc_leads')) || []
-      const newLead = {
-        id: Date.now().toString(),
-        name: leadName,
-        company: companyName,
-        status: 'New',
-        source: leadSource,
-        assigned: leadAssigned,
-        phone: leadPhone || '+91 99999 88888',
-        date: new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }),
-        color: 'bg-blue-600',
-      }
-      localStorage.setItem('tc_leads', JSON.stringify([newLead, ...savedLeads]))
-      
-      // Auto-add customer as well
-      const savedCustomers = JSON.parse(localStorage.getItem('tc_customers')) || []
-      const newCust = {
-        id: Date.now().toString(),
-        name: companyName,
-        contact: leadName,
-        email: `${leadName.toLowerCase().replace(' ', '')}@${companyName.toLowerCase().replace(' ', '')}.com`,
-        phone: leadPhone || '+91 99999 88888',
-        location: 'Chennai',
-        value: '₹0',
-        color: 'bg-blue-500',
-      }
-      localStorage.setItem('tc_customers', JSON.stringify([newCust, ...savedCustomers]))
-
-      // Reset
-      setLeadName('')
-      setCompanyName('')
-      setLeadPhone('')
-      showToast(`Lead for ${companyName} created successfully!`, 'success')
-    } else {
-      if (!companyName || !oppValue) {
-        showToast('Please fill out all required fields!', 'error')
-        return
-      }
-      const savedOpps = JSON.parse(localStorage.getItem('tc_opportunities')) || []
-      const newOpp = {
-        id: Date.now().toString(),
-        company: companyName,
-        rep: leadAssigned,
-        value: parseFloat(oppValue) || 10000,
-        stage: oppStage,
-        probability: oppStage === 'Won' ? 100 : oppStage === 'Lost' ? 0 : 30,
-        age: 1,
-      }
-      localStorage.setItem('tc_opportunities', JSON.stringify([newOpp, ...savedOpps]))
-      
-      // Reset
-      setCompanyName('')
-      setOppValue('')
-      setOppStage('Lead')
-      showToast(`Opportunity for ${companyName} created successfully!`, 'success')
-    }
-
-    dispatchStateUpdate()
-    setQuickActionOpen(false)
-  }
 
   // Handle Sign Out
   const handleSignOut = () => {
@@ -202,63 +105,32 @@ function CeoLayout() {
     window.location.href = '/'
   }
 
-  const activeNav = navItems.find((item) => location.pathname === item.path)
-
-  const pageTitles = {
-    '/ceo': 'Dashboard',
-    '/ceo/leads': 'Leads',
-    '/ceo/customer': 'Customer Database',
-    '/ceo/visits': 'Client Visits Log',
-    '/ceo/followups': 'Follow-ups Dashboard',
-    '/ceo/opportunities': 'Opportunities Pipeline',
-    '/ceo/employee': 'Employee Performance',
-    '/ceo/attendance': 'Daily Attendance Sheet',
-    '/ceo/leaves': 'Leave Management',
-    '/ceo/expenses': 'Expenses Claims',
-    '/ceo/reports': 'Reports & Analytics',
-    '/ceo/settings': 'Settings',
+  // Active item matcher
+  const isNavActive = (itemPath) => {
+    if (itemPath === '/ceo') {
+      return location.pathname === '/ceo' || location.pathname === '/ceo/' || location.pathname === '/ceo/dashboard'
+    }
+    return location.pathname.startsWith(itemPath)
   }
 
-  const pageSubtitle = {
-    '/ceo': 'CEO / Founder · Strategic Overview',
-    '/ceo/leads': 'CEO / Founder · Lead Tracking',
-    '/ceo/customer': 'CEO / Founder · Customer Profiles',
-    '/ceo/visits': 'CEO / Founder · Field Logs',
-    '/ceo/followups': 'CEO / Founder · Action Items',
-    '/ceo/opportunities': 'CEO / Founder · Opportunity Kanban Board',
-    '/ceo/employee': 'CEO / Founder · Team Performance Analytics',
-    '/ceo/attendance': 'CEO / Founder · Time Logs',
-    '/ceo/leaves': 'CEO / Founder · Leave Approvals',
-    '/ceo/expenses': 'CEO / Founder · Expense Reimbursements',
-    '/ceo/reports': 'CEO / Founder · Business Analytics',
-    '/ceo/settings': 'CEO / Founder · Preferences',
-  }
-
-  const mockNotifications = [
-    { id: 1, title: 'Big Deal Won!', desc: 'Global Corp moved to Won (₹2.5L)', time: '5m ago', read: false },
-    { id: 2, title: 'New Lead Assigned', desc: 'Next Gen Tech assigned to Mary Jane', time: '1h ago', read: false },
-    { id: 3, title: 'Weekly Reports Ready', desc: 'Sales performance reports are compiled', time: '5h ago', read: true },
-  ]
-
-  // Mock Calendar agenda
-  const mockAgenda = [
-    { id: 1, title: 'Visit ABC Pvt Ltd', exec: 'John Doe', time: '10:05 AM - 11:15 AM' },
-    { id: 2, title: 'Demo at Tech Solutions', exec: 'Mary Jane', time: '11:30 AM - 12:45 PM' },
-    { id: 3, title: 'Contract Call Global Corp', exec: 'Robert Smith', time: '02:00 PM - 03:00 PM' },
+  const mockSchedule = [
+    { id: 1, title: 'Quarterly Executive Review', time: '10:30 AM - 11:30 AM', rep: 'Sales Managers' },
+    { id: 2, title: 'Enterprise Deal Closing (Apex Tech)', time: '02:00 PM - 03:00 PM', rep: 'Vikram Singh' },
+    { id: 3, title: 'HR & Approvals Clearance', time: '04:30 PM - 05:00 PM', rep: 'Operations' },
   ]
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#ededed]/40 text-slate-800 font-sans antialiased">
-      {/* Sidebar */}
+    <div className="flex h-screen overflow-hidden bg-[#f4f6f8] text-slate-800 font-sans antialiased">
+      {/* CEO Sidebar */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[#013b3f]/40 bg-[#004749] transition-all duration-300 w-64 lg:static lg:h-screen lg:shrink-0 ${
+        className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[#013b3f]/40 bg-[#004749] text-white shadow-2xl transition-all duration-300 w-64 lg:static lg:h-screen lg:shrink-0 ${
           isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'
         } ${sidebarOpen ? 'translate-x-0' : 'max-lg:-translate-x-full'}`}
       >
-        {/* Branding header */}
-        <div className="flex h-16 items-center justify-between border-b border-[#013b3f]/40 px-4 shrink-0 bg-[#004749]">
-          <div className="flex items-center gap-2">
-            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#540000] text-white shadow-md shadow-[#540000]/25 border border-[#540000]/30">
+        {/* Sidebar Header & Brand */}
+        <div className="flex h-16 items-center justify-between border-b border-[#013b3f]/50 px-4 shrink-0 bg-[#004749]">
+          <div className="flex items-center gap-2.5 overflow-hidden">
+            <span className="grid size-9 shrink-0 place-items-center rounded-xl bg-[#540000] text-white shadow-md shadow-[#540000]/30 border border-[#540000]/40">
               <svg
                 className="size-5"
                 viewBox="0 0 36 36"
@@ -273,131 +145,192 @@ function CeoLayout() {
               </svg>
             </span>
             {!isSidebarCollapsed && (
-              <div className="animate-in fade-in duration-300">
-                <p className="m-0 text-md font-extrabold tracking-tight text-white">
+              <div className="animate-in fade-in duration-200 truncate">
+                <p className="m-0 text-base font-black tracking-tight text-white leading-none">
                   Twite<span className="text-[#b09b72]">Connect</span>
                 </p>
+                <span className="text-[10px] font-bold uppercase tracking-widest text-[#b09b72]/90">
+                  CEO Portal
+                </span>
               </div>
             )}
           </div>
-          
-          {/* Collapse toggle (Desktop only, at the top) */}
+
+          {/* Desktop Collapse Toggle */}
           <button
             onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
-            className="hidden lg:grid size-7 place-items-center rounded-lg border border-[#013b3f]/40 bg-[#013b3f]/20 text-[#cccccc] hover:text-white hover:bg-[#013b3f]/40 transition shrink-0 ml-2"
-            title={isSidebarCollapsed ? "Expand Sidebar" : "Collapse Sidebar"}
+            className="hidden lg:grid size-7 place-items-center rounded-lg border border-[#013b3f]/60 bg-[#013b3f]/30 text-[#cccccc] hover:text-white hover:bg-[#013b3f]/60 transition shrink-0"
+            title={isSidebarCollapsed ? 'Expand Sidebar' : 'Collapse Sidebar'}
+            aria-label="Toggle sidebar collapse"
           >
-            {isSidebarCollapsed ? <ChevronRight className="size-4.5" /> : <ChevronLeft className="size-4.5" />}
+            {isSidebarCollapsed ? <ChevronRight className="size-4" /> : <ChevronLeft className="size-4" />}
           </button>
 
+          {/* Mobile Close Button */}
           <button
-            className="ml-auto rounded-lg p-1 text-[#cccccc] hover:bg-[#013b3f]/30 lg:hidden"
+            className="ml-auto rounded-lg p-1 text-[#cccccc] hover:bg-[#013b3f]/40 lg:hidden"
             onClick={() => setSidebarOpen(false)}
+            aria-label="Close sidebar"
           >
             <X className="size-5" />
           </button>
         </div>
 
-        {/* Navigation list */}
-        <nav className="flex-1 overflow-y-auto px-3 py-6 space-y-1 bg-[#004749]">
+        {/* Navigation List - 9 Executive Items */}
+        <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5 bg-[#004749] scrollbar-thin scrollbar-thumb-[#013b3f]">
           {navItems.map((item) => {
             const Icon = item.icon
-            const isActive = location.pathname === item.path
+            const active = isNavActive(item.path)
             return (
               <Link
                 key={item.path}
                 to={item.path}
                 onClick={() => setSidebarOpen(false)}
                 title={isSidebarCollapsed ? item.label : ''}
-                className={`flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-semibold transition-all group ${
-                  isActive
-                    ? 'bg-[#b09b72] text-[#004749] font-bold shadow-[0_4px_12px_rgba(176,155,114,0.15)] border border-[#b09b72]/35'
-                    : 'text-[#cccccc] hover:bg-[#013b3f]/20 hover:text-white'
+                className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 group relative ${
+                  active
+                    ? 'bg-[#b09b72] text-[#004749] font-bold shadow-md shadow-black/10 border border-[#b09b72]'
+                    : 'text-[#d8d8d8] hover:bg-[#013b3f]/35 hover:text-white'
                 }`}
               >
-                <Icon className={`size-5 shrink-0 ${isActive ? 'text-[#004749]' : 'text-[#cccccc]/70 group-hover:text-white'}`} />
-                {!isSidebarCollapsed && <span className="truncate">{item.label}</span>}
+                <Icon
+                  className={`size-5 shrink-0 transition-transform group-hover:scale-105 ${
+                    active ? 'text-[#004749]' : 'text-[#b09b72]/80 group-hover:text-white'
+                  }`}
+                />
+                {!isSidebarCollapsed && (
+                  <span className="truncate flex-1 text-left">{item.label}</span>
+                )}
+                {!isSidebarCollapsed && item.badge && (
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                      active
+                        ? 'bg-[#004749] text-white'
+                        : 'bg-[#540000] text-white shadow-xs'
+                    }`}
+                  >
+                    {item.badge}
+                  </span>
+                )}
+                {isSidebarCollapsed && item.badge && (
+                  <span className="absolute top-2 right-2 size-2 rounded-full bg-[#540000]" />
+                )}
               </Link>
             )
           })}
         </nav>
 
-        {/* User profile section */}
-        <div className="border-t border-[#013b3f]/40 p-4 shrink-0 bg-[#004749]">
-          <div className={`flex items-center gap-3 rounded-xl bg-[#013b3f]/10 p-2.5 ${isSidebarCollapsed ? 'justify-center' : ''}`}>
-            <span className="grid size-9 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#540000] to-[#b09b72] text-sm font-bold text-white shadow-sm border border-[#540000]/30">
-              {currentUser.initials || 'CEO'}
-            </span>
+        {/* Sidebar Footer: CEO Profile & Chief Executive Officer designation & Logout */}
+        <div className="border-t border-[#013b3f]/50 p-3.5 shrink-0 bg-[#00383a]">
+          <div
+            className={`flex items-center gap-3 rounded-xl bg-[#013b3f]/25 p-2.5 border border-[#013b3f]/40 ${
+              isSidebarCollapsed ? 'justify-center' : ''
+            }`}
+          >
+            {/* CEO Avatar */}
+            <div className="relative">
+              <span className="grid size-10 shrink-0 place-items-center rounded-full bg-gradient-to-br from-[#540000] via-[#7d1212] to-[#b09b72] text-sm font-black text-white shadow-md border border-white/20">
+                {currentUser?.initials || 'CEO'}
+              </span>
+              <span className="absolute bottom-0 right-0 size-2.5 rounded-full bg-emerald-400 ring-2 ring-[#00383a]" />
+            </div>
+
+            {/* Profile Info */}
             {!isSidebarCollapsed && (
-              <div className="flex-1 overflow-hidden animate-in fade-in duration-150 text-left">
-                <p className="m-0 text-xs font-bold text-white truncate">{currentUser.name || 'CEO / Founder'}</p>
-                <p className="m-0 text-[0.65rem] font-medium text-[#cccccc] truncate">{currentUser.email || 'ceo@tconnect.com'}</p>
+              <div className="flex-1 overflow-hidden text-left">
+                <p className="m-0 text-xs font-bold text-white truncate leading-tight">
+                  {currentUser?.name || 'Dr. Twite Executive'}
+                </p>
+                <div className="flex items-center gap-1 mt-0.5">
+                  <span className="inline-flex items-center rounded-md bg-[#b09b72]/20 px-1.5 py-0.2 text-[9px] font-bold text-[#b09b72] tracking-wider uppercase">
+                    Chief Executive Officer
+                  </span>
+                </div>
+                <p className="m-0 text-[10px] font-medium text-[#a0a0a0] truncate mt-0.5">
+                  {currentUser?.email || 'ceo@twiteconnect.com'}
+                </p>
               </div>
             )}
+
+            {/* Logout Button */}
             {!isSidebarCollapsed && (
               <button
                 onClick={handleSignOut}
-                className="rounded-lg p-1.5 text-[#cccccc] hover:bg-[#013b3f]/20 hover:text-red-400 transition-colors"
+                className="rounded-lg p-2 text-[#cccccc] hover:bg-[#540000]/30 hover:text-red-300 transition-colors shrink-0"
                 title="Sign Out"
+                aria-label="Logout"
               >
                 <LogOut className="size-4" />
               </button>
             )}
           </div>
+          {isSidebarCollapsed && (
+            <button
+              onClick={handleSignOut}
+              className="mt-2 w-full flex items-center justify-center p-2 rounded-lg text-[#cccccc] hover:bg-[#540000]/30 hover:text-red-300 transition-colors"
+              title="Sign Out"
+              aria-label="Logout"
+            >
+              <LogOut className="size-4" />
+            </button>
+          )}
         </div>
       </aside>
 
-      {/* Main Container */}
+      {/* Main Content Area */}
       <div className="flex flex-1 flex-col overflow-hidden h-screen">
         {/* Top Header */}
-        <header className="flex h-16 items-center justify-between border-b border-[#013b3f]/40 bg-[#004749] px-6 shrink-0 z-20 text-white">
-          <div className="flex items-center gap-4">
+        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 shrink-0 z-20 shadow-xs">
+          <div className="flex items-center gap-3 sm:gap-4 flex-1">
+            {/* Mobile Menu Toggle */}
             <button
-              className="rounded-xl p-2 text-[#cccccc] transition hover:bg-[#013b3f]/20 hover:text-white lg:hidden"
+              className="rounded-xl p-2 text-slate-600 transition hover:bg-slate-100 lg:hidden"
               onClick={() => setSidebarOpen(true)}
               aria-label="Open sidebar"
             >
               <Menu className="size-5" />
             </button>
 
-            {/* CEO Badge (Top) & Date (Bottom) with Pulsing Radar Light */}
-            <div className="hidden items-center gap-3 border-r border-[#013b3f]/40 pr-4 mr-2 shrink-0 lg:flex">
+            {/* Executive Badge & Real-time Indicator */}
+            <div className="hidden items-center gap-3 border-r border-slate-200 pr-4 mr-1 shrink-0 md:flex">
               <span className="relative flex size-2.5 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#540000] opacity-75"></span>
-                <span className="relative inline-flex rounded-full size-2.5 bg-[#540000]"></span>
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full size-2.5 bg-emerald-500"></span>
               </span>
               <div className="flex flex-col justify-center text-left">
-                <span className="text-base font-extrabold tracking-wider text-[#b09b72] uppercase leading-none">
-                  CEO
+                <span className="text-[11px] font-black tracking-widest text-[#004749] uppercase leading-none">
+                  CEO Executive Suite
                 </span>
-                <span className="text-xs font-semibold text-[#cccccc] mt-1 leading-none">
+                <span className="text-[11px] font-semibold text-slate-500 mt-1 leading-none">
                   {currentDate}
                 </span>
               </div>
             </div>
 
-            {/* Global Search Bar (Matching ceo.png, now interactive!) */}
-            <div className="relative hidden w-72 sm:block md:w-96">
+            {/* Global Search Bar */}
+            <div className="relative w-full max-w-md">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search leads, customers, phone, email..."
+                placeholder="Search across CEO portal (sales, reports, teams, revenue)..."
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value)
                   setShowSearchResults(true)
                 }}
                 onFocus={() => setShowSearchResults(true)}
-                className="h-10 w-full rounded-xl border border-[#013b3f]/40 bg-slate-50 pl-10 pr-4 text-xs font-bold text-slate-900 placeholder:text-slate-400 outline-none transition focus:border-[#b09b72] focus:bg-white"
+                className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50/80 pl-9 pr-4 text-xs font-semibold text-slate-800 placeholder:text-slate-400 outline-none transition focus:border-[#004749] focus:bg-white focus:ring-2 focus:ring-[#004749]/10"
               />
 
               {/* Search Results Dropdown */}
               {showSearchResults && searchResults.length > 0 && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setShowSearchResults(false)} />
-                  <div className="absolute left-0 top-full z-50 mt-2.5 w-full rounded-2xl border border-slate-100 bg-white p-2 shadow-2xl ring-1 ring-slate-950/5">
-                    <div className="px-3 py-1.5 border-b border-slate-50 text-[10px] font-bold text-slate-400 uppercase tracking-wider">Search Results</div>
-                    <div className="max-h-64 overflow-y-auto space-y-1 py-1">
+                  <div className="absolute left-0 top-full z-50 mt-2 w-full rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl">
+                    <div className="px-3 py-1.5 border-b border-slate-100 text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                      Matching Modules & Records
+                    </div>
+                    <div className="max-h-60 overflow-y-auto space-y-1 py-1">
                       {searchResults.map((res, i) => (
                         <button
                           key={i}
@@ -409,7 +342,7 @@ function CeoLayout() {
                           className="w-full text-left rounded-xl p-2 transition hover:bg-slate-50 flex flex-col"
                         >
                           <span className="text-xs font-bold text-slate-900">{res.title}</span>
-                          <span className="text-[10px] text-slate-400 font-semibold">{res.desc}</span>
+                          <span className="text-[10px] text-slate-500 font-medium">{res.desc}</span>
                         </button>
                       ))}
                     </div>
@@ -419,304 +352,71 @@ function CeoLayout() {
             </div>
           </div>
 
-          {/* Right Header Actions */}
-          <div className="flex items-center gap-4">
-
-
-            {/* Interactive Calendar Dropdown */}
+          {/* Right Header Quick Tools */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            {/* Quick Agenda / Schedule Dropdown */}
             <div className="relative">
               <button
                 onClick={() => setCalendarOpen(!calendarOpen)}
-                className={`rounded-xl p-2 transition ${calendarOpen ? 'bg-slate-100 text-blue-600' : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600'}`}
+                className={`rounded-xl p-2 transition border ${
+                  calendarOpen
+                    ? 'bg-teal-50 text-[#004749] border-[#004749]/30'
+                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+                title="Today's Executive Agenda"
               >
-                <CalendarIcon className="size-5" />
+                <CalendarIcon className="size-4.5" />
               </button>
 
               {calendarOpen && (
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setCalendarOpen(false)} />
-                  <div className="absolute right-0 top-full z-50 mt-2.5 w-80 rounded-2xl border border-slate-100 bg-white p-4 shadow-2xl ring-1 ring-slate-950/5">
+                  <div className="absolute right-0 top-full z-50 mt-2.5 w-80 rounded-2xl border border-slate-200 bg-white p-4 shadow-2xl text-left">
                     <div className="mb-3 flex items-center justify-between border-b border-slate-100 pb-2">
-                      <p className="text-sm font-bold text-slate-900">Today's Visits Schedule</p>
-                      <button
-                        onClick={() => {
-                          navigate('/ceo/visits')
-                          setCalendarOpen(false)
-                        }}
-                        className="text-xs font-bold text-blue-600 hover:underline"
-                      >
-                        View calendar
-                      </button>
-                    </div>
-                    <div className="space-y-3">
-                      {mockAgenda.map(item => (
-                        <div key={item.id} className="border-l-4 border-blue-500 pl-3">
-                          <p className="text-xs font-bold text-slate-900">{item.title}</p>
-                          <p className="text-[10px] text-slate-400 font-semibold mt-0.5">{item.time}</p>
-                          <p className="text-[9px] text-slate-400 font-medium">Rep: {item.exec}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Notifications Menu */}
-            <div className="relative">
-              <button
-                onClick={() => setNotificationsOpen(!notificationsOpen)}
-                className="relative rounded-xl p-2 text-slate-400 transition hover:bg-slate-100 hover:text-slate-600"
-              >
-                <Bell className="size-5" />
-                <span className="absolute right-2 top-2 size-2.5 rounded-full bg-red-500 ring-2 ring-white" />
-              </button>
-
-              {notificationsOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setNotificationsOpen(false)} />
-                  <div className="absolute right-0 top-full z-50 mt-2.5 w-80 rounded-2xl border border-slate-100 bg-white p-3 shadow-xl ring-1 ring-slate-950/5">
-                    <div className="mb-2 flex items-center justify-between border-b border-slate-100 pb-2">
-                      <p className="text-sm font-bold text-slate-900">Notifications</p>
-                      <button className="text-xs font-semibold text-blue-600 hover:underline">Mark all read</button>
-                    </div>
-                    <div className="space-y-2">
-                      {mockNotifications.map((notif) => (
-                        <div key={notif.id} className="rounded-xl p-2.5 transition hover:bg-slate-50">
-                          <div className="flex items-start justify-between gap-1">
-                            <p className="text-xs font-bold text-slate-900">{notif.title}</p>
-                            <span className="text-[0.65rem] text-slate-400 whitespace-nowrap">{notif.time}</span>
-                          </div>
-                          <p className="mt-0.5 text-xs text-slate-500">{notif.desc}</p>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Profile Dropdown */}
-            <div className="relative">
-              <button
-                className="flex items-center gap-2 rounded-xl p-1.5 text-sm text-white transition hover:bg-[#013b3f]/40 cursor-pointer"
-                onClick={() => setProfileOpen(!profileOpen)}
-              >
-                <span className="grid size-8 place-items-center rounded-full bg-gradient-to-br from-[#540000] to-[#b09b72] text-xs font-bold text-white shadow-sm shrink-0 border border-[#b09b72]/30">
-                  {currentUser.initials || 'CEO'}
-                </span>
-                <div className="hidden text-left sm:block">
-                  <p className="m-0 text-xs font-bold text-white leading-none">{currentUser.name || 'CEO'}</p>
-                  <p className="text-[10px] text-[#b09b72] font-semibold truncate max-w-[140px] leading-tight mt-0.5">{currentUser.email}</p>
-                </div>
-                <ChevronDown className={`size-4 text-[#cccccc] transition ${profileOpen ? 'rotate-180' : ''}`} />
-              </button>
-
-              {profileOpen && (
-                <>
-                  <div className="fixed inset-0 z-40" onClick={() => setProfileOpen(false)} />
-                  <div className="absolute right-0 top-full z-50 mt-2.5 w-60 rounded-2xl border border-slate-100 bg-white p-2 shadow-xl ring-1 ring-slate-950/5">
-                    <div className="px-3 py-2 border-b border-slate-100 mb-1">
-                      <p className="text-xs font-bold text-slate-900">{currentUser.name || 'CEO / Founder'}</p>
-                      <p className="text-[11px] font-semibold text-blue-600 truncate">{currentUser.email || 'ceo@tconnect.com'}</p>
-                      <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[9px] font-extrabold uppercase">
-                        {currentUser.role || 'CEO'}
+                      <p className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+                        Executive Schedule Today
+                      </p>
+                      <span className="text-[10px] font-bold text-[#004749] bg-teal-50 px-2 py-0.5 rounded-md">
+                        3 Events
                       </span>
                     </div>
-                    <Link
-                      to="/ceo/settings"
-                      className="flex items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 hover:text-slate-900"
-                      onClick={() => setProfileOpen(false)}
-                    >
-                      <Settings className="size-4 text-slate-400" />
-                      Settings
-                    </Link>
-                    <button
-                      onClick={handleSignOut}
-                      className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-sm font-semibold text-red-500 transition hover:bg-red-50 hover:text-red-600 cursor-pointer"
-                    >
-                      <LogOut className="size-4" />
-                      Sign out
-                    </button>
+                    <div className="space-y-2.5">
+                      {mockSchedule.map((item) => (
+                        <div key={item.id} className="border-l-4 border-[#004749] bg-slate-50 rounded-r-xl p-2.5">
+                          <p className="text-xs font-bold text-slate-900">{item.title}</p>
+                          <p className="text-[10px] text-slate-500 font-medium mt-0.5">{item.time}</p>
+                          <p className="text-[10px] text-[#004749] font-bold mt-1">Lead: {item.rep}</p>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </>
               )}
+            </div>
+
+            {/* Notifications Link */}
+            <Link
+              to="/ceo/notifications"
+              className="relative rounded-xl p-2 text-slate-600 border border-slate-200 transition hover:bg-slate-50"
+              title="CEO Notifications"
+            >
+              <Bell className="size-4.5" />
+              <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-[#540000] ring-2 ring-white" />
+            </Link>
+
+            {/* Executive Badge */}
+            <div className="hidden sm:flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 border border-slate-200/80">
+              <Shield className="size-4 text-[#004749]" />
+              <span className="text-xs font-bold text-slate-700">CEO Executive Access</span>
             </div>
           </div>
         </header>
 
         {/* Dynamic Page Content */}
-        <main className="flex-1 overflow-y-auto p-6 sm:p-8 bg-[#F5F8FC] relative">
-          {/* Glowing Ambient Background Shades */}
-          <div className="absolute top-1/4 left-1/4 -translate-x-1/2 -translate-y-1/2 w-[35rem] h-[35rem] rounded-full bg-blue-300/10 blur-[100px] pointer-events-none z-0" />
-          <div className="absolute bottom-1/4 right-1/4 translate-x-1/2 translate-y-1/2 w-[35rem] h-[35rem] rounded-full bg-indigo-300/10 blur-[100px] pointer-events-none z-0" />
-          
-          <div className="relative z-10">
-            <Outlet />
-          </div>
+        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 bg-[#f4f6f8] text-slate-800">
+          <Outlet />
         </main>
-
-        {/* Footer */}
-        <footer className="border-t border-slate-200/80 bg-white px-8 py-4 shrink-0">
-          <div className="flex items-center justify-between text-xs font-semibold text-slate-400">
-            <p>&copy; 2026 TwiteConnect. All rights reserved.</p>
-          </div>
-        </footer>
       </div>
-
-      {/* Global Quick Action Modal */}
-      {quickActionOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-sm">
-          <div className="relative w-full max-w-md rounded-2xl border border-slate-100 bg-white p-6 shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <button
-              onClick={() => setQuickActionOpen(false)}
-              className="absolute right-4 top-4 rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
-            >
-              <X className="size-5" />
-            </button>
-            
-            <div className="mb-6">
-              <h3 className="text-lg font-bold text-slate-900">Global Quick Action</h3>
-              <p className="text-xs font-medium text-slate-500">Log new data directly to state databases.</p>
-            </div>
-
-            {/* Selector tabs */}
-            <div className="mb-4 flex rounded-xl bg-slate-100 p-1">
-              <button
-                type="button"
-                onClick={() => setActionType('lead')}
-                className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition ${actionType === 'lead' ? 'bg-white text-blue-600 shadow' : 'text-slate-500 hover:text-slate-900'}`}
-              >
-                <span className="flex items-center justify-center gap-1"><PlusCircle className="size-3.5" /> New Lead</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setActionType('opp')}
-                className={`flex-1 rounded-lg py-1.5 text-xs font-bold transition ${actionType === 'opp' ? 'bg-white text-blue-600 shadow' : 'text-slate-500 hover:text-slate-900'}`}
-              >
-                <span className="flex items-center justify-center gap-1"><Briefcase className="size-3.5" /> New Opportunity</span>
-              </button>
-            </div>
-
-            <form onSubmit={handleQuickActionSubmit} className="space-y-4">
-              {actionType === 'lead' ? (
-                <>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-bold text-slate-700 uppercase">Contact Name</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. John Doe"
-                      value={leadName}
-                      onChange={(e) => setLeadName(e.target.value)}
-                      className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-500 focus:bg-white"
-                    />
-                  </div>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-bold text-slate-700 uppercase">Company Name</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Acme Corp"
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-500 focus:bg-white"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="mb-1.5 block text-xs font-bold text-slate-700 uppercase">Phone Number</label>
-                      <input
-                        type="text"
-                        placeholder="+91 98765..."
-                        value={leadPhone}
-                        onChange={(e) => setLeadPhone(e.target.value)}
-                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-500 focus:bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-bold text-slate-700 uppercase">Source Channel</label>
-                      <select
-                        value={leadSource}
-                        onChange={(e) => setLeadSource(e.target.value)}
-                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-500 focus:bg-white"
-                      >
-                        <option value="Website">Website</option>
-                        <option value="Referral">Referral</option>
-                        <option value="Cold Call">Cold Call</option>
-                        <option value="Walk-In">Walk-In</option>
-                      </select>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="mb-1.5 block text-xs font-bold text-slate-700 uppercase">Company Name</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Acme Corp"
-                      value={companyName}
-                      onChange={(e) => setCompanyName(e.target.value)}
-                      className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-500 focus:bg-white"
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <label className="mb-1.5 block text-xs font-bold text-slate-700 uppercase">Deal Value (₹)</label>
-                      <input
-                        type="number"
-                        required
-                        placeholder="50000"
-                        value={oppValue}
-                        onChange={(e) => setOppValue(e.target.value)}
-                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-500 focus:bg-white"
-                      />
-                    </div>
-                    <div>
-                      <label className="mb-1.5 block text-xs font-bold text-slate-700 uppercase">Stage</label>
-                      <select
-                        value={oppStage}
-                        onChange={(e) => setOppStage(e.target.value)}
-                        className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-500 focus:bg-white"
-                      >
-                        <option value="Lead">Lead</option>
-                        <option value="Qualified">Qualified</option>
-                        <option value="Proposal">Proposal</option>
-                        <option value="Negotiation">Negotiation</option>
-                        <option value="Won">Won</option>
-                        <option value="Lost">Lost</option>
-                      </select>
-                    </div>
-                  </div>
-                </>
-              )}
-
-              <div className="pt-2">
-                <label className="mb-1.5 block text-xs font-bold text-slate-700 uppercase">Assign Sales Representative</label>
-                <select
-                  value={leadAssigned}
-                  onChange={(e) => setLeadAssigned(e.target.value)}
-                  className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 px-3 text-sm outline-none focus:border-blue-500 focus:bg-white"
-                >
-                  <option value="John Doe">John Doe</option>
-                  <option value="Mary Jane">Mary Jane</option>
-                  <option value="Robert Smith">Robert Smith</option>
-                  <option value="David Brown">David Brown</option>
-                </select>
-              </div>
-
-              <button
-                type="submit"
-                className="w-full h-11 mt-4 rounded-xl bg-[#540000] hover:bg-[#3a0101] text-sm font-bold text-white shadow-md border border-[#540000]/40 transition active:scale-[0.98]"
-              >
-                Log Entry
-              </button>
-            </form>
-          </div>
-        </div>
-      )}
     </div>
   )
 }

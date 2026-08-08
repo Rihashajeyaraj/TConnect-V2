@@ -25,19 +25,19 @@ class VisitRepository:
 
         visits = []
         try:
-            res = self.supabase.table("visits").select("*").execute()
+            res = self.supabase.schema("field_management").table("visits").select("*").execute()
             if res.data is not None and len(res.data) > 0:
                 visits = res.data
         except Exception as e:
-            logger.warning(f"Failed fetching visits from public.visits: {e}")
+            logger.debug(f"field_management.visits fetch notice: {e}")
 
         if not visits:
             try:
-                res = self.helper.table(SchemaEnum.VISIT, "visits").select("*").execute()
+                res = self.supabase.table("visits").select("*").execute()
                 if res.data is not None and len(res.data) > 0:
                     visits = res.data
             except Exception as e:
-                logger.warning(f"Failed fetching visits from visit.visits: {e}")
+                logger.warning(f"Failed fetching visits from public.visits: {e}")
 
         if not visits:
             visits = _in_memory_visits
@@ -112,9 +112,24 @@ class VisitRepository:
             except Exception:
                 pass
 
-        logger.info(f"[VISIT INSERT REQUEST] Attempting insert into public.visits with payload: {payload}")
+        logger.info(f"[VISIT INSERT REQUEST] Attempting insert into field_management.visits with payload: {payload}")
 
-        # 1. Try public.visits
+        # 1. Primary: field_management.visits
+        try:
+            res = self.supabase.schema("field_management").table("visits").insert(payload).execute()
+            if res.data and len(res.data) > 0:
+                logger.info(f"[VISIT INSERT SUCCESS] Saved visit in field_management.visits: {res.data[0]}")
+                out_visit = res.data[0]
+                out_visit["id"] = out_visit.get("visit_id") or visit_id
+                out_visit["customer"] = customer_name
+                out_visit["client"] = customer_name
+                out_visit["executive"] = se_name
+                out_visit["assignedToEmail"] = se_email
+                return out_visit
+        except Exception as e:
+            logger.debug(f"field_management.visits insert notice: {e}")
+
+        # 2. Fallback: public.visits
         try:
             res = self.supabase.table("visits").insert(payload).execute()
             if res.data and len(res.data) > 0:
@@ -129,15 +144,6 @@ class VisitRepository:
         except Exception as e:
             logger.error(f"Error creating visit in public.visits: {e}")
 
-        # 2. Try visit.visits via helper
-        try:
-            res = self.helper.table(SchemaEnum.VISIT, "visits").insert(payload).execute()
-            if res.data and len(res.data) > 0:
-                logger.info(f"[VISIT INSERT SUCCESS] Saved visit in visit.visits: {res.data[0]}")
-                return res.data[0]
-        except Exception as e:
-            logger.error(f"Error creating visit in visit.visits: {e}")
-
         payload["id"] = visit_id
         payload["customer"] = customer_name
         payload["client"] = customer_name
@@ -151,14 +157,20 @@ class VisitRepository:
         updates["visit_status"] = "COMPLETED"
         updates["check_out_time"] = updates.get("check_out_time") or datetime.utcnow().isoformat()
 
-        # Try to update Supabase record first
+        # Try to update field_management.visits first
         try:
-            res = self.supabase.table("visits").update(updates).eq("id", visit_id).execute()
+            res = self.supabase.schema("field_management").table("visits").update(updates).eq("id", visit_id).execute()
             if res.data and len(res.data) > 0:
-                logger.info(f"Visit {visit_id} completed in public.visits")
+                logger.info(f"Visit {visit_id} completed in field_management.visits")
                 return res.data[0]
-        except Exception as e:
-            logger.warning(f"public.visits complete update failed: {e}")
+        except Exception:
+            try:
+                res = self.supabase.table("visits").update(updates).eq("id", visit_id).execute()
+                if res.data and len(res.data) > 0:
+                    logger.info(f"Visit {visit_id} completed in public.visits")
+                    return res.data[0]
+            except Exception as e:
+                logger.warning(f"visits complete update failed: {e}")
 
         # Try in-memory
         for v in _in_memory_visits:

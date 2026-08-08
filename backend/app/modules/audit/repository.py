@@ -14,7 +14,7 @@ class AuditRepository:
 
     def get_logs(self) -> List[Dict[str, Any]]:
         try:
-            res = self.helper.table(SchemaEnum.AUDIT, "logs").select("*").execute()
+            res = self.supabase.schema("system").table("audit_logs").select("*").execute()
             if res.data is not None:
                 return res.data
         except Exception:

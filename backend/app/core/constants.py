@@ -9,19 +9,24 @@ class RoleEnum(str, Enum):
 
 
 class SchemaEnum(str, Enum):
-    ORGANIZATION = "organization"
     HRMS = "hrms"
+    ORGANIZATION = "organization"
     CRM = "crm"
-    CUSTOMER = "customer"
-    VISIT = "visit"
-    ATTENDANCE = "attendance"
-    EXPENSE = "expense"
-    PIPELINE = "pipeline"
-    NOTIFICATION = "notification"
-    MASTERS = "masters"
-    SETTINGS = "settings"
-    AUDIT = "audit"
-    REPORTS = "reports"
+    FIELD_MANAGEMENT = "field_management"
+    FINANCE = "finance"
+    SYSTEM = "system"
+
+    # Backward-compatibility mappings to the 6 primary schemas
+    CUSTOMER = "crm"
+    PIPELINE = "crm"
+    VISIT = "field_management"
+    ATTENDANCE = "hrms"
+    EXPENSE = "finance"
+    NOTIFICATION = "system"
+    REPORTS = "system"
+    SETTINGS = "organization"
+    AUDIT = "system"
+    MASTERS = "organization"
 
 
 class LeaveStatusEnum(str, Enum):

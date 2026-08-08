@@ -39,23 +39,25 @@ class SettingsRepository:
         self.helper = get_schema_helper()
 
     def get_settings(self) -> Dict[str, Any]:
-        # 1. Try organization.company_profile in Supabase
-        try:
-            res = self.client.schema(SchemaEnum.ORGANIZATION.value).table("company_profile").select("*").limit(1).execute()
-            if res.data and len(res.data) > 0:
-                merged = _in_memory_settings.copy()
-                merged.update(res.data[0])
-                return merged
-        except Exception as e:
-            logger.debug(f"organization.company_profile lookup fallback: {e}")
+        # 1. Try organization.organization_settings / organization.company_profile in Supabase
+        for schema_tbl in ["organization_settings", "company_profile"]:
+            try:
+                res = self.client.schema("organization").table(schema_tbl).select("*").limit(1).execute()
+                if res.data and len(res.data) > 0:
+                    merged = _in_memory_settings.copy()
+                    merged.update(res.data[0])
+                    return merged
+            except Exception as e:
+                logger.debug(f"organization.{schema_tbl} lookup fallback: {e}")
 
         return _in_memory_settings
 
     def update_settings(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         _in_memory_settings.update({k: v for k, v in updates.items() if v is not None})
         
-        # Build comprehensive database payload for organization.company_profile
+        # Build comprehensive database payload for organization.organization_settings
         full_db_payload = {
+            "id": "TC-001",
             "company_name": _in_memory_settings.get("company_name"),
             "company_code": _in_memory_settings.get("company_code", "TC-001"),
             "email": _in_memory_settings.get("email"),
@@ -64,64 +66,35 @@ class SettingsRepository:
             "address": _in_memory_settings.get("address"),
             "legal_name": _in_memory_settings.get("legal_name"),
             "tax_id_gstin": _in_memory_settings.get("tax_id_gstin"),
-            "gst_number": _in_memory_settings.get("tax_id_gstin"),
+            "pan_no": _in_memory_settings.get("pan_no"),
+            "registration_no": _in_memory_settings.get("registration_no"),
             "time_zone": _in_memory_settings.get("time_zone"),
             "logo_url": _in_memory_settings.get("logo_url"),
             "currency": _in_memory_settings.get("currency"),
             "branches": _in_memory_settings.get("branches"),
             "departments": _in_memory_settings.get("departments"),
-            "role_permissions": _in_memory_settings.get("role_permissions"),
         }
-        # Filter out None values
         full_db_payload = {k: v for k, v in full_db_payload.items() if v is not None}
 
-        # Core columns fallback payload in case extended columns (e.g. JSON fields) are not in DB schema
-        core_db_payload = {
-            "company_name": _in_memory_settings.get("company_name"),
-            "company_code": _in_memory_settings.get("company_code", "TC-001"),
-            "email": _in_memory_settings.get("email"),
-            "phone": _in_memory_settings.get("phone"),
-            "website": _in_memory_settings.get("website"),
-            "address": _in_memory_settings.get("address"),
-            "legal_name": _in_memory_settings.get("legal_name"),
-            "tax_id_gstin": _in_memory_settings.get("tax_id_gstin"),
-            "time_zone": _in_memory_settings.get("time_zone"),
-        }
-        core_db_payload = {k: v for k, v in core_db_payload.items() if v is not None}
-
-        # Save to organization.company_profile / public.company_profile in Supabase
-        for payload in [full_db_payload, core_db_payload]:
+        # Save to organization.organization_settings in Supabase
+        for tbl_name in ["organization_settings", "company_profile"]:
             try:
-                table_ref = self.client.schema(SchemaEnum.ORGANIZATION.value).table("company_profile")
+                table_ref = self.client.schema("organization").table(tbl_name)
                 existing = table_ref.select("*").limit(1).execute()
                 
                 if existing.data and len(existing.data) > 0:
-                    cid = existing.data[0].get("company_id")
-                    res = table_ref.update(payload).eq("company_id", cid).execute()
+                    rec_id = existing.data[0].get("id") or existing.data[0].get("company_id")
+                    id_col = "id" if "id" in existing.data[0] else "company_id"
+                    res = table_ref.update(full_db_payload).eq(id_col, rec_id).execute()
                 else:
-                    payload["company_id"] = str(uuid.uuid4())
-                    res = table_ref.insert(payload).execute()
+                    res = table_ref.insert(full_db_payload).execute()
 
-                logger.info("Saved company details to organization.company_profile in Supabase!")
+                logger.info(f"Saved company details to organization.{tbl_name} in Supabase!")
                 if res.data and len(res.data) > 0:
                     _in_memory_settings.update(res.data[0])
                 break
             except Exception as e:
-                try:
-                    table_ref = self.client.table("company_profile")
-                    existing = table_ref.select("*").limit(1).execute()
-                    if existing.data and len(existing.data) > 0:
-                        cid = existing.data[0].get("company_id")
-                        res = table_ref.update(payload).eq("company_id", cid).execute()
-                    else:
-                        payload["company_id"] = str(uuid.uuid4())
-                        res = table_ref.insert(payload).execute()
-                    logger.info("Saved company details to public.company_profile in Supabase!")
-                    if res.data and len(res.data) > 0:
-                        _in_memory_settings.update(res.data[0])
-                    break
-                except Exception as err2:
-                    logger.warning(f"Attempt to save company_profile failed: {e} / {err2}")
+                logger.warning(f"organization.{tbl_name} save notice: {e}")
 
         return _in_memory_settings
 

@@ -16,19 +16,19 @@ class CRMRepository:
     def get_all_leads(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         leads = []
         try:
-            res = self.supabase.table("leads").select("*").execute()
+            res = self.supabase.schema("crm").table("leads").select("*").execute()
             if res.data is not None and len(res.data) > 0:
                 leads = res.data
         except Exception as e:
-            logger.warning(f"Failed fetching leads from public.leads: {e}")
+            logger.debug(f"crm.leads fetch notice: {e}")
 
         if not leads:
             try:
-                res = self.helper.table(SchemaEnum.CRM, "leads").select("*").execute()
+                res = self.supabase.table("leads").select("*").execute()
                 if res.data is not None and len(res.data) > 0:
                     leads = res.data
             except Exception as e:
-                logger.warning(f"Failed fetching leads from crm.leads: {e}")
+                logger.warning(f"Failed fetching leads from public.leads: {e}")
 
         if not leads:
             leads = _in_memory_leads
@@ -63,6 +63,8 @@ class CRMRepository:
                         row["reporting_manager_email"] = p_strip.split("Manager:")[-1].strip().lower()
                     elif "AssignedTo:" in p_strip:
                         row["assigned_to"] = p_strip.split("AssignedTo:")[-1].strip()
+                    elif "Category:" in p_strip:
+                        row["category"] = p_strip.split("Category:")[-1].strip().title()
 
             a_to = str(row.get("assigned_to") or "").strip()
             c_by = str(row.get("created_by") or "").strip()
@@ -117,7 +119,8 @@ class CRMRepository:
         product_val = str(data.get("product_name") or data.get("product") or data.get("productRequirement") or "TwiteConnect CRM").strip()
 
         notes_raw = str(data.get("notes") or data.get("remarks") or "New lead added")
-        full_notes = f"{notes_raw} | Product: {product_val} | AssignedTo: {assigned_to_raw} | Email: {assigned_to_email} | EMP: {employee_code} | Manager: {mgr_email}"
+        category_val = str(data.get("category") or data.get("lead_type") or "Warm").strip().title()
+        full_notes = f"{notes_raw} | Product: {product_val} | AssignedTo: {assigned_to_raw} | Email: {assigned_to_email} | EMP: {employee_code} | Manager: {mgr_email} | Category: {category_val}"
 
         # assigned_to in Supabase is UUID column!
         assigned_to_uuid = assigned_user_id if (assigned_user_id and len(assigned_user_id) == 36 and "-" in assigned_user_id) else None
@@ -143,9 +146,27 @@ class CRMRepository:
         if val_str.isdigit():
             payload["expected_value"] = float(val_str)
 
-        logger.info(f"[CRM INSERT REQUEST] Attempting insert into public.leads with payload: {payload}")
+        logger.info(f"[CRM INSERT REQUEST] Attempting insert into crm.leads with payload: {payload}")
 
-        # 1. Try public.leads table
+        # 1. Primary: crm.leads
+        try:
+            res = self.supabase.schema("crm").table("leads").insert(payload).execute()
+            if res.data and len(res.data) > 0:
+                logger.info(f"[CRM INSERT SUCCESS] Saved lead in crm.leads: {res.data[0]}")
+                out_lead = res.data[0]
+                out_lead["company"] = company_val
+                out_lead["person"] = person_val
+                out_lead["product"] = product_val
+                out_lead["product_name"] = product_val
+                out_lead["assigned_to"] = assigned_to_raw
+                out_lead["assigned_to_email"] = assigned_to_email
+                out_lead["employee_code"] = employee_code
+                out_lead["reporting_manager_email"] = mgr_email
+                return out_lead
+        except Exception as e:
+            logger.debug(f"crm.leads insert notice: {e}")
+
+        # 2. Fallback: public.leads table
         try:
             res = self.supabase.table("leads").insert(payload).execute()
             if res.data and len(res.data) > 0:
@@ -162,15 +183,6 @@ class CRMRepository:
                 return out_lead
         except Exception as e:
             logger.error(f"Error creating lead in public.leads: {e}")
-
-        # 2. Try crm.leads via helper
-        try:
-            res = self.helper.table(SchemaEnum.CRM, "leads").insert(payload).execute()
-            if res.data and len(res.data) > 0:
-                logger.info(f"[CRM INSERT SUCCESS] Saved lead in crm.leads: {res.data[0]}")
-                return res.data[0]
-        except Exception as e:
-            logger.error(f"Error creating lead in crm.leads: {e}")
 
         payload["id"] = lead_id
         payload["company"] = company_val

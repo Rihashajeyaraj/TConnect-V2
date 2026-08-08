@@ -20,22 +20,22 @@ class NotificationRepository:
 
         notifs = []
 
-        # 1. Try public.notifications
+        # 1. Primary: system.notifications
         try:
-            res = self.supabase.table("notifications").select("*").execute()
+            res = self.supabase.schema("system").table("notifications").select("*").execute()
             if res.data is not None and len(res.data) > 0:
                 notifs = res.data
         except Exception as e:
-            logger.warning(f"public.notifications fetch failed: {e}")
+            logger.debug(f"system.notifications fetch notice: {e}")
 
-        # 2. Fallback to schema helper
+        # 2. Fallback: public.notifications
         if not notifs:
             try:
-                res = self.helper.table(SchemaEnum.NOTIFICATION, "notifications").select("*").execute()
+                res = self.supabase.table("notifications").select("*").execute()
                 if res.data is not None and len(res.data) > 0:
                     notifs = res.data
             except Exception as e:
-                logger.warning(f"notification.notifications fetch failed: {e}")
+                logger.warning(f"public.notifications fetch failed: {e}")
 
         # 3. In-memory fallback
         if not notifs:
@@ -87,9 +87,18 @@ class NotificationRepository:
         if recip_email:
             payload["recipient_email"] = str(recip_email)
 
-        logger.info(f"[NOTIFICATION INSERT REQUEST] Inserting into public.notifications with payload: {payload}")
+        logger.info(f"[NOTIFICATION INSERT REQUEST] Inserting into system.notifications with payload: {payload}")
 
-        # 1. Try public.notifications
+        # 1. Primary: system.notifications
+        try:
+            res = self.supabase.schema("system").table("notifications").insert(payload).execute()
+            if res.data and len(res.data) > 0:
+                logger.info(f"[NOTIFICATION INSERT SUCCESS] Saved notification in system.notifications: {res.data[0]}")
+                return res.data[0]
+        except Exception as e:
+            logger.debug(f"system.notifications insert notice: {e}")
+
+        # 2. Fallback: public.notifications
         try:
             res = self.supabase.table("notifications").insert(payload).execute()
             if res.data and len(res.data) > 0:
@@ -98,26 +107,22 @@ class NotificationRepository:
         except Exception as e:
             logger.error(f"Error creating notification in public.notifications: {e}")
 
-        # 2. Try notification.notifications via helper
-        try:
-            res = self.helper.table(SchemaEnum.NOTIFICATION, "notifications").insert(payload).execute()
-            if res.data and len(res.data) > 0:
-                logger.info(f"[NOTIFICATION INSERT SUCCESS] Saved notification in notification.notifications: {res.data[0]}")
-                return res.data[0]
-        except Exception as e:
-            logger.error(f"Error creating notification in notification.notifications: {e}")
-
         payload["id"] = notif_id
         _in_memory_notifications.append(payload)
         return payload
 
     def mark_as_read(self, notification_id: str) -> Dict[str, Any]:
         try:
-            res = self.supabase.table("notifications").update({"is_read": True, "read": True}).eq("id", notification_id).execute()
+            res = self.supabase.schema("system").table("notifications").update({"is_read": True, "read": True}).eq("id", notification_id).execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
-        except Exception as e:
-            logger.warning(f"mark_as_read failed: {e}")
+        except Exception:
+            try:
+                res = self.supabase.table("notifications").update({"is_read": True, "read": True}).eq("id", notification_id).execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            except Exception as e:
+                logger.warning(f"mark_as_read failed: {e}")
 
         for n in _in_memory_notifications:
             if str(n.get("id")) == str(notification_id):

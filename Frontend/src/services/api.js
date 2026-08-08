@@ -1,26 +1,30 @@
 const API_BASE_URL = 'http://localhost:8000/api/v1'
 
-async function request(endpoint, options = {}) {
-  let token = localStorage.getItem('token') || localStorage.getItem('access_token')
+// ─────────────────────────────────────────────────────────────
+// Helpers: read the real session stored by LoginForm at login
+// ─────────────────────────────────────────────────────────────
+function getStoredToken() {
+  return localStorage.getItem('token') || localStorage.getItem('access_token') || null
+}
 
-  // If no token exists in local environment, fetch a development JWT token automatically
-  if (!token && !endpoint.includes('/auth/')) {
-    try {
-      const devRes = await fetch(`${API_BASE_URL}/auth/dev-token`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: 'manager@tconnect.com', role: 'Sales Manager', name: 'Sales Manager' })
-      })
-      const devData = await devRes.json()
-      token = devData?.data?.access_token
-      if (token) {
-        localStorage.setItem('token', token)
-        localStorage.setItem('access_token', token)
-      }
-    } catch (e) {
-      // Fall through silently if server is offline
-    }
+function clearSession() {
+  localStorage.removeItem('token')
+  localStorage.removeItem('access_token')
+  localStorage.removeItem('user')
+}
+
+function redirectToLogin() {
+  // Only redirect if we're not already on the login page
+  if (!window.location.pathname.startsWith('/login') && !window.location.pathname === '/') {
+    window.location.href = '/login'
   }
+}
+
+// ─────────────────────────────────────────────────────────────
+// Core request function — uses only real Supabase session token
+// ─────────────────────────────────────────────────────────────
+async function request(endpoint, options = {}) {
+  const token = getStoredToken()
 
   const headers = {
     'Content-Type': 'application/json',
@@ -28,51 +32,36 @@ async function request(endpoint, options = {}) {
     ...options.headers,
   }
 
-  const config = {
-    ...options,
-    headers,
-  }
+  const config = { ...options, headers }
 
   try {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, config)
+
     let data
     try {
       data = await response.json()
-    } catch (parseErr) {
-      data = { message: `Server HTTP ${response.status}: Failed to parse JSON response` }
+    } catch {
+      data = { message: `HTTP ${response.status}: Failed to parse response` }
     }
 
-    // Auto-refresh token on 401 Unauthorized in dev mode
+    // On 401 — session expired or invalid. Clear storage and redirect to login.
     if (response.status === 401 && !endpoint.includes('/auth/')) {
-      try {
-        const refreshDevRes = await fetch(`${API_BASE_URL}/auth/dev-token`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: 'manager@tconnect.com', role: 'Sales Manager', name: 'Sales Manager' })
-        })
-        const refreshDevData = await refreshDevRes.json()
-        const newToken = refreshDevData?.data?.access_token
-        if (newToken) {
-          localStorage.setItem('token', newToken)
-          localStorage.setItem('access_token', newToken)
-          config.headers.Authorization = `Bearer ${newToken}`
-          const retryResponse = await fetch(`${API_BASE_URL}${endpoint}`, config)
-          const retryData = await retryResponse.json()
-          if (retryResponse.ok) return retryData
-        }
-      } catch (refreshErr) {
-        // Fall through
-      }
+      clearSession()
+      redirectToLogin()
+      return Promise.reject({ message: 'Session expired. Please log in again.', status: 401 })
     }
 
     if (!response.ok) {
       return Promise.reject(data || { message: `HTTP Error ${response.status}` })
     }
+
     return data
   } catch (error) {
-    return Promise.reject(error || { message: 'Network or internal server error' })
+    if (error?.status === 401) return Promise.reject(error)
+    return Promise.reject(error || { message: 'Network or server error' })
   }
 }
+
 
 export const authAPI = {
   login: (credentials) => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
