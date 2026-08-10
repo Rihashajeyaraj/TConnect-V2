@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useToast } from '../../common/ToastContext.jsx'
+import { pipelineAPI } from '../../services/api.js'
 import {
   Briefcase,
   Plus,
@@ -46,6 +47,19 @@ function SalesPipeline() {
     return initialOpportunities
   })
 
+  // Fetch opportunities from Supabase on mount
+  useEffect(() => {
+    pipelineAPI.getOpportunities().then((res) => {
+      const opps = res.data || res || []
+      if (Array.isArray(opps) && opps.length > 0) {
+        setOpportunities(opps)
+        localStorage.setItem('tc_opportunities', JSON.stringify(opps))
+      }
+    }).catch((err) => {
+      console.warn("Pipeline API fetch notice:", err)
+    })
+  }, [])
+
   // Listen for global state updates (from Quick Action modal)
   useEffect(() => {
     const handleUpdate = () => {
@@ -88,27 +102,33 @@ function SalesPipeline() {
     e.preventDefault()
     if (!draggingId) return
 
-    const targetOpp = opportunities.find(o => o.id === draggingId)
+    const targetOpp = opportunities.find(o => o.id === draggingId || o.opportunity_id === draggingId)
     if (targetOpp) {
       showToast(`Deal "${targetOpp.company}" moved to "${stage}".`, 'success')
     }
 
+    let calculatedProb = targetOpp?.probability || 30
+    if (stage === 'Won') calculatedProb = 100
+    else if (stage === 'Lost') calculatedProb = 0
+    else if (stage === 'Lead') calculatedProb = 30
+    else if (stage === 'Qualified') calculatedProb = 50
+    else if (stage === 'Proposal') calculatedProb = 60
+    else if (stage === 'Negotiation') calculatedProb = 85
+
     updateOpps(
       opportunities.map((opp) => {
-        if (opp.id === draggingId) {
-          let probability = opp.probability
-          if (stage === 'Won') probability = 100
-          else if (stage === 'Lost') probability = 0
-          else if (stage === 'Lead') probability = 30
-          else if (stage === 'Qualified') probability = 50
-          else if (stage === 'Proposal') probability = 60
-          else if (stage === 'Negotiation') probability = 85
-
-          return { ...opp, stage, probability }
+        if (opp.id === draggingId || opp.opportunity_id === draggingId) {
+          return { ...opp, stage, probability: calculatedProb }
         }
         return opp
       })
     )
+
+    // Persist stage update in Supabase
+    pipelineAPI.updateStage(draggingId, { stage, probability: calculatedProb }).catch((err) => {
+      console.warn("Failed updating stage in Supabase:", err)
+    })
+
     setDraggingId(null)
   }
 
@@ -119,13 +139,22 @@ function SalesPipeline() {
       return
     }
 
+    const tempId = Date.now().toString()
+    const numericVal = parseFloat(newValue) || 0
+    const probVal = parseInt(newProb) || 30
+
     const newOpp = {
-      id: Date.now().toString(),
+      id: tempId,
+      opportunity_id: tempId,
       company: newCompany,
+      customer_name: newCompany,
+      title: `Opportunity - ${newCompany}`,
       rep: newRep,
-      value: parseFloat(newValue),
+      assigned_to: newRep,
+      value: numericVal,
+      expected_revenue: numericVal,
       stage: newStage,
-      probability: parseInt(newProb),
+      probability: probVal,
       age: 1,
     }
 
@@ -137,10 +166,33 @@ function SalesPipeline() {
     setNewStage('Lead')
     setNewProb(30)
     setModalOpen(false)
-    showToast(`Opportunity for "${newCompany}" created successfully!`, 'success')
+    showToast(`Opportunity for "${newCompany}" created and saving to Supabase!`, 'success')
+
+    // Persist to Supabase
+    pipelineAPI.createOpportunity({
+      id: tempId,
+      title: `Opportunity - ${newCompany}`,
+      company: newCompany,
+      customer_name: newCompany,
+      rep: newRep,
+      assigned_to: newRep,
+      value: numericVal,
+      expected_revenue: numericVal,
+      stage: newStage,
+      probability: probVal,
+    }).then((res) => {
+      const saved = res.data || res
+      if (saved && (saved.id || saved.opportunity_id)) {
+        const realId = saved.id || saved.opportunity_id
+        updateOpps([saved, ...opportunities.filter(o => o.id !== tempId)])
+      }
+    }).catch((err) => {
+      console.warn("Failed persisting opportunity to Supabase:", err)
+    })
   }
 
   function handleDelete(id) {
+
     const targetOpp = opportunities.find(o => o.id === id)
     if (targetOpp) {
       showToast(`Deal "${targetOpp.company}" has been removed.`, 'warning')

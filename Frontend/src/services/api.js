@@ -34,6 +34,11 @@ async function request(endpoint, options = {}) {
 
   const config = { ...options, headers }
 
+  if (endpoint === '/visits' && options.method === 'POST') {
+    console.log("[VISIT API] POST /api/v1/visits");
+    console.log("[VISIT API] payload:", options.body);
+  }
+
   try {
     const response = await fetch(`${API_BASE_URL}${endpoint}`, config)
 
@@ -52,6 +57,10 @@ async function request(endpoint, options = {}) {
     }
 
     if (!response.ok) {
+      if (endpoint === '/visits' && options.method === 'POST') {
+        console.error("[VISIT API] status:", response.status);
+        console.error("[VISIT API] response:", JSON.stringify(data));
+      }
       return Promise.reject(data || { message: `HTTP Error ${response.status}` })
     }
 

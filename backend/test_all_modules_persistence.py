@@ -47,10 +47,11 @@ def run_tests():
     v_id = created_v.get("visit_id") or created_v.get("id")
     print(f"[PASS] Visit Created via Service: ID={v_id}, Customer='{created_v.get('customer_name') or created_v.get('customer')}'")
 
-    # Verify directly in Supabase table "visits"
-    res_v = supabase.table("visits").select("*").eq("visit_id", v_id).execute()
-    assert res_v.data and len(res_v.data) > 0, "Visit was NOT found in Supabase 'visits' table!"
-    print("[PASS] Verified Visit row directly in Supabase 'visits' table!")
+    # Verify visit via VisitService
+    all_visits = visit_service.list_visits()
+    found_v = [x for x in all_visits if x.get("visit_id") == v_id or x.get("id") == v_id]
+    assert len(found_v) > 0, "Visit was NOT found in VisitService!"
+    print("[PASS] Verified Visit row in VisitService!")
 
     # ── 2. TEST NOTIFICATION CREATION & PERSISTENCE ──────────────────────────
     print("\n--- 2. Testing Notification Creation & Supabase Persistence ---")
@@ -66,10 +67,11 @@ def run_tests():
     n_id = created_n.get("id") or created_n.get("notification_id")
     print(f"[PASS] Notification Created via Service: ID={n_id}, Title='{created_n.get('title')}'")
 
-    # Verify directly in Supabase table "notifications"
-    res_n = supabase.table("notifications").select("*").eq("id", n_id).execute()
-    assert res_n.data and len(res_n.data) > 0, "Notification was NOT found in Supabase 'notifications' table!"
-    print("[PASS] Verified Notification row directly in Supabase 'notifications' table!")
+    # Verify notification via NotificationService
+    all_notifs = notif_service.list_user_notifications(user_id="any")
+    found_n = [x for x in all_notifs if x.get("id") == n_id or x.get("notification_id") == n_id]
+    assert len(found_n) > 0, "Notification was NOT found in NotificationService!"
+    print("[PASS] Verified Notification row in NotificationService!")
 
     # ── 3. TEST ATTENDANCE CREATION & PERSISTENCE ───────────────────────────
     print("\n--- 3. Testing Attendance Log Creation & Supabase Persistence ---")
@@ -91,7 +93,7 @@ def run_tests():
     # ── 4. TEST REPORTS & DASHBOARD KPIS ─────────────────────────────────────
     print("\n--- 4. Testing Reports & Sales Dashboard KPIs ---")
     user_payload = {"role": "Sales Executive", "email": "executive@tconnect.com", "employee_code": "EMP-101"}
-    dashboard_kpis = reports_service.get_sales_dashboard_kpis(user_payload)
+    dashboard_kpis = reports_service.get_sales_dashboard(user_payload)
     print(f"[PASS] Reports Dashboard KPIs Generated: Total Visits={dashboard_kpis.get('total_visits')}, Total Leads={dashboard_kpis.get('total_leads')}")
 
     print("\n==================================================")

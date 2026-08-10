@@ -33,6 +33,7 @@ class VisitService:
         payload["assigned_to_email"] = payload.get("assigned_to_email") or user_email
         payload["status"] = "SCHEDULED"
 
+        print("[VISIT SERVICE] payload before repository:", payload)
         return self.repo.create_visit(payload)
 
     def check_in(self, visit_id: str, data: VisitCheckIn) -> Dict[str, Any]:

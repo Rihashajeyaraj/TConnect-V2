@@ -272,14 +272,19 @@ export default function SmartClientMap() {
         setIsGpsActive(true)
         setGpsErrorMsg('')
 
-        // Post live telemetry update to backend API
+        // Post live telemetry update to backend API & Supabase
         spatialAPI.updateLocation({
           email: currentUser?.email || 'executive@tconnect.com',
+          name: currentUser?.name || currentUser?.full_name || 'Sales Executive',
+          employee_code: currentUser?.employee_code || currentUser?.employee_id || 'EMP000012',
           latitude,
           longitude,
           speed: position.coords.speed || 0,
+          heading: position.coords.heading || 0,
+          timestamp: new Date().toISOString(),
         }).catch(() => null)
       },
+
       (err) => {
         setIsGpsActive(false)
         setGpsErrorMsg('Using default location (Chennai Business Hub)')

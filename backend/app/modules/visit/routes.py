@@ -72,6 +72,8 @@ async def create_visit(
     service: VisitService = Depends(get_service)
 ):
     """Schedule a new field visit."""
+    print("[VISIT ROUTE] POST /visits received")
+    print("[VISIT ROUTE] request:", data)
     visit = service.create_visit(data, user_payload)
     return StandardResponse.success_response(
         data=visit,

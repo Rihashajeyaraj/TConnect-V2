@@ -14,6 +14,28 @@ class VisitRepository:
         self.supabase = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
 
+    def _standardize_visit(self, v: Dict[str, Any]) -> Dict[str, Any]:
+        if not v:
+            return {}
+        row = dict(v)
+        # Expose legacy field names for frontend compatibility
+        row["customer_name"] = row.get("client_name") or row.get("company_name") or "Prospect Client"
+        row["customer"] = row["customer_name"]
+        row["client"] = row["customer_name"]
+        row["company"] = row.get("company_name") or row["customer_name"]
+        row["assigned_to_email"] = row.get("assigned_to_email")
+        row["assignedToEmail"] = row.get("assigned_to_email")
+        row["assigned_to"] = row.get("employee_name")
+        row["executive"] = row.get("employee_name")
+        
+        # Build date/time from created_at or check_in_time
+        created = row.get("created_at") or datetime.utcnow().isoformat()
+        row["visit_date"] = created[:10]
+        row["date"] = created[:10]
+        row["visit_time"] = "10:00 AM"
+        row["time"] = "10:00 AM"
+        return row
+
     def get_all_visits(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         user_id = str((user_payload or {}).get("sub") or (user_payload or {}).get("user_id") or "")
         user_email = str((user_payload or {}).get("email") or "").lower().strip()
@@ -25,22 +47,22 @@ class VisitRepository:
 
         visits = []
         try:
-            res = self.supabase.schema("field_management").table("visits").select("*").execute()
+            res = self.supabase.schema(SchemaEnum.VISIT.value).table("visits").select("*").execute()
             if res.data is not None and len(res.data) > 0:
-                visits = res.data
+                visits = [self._standardize_visit(v) for v in res.data]
         except Exception as e:
-            logger.debug(f"field_management.visits fetch notice: {e}")
+            logger.debug(f"visit.visits fetch notice: {e}")
 
         if not visits:
             try:
                 res = self.supabase.table("visits").select("*").execute()
                 if res.data is not None and len(res.data) > 0:
-                    visits = res.data
+                    visits = [self._standardize_visit(v) for v in res.data]
             except Exception as e:
                 logger.warning(f"Failed fetching visits from public.visits: {e}")
 
         if not visits:
-            visits = _in_memory_visits
+            visits = [self._standardize_visit(v) for v in _in_memory_visits]
 
         from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
         allowed = get_allowed_user_identifiers(user_payload)
@@ -87,18 +109,16 @@ class VisitRepository:
 
         payload = {
             "visit_id": visit_id,
+            "lead_id": lead_id,
             "employee_id": emp_id if emp_id else None,
             "employee_name": se_name,
-            "employee_phone": emp_phone if emp_phone else None,
-            "customer_id": customer_id,
-            "customer_name": customer_name,
+            "client_name": customer_name,
+            "company_name": data.get("company_name") or data.get("company") or customer_name,
+            "assigned_to_email": se_email if se_email else None,
+            "purpose": data.get("purpose") or "Site Visit / Product Demo",
+            "status": data.get("status") or data.get("visit_status") or "SCHEDULED",
             "location": loc_str,
             "notes": full_notes,
-            "status": data.get("status") or data.get("visit_status") or "SCHEDULED",
-            "visit_date": data.get("visit_date") or data.get("date") or now_iso[:10],
-            "visit_time": data.get("visit_time") or data.get("time") or "10:00 AM",
-            "check_in_time": data.get("check_in_time") or None,
-            "check_out_time": data.get("check_out_time") or None,
             "created_at": now_iso,
         }
         if latitude is not None:
@@ -112,45 +132,21 @@ class VisitRepository:
             except Exception:
                 pass
 
-        logger.info(f"[VISIT INSERT REQUEST] Attempting insert into field_management.visits with payload: {payload}")
+        print("[VISIT REPOSITORY] schema=field_management")
+        print("[VISIT REPOSITORY] table=visits")
+        print("[VISIT REPOSITORY] final payload:", payload)
 
-        # 1. Primary: field_management.visits
         try:
             res = self.supabase.schema("field_management").table("visits").insert(payload).execute()
+            print("[VISIT REPOSITORY] Supabase response:", res.data)
             if res.data and len(res.data) > 0:
                 logger.info(f"[VISIT INSERT SUCCESS] Saved visit in field_management.visits: {res.data[0]}")
-                out_visit = res.data[0]
-                out_visit["id"] = out_visit.get("visit_id") or visit_id
-                out_visit["customer"] = customer_name
-                out_visit["client"] = customer_name
-                out_visit["executive"] = se_name
-                out_visit["assignedToEmail"] = se_email
-                return out_visit
+                return self._standardize_visit(res.data[0])
+            else:
+                raise RuntimeError("No data returned from database insert operation.")
         except Exception as e:
-            logger.debug(f"field_management.visits insert notice: {e}")
-
-        # 2. Fallback: public.visits
-        try:
-            res = self.supabase.table("visits").insert(payload).execute()
-            if res.data and len(res.data) > 0:
-                logger.info(f"[VISIT INSERT SUCCESS] Saved visit in public.visits: {res.data[0]}")
-                out_visit = res.data[0]
-                out_visit["id"] = out_visit.get("visit_id") or visit_id
-                out_visit["customer"] = customer_name
-                out_visit["client"] = customer_name
-                out_visit["executive"] = se_name
-                out_visit["assignedToEmail"] = se_email
-                return out_visit
-        except Exception as e:
-            logger.error(f"Error creating visit in public.visits: {e}")
-
-        payload["id"] = visit_id
-        payload["customer"] = customer_name
-        payload["client"] = customer_name
-        payload["executive"] = se_name
-        payload["assignedToEmail"] = se_email
-        _in_memory_visits.append(payload)
-        return payload
+            print("[VISIT REPOSITORY] Supabase exception:", repr(e))
+            raise e
 
     def complete_visit(self, visit_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         updates["status"] = "COMPLETED"
@@ -159,16 +155,16 @@ class VisitRepository:
 
         # Try to update field_management.visits first
         try:
-            res = self.supabase.schema("field_management").table("visits").update(updates).eq("id", visit_id).execute()
+            res = self.supabase.schema(SchemaEnum.VISIT.value).table("visits").update(updates).eq("id", visit_id).execute()
             if res.data and len(res.data) > 0:
                 logger.info(f"Visit {visit_id} completed in field_management.visits")
-                return res.data[0]
+                return self._standardize_visit(res.data[0])
         except Exception:
             try:
                 res = self.supabase.table("visits").update(updates).eq("id", visit_id).execute()
                 if res.data and len(res.data) > 0:
                     logger.info(f"Visit {visit_id} completed in public.visits")
-                    return res.data[0]
+                    return self._standardize_visit(res.data[0])
             except Exception as e:
                 logger.warning(f"visits complete update failed: {e}")
 

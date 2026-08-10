@@ -118,17 +118,40 @@ class CustomerRepository:
         full_notes = f"{notes_raw} | AssignedTo: {assigned_to} | Email: {assigned_email} | Manager: {mgr_email}"
 
         payload = {
+            "id": customer_id,
             "customer_id": customer_id,
-            "lead_id": lead_id,
+            "lead_id": str(lead_id) if lead_id else None,
+            "name": comp_name,
+            "company": comp_name,
+            "company_name": comp_name,
+            "contact_person": person_name,
+            "person": person_name,
+            "phone": phone_num,
+            "mobile": phone_num,
+            "email": email_addr if email_addr else None,
+            "location": city_name,
+            "city": city_name,
+            "address": data.get("address") or data.get("billing_address") or city_name,
             "billing_address": data.get("billing_address") or data.get("address") or city_name,
             "shipping_address": data.get("shipping_address") or data.get("address") or city_name,
+            "sales_executive": assigned_to,
+            "sales_manager": mgr_email or "Sales Manager",
+            "status": str(data.get("status") or "Active Customer"),
             "notes": full_notes,
             "is_active": True,
         }
+        if data.get("contract_value") or data.get("value"):
+            try:
+                c_val = str(data.get("contract_value") or data.get("value")).replace("₹", "").replace(",", "").strip()
+                payload["contract_value"] = float(c_val)
+            except ValueError:
+                pass
+
         if data.get("gstin_tax_id") or data.get("gstin"):
             payload["gstin_tax_id"] = str(data.get("gstin_tax_id") or data.get("gstin"))
 
         logger.info(f"[CUSTOMER INSERT REQUEST] Inserting into crm.customers with payload: {payload}")
+
 
         inserted_row = None
         # 1. Primary: crm.customers

@@ -38,7 +38,7 @@ import {
   ChevronLeft,
   ChevronRight,
 } from "lucide-react";
-import { crmAPI, visitAPI, customerAPI } from "../../services/api.js";
+import { crmAPI, visitAPI, customerAPI, pipelineAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
@@ -486,8 +486,29 @@ export default function Leads() {
         localStorage.setItem("tc_sales_opportunities", JSON.stringify([newOppObj, ...savedOpps]));
       } catch (err) { }
 
+      // Persist directly to Supabase crm.opportunities
+      pipelineAPI.createOpportunity({
+        id: newOppObj.id,
+        opportunity_id: newOppObj.id,
+        title: `Opportunity - ${addForm.company.trim()}`,
+        company: addForm.company.trim(),
+        customer_name: addForm.company.trim(),
+        contact_person: addForm.person.trim(),
+        phone: addForm.phone.trim(),
+        value: parseFloat(String(addForm.value || "450000").replace(/[^0-9.]/g, "")) || 450000,
+        expected_revenue: parseFloat(String(addForm.value || "450000").replace(/[^0-9.]/g, "")) || 450000,
+        stage: "Lead",
+        probability: addForm.category === "Hot" ? 85 : addForm.category === "Warm" ? 60 : 30,
+        rep: userName,
+        assigned_to: userName,
+        notes: addForm.notes.trim() || "Researched client detail logged by Sales Executive.",
+      }).catch((err) => {
+        console.warn("Opportunity Supabase persistence notice:", err);
+      });
+
       showToast(`🎯 Opportunity "${addForm.company}" saved to Supabase & Opportunity List!`, "success");
     } else {
+
       setAllLeads((prev) => {
         const updated = [newLeadObj, ...prev];
         try {
@@ -2557,9 +2578,10 @@ export default function Leads() {
                   {/* Action 3: Schedule Visit */}
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
+                      const newVisitId = `vst_${Date.now()}`;
                       const newVisit = {
-                        id: `vst_${Date.now()}`,
+                        id: newVisitId,
                         customerName: selectedLead.company,
                         clientName: selectedLead.company,
                         contactPerson: selectedLead.person,
@@ -2573,18 +2595,48 @@ export default function Leads() {
                         assignedToEmail: userEmail,
                       };
 
+                      const payload = {
+                        visit_id: newVisitId,
+                        lead_id: selectedLead.id,
+                        client_name: selectedLead.company,
+                        company_name: selectedLead.company,
+                        purpose: "Site Visit / Product Demo",
+                        visit_date: newVisit.visitDate,
+                        visit_time: "10:00 AM",
+                        location: selectedLead.city || "Chennai",
+                        employee_name: userName,
+                        employee_id: currentUser?.employee_id || null,
+                        assigned_to_email: userEmail,
+                        status: "SCHEDULED",
+                        visit_status: "SCHEDULED",
+                        notes: seRemarkInput.trim() || "Visit scheduled from Lead outcome."
+                      };
+                      console.log("[VISIT FRONTEND] createVisit payload:", payload);
+
                       try {
-                        const visits = JSON.parse(localStorage.getItem("tc_sales_visits") || "[]");
-                        localStorage.setItem("tc_sales_visits", JSON.stringify([newVisit, ...visits]));
-                      } catch (e) { }
+                        // Persist in Supabase first
+                        await visitAPI.createVisit(payload);
 
-                      setAllLeads((prev) =>
-                        prev.map((l) => (l.id === selectedLead.id ? { ...l, status: "Follow-up / Visit Scheduled" } : l))
-                      );
+                        // Update localStorage and UI state only if API call succeeds
+                        try {
+                          const visits = JSON.parse(localStorage.getItem("tc_sales_visits") || "[]");
+                          localStorage.setItem("tc_sales_visits", JSON.stringify([newVisit, ...visits]));
+                          
+                          const smVisits = JSON.parse(localStorage.getItem("tc_sm_visits") || "[]");
+                          localStorage.setItem("tc_sm_visits", JSON.stringify([newVisit, ...smVisits]));
+                        } catch (e) { }
 
-                      setSelectedLead(null);
-                      showToast(`📅 Site Visit scheduled for "${selectedLead.company}"!`, "success");
-                      setTimeout(() => navigate("/sales/visits"), 600);
+                        setAllLeads((prev) =>
+                          prev.map((l) => (l.id === selectedLead.id ? { ...l, status: "Follow-up / Visit Scheduled" } : l))
+                        );
+
+                        setSelectedLead(null);
+                        showToast(`📅 Site Visit scheduled for "${selectedLead.company}"!`, "success");
+                        setTimeout(() => navigate("/sales/visits"), 600);
+                      } catch (err) {
+                        console.error("Supabase visits persistence failed:", err);
+                        showToast(`❌ Failed to save visit in database: ${err?.message || "Network Error"}`, "error");
+                      }
                     }}
                     className="py-3.5 px-4 rounded-2xl bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-300 flex items-center justify-center gap-2 transition cursor-pointer"
                   >

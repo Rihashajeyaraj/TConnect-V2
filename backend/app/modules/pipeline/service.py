@@ -17,10 +17,10 @@ class PipelineService:
         return self.repo.create_opportunity(payload)
 
     def update_stage(self, opp_id: str, data: OpportunityUpdateStage) -> Dict[str, Any]:
-        opp = self.repo.get_opportunity_by_id(opp_id)
-        if not opp:
-            raise NotFoundException(resource="Opportunity", identifier=opp_id)
-        opp["stage"] = data.stage
-        if data.probability is not None:
-            opp["probability"] = data.probability
-        return opp
+        return self.repo.update_opportunity_stage(
+            opp_id=opp_id,
+            stage=data.stage,
+            probability=data.probability,
+            notes=data.notes,
+        )
+

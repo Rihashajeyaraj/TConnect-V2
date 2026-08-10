@@ -15,9 +15,8 @@ DECLARE
     r TEXT;
 BEGIN
     FOR s IN SELECT unnest(ARRAY[
-        'hrms', 'crm', 'customer', 'organization',
-        'visit', 'notification', 'attendance',
-        'expense', 'pipeline', 'reports'
+        'hrms', 'organization', 'crm', 'visit',
+        'finance', 'system', 'field_management'
     ])
     LOOP
         IF EXISTS (SELECT 1 FROM information_schema.schemata WHERE schema_name = s) THEN
@@ -41,7 +40,7 @@ END $$;
 --         instead of using public views as a workaround.
 -- ─────────────────────────────────────────────────────────────
 ALTER ROLE authenticator SET pgrst.db_schemas TO
-    'public, hrms, crm, customer, organization, visit, notification, attendance, expense, pipeline, reports';
+    'public, hrms, organization, crm, visit, finance, system, field_management';
 
 
 -- ─────────────────────────────────────────────────────────────

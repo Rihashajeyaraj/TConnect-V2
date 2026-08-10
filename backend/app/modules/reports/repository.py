@@ -5,6 +5,7 @@ from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
 from app.core.logger import logger
+from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
 _in_memory_eod_reports: List[Dict[str, Any]] = []
 
 
@@ -188,7 +189,7 @@ class ReportsRepository:
 
             opportunities = self._safe_fetch("opportunities", limit=1000)
             attendance = self._safe_fetch("attendance", limit=1000)
-            visits = self._safe_fetch("visits", limit=1000)
+            visits = self._safe_fetch("visits", schema="field_management", limit=1000)
             settings_list = self._safe_fetch("company_profile", schema="organization", limit=1)
             if not settings_list:
                 settings_list = self._safe_fetch("organization_settings", limit=1)
@@ -507,7 +508,7 @@ class ReportsRepository:
         total_customers = len(all_customers)
 
         # ── Visit counts ──────────────────────────────────────────────────────
-        all_visits = self._safe_fetch("visits", limit=300)
+        all_visits = self._safe_fetch("visits", schema="field_management", limit=300)
         if allowed is not None:
             all_visits = [v for v in all_visits if is_record_accessible(v, allowed)]
         total_visits = len(all_visits)

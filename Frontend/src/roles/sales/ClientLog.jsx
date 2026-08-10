@@ -20,7 +20,7 @@ import {
   Filter,
   X,
 } from "lucide-react";
-import { visitAPI, crmAPI } from "../../services/api.js";
+import { visitAPI, crmAPI, pipelineAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import { formatDate } from "../../utils/dateUtils.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
@@ -343,6 +343,19 @@ export default function ClientLog() {
     }
   });
 
+  // Fetch opportunities from Supabase on mount
+  useEffect(() => {
+    pipelineAPI.getOpportunities().then((res) => {
+      const opps = res.data || res || [];
+      if (Array.isArray(opps) && opps.length > 0) {
+        setOpportunities(filterUserItems(opps, currentUser));
+        localStorage.setItem("tc_sales_opportunities", JSON.stringify(opps));
+      }
+    }).catch((err) => {
+      console.warn("ClientLog: Failed fetching opportunities from Supabase:", err);
+    });
+  }, [currentUser?.email]);
+
   useEffect(() => {
     try {
       localStorage.setItem("tc_sales_opportunities", JSON.stringify(opportunities));
@@ -369,26 +382,46 @@ export default function ClientLog() {
       return;
     }
 
+    const tempId = `opp_${Date.now()}`;
+    const cleanCompany = oppForm.company.trim();
+    const cleanContact = oppForm.contactPerson.trim() || "Managing Director";
+    const cleanPhone = oppForm.phone.trim() || "N/A";
+    const cleanLocation = oppForm.location.trim();
+    const cleanSource = oppForm.source === "Other" && oppForm.customSource.trim() ? oppForm.customSource.trim() : oppForm.source;
+    const cleanRemarks = oppForm.remarks.trim() || "Researched prospect detail logged.";
+
     const newOppObj = {
-      id: `opp_${Date.now()}`,
+      id: tempId,
+      opportunity_id: tempId,
       leadId: `LD-${Date.now().toString().slice(-8)}`,
       leadNumber: `LD-${Date.now().toString().slice(-8)}`,
       customerId: null,
-      customer: oppForm.company.trim(),
+      company: cleanCompany,
+      customer: cleanCompany,
+      customer_name: cleanCompany,
+      title: `Opportunity - ${cleanCompany}`,
       productRequirement: oppForm.productRequirement.trim() || "CRM & Field Executive Tracking Software",
-      contactPerson: oppForm.contactPerson.trim() || "Managing Director",
-      phone: oppForm.phone.trim() || "N/A",
-      address: oppForm.location.trim(),
-      location: oppForm.location.trim(),
-      source: oppForm.source === "Other" && oppForm.customSource.trim() ? oppForm.customSource.trim() : oppForm.source,
+      contactPerson: cleanContact,
+      contact_person: cleanContact,
+      phone: cleanPhone,
+      address: cleanLocation,
+      location: cleanLocation,
+      source: cleanSource,
       value: "₹4,50,000",
+      expected_revenue: 450000,
       probability: "80%",
-      stage: "SE Research / Prospecting",
+      stage: "Lead",
       closing: oppForm.date,
       date: oppForm.date,
       status: "Hot",
       outcome: "In Negotiation",
-      remarks: oppForm.remarks.trim() || "Researched prospect detail logged.",
+      remarks: cleanRemarks,
+      notes: cleanRemarks,
+      rep: userName,
+      assigned_to: userName,
+      assigned_to_email: userEmail,
+      executiveEmail: userEmail,
+      employee_code: userEmpCode,
     };
 
     setOpportunities((prev) => [newOppObj, ...prev]);
@@ -405,22 +438,56 @@ export default function ClientLog() {
       remarks: "",
     });
 
-    showToast(`🎯 Opportunity "${newOppObj.customer}" saved to Tabular Report!`, "success");
+    showToast(`🎯 Opportunity "${newOppObj.customer}" saving to Supabase!`, "success");
+
+    // Persist directly to Supabase crm.opportunities / public.opportunities
+    pipelineAPI.createOpportunity({
+      id: tempId,
+      opportunity_id: tempId,
+      title: `Opportunity - ${cleanCompany}`,
+      company: cleanCompany,
+      customer_name: cleanCompany,
+      contact_person: cleanContact,
+      phone: cleanPhone,
+      value: 450000,
+      expected_revenue: 450000,
+      stage: "Lead",
+      probability: 80,
+      rep: userName,
+      assigned_to: userName,
+      assigned_to_email: userEmail,
+      notes: cleanRemarks,
+      expected_closing_date: oppForm.date,
+    }).then((res) => {
+      const saved = res.data || res;
+      if (saved && (saved.id || saved.opportunity_id)) {
+        const realId = saved.id || saved.opportunity_id;
+        setOpportunities((prev) =>
+          prev.map((o) => (o.id === tempId ? { ...o, id: realId, opportunity_id: realId } : o))
+        );
+      }
+      showToast(`✅ Opportunity "${cleanCompany}" saved in Supabase table!`, "success");
+    }).catch((err) => {
+      console.warn("Opportunity Supabase save error:", err);
+    });
   };
 
   const handleWinDeal = (id, customerName) => {
     setOpportunities((prev) =>
       prev.map((item) => (item.id === id ? { ...item, outcome: "Won", stage: "Won Deal 🎉", customerId: item.customerId || `CUST-${Date.now().toString().slice(-6)}` } : item))
     );
-    showToast(`🎉 Deal won successfully with ${customerName}! Retained in Report.`, "success");
+    pipelineAPI.updateStage(id, { stage: "Won", probability: 100 }).catch(() => {});
+    showToast(`🎉 Deal won successfully with ${customerName}! Saved in Supabase.`, "success");
   };
 
   const handleLostDeal = (id, customerName) => {
     setOpportunities((prev) =>
       prev.map((item) => (item.id === id ? { ...item, outcome: "Lost", stage: "Lost Deal ❌" } : item))
     );
+    pipelineAPI.updateStage(id, { stage: "Lost", probability: 0 }).catch(() => {});
     showToast(`Deal marked as lost for ${customerName}. Logged for Manager review.`, "info");
   };
+
 
   const filteredOpportunities = opportunities.filter((o) => {
     if (!matchesUser(o)) return false;

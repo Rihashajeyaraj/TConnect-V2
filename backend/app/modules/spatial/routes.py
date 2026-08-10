@@ -354,16 +354,18 @@ def check_geofence(payload: Dict[str, Any] = Body(...)):
 def update_executive_location(payload: Dict[str, Any] = Body(...)):
     """
     Live Telemetry Update:
-    Stores real-time continuous executive GPS location in telemetry cache.
+    Stores real-time continuous executive GPS location in telemetry cache & persists to Supabase.
     """
     email = (payload.get("email") or payload.get("user_email") or "executive@tconnect.com").lower()
     lat = float(payload.get("latitude") or payload.get("lat") or 13.0067)
     lng = float(payload.get("longitude") or payload.get("lng") or 80.2570)
+    emp_code = payload.get("employee_code") or "EMP000012"
+    emp_name = payload.get("name") or payload.get("executive_name") or "Sales Executive"
 
     entry = {
         "email": email,
-        "name": payload.get("name") or payload.get("executive_name") or "Sales Executive",
-        "employee_code": payload.get("employee_code") or "EMP000012",
+        "name": emp_name,
+        "employee_code": emp_code,
         "latitude": lat,
         "longitude": lng,
         "speed_kmh": payload.get("speed") or 0.0,
@@ -372,4 +374,30 @@ def update_executive_location(payload: Dict[str, Any] = Body(...)):
     }
     _live_executive_telemetry[email] = entry
 
+    # Best-effort persist to Supabase
+    try:
+        from app.database.supabase import get_supabase_admin_client, get_supabase_client
+        sp_client = get_supabase_admin_client() or get_supabase_client()
+        # Update today's attendance record with latest coordinates if active
+        import datetime
+        today_str = datetime.date.today().isoformat()
+        try:
+            sp_client.schema("hrms").table("attendance").update({
+                "latitude": lat,
+                "longitude": lng,
+                "check_out_latitude": lat,
+                "check_out_longitude": lng,
+            }).eq("employee_id", emp_code).eq("attendance_date", today_str).execute()
+        except Exception:
+            try:
+                sp_client.table("attendance").update({
+                    "latitude": lat,
+                    "longitude": lng,
+                }).eq("employee_id", emp_code).execute()
+            except Exception:
+                pass
+    except Exception as e:
+        logger.debug(f"Telemetry persistence notice: {e}")
+
     return {"success": True, "location": entry}
+
