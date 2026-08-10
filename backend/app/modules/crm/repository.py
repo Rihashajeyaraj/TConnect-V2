@@ -342,3 +342,131 @@ class CRMRepository:
             if str(lead.get("id")) == str(lead_id):
                 return lead
         return None
+
+    # ── FOLLOW-UPS PERSISTENCE ────────────────────────────────────────────────
+    def _standardize_followup(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        flw_id = str(row.get("follow_up_id") or row.get("id") or "")
+        notes_raw = str(row.get("notes") or "")
+        
+        # Parse serialized metadata from notes if present
+        meta = {}
+        if "|" in notes_raw:
+            parts = notes_raw.split("|")
+            remark_main = parts[0].strip()
+            for part in parts[1:]:
+                if ":" in part:
+                    k, v = part.split(":", 1)
+                    meta[k.strip().lower()] = v.strip()
+        else:
+            remark_main = notes_raw
+
+        return {
+            "id": flw_id,
+            "follow_up_id": flw_id,
+            "leadId": str(row.get("lead_id") or meta.get("leadid") or ""),
+            "leadNumber": meta.get("leadnumber") or "",
+            "company": meta.get("company") or str(row.get("customer_id") or "Client Account"),
+            "person": meta.get("person") or "Contact Person",
+            "phone": meta.get("phone") or "",
+            "email": meta.get("email") or "",
+            "city": meta.get("city") or "Chennai",
+            "category": meta.get("category") or "Warm",
+            "scheduledDate": str(row.get("follow_up_date") or ""),
+            "scheduledTime": str(row.get("follow_up_time") or "11:00 AM"),
+            "remark": remark_main,
+            "assignedTo": meta.get("assignedto") or "Sales Executive",
+            "assignedToEmail": meta.get("email") or meta.get("assignedtoemail") or "",
+            "status": row.get("status") or "Scheduled",
+            "follow_up_type": row.get("follow_up_type") or "Call",
+            "created_at": row.get("created_at") or ""
+        }
+
+    def get_all_followups(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        try:
+            res = self.supabase.schema("crm").table("follow_ups").select("*").order("created_at", desc=True).execute()
+            if res.data is not None:
+                standardized = [self._standardize_followup(r) for r in res.data]
+                from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
+                allowed = get_allowed_user_identifiers(user_payload)
+                if allowed is not None:
+                    standardized = [f for f in standardized if is_record_accessible(f, allowed)]
+                return standardized
+        except Exception as e:
+            logger.warning(f"Failed to fetch follow_ups from crm schema: {e}")
+        return []
+
+    def create_followup(self, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        import datetime as dt
+        flw_id = str(data.get("id") or data.get("follow_up_id") or uuid.uuid4())
+        is_uuid = lambda x: x and len(str(x)) == 36 and "-" in str(x)
+        
+        # User & Lead resolution
+        lead_id = data.get("leadId") or data.get("lead_id")
+        lead_uuid = str(lead_id) if is_uuid(lead_id) else None
+        
+        user_id = str((user_payload or {}).get("sub") or (user_payload or {}).get("user_id") or "")
+        assigned_to_uuid = user_id if is_uuid(user_id) else None
+        
+        company = data.get("company") or data.get("company_name") or "Client Account"
+        person = data.get("person") or data.get("contact_person") or "Contact Person"
+        phone = data.get("phone") or data.get("mobile") or ""
+        email = data.get("email") or data.get("contact_email") or ""
+        city = data.get("city") or "Chennai"
+        category = data.get("category") or "Warm"
+        assigned_to = data.get("assignedTo") or (user_payload or {}).get("name") or "Sales Executive"
+        assigned_to_email = data.get("assignedToEmail") or (user_payload or {}).get("email") or ""
+        
+        # Date & Time formatting
+        sched_date = data.get("scheduledDate") or data.get("follow_up_date") or dt.datetime.utcnow().strftime("%Y-%m-%d")
+        sched_time_raw = str(data.get("scheduledTime") or data.get("follow_up_time") or "11:00 AM")
+        try:
+            if "AM" in sched_time_raw.upper() or "PM" in sched_time_raw.upper():
+                t_obj = dt.datetime.strptime(sched_time_raw.strip(), "%I:%M %p")
+                db_time = t_obj.strftime("%H:%M:%S")
+            else:
+                db_time = sched_time_raw[:8]
+        except Exception:
+            db_time = "11:00:00"
+
+        remark = data.get("remark") or data.get("notes") or "Follow-up scheduled"
+        full_notes = f"{remark} | Company: {company} | Person: {person} | Phone: {phone} | Email: {email} | City: {city} | Category: {category} | AssignedTo: {assigned_to} | Email: {assigned_to_email} | LeadNumber: {data.get('leadNumber', '')}"
+
+        db_payload = {
+            "follow_up_id": flw_id if is_uuid(flw_id) else str(uuid.uuid4()),
+            "lead_id": lead_uuid,
+            "customer_id": company,
+            "assigned_to": assigned_to_uuid,
+            "follow_up_date": sched_date,
+            "follow_up_time": db_time,
+            "follow_up_type": data.get("follow_up_type") or "Call",
+            "status": data.get("status") or "Scheduled",
+            "subject": f"Follow-up: {company}",
+            "notes": full_notes,
+            "created_at": dt.datetime.utcnow().isoformat()
+        }
+
+        res = self.supabase.schema("crm").table("follow_ups").insert(db_payload).execute()
+        if res.data and len(res.data) > 0:
+            logger.info(f"Followup created in crm.follow_ups: {res.data[0]}")
+            return self._standardize_followup(res.data[0])
+        raise RuntimeError("Failed to insert follow-up into crm.follow_ups")
+
+    def update_followup(self, followup_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        db_updates = {}
+        if updates.get("status"):
+            db_updates["status"] = updates["status"]
+        if updates.get("outcome"):
+            db_updates["outcome"] = updates["outcome"]
+        if updates.get("notes") or updates.get("remark"):
+            db_updates["notes"] = updates.get("notes") or updates.get("remark")
+        if updates.get("scheduledDate"):
+            db_updates["follow_up_date"] = updates["scheduledDate"]
+
+        res = self.supabase.schema("crm").table("follow_ups").update(db_updates).eq("follow_up_id", followup_id).execute()
+        if res.data and len(res.data) > 0:
+            return self._standardize_followup(res.data[0])
+        raise RuntimeError(f"Failed to update follow-up '{followup_id}' in crm.follow_ups")
+
+    def delete_followup(self, followup_id: str) -> bool:
+        self.supabase.schema("crm").table("follow_ups").delete().eq("follow_up_id", followup_id).execute()
+        return True

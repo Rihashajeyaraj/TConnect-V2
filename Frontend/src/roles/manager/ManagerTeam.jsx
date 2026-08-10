@@ -74,13 +74,13 @@ export default function ManagerTeam() {
 
   const handleUpdateLeaveStatus = async (reqId, newStatus) => {
     const comment = ackComments[reqId] || `Leave request ${newStatus.toLowerCase()} by Sales Manager.`
-    setTeamLeaveRequests((prev) => prev.map((r) => (r.id === reqId || r.leave_id === reqId ? { ...r, status: newStatus, manager_comment: comment } : r)))
 
     try {
-      await attendanceAPI.updateLeaveStatus(reqId, { status: newStatus, comment })
-      showToast(`Leave / Permission request ${newStatus} successfully!`, newStatus === "Approved" ? "success" : "info")
+      await attendanceAPI.updateLeaveStatus(reqId, newStatus, comment)
+      setTeamLeaveRequests((prev) => prev.map((r) => (r.id === reqId || r.leave_id === reqId ? { ...r, status: newStatus, manager_comment: comment } : r)))
+      showToast(`Leave request ${newStatus.toLowerCase()} successfully!`, newStatus === "Approved" ? "success" : "info")
     } catch (err) {
-      showToast(`Notice: Status updated locally.`, "info")
+      showToast(`Failed to update leave status: ${err?.message || 'Server Error'}`, "error")
     }
   }
 

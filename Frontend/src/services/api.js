@@ -90,6 +90,10 @@ export const crmAPI = {
   updateLead: (id, data) => request(`/crm/leads/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   convertLeadToCustomer: (leadId, extraDetails) =>
     request('/customer/customers', { method: 'POST', body: JSON.stringify({ lead_id: leadId, ...extraDetails }) }),
+  getFollowups: () => request('/crm/followups'),
+  createFollowup: (data) => request('/crm/followups', { method: 'POST', body: JSON.stringify(data) }),
+  updateFollowup: (id, data) => request(`/crm/followups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteFollowup: (id) => request(`/crm/followups/${id}`, { method: 'DELETE' }),
 }
 
 export const customerAPI = {

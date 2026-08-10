@@ -661,6 +661,67 @@ class ReportsRepository:
             "notifications_count": notif_count if notif_count > 0 else 6,
         }
 
+    def _standardize_eod_report(self, r: Dict[str, Any]) -> Dict[str, Any]:
+        if not r:
+            return {}
+        row = dict(r)
+        
+        rep_id = row.get("id")
+        emp_code = row.get("employee_id") or "EMP000012"
+        exec_name = row.get("employee_name") or "Sales Executive"
+        mgr_email = row.get("manager_name") or "manager@tconnect.com"
+        report_date = row.get("report_date")
+        if isinstance(report_date, date):
+            report_date = report_date.isoformat()
+        else:
+            report_date = str(report_date or datetime.utcnow().strftime("%Y-%m-%d"))
+        
+        challenges = row.get("challenges_faced") or ""
+        highlights_val = challenges
+        blockers_val = "None"
+        if " | " in challenges:
+            parts = challenges.split(" | ")
+            highlights_val = parts[0]
+            if len(parts) > 3:
+                blockers_val = parts[1]
+                
+        is_ack = bool(row.get("acknowledged", False))
+        ack_by = row.get("acknowledged_by") or ""
+        
+        std_report = {
+            "id": rep_id,
+            "report_id": rep_id,
+            "date": report_date,
+            "submittedAt": report_date,
+            "executive": exec_name,
+            "executive_name": exec_name,
+            "executiveEmail": "",
+            "executive_email": "",
+            "employee_code": emp_code,
+            "employee_id": emp_code,
+            "reporting_manager_email": mgr_email,
+            "callsMade": int(row.get("leads_contacted") or 0),
+            "calls_made": int(row.get("leads_contacted") or 0),
+            "visitsCompleted": int(row.get("visits_count") or 0),
+            "visits_completed": int(row.get("visits_count") or 0),
+            "leadsGenerated": 0,
+            "leads_generated": 0,
+            "clientsInterested": 0,
+            "clients_interested": 0,
+            "followupsScheduled": 0,
+            "followups_scheduled": 0,
+            "dealsClosed": int(row.get("deals_won") or 0),
+            "deals_closed": int(row.get("deals_won") or 0),
+            "highlights": highlights_val,
+            "blockers": blockers_val,
+            "nextDayPlan": row.get("next_day_plan") or "Follow up with prospects",
+            "status": "Acknowledged" if is_ack else "Submitted",
+            "managerAck": is_ack,
+            "managerComment": ack_by,
+            "created_at": row.get("created_at")
+        }
+        return std_report
+
     def create_eod_report(self, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         report_id = data.get("id") or f"eod_{uuid.uuid4()}"
         now_iso = datetime.utcnow().isoformat()
@@ -730,6 +791,39 @@ class ReportsRepository:
             "created_at": now_iso
         }
 
+        db_payload = {
+            "id": report_id,
+            "employee_id": emp_code,
+            "employee_name": exec_name,
+            "manager_name": mgr_email,
+            "report_date": report_obj["date"],
+            "visits_count": visits,
+            "leads_contacted": calls,
+            "deals_won": deals,
+            "collections_amount": float(data.get("collections_amount") or 0.0),
+            "challenges_faced": full_high,
+            "next_day_plan": report_obj["nextDayPlan"],
+            "acknowledged": False,
+            "acknowledged_by": None,
+            "created_at": now_iso
+        }
+
+        # Try inserting to system.reports_eod in Supabase
+        try:
+            res = self.supabase.schema("system").table("reports_eod").insert(db_payload).execute()
+            if res.data and len(res.data) > 0:
+                logger.info(f"EOD Report saved in system.reports_eod: {res.data[0]}")
+                report_obj = self._standardize_eod_report(res.data[0])
+        except Exception as e:
+            logger.warning(f"Failed to insert into system.reports_eod: {e}")
+            try:
+                res = self.supabase.table("reports_eod").insert(db_payload).execute()
+                if res.data and len(res.data) > 0:
+                    logger.info(f"EOD Report saved in public.reports_eod: {res.data[0]}")
+                    report_obj = self._standardize_eod_report(res.data[0])
+            except Exception as e2:
+                logger.warning(f"Failed to insert into public.reports_eod: {e2}")
+
         _in_memory_eod_reports.insert(0, report_obj)
 
         # Dispatch real-time notification to assigned Sales Manager
@@ -752,13 +846,46 @@ class ReportsRepository:
         from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
         allowed = get_allowed_user_identifiers(user_payload)
         
-        all_r = list(_in_memory_eod_reports)
+        db_reports = []
+        try:
+            res = self.supabase.schema("system").table("reports_eod").select("*").order("created_at", desc=True).execute()
+            if res.data is not None:
+                db_reports = [self._standardize_eod_report(r) for r in res.data]
+        except Exception:
+            try:
+                res = self.supabase.table("reports_eod").select("*").order("created_at", desc=True).execute()
+                if res.data is not None:
+                    db_reports = [self._standardize_eod_report(r) for r in res.data]
+            except Exception as e:
+                logger.debug(f"reports_eod fetch failed: {e}")
+
+        all_r = list(db_reports) if db_reports else [self._standardize_eod_report(r) for r in _in_memory_eod_reports]
         if allowed is not None:
             all_r = [r for r in all_r if is_record_accessible(r, allowed)]
 
         return all_r
 
     def acknowledge_eod_report(self, report_id: str, comment: str = "", user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        ack_by_user = str((user_payload or {}).get("email") or "manager@tconnect.com")
+        updates = {
+            "acknowledged": True,
+            "acknowledged_by": comment or f"Acknowledged by {ack_by_user}"
+        }
+
+        try:
+            res = self.supabase.schema("system").table("reports_eod").update(updates).eq("id", report_id).execute()
+            if res.data and len(res.data) > 0:
+                logger.info(f"EOD report {report_id} acknowledged in system.reports_eod")
+                return self._standardize_eod_report(res.data[0])
+        except Exception:
+            try:
+                res = self.supabase.table("reports_eod").update(updates).eq("id", report_id).execute()
+                if res.data and len(res.data) > 0:
+                    logger.info(f"EOD report {report_id} acknowledged in public.reports_eod")
+                    return self._standardize_eod_report(res.data[0])
+            except Exception as e:
+                logger.warning(f"reports_eod acknowledge update failed: {e}")
+
         for r in _in_memory_eod_reports:
             if str(r.get("id")) == str(report_id) or str(r.get("report_id")) == str(report_id):
                 r["managerAck"] = True

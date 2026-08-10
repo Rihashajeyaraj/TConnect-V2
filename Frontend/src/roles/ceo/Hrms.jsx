@@ -200,30 +200,35 @@ function CeoHrms({ initialTab = 'employees' }) {
     if (!selectedRequest) return
     const isLeave = selectedRequest.leave_type !== undefined
 
-    if (isLeave) {
-      setLeaveRequests((prev) =>
-        prev.map((l) =>
-          l.id === selectedRequest.id
-            ? { ...l, status: reviewAction, reviewed_by: 'Chief Executive Officer', remarks: reviewRemarks }
-            : l
+    try {
+      if (isLeave) {
+        await attendanceAPI.updateLeaveStatus(selectedRequest.id, reviewAction, reviewRemarks)
+        setLeaveRequests((prev) =>
+          prev.map((l) =>
+            l.id === selectedRequest.id
+              ? { ...l, status: reviewAction, reviewed_by: 'Chief Executive Officer', remarks: reviewRemarks }
+              : l
+          )
         )
-      )
-      await attendanceAPI.updateLeaveStatus(selectedRequest.id, reviewAction, reviewRemarks).catch(() => null)
-    } else {
-      setPermissionRequests((prev) =>
-        prev.map((p) =>
-          p.id === selectedRequest.id
-            ? { ...p, status: reviewAction, reviewed_by: 'Chief Executive Officer', remarks: reviewRemarks }
-            : p
+      } else {
+        await attendanceAPI.updateLeaveStatus(selectedRequest.id, reviewAction, reviewRemarks)
+        setPermissionRequests((prev) =>
+          prev.map((p) =>
+            p.id === selectedRequest.id
+              ? { ...p, status: reviewAction, reviewed_by: 'Chief Executive Officer', remarks: reviewRemarks }
+              : p
+          )
         )
-      )
-    }
+      }
 
-    showToast(
-      `${isLeave ? 'Leave Request' : 'Permission Request'} for ${selectedRequest.employee_name} has been ${reviewAction}`,
-      reviewAction === 'Approved' ? 'success' : 'info'
-    )
-    setReviewModalOpen(false)
+      showToast(
+        `${isLeave ? 'Leave Request' : 'Permission Request'} for ${selectedRequest.employee_name} has been ${reviewAction}`,
+        reviewAction === 'Approved' ? 'success' : 'info'
+      )
+      setReviewModalOpen(false)
+    } catch (err) {
+      showToast(`Failed to update leave status: ${err?.message || 'Server Error'}`, 'error')
+    }
   }
 
   // Filtered queries

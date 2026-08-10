@@ -14,6 +14,19 @@ class NotificationRepository:
         self.supabase = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
 
+    def _standardize_notification(self, n: Dict[str, Any]) -> Dict[str, Any]:
+        if not n:
+            return {}
+        row = dict(n)
+        # Map DB columns back to legacy/frontend keys
+        row["message"] = row.get("description") or ""
+        row["type"] = row.get("category") or "INFO"
+        row["notification_type"] = row.get("category") or "INFO"
+        row["recipient_id"] = row.get("recipient_user_id")
+        row["read"] = row.get("is_read") or row.get("read") or False
+        row["is_read"] = row.get("is_read") or row.get("read") or False
+        return row
+
     def get_user_notifications(self, user_id: str, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         user_email = str((user_payload or {}).get("email") or "").lower().strip()
         user_emp_code = str((user_payload or {}).get("employee_code") or (user_payload or {}).get("employee_id") or "").strip()
@@ -24,7 +37,7 @@ class NotificationRepository:
         try:
             res = self.supabase.schema("system").table("notifications").select("*").execute()
             if res.data is not None and len(res.data) > 0:
-                notifs = res.data
+                notifs = [self._standardize_notification(n) for n in res.data]
         except Exception as e:
             logger.debug(f"system.notifications fetch notice: {e}")
 
@@ -33,22 +46,36 @@ class NotificationRepository:
             try:
                 res = self.supabase.table("notifications").select("*").execute()
                 if res.data is not None and len(res.data) > 0:
-                    notifs = res.data
+                    notifs = [self._standardize_notification(n) for n in res.data]
             except Exception as e:
                 logger.warning(f"public.notifications fetch failed: {e}")
 
         # 3. In-memory fallback
         if not notifs:
-            notifs = _in_memory_notifications
+            notifs = [self._standardize_notification(n) for n in _in_memory_notifications]
 
         # Filter by recipient
         if user_id or user_email or user_emp_code:
-            notifs = [
-                n for n in notifs
-                if str(n.get("recipient_id") or "").strip() == user_id
-                or str(n.get("employee_id") or "").strip() in (user_id, user_emp_code)
-                or str(n.get("recipient_email") or "").lower() == user_email
-            ]
+            filtered = []
+            for n in notifs:
+                r_id = str(n.get("recipient_id") or n.get("recipient_user_id") or "").strip()
+                r_role = str(n.get("recipient_role") or "").strip().lower()
+                r_email = str(n.get("recipient_email") or "").lower().strip()
+                
+                # Exclude if it has a specific recipient and it's not the user
+                if r_id and r_id != user_id:
+                    continue
+                if r_email and r_email != user_email:
+                    continue
+                
+                # Check role or broadcast
+                if r_role == "all" or not r_role:
+                    filtered.append(n)
+                elif user_payload and r_role == str(user_payload.get("role") or "").strip().lower():
+                    filtered.append(n)
+                elif r_id == user_id or r_email == user_email:
+                    filtered.append(n)
+            return filtered
 
         return notifs
 
@@ -67,60 +94,79 @@ class NotificationRepository:
         title_str = str(data.get("title") or "System Notification")
         msg_str = str(data.get("message") or "")
         type_str = str(data.get("type") or data.get("notification_type") or "INFO")
+        is_read_val = bool(data.get("is_read") or data.get("read") or False)
 
-        payload = {
+        # Build database-conforming payload
+        db_payload = {
             "id": notif_id,
+            "recipient_role": recip_role,
+            "category": type_str,
+            "title": title_str,
+            "description": msg_str,
+            "unread": not is_read_val,
+            "is_read": is_read_val,
+            "read": is_read_val,
+            "created_at": now_iso,
+        }
+
+        # Optional recipient identity if valid UUID
+        recip_id = data.get("recipient_id") or data.get("employee_id") or data.get("user_id") or data.get("recipient_user_id")
+        is_uuid = lambda x: x and len(str(x)) == 36 and "-" in str(x)
+        if recip_id and is_uuid(recip_id):
+            db_payload["recipient_user_id"] = str(recip_id)
+
+        # Build fully enriched legacy request object for in-memory fallback
+        req_obj = {
+            "id": notif_id,
+            "notification_id": notif_id,
             "recipient_role": recip_role,
             "title": title_str,
             "message": msg_str,
             "type": type_str,
-            "is_read": bool(data.get("is_read") or data.get("read") or False),
+            "is_read": is_read_val,
+            "read": is_read_val,
             "created_at": now_iso,
         }
-
-        # Optional recipient identity if valid UUID or email
-        recip_id = data.get("recipient_id") or data.get("employee_id") or data.get("user_id")
-        if recip_id and len(str(recip_id)) == 36 and "-" in str(recip_id):
-            payload["recipient_id"] = str(recip_id)
-        
+        if recip_id:
+            req_obj["recipient_id"] = str(recip_id)
         recip_email = data.get("recipient_email") or data.get("employee_email")
         if recip_email:
-            payload["recipient_email"] = str(recip_email)
+            req_obj["recipient_email"] = str(recip_email)
 
-        logger.info(f"[NOTIFICATION INSERT REQUEST] Inserting into system.notifications with payload: {payload}")
+        logger.info(f"[NOTIFICATION INSERT REQUEST] Inserting into system.notifications with payload: {db_payload}")
 
         # 1. Primary: system.notifications
         try:
-            res = self.supabase.schema("system").table("notifications").insert(payload).execute()
+            res = self.supabase.schema("system").table("notifications").insert(db_payload).execute()
             if res.data and len(res.data) > 0:
                 logger.info(f"[NOTIFICATION INSERT SUCCESS] Saved notification in system.notifications: {res.data[0]}")
-                return res.data[0]
+                return self._standardize_notification(res.data[0])
         except Exception as e:
             logger.debug(f"system.notifications insert notice: {e}")
 
         # 2. Fallback: public.notifications
         try:
-            res = self.supabase.table("notifications").insert(payload).execute()
+            res = self.supabase.table("notifications").insert(db_payload).execute()
             if res.data and len(res.data) > 0:
                 logger.info(f"[NOTIFICATION INSERT SUCCESS] Saved notification in public.notifications: {res.data[0]}")
-                return res.data[0]
+                return self._standardize_notification(res.data[0])
         except Exception as e:
             logger.error(f"Error creating notification in public.notifications: {e}")
 
-        payload["id"] = notif_id
-        _in_memory_notifications.append(payload)
-        return payload
+        _in_memory_notifications.append(req_obj)
+        return req_obj
 
     def mark_as_read(self, notification_id: str) -> Dict[str, Any]:
+        updates = {"is_read": True, "read": True, "unread": False}
         try:
-            res = self.supabase.schema("system").table("notifications").update({"is_read": True, "read": True}).eq("id", notification_id).execute()
+            res = self.supabase.schema("system").table("notifications").update(updates).eq("id", notification_id).execute()
             if res.data and len(res.data) > 0:
-                return res.data[0]
+                return self._standardize_notification(res.data[0])
         except Exception:
             try:
-                res = self.supabase.table("notifications").update({"is_read": True, "read": True}).eq("id", notification_id).execute()
+                res = self.supabase.table("notifications").update(updates).eq("id", notification_id).execute()
                 if res.data and len(res.data) > 0:
-                    return res.data[0]
+                    return self._standardize_notification(res.data[0])
             except Exception as e:
                 logger.warning(f"mark_as_read failed: {e}")
 

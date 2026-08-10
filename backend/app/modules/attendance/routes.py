@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Query, status, HTTPException
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
 from app.modules.attendance.schemas import ClockInRequest, ClockOutRequest, EnrollmentRequest
@@ -121,6 +121,19 @@ async def clock_in(
         data.employee_name = str(user_payload.get("name") or "Sales Executive")
 
     log = service.clock_in(user_id, data)
+
+    # Audit logging
+    try:
+        from app.modules.audit.repository import AuditRepository
+        AuditRepository().create_log({
+            "action": "CLOCK_IN",
+            "entity_type": "hrms.attendance_logs",
+            "entity_id": log.get("id") or log.get("attendance_id") or "",
+            "details": {"latitude": data.latitude, "longitude": data.longitude, "work_location": data.work_location}
+        }, user_payload)
+    except Exception:
+        pass
+
     return StandardResponse.success_response(
         data=log,
         message="Clocked in successfully"
@@ -140,6 +153,19 @@ async def clock_out(
         data.employee_id = str(user_payload.get("employee_code") or user_id)
 
     log = service.clock_out(user_id, data)
+
+    # Audit logging
+    try:
+        from app.modules.audit.repository import AuditRepository
+        AuditRepository().create_log({
+            "action": "CLOCK_OUT",
+            "entity_type": "hrms.attendance_logs",
+            "entity_id": log.get("id") or log.get("attendance_id") or "",
+            "details": {"latitude": data.latitude, "longitude": data.longitude}
+        }, user_payload)
+    except Exception:
+        pass
+
     return StandardResponse.success_response(
         data=log,
         message="Clocked out successfully"
@@ -154,6 +180,19 @@ async def submit_leave_request(
 ):
     """Submit Leave / Permission request by Sales Executive."""
     result = service.submit_leave_request(data, user_payload)
+
+    # Audit logging
+    try:
+        from app.modules.audit.repository import AuditRepository
+        AuditRepository().create_log({
+            "action": "SUBMIT_LEAVE",
+            "entity_type": "hrms.leave_requests",
+            "entity_id": result.get("id") or result.get("leave_request_id") or "",
+            "details": {"leave_type": result.get("leave_type"), "from_date": result.get("from_date"), "to_date": result.get("to_date")}
+        }, user_payload)
+    except Exception:
+        pass
+
     return StandardResponse.success_response(
         data=result,
         message="Leave / Permission request submitted successfully"
@@ -183,7 +222,23 @@ async def update_leave_status(
     """Approve or Reject Leave / Permission request by Sales Manager."""
     new_status = data.get("status") or "Approved"
     comment = data.get("comment") or data.get("manager_comment") or ""
-    result = service.update_leave_status(request_id, new_status, comment, user_payload)
+    try:
+        result = service.update_leave_status(request_id, new_status, comment, user_payload)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    # Audit logging
+    try:
+        from app.modules.audit.repository import AuditRepository
+        AuditRepository().create_log({
+            "action": f"{new_status.upper()}_LEAVE",
+            "entity_type": "hrms.leave_requests",
+            "entity_id": request_id,
+            "details": {"status": new_status, "comment": comment}
+        }, user_payload)
+    except Exception:
+        pass
+
     return StandardResponse.success_response(
         data=result,
         message=f"Leave request {new_status} successfully"

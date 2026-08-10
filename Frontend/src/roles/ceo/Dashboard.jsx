@@ -177,16 +177,15 @@ function CeoDashboard() {
   const handleQuickApproval = async (id, type, decision) => {
     try {
       if (type === 'leave') {
-        await attendanceAPI.updateLeaveStatus(id, decision, 'Approved from CEO Cockpit').catch(() => null)
+        await attendanceAPI.updateLeaveStatus(id, decision, 'Approved from CEO Cockpit')
       } else if (type === 'expense') {
-        if (decision === 'Approved') await expenseAPI.approveExpense(id).catch(() => null)
-        else await expenseAPI.rejectExpense(id).catch(() => null)
+        if (decision === 'Approved') await expenseAPI.approveExpense(id)
+        else await expenseAPI.rejectExpense(id)
       }
       setPendingApprovals((prev) => prev.filter((item) => item.id !== id))
       showToast(`${type.toUpperCase()} ${decision} successfully!`, 'success')
-    } catch {
-      setPendingApprovals((prev) => prev.filter((item) => item.id !== id))
-      showToast(`Approval marked as ${decision}`, 'info')
+    } catch (err) {
+      showToast(`Failed to ${decision.toLowerCase()} ${type}: ${err?.message || 'Server Error'}`, 'error')
     }
   }
 

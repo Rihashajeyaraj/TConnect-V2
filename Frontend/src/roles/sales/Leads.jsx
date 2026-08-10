@@ -139,8 +139,16 @@ export default function Leads() {
     }
   });
 
-  // Fetch real visits from Supabase via backend visitAPI
+  // Fetch real visits and followups from Supabase via backend APIs
   useEffect(() => {
+    crmAPI.getFollowups()
+      .then((res) => {
+        if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
+          setFollowupsList((prev) => [...res.data, ...prev.filter(p => !res.data.some(a => a.id === p.id))]);
+        }
+      })
+      .catch(() => null);
+
     visitAPI.getVisits()
       .then((res) => {
         if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
@@ -594,7 +602,15 @@ export default function Leads() {
 
     setFollowupsList((prev) => [newFollowup, ...prev]);
 
-    // Update lead status in allLeads
+    // Save to Supabase crm.follow_ups table
+    crmAPI.createFollowup(newFollowup).catch(() => null);
+
+    // Update lead status in allLeads and backend
+    crmAPI.updateLead(lead.id, {
+      status: "Moved to Follow-ups",
+      notes: `[Follow-up scheduled on ${followupDate} ${followupTime}]: ${remarkText}`
+    }).catch(() => null);
+
     setAllLeads((prev) =>
       prev.map((l) =>
         l.id === lead.id
@@ -990,6 +1006,7 @@ export default function Leads() {
       };
 
       setFollowupsList((prev) => [newFollowup, ...prev]);
+      crmAPI.createFollowup(newFollowup).catch(() => null);
       setVisitList((prev) => prev.filter((item) => item.id !== v.id));
       showToast(`📞 Meeting Outcome Logged: Lead moved to Follow-ups tab for next discussion call!`, "success");
       setActiveTab("followups");

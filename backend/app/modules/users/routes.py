@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, HTTPException
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
 from app.modules.users.schemas import UserCreate, UserUpdate, UserResponse, AssignManagerRequest
@@ -40,7 +40,11 @@ async def assign_sales_executives(
 ):
     """Assign one or more Sales Executives to a Sales Manager (Admin / Super Admin only)."""
     _require_admin_or_superadmin(user_payload)
-    res = service.assign_sales_executives(data)
+    try:
+        res = service.assign_sales_executives(data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     return StandardResponse.success_response(
         data=res,
         message=f"Successfully assigned {res.get('count', 0)} Sales Executives to Sales Manager {res.get('manager_name')}."

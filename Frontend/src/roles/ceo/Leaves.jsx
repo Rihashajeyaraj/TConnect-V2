@@ -82,21 +82,18 @@ function Leaves() {
   const handleConfirmApproval = async () => {
     if (!selectedRequest) return
     
-    // Optimistic UI update
-    setLeaves((prev) =>
-      prev.map((l) =>
-        l.id === selectedRequest.id ? { ...l, status: actionType, remarks: remarks } : l
-      )
-    )
-
     try {
-      await attendanceAPI.updateLeaveStatus(selectedRequest.id, actionType, remarks).catch(() => null)
+      await attendanceAPI.updateLeaveStatus(selectedRequest.id, actionType, remarks)
+      setLeaves((prev) =>
+        prev.map((l) =>
+          l.id === selectedRequest.id ? { ...l, status: actionType, remarks: remarks } : l
+        )
+      )
       showToast(`Leave request ${actionType.toLowerCase()} successfully!`, 'success')
-    } catch (err) {
-      showToast('Leave status updated.', 'success')
-    } finally {
       setShowApprovalModal(false)
       setSelectedRequest(null)
+    } catch (err) {
+      showToast(`Failed to update leave status: ${err?.message || 'Server Error'}`, 'error')
     }
   }
 

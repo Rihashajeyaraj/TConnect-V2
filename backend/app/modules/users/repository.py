@@ -23,6 +23,68 @@ class UserRepository:
         self.helper = get_schema_helper()
 
     def get_all_users(self) -> List[Dict[str, Any]]:
+        # 1. Fetch raw employees from hrms.employees table
+        db_employees = []
+        try:
+            res = self.client.schema("hrms").table("employees").select("*").execute()
+            if res.data and len(res.data) > 0:
+                db_employees = res.data
+        except Exception as e:
+            try:
+                res = self.client.table("employees").select("*").execute()
+                if res.data and len(res.data) > 0:
+                    db_employees = res.data
+            except Exception:
+                pass
+
+        # 2. Build employee ID mapping for reporting manager resolution
+        emp_map = {}
+        for emp in db_employees:
+            e_id = str(emp.get("employee_id") or emp.get("id") or "")
+            u_id = str(emp.get("user_id") or "")
+            if e_id:
+                emp_map[e_id] = emp
+            if u_id:
+                emp_map[u_id] = emp
+
+        # Helper to resolve manager info from reporting_manager UUID
+        def resolve_manager(mgr_uuid):
+            if not mgr_uuid:
+                return None, None, None
+            mgr_str = str(mgr_uuid)
+            if mgr_str in emp_map:
+                mgr = emp_map[mgr_str]
+                m_id = str(mgr.get("employee_id") or mgr.get("id") or mgr.get("user_id") or "")
+                m_name = mgr.get("name") or f"{mgr.get('first_name', '')} {mgr.get('last_name', '')}".strip() or "Sales Manager"
+                m_email = mgr.get("email") or ""
+                return m_id, m_name, m_email
+            return mgr_str, None, None
+
+        # 3. Format db users
+        db_users = []
+        for emp in db_employees:
+            emp_id = str(emp.get("employee_id") or emp.get("id") or f"usr_{uuid.uuid4()}")
+            mgr_id, mgr_name, mgr_email = resolve_manager(emp.get("reporting_manager"))
+            
+            db_users.append({
+                "id": emp_id,
+                "auth_user_id": str(emp.get("user_id") or emp_id),
+                "employee_id": emp_id,
+                "employee_code": emp.get("employee_code") or "N/A",
+                "name": emp.get("name") or f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip() or "User Account",
+                "email": emp.get("email", "user@tconnect.com"),
+                "phone": emp.get("phone") or emp.get("mobile", "+91 99999 00000"),
+                "role": emp.get("role") or emp.get("designation", "Sales Executive"),
+                "dept": emp.get("dept") or emp.get("department", "Sales & Business Development"),
+                "status": emp.get("status", "Active"),
+                "lastLogin": "Recently",
+                "accessPassword": emp.get("accessPassword") or emp.get("password", "TConnect2026#"),
+                "reporting_manager_id": mgr_id,
+                "reporting_manager_name": mgr_name,
+                "reporting_manager_email": mgr_email,
+            })
+
+        # 4. Load from Supabase Auth and merge
         auth_users_list = []
         try:
             admin_client = get_supabase_admin_client() or self.client
@@ -33,58 +95,40 @@ class UserRepository:
                     users_data = res_users if isinstance(res_users, list) else getattr(res_users, "users", [])
                     for u in users_data:
                         meta = getattr(u, "user_metadata", {}) or {}
+                        # Check if db user has manager resolution for this user
+                        matching_db = next((d for d in db_users if str(d["email"]).lower() == str(u.email).lower() or d["id"] == str(u.id)), None)
+                        mgr_id = matching_db.get("reporting_manager_id") if matching_db else meta.get("reporting_manager_id")
+                        mgr_name = matching_db.get("reporting_manager_name") if matching_db else meta.get("reporting_manager_name")
+                        mgr_email = matching_db.get("reporting_manager_email") if matching_db else meta.get("reporting_manager_email")
+
                         auth_users_list.append({
                             "id": str(u.id),
                             "auth_user_id": str(u.id),
-                            "employee_id": str(u.id),
-                            "employee_code": meta.get("employee_code") or "N/A",
-                            "name": meta.get("full_name") or u.email.split("@")[0].replace(".", " ").title(),
+                            "employee_id": matching_db.get("employee_id") if matching_db else str(u.id),
+                            "employee_code": (matching_db.get("employee_code") if matching_db and matching_db.get("employee_code") != "N/A" else None) or meta.get("employee_code") or "N/A",
+                            "name": meta.get("full_name") or (matching_db.get("name") if matching_db else None) or u.email.split("@")[0].replace(".", " ").title(),
                             "email": u.email,
-                            "phone": meta.get("phone") or "+91 99999 00000",
-                            "role": meta.get("role") or "Sales Executive",
-                            "dept": meta.get("dept") or meta.get("department") or "Sales & Business Development",
+                            "phone": meta.get("phone") or (matching_db.get("phone") if matching_db else None) or "+91 99999 00000",
+                            "role": meta.get("role") or (matching_db.get("role") if matching_db else None) or "Sales Executive",
+                            "dept": meta.get("dept") or meta.get("department") or (matching_db.get("dept") if matching_db else None) or "Sales & Business Development",
                             "status": meta.get("status") or "Active",
                             "lastLogin": "Recently",
                             "accessPassword": "Set via Supabase Auth",
-                            "reporting_manager_id": meta.get("reporting_manager_id"),
-                            "reporting_manager_name": meta.get("reporting_manager_name"),
-                            "reporting_manager_email": meta.get("reporting_manager_email"),
+                            "reporting_manager_id": mgr_id,
+                            "reporting_manager_name": mgr_name,
+                            "reporting_manager_email": mgr_email,
                         })
                 logger.info(f"UserRepository: loaded {len(auth_users_list)} users from Supabase Auth")
         except Exception as auth_err:
             logger.warning(f"Supabase Auth list_users error: {auth_err}")
 
-        db_users = []
-        try:
-            res = self.client.table("employees").select("*").execute()
-            if res.data and len(res.data) > 0:
-                existing_emails = {u["email"].lower() for u in auth_users_list}
-                for emp in res.data:
-                    emp_email = str(emp.get("email", "")).lower()
-                    if emp_email and emp_email not in existing_emails:
-                        db_users.append({
-                            "id": str(emp.get("employee_id") or emp.get("id") or f"usr_{uuid.uuid4()}"),
-                            "name": emp.get("name") or f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip() or "User Account",
-                            "email": emp.get("email", "user@tconnect.com"),
-                            "phone": emp.get("phone") or emp.get("mobile", "+91 99999 00000"),
-                            "role": emp.get("role") or emp.get("designation", "Sales Executive"),
-                            "dept": emp.get("dept") or emp.get("department", "Sales & Business Development"),
-                            "status": emp.get("status", "Active"),
-                            "lastLogin": "Recently",
-                            "accessPassword": emp.get("accessPassword") or emp.get("password", "TConnect2026#"),
-                            "reporting_manager_id": emp.get("reporting_manager_id"),
-                            "reporting_manager_name": emp.get("reporting_manager_name"),
-                            "reporting_manager_email": emp.get("reporting_manager_email"),
-                        })
-        except Exception as e:
-            logger.debug(f"Supabase users lookup fallback: {e}")
-
-        # Combine ensuring unique emails
-        all_combined = auth_users_list + db_users
+        # Combine with db users
+        all_combined = auth_users_list
         existing_emails = {u["email"].lower() for u in all_combined}
-        for u in _in_memory_users:
+        for u in db_users:
             if u["email"].lower() not in existing_emails:
                 all_combined.append(u)
+                existing_emails.add(u["email"].lower())
 
         return all_combined
 
@@ -193,9 +237,7 @@ class UserRepository:
                 "status": new_user["status"],
                 "password": password,
                 "company_id": user_data.get("company_id", "TC-001"),
-                "reporting_manager_id": reporting_manager_id,
-                "reporting_manager_name": reporting_manager_name,
-                "reporting_manager_email": reporting_manager_email,
+                "reporting_manager": reporting_manager_id,
             }
             hrms_record = hrms_repo.sync_employee_from_user(hrms_payload)
             logger.info(f"✅ HRMS employee record synced for {email} (emp_code: {emp_code})")
@@ -248,21 +290,52 @@ class UserRepository:
             logger.debug(f"Auth metadata update notice: {meta_err}")
 
         # Sync update to hrms.employees
+        mgr_val = updates.get("reporting_manager_id") or updates.get("reporting_manager")
+        is_uuid = lambda x: x and len(str(x)) == 36 and "-" in str(x)
+        
+        db_updates = {}
+        if updates.get("name"):
+            db_updates["first_name"] = updates["name"].split(" ")[0]
+            db_updates["last_name"] = " ".join(updates["name"].split(" ")[1:]) if " " in updates["name"] else ""
+        if updates.get("email"):
+            db_updates["email"] = updates["email"]
+        if updates.get("role"):
+            db_updates["designation"] = updates["role"]
+            db_updates["role"] = updates["role"]
+        if updates.get("status"):
+            db_updates["status"] = updates["status"]
+        if "reporting_manager_id" in updates or "reporting_manager" in updates:
+            db_updates["reporting_manager"] = str(mgr_val) if is_uuid(mgr_val) else None
+
+        print("[REPORTING MANAGER]")
+        print(f"employee_id: {user_id}")
+        print(f"selected_manager_id: {updates.get('reporting_manager_id')}")
+        print(f"selected_manager_name: {updates.get('reporting_manager_name')}")
+        print("database schema: hrms")
+        print("database table: employees")
+        print(f"update payload: {db_updates}")
+
+        db_err = None
+        db_res = None
         try:
-            db_updates = {
-                "first_name": target["name"].split(" ")[0],
-                "last_name": " ".join(target["name"].split(" ")[1:]) if " " in target["name"] else "",
-                "email": target["email"],
-                "designation": target.get("role"),
-                "role": target.get("role"),
-                "status": target["status"],
-                "reporting_manager_id": target.get("reporting_manager_id"),
-                "reporting_manager_name": target.get("reporting_manager_name"),
-                "reporting_manager_email": target.get("reporting_manager_email"),
-            }
-            self.client.schema("hrms").table("employees").update(db_updates).eq("employee_id", user_id).execute()
+            res = self.client.schema("hrms").table("employees").update(db_updates).or_(f"employee_id.eq.{user_id},user_id.eq.{user_id}").execute()
+            if res.data and len(res.data) > 0:
+                db_res = res.data
+                print(f"database response: {res.data}")
+                print("database error: None")
+            else:
+                res = self.client.schema("hrms").table("employees").update(db_updates).eq("employee_id", user_id).execute()
+                if res.data and len(res.data) > 0:
+                    db_res = res.data
+                    print(f"database response: {res.data}")
+                    print("database error: None")
+                else:
+                    raise RuntimeError(f"No matching employee found with ID '{user_id}' in hrms.employees")
         except Exception as hrms_err:
-            logger.warning(f"hrms.employees update notice for {user_id}: {hrms_err}")
+            db_err = hrms_err
+            print("database response: None")
+            print(f"database error: {hrms_err}")
+            raise RuntimeError(f"Database employee update failed: {hrms_err}")
 
         return target
 

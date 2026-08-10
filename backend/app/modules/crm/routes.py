@@ -109,3 +109,63 @@ async def update_lead(
         message="Lead details updated successfully"
     )
 
+
+@router.get("/followups", response_model=StandardResponse)
+async def list_followups(
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewLeads),
+    service: CRMService = Depends(get_service)
+):
+    """Retrieve follow-ups filtered by authenticated user."""
+    followups = service.list_followups(user_payload)
+    return StandardResponse.success_response(
+        data=followups,
+        message="Follow-ups list retrieved successfully"
+    )
+
+
+@router.post("/followups", response_model=StandardResponse, status_code=status.HTTP_201_CREATED)
+async def create_followup(
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewLeads),
+    service: CRMService = Depends(get_service)
+):
+    """Create a new follow-up in CRM."""
+    flw = service.create_followup(data, user_payload)
+    return StandardResponse.success_response(
+        data=flw,
+        message="Follow-up scheduled successfully"
+    )
+
+
+@router.put("/followups/{followup_id}", response_model=StandardResponse)
+async def update_followup(
+    followup_id: str,
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageLeads),
+    service: CRMService = Depends(get_service)
+):
+    """Update follow-up details or outcome."""
+    updated = service.update_followup(followup_id, data)
+    return StandardResponse.success_response(
+        data=updated,
+        message="Follow-up updated successfully"
+    )
+
+
+@router.delete("/followups/{followup_id}", response_model=StandardResponse)
+async def delete_followup(
+    followup_id: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageLeads),
+    service: CRMService = Depends(get_service)
+):
+    """Delete a follow-up."""
+    service.delete_followup(followup_id)
+    return StandardResponse.success_response(
+        data={"deleted": True},
+        message="Follow-up removed successfully"
+    )
+

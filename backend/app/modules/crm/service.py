@@ -43,3 +43,15 @@ class CRMService:
     def get_team_leads(self, user_payload: Dict[str, Any] = None, params: Dict[str, Any] = None) -> Dict[str, Any]:
         return self.repo.get_team_leads(user_payload, params)
 
+    def list_followups(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        return self.repo.get_all_followups(user_payload)
+
+    def create_followup(self, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        return self.repo.create_followup(data, user_payload)
+
+    def update_followup(self, followup_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repo.update_followup(followup_id, data)
+
+    def delete_followup(self, followup_id: str) -> bool:
+        return self.repo.delete_followup(followup_id)
+
