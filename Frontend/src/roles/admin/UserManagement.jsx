@@ -140,7 +140,8 @@ function UserManagement() {
 
   const salesExecutives = users.filter((u) => {
     const r = (u.role || '').toLowerCase()
-    return r.includes('executive') || r.includes('specialist') || r.includes('sales')
+    const isManagerOrAdmin = r.includes('manager') || r.includes('admin') || r.includes('ceo')
+    return (r.includes('executive') || r.includes('specialist') || r.includes('sales')) && !isManagerOrAdmin
   })
 
   const handleManagerSelect = (mId) => {

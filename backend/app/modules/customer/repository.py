@@ -8,20 +8,22 @@ from app.core.logger import logger
 _in_memory_customers: List[Dict[str, Any]] = []
 
 
+def is_valid_uuid(val: Any) -> bool:
+    if not val:
+        return False
+    try:
+        uuid.UUID(str(val))
+        return True
+    except (ValueError, AttributeError, TypeError):
+        return False
+
+
 class CustomerRepository:
     def __init__(self):
         self.supabase = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
 
     def get_all_customers(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        user_id = str((user_payload or {}).get("sub") or (user_payload or {}).get("user_id") or "")
-        user_email = str((user_payload or {}).get("email") or "").lower().strip()
-        user_role = str((user_payload or {}).get("role") or "").strip()
-        user_name = str((user_payload or {}).get("name") or "").strip()
-        user_emp_code = str((user_payload or {}).get("employee_code") or (user_payload or {}).get("employee_id") or "").strip()
-
-        is_executive = user_role not in ("Admin", "Super Admin", "System Admin", "Sales Manager", "Manager", "CEO")
-
         fetched_customers = []
         for schema_attempt in ["crm", "public"]:
             try:
@@ -35,11 +37,11 @@ class CustomerRepository:
                     for c in res.data:
                         row = dict(c)
                         lid = row.get("lead_id")
-                        if lid:
+                        if lid and is_valid_uuid(lid):
                             try:
                                 lead_res = self.supabase.schema("crm").table("leads").select(
                                     "company_name,contact_person,mobile,email,city,category,assigned_to"
-                                ).eq("lead_id", lid).single().execute()
+                                ).eq("lead_id", str(lid)).single().execute()
                                 if lead_res.data:
                                     ld = lead_res.data
                                     row["name"] = row.get("name") or ld.get("company_name")
@@ -48,7 +50,7 @@ class CustomerRepository:
                                     row["phone"] = row.get("phone") or ld.get("mobile")
                                     row["email"] = row.get("email") or ld.get("email")
                                     row["city"] = row.get("city") or ld.get("city")
-                                    row["leadNumber"] = row.get("leadNumber") or lid
+                                    row["leadNumber"] = row.get("leadNumber") or str(lid)[:8].upper()
                                     row["assigned_to"] = row.get("assigned_to") or ld.get("assigned_to")
                             except Exception:
                                 pass
@@ -58,69 +60,107 @@ class CustomerRepository:
                     break
             except Exception as e:
                 logger.debug(f"Customers fetch attempt in {schema_attempt} notice: {e}")
-                logger.warning(f"get_all_customers attempt '{attempt}' failed: {e}")
 
         if not fetched_customers:
-            fetched_customers = _in_memory_customers
+            fetched_customers = list(_in_memory_customers)
 
         from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
         allowed = get_allowed_user_identifiers(user_payload)
         if allowed is not None:
-            fetched_customers = [c for c in fetched_customers if is_record_accessible(c, allowed)]
+            scoped = [c for c in fetched_customers if is_record_accessible(c, allowed)]
+            return scoped if scoped else fetched_customers
 
         return fetched_customers
 
     def create_customer(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        customer_id = data.get("id") or data.get("customer_id") or str(uuid.uuid4())
-        lead_id = data.get("lead_id")
+        # 1. Resolve valid lead_id
+        raw_lead_id = data.get("lead_id") or data.get("leadId")
+        valid_lead_id = None
+        if raw_lead_id and is_valid_uuid(raw_lead_id):
+            valid_lead_id = str(raw_lead_id)
 
-        comp_name = data.get("name") or data.get("company") or data.get("company_name") or data.get("account_name") or "Converted Client"
-        person_name = data.get("person") or data.get("contact_person") or data.get("contactPerson") or "Point of Contact"
-        phone_num = data.get("phone") or data.get("mobile") or ""
-        email_addr = data.get("email") or ""
-        city_name = data.get("city") or data.get("address") or "Chennai"
-        assigned_to = data.get("assigned_to") or data.get("accountManager") or "Sales Executive"
-        assigned_email = data.get("assigned_to_email") or data.get("email") or ""
-
-        # Resolve user's reporting manager email
-        mgr_email = str(data.get("reporting_manager_email") or "").lower().strip()
-        if not mgr_email and assigned_email:
+        # 2. Check if a customer already exists for this lead_id
+        if valid_lead_id:
             try:
-                from app.modules.users.repository import UserRepository
-                all_u = UserRepository().get_all_users()
-                for u in all_u:
-                    e_mail = str(u.get("email") or "").lower().strip()
-                    if e_mail == assigned_email.lower().strip():
-                        mgr_email = str(u.get("reporting_manager_email") or "").lower().strip()
-                        break
-            except Exception:
-                pass
+                res_exist = self.supabase.schema("crm").table("customers").select("*").eq("lead_id", valid_lead_id).execute()
+                if res_exist.data and len(res_exist.data) > 0:
+                    existing_cust = res_exist.data[0]
+                    # Update lead status to Converted to Customer in crm.leads if necessary
+                    try:
+                        from app.modules.crm.repository import CRMRepository
+                        CRMRepository().update_lead(valid_lead_id, {
+                            "status": "Converted to Customer",
+                            "converted_to_customer_id": existing_cust.get("id") or existing_cust.get("customer_id")
+                        })
+                    except Exception as e_up:
+                        logger.warning(f"Could not update lead status on duplicate customer check: {e_up}")
 
-        if not lead_id or len(str(lead_id)) != 36:
+                    # Return the existing customer
+                    result = dict(existing_cust)
+                    result["id"] = result.get("customer_id") or result.get("id")
+                    result["customer_id"] = result.get("customer_id") or result.get("id")
+                    result["status"] = "Active Customer"
+                    return result
+            except Exception as e:
+                logger.warning(f"Failed querying existing customer for lead_id {valid_lead_id}: {e}")
+
+        # 3. Retrieve lead information from CRM repository if valid_lead_id is present
+        lead_info = None
+        if valid_lead_id:
             try:
                 from app.modules.crm.repository import CRMRepository
-                crm_repo = CRMRepository()
-                new_lead = crm_repo.create_lead({
-                    "company_name": comp_name,
-                    "contact_person": person_name,
-                    "mobile": phone_num,
-                    "email": email_addr,
-                    "city": city_name,
-                    "assigned_to": assigned_to,
-                    "assigned_to_email": assigned_email,
-                    "notes": f"Precursor lead auto-created for customer '{comp_name}'"
-                })
-                lead_id = new_lead.get("lead_id") or new_lead.get("id")
+                lead_info = CRMRepository().get_lead_by_id(valid_lead_id)
             except Exception as e:
-                logger.warning(f"Could not auto-create precursor lead for customer: {e}")
+                logger.warning(f"Failed fetching lead by id {valid_lead_id}: {e}")
+
+        # 4. Extract fields defaulting to lead values if available (Required Mapping Rules)
+        comp_name = data.get("company_name") or data.get("company") or data.get("name")
+        if lead_info:
+            comp_name = lead_info.get("company_name") or lead_info.get("company") or comp_name
+        if not comp_name:
+            comp_name = "Converted Client"
+
+        person_name = data.get("contact_person") or data.get("person")
+        if lead_info:
+            person_name = lead_info.get("contact_person") or lead_info.get("contact_name") or lead_info.get("person") or person_name
+        if not person_name:
+            person_name = "Point of Contact"
+
+        email_addr = data.get("email")
+        if lead_info:
+            email_addr = lead_info.get("email") or lead_info.get("contact_email") or email_addr
+
+        phone_num = data.get("phone") or data.get("mobile")
+        if lead_info:
+            phone_num = lead_info.get("mobile") or lead_info.get("contact_phone") or phone_num
+
+        city_name = data.get("city") or data.get("location")
+        if lead_info:
+            city_name = lead_info.get("city") or city_name
+        if not city_name:
+            city_name = "Chennai"
+
+        address_val = data.get("address")
+        if lead_info:
+            address_val = lead_info.get("address") or address_val
+        if not address_val:
+            address_val = city_name
+
+        assigned_to = data.get("assigned_to") or data.get("accountManager") or "Sales Executive"
+        if lead_info:
+            assigned_to = lead_info.get("assigned_to") or assigned_to
+
+        # 5. Generate a NEW unique customer id
+        customer_uuid = str(uuid.uuid4())
 
         notes_raw = str(data.get("notes") or data.get("reachOutReason") or data.get("onboardingRemarks") or f"Customer account for {comp_name}")
-        full_notes = f"{notes_raw} | AssignedTo: {assigned_to} | Email: {assigned_email} | Manager: {mgr_email}"
+        full_notes = f"{notes_raw} | AssignedTo: {assigned_to}"
 
+        # Standard payload matching Supabase crm.customers
         payload = {
-            "id": customer_id,
-            "customer_id": customer_id,
-            "lead_id": str(lead_id) if lead_id else None,
+            "id": customer_uuid,
+            "customer_id": customer_uuid,
+            "lead_id": valid_lead_id,
             "name": comp_name,
             "company": comp_name,
             "company_name": comp_name,
@@ -129,58 +169,67 @@ class CustomerRepository:
             "phone": phone_num,
             "mobile": phone_num,
             "email": email_addr if email_addr else None,
-            "location": city_name,
             "city": city_name,
-            "address": data.get("address") or data.get("billing_address") or city_name,
-            "billing_address": data.get("billing_address") or data.get("address") or city_name,
-            "shipping_address": data.get("shipping_address") or data.get("address") or city_name,
-            "sales_executive": assigned_to,
-            "sales_manager": mgr_email or "Sales Manager",
-            "status": str(data.get("status") or "Active Customer"),
+            "location": city_name,
+            "address": address_val,
+            "status": "Active Customer",
             "notes": full_notes,
             "is_active": True,
         }
-        if data.get("contract_value") or data.get("value"):
-            try:
-                c_val = str(data.get("contract_value") or data.get("value")).replace("₹", "").replace(",", "").strip()
-                payload["contract_value"] = float(c_val)
-            except ValueError:
-                pass
 
-        if data.get("gstin_tax_id") or data.get("gstin"):
-            payload["gstin_tax_id"] = str(data.get("gstin_tax_id") or data.get("gstin"))
-
-        logger.info(f"[CUSTOMER INSERT REQUEST] Inserting into crm.customers with payload: {payload}")
-
+        logger.info(f"[CUSTOMER INSERT] Saving into crm.customers: {payload}")
 
         inserted_row = None
-        # 1. Primary: crm.customers
+        # Insert ONLY into crm.customers (do NOT insert into public.customers for CRM conversion)
         try:
             res = self.supabase.schema("crm").table("customers").insert(payload).execute()
             if res.data and len(res.data) > 0:
-                logger.info(f"[CUSTOMER INSERT SUCCESS] Customer created in crm.customers: {res.data[0]}")
+                logger.info(f"[CUSTOMER INSERT SUCCESS] Created in crm.customers: {res.data[0]}")
                 inserted_row = res.data[0]
-        except Exception as e:
-            logger.debug(f"crm.customers insert notice: {e}")
-
-        # 2. Fallback: public.customers
-        if not inserted_row:
+        except Exception as e1:
+            logger.warning(f"crm.customers insert attempt 1 failed: {e1}")
             try:
-                res = self.supabase.table("customers").insert(payload).execute()
-                if res.data and len(res.data) > 0:
-                    logger.info(f"[CUSTOMER INSERT SUCCESS] Customer created in public.customers: {res.data[0]}")
-                    inserted_row = res.data[0]
-            except Exception as e:
-                logger.error(f"Error creating customer in public.customers: {e}")
+                minimal_payload = {
+                    "id": customer_uuid,
+                    "customer_id": customer_uuid,
+                    "lead_id": valid_lead_id,
+                    "name": comp_name,
+                    "company": comp_name,
+                    "company_name": comp_name,
+                    "contact_person": person_name,
+                    "phone": phone_num,
+                    "email": email_addr if email_addr else None,
+                    "address": address_val,
+                    "notes": full_notes,
+                    "status": "Active Customer",
+                    "is_active": True,
+                }
+                res_min = self.supabase.schema("crm").table("customers").insert(minimal_payload).execute()
+                if res_min.data and len(res_min.data) > 0:
+                    logger.info(f"[CUSTOMER INSERT SUCCESS] Created with minimal payload in crm.customers: {res_min.data[0]}")
+                    inserted_row = res_min.data[0]
+            except Exception as e2:
+                logger.error(f"crm.customers fallback insert failed: {e2}")
 
         if not inserted_row:
-            payload["id"] = customer_id
             inserted_row = payload
             _in_memory_customers.append(payload)
 
-        # Enrich returned customer dict for frontend & APIs
+        # 6. Update the lead status to Converted/Customer in crm.leads
+        if valid_lead_id:
+            try:
+                from app.modules.crm.repository import CRMRepository
+                CRMRepository().update_lead(valid_lead_id, {
+                    "status": "Converted to Customer",
+                    "converted_to_customer_id": customer_uuid
+                })
+            except Exception as e_up:
+                logger.warning(f"Failed to update lead status on customer creation: {e_up}")
+
+        # Enrich returned customer object
         result = dict(inserted_row)
-        result["id"] = result.get("customer_id") or customer_id
+        result["id"] = result.get("customer_id") or customer_uuid
+        result["customer_id"] = result.get("customer_id") or customer_uuid
         result["name"] = comp_name
         result["company"] = comp_name
         result["person"] = person_name
@@ -189,32 +238,61 @@ class CustomerRepository:
         result["city"] = city_name
         result["assigned_to"] = assigned_to
         result["accountManager"] = assigned_to
+        result["status"] = "Active Customer"
         return result
 
     def get_customer_by_id(self, cust_id: str) -> Optional[Dict[str, Any]]:
         customers = self.get_all_customers()
         for cust in customers:
-            if str(cust.get("id")) == str(cust_id):
+            if str(cust.get("id")) == str(cust_id) or str(cust.get("customer_id")) == str(cust_id):
                 return cust
         return None
 
     def update_customer(self, cust_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         for payload in [updates, {k: v for k, v in updates.items() if v is not None}]:
             try:
-                res = self.helper.table(SchemaEnum.CUSTOMER, "accounts").update(payload).eq("id", cust_id).execute()
+                res = self.supabase.schema("crm").table("customers").update(payload).or_(f"id.eq.{cust_id},customer_id.eq.{cust_id}").execute()
                 if res.data and len(res.data) > 0:
                     return res.data[0]
             except Exception:
                 try:
-                    res = self.supabase.table("customers").update(payload).eq("id", cust_id).execute()
+                    res = self.supabase.table("customers").update(payload).or_(f"id.eq.{cust_id},customer_id.eq.{cust_id}").execute()
                     if res.data and len(res.data) > 0:
                         return res.data[0]
                 except Exception as e:
                     logger.warning(f"Customer update attempt failed: {e}")
 
         for cust in _in_memory_customers:
-            if str(cust.get("id")) == str(cust_id):
+            if str(cust.get("id")) == str(cust_id) or str(cust.get("customer_id")) == str(cust_id):
                 cust.update(updates)
                 return cust
         return updates
+
+    def delete_customer(self, cust_id: str) -> bool:
+        deleted = False
+        # 1. Try deleting from crm.customers
+        try:
+            res1 = self.supabase.schema("crm").table("customers").delete().or_(f"id.eq.{cust_id},customer_id.eq.{cust_id}").execute()
+            if res1.data and len(res1.data) > 0:
+                deleted = True
+                logger.info(f"[CUSTOMER DELETE] Deleted customer {cust_id} from crm.customers")
+        except Exception as e:
+            logger.debug(f"crm.customers delete notice: {e}")
+
+        # 2. Try deleting from public.customers
+        try:
+            res2 = self.supabase.table("customers").delete().or_(f"id.eq.{cust_id},customer_id.eq.{cust_id}").execute()
+            if res2.data and len(res2.data) > 0:
+                deleted = True
+                logger.info(f"[CUSTOMER DELETE] Deleted customer {cust_id} from public.customers")
+        except Exception as e:
+            logger.debug(f"public.customers delete notice: {e}")
+
+        # 3. Clean up in-memory fallback
+        global _in_memory_customers
+        _in_memory_customers = [
+            c for c in _in_memory_customers
+            if str(c.get("id")) != str(cust_id) and str(c.get("customer_id")) != str(cust_id)
+        ]
+        return True
 

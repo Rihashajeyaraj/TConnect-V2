@@ -128,14 +128,7 @@ export default function ManagerTeam() {
       return isReportingManagerMatch || isAssignmentMapMatch
     })
 
-    if (assignedOnly.length > 0) return assignedOnly
-
-    return rawEmployees.filter(
-      (u) =>
-        (u.role && u.role.toLowerCase().includes('exec')) ||
-        (u.designation && u.designation.toLowerCase().includes('exec')) ||
-        u.role === 'Sales Executive'
-    )
+    return assignedOnly
   }
 
   useEffect(() => {

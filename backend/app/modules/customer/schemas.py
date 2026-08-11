@@ -3,6 +3,7 @@ from pydantic import BaseModel, Extra
 
 
 class CustomerCreate(BaseModel):
+    """Direct Add customer — lead_id is OPTIONAL (not always needed)."""
     account_name: Optional[str] = None
     company_name: Optional[str] = None
     company: Optional[str] = None
@@ -22,6 +23,7 @@ class CustomerCreate(BaseModel):
     accountManager: Optional[str] = None
     employee_id: Optional[str] = None
     employee_code: Optional[str] = None
+    # Optional: link to an existing lead if one exists
     lead_id: Optional[str] = None
     value: Optional[str] = None
     revenue: Optional[str] = None
@@ -44,6 +46,41 @@ class CustomerUpdate(BaseModel):
 
     class Config:
         extra = Extra.allow
+
+
+class ConversionRequest(BaseModel):
+    """
+    Optional extra data supplied alongside a conversion request.
+    All fields are optional — the service resolves missing fields
+    from the source record (lead/followup/visit).
+    """
+    # Contact overrides (used when source record is incomplete)
+    company_name: Optional[str] = None
+    company: Optional[str] = None
+    contact_person: Optional[str] = None
+    person: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
+    mobile: Optional[str] = None
+    city: Optional[str] = None
+    address: Optional[str] = None
+    # Assignee (defaults to authenticated user)
+    assigned_to: Optional[str] = None
+    assigned_to_email: Optional[str] = None
+    # Optional lead link for visit/followup conversions
+    lead_id: Optional[str] = None
+    notes: Optional[str] = None
+
+    class Config:
+        extra = Extra.allow
+
+
+class ConversionResponse(BaseModel):
+    """Envelope returned by all conversion endpoints."""
+    customer: dict
+    created: bool
+    source: str
+    match_reason: Optional[str] = None
 
 
 class CustomerResponse(BaseModel):

@@ -63,6 +63,7 @@ export default function ManagerLeads() {
   const [toDate, setToDate] = useState('')
   const [sortBy, setSortBy] = useState('created_at_desc')
   const [dateFilterTab, setDateFilterTab] = useState('All') // 'All' | 'Today' | 'Yesterday' | 'This Month' | 'Custom'
+  const [selectedLeadTab, setSelectedLeadTab] = useState('Total Lead')
 
   const handleLinearDateFilter = (tab) => {
     setDateFilterTab(tab)
@@ -140,17 +141,7 @@ export default function ManagerLeads() {
       return isReportingManagerMatch || isAssignmentMapMatch
     })
 
-    if (assignedOnly.length > 0) {
-      return assignedOnly
-    }
-
-    // Fallback: return executives
-    return rawEmployees.filter(
-      (u) =>
-        (u.role && u.role.toLowerCase().includes('exec')) ||
-        (u.designation && u.designation.toLowerCase().includes('exec')) ||
-        u.role === 'Sales Executive'
-    )
+    return assignedOnly
   }
 
   // Load Sales Executives from backend HRMS API or localStorage
@@ -319,75 +310,151 @@ export default function ManagerLeads() {
   }, [selectedSE, selectedStatus, selectedPriority, fromDate, toDate, sortBy, page, limit])
 
   // Filtered Leads calculation for active UI filters
-  const filteredLeads = leads.filter((l) => {
-    if (!l) return false
-    const q = search.toLowerCase().trim()
-    const comp = (l.company_name || l.company || l.title || '').toLowerCase()
-    const poc = (l.contact_person || l.contact_name || l.person || '').toLowerCase()
-    const phone = (l.mobile || l.phone || l.contact_phone || '').toLowerCase()
-    const mail = (l.email || l.contact_email || '').toLowerCase()
-    const leadCode = (l.lead_code || l.lead_number || l.id || '').toLowerCase()
-    const seName = (l.assigned_to || l.assignedTo || l.created_by_name || '').toLowerCase()
-    const seEmail = (l.assigned_to_email || l.assignedToEmail || '').toLowerCase()
-    const seCode = (l.employee_code || l.employee_id || '').toLowerCase()
+  // Filtered Leads calculation for active UI filters
+  const baseFilteredLeads = React.useMemo(() => {
+    const rawFiltered = leads.filter((l) => {
+      if (!l) return false
+      const q = search.toLowerCase().trim()
+      const comp = (l.company_name || l.company || l.title || '').toLowerCase()
+      const poc = (l.contact_person || l.contact_name || l.person || '').toLowerCase()
+      const phone = (l.mobile || l.phone || l.contact_phone || '').toLowerCase()
+      const mail = (l.email || l.contact_email || '').toLowerCase()
+      const leadCode = (l.lead_code || l.lead_number || l.id || '').toLowerCase()
+      const seName = (l.assigned_to || l.assignedTo || l.created_by_name || '').toLowerCase()
+      const seEmail = (l.assigned_to_email || l.assignedToEmail || '').toLowerCase()
+      const seCode = (l.employee_code || l.employee_id || '').toLowerCase()
 
-    const matchesSearch =
-      !q ||
-      comp.includes(q) ||
-      poc.includes(q) ||
-      phone.includes(q) ||
-      mail.includes(q) ||
-      leadCode.includes(q) ||
-      seName.includes(q) ||
-      seEmail.includes(q) ||
-      seCode.includes(q)
+      const matchesSearch =
+        !q ||
+        comp.includes(q) ||
+        poc.includes(q) ||
+        phone.includes(q) ||
+        mail.includes(q) ||
+        leadCode.includes(q) ||
+        seName.includes(q) ||
+        seEmail.includes(q) ||
+        seCode.includes(q)
 
-    const matchesPriority = selectedPriority === 'All' || String(l.priority || '').toLowerCase() === selectedPriority.toLowerCase()
-    const matchesStatus = selectedStatus === 'All' || String(l.status || '').toLowerCase().includes(selectedStatus.toLowerCase())
+      const matchesPriority = selectedPriority === 'All' || String(l.priority || '').toLowerCase() === selectedPriority.toLowerCase()
+      const matchesStatus = selectedStatus === 'All' || String(l.status || '').toLowerCase().includes(selectedStatus.toLowerCase())
 
-    let matchesSE = selectedSE === 'All'
-    if (selectedSE === 'Other') {
-      if (!customSEInput.trim()) {
-        matchesSE = true
-      } else {
-        const q = customSEInput.toLowerCase().trim()
-        matchesSE = seName.includes(q) || seEmail.includes(q) || seCode.includes(q)
+      // Client-side date filter check
+      let matchesDate = true
+      const lDateStr = String(l.created_at || l.date || '')
+      if (lDateStr) {
+        const lDate = lDateStr.split('T')[0]
+        if (fromDate && lDate < fromDate) matchesDate = false
+        if (toDate && lDate > toDate) matchesDate = false
       }
-    } else if (!matchesSE) {
-      const targetVal = selectedSE.toLowerCase().trim()
-      const targetUser = targetVal.includes('@') ? targetVal.split('@')[0] : targetVal
-      const targetClean = targetUser.replace(/[^a-z0-9]/g, '')
 
-      matchesSE =
-        seEmail === targetVal ||
-        seName === targetVal ||
-        seCode === targetVal ||
-        (targetClean.length >= 2 && (seEmail.includes(targetClean) || seName.includes(targetClean) || seCode.includes(targetClean)))
+      let matchesSE = selectedSE === 'All'
+      if (selectedSE === 'Other') {
+        if (!customSEInput.trim()) {
+          matchesSE = true
+        } else {
+          const q = customSEInput.toLowerCase().trim()
+          matchesSE = seName.includes(q) || seEmail.includes(q) || seCode.includes(q)
+        }
+      } else if (!matchesSE) {
+        const targetVal = selectedSE.toLowerCase().trim()
+        const targetUser = targetVal.includes('@') ? targetVal.split('@')[0] : targetVal
+        const targetClean = targetUser.replace(/[^a-z0-9]/g, '')
 
-      if (!matchesSE) {
-        const foundExec = executives.find(
-          (ex) =>
-            (ex.email && ex.email.toLowerCase() === targetVal) ||
-            (ex.name && ex.name.toLowerCase() === targetVal) ||
-            (ex.employee_code && ex.employee_code.toLowerCase() === targetVal)
-        )
-        if (foundExec) {
-          const exEmail = (foundExec.email || '').toLowerCase()
-          const exName = (foundExec.name || '').toLowerCase()
-          const exCode = (foundExec.employee_code || '').toLowerCase()
-          const exUser = exEmail.includes('@') ? exEmail.split('@')[0] : exName.split(' ')[0]
+        matchesSE =
+          seEmail === targetVal ||
+          seName === targetVal ||
+          seCode === targetVal ||
+          (targetClean.length >= 2 && (seEmail.includes(targetClean) || seName.includes(targetClean) || seCode.includes(targetClean)))
 
-          matchesSE =
-            (exEmail && (seEmail === exEmail || seEmail.includes(exEmail))) ||
-            (exName && (seName.includes(exName) || exName.includes(seName))) ||
-            (exCode && (seCode === exCode || seCode.includes(exCode))) ||
-            (exUser && exUser.length >= 2 && (seEmail.includes(exUser) || seName.includes(exUser)))
+        if (!matchesSE) {
+          const foundExec = executives.find(
+            (ex) =>
+              (ex.email && ex.email.toLowerCase() === targetVal) ||
+              (ex.name && ex.name.toLowerCase() === targetVal) ||
+              (ex.employee_code && ex.employee_code.toLowerCase() === targetVal)
+          )
+          if (foundExec) {
+            const exEmail = (foundExec.email || '').toLowerCase()
+            const exName = (foundExec.name || '').toLowerCase()
+            const exCode = (foundExec.employee_code || '').toLowerCase()
+            const exUser = exEmail.includes('@') ? exEmail.split('@')[0] : exName.split(' ')[0]
+
+            matchesSE =
+              (exEmail && (seEmail === exEmail || seEmail.includes(exEmail))) ||
+              (exName && (seName.includes(exName) || exName.includes(seName))) ||
+              (exCode && (seCode === exCode || seCode.includes(exCode))) ||
+              (exUser && exUser.length >= 2 && (seEmail.includes(exUser) || seName.includes(exUser)))
+          }
         }
       }
-    }
 
-    return matchesSearch && matchesPriority && matchesStatus && matchesSE
-  })
+      return matchesSearch && matchesPriority && matchesStatus && matchesSE && matchesDate
+    })
+
+    // Deduplicate leads to avoid duplicate double-clicks
+    const seen = new Set()
+    return rawFiltered.filter((lead) => {
+      const exec = String(lead.assigned_to || lead.assignedTo || '').toLowerCase().trim()
+      const client = String(lead.contact_person || lead.contact_name || lead.person || '').toLowerCase().trim()
+      const company = String(lead.company_name || lead.company || '').toLowerCase().trim()
+      const product = String(lead.product || lead.product_name || '').toLowerCase().trim()
+
+      const key = `${exec}|${client}|${company}|${product}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [leads, search, selectedPriority, selectedStatus, fromDate, toDate, selectedSE, customSEInput, executives])
+
+  const getLeadCategory = React.useCallback((lead) => {
+    if (!lead) return 'cold'
+    const cat = String(lead.priority || lead.category || lead.status || '').toLowerCase().trim()
+    if (cat.includes('hot') || cat.includes('high') || cat === 'won' || cat === 'converted') {
+      return 'hot'
+    }
+    if (cat.includes('warm') || cat.includes('medium')) {
+      return 'warm'
+    }
+    return 'cold'
+  }, [])
+
+  const tabCounts = React.useMemo(() => {
+    let total = 0, hot = 0, warm = 0, cold = 0, customer = 0
+    baseFilteredLeads.forEach((l) => {
+      total++
+      const catVal = String(l.category || l.priority || l.status || '').toLowerCase().trim()
+      const isCust = catVal.includes('convert') || catVal.includes('customer') || catVal.includes('won') || !!l.converted_to_customer_id || !!l.customerId
+      
+      if (isCust) {
+        customer++
+      } else {
+        const category = getLeadCategory(l)
+        if (category === 'hot') hot++
+        else if (category === 'warm') warm++
+        else if (category === 'cold') cold++
+      }
+    })
+    return { total, hot, warm, cold, customer }
+  }, [baseFilteredLeads, getLeadCategory])
+
+  const filteredLeads = React.useMemo(() => {
+    return baseFilteredLeads.filter((l) => {
+      const target = selectedLeadTab.toLowerCase().trim()
+      if (target === 'total lead') return true
+
+      const catVal = String(l.category || l.priority || l.status || '').toLowerCase().trim()
+      const isCust = catVal.includes('convert') || catVal.includes('customer') || catVal.includes('won') || !!l.converted_to_customer_id || !!l.customerId
+
+      if (target === 'customer') {
+        return isCust
+      }
+
+      if (isCust) return false
+
+      const category = getLeadCategory(l)
+      return category === target
+    })
+  }, [baseFilteredLeads, selectedLeadTab, getLeadCategory])
 
   // Pagination calculation
   const totalPages = Math.ceil(filteredLeads.length / limit) || 1
@@ -414,86 +481,11 @@ export default function ManagerLeads() {
         </button>
       </div>
 
-      {/* ── TOP KPI CARDS (PREVIOUS VIBRANT COLOR THEME WITH 1PX THIN BORDERS) ──────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-        {/* 1. Total Leads */}
-        <div className="bg-gradient-to-br from-[#f5b041] via-[#f4b41a] to-[#d97706] text-[#1d2731] p-3.5 rounded-xl border border-[#d97706] shadow-xs flex flex-col justify-between hover:scale-[1.02] transition">
-          <div className="flex items-center justify-between text-[#1d2731] text-[10px] font-black uppercase tracking-wider">
-            <span className="truncate">Total Leads</span>
-            <Target size={14} className="shrink-0 text-[#1d2731]" />
-          </div>
-          <div className="mt-2">
-            <h2 className="text-2xl font-black leading-tight text-[#1d2731]">{summary.total_leads}</h2>
-            <p className="text-[10px] text-[#1d2731] font-extrabold truncate mt-0.5">All Execs Sum</p>
-          </div>
-        </div>
-
-        {/* 2. Hot Leads */}
-        <div className="bg-rose-50 border border-rose-200 p-3.5 rounded-xl shadow-2xs flex flex-col justify-between hover:scale-[1.02] transition">
-          <div className="flex items-center justify-between text-rose-700 text-[10px] font-black uppercase tracking-wider">
-            <span className="truncate">🔥 Hot Leads</span>
-            <Flame size={14} className="shrink-0 text-rose-600" />
-          </div>
-          <div className="mt-2">
-            <h2 className="text-2xl font-black text-rose-950 leading-tight">{summary.hot_leads}</h2>
-            <p className="text-[10px] text-rose-700 font-extrabold truncate mt-0.5">Priority 1 High</p>
-          </div>
-        </div>
-
-        {/* 3. Warm Leads */}
-        <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl shadow-2xs flex flex-col justify-between hover:scale-[1.02] transition">
-          <div className="flex items-center justify-between text-amber-800 text-[10px] font-black uppercase tracking-wider">
-            <span className="truncate">⚡ Warm Leads</span>
-            <Zap size={14} className="shrink-0 text-amber-600" />
-          </div>
-          <div className="mt-2">
-            <h2 className="text-2xl font-black text-amber-950 leading-tight">{summary.warm_leads}</h2>
-            <p className="text-[10px] text-amber-800 font-extrabold truncate mt-0.5">Demo / Proposal</p>
-          </div>
-        </div>
-
-        {/* 4. Cold Leads */}
-        <div className="bg-sky-50 border border-sky-200 p-3.5 rounded-xl shadow-2xs flex flex-col justify-between hover:scale-[1.02] transition">
-          <div className="flex items-center justify-between text-sky-700 text-[10px] font-black uppercase tracking-wider">
-            <span className="truncate">❄️ Cold Leads</span>
-            <Snowflake size={14} className="shrink-0 text-sky-600" />
-          </div>
-          <div className="mt-2">
-            <h2 className="text-2xl font-black text-sky-950 leading-tight">{summary.cold_leads}</h2>
-            <p className="text-[10px] text-sky-700 font-extrabold truncate mt-0.5">Nurturing Stage</p>
-          </div>
-        </div>
-
-        {/* 5. Converted Leads */}
-        <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl shadow-2xs flex flex-col justify-between hover:scale-[1.02] transition">
-          <div className="flex items-center justify-between text-emerald-700 text-[10px] font-black uppercase tracking-wider">
-            <span className="truncate">Converted</span>
-            <CheckCircle2 size={14} className="shrink-0 text-emerald-600" />
-          </div>
-          <div className="mt-2">
-            <h2 className="text-2xl font-black text-emerald-950 leading-tight">{summary.converted_leads}</h2>
-            <p className="text-[10px] text-emerald-700 font-extrabold truncate mt-0.5">Closed Deals</p>
-          </div>
-        </div>
-
-        {/* 6. This Month Leads */}
-        <div className="bg-indigo-50 border border-indigo-200 p-3.5 rounded-xl shadow-2xs flex flex-col justify-between hover:scale-[1.02] transition">
-          <div className="flex items-center justify-between text-indigo-700 text-[10px] font-black uppercase tracking-wider">
-            <span className="truncate">This Month</span>
-            <Calendar size={14} className="shrink-0 text-indigo-600" />
-          </div>
-          <div className="mt-2">
-            <h2 className="text-2xl font-black text-indigo-950 leading-tight">{summary.month_leads}</h2>
-            <p className="text-[10px] text-indigo-700 font-extrabold truncate mt-0.5">Monthly Target</p>
-          </div>
-        </div>
-      </div>
-
       {/* ── FILTERS & SEARCH CONTROL BAR ────────────────────────────────────── */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Sales Executive Filter */}
-          <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold shrink-0">
+          <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold shrink-0">
             <span className="text-slate-600 font-bold">Sales Executive:</span>
             <select
               value={selectedSE}
@@ -502,17 +494,16 @@ export default function ManagerLeads() {
                 if (e.target.value !== 'Other') setCustomSEInput('')
                 setPage(1)
               }}
-              className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-extrabold max-w-[260px] truncate"
+              className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-extrabold max-w-[260px] truncate text-sm"
             >
               <option value="All">All Executives (Combined Sum)</option>
               {executives.map((ex) => (
                 <option key={ex.email || ex.id} value={ex.email || ex.name}>
-                  [{ex.employee_code || 'EMP-101'}] {ex.name || ex.full_name} ({ex.email})
+                  {ex.name} ({ex.employee_code || 'EMP'})
                 </option>
               ))}
-              <option value="Other">✏️ Other (Manual Type & Search...)</option>
+              <option value="Other">Custom Search...</option>
             </select>
-
             {selectedSE === 'Other' && (
               <input
                 type="text"
@@ -521,16 +512,15 @@ export default function ManagerLeads() {
                   setCustomSEInput(e.target.value)
                   setPage(1)
                 }}
-                placeholder="Type SE Name, Email, Code..."
-                className="bg-white border border-slate-300 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500 w-[200px]"
-                autoFocus
+                placeholder="SE Name / Code..."
+                className="ml-2 w-32 h-6 px-2 bg-white border border-slate-200 rounded focus:outline-none font-bold text-xs"
               />
             )}
           </div>
 
-          {/* Search Box */}
-          <div className="relative flex-1 min-w-[240px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+          {/* Search bar */}
+          <div className="relative flex-1 min-w-[280px]">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"
               value={search}
@@ -539,53 +529,85 @@ export default function ManagerLeads() {
                 setPage(1)
               }}
               placeholder="Search Client, Lead ID, Employee Code, POC, Phone, Email..."
-              className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 font-semibold"
+              className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-sm text-slate-900 focus:outline-none focus:border-amber-500 font-semibold"
             />
           </div>
         </div>
 
-        {/* Linear Date Quick-Filter Strip */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
-          <div className="flex items-center gap-1.5 bg-amber-50/70 p-1 rounded-xl border border-amber-300">
-            <span className="text-[11px] font-black text-amber-950 px-2">Date Filter:</span>
-            {['All', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => handleLinearDateFilter(tab)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
-                  dateFilterTab === tab
-                    ? 'bg-[#0c4160] text-white shadow-2xs'
-                    : 'text-amber-950 hover:bg-amber-100'
-                }`}
-              >
-                {tab === 'All' ? 'All Time' : tab}
-              </button>
-            ))}
+        {/* Linear Date Quick-Filter Strip & Leads Classification Toggles */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-sm">
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Date Filters */}
+            <div className="flex items-center gap-1.5 bg-amber-50/60 p-1 rounded-xl border border-amber-300">
+              <span className="text-xs font-black text-amber-950 px-2">Date Filter:</span>
+              {['All', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => handleLinearDateFilter(tab)}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-black transition cursor-pointer ${
+                    dateFilterTab === tab
+                      ? 'bg-[#0c4160] text-white shadow-2xs'
+                      : 'text-amber-950 hover:bg-amber-100'
+                  }`}
+                >
+                  {tab === 'All' ? 'All Time' : tab}
+                </button>
+              ))}
+            </div>
+
+            {/* Custom Date Range picker inputs */}
+            {dateFilterTab === 'Custom' && (
+              <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5 font-bold">
+                <span className="text-amber-900 font-extrabold text-sm">From:</span>
+                <input
+                  type="date"
+                  value={fromDate}
+                  onChange={(e) => setFromDate(e.target.value)}
+                  className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-sm"
+                />
+                <span className="text-amber-900 font-extrabold ml-1 text-sm">To:</span>
+                <input
+                  type="date"
+                  value={toDate}
+                  onChange={(e) => setToDate(e.target.value)}
+                  className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-sm"
+                />
+              </div>
+            )}
           </div>
 
-          {/* Custom Date Range Picker Inputs */}
-          {dateFilterTab === 'Custom' && (
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5 font-bold">
-              <span className="text-amber-900 font-extrabold">From:</span>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
-              />
-              <span className="text-amber-900 font-extrabold ml-1">To:</span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
-              />
-            </div>
-          )}
+          {/* Classification Toggles */}
+          <div className="inline-flex p-1 bg-slate-100 rounded-xl">
+            {[
+              { name: 'Total Lead', key: 'total', color: 'bg-[#0c4160] text-white shadow-xs' },
+              { name: 'Hot', key: 'hot', color: 'bg-emerald-600 text-white shadow-xs' },
+              { name: 'Warm', key: 'warm', color: 'bg-yellow-500 text-yellow-950 shadow-xs' },
+              { name: 'Cold', key: 'cold', color: 'bg-rose-600 text-white shadow-xs' },
+              { name: 'Customer', key: 'customer', color: 'bg-teal-600 text-white shadow-xs' }
+            ].map((t) => {
+              const active = selectedLeadTab === t.name
+              const count = tabCounts[t.key] || 0
+              return (
+                <button
+                  key={t.name}
+                  type="button"
+                  onClick={() => {
+                    setSelectedLeadTab(t.name)
+                    setPage(1)
+                  }}
+                  className={`px-3 py-1.5 rounded-lg text-sm font-black transition cursor-pointer ${
+                    active ? t.color : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  {t.name} ({count})
+                </button>
+              )
+            })}
+          </div>
 
           {/* Reset Filters Button */}
-          {(selectedSE !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || search || fromDate || toDate) && (
+          {(selectedSE !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || search || fromDate || toDate || selectedLeadTab !== 'Total Lead') && (
             <button
               onClick={() => {
                 setSelectedSE('All')
@@ -594,9 +616,10 @@ export default function ManagerLeads() {
                 setSearch('')
                 setFromDate('')
                 setToDate('')
+                setSelectedLeadTab('Total Lead')
                 setPage(1)
               }}
-              className="text-xs font-extrabold text-rose-700 hover:underline cursor-pointer ml-auto bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200"
+              className="text-sm font-extrabold text-rose-700 hover:underline cursor-pointer bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200"
             >
               Reset All Filters
             </button>
@@ -610,6 +633,7 @@ export default function ManagerLeads() {
           <table className="w-full text-left text-sm text-slate-800 min-w-[1000px]">
             <thead>
               <tr className="bg-slate-100/80 border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-700">
+                <th className="px-5 py-4">Date</th>
                 <th className="px-5 py-4">Sales Executive Name</th>
                 <th className="px-5 py-4">Company Name</th>
                 <th className="px-5 py-4">POC Name</th>
@@ -623,20 +647,25 @@ export default function ManagerLeads() {
             <tbody className="divide-y divide-slate-200 font-bold">
               {loading ? (
                 <tr>
-                  <td colSpan="8" className="text-center py-16 text-slate-400">
+                  <td colSpan="9" className="text-center py-16 text-slate-400">
                     <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-600 mb-3" />
                     <span className="text-sm font-black text-slate-700">Loading Team Lead Reports from Supabase...</span>
                   </td>
                 </tr>
               ) : paginatedLeads.length === 0 ? (
                 <tr>
-                  <td colSpan="8" className="text-center py-16 text-slate-500 font-bold text-sm bg-slate-50/50 border-b border-slate-200">
+                  <td colSpan="9" className="text-center py-16 text-slate-500 font-bold text-sm bg-slate-50/50 border-b border-slate-200">
                     No team leads match your search or filter requirements.
                   </td>
                 </tr>
               ) : (
                 paginatedLeads.map((lead, idx) => (
                   <tr key={lead.id || lead.lead_id || idx} className="hover:bg-amber-50/50 transition-colors">
+                    {/* 0. Date */}
+                    <td className="px-5 py-4.5 font-bold text-slate-900 text-sm">
+                      {lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-GB') : lead.date || '—'}
+                    </td>
+
                     {/* 1. SE Name */}
                     <td className="px-5 py-4.5 font-black text-slate-900 text-sm sm:text-base">{lead.assigned_to || lead.assignedTo || lead.created_by_name || 'Sales Executive'}</td>
 
@@ -662,14 +691,15 @@ export default function ManagerLeads() {
                     {/* 7. Lead Priority */}
                     <td className="px-5 py-4.5">
                       <span
-                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black shadow-2xs ${String(lead.priority || lead.category || '').toLowerCase() === 'hot'
-                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                            : String(lead.priority || lead.category || '').toLowerCase() === 'warm'
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                              : 'bg-sky-100 text-sky-800 border border-sky-300'
-                          }`}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black shadow-2xs ${
+                          getLeadCategory(lead) === 'hot'
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                            : getLeadCategory(lead) === 'warm'
+                              ? 'bg-yellow-100 text-yellow-900 border border-yellow-300'
+                              : 'bg-rose-100 text-rose-800 border border-rose-300'
+                        }`}
                       >
-                        {String(lead.priority || lead.category || '').toLowerCase() === 'hot' ? '🔥 Hot' : String(lead.priority || lead.category || '').toLowerCase() === 'warm' ? '⚡ Warm' : '❄️ Cold'}
+                        {getLeadCategory(lead) === 'hot' ? '🔥 Hot' : getLeadCategory(lead) === 'warm' ? '⚡ Warm' : '❄️ Cold'}
                       </span>
                     </td>
 

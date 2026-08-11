@@ -24,6 +24,7 @@ import {
   ArrowLeft,
   LayoutGrid,
   Table as TableIcon,
+  Trash2,
 } from "lucide-react";
 import { customerAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
@@ -62,7 +63,17 @@ export default function Customers() {
     try {
       const saved = localStorage.getItem("tc_customer_accounts");
       const parsed = saved ? JSON.parse(saved) : filterUserItems(DEFAULT_CUSTOMERS, currentUser);
-      return filterUserItems(parsed, currentUser);
+      const seen = new Set();
+      const clean = [];
+      (parsed || []).forEach((c) => {
+        if (!c) return;
+        const key = c.id || c.customer_id || (c.name || c.company || "").toLowerCase().trim();
+        if (!seen.has(key)) {
+          seen.add(key);
+          clean.push(c);
+        }
+      });
+      return filterUserItems(clean, currentUser);
     } catch {
       return filterUserItems(DEFAULT_CUSTOMERS, currentUser);
     }
@@ -72,7 +83,7 @@ export default function Customers() {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [dateFilterMode, setDateFilterMode] = useState("All"); // "All" | "Today" | "This Month" | "Custom"
   const [customFilterDate, setCustomFilterDate] = useState("");
-  const [viewMode, setViewMode] = useState("grid"); // "grid" (Card View) | "table" (Table View)
+  const [viewMode, setViewMode] = useState("table"); // Default View Mode: "table" (Table View) | "grid" (Card View)
 
   // Form states for Logging Remarks & Converting to Visit
   const [newRemarkText, setNewRemarkText] = useState("");
@@ -91,73 +102,12 @@ export default function Customers() {
   }, [customerList]);
 
   // Load Converted Leads dynamically on mount and sync to Supabase
+  // Load Converted Leads and sync with Supabase
   useEffect(() => {
-    try {
-      const savedLeads = localStorage.getItem("tc_sm_leads");
-      if (savedLeads) {
-        const parsedLeads = JSON.parse(savedLeads);
-        const converted = parsedLeads
-          .filter((l) => l && (l.status === "Converted to Customer" || l.status === "Converted"))
-          .map((l) => ({
-            id: `conv_${l.id}`,
-            lead_id: l.lead_id || l.id,
-            name: l.company || l.name || "Converted Client",
-            person: l.person || l.contactPerson || "Contact Person",
-            phone: l.phone || "",
-            email: l.email || "",
-            city: l.city || "Chennai",
-            revenue: l.value || "₹4,50,000",
-            lastVisit: "Just Converted",
-            status: "Active",
-            reachOutReason: l.notes || "Reached out for CRM automation & field sales streamlining.",
-            packageTier: "Standard Enterprise Suite",
-            onboardingRemarks: "Newly converted client from Sales Manager lead allocation.",
-            accountManager: l.assignedTo || userName,
-            onboardDate: new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }),
-            remarksHistory: l.executiveRemarks || [
-              { date: "Just now", note: "Account converted from SM Lead allocation." }
-            ]
-          }));
-
-        // Dispatch createCustomer API for each converted lead to ensure Supabase persistence
-        converted.forEach(async (c) => {
-          try {
-            await customerAPI.createCustomer({
-              name: c.name,
-              company_name: c.name,
-              contact_person: c.person,
-              email: c.email,
-              phone: c.phone,
-              city: c.city,
-              lead_id: c.lead_id,
-              notes: c.reachOutReason,
-              assigned_to: userName,
-              assigned_to_email: userEmail,
-            });
-          } catch (e) {}
-        });
-
-        setCustomerList((prev) => {
-          let updated = [...prev];
-          converted.forEach((c) => {
-            const targetName = (c.name || "").toLowerCase();
-            if (targetName && !updated.some((item) => (item?.name || item?.company || "").toLowerCase() === targetName)) {
-              updated.unshift(c);
-            }
-          });
-          return updated;
-        });
-      }
-    } catch (e) {
-      console.error(e);
-    }
-
     customerAPI
       .getCustomers()
       .then((res) => {
         const raw = Array.isArray(res) ? res : (res?.data || []);
-        if (!raw.length) return;
-
         const normalized = raw.map((c) => ({
           id: c.customer_id || c.id,
           customer_id: c.customer_id || c.id,
@@ -168,31 +118,93 @@ export default function Customers() {
           person: c.person || c.contactPerson || c.contact_person || "—",
           phone: c.phone || c.mobile || "—",
           email: c.email || "—",
-          city: c.city || (c.billing_address || "").split(",")[0] || "—",
+          city: c.city || (c.billing_address || "").split(",")[0] || "Chennai",
           status: c.status || "Active Customer",
           packageTier: c.packageTier || "Enterprise Plan",
-          reachOutReason: c.notes || c.reachOutReason || "Converted from lead.",
+          reachOutReason: c.notes || c.reachOutReason || "Converted customer account.",
           accountManager: c.accountManager || c.account_manager || userName,
           contractValue: c.contractValue || c.revenue || "₹4,50,000",
           remarksHistory: c.remarksHistory || [],
         }));
 
         setCustomerList((prev) => {
-          const merged = [...prev];
-          normalized.forEach((sc) => {
-            const alreadyExists = merged.some(
-              (lc) =>
-                (lc.customer_id && lc.customer_id === sc.customer_id) ||
-                (lc.id && lc.id === sc.id) ||
-                (sc.name && (lc.name || lc.company || "").toLowerCase() === sc.name.toLowerCase())
+          const merged = [...normalized];
+          // Check if any local converted customer needs to be added & synced to Supabase
+          prev.forEach((lc) => {
+            const exists = merged.some(
+              (sc) =>
+                (sc.customer_id && sc.customer_id === lc.customer_id) ||
+                (sc.id && sc.id === lc.id) ||
+                ((sc.name || "").toLowerCase().trim() === (lc.name || lc.company || "").toLowerCase().trim())
             );
-            if (!alreadyExists) merged.unshift(sc);
+            if (!exists && lc.name) {
+              merged.push(lc);
+              // Push to Supabase
+              customerAPI.createCustomer({
+                name: lc.name || lc.company,
+                company: lc.name || lc.company,
+                company_name: lc.name || lc.company,
+                person: lc.person || lc.contactPerson,
+                contact_person: lc.person || lc.contactPerson,
+                phone: lc.phone,
+                mobile: lc.phone,
+                email: lc.email,
+                city: lc.city,
+                address: lc.city,
+                notes: lc.reachOutReason || lc.notes,
+                lead_id: lc.leadId,
+                assigned_to: userName,
+                assigned_to_email: userEmail
+              }).catch(() => null);
+            }
           });
           return merged;
         });
       })
       .catch((err) => console.warn("Could not fetch customers from API:", err));
   }, []);
+
+  // Delete Customer Handler (Removes from Supabase & Frontend)
+  const handleDeleteCustomer = async (e, customer) => {
+    if (e && e.stopPropagation) e.stopPropagation();
+
+    const targetId = customer.id || customer.customer_id;
+    const targetName = customer.name || customer.company || "Customer Account";
+
+    if (!window.confirm(`Are you sure you want to delete "${targetName}"? This will permanently delete this record from Supabase.`)) {
+      return;
+    }
+
+    try {
+      if (targetId) {
+        await customerAPI.deleteCustomer(targetId).catch((err) => {
+          console.warn("Delete customer notice from backend:", err);
+        });
+      }
+
+      setCustomerList((prev) => {
+        const updated = prev.filter(
+          (c) =>
+            c.id !== targetId &&
+            c.customer_id !== targetId &&
+            (targetId ? c.id !== customer.id : true)
+        );
+        try {
+          localStorage.setItem("tc_customer_accounts", JSON.stringify(updated));
+        } catch (err) { }
+        return updated;
+      });
+
+      if (selectedCustomer && (selectedCustomer.id === targetId || selectedCustomer.customer_id === targetId)) {
+        setSelectedCustomer(null);
+      }
+
+      showToast(`🗑️ Customer "${targetName}" deleted from Supabase!`, "success");
+    } catch (err) {
+      console.error(err);
+      showToast("Error deleting customer record.", "error");
+    }
+  };
 
   // Standard Remark Logging Handler
   const handleAddRemark = (e) => {
@@ -503,9 +515,20 @@ export default function Customers() {
                       )}
                     </div>
                   </div>
-                  <span className="bg-emerald-50 text-emerald-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">
-                    {customer.status}
-                  </span>
+                  <div className="flex items-center gap-1 shrink-0">
+                    <span className="bg-emerald-50 text-emerald-700 text-[10px] font-extrabold px-2 py-0.5 rounded-full border border-emerald-200">
+                      {customer.status}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={(e) => handleDeleteCustomer(e, customer)}
+                      className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition cursor-pointer"
+                      title={`Delete ${customer.name}`}
+                      aria-label={`Delete ${customer.name}`}
+                    >
+                      <Trash2 size={15} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Reach Out Reason Snippet */}
@@ -614,16 +637,26 @@ export default function Customers() {
 
                       {/* Action */}
                       <td className="py-3.5 px-4 text-right">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedCustomer(customer);
-                            setShowVisitForm(false);
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs shadow-xs inline-flex items-center gap-1 transition cursor-pointer"
-                        >
-                          <Eye size={13} /> View Details
-                        </button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedCustomer(customer);
+                              setShowVisitForm(false);
+                            }}
+                            className="px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs shadow-xs inline-flex items-center gap-1 transition cursor-pointer"
+                          >
+                            <Eye size={13} /> View Details
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(e) => handleDeleteCustomer(e, customer)}
+                            className="p-1.5 rounded-xl text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 transition cursor-pointer"
+                            title={`Delete ${customer.name}`}
+                          >
+                            <Trash2 size={15} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))
@@ -643,14 +676,24 @@ export default function Customers() {
                 <h3 className="text-lg sm:text-xl font-black text-slate-900">{selectedCustomer.name}</h3>
                 <p className="text-xs font-semibold text-teal-600">Active Customer Insights & Remarks</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedCustomer(null)}
-                className="p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
-                aria-label="Close modal"
-              >
-                <X size={20} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={(e) => handleDeleteCustomer(e, selectedCustomer)}
+                  className="px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 font-extrabold text-xs border border-rose-200 flex items-center gap-1.5 transition cursor-pointer"
+                  title="Delete Customer Account"
+                >
+                  <Trash2 size={14} /> Delete Account
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCustomer(null)}
+                  className="p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+                  aria-label="Close modal"
+                >
+                  <X size={20} />
+                </button>
+              </div>
             </div>
 
             <div className="space-y-4 text-xs sm:text-sm font-semibold text-slate-700">

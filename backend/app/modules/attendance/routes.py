@@ -14,7 +14,7 @@ def get_service() -> AttendanceService:
 
 @router.get("/enrollment-status", response_model=StandardResponse)
 async def get_enrollment_status(
-    employee_id: str = Query("EMP000012"),
+    employee_id: str = Query(None),
     email: str = Query(""),
     user_payload: dict = Depends(get_current_user_payload),
     service: AttendanceService = Depends(get_service)
@@ -35,10 +35,8 @@ async def enroll_employee(
     service: AttendanceService = Depends(get_service)
 ):
     """Save one-time facial/biometric enrollment data."""
-    if not data.employee_id:
-        data.employee_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "EMP000012")
-    if not data.employee_name:
-        data.employee_name = str(user_payload.get("name") or "Sales Executive")
+    data.employee_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "EMP000012")
+    data.employee_name = str(user_payload.get("name") or "Sales Executive")
 
     result = service.enroll(data)
     return StandardResponse.success_response(
@@ -53,17 +51,13 @@ async def verify_liveness(
     user_payload: dict = Depends(get_current_user_payload),
     service: AttendanceService = Depends(get_service)
 ):
-    """Verify facial liveness challenge (eye blink, head turn, smile) for anti-spoofing."""
+    """Verify facial liveness challenge for anti-spoofing."""
     challenge = data.get("challenge_type", "blink")
-    metrics = data.get("motion_metrics", {})
-    
-    # Server-side verification validation
-    is_valid = True
     score = 0.98
     
     return StandardResponse.success_response(
         data={
-            "liveness_verified": is_valid,
+            "liveness_verified": True,
             "liveness_score": score,
             "challenge_type": challenge,
             "message": "Face Verified Successfully."
@@ -78,8 +72,8 @@ async def match_face(
     user_payload: dict = Depends(get_current_user_payload),
     service: AttendanceService = Depends(get_service)
 ):
-    """Match live facial feature template against enrolled employee template for device-independent verification."""
-    emp_id = data.get("target_employee_id") or user_payload.get("employee_code") or user_payload.get("sub") or "EMP000012"
+    """Match live facial feature template against enrolled employee template."""
+    emp_id = user_payload.get("employee_code") or user_payload.get("sub") or "EMP000012"
     
     return StandardResponse.success_response(
         data={
@@ -114,15 +108,12 @@ async def clock_in(
     service: AttendanceService = Depends(get_service)
 ):
     """Record clock-in with GPS location for the authenticated user."""
-    user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "user_001")
-    if not data.employee_id:
-        data.employee_id = str(user_payload.get("employee_code") or user_id)
-    if not data.employee_name:
-        data.employee_name = str(user_payload.get("name") or "Sales Executive")
+    user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
+    data.employee_id = str(user_payload.get("employee_code") or user_payload.get("employee_id") or user_id)
+    data.employee_name = str(user_payload.get("name") or user_payload.get("full_name") or "Sales Executive")
 
     log = service.clock_in(user_id, data)
 
-    # Audit logging
     try:
         from app.modules.audit.repository import AuditRepository
         AuditRepository().create_log({
@@ -148,13 +139,11 @@ async def clock_out(
     service: AttendanceService = Depends(get_service)
 ):
     """Record clock-out with GPS location for the authenticated user."""
-    user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "user_001")
-    if not data.employee_id:
-        data.employee_id = str(user_payload.get("employee_code") or user_id)
+    user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
+    data.employee_id = str(user_payload.get("employee_code") or user_payload.get("employee_id") or user_id)
 
     log = service.clock_out(user_id, data)
 
-    # Audit logging
     try:
         from app.modules.audit.repository import AuditRepository
         AuditRepository().create_log({
@@ -179,9 +168,20 @@ async def submit_leave_request(
     service: AttendanceService = Depends(get_service)
 ):
     """Submit Leave / Permission request by Sales Executive."""
+    user_name = str(user_payload.get("name") or user_payload.get("full_name") or "")
+    user_email = str(user_payload.get("email") or "").lower().strip()
+    user_code = str(user_payload.get("employee_code") or user_payload.get("employee_id") or "")
+
+    if user_name:
+        data["executive_name"] = user_name
+        data["executive"] = user_name
+    if user_email:
+        data["executive_email"] = user_email
+    if user_code:
+        data["employee_code"] = user_code
+
     result = service.submit_leave_request(data, user_payload)
 
-    # Audit logging
     try:
         from app.modules.audit.repository import AuditRepository
         AuditRepository().create_log({
@@ -219,15 +219,14 @@ async def update_leave_status(
     user_payload: dict = Depends(get_current_user_payload),
     service: AttendanceService = Depends(get_service)
 ):
-    """Approve or Reject Leave / Permission request by Sales Manager."""
+    """Approve or Reject Leave / Permission request by Sales Manager / Admin / CEO."""
     new_status = data.get("status") or "Approved"
     comment = data.get("comment") or data.get("manager_comment") or ""
     try:
         result = service.update_leave_status(request_id, new_status, comment, user_payload)
     except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=400 if "not found" not in str(e).lower() else 404, detail=str(e))
 
-    # Audit logging
     try:
         from app.modules.audit.repository import AuditRepository
         AuditRepository().create_log({

@@ -115,14 +115,7 @@ export default function ManagerExpenses() {
       return isReportingManagerMatch || isAssignmentMapMatch
     })
 
-    if (assignedOnly.length > 0) return assignedOnly
-
-    return rawEmployees.filter(
-      (u) =>
-        (u.role && u.role.toLowerCase().includes('exec')) ||
-        (u.designation && u.designation.toLowerCase().includes('exec')) ||
-        u.role === 'Sales Executive'
-    )
+    return assignedOnly
   }
 
   // Load Sales Executives list
@@ -461,8 +454,6 @@ export default function ManagerExpenses() {
       matchesDate = expDateStr.includes('2026-08-06') || expDateStr.includes('06/08/2026') || expDateStr.includes('Today')
     } else if (dateFilterTab === 'Yesterday') {
       matchesDate = expDateStr.includes('2026-08-05') || expDateStr.includes('05/08/2026') || expDateStr.includes('Yesterday')
-    } else if (dateFilterTab === 'Tomorrow') {
-      matchesDate = expDateStr.includes('2026-08-07') || expDateStr.includes('07/08/2026')
     } else if (dateFilterTab === 'This Month') {
       matchesDate = expDateStr.includes('2026-08') || expDateStr.includes('/08/')
     } else if (dateFilterTab === 'Custom') {
@@ -648,7 +639,7 @@ export default function ManagerExpenses() {
             <span className="text-amber-900 px-2 py-0.5 font-black uppercase tracking-wider text-[10px]">
               Date Filter:
             </span>
-            {['All Time', 'Today', 'Yesterday', 'Tomorrow', 'This Month', 'Custom'].map((tab) => (
+            {['All Time', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
               <button
                 key={tab}
                 onClick={() => {

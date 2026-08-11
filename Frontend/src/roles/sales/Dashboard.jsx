@@ -30,6 +30,11 @@ import {
   Building2,
   Sparkles,
   Zap,
+  Phone,
+  Gift,
+  Award,
+  ExternalLink,
+  Briefcase
 } from "lucide-react";
 import { salesDashboardAPI, todoAPI, notificationAPI, crmAPI } from "../../services/api.js";
 import { exportToPDF, exportToExcel, exportToCSV, getFormattedTodayDate } from "../../utils/exportUtils.js";
@@ -63,9 +68,6 @@ const MOCK_KPIS = {
   recent_activities: [],
   today_schedule: [],
 };
-
-const MOCK_TODOS = [];
-const MOCK_NOTIFICATIONS = [];
 
 // ── Circular Gauge Component ───────────────────────────────────────────────────
 
@@ -161,6 +163,15 @@ export default function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState("Today");
   const [refreshing, setRefreshing] = useState(false);
   const [showExportMenu, setShowExportMenu] = useState(false);
+  const [showLeadsModal, setShowLeadsModal] = useState(false);
+  const [leadsModalTab, setLeadsModalTab] = useState("Hot");
+  const [allLeadsList, setAllLeadsList] = useState([]);
+  const [myCustomersList, setMyCustomersList] = useState([]);
+  const [todayFollowupsListState, setTodayFollowupsListState] = useState([]);
+
+  // Modals state: Reminder of the Day (Today Followups) & Revenue Incentive Modal
+  const [showTodayFollowupsModal, setShowTodayFollowupsModal] = useState(false);
+  const [showRevenueIncentiveModal, setShowRevenueIncentiveModal] = useState(false);
 
   // Quick Action Modal State (Direct Add Lead Modal on Dashboard!)
   const [isAddLeadModalOpen, setIsAddLeadModalOpen] = useState(false);
@@ -185,8 +196,9 @@ export default function Dashboard() {
   const QUICK_ACTIONS = [
     { label: "Mark Attendance 📹", icon: UserCheck, color: "text-emerald-600", bg: "bg-emerald-50", path: "/sales/attendance" },
     { label: "Add Lead 🪪", icon: UserPlus, color: "text-teal-600", bg: "bg-teal-50", isDirectModal: true },
-    { label: "Follow-Ups 📅", icon: Clock3, color: "text-purple-600", bg: "bg-purple-50", path: "/sales/followups" },
+    { label: "Follow-Ups 📅", icon: Clock3, color: "text-purple-600", bg: "bg-purple-50", path: "/sales/leads", activeTab: "followups" },
     { label: "Schedule Visit 📍", icon: Calendar, color: "text-blue-600", bg: "bg-blue-50", path: "/sales/client-log" },
+    { label: "Opportunities 🎯", icon: Target, color: "text-orange-600", bg: "bg-orange-50", path: "/sales/leads", activeTab: "opportunities" },
     { label: "Submit Expense 💰", icon: DollarSign, color: "text-amber-600", bg: "bg-amber-50", path: "/sales/expenses" },
     { label: "Client Log 📑", icon: FileText, color: "text-teal-600", bg: "bg-teal-50", path: "/sales/client-log" },
     { label: "My Leads 👥", icon: Users, color: "text-indigo-600", bg: "bg-indigo-50", path: "/sales/leads" },
@@ -206,6 +218,7 @@ export default function Dashboard() {
       // Calculate Date Scope based on selectedMonth / date filter
       const now = new Date();
       const todayISO = now.toISOString().slice(0, 10);
+      const todayFormattedStr = formatDate(now);
       const yesterdayISO = new Date(now.setDate(now.getDate() - 1)).toISOString().slice(0, 10);
 
       const matchesDate = (itemDate) => {
@@ -224,7 +237,7 @@ export default function Dashboard() {
           return str.includes(currentMonthPrefix);
         }
         // Default: Today
-        return str.includes(todayISO) || str.includes(formatDate(new Date()));
+        return str.includes(todayISO) || str.includes(todayFormattedStr);
       };
 
       // Helper check for ownership
@@ -233,9 +246,11 @@ export default function Dashboard() {
       // Filter My Leads strictly
       const myLeads = leads.filter(matchesUser);
       const totalMyLeads = myLeads.length;
+      setAllLeadsList(myLeads);
 
       // Filter My Customers strictly
       const myCustomers = customers.filter(matchesUser);
+      setMyCustomersList(myCustomers);
 
       // Converted count
       const convertedCount = myLeads.filter(
@@ -259,14 +274,23 @@ export default function Dashboard() {
           return sum + val;
         }, 0);
 
-      const totalSeRevenue = customerRevenue + convertedLeadsRevenue || (myLeads.length > 0 ? 650000 : 0);
+      const totalSeRevenue = customerRevenue + convertedLeadsRevenue || (myCustomers.length > 0 ? customerRevenue : 0);
 
-      // My Followups filtered date-wise
-      const myFollowups = followups.filter(matchesUser);
+      // My Followups filtered date-wise & excluding converted follow-ups
+      const myFollowups = followups.filter((f) => {
+        if (!matchesUser(f)) return false;
+        const statusStr = String(f.status || f.outcome || "").toLowerCase();
+        if (statusStr.includes("converted") || statusStr.includes("completed") || statusStr.includes("cancelled")) {
+          return false;
+        }
+        return true;
+      });
+
       const todayFollowupsList = myFollowups.filter((f) => {
         const fDate = f.scheduledDate || f.date || f.createdAt || "";
-        return matchesDate(fDate);
+        return matchesDate(fDate) || String(fDate).includes(todayISO) || String(fDate).includes(todayFormattedStr);
       });
+      setTodayFollowupsListState(todayFollowupsList);
 
       // My Visits filtered date-wise
       const myVisits = visits.filter(matchesUser);
@@ -293,9 +317,7 @@ export default function Dashboard() {
         type: v.purpose || "Site Visit"
       }));
 
-      const hotCount = myLeads.filter(l => l.category === "Hot").length;
-
-      // My Attendance checking (Present when executive is logged into system)
+      // My Attendance checking
       const myAtt = attLogs.filter(matchesUser);
       const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
       const todayISOStr = new Date().toISOString().slice(0, 10);
@@ -304,7 +326,6 @@ export default function Dashboard() {
         return d.includes(todayStr) || d.includes(todayISOStr);
       }) || myAtt[0];
 
-      const isExecutivePresent = true; // Sales Executive logged into active session
       const attCheckInTime = todayAtt?.loginTime || todayAtt?.check_in_time || "09:00 AM";
 
       const dynamicKpis = {
@@ -318,7 +339,6 @@ export default function Dashboard() {
         check_in_time: attCheckInTime,
         check_out_time: todayAtt ? (todayAtt.logoutTime || todayAtt.check_out_time || "—") : "—",
         work_hours: todayAtt ? (todayAtt.workHours || todayAtt.total_working_hours || "8.5 hrs") : "8.5 hrs",
-        hot_leads_count: hotCount,
         expenses_pending_amount: pendingExpensesAmount,
         today_schedule: todaySchedule,
         revenue_achievement_pct: conversionPct > 0 ? conversionPct : 0,
@@ -379,25 +399,11 @@ export default function Dashboard() {
     try {
       const saved = JSON.parse(localStorage.getItem("tc_sm_leads") || "[]");
       localStorage.setItem("tc_sm_leads", JSON.stringify([newLead, ...saved]));
-
-      // Notify Manager
-      const notifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
-      const smNotif = {
-        id: `notif_sm_${Date.now()}`,
-        recipientRole: "manager",
-        title: `🆕 New Lead Added by ${userName}`,
-        message: `${userName} added new lead "${newLead.company}" (${newLead.category} Lead) from Quick Actions.`,
-        time: "Just now",
-        read: false,
-        type: "Lead",
-      };
-      localStorage.setItem("tc_app_notifications", JSON.stringify([smNotif, ...notifs]));
     } catch (e) { }
 
     setIsAddLeadModalOpen(false);
     setAddLeadForm({ company: "", person: "", phone: "", email: "", city: "", category: "Hot", value: "₹4,50,000", notes: "" });
     showToast(`🎉 New Lead "${newLead.company}" created successfully!`, "success");
-    // Refresh dashboard metrics so hot leads count updates immediately
     setTimeout(() => fetchAll(), 100);
   };
 
@@ -434,15 +440,18 @@ export default function Dashboard() {
   // Manager Fixed Sales Target Sync
   const managerTarget = React.useMemo(() => {
     try {
-      const saved = localStorage.getItem('tc_monthly_sales_target')
-      if (saved) return JSON.parse(saved)
+      const saved = localStorage.getItem('tc_monthly_sales_target');
+      if (saved) return JSON.parse(saved);
     } catch {}
-    return { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' }
-  }, [])
+    return { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' };
+  }, []);
 
-  const revTargetVal = Number(managerTarget.revenueTarget) || 500000
-  const revAchievedVal = k.my_generated_revenue || k.revenue_this_month || 0
-  const revAchievementPct = Math.min(Math.round((revAchievedVal / revTargetVal) * 100), 100)
+  const revTargetVal = Number(managerTarget.revenueTarget) || 500000;
+  const revAchievedVal = k.my_generated_revenue || k.revenue_this_month || 0;
+  const revAchievementPct = Math.min(Math.round((revAchievedVal / revTargetVal) * 100), 100);
+
+  // Executive Incentive Calculation: 5% of total revenue generated
+  const totalIncentiveEarned = Math.round(revAchievedVal * 0.05);
 
   return (
     <div className="space-y-5 font-sans text-slate-900 min-w-0 w-full">
@@ -460,7 +469,7 @@ export default function Dashboard() {
             onChange={(e) => setSelectedMonth(e.target.value)}
             className="h-9 text-xs border border-teal-500/50 rounded-xl px-3 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs"
           >
-            <option value="Add Today">📍 Add Today</option>
+            <option value="Today">📍 Today</option>
             <option value="This Month">This Month</option>
             <option value="Last Month">Last Month</option>
             <option value="This Quarter">This Quarter</option>
@@ -483,14 +492,13 @@ export default function Dashboard() {
                     const exportRows = [
                       { Metric: 'Assigned Leads', Value: k.assigned_leads },
                       { Metric: 'Converted Customers', Value: k.converted_customers },
-                      { Metric: 'Revenue This Month', Value: k.revenue_this_month },
+                      { Metric: 'Revenue Generated', Value: k.my_generated_revenue },
                       { Metric: 'Today Visits', Value: k.today_visits },
                       { Metric: 'Pending Followups', Value: k.pending_followups },
-                      { Metric: 'Target Achievement', Value: `${k.target_achievement_pct}%` },
                       { Metric: 'Date', Value: getFormattedTodayDate() },
-                    ]
-                    exportToPDF(`TConnect_Sales_Report_${new Date().toISOString().slice(0, 10)}`, 'TConnect Executive Sales Report', exportRows)
-                    setShowExportMenu(false)
+                    ];
+                    exportToPDF(`TConnect_Sales_Report_${new Date().toISOString().slice(0, 10)}`, 'TConnect Executive Sales Report', exportRows);
+                    setShowExportMenu(false);
                   }}
                   className="px-3 py-2 rounded-lg text-left text-xs font-bold text-slate-700 hover:bg-teal-50 hover:text-teal-700 flex items-center gap-2 transition"
                 >
@@ -503,14 +511,13 @@ export default function Dashboard() {
                     const exportRows = [
                       { Metric: 'Assigned Leads', Value: k.assigned_leads },
                       { Metric: 'Converted Customers', Value: k.converted_customers },
-                      { Metric: 'Revenue This Month', Value: k.revenue_this_month },
+                      { Metric: 'Revenue Generated', Value: k.my_generated_revenue },
                       { Metric: 'Today Visits', Value: k.today_visits },
                       { Metric: 'Pending Followups', Value: k.pending_followups },
-                      { Metric: 'Target Achievement', Value: `${k.target_achievement_pct}%` },
                       { Metric: 'Date', Value: getFormattedTodayDate() },
-                    ]
-                    exportToExcel(`TConnect_Sales_Report_${new Date().toISOString().slice(0, 10)}.xls`, exportRows)
-                    setShowExportMenu(false)
+                    ];
+                    exportToExcel(`TConnect_Sales_Report_${new Date().toISOString().slice(0, 10)}.xls`, exportRows);
+                    setShowExportMenu(false);
                   }}
                   className="px-3 py-2 rounded-lg text-left text-xs font-bold text-slate-700 hover:bg-teal-50 hover:text-teal-700 flex items-center gap-2 transition"
                 >
@@ -523,14 +530,13 @@ export default function Dashboard() {
                     const exportRows = [
                       { Metric: 'Assigned Leads', Value: k.assigned_leads },
                       { Metric: 'Converted Customers', Value: k.converted_customers },
-                      { Metric: 'Revenue This Month', Value: k.revenue_this_month },
+                      { Metric: 'Revenue Generated', Value: k.my_generated_revenue },
                       { Metric: 'Today Visits', Value: k.today_visits },
                       { Metric: 'Pending Followups', Value: k.pending_followups },
-                      { Metric: 'Target Achievement', Value: `${k.target_achievement_pct}%` },
                       { Metric: 'Date', Value: getFormattedTodayDate() },
-                    ]
-                    exportToCSV(`TConnect_Sales_Report_${new Date().toISOString().slice(0, 10)}.csv`, exportRows)
-                    setShowExportMenu(false)
+                    ];
+                    exportToCSV(`TConnect_Sales_Report_${new Date().toISOString().slice(0, 10)}.csv`, exportRows);
+                    setShowExportMenu(false);
                   }}
                   className="px-3 py-2 rounded-lg text-left text-xs font-bold text-slate-700 hover:bg-teal-50 hover:text-teal-700 flex items-center gap-2 transition"
                 >
@@ -542,7 +548,7 @@ export default function Dashboard() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 transition"
+            className="p-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 transition cursor-pointer"
             title="Refresh data"
           >
             <RefreshCw size={15} className={refreshing ? "animate-spin text-teal-500" : ""} />
@@ -550,16 +556,16 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Top Distinct Vivid Colored KPI Cards (4) ────────────────────────── */}
+      {/* ── Top Distinct Vivid Colored KPI Cards (3 Cards - Hot Lead Card Removed as requested!) ── */}
       {loading ? (
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-4">
-          {Array(4).fill(0).map((_, i) => <SkeletonCard key={i} />)}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
+          {Array(3).fill(0).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {/* Card 1: My Leads (Vivid Blue Gradient) */}
           <div
-            onClick={() => navigate("/sales/leads")}
+            onClick={() => setShowLeadsModal(true)}
             className="bg-gradient-to-br from-blue-100/90 via-blue-50 to-indigo-50/80 rounded-2xl p-4.5 shadow-sm border-2 border-blue-200 hover:shadow-md hover:border-blue-400 transition cursor-pointer"
           >
             <div className="flex items-center justify-between">
@@ -589,34 +595,22 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Card 3: 🔥 Active Hot Leads (Moved to 1st Row!) */}
+          {/* Card 3: Today's Follow-Ups (REMINDER OF THE DAY MODAL TRIGGER!) */}
           <div
-            onClick={() => navigate("/sales/leads")}
-            className="bg-gradient-to-br from-rose-100/90 via-rose-50 to-amber-50/80 rounded-2xl p-4.5 shadow-sm border-2 border-rose-200 hover:shadow-md hover:border-rose-400 transition cursor-pointer"
+            onClick={() => setShowTodayFollowupsModal(true)}
+            className="bg-gradient-to-br from-amber-100/90 via-amber-50 to-orange-50/80 rounded-2xl p-4.5 shadow-sm border-2 border-amber-200 hover:shadow-md hover:border-amber-400 transition cursor-pointer group"
           >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-rose-950 text-[10px] sm:text-xs font-black uppercase tracking-wider">🔥 Active Hot Leads</p>
-                <h2 className="text-2xl sm:text-3xl font-black text-rose-700 mt-1">{k.hot_leads_count ?? 0}</h2>
-              </div>
-              <div className="w-11 h-11 rounded-2xl bg-rose-600 text-white flex items-center justify-center font-bold shadow-md shrink-0">
-                <Target size={20} />
-              </div>
-            </div>
-          </div>
-
-          {/* Card 4: Today's Follow-Ups (Vivid Amber Gradient) */}
-          <div
-            onClick={() => navigate("/sales/client-log")}
-            className="bg-gradient-to-br from-amber-100/90 via-amber-50 to-orange-50/80 rounded-2xl p-4.5 shadow-sm border-2 border-amber-200 hover:shadow-md hover:border-amber-400 transition cursor-pointer"
-          >
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="text-amber-950 text-[10px] sm:text-xs font-black uppercase tracking-wider">Today's Follow-Ups</p>
-                <h2 className="text-2xl sm:text-3xl font-black text-amber-950 mt-1">{k.today_followups || k.pending_followups}</h2>
+                <div className="flex items-center gap-1.5">
+                  <p className="text-amber-950 text-[10px] sm:text-xs font-black uppercase tracking-wider">Total Follow Ups (Today's Reminder)</p>
+                  <span className="text-[9px] font-extrabold bg-amber-200/90 text-amber-900 px-1.5 py-0.5 rounded-full">Reminder</span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-amber-950 mt-1">{todayFollowupsListState.length}</h2>
+                <p className="text-[10px] font-bold text-amber-800 mt-0.5 group-hover:underline">Click to view today's scheduled call reminders ↗</p>
               </div>
               <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-md shrink-0">
-                <ClipboardList size={20} />
+                <Clock3 size={20} />
               </div>
             </div>
           </div>
@@ -662,19 +656,27 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* My Revenue Generated (Moved to 2nd Row!) */}
+          {/* My Revenue Generated (REVENUE & INCENTIVE BREAKDOWN MODAL TRIGGER!) */}
           <div
-            onClick={() => navigate("/sales/customers")}
-            className="bg-gradient-to-br from-purple-100/80 to-fuchsia-50/60 rounded-2xl p-5 shadow-xs border-2 border-purple-200 flex flex-col justify-between cursor-pointer"
+            onClick={() => setShowRevenueIncentiveModal(true)}
+            className="bg-gradient-to-br from-purple-100/80 to-fuchsia-50/60 rounded-2xl p-5 shadow-xs border-2 border-purple-200 flex flex-col justify-between cursor-pointer hover:border-purple-400 transition group"
           >
             <div>
-              <p className="text-purple-900 text-xs uppercase tracking-wider font-extrabold mb-1">My Revenue Generated</p>
-              <h2 className="text-2xl sm:text-3xl font-black text-purple-950 mt-1">{formatINR(k.my_generated_revenue || k.revenue_this_month)}</h2>
-              <p className="text-slate-600 text-xs font-semibold mt-1">Total revenue closed</p>
+              <div className="flex items-center justify-between">
+                <p className="text-purple-900 text-xs uppercase tracking-wider font-extrabold mb-1">My Revenue Generated</p>
+                <Award size={16} className="text-purple-600" />
+              </div>
+              <h2 className="text-2xl sm:text-3xl font-black text-purple-950 mt-1">{formatINR(revAchievedVal)}</h2>
+              <div className="mt-1.5 flex items-center justify-between">
+                <span className="text-[11px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md border border-purple-200">
+                  Earned Incentive: {formatINR(totalIncentiveEarned)}
+                </span>
+                <span className="text-[10px] font-extrabold text-purple-800 group-hover:underline">Click list ↗</span>
+              </div>
             </div>
           </div>
 
-          {/* Reimbursements (Renamed from Expenses Pending!) */}
+          {/* Reimbursements */}
           <div
             onClick={() => navigate("/sales/expenses")}
             className="bg-gradient-to-br from-rose-100/80 to-pink-50/60 rounded-2xl p-5 shadow-xs border-2 border-rose-200 flex flex-col justify-between cursor-pointer"
@@ -692,7 +694,7 @@ export default function Dashboard() {
       {!loading && (
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
 
-          {/* Quick Actions (Vivid Colorful Card) */}
+          {/* Quick Actions */}
           <div className="bg-gradient-to-br from-teal-50/90 via-emerald-50/40 to-slate-50 rounded-3xl p-5 sm:p-6 shadow-sm border-2 border-teal-200/90 flex flex-col justify-between">
             <div className="flex items-center justify-between mb-4">
               <h2 className="font-black text-teal-950 text-base flex items-center gap-2">
@@ -709,7 +711,7 @@ export default function Dashboard() {
                       if (action.isDirectModal) {
                         setIsAddLeadModalOpen(true);
                       } else {
-                        navigate(action.path);
+                        navigate(action.path, { state: { activeTab: action.activeTab } });
                       }
                     }}
                     className="flex flex-col items-center justify-center p-3.5 rounded-2xl bg-white border-2 border-teal-200/80 hover:border-teal-500 hover:shadow-md hover:-translate-y-0.5 transition cursor-pointer group shadow-2xs"
@@ -724,7 +726,7 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Sales Target Overview (Vivid Colorful Card) */}
+          {/* Sales Target Overview */}
           <div className="bg-gradient-to-br from-indigo-50/90 via-blue-50/40 to-slate-50 rounded-3xl p-5 sm:p-6 shadow-sm border-2 border-indigo-200/90 flex flex-col justify-between">
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h2 className="font-black text-indigo-950 text-base flex items-center gap-2">
@@ -762,7 +764,7 @@ export default function Dashboard() {
       {/* ── Perfectly Aligned Grid with Vivid Colorful Cards ── */}
       {!loading && (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Today's Schedule (Vivid Emerald Tinted Card) */}
+          {/* Today's Schedule */}
           <div className="bg-gradient-to-br from-emerald-50/90 via-teal-50/40 to-slate-50 rounded-3xl p-5 sm:p-6 shadow-sm border-2 border-emerald-200/90 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="font-black text-emerald-950 text-base flex items-center gap-2">
@@ -794,7 +796,7 @@ export default function Dashboard() {
             </button>
           </div>
 
-          {/* My To Do Tasks (Vivid Amber Tinted Card) */}
+          {/* My To Do Tasks */}
           <div className="bg-gradient-to-br from-amber-50/90 via-orange-50/40 to-slate-50 rounded-3xl p-5 sm:p-6 shadow-sm border-2 border-amber-200/90 space-y-4">
             <div className="flex items-center justify-between">
               <h2 className="font-black text-amber-950 text-base flex items-center gap-2">
@@ -844,11 +846,188 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── DIRECT ADD LEAD MODAL FROM QUICK ACTIONS (With Only Back Button as requested!) ── */}
+      {/* ── MODAL 1: REMINDER OF THE DAY (TODAY'S SCHEDULED FOLLOW-UPS LIST) ── */}
+      {showTodayFollowupsModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-3xl w-full p-6 space-y-6 shadow-2xl border border-slate-200 flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between border-b border-amber-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-sm">
+                  <Clock3 size={22} />
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
+                    🗓️ Scheduled Follow-Ups Call Reminders (Today's Reminder)
+                  </h2>
+                  <p className="text-xs text-amber-700 font-extrabold mt-0.5">
+                    {formatDate(new Date())} • {todayFollowupsListState.length} Pending Call Reminders Scheduled Today
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTodayFollowupsModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* List of Today's Scheduled Follow-up Calls */}
+            <div className="overflow-y-auto flex-1 min-h-0 space-y-3 pr-1">
+              {todayFollowupsListState.length === 0 ? (
+                <div className="p-10 text-center text-slate-500 bg-amber-50/50 rounded-2xl border border-amber-100">
+                  <Clock3 size={32} className="mx-auto text-amber-400 mb-2" />
+                  <p className="text-sm font-bold text-slate-800">No Follow-Up Calls Scheduled for Today!</p>
+                  <p className="text-xs text-slate-500 mt-1">You have completed all reminders for today or none were scheduled.</p>
+                </div>
+              ) : (
+                todayFollowupsListState.map((f, idx) => (
+                  <div
+                    key={idx}
+                    className="p-4 rounded-2xl bg-gradient-to-r from-amber-50/80 to-orange-50/40 border border-amber-200/90 shadow-2xs flex flex-wrap items-center justify-between gap-3"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500 text-white uppercase tracking-wider">
+                          📞 Call Reminder #{idx + 1}
+                        </span>
+                        <span className="text-xs font-black text-amber-900">⏰ {f.scheduledTime || f.follow_up_time || "10:30 AM"}</span>
+                      </div>
+                      <h3 className="text-base font-black text-slate-900">{f.company || f.client_name || "Lead Client"}</h3>
+                      <p className="text-xs font-bold text-slate-600">
+                        👤 {f.person || f.contact_person || "Contact Person"} • 📞 {f.phone || f.mobile || "Phone N/A"}
+                      </p>
+                      {f.remark && (
+                        <p className="text-xs text-slate-700 bg-white p-2 rounded-xl border border-amber-200/60 font-medium italic mt-1">
+                          " {f.remark} "
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {f.phone && (
+                        <a
+                          href={`tel:${f.phone}`}
+                          className="px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center gap-1.5 transition shadow-2xs"
+                        >
+                          <Phone size={14} /> Call Client
+                        </a>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setShowTodayFollowupsModal(false);
+                          navigate("/sales/leads", { state: { activeTab: "followups" } });
+                        }}
+                        className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs flex items-center gap-1.5 transition shadow-2xs"
+                      >
+                        <ExternalLink size={14} /> View in Follow-Ups Workspace
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 2: MY REVENUE GENERATED & EXECUTIVE INCENTIVE BREAKDOWN ── */}
+      {showRevenueIncentiveModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 space-y-6 shadow-2xl border border-slate-200 flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between border-b border-purple-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-bold shadow-sm">
+                  <Award size={22} />
+                </div>
+                <div>
+                  <h2 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
+                    💰 My Revenue Generated & Executive Incentive Breakdown
+                  </h2>
+                  <p className="text-xs text-purple-700 font-extrabold mt-0.5">
+                    Calculated for Executive {userName} ({userEmpCode || "Sales Executive"})
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowRevenueIncentiveModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Total Summary Cards Banner */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-purple-100 via-purple-50 to-indigo-50 border-2 border-purple-200">
+                <p className="text-xs font-black text-purple-900 uppercase tracking-wider">Total Revenue Generated for Company</p>
+                <h3 className="text-2xl sm:text-3xl font-black text-purple-950 mt-1">{formatINR(revAchievedVal)}</h3>
+                <p className="text-[11px] font-bold text-slate-600 mt-0.5">Closed converted customer deals</p>
+              </div>
+
+              <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-100 via-emerald-50 to-teal-50 border-2 border-emerald-200">
+                <p className="text-xs font-black text-emerald-900 uppercase tracking-wider">Total Executive Incentive Earned (5% Commission)</p>
+                <h3 className="text-2xl sm:text-3xl font-black text-emerald-950 mt-1">{formatINR(totalIncentiveEarned)}</h3>
+                <p className="text-[11px] font-bold text-emerald-800 mt-0.5">🎉 Standard 5% incentive calculated per closed deal</p>
+              </div>
+            </div>
+
+            {/* Converted Customers Table with Revenue & Incentive Columns */}
+            <div className="overflow-y-auto flex-1 min-h-0 border border-slate-100 rounded-2xl">
+              {myCustomersList.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 text-sm font-semibold">
+                  No converted customer deals recorded yet. Convert leads or follow-ups to generate revenue & earn incentives!
+                </div>
+              ) : (
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-purple-50/80 text-purple-900 uppercase font-black tracking-wider border-b border-purple-100">
+                      <th className="py-3 px-4">Customer Account</th>
+                      <th className="py-3 px-4">Contact Person</th>
+                      <th className="py-3 px-4">City</th>
+                      <th className="py-3 px-4">Deal Amount Generated</th>
+                      <th className="py-3 px-4 text-emerald-800">Executive Incentive (5%)</th>
+                      <th className="py-3 px-4">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-800">
+                    {myCustomersList.map((c, i) => {
+                      const valStr = c.contractValue || c.value || c.revenue || c.budget || "450000";
+                      const valNum = parseInt(String(valStr).replace(/[^0-9]/g, "")) || 450000;
+                      const incNum = Math.round(valNum * 0.05);
+
+                      return (
+                        <tr key={i} className="hover:bg-purple-50/40 transition">
+                          <td className="py-3 px-4 font-black text-slate-900">{c.name || c.company || "Customer"}</td>
+                          <td className="py-3 px-4">
+                            <div>{c.person || c.contact_person || "Contact Person"}</div>
+                            <div className="text-[10px] text-slate-400">{c.phone || c.mobile || "—"}</div>
+                          </td>
+                          <td className="py-3 px-4">{c.city || "Chennai"}</td>
+                          <td className="py-3 px-4 font-black text-purple-950">{formatINR(valNum)}</td>
+                          <td className="py-3 px-4 font-black text-emerald-700 bg-emerald-50/60">{formatINR(incNum)}</td>
+                          <td className="py-3 px-4">
+                            <span className="px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-black border border-emerald-200">
+                              ● {c.status || "Active Customer"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DIRECT ADD LEAD MODAL FROM QUICK ACTIONS ── */}
       {isAddLeadModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto">
           <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto">
-            {/* Modal Header with ONLY Back Button! */}
+            {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div className="flex items-center gap-3">
                 <button
@@ -991,22 +1170,119 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+
+      {/* Leads Detail Modal */}
+      {showLeadsModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 space-y-6 shadow-2xl border border-slate-200 flex flex-col max-h-[85vh]">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-900">Total Leads Details</h2>
+                <p className="text-xs text-slate-400 font-semibold">Segmented overview of your sourced leads</p>
+              </div>
+              <button
+                onClick={() => setShowLeadsModal(false)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Segment Tabs */}
+            <div className="grid grid-cols-3 gap-2 p-1 bg-slate-50 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => setLeadsModalTab("Hot")}
+                className={`py-3 px-4 rounded-xl text-xs font-black transition cursor-pointer text-center ${
+                  leadsModalTab === "Hot"
+                    ? "bg-emerald-600 text-white shadow-xs"
+                    : "text-emerald-700 hover:bg-emerald-50"
+                }`}
+              >
+                🟢 Hot ({allLeadsList.filter(l => l.category === "Hot" || l.lead_priority === "Hot" || l.priority === "High").length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setLeadsModalTab("Warm")}
+                className={`py-3 px-4 rounded-xl text-xs font-black transition cursor-pointer text-center ${
+                  leadsModalTab === "Warm"
+                    ? "bg-amber-500 text-white shadow-xs"
+                    : "text-amber-700 hover:bg-amber-50"
+                }`}
+              >
+                ⚡ Warm ({allLeadsList.filter(l => l.category === "Warm" || l.lead_priority === "Warm" || l.priority === "Medium").length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setLeadsModalTab("Cold")}
+                className={`py-3 px-4 rounded-xl text-xs font-black transition cursor-pointer text-center ${
+                  leadsModalTab === "Cold"
+                    ? "bg-rose-600 text-white shadow-xs"
+                    : "text-rose-700 hover:bg-rose-50"
+                }`}
+              >
+                🔴 Cold ({allLeadsList.filter(l => l.category === "Cold" || l.lead_priority === "Cold" || l.priority === "Low").length})
+              </button>
+            </div>
+
+            {/* Leads Table */}
+            <div className="overflow-y-auto flex-1 min-h-0 border border-slate-100 rounded-2xl">
+              {(() => {
+                const filtered = allLeadsList.filter(l => {
+                  const cat = (l.category || l.lead_priority || l.priority || "Warm").toLowerCase();
+                  if (leadsModalTab === "Hot") return cat === "hot" || cat === "high";
+                  if (leadsModalTab === "Warm") return cat === "warm" || cat === "medium";
+                  return cat === "cold" || cat === "low";
+                });
+
+                if (filtered.length === 0) {
+                  return (
+                    <div className="p-8 text-center text-slate-400 text-sm font-semibold">
+                      No leads found in this segment.
+                    </div>
+                  );
+                }
+
+                return (
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-400 uppercase font-black tracking-wider border-b border-slate-100">
+                        <th className="py-3 px-4">Company</th>
+                        <th className="py-3 px-4">Contact Person</th>
+                        <th className="py-3 px-4">City</th>
+                        <th className="py-3 px-4">Product</th>
+                        <th className="py-3 px-4">Value</th>
+                        <th className="py-3 px-4">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-semibold text-slate-800">
+                      {filtered.map((l, i) => (
+                        <tr key={i} className="hover:bg-slate-50/80 transition">
+                          <td className="py-3 px-4 font-black">{l.company_name || l.company}</td>
+                          <td className="py-3 px-4">
+                            <div>{l.contact_person || l.person}</div>
+                            <div className="text-[10px] text-slate-400">{l.mobile || l.phone}</div>
+                          </td>
+                          <td className="py-3 px-4">{l.city || "—"}</td>
+                          <td className="py-3 px-4">{l.product_name || l.product || "—"}</td>
+                          <td className="py-3 px-4 text-slate-900 font-black">
+                            {formatINR(l.expected_value || l.value || 450000)}
+                          </td>
+                          <td className="py-3 px-4">
+                            <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-black border border-slate-200">
+                              {l.status || "New"}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                );
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
-// ── Constants ──────────────────────────────────────────────────────────────────
-
-const ACTIVITY_COLORS = {
-  visit: "bg-blue-500",
-  lead: "bg-emerald-500",
-  expense: "bg-amber-500",
-  followup: "bg-purple-500",
-};
-
-const NOTIF_COLORS = {
-  lead: "bg-blue-500",
-  visit: "bg-teal-500",
-  expense: "bg-emerald-500",
-  info: "bg-slate-400",
-};

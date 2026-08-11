@@ -19,15 +19,82 @@ import {
   UserCheck,
   History,
   MessageSquare,
+  GripVertical,
+  RotateCcw,
 } from 'lucide-react'
 import { hrmsAPI, attendanceAPI, userAPI } from '../../services/api.js'
 import { exportToCSV } from '../../utils/exportUtils.js'
+
+const DEFAULT_CEO_TABS = [
+  { id: 'employees', label: 'Employees Directory', icon: Users },
+  { id: 'leaves', label: 'Leave Requests', icon: Calendar },
+  { id: 'permissions', label: 'Permission Requests', icon: Clock },
+  { id: 'attendance', label: 'Attendance Summary', icon: UserCheck },
+  { id: 'approval_history', label: 'Approval Status & Audit', icon: History },
+]
 
 function CeoHrms({ initialTab = 'employees' }) {
   const { showToast } = useToast()
   const [activeTab, setActiveTab] = useState(initialTab) // 'employees' | 'leaves' | 'permissions' | 'attendance' | 'approval_history'
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+
+  const ceoTabStorageKey = `tc_hrms_nav_order_ceo`
+
+  const [tabOrder, setTabOrder] = useState(() => {
+    try {
+      const saved = localStorage.getItem(ceoTabStorageKey)
+      if (saved) {
+        const savedIds = JSON.parse(saved)
+        if (Array.isArray(savedIds) && savedIds.length > 0) {
+          const ordered = []
+          savedIds.forEach((id) => {
+            const item = DEFAULT_CEO_TABS.find((t) => t.id === id)
+            if (item) ordered.push(item)
+          })
+          DEFAULT_CEO_TABS.forEach((item) => {
+            if (!ordered.some((t) => t.id === item.id)) ordered.push(item)
+          })
+          return ordered
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_CEO_TABS
+  })
+
+  const [draggedTabIdx, setDraggedTabIdx] = useState(null)
+
+  const handleTabDragStart = (e, index) => {
+    setDraggedTabIdx(index)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleTabDragOver = (e, index) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleTabDrop = (e, dropIndex) => {
+    e.preventDefault()
+    if (draggedTabIdx === null || draggedTabIdx === dropIndex) return
+    const updated = Array.from(tabOrder)
+    const [removed] = updated.splice(draggedTabIdx, 1)
+    updated.splice(dropIndex, 0, removed)
+    setTabOrder(updated)
+    setDraggedTabIdx(null)
+    try {
+      localStorage.setItem(ceoTabStorageKey, JSON.stringify(updated.map((t) => t.id)))
+      showToast('HRMS tab order saved!', 'success')
+    } catch (e) {}
+  }
+
+  const resetCeoTabOrder = () => {
+    try {
+      localStorage.removeItem(ceoTabStorageKey)
+      setTabOrder(DEFAULT_CEO_TABS)
+      showToast('HRMS tabs reset to default order.', 'info')
+    } catch (e) {}
+  }
 
   // 1. Employees Directory State
   const [employees, setEmployees] = useState([
@@ -268,45 +335,62 @@ function CeoHrms({ initialTab = 'employees' }) {
         </div>
       </div>
 
-      {/* Primary HRMS Navigation Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs">
-        {[
-          { id: 'employees', label: 'Employees Directory', icon: Users, badge: employees.length },
-          { id: 'leaves', label: 'Leave Requests', icon: Calendar, badge: pendingLeaves.length, alert: pendingLeaves.length > 0 },
-          { id: 'permissions', label: 'Permission Requests', icon: Clock, badge: pendingPermissions.length, alert: pendingPermissions.length > 0 },
-          { id: 'attendance', label: 'Attendance Summary', icon: UserCheck },
-          { id: 'approval_history', label: 'Approval Status & Audit', icon: History },
-        ].map((tab) => {
-          const Icon = tab.icon
-          const isActive = activeTab === tab.id
-          return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
-                isActive
-                  ? 'bg-[#004749] text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Icon className="size-4" />
-              <span>{tab.label}</span>
-              {tab.badge !== undefined && (
-                <span
-                  className={`rounded-full px-2 py-0.2 text-[10px] font-black ${
-                    isActive
-                      ? 'bg-white text-[#004749]'
-                      : tab.alert
-                      ? 'bg-[#540000] text-white'
-                      : 'bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          )
-        })}
+      {/* Primary HRMS Navigation Tabs (Draggable & Reorderable) */}
+      <div className="flex items-center justify-between gap-2 bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs">
+        <div className="flex items-center gap-1.5 overflow-x-auto min-w-0">
+          {tabOrder.map((tItem, idx) => {
+            const Icon = tItem.icon
+            const isActive = activeTab === tItem.id
+            let badgeVal = undefined
+            let isAlert = false
+            if (tItem.id === 'employees') badgeVal = employees.length
+            else if (tItem.id === 'leaves') { badgeVal = pendingLeaves.length; isAlert = pendingLeaves.length > 0 }
+            else if (tItem.id === 'permissions') { badgeVal = pendingPermissions.length; isAlert = pendingPermissions.length > 0 }
+
+            return (
+              <button
+                key={tItem.id}
+                draggable={true}
+                onDragStart={(e) => handleTabDragStart(e, idx)}
+                onDragOver={(e) => handleTabDragOver(e, idx)}
+                onDrop={(e) => handleTabDrop(e, idx)}
+                onClick={() => setActiveTab(tItem.id)}
+                className={`flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap cursor-grab active:cursor-grabbing border border-transparent hover:border-slate-200 ${
+                  isActive
+                    ? 'bg-[#004749] text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+                title="Drag tab to reorder"
+              >
+                <GripVertical className="size-3.5 text-slate-400 opacity-60 shrink-0" />
+                <Icon className="size-4" />
+                <span>{tItem.label}</span>
+                {badgeVal !== undefined && (
+                  <span
+                    className={`rounded-full px-2 py-0.2 text-[10px] font-black ${
+                      isActive
+                        ? 'bg-white text-[#004749]'
+                        : isAlert
+                        ? 'bg-[#540000] text-white'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    {badgeVal}
+                  </span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+
+        <button
+          type="button"
+          onClick={resetCeoTabOrder}
+          className="px-2.5 py-2 text-[10px] font-black text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition shrink-0 cursor-pointer flex items-center gap-1 border border-slate-200"
+          title="Reset HRMS tab order to default"
+        >
+          <RotateCcw size={11} /> Reset Order
+        </button>
       </div>
 
       {/* ── TAB 1: EMPLOYEES DIRECTORY ────────────────────────── */}

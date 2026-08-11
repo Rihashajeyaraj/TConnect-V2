@@ -116,6 +116,10 @@ class HRMSRepository:
                     "date_of_birth": emp.get("date_of_birth"),
                     "joining_date": emp.get("joining_date"),
                     "created_at": emp.get("created_at"),
+                    "reporting_manager": emp.get("reporting_manager"),
+                    "reporting_manager_id": emp.get("reporting_manager_id") or emp.get("reporting_manager"),
+                    "reporting_manager_name": emp.get("reporting_manager_name") or "Not Assigned",
+                    "reporting_manager_email": emp.get("reporting_manager_email") or "",
                 }
                 all_employees.append(normalized)
                 seen_emails.add(emp_email)
@@ -162,6 +166,9 @@ class HRMSRepository:
                         "status": "Active",
                         "gender": meta.get("gender"),
                         "date_of_birth": meta.get("date_of_birth"),
+                        "reporting_manager_id": meta.get("reporting_manager_id"),
+                        "reporting_manager_name": meta.get("reporting_manager_name") or "Not Assigned",
+                        "reporting_manager_email": meta.get("reporting_manager_email") or "",
                     })
                     seen_emails.add(email.lower())
             logger.info(f"Total employees after Auth merge: {len(all_employees)}")
@@ -175,6 +182,25 @@ class HRMSRepository:
         #      (department_id, designation_id FK columns) and it previously carried
         #      the broken employees_user_id_fkey that referenced non-existent public.users.
         # Merging from it would cause duplicate rows and schema mismatches.
+
+        # Step 3: Resolve reporting manager names/emails dynamically using lookup map
+        id_to_name = {}
+        id_to_email = {}
+        for emp in all_employees:
+            emp_id_key = emp.get("employee_id") or emp.get("id")
+            if emp_id_key:
+                id_to_name[str(emp_id_key)] = emp.get("name")
+                id_to_email[str(emp_id_key)] = emp.get("email")
+                
+        for emp in all_employees:
+            mgr_id = emp.get("reporting_manager_id") or emp.get("reporting_manager")
+            if mgr_id and (not emp.get("reporting_manager_name") or emp.get("reporting_manager_name") == "Not Assigned"):
+                name_found = id_to_name.get(str(mgr_id))
+                email_found = id_to_email.get(str(mgr_id))
+                if name_found:
+                    emp["reporting_manager_name"] = name_found
+                if email_found:
+                    emp["reporting_manager_email"] = email_found
 
         if all_employees:
             return all_employees
@@ -406,17 +432,85 @@ class HRMSRepository:
     def get_employee_by_id(self, emp_id: str) -> Optional[Dict[str, Any]]:
         # Try DB first for accuracy
         try:
-            res = self.supabase.schema("hrms").table("employees").select("*").eq("employee_id", emp_id).execute()
+            is_uuid = lambda x: x and len(str(x)) == 36 and "-" in str(x)
+            if is_uuid(emp_id):
+                res = self.supabase.schema("hrms").table("employees").select("*").eq("employee_id", emp_id).execute()
+            else:
+                res = self.supabase.schema("hrms").table("employees").select("*").eq("employee_code", emp_id).execute()
+                if not res.data or len(res.data) == 0:
+                    # Fallback to email query
+                    res = self.supabase.schema("hrms").table("employees").select("*").eq("email", emp_id).execute()
+
             if res.data and len(res.data) > 0:
-                return res.data[0]
+                emp = res.data[0]
+                # Normalize and ensure manager fields are filled
+                emp["reporting_manager_id"] = emp.get("reporting_manager_id") or emp.get("reporting_manager")
+                if not emp.get("reporting_manager_name") or emp.get("reporting_manager_name") == "Not Assigned":
+                    mgr_uuid = emp.get("reporting_manager") or emp.get("reporting_manager_id")
+                    if mgr_uuid:
+                        # Try resolving by employee_id, user_id, auth_user_id — admin may have
+                        # stored the manager's Supabase auth UID in any of these columns
+                        mgr_found = False
+                        for col in ["employee_id", "user_id", "auth_user_id"]:
+                            try:
+                                mgr_res = self.supabase.schema("hrms").table("employees").select(
+                                    "name,first_name,last_name,email"
+                                ).eq(col, str(mgr_uuid)).execute()
+                                if mgr_res.data and len(mgr_res.data) > 0:
+                                    mgr = mgr_res.data[0]
+                                    resolved_name = (
+                                        mgr.get("name")
+                                        or f"{mgr.get('first_name', '')} {mgr.get('last_name', '')}".strip()
+                                        or "Sales Manager"
+                                    )
+                                    emp["reporting_manager_name"] = resolved_name
+                                    emp["reporting_manager_email"] = mgr.get("email") or ""
+                                    mgr_found = True
+                                    logger.info(
+                                        f"Resolved manager '{resolved_name}' via hrms.employees.{col} "
+                                        f"for emp={emp_id}"
+                                    )
+                                    break
+                            except Exception:
+                                continue
+
+                        # Last-resort: look up Supabase Auth user_metadata for the manager UUID
+                        if not mgr_found:
+                            try:
+                                admin_client = get_supabase_admin_client() or self.supabase
+                                auth_admin = getattr(admin_client, "auth", None)
+                                if auth_admin and hasattr(auth_admin, "admin"):
+                                    mgr_auth = auth_admin.admin.get_user_by_id(str(mgr_uuid))
+                                    if mgr_auth and hasattr(mgr_auth, "user") and mgr_auth.user:
+                                        meta = getattr(mgr_auth.user, "user_metadata", {}) or {}
+                                        resolved_name = (
+                                            meta.get("full_name")
+                                            or f"{meta.get('first_name', '')} {meta.get('last_name', '')}".strip()
+                                            or mgr_auth.user.email.split("@")[0].replace(".", " ").title()
+                                        )
+                                        emp["reporting_manager_name"] = resolved_name
+                                        emp["reporting_manager_email"] = mgr_auth.user.email or ""
+                                        logger.info(
+                                            f"Resolved manager '{resolved_name}' via Supabase Auth for emp={emp_id}"
+                                        )
+                            except Exception as auth_err:
+                                logger.debug(f"Auth manager resolve notice: {auth_err}")
+
+                if not emp.get("reporting_manager_name"):
+                    emp["reporting_manager_name"] = "Not Assigned"
+                return emp
         except Exception:
             pass
 
         employees = self.get_all_employees()
         for emp in employees:
-            if str(emp.get("employee_id")) == str(emp_id) or str(emp.get("id")) == str(emp_id):
+            if (str(emp.get("employee_id")) == str(emp_id) or 
+                str(emp.get("id")) == str(emp_id) or 
+                str(emp.get("employee_code")) == str(emp_id) or 
+                str(emp.get("email")).lower() == str(emp_id).lower()):
                 return emp
         return None
+
 
     # ── Sequential employee code generator ───────────────────────────────────
     def next_sequential_code(self) -> str:

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import {
   Calendar,
   Search,
@@ -57,9 +57,9 @@ export default function ManagerVisits() {
   const [selectedVisitStatus, setSelectedVisitStatus] = useState('All')
   const [selectedLeadStatus, setSelectedLeadStatus] = useState('All')
   const [selectedPriority, setSelectedPriority] = useState('All')
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
-  const [dateFilterTab, setDateFilterTab] = useState('All') // 'All' | 'Today' | 'Yesterday' | 'This Month' | 'Custom'
+  const [fromDate, setFromDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [toDate, setToDate] = useState(() => new Date().toISOString().split('T')[0])
+  const [dateFilterTab, setDateFilterTab] = useState('Today') // 'All' | 'Today' | 'Yesterday' | 'This Week' | 'This Month' | 'Custom'
 
   const handleLinearDateFilter = (tab) => {
     setDateFilterTab(tab)
@@ -75,14 +75,23 @@ export default function ManagerVisits() {
       const yestStr = yest.toISOString().split('T')[0]
       setFromDate(yestStr)
       setToDate(yestStr)
+    } else if (tab === 'This Week') {
+      // Monday of current week
+      const day = now.getDay() // 0=Sun, 1=Mon...
+      const diffToMon = (day === 0 ? -6 : 1 - day)
+      const monday = new Date(now)
+      monday.setDate(now.getDate() + diffToMon)
+      setFromDate(monday.toISOString().split('T')[0])
+      setToDate(todayStr)
     } else if (tab === 'This Month') {
       const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
-      const firstDayStr = firstDay.toISOString().split('T')[0]
-      setFromDate(firstDayStr)
+      setFromDate(firstDay.toISOString().split('T')[0])
       setToDate(todayStr)
-    } else if (tab === 'All' || tab === 'Custom') {
+    } else if (tab === 'All') {
       setFromDate('')
       setToDate('')
+    } else if (tab === 'Custom') {
+      // Keep existing dates; user will set them manually
     }
     setPage(1)
   }
@@ -131,14 +140,7 @@ export default function ManagerVisits() {
       return isReportingManagerMatch || isAssignmentMapMatch
     })
 
-    if (assignedOnly.length > 0) return assignedOnly
-
-    return rawEmployees.filter(
-      (u) =>
-        (u.role && u.role.toLowerCase().includes('exec')) ||
-        (u.designation && u.designation.toLowerCase().includes('exec')) ||
-        u.role === 'Sales Executive'
-    )
+    return assignedOnly
   }
 
   // Load Sales Executives from backend HRMS API or localStorage
@@ -233,9 +235,14 @@ export default function ManagerVisits() {
   const normalizeVisit = (v, idx = 0) => {
     if (!v) return null
     const id = v.id || v.visit_id || `VST-${1001 + idx}`
-    const seName = v.assigned_to || v.assignedTo || v.executive || v.executiveName || v.sales_executive_name || 'Abi hastro'
-    const seEmail = v.assigned_to_email || v.assignedToEmail || v.executiveEmail || v.email || 'abi@gmail.com'
+    const seName = v.assigned_to || v.assignedTo || v.executive || v.executiveName || v.sales_executive_name || 'Sales Executive'
+    const seEmail = v.assigned_to_email || v.assignedToEmail || v.executiveEmail || v.email || ''
     const empCode = resolveEmployeeCode(seName, seEmail, v.employee_code || v.employee_id || v.emp_code)
+
+    // Resolve scheduled date — prefer visit_date/date, never fall back to check_in_time/created_at
+    const rawSchedDate = v.visit_date || v.visitDate || v.scheduledDate || v.date || ''
+    // Resolve scheduled time — prefer visit_time/time, never check_in_time
+    const rawSchedTime = v.visit_time || v.visitTime || v.scheduledTime || v.time || '10:00 AM'
 
     return {
       id: id,
@@ -249,11 +256,15 @@ export default function ManagerVisits() {
       employee_code: empCode,
       assigned_to: seName,
       assigned_to_email: seEmail,
-      visit_date: v.visit_date || v.visitDate || v.date || v.scheduledDate || 'Today',
-      visit_time: v.visit_time || v.visitTime || v.time || v.scheduledTime || '10:00 AM',
-      check_in_time: v.check_in_time || v.checkInTime || '10:30 AM',
-      check_out_time: v.check_out_time || v.checkOutTime || '11:15 AM',
-      duration: v.duration || v.meetingDuration || '45 Mins',
+      // Scheduled appointment date/time (from SE's form, NOT check-in time)
+      visit_date: rawSchedDate,
+      visit_time: rawSchedTime,
+      scheduledDate: rawSchedDate,
+      scheduledTime: rawSchedTime,
+      // Audit fields — separate from scheduled date
+      check_in_time: v.check_in_time || v.checkInTime || null,
+      check_out_time: v.check_out_time || v.checkOutTime || null,
+      duration: v.duration || v.meetingDuration || '',
       gps_location: v.gps_location || v.location || v.address || v.city || 'Chennai',
       visit_status: v.visit_status || v.status || 'Scheduled',
       discussion_summary: v.discussion_summary || v.purpose || v.notes || v.remark || 'Site Visit / Product Demo',
@@ -266,6 +277,7 @@ export default function ManagerVisits() {
       lead_status: v.lead_status || 'Follow Up Required',
       lead_priority: v.lead_priority || v.priority || 'Hot',
       remarks: v.remarks || v.notes || v.remark || 'Site visit logged by sales executive.',
+      created_at: v.created_at || null,
     }
   }
 
@@ -323,11 +335,9 @@ export default function ManagerVisits() {
 
       const combined = Array.from(map.values())
       setVisits(combined)
-      calculateLocalSummary(combined)
     } catch (err) {
       const localVisits = getLocalStorageVisits()
       setVisits(localVisits)
-      calculateLocalSummary(localVisits)
     } finally {
       setLoading(false)
     }
@@ -361,75 +371,118 @@ export default function ManagerVisits() {
     fetchTeamAuditData()
   }, [selectedSE, selectedVisitStatus, selectedLeadStatus, selectedPriority, fromDate, toDate, page, limit])
 
+
   // Filtered calculation
-  const filteredVisits = visits.filter((v) => {
-    if (!v) return false
-    const q = search.toLowerCase().trim()
-    const cName = (v.customer_name || v.company || v.title || '').toLowerCase()
-    const poc = (v.poc_name || v.person || '').toLowerCase()
-    const vId = (v.visit_id || v.id || '').toLowerCase()
-    const lId = (v.lead_id || v.lead_code || '').toLowerCase()
-    const seName = (v.assigned_to || v.executive || '').toLowerCase()
-    const seEmail = (v.assigned_to_email || v.email || '').toLowerCase()
-    const seCode = (v.employee_code || v.employee_id || '').toLowerCase()
+  // Filtered calculation
+  const filteredVisits = useMemo(() => {
+    const rawFiltered = visits.filter((v) => {
+      if (!v) return false
+      const q = search.toLowerCase().trim()
+      const cName = (v.customer_name || v.company || v.title || '').toLowerCase()
+      const poc = (v.poc_name || v.person || '').toLowerCase()
+      const vId = (v.visit_id || v.id || '').toLowerCase()
+      const lId = (v.lead_id || v.lead_code || '').toLowerCase()
+      const seName = (v.assigned_to || v.executive || '').toLowerCase()
+      const seEmail = (v.assigned_to_email || v.email || '').toLowerCase()
+      const seCode = (v.employee_code || v.employee_id || '').toLowerCase()
 
-    const matchesSearch =
-      !q ||
-      cName.includes(q) ||
-      poc.includes(q) ||
-      vId.includes(q) ||
-      lId.includes(q) ||
-      seName.includes(q) ||
-      seEmail.includes(q) ||
-      seCode.includes(q)
+      const matchesSearch =
+        !q ||
+        cName.includes(q) ||
+        poc.includes(q) ||
+        vId.includes(q) ||
+        lId.includes(q) ||
+        seName.includes(q) ||
+        seEmail.includes(q) ||
+        seCode.includes(q)
 
-    const matchesVisitStatus = selectedVisitStatus === 'All' || String(v.visit_status || v.status || '').toLowerCase().includes(selectedVisitStatus.toLowerCase())
-    const matchesLeadStatus = selectedLeadStatus === 'All' || String(v.lead_status || '').toLowerCase().includes(selectedLeadStatus.toLowerCase())
-    const matchesPriority = selectedPriority === 'All' || String(v.lead_priority || v.priority || '').toLowerCase().includes(selectedPriority.toLowerCase())
+      const matchesVisitStatus = selectedVisitStatus === 'All' || String(v.visit_status || v.status || '').toLowerCase().includes(selectedVisitStatus.toLowerCase())
+      const matchesLeadStatus = selectedLeadStatus === 'All' || String(v.lead_status || '').toLowerCase().includes(selectedLeadStatus.toLowerCase())
+      const matchesPriority = selectedPriority === 'All' || String(v.lead_priority || v.priority || '').toLowerCase().includes(selectedPriority.toLowerCase())
 
-    let matchesSE = selectedSE === 'All'
-    if (selectedSE === 'Other') {
-      if (!customSEInput.trim()) {
-        matchesSE = true
-      } else {
-        const q = customSEInput.toLowerCase().trim()
-        matchesSE = seName.includes(q) || seEmail.includes(q) || seCode.includes(q)
+      // Client-side date filter check
+      let matchesDate = true
+      const vDateStr = String(v.visit_date || v.visitDate || v.date || '')
+      if (vDateStr) {
+        let vDate = vDateStr.split('T')[0].split(' ')[0]
+        if (vDate.includes('/')) {
+          const parts = vDate.split('/')
+          if (parts.length === 3) {
+            if (parts[2].length === 4) {
+              vDate = `${parts[2]}-${parts[1]}-${parts[0]}`
+            } else if (parts[0].length === 4) {
+              vDate = `${parts[0]}-${parts[1]}-${parts[2]}`
+            }
+          }
+        }
+        if (fromDate && vDate < fromDate) matchesDate = false
+        if (toDate && vDate > toDate) matchesDate = false
       }
-    } else if (!matchesSE) {
-      const targetVal = selectedSE.toLowerCase().trim()
-      const targetUser = targetVal.includes('@') ? targetVal.split('@')[0] : targetVal
-      const targetClean = targetUser.replace(/[^a-z0-9]/g, '')
 
-      matchesSE =
-        seEmail === targetVal ||
-        seName === targetVal ||
-        seCode === targetVal ||
-        (targetClean.length >= 2 && (seEmail.includes(targetClean) || seName.includes(targetClean) || seCode.includes(targetClean)))
+      let matchesSE = selectedSE === 'All'
+      if (selectedSE === 'Other') {
+        if (!customSEInput.trim()) {
+          matchesSE = true
+        } else {
+          const q = customSEInput.toLowerCase().trim()
+          matchesSE = seName.includes(q) || seEmail.includes(q) || seCode.includes(q)
+        }
+      } else if (!matchesSE) {
+        const targetVal = selectedSE.toLowerCase().trim()
+        const targetUser = targetVal.includes('@') ? targetVal.split('@')[0] : targetVal
+        const targetClean = targetUser.replace(/[^a-z0-9]/g, '')
 
-      if (!matchesSE) {
-        const foundExec = executives.find(
-          (ex) =>
-            (ex.email && ex.email.toLowerCase() === targetVal) ||
-            (ex.name && ex.name.toLowerCase() === targetVal) ||
-            (ex.employee_code && ex.employee_code.toLowerCase() === targetVal)
-        )
-        if (foundExec) {
-          const exEmail = (foundExec.email || '').toLowerCase()
-          const exName = (foundExec.name || '').toLowerCase()
-          const exCode = (foundExec.employee_code || '').toLowerCase()
-          const exUser = exEmail.includes('@') ? exEmail.split('@')[0] : exName.split(' ')[0]
+        matchesSE =
+          seEmail === targetVal ||
+          seName === targetVal ||
+          seCode === targetVal ||
+          (targetClean.length >= 2 && (seEmail.includes(targetClean) || seName.includes(targetClean) || seCode.includes(targetClean)))
 
-          matchesSE =
-            (exEmail && (seEmail === exEmail || seEmail.includes(exEmail))) ||
-            (exName && (seName.includes(exName) || exName.includes(seName))) ||
-            (exCode && (seCode === exCode || seCode.includes(exCode))) ||
-            (exUser && exUser.length >= 2 && (seEmail.includes(exUser) || seName.includes(exUser)))
+        if (!matchesSE) {
+          const foundExec = executives.find(
+            (ex) =>
+              (ex.email && ex.email.toLowerCase() === targetVal) ||
+              (ex.name && ex.name.toLowerCase() === targetVal) ||
+              (ex.employee_code && ex.employee_code.toLowerCase() === targetVal)
+          )
+          if (foundExec) {
+            const exEmail = (foundExec.email || '').toLowerCase()
+            const exName = (foundExec.name || '').toLowerCase()
+            const exCode = (foundExec.employee_code || '').toLowerCase()
+            const exUser = exEmail.includes('@') ? exEmail.split('@')[0] : exName.split(' ')[0]
+
+            matchesSE =
+              (exEmail && (seEmail === exEmail || seEmail.includes(exEmail))) ||
+              (exName && (seName.includes(exName) || exName.includes(seName))) ||
+              (exCode && (seCode === exCode || seCode.includes(exCode))) ||
+              (exUser && exUser.length >= 2 && (seEmail.includes(exUser) || seName.includes(exUser)))
+          }
         }
       }
-    }
 
-    return matchesSearch && matchesVisitStatus && matchesLeadStatus && matchesPriority && matchesSE
-  })
+      return matchesSearch && matchesVisitStatus && matchesLeadStatus && matchesPriority && matchesSE && matchesDate
+    })
+
+    // Deduplicate visits to prevent showing repeated records
+    const seen = new Set()
+    return rawFiltered.filter((v) => {
+      const exec = String(v.assigned_to || v.assigned_to_email || '').toLowerCase().trim()
+      const client = String(v.customer_name || v.company || '').toLowerCase().trim()
+      const date = String(v.visit_date || '').toLowerCase().trim()
+      const time = String(v.visit_time || '').toLowerCase().trim()
+      const summary = String(v.discussion_summary || '').toLowerCase().trim()
+
+      const key = `${exec}|${client}|${date}|${time}|${summary}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [visits, search, selectedSE, selectedVisitStatus, selectedLeadStatus, selectedPriority, customSEInput, executives, fromDate, toDate])
+
+  useEffect(() => {
+    calculateLocalSummary(filteredVisits)
+  }, [filteredVisits])
+
 
   // Pagination calculation
   const totalPages = Math.ceil(filteredVisits.length / limit) || 1
@@ -570,9 +623,9 @@ export default function ManagerVisits() {
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-amber-50/70 p-1 rounded-xl border border-amber-300">
-            <span className="text-[11px] font-black text-amber-950 px-2">Date Filter:</span>
-            {['All', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
+          <div className="flex items-center gap-1 bg-amber-50/70 p-1 rounded-xl border border-amber-300 flex-wrap">
+            <span className="text-[11px] font-black text-amber-950 px-2">📅 Scheduled Date:</span>
+            {['Today', 'Yesterday', 'This Week', 'This Month', 'All', 'Custom'].map((tab) => (
               <button
                 key={tab}
                 type="button"
@@ -609,7 +662,7 @@ export default function ManagerVisits() {
           )}
 
           {/* Reset Filters Button */}
-          {(selectedSE !== 'All' || selectedVisitStatus !== 'All' || selectedLeadStatus !== 'All' || selectedPriority !== 'All' || search || fromDate || toDate) && (
+          {(selectedSE !== 'All' || selectedVisitStatus !== 'All' || selectedLeadStatus !== 'All' || selectedPriority !== 'All' || search || dateFilterTab !== 'Today') && (
             <button
               onClick={() => {
                 setSelectedSE('All')
@@ -617,8 +670,11 @@ export default function ManagerVisits() {
                 setSelectedLeadStatus('All')
                 setSelectedPriority('All')
                 setSearch('')
-                setFromDate('')
-                setToDate('')
+                // Reset back to Today (default)
+                const todayStr = new Date().toISOString().split('T')[0]
+                setFromDate(todayStr)
+                setToDate(todayStr)
+                setDateFilterTab('Today')
                 setPage(1)
               }}
               className="text-[11px] font-extrabold text-rose-700 hover:underline cursor-pointer ml-auto"
@@ -635,12 +691,12 @@ export default function ManagerVisits() {
           <table className="w-full text-left text-sm text-slate-800 min-w-[1000px]">
             <thead>
               <tr className="bg-slate-100/80 border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-700">
-                <th className="px-5 py-4.5">Company Name</th>
-                <th className="px-5 py-4.5">Sales Executive Name</th>
-                <th className="px-5 py-4.5">Visit Date & Time</th>
+                <th className="px-5 py-4.5">Company / Client</th>
+                <th className="px-5 py-4.5">Sales Executive</th>
+                <th className="px-5 py-4.5">📅 Scheduled Date &amp; Time</th>
                 <th className="px-5 py-4.5">Visit Status</th>
-                <th className="px-5 py-4.5">Discussion Summary</th>
-                <th className="px-5 py-4.5">Lead Priority</th>
+                <th className="px-5 py-4.5">Product / Purpose</th>
+                <th className="px-5 py-4.5">Location</th>
                 <th className="px-5 py-4.5 text-right">Action</th>
               </tr>
             </thead>
@@ -661,20 +717,28 @@ export default function ManagerVisits() {
               ) : (
                 paginatedVisits.map((visit, idx) => (
                   <tr key={visit.id || visit.visit_id || idx} className="hover:bg-amber-50/50 transition-colors">
-                    {/* 1. Company Name */}
-                    <td className="px-5 py-4.5 font-black text-slate-900 text-sm sm:text-base">
-                      {visit.company || visit.customer_name || 'Enterprise Ltd'}
+                    {/* 1. Company / Client Name */}
+                    <td className="px-5 py-4.5">
+                      <p className="font-black text-slate-900 text-sm">{visit.company || visit.customer_name || 'Enterprise Ltd'}</p>
+                      <p className="text-[11px] text-slate-500 font-semibold mt-0.5">{visit.poc_name || 'Contact Person'}</p>
                     </td>
 
-                    {/* 2. SE Name */}
-                    <td className="px-5 py-4.5 font-black text-slate-900 text-sm sm:text-base">
-                      {visit.assigned_to || visit.assignedTo || visit.executive || 'Sales Executive'}
+                    {/* 2. SE Name + Code */}
+                    <td className="px-5 py-4.5">
+                      <p className="font-black text-slate-900 text-sm">{visit.assigned_to || visit.executive || 'Sales Executive'}</p>
+                      <p className="text-[11px] text-amber-700 font-bold">{visit.employee_code || ''}</p>
                     </td>
 
-                    {/* 3. Combined Visit Date & Time */}
-                    <td className="px-5 py-4.5 font-mono text-xs sm:text-sm font-bold text-slate-800">
-                      <span className="text-slate-900">{visit.visit_date || visit.date || '2026-08-05'}</span>
-                      <span className="text-amber-800 font-black ml-1.5">• {visit.visit_time || visit.time || '10:30 AM'}</span>
+                    {/* 3. Scheduled Date & Time (from SE's visit form — NOT check-in time) */}
+                    <td className="px-5 py-4.5">
+                      {visit.visit_date ? (
+                        <div>
+                          <span className="font-black text-slate-900 text-sm">{visit.visit_date}</span>
+                          <span className="text-amber-800 font-black ml-1.5">• {visit.visit_time || '10:00 AM'}</span>
+                        </div>
+                      ) : (
+                        <span className="text-slate-400 text-xs italic">No date scheduled</span>
+                      )}
                     </td>
 
                     {/* 4. Visit Status */}
@@ -685,42 +749,37 @@ export default function ManagerVisits() {
                             ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                             : String(visit.visit_status || visit.status || '').toLowerCase().includes('schedule')
                             ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                            : 'bg-sky-100 text-sky-800 border border-sky-300'
+                            : String(visit.visit_status || visit.status || '').toLowerCase().includes('check')
+                            ? 'bg-sky-100 text-sky-800 border border-sky-300'
+                            : 'bg-slate-100 text-slate-700 border border-slate-300'
                         }`}
                       >
                         {visit.visit_status || visit.status || 'SCHEDULED'}
                       </span>
                     </td>
 
-                    {/* 5. Discussion Summary */}
-                    <td className="px-5 py-4.5 max-w-[220px]">
-                      <p className="text-xs sm:text-sm text-slate-700 font-semibold line-clamp-2 italic">
-                        "{visit.discussion_summary || visit.purpose || 'Site visit completed.'}"
+                    {/* 5. Product / Purpose */}
+                    <td className="px-5 py-4.5 max-w-[200px]">
+                      <p className="text-xs text-slate-700 font-semibold line-clamp-2">
+                        {visit.products_discussed || visit.discussion_summary || visit.purpose || 'TwiteConnect CRM'}
                       </p>
                     </td>
 
-                    {/* 6. Lead Priority */}
+                    {/* 6. Location */}
                     <td className="px-5 py-4.5">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black shadow-2xs ${
-                          String(visit.lead_priority || visit.priority || '').toLowerCase().includes('hot')
-                            ? 'bg-rose-100 text-rose-800 border border-rose-300'
-                            : String(visit.lead_priority || visit.priority || '').toLowerCase().includes('warm')
-                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                            : 'bg-sky-100 text-sky-800 border border-sky-300'
-                        }`}
-                      >
-                        {String(visit.lead_priority || visit.priority || '').toLowerCase().includes('hot') ? '🔥 Hot' : String(visit.lead_priority || visit.priority || '').toLowerCase().includes('warm') ? '⚡ Warm' : '❄️ Cold'}
+                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                        <MapPin size={11} className="text-amber-600 shrink-0" />
+                        {visit.gps_location || 'Chennai'}
                       </span>
                     </td>
 
-                    {/* 7. Action -> View Full Audit */}
+                    {/* 7. Action */}
                     <td className="px-5 py-4.5 text-right">
                       <button
                         onClick={() => setSelectedAuditModal(visit)}
                         className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto active:scale-95"
                       >
-                        <Eye size={14} /> View Full Audit
+                        <Eye size={14} /> View Audit
                       </button>
                     </td>
                   </tr>

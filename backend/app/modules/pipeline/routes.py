@@ -33,9 +33,8 @@ async def create_opportunity(
     rbac: None = Depends(CanViewPipeline),
     service: PipelineService = Depends(get_service)
 ):
-    """Create a new sales opportunity."""
-    owner_id = user_payload.get("sub", "user_001")
-    opp = service.create_opportunity(data, owner_id)
+    """Create a new sales opportunity for the authenticated user."""
+    opp = service.create_opportunity(data, user_payload)
     return StandardResponse.success_response(
         data=opp,
         message="Opportunity created successfully"
@@ -51,8 +50,8 @@ async def update_opportunity_stage(
     rbac: None = Depends(CanViewPipeline),
     service: PipelineService = Depends(get_service)
 ):
-    """Update sales stage for an opportunity."""
-    opp = service.update_stage(opp_id, data)
+    """Update sales stage for an opportunity with authorization check."""
+    opp = service.update_stage(opp_id, data, user_payload)
     return StandardResponse.success_response(
         data=opp,
         message="Opportunity stage updated successfully"

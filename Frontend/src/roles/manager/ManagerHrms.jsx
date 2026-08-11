@@ -34,13 +34,15 @@ import {
   RefreshCw,
   Download,
   PlusCircle,
+  GripVertical,
+  RotateCcw,
 } from 'lucide-react'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import { attendanceAPI } from '../../services/api.js'
 import { calculateWorkHours } from '../sales/Attendance.jsx'
 
-const NAV_ITEMS = [
+const DEFAULT_NAV_ITEMS = [
   { key: 'dashboard',   label: 'My Dashboard',        icon: LayoutDashboard },
   { key: 'team_leave',  label: 'Team Leave Approval', icon: UserCheck      },
   { key: 'leave',       label: 'My Leave',            icon: CalendarOff    },
@@ -126,6 +128,64 @@ export default function ManagerHrms() {
   const managerEmail = (currentUser.email || '').toLowerCase().trim()
   const empCode      = currentUser.employee_code || currentUser.employee_id || 'MGR-001'
   const [activeSection, setActiveSection] = useState('dashboard')
+
+  const userKey = currentUser?.id || currentUser?.email || empCode || 'manager'
+  const hrmsNavStorageKey = `tc_hrms_nav_order_manager_${userKey}`
+
+  const [navItems, setNavItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem(hrmsNavStorageKey)
+      if (saved) {
+        const savedKeys = JSON.parse(saved)
+        if (Array.isArray(savedKeys) && savedKeys.length > 0) {
+          const ordered = []
+          savedKeys.forEach((key) => {
+            const item = DEFAULT_NAV_ITEMS.find((i) => i.key === key)
+            if (item) ordered.push(item)
+          })
+          DEFAULT_NAV_ITEMS.forEach((item) => {
+            if (!ordered.some((i) => i.key === item.key)) ordered.push(item)
+          })
+          return ordered
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_NAV_ITEMS
+  })
+
+  const [draggedTabIdx, setDraggedTabIdx] = useState(null)
+
+  const handleTabDragStart = (e, index) => {
+    setDraggedTabIdx(index)
+    e.dataTransfer.effectAllowed = 'move'
+  }
+
+  const handleTabDragOver = (e, index) => {
+    e.preventDefault()
+    e.dataTransfer.dropEffect = 'move'
+  }
+
+  const handleTabDrop = (e, dropIndex) => {
+    e.preventDefault()
+    if (draggedTabIdx === null || draggedTabIdx === dropIndex) return
+    const updated = Array.from(navItems)
+    const [removed] = updated.splice(draggedTabIdx, 1)
+    updated.splice(dropIndex, 0, removed)
+    setNavItems(updated)
+    setDraggedTabIdx(null)
+    try {
+      localStorage.setItem(hrmsNavStorageKey, JSON.stringify(updated.map((i) => i.key)))
+      showToast('HRMS tab order saved!', 'success')
+    } catch (e) {}
+  }
+
+  const resetHrmsTabOrder = () => {
+    try {
+      localStorage.removeItem(hrmsNavStorageKey)
+      setNavItems(DEFAULT_NAV_ITEMS)
+      showToast('HRMS tabs reset to default order.', 'info')
+    } catch (e) {}
+  }
 
   // ── Attendance State for My Dashboard ─────────────────────────────────────
   const [realAttendanceLogs, setRealAttendanceLogs] = useState(() => {
@@ -283,20 +343,37 @@ export default function ManagerHrms() {
           </div>
         </div>
 
-        {/* HORIZONTAL NAV TABS */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-3">
-          {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => setActiveSection(key)}
-              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-pointer ${
-                activeSection === key ? 'bg-[#ca8a04] text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-amber-50 hover:text-amber-900'
-              }`}
-            >
-              <Icon size={14} />
-              {label}
-            </button>
-          ))}
+        {/* HORIZONTAL NAV TABS (Draggable & Reorderable) */}
+        <div className="flex items-center justify-between gap-1.5 border-t border-slate-100 pt-3">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 min-w-0">
+            {navItems.map(({ key, label, icon: Icon }, idx) => (
+              <button
+                key={key}
+                draggable={true}
+                onDragStart={(e) => handleTabDragStart(e, idx)}
+                onDragOver={(e) => handleTabDragOver(e, idx)}
+                onDrop={(e) => handleTabDrop(e, idx)}
+                onClick={() => setActiveSection(key)}
+                className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-grab active:cursor-grabbing border border-transparent hover:border-amber-200 ${
+                  activeSection === key ? 'bg-[#ca8a04] text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-amber-50 hover:text-amber-900'
+                }`}
+                title="Drag tab to reorder"
+              >
+                <GripVertical size={13} className="text-amber-400 opacity-70 shrink-0" />
+                <Icon size={14} />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={resetHrmsTabOrder}
+            className="px-2.5 py-1.5 text-[10px] font-black text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition shrink-0 cursor-pointer flex items-center gap-1 border border-slate-200"
+            title="Reset HRMS tab order to default"
+          >
+            <RotateCcw size={11} /> Reset Order
+          </button>
         </div>
       </div>
 

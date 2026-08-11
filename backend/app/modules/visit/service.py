@@ -4,6 +4,7 @@ from datetime import datetime
 from app.modules.visit.repository import VisitRepository
 from app.modules.visit.schemas import VisitCreate, VisitCheckIn, VisitCheckOut
 from app.exceptions.base import NotFoundException
+from app.core.scoping import enforce_record_access
 
 
 class VisitService:
@@ -23,23 +24,25 @@ class VisitService:
         user_emp_code = str((user_payload or {}).get("employee_code") or (user_payload or {}).get("employee_id") or "")
         user_phone = str((user_payload or {}).get("phone") or (user_payload or {}).get("mobile") or "")
 
-        payload["visitor_id"] = payload.get("visitor_id") or user_id
-        payload["employee_id"] = payload.get("employee_id") or user_emp_code or user_id
-        payload["employee_code"] = payload.get("employee_code") or user_emp_code
-        payload["employee_name"] = payload.get("employee_name") or user_name
-        payload["employee_phone"] = payload.get("employee_phone") or user_phone
+        payload["visitor_id"] = user_id
+        payload["employee_id"] = user_emp_code or user_id
+        payload["employee_code"] = user_emp_code
+        payload["employee_name"] = user_name
+        payload["employee_phone"] = user_phone
         payload["employee_email"] = user_email
-        payload["assigned_to"] = payload.get("assigned_to") or user_name
-        payload["assigned_to_email"] = payload.get("assigned_to_email") or user_email
+        payload["assigned_to"] = user_name
+        payload["assigned_to_email"] = user_email
         payload["status"] = "SCHEDULED"
 
-        print("[VISIT SERVICE] payload before repository:", payload)
         return self.repo.create_visit(payload)
 
-    def check_in(self, visit_id: str, data: VisitCheckIn) -> Dict[str, Any]:
+    def check_in(self, visit_id: str, data: VisitCheckIn, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         visit = self.repo.get_visit_by_id(visit_id)
         if not visit:
             raise NotFoundException(resource="Visit", identifier=visit_id)
+        if user_payload:
+            enforce_record_access(visit, user_payload, "visit")
+
         updates = {
             "status": "IN_PROGRESS",
             "visit_status": "IN_PROGRESS",
@@ -47,7 +50,6 @@ class VisitService:
             "latitude": data.latitude,
             "longitude": data.longitude,
         }
-        # Persist update in Supabase
         try:
             from app.database.supabase import get_supabase_admin_client
             sb = get_supabase_admin_client()
@@ -57,10 +59,13 @@ class VisitService:
         visit.update(updates)
         return visit
 
-    def check_out(self, visit_id: str, data: VisitCheckOut) -> Dict[str, Any]:
+    def check_out(self, visit_id: str, data: VisitCheckOut, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         visit = self.repo.get_visit_by_id(visit_id)
         if not visit:
             raise NotFoundException(resource="Visit", identifier=visit_id)
+        if user_payload:
+            enforce_record_access(visit, user_payload, "visit")
+
         updates = {
             "status": "COMPLETED",
             "visit_status": "COMPLETED",
@@ -75,7 +80,13 @@ class VisitService:
         visit.update(updates)
         return visit
 
-    def complete_visit(self, visit_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+    def complete_visit(self, visit_id: str, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        visit = self.repo.get_visit_by_id(visit_id)
+        if not visit:
+            raise NotFoundException(resource="Visit", identifier=visit_id)
+        if user_payload:
+            enforce_record_access(visit, user_payload, "visit")
+
         return self.repo.complete_visit(visit_id, data)
 
     def get_team_audit_visits(self, user_payload: Dict[str, Any] = None, params: Dict[str, Any] = None) -> Dict[str, Any]:

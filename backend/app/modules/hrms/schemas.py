@@ -33,6 +33,30 @@ class EmployeeUpdate(BaseModel):
     designation: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = None
+    
+    # Profile & Banking Details
+    employment_type: Optional[str] = None
+    work_mode: Optional[str] = None
+    work_location: Optional[str] = None
+    marital_status: Optional[str] = None
+    blood_group: Optional[str] = None
+    pan_id: Optional[str] = None
+    personal_email: Optional[str] = None
+    alternate_contact: Optional[str] = None
+    current_address: Optional[str] = None
+    permanent_address: Optional[str] = None
+    primary_skills: Optional[str] = None
+    secondary_skills: Optional[str] = None
+    tools: Optional[str] = None
+    emergency_name: Optional[str] = None
+    emergency_relationship: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    account_holder: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    ifsc: Optional[str] = None
+    branch: Optional[str] = None
+    profile_photo: Optional[str] = None
 
 
 class EmployeeResponse(BaseModel):
@@ -48,3 +72,27 @@ class EmployeeResponse(BaseModel):
     designation: str
     role: str
     is_active: bool = True
+
+    # Profile & Banking Details
+    employment_type: Optional[str] = None
+    work_mode: Optional[str] = None
+    work_location: Optional[str] = None
+    marital_status: Optional[str] = None
+    blood_group: Optional[str] = None
+    pan_id: Optional[str] = None
+    personal_email: Optional[str] = None
+    alternate_contact: Optional[str] = None
+    current_address: Optional[str] = None
+    permanent_address: Optional[str] = None
+    primary_skills: Optional[str] = None
+    secondary_skills: Optional[str] = None
+    tools: Optional[str] = None
+    emergency_name: Optional[str] = None
+    emergency_relationship: Optional[str] = None
+    emergency_contact: Optional[str] = None
+    account_holder: Optional[str] = None
+    bank_name: Optional[str] = None
+    account_number: Optional[str] = None
+    ifsc: Optional[str] = None
+    branch: Optional[str] = None
+    profile_photo: Optional[str] = None

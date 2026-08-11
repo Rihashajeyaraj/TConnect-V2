@@ -86,8 +86,8 @@ async def get_lead(
     rbac: None = Depends(CanViewLeads),
     service: CRMService = Depends(get_service)
 ):
-    """Retrieve lead details by ID."""
-    lead = service.get_lead(lead_id)
+    """Retrieve lead details by ID with IDOR access authorization."""
+    lead = service.get_lead(lead_id, user_payload)
     return StandardResponse.success_response(
         data=lead,
         message="Lead details retrieved successfully"
@@ -102,22 +102,38 @@ async def update_lead(
     rbac: None = Depends(CanManageLeads),
     service: CRMService = Depends(get_service)
 ):
-    """Update lead details."""
-    updated = service.update_lead(lead_id, data)
+    """Update lead details with authorization check."""
+    updated = service.update_lead(lead_id, data, user_payload)
     return StandardResponse.success_response(
         data=updated,
         message="Lead details updated successfully"
     )
 
 
-@router.get("/followups", response_model=StandardResponse)
-async def list_followups(
+@router.delete("/leads/{lead_id}", response_model=StandardResponse)
+async def delete_lead(
+    lead_id: str,
     user_payload: dict = Depends(get_current_user_payload),
     rbac: None = Depends(CanViewLeads),
     service: CRMService = Depends(get_service)
 ):
-    """Retrieve follow-ups filtered by authenticated user."""
-    followups = service.list_followups(user_payload)
+    """Delete a CRM lead with authorization check."""
+    service.delete_lead(lead_id, user_payload)
+    return StandardResponse.success_response(
+        data={"deleted": True},
+        message="Lead deleted successfully"
+    )
+
+
+@router.get("/followups", response_model=StandardResponse)
+async def list_followups(
+    active_only: bool = True,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewLeads),
+    service: CRMService = Depends(get_service)
+):
+    """Retrieve follow-ups for the authenticated user."""
+    followups = service.list_followups(user_payload, active_only=active_only)
     return StandardResponse.success_response(
         data=followups,
         message="Follow-ups list retrieved successfully"
@@ -147,8 +163,8 @@ async def update_followup(
     rbac: None = Depends(CanManageLeads),
     service: CRMService = Depends(get_service)
 ):
-    """Update follow-up details or outcome."""
-    updated = service.update_followup(followup_id, data)
+    """Update follow-up details or outcome with authorization check."""
+    updated = service.update_followup(followup_id, data, user_payload)
     return StandardResponse.success_response(
         data=updated,
         message="Follow-up updated successfully"
@@ -162,10 +178,9 @@ async def delete_followup(
     rbac: None = Depends(CanManageLeads),
     service: CRMService = Depends(get_service)
 ):
-    """Delete a follow-up."""
-    service.delete_followup(followup_id)
+    """Delete a follow-up with authorization check."""
+    service.delete_followup(followup_id, user_payload)
     return StandardResponse.success_response(
         data={"deleted": True},
         message="Follow-up removed successfully"
     )
-

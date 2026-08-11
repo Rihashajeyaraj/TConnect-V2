@@ -94,6 +94,28 @@ export default function Todo() {
     }
   });
 
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    setLoading(true);
+    todoAPI.getTodos()
+      .then((res) => {
+        const raw = Array.isArray(res) ? res : (res?.data || []);
+        if (Array.isArray(raw)) {
+          const userTodos = filterUserItems(raw, currentUser);
+          if (userTodos.length > 0) {
+            setTodos(userTodos);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch todos online:", err);
+      })
+      .finally(() => {
+        setLoading(false);
+      });
+  }, []);
+
   useEffect(() => {
     try {
       localStorage.setItem("tc_3d_todos", JSON.stringify(todos));

@@ -669,7 +669,18 @@ class ReportsRepository:
         rep_id = row.get("id")
         emp_code = row.get("employee_id") or "EMP000012"
         exec_name = row.get("employee_name") or "Sales Executive"
-        mgr_email = row.get("manager_name") or "manager@tconnect.com"
+        exec_email = str(row.get("employee_email") or row.get("executiveEmail") or row.get("executive_email") or "").lower().strip()
+        # Correctly resolve manager fields — db stores them as manager_email / reporting_manager_email
+        mgr_email = str(
+            row.get("manager_email")
+            or row.get("reporting_manager_email")
+            or ""
+        ).lower().strip()
+        mgr_name = str(
+            row.get("manager_name")
+            or row.get("reporting_manager_name")
+            or ""
+        ).strip()
         report_date = row.get("report_date")
         if isinstance(report_date, date):
             report_date = report_date.isoformat()
@@ -695,11 +706,13 @@ class ReportsRepository:
             "submittedAt": report_date,
             "executive": exec_name,
             "executive_name": exec_name,
-            "executiveEmail": "",
-            "executive_email": "",
+            "executiveEmail": exec_email,
+            "executive_email": exec_email,
             "employee_code": emp_code,
             "employee_id": emp_code,
             "reporting_manager_email": mgr_email,
+            "manager_email": mgr_email,
+            "reporting_manager_name": mgr_name,
             "callsMade": int(row.get("leads_contacted") or 0),
             "calls_made": int(row.get("leads_contacted") or 0),
             "visitsCompleted": int(row.get("visits_count") or 0),
@@ -722,6 +735,7 @@ class ReportsRepository:
         }
         return std_report
 
+
     def create_eod_report(self, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         report_id = data.get("id") or f"eod_{uuid.uuid4()}"
         now_iso = datetime.utcnow().isoformat()
@@ -732,9 +746,12 @@ class ReportsRepository:
         emp_code = str(data.get("employee_code") or data.get("employee_id") or (user_payload or {}).get("employee_code") or "EMP000012").strip()
 
         # Resolve user's reporting manager email and ID
+        # Strategy: try UserRepository first (merged auth+db view), then hrms.employees directly
         mgr_email = ""
         mgr_id = ""
+        mgr_name = ""
         if exec_email or emp_code:
+            # Attempt 1: UserRepository (most accurate — resolves UUID → name/email)
             try:
                 from app.modules.users.repository import UserRepository
                 all_u = UserRepository().get_all_users()
@@ -744,9 +761,50 @@ class ReportsRepository:
                     if (exec_email and e_mail == exec_email) or (emp_code and e_code == emp_code):
                         mgr_email = str(u.get("reporting_manager_email") or "").lower().strip()
                         mgr_id = str(u.get("reporting_manager_id") or "").strip()
+                        mgr_name = str(u.get("reporting_manager_name") or "").strip()
                         break
             except Exception:
                 pass
+
+            # Attempt 2: Query hrms.employees directly for the executive's record
+            if not mgr_email:
+                try:
+                    hrms_q = None
+                    if exec_email:
+                        hrms_q = self.supabase.schema("hrms").table("employees").select(
+                            "reporting_manager,reporting_manager_id,reporting_manager_name,reporting_manager_email"
+                        ).eq("email", exec_email).execute()
+                    elif emp_code:
+                        hrms_q = self.supabase.schema("hrms").table("employees").select(
+                            "reporting_manager,reporting_manager_id,reporting_manager_name,reporting_manager_email"
+                        ).eq("employee_code", emp_code).execute()
+                    if hrms_q and hrms_q.data and len(hrms_q.data) > 0:
+                        row = hrms_q.data[0]
+                        mgr_uuid = row.get("reporting_manager") or row.get("reporting_manager_id")
+                        mgr_email = str(row.get("reporting_manager_email") or "").lower().strip()
+                        mgr_name = str(row.get("reporting_manager_name") or "").strip()
+                        mgr_id = str(mgr_uuid or "").strip()
+                        # If the name/email are still missing, resolve manager UUID via auth
+                        if mgr_uuid and (not mgr_email or not mgr_name):
+                            try:
+                                admin_client = get_supabase_admin_client() or self.supabase
+                                auth_admin = getattr(admin_client, "auth", None)
+                                if auth_admin and hasattr(auth_admin, "admin"):
+                                    mgr_auth = auth_admin.admin.get_user_by_id(str(mgr_uuid))
+                                    if mgr_auth and hasattr(mgr_auth, "user") and mgr_auth.user:
+                                        meta = getattr(mgr_auth.user, "user_metadata", {}) or {}
+                                        if not mgr_name:
+                                            mgr_name = (
+                                                meta.get("full_name")
+                                                or f"{meta.get('first_name', '')} {meta.get('last_name', '')}".strip()
+                                                or mgr_auth.user.email.split("@")[0].replace(".", " ").title()
+                                            )
+                                        if not mgr_email:
+                                            mgr_email = str(mgr_auth.user.email or "").lower().strip()
+                            except Exception:
+                                pass
+                except Exception as hrms_err:
+                    logger.debug(f"hrms.employees manager resolve notice: {hrms_err}")
 
         calls = int(data.get("callsMade") or data.get("calls_made") or 0)
         visits = int(data.get("visitsCompleted") or data.get("visits_completed") or 0)
@@ -788,6 +846,7 @@ class ReportsRepository:
             "status": "Submitted",
             "managerAck": False,
             "managerComment": "",
+            "reporting_manager_name": mgr_name,
             "created_at": now_iso
         }
 
@@ -795,7 +854,10 @@ class ReportsRepository:
             "id": report_id,
             "employee_id": emp_code,
             "employee_name": exec_name,
-            "manager_name": mgr_email,
+            "employee_email": exec_email,
+            "manager_name": mgr_name or mgr_email,
+            "manager_email": mgr_email,
+            "reporting_manager_email": mgr_email,
             "report_date": report_obj["date"],
             "visits_count": visits,
             "leads_contacted": calls,
@@ -826,26 +888,21 @@ class ReportsRepository:
 
         _in_memory_eod_reports.insert(0, report_obj)
 
-        # Dispatch real-time notification to assigned Sales Manager
-        try:
-            from app.modules.notification.repository import NotificationRepository
-            NotificationRepository().create_notification({
-                "recipient_id": mgr_id,
-                "recipient_email": mgr_email,
-                "recipient_role": "Sales Manager",
-                "title": f"📑 EOD Daily Work Report Submitted by {exec_name}",
-                "message": f"{exec_name} [{emp_code}] submitted daily EOD report ({calls} calls, {visits} visits, {deals} deals closed).",
-                "type": "REPORT"
-            })
-        except Exception as ex:
-            logger.warning(f"Failed sending EOD notification to manager: {ex}")
-
         return report_obj
 
     def get_eod_reports(self, user_payload: Dict[str, Any] = None, params: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
         allowed = get_allowed_user_identifiers(user_payload)
-        
+
+        # Determine the logged-in user's email for reporting-manager scoping
+        caller_email = str(
+            (user_payload or {}).get("email")
+            or (user_payload or {}).get("sub")
+            or ""
+        ).lower().strip()
+        caller_role = str((user_payload or {}).get("role") or "").strip().lower()
+        is_manager_role = any(r in caller_role for r in ("manager", "admin", "ceo", "hr"))
+
         db_reports = []
         try:
             res = self.supabase.schema("system").table("reports_eod").select("*").order("created_at", desc=True).execute()
@@ -860,8 +917,25 @@ class ReportsRepository:
                 logger.debug(f"reports_eod fetch failed: {e}")
 
         all_r = list(db_reports) if db_reports else [self._standardize_eod_report(r) for r in _in_memory_eod_reports]
+
         if allowed is not None:
-            all_r = [r for r in all_r if is_record_accessible(r, allowed)]
+            def _is_accessible(r: Dict[str, Any]) -> bool:
+                # Standard executive/admin scoping
+                if is_record_accessible(r, allowed):
+                    return True
+                # Reporting manager access: the logged-in manager can see all EOD
+                # reports where they are the assigned reporting_manager_email
+                if is_manager_role and caller_email:
+                    rme = str(
+                        r.get("reporting_manager_email")
+                        or r.get("manager_email")
+                        or ""
+                    ).lower().strip()
+                    if rme and rme == caller_email:
+                        return True
+                return False
+
+            all_r = [r for r in all_r if _is_accessible(r)]
 
         return all_r
 

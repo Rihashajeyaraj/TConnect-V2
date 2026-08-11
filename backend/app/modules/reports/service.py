@@ -6,9 +6,9 @@ class ReportsService:
     def __init__(self, repo: ReportsRepository = None):
         self.repo = repo or ReportsRepository()
 
-    def get_dashboard_summary(self) -> Dict[str, Any]:
-        """Legacy: basic counts for generic dashboard."""
-        return self.repo.get_dashboard_counts()
+    def get_dashboard_summary(self, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        """Role-scoped basic counts for dashboard summary."""
+        return self.repo.get_dashboard_counts(user_payload)
 
     def get_ceo_dashboard_kpis(self) -> Dict[str, Any]:
         """Retrieve full dashboard metrics and details for the CEO Portal."""

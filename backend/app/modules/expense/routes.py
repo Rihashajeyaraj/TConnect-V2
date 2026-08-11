@@ -83,8 +83,8 @@ async def approve_or_reject_expense(
     rbac: None = Depends(CanApproveExpenses),
     service: ExpenseService = Depends(get_service)
 ):
-    """Approve or reject an expense claim."""
-    exp = service.update_expense_status(exp_id, approval)
+    """Approve or reject an expense claim with authorization check."""
+    exp = service.update_expense_status(exp_id, approval, user_payload)
     return StandardResponse.success_response(
         data=exp,
         message=f"Expense claim {approval.status.lower()} successfully"
@@ -99,7 +99,7 @@ async def approve_expense_patch(
     rbac: None = Depends(CanApproveExpenses),
     service: ExpenseService = Depends(get_service)
 ):
-    """Approve an expense claim."""
+    """Approve an expense claim with authorization check."""
     remarks = (data or {}).get("remarks") or (data or {}).get("manager_remarks") or "Approved by Sales Manager."
     exp = service.change_status(exp_id, "APPROVED", remarks, user_payload)
     return StandardResponse.success_response(
@@ -116,7 +116,7 @@ async def reject_expense_patch(
     rbac: None = Depends(CanApproveExpenses),
     service: ExpenseService = Depends(get_service)
 ):
-    """Reject an expense claim."""
+    """Reject an expense claim with authorization check."""
     remarks = (data or {}).get("remarks") or (data or {}).get("manager_remarks") or (data or {}).get("reason") or "Rejected by Sales Manager."
     exp = service.change_status(exp_id, "REJECTED", remarks, user_payload)
     return StandardResponse.success_response(
@@ -133,7 +133,7 @@ async def return_expense_patch(
     rbac: None = Depends(CanApproveExpenses),
     service: ExpenseService = Depends(get_service)
 ):
-    """Return an expense claim for correction."""
+    """Return an expense claim for correction with authorization check."""
     remarks = (data or {}).get("remarks") or (data or {}).get("manager_remarks") or "Returned for correction."
     exp = service.change_status(exp_id, "RETURNED", remarks, user_payload)
     return StandardResponse.success_response(

@@ -15,6 +15,7 @@ from app.modules.audit.routes import router as audit_router
 from app.modules.db_test.routes import router as db_test_router
 from app.modules.todo.routes import router as todo_router
 from app.modules.spatial.routes import router as spatial_router
+from app.modules.sales.routes import router as sales_router
 
 api_router = APIRouter()
 
@@ -27,6 +28,7 @@ api_router.include_router(users_router)
 api_router.include_router(crm_router)
 api_router.include_router(customer_router)
 api_router.include_router(customer_router, prefix="/customer")
+api_router.include_router(sales_router, prefix="/sales", tags=["Sales Targets"])
 api_router.include_router(visit_router)
 api_router.include_router(attendance_router)
 api_router.include_router(expense_router)

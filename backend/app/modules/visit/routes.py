@@ -100,8 +100,8 @@ async def check_in_visit(
     rbac: None = Depends(CanRecordVisits),
     service: VisitService = Depends(get_service)
 ):
-    """Check-in to a field visit with geo-location."""
-    visit = service.check_in(visit_id, data)
+    """Check-in to a field visit with geo-location and authorization check."""
+    visit = service.check_in(visit_id, data, user_payload)
 
     # Audit logging
     try:
@@ -129,8 +129,8 @@ async def check_out_visit(
     rbac: None = Depends(CanRecordVisits),
     service: VisitService = Depends(get_service)
 ):
-    """Check-out of a field visit."""
-    visit = service.check_out(visit_id, data)
+    """Check-out of a field visit with authorization check."""
+    visit = service.check_out(visit_id, data, user_payload)
 
     # Audit logging
     try:
@@ -158,8 +158,8 @@ async def complete_visit(
     rbac: None = Depends(CanRecordVisits),
     service: VisitService = Depends(get_service)
 ):
-    """Submit complete SE Visit Completion Form."""
-    visit = service.complete_visit(visit_id, data)
+    """Submit complete SE Visit Completion Form with authorization check."""
+    visit = service.complete_visit(visit_id, data, user_payload)
 
     # Audit logging
     try:

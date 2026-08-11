@@ -38,35 +38,14 @@ class AttendanceRepository:
             except Exception:
                 pass
 
-        # Auto-create a default enrolled row if none exists to populate table
-        now_iso = datetime.utcnow().isoformat()
-        entry = {
-            "id": f"enroll_{uuid.uuid4()}",
+        return {
             "employee_id": emp_id,
-            "employee_name": "Sales Executive" if not email else email.split("@")[0].title(),
-            "enrollment_status": "ENROLLED",
-            "enrolled": True,
+            "enrollment_status": "PENDING",
+            "enrolled": False,
             "face_data_url": "",
-            "biometric_hash": f"bio_{uuid.uuid4()}",
-            "device_info": "System Autocreated",
-            "created_at": now_iso,
+            "biometric_hash": "",
+            "device_info": "",
         }
-        
-        try:
-            res = self.supabase.schema("hrms").table("enrollments").insert(entry).execute()
-            if res.data and len(res.data) > 0:
-                _in_memory_enrollments[key] = res.data[0]
-                return res.data[0]
-        except Exception:
-            try:
-                res = self.supabase.table("enrollments").insert(entry).execute()
-                if res.data and len(res.data) > 0:
-                    _in_memory_enrollments[key] = res.data[0]
-                    return res.data[0]
-            except Exception:
-                pass
-
-        return entry
 
     def save_enrollment(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Save employee facial / biometric enrollment data to hrms.enrollments."""
@@ -83,6 +62,7 @@ class AttendanceRepository:
             "face_data_url": data.get("face_data_url") or "",
             "biometric_hash": data.get("biometric_hash") or f"bio_{uuid.uuid4()}",
             "device_info": data.get("device_info") or "",
+            "face_template_vector": data.get("face_template_vector") or None,
             "created_at": now_iso,
         }
 
@@ -242,6 +222,7 @@ class AttendanceRepository:
         att_id = data.get("attendance_id") or data.get("id")
         emp_id = str(data.get("employee_id") or data.get("employee_code") or "EMP000012")
         out_time = data.get("check_out_time") or "06:00 PM"
+        today_date = data.get("attendance_date") or data.get("date") or datetime.utcnow().strftime("%Y-%m-%d")
 
         lat = data.get("check_out_latitude") or data.get("latitude") or 13.0067
         lng = data.get("check_out_longitude") or data.get("longitude") or 80.2570
@@ -272,7 +253,7 @@ class AttendanceRepository:
                 "total_working_hours": hrs,
                 "attendance_status": "Logged off",
                 "status": "Logged off"
-            }).eq("employee_id", emp_id).execute()
+            }).eq("employee_id", emp_id).eq("attendance_date", today_date).execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
         except Exception:
@@ -286,7 +267,7 @@ class AttendanceRepository:
                     "total_working_hours": hrs,
                     "attendance_status": "Logged off",
                     "status": "Logged off"
-                }).eq("employee_id", emp_id).execute()
+                }).eq("employee_id", emp_id).eq("attendance_date", today_date).execute()
                 if res.data and len(res.data) > 0:
                     return res.data[0]
             except Exception:
@@ -324,10 +305,10 @@ class AttendanceRepository:
             lr_id = row.get("leave_request_id")
             row["id"] = lr_id
             row["leave_id"] = lr_id
-            row["leave_type"] = "Full Day Leave" 
-            row["time_slot"] = "Full Day"
-            row["duration"] = "1 Day"
-            row["manager_comment"] = ""
+            row["leave_type"] = lr.get("leave_type") or "Full Day Leave" 
+            row["time_slot"] = lr.get("time_slot") or "Full Day"
+            row["duration"] = lr.get("duration") or "1 Day"
+            row["manager_comment"] = lr.get("manager_comment") or lr.get("comment") or ""
             
             emp_id = row.get("employee_id")
             if emp_id and emp_id in emp_map:
@@ -442,13 +423,21 @@ class AttendanceRepository:
 
         db_payload = {
             "leave_request_id": leave_req_uuid,
+            "id": leave_req_uuid,
+            "leave_id": leave_req_uuid,
             "employee_id": resolved_emp_id,
-            "leave_type_id": None,
+            "employee_code": emp_code,
+            "employee_name": exec_name,
+            "executive_name": exec_name,
+            "executive_email": exec_email,
+            "email": exec_email,
+            "leave_type": leave_type,
             "from_date": req_obj["from_date"],
             "to_date": req_obj["to_date"],
+            "time_slot": req_obj["time_slot"],
+            "duration": req_obj["duration"],
             "reason": reason_str,
             "status": "Pending",
-            "approved_by": None,
             "created_at": now_iso
         }
 

@@ -88,9 +88,46 @@ export const crmAPI = {
   createLead: (data) => request('/crm/leads', { method: 'POST', body: JSON.stringify(data) }),
   getLeadById: (id) => request(`/crm/leads/${id}`),
   updateLead: (id, data) => request(`/crm/leads/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
-  convertLeadToCustomer: (leadId, extraDetails) =>
-    request('/customer/customers', { method: 'POST', body: JSON.stringify({ lead_id: leadId, ...extraDetails }) }),
-  getFollowups: () => request('/crm/followups'),
+  deleteLead: (id) => request(`/crm/leads/${id}`, { method: 'DELETE' }),
+
+  // ── Centralized conversion endpoints ────────────────────────────────────
+  // All three route through the same backend CustomerConversionService.
+  // DO NOT add customer creation logic elsewhere in the frontend.
+
+  /** Lead → Customer. Marks lead as Converted. Prevents duplicates. */
+  convertLeadToCustomer: (leadId, extraData = {}) =>
+    request(`/customer/convert/lead/${leadId}`, {
+      method: 'POST',
+      body: JSON.stringify(extraData),
+    }),
+
+  /** Follow-up → Customer. Marks follow-up as Converted. Prevents duplicates. */
+  convertFollowupToCustomer: (followupId, extraData = {}) =>
+    request(`/customer/convert/followup/${followupId}`, {
+      method: 'POST',
+      body: JSON.stringify(extraData),
+    }),
+
+  /** Visit → Customer. Links visit to customer. Prevents duplicates. */
+  convertVisitToCustomer: (visitId, extraData = {}) =>
+    request(`/customer/convert/visit/${visitId}`, {
+      method: 'POST',
+      body: JSON.stringify(extraData),
+    }),
+  // ────────────────────────────────────────────────────────────────────────
+
+  /**
+   * Get ACTIVE follow-ups only (excludes Converted/Completed/Cancelled).
+   * Use for the active Follow-up tab.
+   */
+  getFollowups: () => request('/crm/followups?active_only=true'),
+
+  /**
+   * Get ALL follow-ups including converted/completed history.
+   * Use for Client Log / history views.
+   */
+  getFollowupsAll: () => request('/crm/followups?active_only=false'),
+
   createFollowup: (data) => request('/crm/followups', { method: 'POST', body: JSON.stringify(data) }),
   updateFollowup: (id, data) => request(`/crm/followups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteFollowup: (id) => request(`/crm/followups/${id}`, { method: 'DELETE' }),
@@ -99,7 +136,20 @@ export const crmAPI = {
 export const customerAPI = {
   getCustomers: () => request('/customer/customers'),
   getCustomerById: (id) => request(`/customer/customers/${id}`),
-  createCustomer: (data) => request('/customer/customers', { method: 'POST', body: JSON.stringify(data) }),
+
+  /**
+   * Direct Add Customer.
+   * data.lead_id is OPTIONAL — pass only when a lead exists for this customer.
+   * When lead_id is omitted, a standalone customer is created (no fake lead).
+   * Duplicate check still runs: email, phone, company+person.
+   */
+  createCustomer: (data) =>
+    request('/customer/customers', { method: 'POST', body: JSON.stringify(data) }),
+
+  updateCustomer: (id, data) =>
+    request(`/customer/customers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteCustomer: (id) =>
+    request(`/customer/customers/${id}`, { method: 'DELETE' }),
 }
 
 export const hrmsAPI = {
@@ -211,6 +261,13 @@ export const spatialAPI = {
     request('/spatial/geofence-check', { method: 'POST', body: JSON.stringify({ lat, lng, geofence_threshold_meters: thresholdMeters }) }),
   updateLocation: (data) =>
     request('/spatial/update-location', { method: 'POST', body: JSON.stringify(data) }),
+}
+
+export const salesAPI = {
+  getTargets: () => request('/sales/targets'),
+  createTarget: (data) => request('/sales/targets', { method: 'POST', body: JSON.stringify(data) }),
+  updateTarget: (id, data) => request(`/sales/targets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteTarget: (id) => request(`/sales/targets/${id}`, { method: 'DELETE' }),
 }
 
 export const usersAPI = userAPI

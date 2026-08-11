@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
+from app.core.scoping import normalize_user_role
+from app.exceptions.base import ForbiddenException
 from app.modules.reports.schemas import DashboardSummaryResponse
 from app.modules.reports.service import ReportsService
 from app.modules.reports.permissions import CanViewReports, CanViewSalesDashboard
@@ -19,8 +21,8 @@ async def get_dashboard_kpis(
     rbac: None = Depends(CanViewReports),
     service: ReportsService = Depends(get_service)
 ):
-    """Retrieve high-level KPI dashboard metrics."""
-    kpis = service.get_dashboard_summary()
+    """Retrieve role-scoped high-level KPI dashboard metrics."""
+    kpis = service.get_dashboard_summary(user_payload)
     return StandardResponse.success_response(
         data=kpis,
         message="Dashboard KPI metrics retrieved successfully"
@@ -32,7 +34,11 @@ async def get_ceo_dashboard(
     user_payload: dict = Depends(get_current_user_payload),
     service: ReportsService = Depends(get_service)
 ):
-    """Retrieve full dashboard data for the CEO Portal."""
+    """Retrieve full organization dashboard data for CEO / Super Admin / Admin Portal."""
+    role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+    if role not in ("super_admin", "ceo", "admin"):
+        raise ForbiddenException("Access to CEO Dashboard is restricted to Admin, Super Admin, and CEO roles.")
+
     data = service.get_ceo_dashboard_kpis()
     return StandardResponse.success_response(
         data=data,
@@ -75,6 +81,18 @@ async def submit_eod_report(
     service: ReportsService = Depends(get_service)
 ):
     """Submit daily EOD work report by Sales Executive."""
+    user_name = str(user_payload.get("name") or user_payload.get("full_name") or "")
+    user_email = str(user_payload.get("email") or "").lower().strip()
+    user_code = str(user_payload.get("employee_code") or user_payload.get("employee_id") or "")
+
+    if user_name:
+        data["executive_name"] = user_name
+        data["executive"] = user_name
+    if user_email:
+        data["executive_email"] = user_email
+    if user_code:
+        data["employee_code"] = user_code
+
     result = service.submit_eod_report(data, user_payload)
     return StandardResponse.success_response(
         data=result,
@@ -104,6 +122,10 @@ async def acknowledge_eod_report(
     service: ReportsService = Depends(get_service)
 ):
     """Acknowledge an EOD work report by Sales Manager."""
+    role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+    if role == "sales_executive":
+        raise ForbiddenException("Sales Executives are not authorized to acknowledge EOD reports.")
+
     comment = (data or {}).get("comment") or (data or {}).get("managerComment") or "Acknowledged"
     result = service.acknowledge_eod_report(report_id, comment, user_payload)
     return StandardResponse.success_response(

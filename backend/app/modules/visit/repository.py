@@ -18,7 +18,7 @@ class VisitRepository:
         if not v:
             return {}
         row = dict(v)
-        # Expose legacy field names for frontend compatibility
+        # Expose standard field names for frontend compatibility
         row["customer_name"] = row.get("client_name") or row.get("company_name") or "Prospect Client"
         row["customer"] = row["customer_name"]
         row["client"] = row["customer_name"]
@@ -27,13 +27,64 @@ class VisitRepository:
         row["assignedToEmail"] = row.get("assigned_to_email")
         row["assigned_to"] = row.get("employee_name")
         row["executive"] = row.get("employee_name")
-        
-        # Build date/time from created_at or check_in_time
-        created = row.get("created_at") or datetime.utcnow().isoformat()
-        row["visit_date"] = created[:10]
-        row["date"] = created[:10]
-        row["visit_time"] = "10:00 AM"
-        row["time"] = "10:00 AM"
+        row["lead_number"] = row.get("lead_number") or row.get("lead_id") or ""
+        row["leadNumber"] = row.get("lead_number") or row.get("lead_id") or ""
+        row["lead_id"] = row.get("lead_id") or row.get("lead_number") or ""
+        row["product"] = row.get("product") or row.get("product_name") or row.get("purpose") or "TwiteConnect CRM"
+        row["purpose"] = row.get("purpose") or row.get("product") or "Site Visit & Demo"
+        row["location"] = row.get("location") or row.get("address") or "Chennai"
+        row["address"] = row.get("location") or row.get("address") or "Chennai"
+        row["remarks"] = row.get("remarks") or row.get("notes") or ""
+        row["notes"] = row.get("notes") or row.get("remarks") or ""
+
+        # ── Scheduled Visit Date (preferred/scheduled date, NOT created_at) ────
+        # Priority: visit_date > date field > parsed from notes. created_at is NEVER used for display.
+        notes_str = str(row.get("notes") or "")
+        raw_sched_date = row.get("visit_date") or row.get("date")
+        if not raw_sched_date and "Visit Date:" in notes_str:
+            try:
+                raw_sched_date = notes_str.split("Visit Date:")[1].split("|")[0].strip()
+            except Exception:
+                pass
+
+        if raw_sched_date:
+            raw_str = str(raw_sched_date).strip().split("T")[0].split(" ")[0]
+            if "-" in raw_str and len(raw_str) == 10:
+                parts = raw_str.split("-")
+                if len(parts) == 3 and len(parts[0]) == 4:
+                    # ISO -> DD/MM/YYYY
+                    formatted_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                else:
+                    formatted_date = raw_str
+            elif "/" in raw_str:
+                formatted_date = raw_str
+            else:
+                formatted_date = raw_str
+        else:
+            formatted_date = ""
+
+        # Keep created_at intact and separate — for audit/internal use ONLY
+        row["created_at"] = row.get("created_at")
+
+        row["visit_date"] = formatted_date
+        row["date"] = formatted_date
+        row["scheduledDate"] = formatted_date
+
+        # ── Scheduled Visit Time ──────────────────────────────────────────────
+        stored_time = row.get("visit_time") or row.get("time")
+        if not stored_time and "Visit Time:" in notes_str:
+            try:
+                stored_time = notes_str.split("Visit Time:")[1].split("|")[0].strip()
+            except Exception:
+                pass
+        row["visit_time"] = stored_time or "10:00 AM"
+        row["time"] = row["visit_time"]
+        row["scheduledTime"] = row["visit_time"]
+
+        # Preserve check_in_time and check_out_time as separate audit fields
+        row["check_in_time"] = row.get("check_in_time")
+        row["check_out_time"] = row.get("check_out_time")
+
         return row
 
     def get_all_visits(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
@@ -103,9 +154,28 @@ class VisitRepository:
             except Exception:
                 pass
 
+        lead_id = str(data.get("lead_number") or data.get("leadNumber") or data.get("lead_id") or data.get("lead_code") or f"LD-{str(uuid.uuid4())[:6].upper()}")
         loc_str = str(data.get("location") or data.get("address") or data.get("location_name") or "Chennai Site")
-        notes_str = str(data.get("notes") or data.get("discussion_summary") or data.get("remarks") or "Client Visit")
-        full_notes = f"{notes_str} | Executive: {se_name} | Email: {se_email} | EMP: {emp_id} | Manager: {mgr_email}"
+        product_str = str(data.get("product") or data.get("product_name") or data.get("purpose") or "Site Visit / Product Demo")
+        remarks_str = str(data.get("remarks") or data.get("notes") or data.get("discussion_summary") or "Site Visit Scheduled")
+        v_date = data.get("visit_date") or data.get("date") or data.get("scheduled_time")
+        v_date_clean = None
+        if v_date:
+            v_date_str = str(v_date).strip()
+            if "/" in v_date_str:
+                parts = v_date_str.split("/")
+                if len(parts) == 3:
+                    if len(parts[2]) == 4:
+                        v_date_clean = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                    elif len(parts[0]) == 4:
+                        v_date_clean = f"{parts[0]}-{parts[1]}-{parts[2]}"
+            else:
+                v_date_clean = v_date_str.split("T")[0].split(" ")[0]
+        if not v_date_clean:
+            v_date_clean = now_iso.split("T")[0]
+
+        v_time = data.get("visit_time") or data.get("time") or "10:00 AM"
+        full_notes = f"{remarks_str} | Visit Date: {v_date_clean} | Visit Time: {v_time} | Product: {product_str} | Executive: {se_name} | Email: {se_email} | EMP: {emp_id}"
 
         payload = {
             "visit_id": visit_id,
@@ -115,7 +185,7 @@ class VisitRepository:
             "client_name": customer_name,
             "company_name": data.get("company_name") or data.get("company") or customer_name,
             "assigned_to_email": se_email if se_email else None,
-            "purpose": data.get("purpose") or "Site Visit / Product Demo",
+            "purpose": product_str,
             "status": data.get("status") or data.get("visit_status") or "SCHEDULED",
             "location": loc_str,
             "notes": full_notes,
@@ -145,7 +215,25 @@ class VisitRepository:
             else:
                 raise RuntimeError("No data returned from database insert operation.")
         except Exception as e:
-            print("[VISIT REPOSITORY] Supabase exception:", repr(e))
+            print("[VISIT REPOSITORY] Supabase exception, trying fallback payload:", repr(e))
+            try:
+                minimal_payload = {
+                    "visit_id": visit_id,
+                    "lead_id": lead_id,
+                    "employee_name": se_name,
+                    "client_name": customer_name,
+                    "purpose": product_str,
+                    "status": data.get("status") or "SCHEDULED",
+                    "location": loc_str,
+                    "notes": full_notes,
+                    "created_at": now_iso,
+                }
+                res_min = self.supabase.schema("field_management").table("visits").insert(minimal_payload).execute()
+                if res_min.data and len(res_min.data) > 0:
+                    logger.info(f"[VISIT INSERT SUCCESS] Saved minimal fallback visit: {res_min.data[0]}")
+                    return self._standardize_visit(res_min.data[0])
+            except Exception as ex_min:
+                logger.error(f"Fallback insert failed: {ex_min}")
             raise e
 
     def complete_visit(self, visit_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -240,18 +328,42 @@ class VisitRepository:
                 if not (search_filter in c_name or search_filter in poc or search_filter in v_id or search_filter in l_id or search_filter in se_n):
                     continue
 
+            # Date range filter — compare against SCHEDULED visit_date (not created_at)
+            from_date = params.get("from_date")
+            to_date = params.get("to_date")
+            # v.visit_date is now in DD/MM/YYYY format — convert to ISO for comparison
+            v_date_str = str(v.get("visit_date") or v.get("date") or "")
+            if (from_date or to_date) and v_date_str:
+                # Remove time part if any
+                v_date = v_date_str.split("T")[0].split(" ")[0].strip()
+                # Convert DD/MM/YYYY -> YYYY-MM-DD
+                if "/" in v_date:
+                    parts = v_date.split("/")
+                    if len(parts) == 3:
+                        if len(parts[2]) == 4:  # DD/MM/YYYY
+                            v_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                        elif len(parts[0]) == 4:  # YYYY/MM/DD
+                            v_date = f"{parts[0]}-{parts[1]}-{parts[2]}"
+                if from_date and v_date < from_date:
+                    continue
+                if to_date and v_date > to_date:
+                    continue
+            elif (from_date or to_date) and not v_date_str:
+                # Visit has no scheduled date — skip in date-filtered views
+                continue
+
             filtered.append(v)
 
-        # Compute 9 Top KPI metrics
-        scheduled_today = len([x for x in all_visits if "schedule" in str(x.get("status") or x.get("visit_status") or "").lower()])
-        completed_today = len([x for x in all_visits if "complete" in str(x.get("status") or x.get("visit_status") or "").lower()])
-        pending_count = len([x for x in all_visits if "pending" in str(x.get("status") or x.get("visit_status") or "").lower() or "check" in str(x.get("status") or "").lower()])
-        missed_count = len([x for x in all_visits if "miss" in str(x.get("status") or x.get("visit_status") or "").lower() or "cancel" in str(x.get("status") or "").lower()])
-        converted_count = len([x for x in all_visits if "convert" in str(x.get("lead_status") or "").lower()])
-        followup_count = len([x for x in all_visits if "follow" in str(x.get("lead_status") or "").lower()])
-        hot_count = len([x for x in all_visits if "hot" in str(x.get("lead_priority") or x.get("priority") or "").lower()])
-        warm_count = len([x for x in all_visits if "warm" in str(x.get("lead_priority") or x.get("priority") or "").lower()])
-        cold_count = len([x for x in all_visits if "cold" in str(x.get("lead_priority") or x.get("priority") or "").lower()])
+        # Compute 9 Top KPI metrics dynamically from the filtered list
+        scheduled_today = len([x for x in filtered if "schedule" in str(x.get("status") or x.get("visit_status") or "").lower()])
+        completed_today = len([x for x in filtered if "complete" in str(x.get("status") or x.get("visit_status") or "").lower()])
+        pending_count = len([x for x in filtered if "pending" in str(x.get("status") or x.get("visit_status") or "").lower() or "check" in str(x.get("status") or "").lower()])
+        missed_count = len([x for x in filtered if "miss" in str(x.get("status") or x.get("visit_status") or "").lower() or "cancel" in str(x.get("status") or "").lower()])
+        converted_count = len([x for x in filtered if "convert" in str(x.get("lead_status") or "").lower()])
+        followup_count = len([x for x in filtered if "follow" in str(x.get("lead_status") or "").lower()])
+        hot_count = len([x for x in filtered if "hot" in str(x.get("lead_priority") or x.get("priority") or "").lower()])
+        warm_count = len([x for x in filtered if "warm" in str(x.get("lead_priority") or x.get("priority") or "").lower()])
+        cold_count = len([x for x in filtered if "cold" in str(x.get("lead_priority") or x.get("priority") or "").lower()])
 
         page = int(params.get("page") or 1)
         limit = int(params.get("limit") or 50)

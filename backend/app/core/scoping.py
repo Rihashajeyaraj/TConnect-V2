@@ -1,6 +1,21 @@
 from typing import Dict, Any, Optional, Set
 from app.modules.users.repository import UserRepository
+from app.exceptions.base import ForbiddenException
 from app.core.logger import logger
+
+
+def normalize_user_role(role_str: str) -> str:
+    """Normalize role strings safely across system variations."""
+    r = str(role_str or "").lower().strip().replace("_", " ").replace("-", " ")
+    if any(k in r for k in ["super admin", "superadmin", "system admin"]):
+        return "super_admin"
+    if any(k in r for k in ["ceo", "founder"]):
+        return "ceo"
+    if "admin" in r:
+        return "admin"
+    if "manager" in r:
+        return "sales_manager"
+    return "sales_executive"
 
 
 def get_allowed_user_identifiers(user_payload: Dict[str, Any] = None) -> Optional[Dict[str, Set[str]]]:
@@ -8,7 +23,7 @@ def get_allowed_user_identifiers(user_payload: Dict[str, Any] = None) -> Optiona
     Centralized data access scoping resolver.
     
     Returns:
-      - None: Admin / Super Admin / CEO -> Unrestricted access to ALL records.
+      - None: Admin / Super Admin / CEO -> Unrestricted access to ALL records in organization.
       - Dict with sets of allowed 'emails', 'codes', 'ids', 'names':
           - Sales Manager: Allowed to view records belonging to themselves AND any assigned Sales Executive.
           - Sales Executive: Allowed to view ONLY their own records.
@@ -21,10 +36,10 @@ def get_allowed_user_identifiers(user_payload: Dict[str, Any] = None) -> Optiona
     user_role = str(user_payload.get("role") or "").strip()
     user_emp_code = str(user_payload.get("employee_code") or user_payload.get("employee_id") or "").strip()
 
-    role_lower = user_role.lower()
+    norm_role = normalize_user_role(user_role)
 
-    # 1. Admin / Super Admin / CEO -> Unrestricted Access
-    if any(r in role_lower for r in ["admin", "super admin", "system admin", "ceo", "founder"]):
+    # 1. Admin / Super Admin / CEO -> Unrestricted Organization Access
+    if norm_role in ("super_admin", "ceo", "admin"):
         return None
 
     # Base allowed sets (always includes the logged-in user's own credentials)
@@ -40,13 +55,13 @@ def get_allowed_user_identifiers(user_payload: Dict[str, Any] = None) -> Optiona
         allowed_names.add(user_name)
 
     # 2. Sales Manager -> Include assigned Sales Executives
-    if "manager" in role_lower:
+    if norm_role == "sales_manager":
         try:
             repo = UserRepository()
             all_users = repo.get_all_users()
 
             for u in all_users:
-                r_id = str(u.get("reporting_manager_id") or "").strip()
+                r_id = str(u.get("reporting_manager_id") or u.get("reporting_manager") or "").strip()
                 r_email = str(u.get("reporting_manager_email") or "").lower().strip()
 
                 is_assigned = (
@@ -58,7 +73,7 @@ def get_allowed_user_identifiers(user_payload: Dict[str, Any] = None) -> Optiona
                 if is_assigned:
                     exec_email = str(u.get("email") or "").lower().strip()
                     exec_code = str(u.get("employee_code") or u.get("employee_id") or "").strip()
-                    exec_id = str(u.get("id") or u.get("auth_user_id") or "").strip()
+                    exec_id = str(u.get("id") or u.get("auth_user_id") or u.get("user_id") or "").strip()
                     exec_name = str(u.get("name") or u.get("full_name") or "").lower().strip()
 
                     if exec_email:
@@ -83,7 +98,7 @@ def get_allowed_user_identifiers(user_payload: Dict[str, Any] = None) -> Optiona
 def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[str]]]) -> bool:
     """
     Check if a data record matches the allowed user identifiers.
-    If allowed is None, record is universally accessible (Admin mode).
+    If allowed is None, record is universally accessible (Admin/CEO mode).
     """
     if allowed is None or not isinstance(item, dict):
         return True
@@ -115,6 +130,7 @@ def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[s
         str(item.get("user_id") or "").strip(),
         str(item.get("created_by") or "").strip(),
         str(item.get("reporting_manager_id") or "").strip(),
+        str(item.get("id") or "").strip(),
     } - {""}
 
     # Extract Names on record
@@ -126,6 +142,8 @@ def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[s
         str(item.get("employee_name") or "").lower().strip(),
         str(item.get("created_by_name") or "").lower().strip(),
         str(item.get("reporting_manager_name") or "").lower().strip(),
+        str(item.get("sales_executive") or "").lower().strip(),
+        str(item.get("sales_manager") or "").lower().strip(),
     } - {""}
 
     # Parse metadata tags embedded in notes/description (e.g. "Email: xyz | EMP: 123")
@@ -162,3 +180,13 @@ def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[s
         return True
 
     return False
+
+
+def enforce_record_access(item: Dict[str, Any], user_payload: Dict[str, Any], resource_name: str = "resource") -> None:
+    """
+    Enforces authorization on a single record.
+    Raises ForbiddenException (HTTP 403) if the logged-in user does NOT have permission.
+    """
+    allowed = get_allowed_user_identifiers(user_payload)
+    if not is_record_accessible(item, allowed):
+        raise ForbiddenException(f"You do not have permission to access or modify this {resource_name}.")

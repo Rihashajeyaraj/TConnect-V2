@@ -1,26 +1,16 @@
-import React from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Filter,
   UserCheck,
   Calendar,
   Search,
   RotateCcw,
-  CheckCircle2,
   SlidersHorizontal,
   X,
-  Sparkles,
 } from 'lucide-react'
 import { useManagerFilter } from './ManagerFilterContext.jsx'
-
-export const SALES_EXECUTIVES_LIST = [
-  { id: 'all', name: 'All Sales Executives' },
-  { id: 'Ashwini E', name: 'Ashwini E (EMP-101)' },
-  { id: 'Suresh Raina', name: 'Suresh Raina (EMP-106)' },
-  { id: 'Vikram Singh', name: 'Vikram Singh (EMP-103)' },
-  { id: 'Abi hastro', name: 'Abi hastro (EMP-104)' },
-  { id: 'Ananya Roy', name: 'Ananya Roy (EMP-105)' },
-  { id: 'Karthik Raja', name: 'Karthik Raja (EMP-102)' },
-]
+import useCurrentUser from '../../hooks/useCurrentUser.js'
+import { hrmsAPI } from '../../services/api.js'
 
 export default function ManagerGlobalFilterBar() {
   const {
@@ -34,12 +24,54 @@ export default function ManagerGlobalFilterBar() {
     resetFilters,
   } = useManagerFilter()
 
+  const currentUser = useCurrentUser()
+  const managerId = String(currentUser.id || currentUser.user_id || currentUser.employee_code || '').trim()
+  const managerEmail = (currentUser.email || '').toLowerCase().trim()
+  const managerName = currentUser.name || currentUser.full_name || 'Sales Manager'
+
+  const [assignedExecutives, setAssignedExecutives] = useState([])
+
+  useEffect(() => {
+    hrmsAPI
+      .getEmployees()
+      .then((res) => {
+        const raw = Array.isArray(res) ? res : res?.data || []
+        const filtered = raw.filter((emp) => {
+          if (!emp) return false
+
+          const empManagerId = String(emp.reporting_manager_id || emp.reporting_manager || '').trim()
+          const empManagerEmail = String(emp.reporting_manager_email || '').toLowerCase().trim()
+          const empManagerName = String(emp.reporting_manager_name || '').toLowerCase().trim()
+
+          const myId = String(currentUser.id || '').trim()
+          const myUserId = String(currentUser.user_id || '').trim()
+          const myCode = String(currentUser.employee_code || '').trim()
+          const myEmail = String(currentUser.email || '').toLowerCase().trim()
+          const myName = String(currentUser.name || currentUser.full_name || '').toLowerCase().trim()
+
+          const idMatch = !!(empManagerId && (
+            (myId && empManagerId === myId) ||
+            (myUserId && empManagerId === myUserId) ||
+            (myCode && empManagerId === myCode)
+          ))
+
+          const emailMatch = !!(empManagerEmail && myEmail && empManagerEmail === myEmail)
+
+          const nameMatch = !!(empManagerName && myName && empManagerName === myName)
+
+          return idMatch || emailMatch || nameMatch
+        })
+        setAssignedExecutives(filtered)
+      })
+      .catch(() => {})
+  }, [managerId, managerEmail, managerName, currentUser])
+
   // Calculate Active Filters Count
   let activeCount = 0
   if (filters.selectedExecutive !== 'All') activeCount++
   if (filters.dateRange !== 'all') activeCount++
   if (filters.statusFilter !== 'All') activeCount++
-  if (filters.searchKeyword.trim() !== '') activeCount++
+  if (filters.searchKeyword && filters.searchKeyword.trim() !== '') activeCount++
 
   return (
     <div className="bg-[#fffdf5] border border-amber-300 rounded-3xl p-4 shadow-sm mb-6 space-y-3">
@@ -67,6 +99,7 @@ export default function ManagerGlobalFilterBar() {
         {/* Reset Button */}
         {activeCount > 0 && (
           <button
+            type="button"
             onClick={resetFilters}
             className="px-3 py-1 rounded-xl bg-amber-100 hover:bg-amber-200 text-amber-950 font-black text-[11px] flex items-center gap-1.5 transition cursor-pointer border border-amber-300"
           >
@@ -77,7 +110,7 @@ export default function ManagerGlobalFilterBar() {
 
       {/* Filter Controls Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs font-semibold">
-        {/* 1. REQUIRED: Sales Executive Filter */}
+        {/* 1. REQUIRED: Dynamic Sales Executive Filter */}
         <div className="space-y-1">
           <label className="text-[10px] font-black text-amber-950 uppercase tracking-wider flex items-center gap-1">
             <UserCheck size={13} className="text-[#c2410c]" /> Required: Sales Executive
@@ -87,9 +120,10 @@ export default function ManagerGlobalFilterBar() {
             onChange={(e) => setExecutive(e.target.value)}
             className="w-full h-9 bg-white border border-amber-300 rounded-xl px-3 text-xs font-black text-slate-900 focus:outline-none focus:border-[#c2410c] shadow-2xs cursor-pointer"
           >
-            {SALES_EXECUTIVES_LIST.map((se) => (
-              <option key={se.id} value={se.id === 'all' ? 'All' : se.id}>
-                {se.name}
+            <option value="All">All Assigned Executives ({assignedExecutives.length})</option>
+            {assignedExecutives.map((se) => (
+              <option key={se.id || se.employee_code} value={se.name || se.full_name}>
+                {se.name || se.full_name} ({se.employee_code || se.employee_id || 'EMP'})
               </option>
             ))}
           </select>
@@ -107,7 +141,6 @@ export default function ManagerGlobalFilterBar() {
           >
             <option value="all">All Time</option>
             <option value="today">Today</option>
-            <option value="yesterday">Yesterday</option>
             <option value="week">This Week</option>
             <option value="month">This Month</option>
             <option value="custom">Custom Date Range</option>
@@ -147,8 +180,9 @@ export default function ManagerGlobalFilterBar() {
             <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
             {filters.searchKeyword && (
               <button
+                type="button"
                 onClick={() => setSearchKeyword('')}
-                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X size={13} />
               </button>

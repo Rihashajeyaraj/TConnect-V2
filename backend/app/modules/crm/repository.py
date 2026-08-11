@@ -75,6 +75,31 @@ class CRMRepository:
                 row["employee_code"] = row.get("employee_code") or str(matched_user.get("employee_code") or matched_user.get("employee_id") or "")
                 row["reporting_manager_email"] = row.get("reporting_manager_email") or str(matched_user.get("reporting_manager_email") or "").lower().strip()
 
+            # Enrich fields for standard frontend mapping
+            row["id"] = row.get("lead_id")
+            row["company"] = row.get("company_name")
+            row["person"] = row.get("contact_person") or row.get("contact_name")
+            row["phone"] = row.get("mobile") or row.get("contact_phone")
+            row["value"] = row.get("expected_value")
+
+            # Resolve status
+            row["status"] = "New"
+            if row.get("converted_to_customer_id") or row.get("converted_at"):
+                row["status"] = "Converted to Customer"
+            else:
+                status_part = next((part.split("Status:")[-1].strip() for part in notes_str.split("|") if "Status:" in part), None)
+                if status_part:
+                    row["status"] = status_part
+
+            # Resolve priority / category fallback
+            category_part = next((part.split("Category:")[-1].strip() for part in notes_str.split("|") if "Category:" in part), None)
+            if category_part:
+                row["category"] = category_part.title()
+                row["priority"] = category_part.title()
+            else:
+                row.setdefault("category", "Warm")
+                row.setdefault("priority", "Medium")
+
             enriched_leads.append(row)
 
         from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
@@ -194,21 +219,130 @@ class CRMRepository:
         return payload
 
     def update_lead(self, lead_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
-        for payload in [updates, {k: v for k, v in updates.items() if v is not None}]:
+        # Helper to sanitize and map input payload fields to actual db columns
+        def sanitize_lead_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+            p = dict(data)
+
+            # Map fields
+            lid = p.pop("id", None) or p.get("lead_id")
+            if lid:
+                p["lead_id"] = lid
+
+            company = p.pop("company", None)
+            if company:
+                p["company_name"] = company
+
+            person = p.pop("person", None)
+            if person:
+                p["contact_person"] = person
+                p["contact_name"] = person
+
+            phone = p.pop("phone", None)
+            if phone:
+                p["mobile"] = phone
+                p["contact_phone"] = phone
+
+            email = p.get("email")
+            if email:
+                p["contact_email"] = email
+
+            val = p.pop("value", None) or p.get("expected_value")
+            if val:
+                val_str = str(val).replace("₹", "").replace(",", "").strip()
+                try:
+                    p["expected_value"] = float(val_str)
+                except ValueError:
+                    pass
+
+            # Capture status
+            status = p.pop("status", None)
+            if status:
+                if str(status).upper() in ("CONVERTED", "CONVERTED TO CUSTOMER", "CUSTOMER"):
+                    from datetime import datetime
+                    p["converted_at"] = datetime.utcnow().isoformat()
+
+            # Capture category/priority
+            category = p.pop("category", None)
+            priority = p.pop("priority", None)
+
+            # Update notes/remarks if status, category, or priority changes
+            notes_str = str(p.get("notes") or p.get("remarks") or "")
+            parts = [part.strip() for part in notes_str.split("|")] if notes_str else []
+
+            new_parts = []
+            has_cat = False
+            has_status = False
+            for part in parts:
+                if "Category:" in part:
+                    if category:
+                        new_parts.append(f"Category: {category}")
+                        has_cat = True
+                    else:
+                        new_parts.append(part)
+                elif "Status:" in part:
+                    if status:
+                        new_parts.append(f"Status: {status}")
+                        has_status = True
+                    else:
+                        new_parts.append(part)
+                else:
+                    new_parts.append(part)
+
+            if category and not has_cat:
+                new_parts.append(f"Category: {category}")
+            if status and not has_status:
+                new_parts.append(f"Status: {status}")
+
+            if new_parts:
+                p["notes"] = " | ".join(new_parts)
+                p["remarks"] = " | ".join(new_parts)
+
+            allowed_keys = {
+                "lead_id", "lead_number", "company_name", "contact_person", "mobile", "email",
+                "designation", "address", "city", "state", "country", "postal_code",
+                "lead_source_id", "lead_status_id", "assigned_to", "expected_value",
+                "remarks", "next_followup_date", "created_by", "updated_by", "is_active",
+                "is_deleted", "created_at", "updated_at", "notes", "documents", "activities",
+                "contact_name", "contact_email", "contact_phone", "converted_to_customer_id", "converted_at"
+            }
+            return {k: v for k, v in p.items() if k in allowed_keys}
+
+        sanitized = sanitize_lead_payload(updates)
+        for payload in [sanitized, {k: v for k, v in sanitized.items() if v is not None}]:
+            # 1. Try schema 'crm' with lead_id key
             try:
-                res = self.helper.table(SchemaEnum.CRM, "leads").update(payload).eq("id", lead_id).execute()
+                res = self.supabase.schema("crm").table("leads").update(payload).eq("lead_id", lead_id).execute()
                 if res.data and len(res.data) > 0:
                     return res.data[0]
             except Exception:
-                try:
-                    res = self.supabase.table("leads").update(payload).eq("id", lead_id).execute()
-                    if res.data and len(res.data) > 0:
-                        return res.data[0]
-                except Exception as e:
-                    logger.warning(f"Lead update attempt failed: {e}")
+                pass
+
+            # 2. Try schema 'crm' with id key
+            try:
+                res = self.supabase.schema("crm").table("leads").update(payload).eq("id", lead_id).execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            except Exception:
+                pass
+
+            # 3. Try public table with lead_id key
+            try:
+                res = self.supabase.table("leads").update(payload).eq("lead_id", lead_id).execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            except Exception:
+                pass
+
+            # 4. Try public table with id key
+            try:
+                res = self.supabase.table("leads").update(payload).eq("id", lead_id).execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            except Exception:
+                pass
 
         for lead in _in_memory_leads:
-            if str(lead.get("id")) == str(lead_id):
+            if str(lead.get("id")) == str(lead_id) or str(lead.get("lead_id")) == str(lead_id):
                 lead.update(updates)
                 return lead
 
@@ -286,14 +420,25 @@ class CRMRepository:
                     if not matches_q:
                         continue
 
+                # Date range filter check
+                from_date = params.get("from_date")
+                to_date = params.get("to_date")
+                l_date_str = str(l.get("created_at") or l.get("date") or "")
+                if l_date_str:
+                    l_date = l_date_str.split("T")[0]
+                    if from_date and l_date < from_date:
+                        continue
+                    if to_date and l_date > to_date:
+                        continue
+
                 filtered.append(l)
 
             # Calculate Summary Metrics
-            hot_count = len([x for x in (all_leads or []) if isinstance(x, dict) and str(x.get("category") or x.get("priority") or "").lower() == "hot"])
-            warm_count = len([x for x in (all_leads or []) if isinstance(x, dict) and str(x.get("category") or x.get("priority") or "").lower() == "warm"])
-            cold_count = len([x for x in (all_leads or []) if isinstance(x, dict) and str(x.get("category") or x.get("priority") or "").lower() == "cold"])
-            converted_count = len([x for x in (all_leads or []) if isinstance(x, dict) and "convert" in str(x.get("status") or "").lower()])
-            lost_count = len([x for x in (all_leads or []) if isinstance(x, dict) and "lost" in str(x.get("status") or "").lower()])
+            hot_count = len([x for x in (filtered or []) if isinstance(x, dict) and str(x.get("category") or x.get("priority") or "").lower() == "hot"])
+            warm_count = len([x for x in (filtered or []) if isinstance(x, dict) and str(x.get("category") or x.get("priority") or "").lower() == "warm"])
+            cold_count = len([x for x in (filtered or []) if isinstance(x, dict) and str(x.get("category") or x.get("priority") or "").lower() == "cold"])
+            converted_count = len([x for x in (filtered or []) if isinstance(x, dict) and "convert" in str(x.get("status") or "").lower()])
+            lost_count = len([x for x in (filtered or []) if isinstance(x, dict) and "lost" in str(x.get("status") or "").lower()])
 
             page = int(params.get("page") or 1)
             limit = int(params.get("limit") or 50)
@@ -303,14 +448,14 @@ class CRMRepository:
 
             return {
                 "summary": {
-                    "total_leads": len(all_leads or []),
+                    "total_leads": len(filtered or []),
                     "hot_leads": hot_count,
                     "warm_leads": warm_count,
                     "cold_leads": cold_count,
                     "converted_leads": converted_count,
                     "lost_leads": lost_count,
-                    "today_leads": len(all_leads or []),
-                    "month_leads": len(all_leads or []),
+                    "today_leads": len(filtered or []),
+                    "month_leads": len(filtered or []),
                 },
                 "leads": paginated,
                 "total": len(filtered),
@@ -360,12 +505,19 @@ class CRMRepository:
         else:
             remark_main = notes_raw
 
+        cust_id_val = str(row.get("customer_id") or "")
+        # If customer_id is a UUID, don't use it as company name fallback!
+        is_cust_uuid = len(cust_id_val) == 36 and "-" in cust_id_val
+
         return {
             "id": flw_id,
             "follow_up_id": flw_id,
             "leadId": str(row.get("lead_id") or meta.get("leadid") or ""),
+            "lead_id": str(row.get("lead_id") or meta.get("leadid") or ""),
             "leadNumber": meta.get("leadnumber") or "",
-            "company": meta.get("company") or str(row.get("customer_id") or "Client Account"),
+            "customer_id": cust_id_val,
+            "customerId": cust_id_val,
+            "company": meta.get("company") or (cust_id_val if not is_cust_uuid and cust_id_val else "Client Account"),
             "person": meta.get("person") or "Contact Person",
             "phone": meta.get("phone") or "",
             "email": meta.get("email") or "",
@@ -381,11 +533,26 @@ class CRMRepository:
             "created_at": row.get("created_at") or ""
         }
 
-    def get_all_followups(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    def get_all_followups(self, user_payload: Dict[str, Any] = None, active_only: bool = True) -> List[Dict[str, Any]]:
+        """
+        Fetch follow-ups from crm.follow_ups.
+
+        active_only=True  → excludes Converted / Completed / Cancelled statuses.
+                           Use for the active Follow-up tab/list.
+        active_only=False → returns ALL follow-ups including converted ones.
+                           Use for Client Log / history views.
+        """
+        INACTIVE = {"converted", "completed", "cancelled", "closed", "done"}
         try:
             res = self.supabase.schema("crm").table("follow_ups").select("*").order("created_at", desc=True).execute()
             if res.data is not None:
                 standardized = [self._standardize_followup(r) for r in res.data]
+                if active_only:
+                    # Exclude follow-ups that have been converted/completed
+                    standardized = [
+                        f for f in standardized
+                        if str(f.get("status") or "").lower().strip() not in INACTIVE
+                    ]
                 from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
                 allowed = get_allowed_user_identifiers(user_payload)
                 if allowed is not None:
@@ -394,6 +561,22 @@ class CRMRepository:
         except Exception as e:
             logger.warning(f"Failed to fetch follow_ups from crm schema: {e}")
         return []
+
+    def get_followup_by_id(self, followup_id: str) -> Optional[Dict[str, Any]]:
+        """Fetch a single follow-up by its UUID. Returns None if not found."""
+        try:
+            res = (
+                self.supabase.schema("crm")
+                .table("follow_ups")
+                .select("*")
+                .eq("follow_up_id", followup_id)
+                .execute()
+            )
+            if res.data:
+                return self._standardize_followup(res.data[0])
+        except Exception as e:
+            logger.warning(f"get_followup_by_id error: {e}")
+        return None
 
     def create_followup(self, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         import datetime as dt
@@ -453,20 +636,49 @@ class CRMRepository:
 
     def update_followup(self, followup_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         db_updates = {}
-        if updates.get("status"):
+        if updates.get("status") is not None:
             db_updates["status"] = updates["status"]
-        if updates.get("outcome"):
+        if updates.get("outcome") is not None:
             db_updates["outcome"] = updates["outcome"]
         if updates.get("notes") or updates.get("remark"):
             db_updates["notes"] = updates.get("notes") or updates.get("remark")
         if updates.get("scheduledDate"):
             db_updates["follow_up_date"] = updates["scheduledDate"]
+        # customer_id — set when follow-up is converted to a customer
+        if updates.get("customer_id") is not None:
+            db_updates["customer_id"] = updates["customer_id"]
+        if updates.get("completed_at") is not None:
+            db_updates["completed_at"] = updates["completed_at"]
 
-        res = self.supabase.schema("crm").table("follow_ups").update(db_updates).eq("follow_up_id", followup_id).execute()
-        if res.data and len(res.data) > 0:
-            return self._standardize_followup(res.data[0])
-        raise RuntimeError(f"Failed to update follow-up '{followup_id}' in crm.follow_ups")
+        if not db_updates:
+            # Nothing to update — fetch and return current record
+            return self.get_followup_by_id(followup_id) or {}
+
+        try:
+            res = self.supabase.schema("crm").table("follow_ups").update(db_updates).eq("follow_up_id", followup_id).execute()
+            if res.data and len(res.data) > 0:
+                return self._standardize_followup(res.data[0])
+        except Exception as e:
+            logger.error(f"update_followup failed for {followup_id}: {e}")
+            raise RuntimeError(f"Failed to update follow-up '{followup_id}': {e}") from e
+
+        raise RuntimeError(f"Follow-up '{followup_id}' not found or update returned no data")
 
     def delete_followup(self, followup_id: str) -> bool:
         self.supabase.schema("crm").table("follow_ups").delete().eq("follow_up_id", followup_id).execute()
+        return True
+
+    def delete_lead(self, lead_id: str) -> bool:
+        global _in_memory_leads
+        _in_memory_leads = [l for l in _in_memory_leads if str(l.get("id")) != str(lead_id) and str(l.get("lead_id")) != str(lead_id)]
+
+        try:
+            self.supabase.schema("crm").table("leads").delete().eq("lead_id", lead_id).execute()
+        except Exception:
+            pass
+
+        try:
+            self.supabase.table("leads").delete().eq("id", lead_id).execute()
+        except Exception:
+            pass
         return True

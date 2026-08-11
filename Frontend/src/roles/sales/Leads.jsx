@@ -37,6 +37,8 @@ import {
   List,
   ChevronLeft,
   ChevronRight,
+  Briefcase,
+  ClipboardList,
 } from "lucide-react";
 import { crmAPI, visitAPI, customerAPI, pipelineAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
@@ -44,7 +46,7 @@ import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { formatDate } from "../../utils/dateUtils.js";
 
-const INITIAL_LEADS = [];
+const INITIAL_LEADS = []; // Active list of leads
 const INITIAL_FOLLOWUPS = [];
 
 export default function Leads() {
@@ -53,8 +55,32 @@ export default function Leads() {
   const { showToast } = useToast();
   const currentUser = useCurrentUser();
 
-  // Active view tab: "leads" | "followups"
+  // Active view tab: "leads" | "followups" | "visits" | "opportunities"
   const [activeTab, setActiveTab] = useState("leads");
+
+  // Opportunities Pipeline state
+  const [opportunities, setOpportunities] = useState(() => {
+    try {
+      const saved = localStorage.getItem("tc_sales_opportunities");
+      const parsed = saved ? JSON.parse(saved) : [];
+      const cleanOpps = parsed.filter((p) => p && !["NexGen Automations", "Apex Retail Chains"].includes(p.customer || p.company));
+      return filterUserItems(cleanOpps, currentUser);
+    } catch {
+      return [];
+    }
+  });
+
+  const [isOppModalOpen, setIsOppModalOpen] = useState(false);
+  const [oppForm, setOppForm] = useState({
+    companyName: "",
+    source: "Field Research (SE)",
+    productRequirement: "",
+    contactPerson: "",
+    phone: "",
+    location: "",
+    value: "450000",
+    remarks: "",
+  });
 
   useEffect(() => {
     if (location.state?.openAddModal) {
@@ -67,6 +93,7 @@ export default function Leads() {
 
   const userEmail = (currentUser.email || "executive@tconnect.com").toLowerCase().trim();
   const userName = currentUser.name || currentUser.full_name || "Sales Executive";
+  const userEmpCode = currentUser.employee_code || currentUser.employee_id || "EMP000012";
   const firstName = userName.split(" ")[0];
 
   // Helper to remove duplicate lead records by phone number or company name
@@ -170,6 +197,39 @@ export default function Leads() {
         }
       })
       .catch(() => null);
+
+    pipelineAPI.getOpportunities()
+      .then((res) => {
+        const raw = Array.isArray(res) ? res : (res?.data || []);
+        if (raw.length > 0) {
+          const apiOpps = raw
+            .filter(o => o && !["NexGen Automations", "Apex Retail Chains"].includes(o.company || o.customer || o.customer_name))
+            .map((o) => ({
+              id: o.id || o.opportunity_id,
+              date: o.closing || o.expected_closing_date || formatDate(new Date()),
+              customer: o.company || o.customer || o.customer_name || "Prospect Account",
+              productRequirement: o.productRequirement || o.title || "CRM Software",
+              source: o.source || "Field Research (SE)",
+              contactPerson: o.contact_person || o.contactPerson || "Contact Person",
+              phone: o.phone || "N/A",
+              address: o.address || o.location || "Chennai",
+              remarks: o.remarks || o.notes || "",
+              stage: o.stage || "Qualification",
+              value: o.value ? (typeof o.value === "number" ? `₹${o.value.toLocaleString("en-IN")}` : o.value) : "₹4,50,000",
+            }));
+          setOpportunities((prev) => {
+            const cleanPrev = prev.filter(p => p && !["NexGen Automations", "Apex Retail Chains"].includes(p.customer || p.company));
+            const merged = [...apiOpps];
+            cleanPrev.forEach((cp) => {
+              if (!merged.some(m => m.id === cp.id || m.customer === cp.customer)) {
+                merged.push(cp);
+              }
+            });
+            return merged;
+          });
+        }
+      })
+      .catch(() => null);
   }, []);
   useEffect(() => {
     crmAPI.getLeads()
@@ -231,7 +291,7 @@ export default function Leads() {
   const [search, setSearch] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [viewMode, setViewMode] = useState("grid");
+  const [viewMode, setViewMode] = useState("list"); // Default View Mode: Table List View
   const [currentPage, setCurrentPage] = useState(1);
   const itemsPerPage = 10;
 
@@ -247,6 +307,15 @@ export default function Leads() {
   const [showFollowupForm, setShowFollowupForm] = useState(false);
   const [followupDate, setFollowupDate] = useState("");
   const [followupTime, setFollowupTime] = useState("02:30 PM");
+
+  // Visit scheduling form state inside modal
+  const [showVisitForm, setShowVisitForm] = useState(false);
+  const [visitDate, setVisitDate] = useState("");
+  const [visitTimeCustom, setVisitTimeCustom] = useState("10:00");
+  const [visitTimePeriod, setVisitTimePeriod] = useState("AM");
+  const [visitLocation, setVisitLocation] = useState("");
+  const [visitPurpose, setVisitPurpose] = useState("Site Visit / Product Demo");
+  const [visitRemarks, setVisitRemarks] = useState("");
 
   // Post-Visit Meeting Outcome Modal State
   const [selectedVisitForOutcome, setSelectedVisitForOutcome] = useState(null);
@@ -295,7 +364,7 @@ export default function Leads() {
           if (data && data.display_name) {
             addr = data.display_name;
           }
-        } catch {}
+        } catch { }
 
         setAddForm((prev) => ({
           ...prev,
@@ -358,7 +427,6 @@ export default function Leads() {
     } catch (e) { }
   }, [visitList]);
 
-  const userEmpCode = currentUser.employee_code || currentUser.employee_id || "";
   const userId = currentUser.id || currentUser.user_id || "";
 
   const matchesUser = (item) => {
@@ -376,11 +444,47 @@ export default function Leads() {
     return false;
   };
 
-  // Filter leads strictly for the logged-in Sales Executive
-  const myAssignedLeads = allLeads.filter(matchesUser);
+  // Helper check to determine if a lead or followup has been converted into an active customer account
+  const isConvertedToCustomer = (item) => {
+    if (!item) return false;
+    const statusStr = String(item.status || item.outcome || "").toLowerCase().trim();
+    if (
+      statusStr.includes("converted") ||
+      statusStr.includes("customer") ||
+      statusStr.includes("closed won") ||
+      item.is_converted ||
+      item.converted_to_customer_id ||
+      item.customerId
+    ) {
+      return true;
+    }
+    const itemComp = String(item.company || item.company_name || "").toLowerCase().trim();
+    const itemPhone = String(item.phone || item.mobile || "").replace(/\D/g, "");
+    const itemId = String(item.id || item.lead_id || item.leadId || "");
 
-  // Filter follow-ups strictly for the logged-in Sales Executive
-  const myFollowups = followupsList.filter(matchesUser);
+    try {
+      const savedCustomers = JSON.parse(localStorage.getItem("tc_customer_accounts") || "[]");
+      return savedCustomers.some((c) => {
+        const cComp = String(c.company || c.name || "").toLowerCase().trim();
+        const cPhone = String(c.phone || c.mobile || "").replace(/\D/g, "");
+        const cLeadId = String(c.leadId || c.lead_id || "");
+
+        return (
+          (itemId && cLeadId && itemId === cLeadId) ||
+          (itemComp && cComp && itemComp !== "client account" && itemComp === cComp) ||
+          (itemPhone && cPhone && itemPhone.length >= 7 && itemPhone === cPhone)
+        );
+      });
+    } catch {
+      return false;
+    }
+  };
+
+  // Filter leads strictly for the logged-in Sales Executive, EXCLUDING converted customer leads
+  const myAssignedLeads = allLeads.filter((l) => matchesUser(l) && !isConvertedToCustomer(l));
+
+  // Filter follow-ups strictly for the logged-in Sales Executive, EXCLUDING converted follow-ups/leads
+  const myFollowups = followupsList.filter((f) => matchesUser(f) && !isConvertedToCustomer(f));
 
   // Filter visits strictly for the logged-in Sales Executive
   const myVisits = visitList.filter(matchesUser);
@@ -521,7 +625,7 @@ export default function Leads() {
         const updated = [newLeadObj, ...prev];
         try {
           localStorage.setItem("tc_sm_leads", JSON.stringify(updated));
-        } catch (err) {}
+        } catch (err) { }
         return updated;
       });
       showToast(`✨ New Lead "${addForm.company}" saved to Supabase & Lead Pipeline!`, "success");
@@ -543,20 +647,8 @@ export default function Leads() {
     });
     setIsAddModalOpen(false);
 
-    // Send notification to Sales Manager
-    try {
-      const existingNotifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
-      const smNotif = {
-        id: `notif_${Date.now()}`,
-        recipientRole: "manager",
-        title: `🆕 New Lead Sourced by ${userName}`,
-        message: `${userName} added lead "${newLeadObj.company}" (${newLeadObj.category} Lead).`,
-        time: "Just now",
-        read: false,
-        type: "Lead",
-      };
-      localStorage.setItem("tc_app_notifications", JSON.stringify([smNotif, ...existingNotifs]));
-    } catch (e) { }
+    // Notification to Sales Manager disabled by policy rules (only Converted Customer & Visits allowed)
+    setIsAddModalOpen(false);
 
     setIsAddModalOpen(false);
     setAddForm({
@@ -571,6 +663,80 @@ export default function Leads() {
       notes: "",
     });
     showToast(`🎉 New Lead "${newLeadObj.company}" added successfully!`, "success");
+  };
+
+  // ── Add Opportunity Action ───────────────────────────────────────────────
+  const handleAddOpportunity = (e) => {
+    e.preventDefault();
+    if (!oppForm.companyName || !oppForm.location) {
+      showToast("Company name and location are required.", "error");
+      return;
+    }
+
+    const finalSource = oppForm.source === "Custom" ? (oppForm.customSource?.trim() || "Custom Source") : oppForm.source;
+
+    const newOpp = {
+      id: `opp_${Date.now()}`,
+      date: formatDate(new Date()),
+      customer: oppForm.companyName.trim(),
+      company: oppForm.companyName.trim(),
+      source: finalSource,
+      productRequirement: oppForm.productRequirement,
+      contactPerson: oppForm.contactPerson.trim(),
+      phone: oppForm.phone.trim(),
+      address: oppForm.location.trim(),
+      location: oppForm.location.trim(),
+      remarks: oppForm.remarks.trim(),
+      value: oppForm.value ? (oppForm.value.startsWith('₹') ? oppForm.value : `₹${Number(oppForm.value).toLocaleString('en-IN')}`) : "₹4,50,000",
+      stage: "Qualification",
+      assignedTo: userName,
+      assignedToEmail: userEmail,
+      status: "Open"
+    };
+
+    setOpportunities((prev) => [newOpp, ...prev]);
+
+    try {
+      const savedOpps = JSON.parse(localStorage.getItem("tc_sales_opportunities") || "[]");
+      localStorage.setItem("tc_sales_opportunities", JSON.stringify([newOpp, ...savedOpps]));
+    } catch (err) {}
+
+    try {
+      pipelineAPI.createOpportunity({
+        id: newOpp.id,
+        opportunity_id: newOpp.id,
+        title: `Opportunity - ${newOpp.company}`,
+        company: newOpp.company,
+        customer_name: newOpp.company,
+        contact_person: newOpp.contactPerson,
+        phone: newOpp.phone,
+        value: parseFloat(String(oppForm.value || "450000").replace(/[^0-9.]/g, "")) || 450000,
+        expected_revenue: parseFloat(String(oppForm.value || "450000").replace(/[^0-9.]/g, "")) || 450000,
+        stage: "Qualification",
+        probability: 60,
+        location: newOpp.location,
+        lead_source: newOpp.source,
+        requirement: newOpp.productRequirement,
+        notes: newOpp.remarks,
+        rep: userName,
+        assigned_to: userName,
+        assigned_to_email: userEmail
+      }).catch(() => null);
+    } catch (err) {}
+
+    setIsOppModalOpen(false);
+    setOppForm({
+      companyName: "",
+      source: "Field Research (SE)",
+      customSource: "",
+      productRequirement: "",
+      contactPerson: "",
+      phone: "",
+      location: "",
+      value: "450000",
+      remarks: "",
+    });
+    showToast(`🎯 Opportunity for "${newOpp.customer}" added successfully!`, "success");
   };
 
   // ── Move to Follow-ups Action ─────────────────────────────────────────────
@@ -623,20 +789,7 @@ export default function Leads() {
       )
     );
 
-    // Alert SM
-    try {
-      const existingNotifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
-      const smNotif = {
-        id: `notif_${Date.now()}`,
-        recipientRole: "manager",
-        title: `📞 Follow-up Scheduled by ${userName}`,
-        message: `${userName} scheduled follow-up for "${lead.company}" on ${followupDate} ${followupTime}. Remark: ${remarkText}`,
-        time: "Just now",
-        read: false,
-        type: "Followup",
-      };
-      localStorage.setItem("tc_app_notifications", JSON.stringify([smNotif, ...existingNotifs]));
-    } catch (e) { }
+    // Notification to Sales Manager disabled by policy rules (only Converted Customer & Visits allowed)
 
     setSelectedLead(null);
     setShowFollowupForm(false);
@@ -645,108 +798,164 @@ export default function Leads() {
     showToast(`📞 Lead "${lead.company}" moved to Scheduled Follow-ups!`, "success");
   };
 
-  // ── FOLLOW-UP TAB OUTCOME ACTION 1: Move to Visit Page ──────────────────────
-  const handleMoveFollowupToVisit = (item) => {
-    const vstId = `vst_${Date.now()}`;
-    const genLeadId = item.leadId || item.id || `LD-${Date.now().toString().slice(-8)}`;
+  const handleConfirmScheduleVisit = async (lead) => {
+    if (!visitDate) {
+      showToast("Please select a Visit Date first!", "error");
+      return;
+    }
+
+    const formattedTime = `${visitTimeCustom.trim() || "10:00"} ${visitTimePeriod || "AM"}`;
+    const newVisitId = `vst_${Date.now()}`;
+    const formattedDate = formatDate(visitDate);
+    const genLeadNumber = lead.leadNumber || lead.id?.toString().slice(0, 12).toUpperCase();
+
     const newVisit = {
-      id: vstId,
-      visit_id: vstId,
-      lead_id: genLeadId,
-      leadId: genLeadId,
-      leadNumber: item.leadNumber || genLeadId,
-      customer_name: item.company || "Client Account",
-      company: item.company || "Client Account",
-      customerName: item.company || "Client Account",
-      clientName: item.company || "Client Account",
-      poc_name: item.person || "Point of Contact",
-      contactPerson: item.person || "Point of Contact",
-      person: item.person || "Point of Contact",
-      poc_mobile: item.phone || "+91 98765 43210",
-      phone: item.phone || "+91 98765 43210",
-      location: item.city || "Chennai",
-      address: item.city || "Chennai",
-      visit_date: formatDate(new Date()),
-      visitDate: formatDate(new Date()),
-      visit_time: "10:00 AM",
-      visitTime: "10:00 AM",
+      id: newVisitId,
+      visit_id: newVisitId,
+      leadId: lead.id,
+      leadNumber: genLeadNumber,
+      customerName: lead.company,
+      clientName: lead.company,
+      customer: lead.company,
+      company: lead.company,
+      contactPerson: lead.person,
+      phone: lead.phone,
+      location: visitLocation || lead.city || "Chennai",
+      address: visitLocation || lead.city || "Chennai",
+      visitDate: formattedDate,
+      date: formattedDate,
+      time: formattedTime,
+      scheduledTime: formattedTime,
       status: "Scheduled",
-      visit_status: "Scheduled",
-      purpose: "Site Visit / Product Demo (Converted from Follow-up Call)",
-      discussion_summary: item.remark || "Follow-up completed successfully. Site visit requested.",
-      remark: item.remark || "Follow-up completed successfully. Site visit requested.",
-      remarks: item.remark || "Follow-up completed successfully. Site visit requested.",
-      assigned_to: userName,
-      assignedTo: userName,
-      executive: userName,
+      purpose: visitPurpose || lead.product || "Site Visit / Product Demo",
+      product: lead.product || "TwiteConnect CRM",
+      remark: visitRemarks || "Visit scheduled from Lead outcome.",
+      remarks: visitRemarks || "Visit scheduled from Lead outcome.",
+      notes: visitRemarks || "Visit scheduled from Lead outcome.",
       executiveName: userName,
-      assigned_to_email: userEmail,
+      assignedTo: userName,
       assignedToEmail: userEmail,
-      employee_code: userEmpCode || "EMP-101",
-      lead_status: "Follow Up Required",
-      lead_priority: "Hot",
-      estimated_order_value: "₹4,50,000",
+      assigned_to: userName,
+      assigned_to_email: userEmail,
+      mapsUrl: `https://maps.google.com/?q=${encodeURIComponent(lead.company + " " + (visitLocation || lead.city || "Chennai"))}`,
+    };
+
+    const payload = {
+      visit_id: newVisitId,
+      lead_id: lead.id,
+      lead_number: genLeadNumber,
+      client_name: lead.company,
+      customer_name: lead.company,
+      company_name: lead.company,
+      purpose: visitPurpose || lead.product || "Site Visit / Product Demo",
+      product: lead.product || "TwiteConnect CRM",
+      product_name: lead.product || "TwiteConnect CRM",
+      visit_date: formattedDate,
+      date: formattedDate,
+      visit_time: formattedTime,
+      time: formattedTime,
+      location: visitLocation || lead.city || "Chennai",
+      address: visitLocation || lead.city || "Chennai",
+      contact_person: lead.person,
+      phone: lead.phone,
+      employee_name: userName,
+      employee_id: currentUser?.employee_id || currentUser?.id || null,
+      assigned_to: userName,
+      assigned_to_email: userEmail,
+      status: "SCHEDULED",
+      visit_status: "SCHEDULED",
+      notes: visitRemarks || "Visit scheduled from Lead outcome.",
+      remarks: visitRemarks || "Visit scheduled from Lead outcome."
     };
 
     try {
-      const visits = JSON.parse(localStorage.getItem("tc_sales_visits") || "[]");
-      localStorage.setItem("tc_sales_visits", JSON.stringify([newVisit, ...visits]));
+      await visitAPI.createVisit(payload);
 
-      const smVisits = JSON.parse(localStorage.getItem("tc_sm_visits") || "[]");
-      localStorage.setItem("tc_sm_visits", JSON.stringify([newVisit, ...smVisits]));
+      try {
+        const visits = JSON.parse(localStorage.getItem("tc_sales_visits") || "[]");
+        localStorage.setItem("tc_sales_visits", JSON.stringify([newVisit, ...visits.filter(v => v.id !== newVisitId)]));
 
-      // Persist visit in Supabase via backend API
-      visitAPI.createVisit({
-        visit_id: newVisit.id,
-        lead_id: genLeadId,
-        customer_name: newVisit.customer_name,
-        company: newVisit.company,
-        poc_name: newVisit.poc_name,
-        poc_mobile: newVisit.poc_mobile,
-        location: newVisit.location,
-        visit_date: newVisit.visit_date,
-        visit_time: newVisit.visit_time,
-        purpose: newVisit.purpose,
-        assigned_to: userName,
-        assigned_to_email: userEmail,
-        employee_code: userEmpCode || "EMP-101",
-        status: "SCHEDULED",
-        visit_status: "SCHEDULED",
-      }).catch(() => null);
+        const smVisits = JSON.parse(localStorage.getItem("tc_sm_visits") || "[]");
+        localStorage.setItem("tc_sm_visits", JSON.stringify([newVisit, ...smVisits.filter(v => v.id !== newVisitId)]));
+      } catch (e) { }
 
-      // Alert SM
-      const existingNotifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
-      const smNotif = {
-        id: `notif_${Date.now()}`,
-        recipientRole: "manager",
-        title: `📅 Visit Scheduled from Follow-up by ${userName}`,
-        message: `${userName} converted follow-up "${item.company}" into a Site Visit scheduled date.`,
-        time: "Just now",
-        read: false,
-        type: "Visit",
-      };
-      localStorage.setItem("tc_app_notifications", JSON.stringify([smNotif, ...existingNotifs]));
-    } catch (e) { }
+      // Update lead status in Supabase & frontend
+      try {
+        await crmAPI.updateLead(lead.id, { status: "VISIT_SCHEDULED", notes: visitRemarks });
+      } catch (err) { }
 
-    // Update lead status & remove from followups
-    setFollowupsList((prev) => prev.filter((f) => f.id !== item.id));
-    setAllLeads((prev) =>
-      prev.map((l) => (l.id === item.leadId || l.company === item.company ? { ...l, status: "Follow-up / Visit Scheduled" } : l))
-    );
+      setAllLeads((prev) =>
+        prev.map((l) => (l.id === lead.id ? { ...l, status: "Visit Scheduled" } : l))
+      );
 
-    showToast(`📅 Follow-up "${item.company}" converted to Visit! Moving to Visit Page...`, "success");
-    setTimeout(() => navigate("/sales/visits"), 600);
+      setVisitList((prev) => [newVisit, ...prev.filter(v => v.id !== newVisitId)]);
+
+      if (lead.isFromFollowup && lead.followupId) {
+        setFollowupsList((prev) => prev.filter((f) => f.id !== lead.followupId));
+      }
+
+      // Alert SM notification
+      try {
+        const existingNotifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
+        const smNotif = {
+          id: `notif_${Date.now()}`,
+          recipientRole: "manager",
+          title: `📅 Visit Scheduled by ${userName}`,
+          message: `${userName} scheduled site visit for "${lead.company}" on ${formattedDate} at ${formattedTime}.`,
+          time: "Just now",
+          read: false,
+          type: "Visit",
+        };
+        localStorage.setItem("tc_app_notifications", JSON.stringify([smNotif, ...existingNotifs]));
+      } catch (err) { }
+
+      setSelectedLead(null);
+      setShowVisitForm(false);
+      setVisitDate("");
+      setVisitRemarks("");
+      showToast(`📅 Site Visit for "${lead.company}" on ${formattedDate} (${formattedTime}) saved to Supabase!`, "success");
+      setActiveTab("visits");
+    } catch (apiErr) {
+      console.warn("API save notice:", apiErr);
+      setAllLeads((prev) =>
+        prev.map((l) => (l.id === lead.id ? { ...l, status: "Visit Scheduled" } : l))
+      );
+      setVisitList((prev) => [newVisit, ...prev.filter(v => v.id !== newVisitId)]);
+      setSelectedLead(null);
+      setShowVisitForm(false);
+      showToast(`📅 Site Visit for "${lead.company}" scheduled!`, "success");
+      setActiveTab("visits");
+    }
   };
 
+  // ── FOLLOW-UP TAB OUTCOME ACTION 1: Move to Visit Page ──────────────────────
+  const handleMoveFollowupToVisit = (item) => {
+    setSelectedLead({
+      ...item,
+      id: item.leadId || item.id,
+      isFromFollowup: true,
+      followupId: item.id
+    });
+    setVisitLocation(item.city || "");
+    setVisitRemarks(item.remark || "");
+    setShowVisitForm(true);
+    setShowFollowupForm(false);
+  };
+
+
   // ── FOLLOW-UP TAB OUTCOME ACTION 2: Move to Customer Page ───────────────────
-  const handleMoveFollowupToCustomer = (item) => {
+  const handleMoveFollowupToCustomer = async (item) => {
+    const custId = `cust_${Date.now()}`;
+    const genLeadNum = item.leadNumber || item.leadId?.toString().slice(0, 12).toUpperCase();
     const newCustomer = {
-      id: `cust_${Date.now()}`,
+      id: custId,
+      customer_id: custId,
       leadId: item.leadId,
-      leadNumber: item.leadNumber,
+      leadNumber: genLeadNum,
       name: item.company,
       company: item.company,
       contactPerson: item.person,
+      person: item.person,
       phone: item.phone,
       email: item.email || `${item.company.toLowerCase().replace(/\s+/g, '')}@example.com`,
       city: item.city || "Chennai",
@@ -754,44 +963,43 @@ export default function Leads() {
       packageTier: "Enterprise Plan",
       reachOutReason: item.remark || "Converted after follow-up call.",
       accountManager: userName,
+      assigned_to: userName,
+      assigned_to_email: userEmail,
       onboardingRemarks: `Converted directly from Follow-up call by ${userName}.`,
       contractValue: "₹4,50,000",
     };
 
+    // 1. Convert via Centralized Customer Conversion API
+    try {
+      const res = await crmAPI.convertFollowupToCustomer(item.id, {
+        company_name: item.company,
+        contact_person: item.person,
+        phone: item.phone,
+        email: item.email,
+        city: item.city,
+        notes: item.remark || "Converted after follow-up call.",
+        lead_id: item.leadId,
+        assigned_to: userName,
+        assigned_to_email: userEmail
+      });
+      if (res && res.data && res.data.customer) {
+        newCustomer.id = res.data.customer.id || res.data.customer.customer_id;
+        newCustomer.customer_id = newCustomer.id;
+      }
+    } catch (err) {
+      console.warn("Customer Supabase conversion notice:", err);
+    }
+
     try {
       const customers = JSON.parse(localStorage.getItem("tc_customer_accounts") || "[]");
-      localStorage.setItem("tc_customer_accounts", JSON.stringify([newCustomer, ...customers]));
+      localStorage.setItem("tc_customer_accounts", JSON.stringify([newCustomer, ...customers.filter(c => c.name !== item.company)]));
 
-      // Persist customer account in Supabase via backend API
-      customerAPI.createCustomer({
-        id: newCustomer.id,
-        name: newCustomer.name,
-        company: newCustomer.company,
-        person: newCustomer.contactPerson,
-        phone: newCustomer.phone,
-        email: newCustomer.email,
-        city: newCustomer.city,
-        notes: newCustomer.reachOutReason
-      }).then((savedCust) => {
-        const realCustomerId = savedCust?.customer_id || newCustomer.id;
-        // Backfill customer ID onto the original lead in allLeads state
-        setAllLeads((prev) => prev.map((l) =>
-          (l.id === item.leadId || l.company === item.company)
-            ? { ...l, status: "Converted to Customer", customerId: realCustomerId }
-            : l
-        ));
-        console.log("✅ Customer persisted in Supabase:", savedCust);
-      }).catch((err) => {
-        console.warn("Customer API error:", err);
-      });
-
-      // Alert SM
       const existingNotifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
       const smNotif = {
         id: `notif_${Date.now()}`,
         recipientRole: "manager",
         title: `🎉 Customer Converted from Follow-up by ${userName}`,
-        message: `${userName} converted follow-up "${item.company}" into an active Customer Account!`,
+        message: `${userName} converted follow-up "${item.company}" into active Customer Account!`,
         time: "Just now",
         read: false,
         type: "Customer",
@@ -799,17 +1007,12 @@ export default function Leads() {
       localStorage.setItem("tc_app_notifications", JSON.stringify([smNotif, ...existingNotifs]));
     } catch (e) { }
 
-    // Update lead status & remove from followups
+    // 3. Remove from followups and active leads
     setFollowupsList((prev) => prev.filter((f) => f.id !== item.id));
-    setAllLeads((prev) =>
-      prev.map((l) => (l.id === item.leadId || l.company === item.company
-        ? { ...l, status: "Converted to Customer", customerId: l.customerId || newCustomer.id }
-        : l
-      ))
-    );
+    setAllLeads((prev) => prev.filter((l) => l.id !== item.leadId && l.company !== item.company));
 
-    showToast(`🎉 Follow-up "${item.company}" converted to Customer Account! Moving to Customer Page...`, "success");
-    setTimeout(() => navigate("/sales/customers"), 600);
+    showToast(`🎉 "${item.company}" converted to Customer & saved in Supabase! Moving to Customer page...`, "success");
+    setTimeout(() => navigate("/sales/customers"), 500);
   };
 
   // ── FOLLOW-UP TAB OUTCOME ACTION 3: Classify to Hot / Warm / Cold ───────────
@@ -836,7 +1039,7 @@ export default function Leads() {
   };
 
   // ── POST-VISIT MEETING OUTCOME SUBMIT HANDLER ─────────────────────────────
-  const handleVisitOutcomeSubmit = (e) => {
+  const handleVisitOutcomeSubmit = async (e) => {
     e.preventDefault();
     if (!selectedVisitForOutcome) return;
 
@@ -846,28 +1049,35 @@ export default function Leads() {
     const meetingSummary = `[Visited ${v.date || 'Today'}]: Spoke with ${personMet || v.person || 'Client Head'}. Discussion: ${discussionNotes || 'N/A'}. Lead said: ${leadFeedback || 'N/A'}`;
 
     if (outcomeStatus === "Won") {
+      const custId = `cust_${Date.now()}`;
+      const genLeadNum = v.leadNumber || v.leadId?.toString().slice(0, 12).toUpperCase();
       const newCustomer = {
-        id: `cust_${Date.now()}`,
+        id: custId,
+        customer_id: custId,
+        leadId: v.leadId,
+        leadNumber: genLeadNum,
         name: v.customer || v.client || v.company || "Client Account",
         company: v.customer || v.client || v.company || "Client Account",
         person: personMet || v.person || v.contactPerson || "Contact Person",
         phone: v.phone || "",
         email: v.email || "",
         city: v.location || v.city || "Chennai",
-        status: "Active",
+        status: "Active Customer",
         packageTier: "Enterprise Suite",
         reachOutReason: meetingSummary,
         accountManager: userName,
+        assigned_to: userName,
+        assigned_to_email: userEmail,
         onboardingRemarks: `Converted after site visit meeting by ${userName}.`,
         revenue: agreedValue || "₹4,50,000",
+        contractValue: agreedValue || "₹4,50,000",
         lastVisit: formatDate(new Date()),
         onboardDate: formatDate(new Date()),
-        remarksHistory: [{ date: "Just now", note: meetingSummary }]
       };
 
       try {
         const customers = JSON.parse(localStorage.getItem("tc_customer_accounts") || "[]");
-        localStorage.setItem("tc_customer_accounts", JSON.stringify([newCustomer, ...customers]));
+        localStorage.setItem("tc_customer_accounts", JSON.stringify([newCustomer, ...customers.filter(c => c.name !== newCustomer.name)]));
 
         const existingNotifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
         const smNotif = {
@@ -882,41 +1092,35 @@ export default function Leads() {
         localStorage.setItem("tc_app_notifications", JSON.stringify([smNotif, ...existingNotifs]));
       } catch (err) { }
 
-      const custId = newCustomer.id;
+      // 1. Convert Visit via Centralized Customer Conversion API
+      try {
+        const res = await crmAPI.convertVisitToCustomer(v.id, {
+          company_name: newCustomer.company,
+          contact_person: newCustomer.person,
+          phone: newCustomer.phone,
+          email: newCustomer.email,
+          city: newCustomer.city,
+          notes: meetingSummary,
+          lead_id: v.leadId,
+          assigned_to: userName,
+          assigned_to_email: userEmail
+        });
+        if (res && res.data && res.data.customer) {
+          newCustomer.id = res.data.customer.id || res.data.customer.customer_id;
+          newCustomer.customer_id = newCustomer.id;
+        }
+      } catch (err) {
+        console.warn("Customer Visit Supabase conversion notice:", err);
+      }
 
-      // Persist customer in Supabase
-      customerAPI.createCustomer({
-        id: custId,
-        name: newCustomer.name,
-        person: newCustomer.person,
-        phone: newCustomer.phone,
-        email: newCustomer.email,
-        city: newCustomer.city,
-        notes: meetingSummary,
-        leadId: v.leadId,
-        leadNumber: v.leadNumber
-      }).then((savedCust) => {
-        const realId = savedCust?.customer_id || custId;
-        setAllLeads((prev) =>
-          prev.map((l) => (l.company === newCustomer.name || l.id === v.leadId
-            ? { ...l, status: "Converted to Customer", customerId: realId, notes: meetingSummary }
-            : l
-          ))
-        );
-      }).catch(() => {
-        setAllLeads((prev) =>
-          prev.map((l) => (l.company === newCustomer.name || l.id === v.leadId
-            ? { ...l, status: "Converted to Customer", customerId: custId, notes: meetingSummary }
-            : l
-          ))
-        );
-      });
-
-      // Remove from visits list
+      // 2. Remove from visits and active leads
       setVisitList((prev) => prev.filter((item) => item.id !== v.id));
+      setAllLeads((prev) => prev.filter((l) => l.company !== newCustomer.name && l.id !== v.leadId));
 
-      showToast(`🎉 Meeting Outcome Logged: Deal Won! ${newCustomer.name} converted to Customer Account!`, "success");
-      setActiveTab("converted");
+      setSelectedVisitForOutcome(null);
+      showToast(`🎉 Deal Won! "${newCustomer.name}" converted to Customer & saved in Supabase! Moving to Customer page...`, "success");
+      setTimeout(() => navigate("/sales/customers"), 500);
+      return;
     } else if (outcomeStatus === "Lost") {
       const targetCompany = v.customer || v.client || v.company || "Client Account";
 
@@ -1035,8 +1239,8 @@ export default function Leads() {
   // ── Lead Filtering ────────────────────────────────────────────────────────
   // Deduplicate assigned leads by phone or company name so duplicate cards never appear
   const deduplicatedAssignedLeads = deduplicateLeadsList(myAssignedLeads);
-  const openLeadsOnly = deduplicatedAssignedLeads.filter((l) => l.status !== "Converted to Customer" && l.status !== "Converted");
-  const convertedLeadsOnly = deduplicatedAssignedLeads.filter((l) => l.status === "Converted to Customer" || l.status === "Converted");
+  const openLeadsOnly = deduplicatedAssignedLeads.filter((l) => !isConvertedToCustomer(l));
+  const convertedLeadsOnly = [];
 
   const filteredLeads = openLeadsOnly.filter((lead) => {
     const q = (search || "").toLowerCase();
@@ -1054,26 +1258,15 @@ export default function Leads() {
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
-  const totalPages = Math.ceil(filteredLeads.length / itemsPerPage) || 1;
-  const paginatedLeads = filteredLeads.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+  const paginatedLeads = filteredLeads;
 
-  const filteredConvertedLeads = convertedLeadsOnly.filter((lead) => {
-    const q = (search || "").toLowerCase();
-    return (
-      (lead.company || "").toLowerCase().includes(q) ||
-      (lead.person || "").toLowerCase().includes(q) ||
-      (lead.phone || "").includes(q) ||
-      (lead.city || "").toLowerCase().includes(q) ||
-      (lead.leadNumber || "").toLowerCase().includes(q) ||
-      (lead.id || "").toString().toLowerCase().includes(q)
-    );
-  });
+  const filteredConvertedLeads = [];
 
-  const totalAssigned = myAssignedLeads.length;
+  const totalAssigned = openLeadsOnly.length;
   const hotCount = openLeadsOnly.filter((l) => l.category === "Hot").length;
   const warmCount = openLeadsOnly.filter((l) => l.category === "Warm").length;
   const coldCount = openLeadsOnly.filter((l) => l.category === "Cold").length;
-  const convertedCount = convertedLeadsOnly.length;
+  const convertedCount = 0;
 
   return (
     <div className="space-y-6 font-sans text-slate-900 min-w-0 w-full">
@@ -1092,118 +1285,121 @@ export default function Leads() {
         </button>
       </div>
 
-      {/* Sleek & Interactive Metric Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {/* Total My Leads Card -> Shows ALL HOT, WARM, COLD leads in Tabular View */}
-        <div
-          onClick={() => {
-            setActiveTab("leads");
-            setCategoryFilter("All");
-            setStatusFilter("All");
-            showToast("Showing ALL (Hot, Warm, Cold) leads in tabular column view!", "info");
-          }}
-          className="bg-white rounded-2xl p-3 sm:p-3.5 shadow-xs border-2 border-blue-200 hover:border-blue-500 hover:shadow-md transition cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-blue-900 text-[10px] font-extrabold uppercase tracking-wider">Total My Leads</p>
-              <h2 className="text-xl sm:text-2xl font-black text-blue-950 mt-0.5">{totalAssigned}</h2>
+      {/* Single Spacious Category Filter Toggle Bar (Total | HOT [Green] | WARM [Yellow] | COLD [Red]) */}
+      <div className="bg-white rounded-3xl p-2.5 sm:p-3 border border-slate-200 shadow-xs max-w-5xl">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+          {/* 1. Total Leads Toggle */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("leads");
+              setCategoryFilter("All");
+              setStatusFilter("All");
+              showToast("Showing ALL Leads!", "info");
+            }}
+            className={`px-4 py-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2.5 transition cursor-pointer border-2 ${
+              categoryFilter === "All"
+                ? "bg-[#0b3c5d] text-white border-[#0b3c5d] shadow-md shadow-blue-950/25"
+                : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Users size={18} className={categoryFilter === "All" ? "text-amber-400" : "text-[#0b3c5d]"} />
+              <span className="uppercase tracking-wider text-[11px] sm:text-xs">TOTAL LEADS</span>
             </div>
-            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
-              <Users size={16} />
-            </div>
-          </div>
-        </div>
+            <span className={`px-3 py-1 rounded-full text-xs font-black ${
+              categoryFilter === "All" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-800"
+            }`}>
+              {totalAssigned}
+            </span>
+          </button>
 
-        {/* Hot Leads Card */}
-        <div
-          onClick={() => {
-            setActiveTab("leads");
-            setCategoryFilter("Hot");
-            showToast("Filtered by 🔥 Hot Leads!", "info");
-          }}
-          className="bg-rose-50/60 rounded-2xl p-3 sm:p-3.5 shadow-xs border-2 border-rose-200 hover:border-rose-500 hover:shadow-md transition cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-rose-700 text-[10px] font-extrabold uppercase tracking-wider">🔥 My Hot Leads</p>
-              <h2 className="text-xl sm:text-2xl font-black text-rose-700 mt-0.5">{hotCount}</h2>
+          {/* 2. HOT Leads Toggle (GREEN) */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("leads");
+              setCategoryFilter("Hot");
+              showToast("Filtered by 🟢 HOT Leads!", "info");
+            }}
+            className={`px-4 py-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2.5 transition cursor-pointer border-2 ${
+              categoryFilter === "Hot"
+                ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/35"
+                : "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Flame size={18} className={categoryFilter === "Hot" ? "text-emerald-200" : "text-emerald-600"} />
+              <span className="uppercase tracking-wider text-[11px] sm:text-xs">HOT</span>
             </div>
-            <div className="w-8 h-8 rounded-xl bg-rose-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
-              <Flame size={16} />
-            </div>
-          </div>
-        </div>
+            <span className={`px-3 py-1 rounded-full text-xs font-black ${
+              categoryFilter === "Hot" ? "bg-white/20 text-white" : "bg-emerald-200/90 text-emerald-950"
+            }`}>
+              {hotCount}
+            </span>
+          </button>
 
-        {/* Warm Leads Card */}
-        <div
-          onClick={() => {
-            setActiveTab("leads");
-            setCategoryFilter("Warm");
-            showToast("Filtered by ⚡ Warm Leads!", "info");
-          }}
-          className="bg-amber-50/60 rounded-2xl p-3 sm:p-3.5 shadow-xs border-2 border-amber-200 hover:border-amber-500 hover:shadow-md transition cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-amber-700 text-[10px] font-extrabold uppercase tracking-wider">⚡ My Warm Leads</p>
-              <h2 className="text-xl sm:text-2xl font-black text-amber-700 mt-0.5">{warmCount}</h2>
+          {/* 3. WARM Leads Toggle (YELLOW / AMBER) */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("leads");
+              setCategoryFilter("Warm");
+              showToast("Filtered by ⚡ WARM Leads!", "info");
+            }}
+            className={`px-4 py-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2.5 transition cursor-pointer border-2 ${
+              categoryFilter === "Warm"
+                ? "bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/35"
+                : "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Zap size={18} className={categoryFilter === "Warm" ? "text-amber-200" : "text-amber-600"} />
+              <span className="uppercase tracking-wider text-[11px] sm:text-xs">WARM</span>
             </div>
-            <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
-              <Zap size={16} />
-            </div>
-          </div>
-        </div>
+            <span className={`px-3 py-1 rounded-full text-xs font-black ${
+              categoryFilter === "Warm" ? "bg-white/20 text-white" : "bg-amber-200/90 text-amber-950"
+            }`}>
+              {warmCount}
+            </span>
+          </button>
 
-        {/* Cold Leads Card */}
-        <div
-          onClick={() => {
-            setActiveTab("leads");
-            setCategoryFilter("Cold");
-            showToast("Filtered by ❄️ Cold Leads!", "info");
-          }}
-          className="bg-sky-50/60 rounded-2xl p-3 sm:p-3.5 shadow-xs border-2 border-sky-200 hover:border-sky-500 hover:shadow-md transition cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sky-700 text-[10px] font-extrabold uppercase tracking-wider">❄️ My Cold Leads</p>
-              <h2 className="text-xl sm:text-2xl font-black text-sky-700 mt-0.5">{coldCount}</h2>
+          {/* 4. COLD Leads Toggle (RED) */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("leads");
+              setCategoryFilter("Cold");
+              showToast("Filtered by 🔴 COLD Leads!", "info");
+            }}
+            className={`px-4 py-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2.5 transition cursor-pointer border-2 ${
+              categoryFilter === "Cold"
+                ? "bg-red-600 text-white border-red-600 shadow-md shadow-red-600/35"
+                : "bg-red-50 text-red-800 border-red-200 hover:bg-red-100"
+            }`}
+          >
+            <div className="flex items-center gap-2">
+              <Snowflake size={18} className={categoryFilter === "Cold" ? "text-red-200" : "text-red-600"} />
+              <span className="uppercase tracking-wider text-[11px] sm:text-xs">COLD</span>
             </div>
-            <div className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
-              <Zap size={16} />
-            </div>
-          </div>
-        </div>
-
-        {/* Converted Customers Card */}
-        <div
-          onClick={() => {
-            setActiveTab("converted");
-            showToast("Showing Converted Customer Accounts!", "info");
-          }}
-          className="bg-emerald-50/60 rounded-2xl p-3 sm:p-3.5 shadow-xs border-2 border-emerald-200 hover:border-emerald-500 hover:shadow-md transition cursor-pointer"
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-emerald-700 text-[10px] font-extrabold uppercase tracking-wider">My Converted Customers</p>
-              <h2 className="text-xl sm:text-2xl font-black text-emerald-700 mt-0.5">{convertedCount}</h2>
-            </div>
-            <div className="w-8 h-8 rounded-xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
-              <UserCheck size={16} />
-            </div>
-          </div>
+            <span className={`px-3 py-1 rounded-full text-xs font-black ${
+              categoryFilter === "Cold" ? "bg-white/20 text-white" : "bg-red-200/90 text-red-950"
+            }`}>
+              {coldCount}
+            </span>
+          </button>
         </div>
       </div>
 
-      {/* ── TOGGLE TAB BAR INSIDE LEADS PAGE (Leads | Followups | Visits | Converted) ── */}
-      <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-xs flex items-center overflow-x-auto">
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto">
+      {/* ── TOGGLE TAB BAR INSIDE LEADS PAGE (Leads | Followups | Visits | Opportunities) ── */}
+      <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto overflow-x-auto shrink-0">
           <button
             type="button"
             onClick={() => setActiveTab("leads")}
             className={`px-4 py-2 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shrink-0 ${activeTab === "leads"
-                ? "bg-teal-600 text-white shadow-md shadow-teal-600/30"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+              ? "bg-teal-600 text-white shadow-md shadow-teal-600/30"
+              : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
               }`}
           >
             <Building2 size={16} />
@@ -1214,8 +1410,8 @@ export default function Leads() {
             type="button"
             onClick={() => setActiveTab("followups")}
             className={`px-4 py-2 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shrink-0 ${activeTab === "followups"
-                ? "bg-purple-600 text-white shadow-md shadow-purple-600/30"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+              ? "bg-purple-600 text-white shadow-md shadow-purple-600/30"
+              : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
               }`}
           >
             <Clock3 size={16} />
@@ -1226,8 +1422,8 @@ export default function Leads() {
             type="button"
             onClick={() => setActiveTab("visits")}
             className={`px-4 py-2 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shrink-0 ${activeTab === "visits"
-                ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+              ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
+              : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
               }`}
           >
             <MapPin size={16} />
@@ -1236,14 +1432,40 @@ export default function Leads() {
 
           <button
             type="button"
-            onClick={() => setActiveTab("converted")}
-            className={`px-4 py-2 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shrink-0 ${activeTab === "converted"
-                ? "bg-emerald-600 text-white shadow-md shadow-emerald-600/30"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
+            onClick={() => setActiveTab("opportunities")}
+            className={`px-4 py-2 rounded-lg font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shrink-0 ${activeTab === "opportunities"
+              ? "bg-amber-600 text-white shadow-md shadow-amber-600/30"
+              : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/60"
               }`}
           >
-            <UserCheck size={16} />
-            <span>Converted ({convertedCount})</span>
+            <Briefcase size={16} />
+            <span>Opportunities ({opportunities.length})</span>
+          </button>
+        </div>
+
+        {/* Global View Mode Switcher: Cards vs Table (Default: Table) */}
+        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0 ml-auto">
+          <button
+            type="button"
+            onClick={() => setViewMode("grid")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${viewMode === "grid"
+              ? "bg-white text-teal-700 shadow-xs border border-slate-200"
+              : "text-slate-500 hover:text-slate-800"
+              }`}
+            title="Cards View"
+          >
+            <LayoutGrid size={14} /> Cards
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("list")}
+            className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${viewMode === "list"
+              ? "bg-white text-teal-700 shadow-xs border border-slate-200"
+              : "text-slate-500 hover:text-slate-800"
+              }`}
+            title="Table View (Default)"
+          >
+            <List size={14} /> Table View
           </button>
         </div>
       </div>
@@ -1279,49 +1501,6 @@ export default function Leads() {
                   <option value="Cold">❄️ Cold Leads</option>
                   <option value="Other">🌐 Other Category</option>
                 </select>
-              </div>
-
-              <div className="flex-1 sm:flex-initial flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 font-bold">
-                <span className="text-slate-400">Status:</span>
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="bg-transparent text-slate-800 font-bold focus:outline-none cursor-pointer text-xs sm:text-sm"
-                >
-                  <option value="All">All Statuses</option>
-                  <option value="New">New</option>
-                  <option value="Moved to Follow-ups">In Follow-ups</option>
-                  <option value="Follow-up / Visit Scheduled">In Visit / Follow-up</option>
-                  <option value="Converted to Customer">Converted</option>
-                  <option value="Not Converted / Lost">Not Converted</option>
-                  <option value="Other">🌐 Other Status</option>
-                </select>
-              </div>
-
-              {/* View Mode Toggle: Grid Cards vs Compact Table List */}
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 ml-auto">
-                <button
-                  type="button"
-                  onClick={() => setViewMode("grid")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${viewMode === "grid"
-                      ? "bg-white text-teal-700 shadow-xs border border-slate-200"
-                      : "text-slate-500 hover:text-slate-800"
-                    }`}
-                  title="Grid Cards View"
-                >
-                  <LayoutGrid size={14} /> Cards
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode("list")}
-                  className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${viewMode === "list"
-                      ? "bg-white text-teal-700 shadow-xs border border-slate-200"
-                      : "text-slate-500 hover:text-slate-800"
-                    }`}
-                  title="Spacious Table List View"
-                >
-                  <List size={14} /> Table
-                </button>
               </div>
             </div>
           </div>
@@ -1386,13 +1565,13 @@ export default function Leads() {
                       <td className="py-3.5 px-4">
                         <span
                           className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-black border ${lead.category === "Hot"
-                              ? "bg-rose-50 text-rose-700 border-rose-200"
-                              : lead.category === "Warm"
-                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                : "bg-sky-50 text-sky-700 border-sky-200"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : lead.category === "Warm"
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : "bg-rose-50 text-rose-700 border-rose-200"
                             }`}
                         >
-                          {lead.category === "Hot" ? "🔥 Hot Lead" : lead.category === "Warm" ? "⚡ Warm Lead" : "❄️ Cold Lead"}
+                          {lead.category === "Hot" ? "🟢 Hot Lead" : lead.category === "Warm" ? "⚡ Warm Lead" : "🔴 Cold Lead"}
                         </span>
                       </td>
                       <td className="py-3.5 px-4">
@@ -1446,21 +1625,21 @@ export default function Leads() {
                       <div className="flex items-center gap-2 flex-wrap">
                         <span
                           className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black border ${lead.status === "Converted to Customer"
-                              ? "bg-emerald-100 text-emerald-800 border-emerald-300"
-                              : lead.category === "Hot"
-                                ? "bg-rose-50 text-rose-700 border-rose-200"
-                                : lead.category === "Warm"
-                                  ? "bg-amber-50 text-amber-700 border-amber-200"
-                                  : "bg-sky-50 text-sky-700 border-sky-200"
+                            ? "bg-emerald-100 text-emerald-800 border-emerald-300"
+                            : lead.category === "Hot"
+                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                              : lead.category === "Warm"
+                                ? "bg-amber-50 text-amber-700 border-amber-200"
+                                : "bg-rose-50 text-rose-700 border-rose-200"
                             }`}
                         >
                           {lead.status === "Converted to Customer"
                             ? "🎉 Converted Customer"
                             : lead.category === "Hot"
-                              ? "🔥 Hot Lead"
+                              ? "🟢 Hot Lead"
                               : lead.category === "Warm"
                                 ? "⚡ Warm Lead"
-                                : "❄️ Cold Lead"}
+                                : "🔴 Cold Lead"}
                         </span>
 
                         {lead.status === "Converted to Customer" ? (
@@ -1469,10 +1648,10 @@ export default function Leads() {
                           </span>
                         ) : (
                           <span className={`text-xs font-bold px-2.5 py-0.5 rounded-full border ${lead.category === "Hot"
-                              ? "bg-rose-50 text-rose-700 border-rose-200"
-                              : lead.category === "Warm"
-                                ? "bg-amber-50 text-amber-700 border-amber-200"
-                                : "bg-sky-50 text-sky-700 border-sky-200"
+                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                            : lead.category === "Warm"
+                              ? "bg-amber-50 text-amber-700 border-amber-200"
+                              : "bg-rose-50 text-rose-700 border-rose-200"
                             }`}>
                             {lead.category === "Hot" ? "High Priority" : lead.category === "Warm" ? "Medium Priority" : "Low Priority"}
                           </span>
@@ -1545,29 +1724,18 @@ export default function Leads() {
                   <div className="pt-3.5 border-t border-slate-100 space-y-3">
                     <div className="flex items-center justify-between">
                       <span className={`px-3 py-1 rounded-full text-xs font-extrabold ${lead.status === 'Converted to Customer'
-                          ? 'bg-emerald-100 text-emerald-800'
-                          : lead.status === 'Not Converted / Lost'
-                            ? 'bg-rose-100 text-rose-800'
-                            : lead.status === 'Moved to Follow-ups'
-                              ? 'bg-purple-100 text-purple-800'
-                              : 'bg-blue-100 text-blue-800'
+                        ? 'bg-emerald-100 text-emerald-800'
+                        : lead.status === 'Not Converted / Lost'
+                          ? 'bg-rose-100 text-rose-800'
+                          : lead.status === 'Moved to Follow-ups'
+                            ? 'bg-purple-100 text-purple-800'
+                            : 'bg-blue-100 text-blue-800'
                         }`}>
                         ● {lead.status}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2 text-xs sm:text-sm font-bold">
-                      <button
-                        onClick={() => {
-                          setSelectedLead(lead);
-                          setSeRemarkInput("");
-                          setShowFollowupForm(false);
-                        }}
-                        className="py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center gap-1.5 transition cursor-pointer"
-                      >
-                        <Eye size={15} /> Talk & Log Notes
-                      </button>
-
+                    <div className="grid grid-cols-1 gap-2 text-xs sm:text-sm font-bold">
                       {lead.status !== "Converted to Customer" ? (
                         <button
                           onClick={() => {
@@ -1593,41 +1761,6 @@ export default function Leads() {
               ))}
             </div>
           )}
-
-          {/* ── PAGINATION CONTROLS BAR (MAX 10 PER PAGE) ────────────────────── */}
-          {filteredLeads.length > 0 && (
-            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3 text-xs font-extrabold text-slate-600">
-              <div>
-                Showing <span className="text-slate-900 font-black">{(currentPage - 1) * itemsPerPage + 1}</span> to{" "}
-                <span className="text-slate-900 font-black">{Math.min(currentPage * itemsPerPage, filteredLeads.length)}</span> of{" "}
-                <span className="text-teal-700 font-black">{filteredLeads.length}</span> total leads
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  disabled={currentPage === 1}
-                  onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
-                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-black text-xs flex items-center gap-1 transition cursor-pointer"
-                >
-                  <ChevronLeft size={16} /> Prev
-                </button>
-
-                <span className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-slate-800 font-black text-xs">
-                  Page {currentPage} of {totalPages}
-                </span>
-
-                <button
-                  type="button"
-                  disabled={currentPage >= totalPages}
-                  onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
-                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-black text-xs flex items-center gap-1 transition cursor-pointer"
-                >
-                  Next <ChevronRight size={16} />
-                </button>
-              </div>
-            </div>
-          )}
         </div>
       )}
 
@@ -1646,6 +1779,80 @@ export default function Leads() {
           {myFollowups.length === 0 ? (
             <div className="bg-white rounded-3xl p-10 text-center text-slate-400 font-semibold text-xs sm:text-sm border border-slate-200">
               No follow-ups currently scheduled. Move a lead to follow-ups from the Assigned Leads tab above.
+            </div>
+          ) : viewMode === "list" ? (
+            <div className="bg-white rounded-3xl border border-purple-200 shadow-xs overflow-x-auto">
+              <table className="w-full text-left font-semibold text-xs text-slate-800">
+                <thead className="border-b border-purple-100 text-purple-900 font-black text-[10px] uppercase tracking-wider bg-purple-50/70">
+                  <tr>
+                    <th className="py-3 px-4">COMPANY / CLIENT</th>
+                    <th className="py-3 px-4">CONTACT & PHONE</th>
+                    <th className="py-3 px-4">CITY</th>
+                    <th className="py-3 px-4">SCHEDULED DATE & TIME</th>
+                    <th className="py-3 px-4 min-w-[200px]">REMARKS / CALL NOTES</th>
+                    <th className="py-3 px-4 text-right">OUTCOME ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-purple-50">
+                  {myFollowups.map((item) => (
+                    <tr key={item.id} className="hover:bg-purple-50/30 transition">
+                      <td className="py-3.5 px-4 font-black text-slate-900 text-sm whitespace-nowrap">
+                        {item.company}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="font-extrabold text-slate-900">{item.person}</div>
+                        <div className="text-[11px] text-slate-500 font-semibold">{item.phone}</div>
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-700 whitespace-nowrap">
+                        {item.city}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800 font-black text-[11px] border border-purple-200">
+                          📅 {item.scheduledDate} @ {item.scheduledTime || "02:30 PM"}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-600 font-semibold text-xs leading-snug">
+                        {item.remark || "Client requested follow-up discussion."}
+                      </td>
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleClassifyFollowupToCategory(item, "Hot")}
+                            className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-extrabold text-[11px] cursor-pointer"
+                          >
+                            🔥 Hot
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleClassifyFollowupToCategory(item, "Warm")}
+                            className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold text-[11px] cursor-pointer"
+                          >
+                            ⚡ Warm
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleMoveFollowupToVisit(item);
+                              setActiveTab("visits");
+                            }}
+                            className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-[11px] cursor-pointer"
+                          >
+                            📅 Move to Visit
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveFollowupToCustomer(item)}
+                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] cursor-pointer"
+                          >
+                            🎉 Convert
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -1704,7 +1911,7 @@ export default function Leads() {
                       <button
                         type="button"
                         onClick={() => handleClassifyFollowupToCategory(item, "Hot")}
-                        className="py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        className="py-2.5 px-3 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
                       >
                         <Flame size={14} /> Move to Hot Lead
                       </button>
@@ -1720,7 +1927,7 @@ export default function Leads() {
                       <button
                         type="button"
                         onClick={() => handleClassifyFollowupToCategory(item, "Cold")}
-                        className="py-2.5 px-3 rounded-xl bg-sky-50 hover:bg-sky-100 text-sky-700 border border-sky-200 font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        className="py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 font-extrabold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer"
                       >
                         <Snowflake size={14} /> Move to Cold Lead
                       </button>
@@ -1774,6 +1981,81 @@ export default function Leads() {
             <div className="bg-white rounded-3xl p-10 text-center text-slate-400 font-semibold text-xs sm:text-sm border border-slate-200">
               No site visits currently scheduled. Click "Move to Visit Page" on any lead or follow-up call to see it here!
             </div>
+          ) : viewMode === "list" ? (
+            <div className="bg-white rounded-3xl border border-blue-200 shadow-xs overflow-x-auto">
+              <table className="w-full text-left font-semibold text-xs text-slate-800">
+                <thead className="border-b border-blue-100 text-blue-900 font-black text-[10px] uppercase tracking-wider bg-blue-50/70">
+                  <tr>
+                    <th className="py-3 px-4">CLIENT ACCOUNT</th>
+                    <th className="py-3 px-4">CONTACT & PHONE</th>
+                    <th className="py-3 px-4">LOCATION</th>
+                    <th className="py-3 px-4">VISIT TIMING</th>
+                    <th className="py-3 px-4">STATUS</th>
+                    <th className="py-3 px-4 min-w-[180px]">PURPOSE & REMARKS</th>
+                    <th className="py-3 px-4 text-right">ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-blue-50">
+                  {myVisits.map((v) => (
+                    <tr key={v.id} className="hover:bg-blue-50/30 transition">
+                      <td className="py-3.5 px-4 font-black text-slate-900 text-sm whitespace-nowrap">
+                        🏢 {v.customer || v.client || v.company || "Client Account"}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="font-extrabold text-slate-900">{v.person || v.contactPerson || "Contact Person"}</div>
+                        <div className="text-[11px] text-slate-500 font-semibold">{v.phone || "—"}</div>
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-700 whitespace-nowrap">
+                        📍 {v.location || v.address || v.city || "Chennai"}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span className="font-extrabold text-slate-800">
+                          📅 {v.date || v.scheduledDate || "Today"} @ {v.time || v.scheduledTime || "10:00 AM"}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${
+                          v.status === "Completed" ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "bg-amber-100 text-amber-800 border-amber-200"
+                        }`}>
+                          {v.status === "Completed" ? "✅ Completed" : "📅 Scheduled"}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-600 font-semibold text-xs leading-snug">
+                        <div className="font-bold text-slate-800">{v.purpose || "Product Demo"}</div>
+                        {v.notes && <div className="text-[11px] text-slate-500 truncate max-w-[200px]">{v.notes}</div>}
+                      </td>
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedVisitForOutcome(v);
+                              setVisitOutcomeForm({
+                                personMet: v.personMet || v.person || v.contactPerson || v.contact || "",
+                                discussionNotes: v.discussionNotes || "",
+                                leadFeedback: v.leadFeedback || "",
+                                outcomeStatus: "Won",
+                                agreedValue: v.value || "₹4,50,000",
+                              });
+                            }}
+                            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs cursor-pointer"
+                          >
+                            📝 Log Outcome
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleMoveFollowupToCustomer(v)}
+                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs cursor-pointer"
+                          >
+                            🎉 Convert
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {myVisits.map((v) => (
@@ -1786,10 +2068,10 @@ export default function Leads() {
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <span
                         className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black border ${v.status === "Completed"
-                            ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                            : v.status === "Checked In"
-                              ? "bg-blue-50 text-blue-700 border-blue-200"
-                              : "bg-amber-50 text-amber-700 border-amber-200"
+                          ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                          : v.status === "Checked In"
+                            ? "bg-blue-50 text-blue-700 border-blue-200"
+                            : "bg-amber-50 text-amber-700 border-amber-200"
                           }`}
                       >
                         {v.status === "Completed" ? "✅ Visit Completed" : v.status === "Checked In" ? "📍 Checked In Live" : "📅 Scheduled Visit"}
@@ -1872,8 +2154,8 @@ export default function Leads() {
                         });
                       }}
                       className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs ${v.status === "Completed"
-                          ? "bg-emerald-600 hover:bg-emerald-700 text-white"
-                          : "bg-blue-600 hover:bg-blue-700 text-white"
+                        ? "bg-emerald-600 hover:bg-emerald-700 text-white"
+                        : "bg-blue-600 hover:bg-blue-700 text-white"
                         }`}
                     >
                       <CheckCircle2 size={15} /> {v.status === "Completed" ? "✅ Visit Completed (View Log)" : "Log Meeting Outcome & Remarks 📝"}
@@ -1894,74 +2176,170 @@ export default function Leads() {
         </div>
       )}
 
-      {/* ── TAB 3: CONVERTED CLIENTS TOGGLE VIEW ─────────────────────────────── */}
-      {activeTab === "converted" && (
+      {/* ── TAB: OPPORTUNITIES & DEALS TOGGLE VIEW ────────────────────── */}
+      {activeTab === "opportunities" && (
         <div className="space-y-5">
-          <div className="bg-emerald-50/80 border border-emerald-200 rounded-3xl p-5 sm:p-6 space-y-2">
-            <h2 className="text-base sm:text-lg font-black text-emerald-950 flex items-center gap-2">
-              <UserCheck className="w-5 h-5 text-emerald-600" /> Converted Customer Accounts
-            </h2>
-            <p className="text-xs sm:text-sm font-medium text-emerald-900">
-              Clients successfully converted into active accounts by you or transferred from follow-up outcomes.
-            </p>
+          <div className="bg-amber-50/80 border border-amber-200 rounded-3xl p-5 sm:p-6 flex flex-wrap items-center justify-between gap-4">
+            <div className="space-y-1">
+              <h2 className="text-base sm:text-lg font-black text-amber-950 flex items-center gap-2">
+                <Briefcase className="w-5.5 h-5.5 text-amber-600" /> Pipeline Deals & Opportunities
+              </h2>
+              <p className="text-xs sm:text-sm font-medium text-amber-900">
+                Track and manage prospect opportunities, product requirements, and deal stages.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsOppModalOpen(true)}
+              className="px-4 py-2.5 rounded-2xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs sm:text-sm shadow-md shadow-amber-600/30 flex items-center gap-2 cursor-pointer transition"
+            >
+              <Plus size={18} /> Add Opportunity
+            </button>
           </div>
 
-          {filteredConvertedLeads.length === 0 ? (
+          {opportunities.length === 0 ? (
             <div className="bg-white rounded-3xl p-10 text-center text-slate-400 font-semibold text-xs sm:text-sm border border-slate-200">
-              No converted customer accounts yet. Convert open leads or follow-up calls to see them here!
+              No active sales opportunities found. Click "Add Opportunity" above to create one!
+            </div>
+          ) : viewMode === "list" ? (
+            <div className="bg-white rounded-3xl border border-amber-200 shadow-xs overflow-x-auto">
+              <table className="w-full text-left font-semibold text-xs text-slate-800">
+                <thead className="border-b border-amber-100 text-amber-900 font-black text-[10px] uppercase tracking-wider bg-amber-50/70">
+                  <tr>
+                    <th className="py-3 px-4">PROSPECT / COMPANY</th>
+                    <th className="py-3 px-4">REQUIREMENT / PRODUCT</th>
+                    <th className="py-3 px-4">CONTACT & PHONE</th>
+                    <th className="py-3 px-4">LOCATION</th>
+                    <th className="py-3 px-4">STAGE</th>
+                    <th className="py-3 px-4">DEAL VALUE</th>
+                    <th className="py-3 px-4 text-right">ACTIONS</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-amber-50">
+                  {opportunities.map((opp) => (
+                    <tr key={opp.id || opp.opportunity_id} className="hover:bg-amber-50/30 transition">
+                      <td className="py-3.5 px-4 font-black text-slate-900 text-sm whitespace-nowrap">
+                        🏢 {opp.customer || opp.company || "Prospect Account"}
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-amber-900 whitespace-nowrap">
+                        {opp.productRequirement || "TwiteConnect CRM"}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <div className="font-extrabold text-slate-900">{opp.contactPerson || "Contact Person"}</div>
+                        <div className="text-[11px] text-slate-500 font-semibold">{opp.phone || "—"}</div>
+                      </td>
+                      <td className="py-3.5 px-4 font-bold text-slate-700 whitespace-nowrap">
+                        📍 {opp.location || opp.address || "Chennai"}
+                      </td>
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 font-black text-[11px] border border-amber-200">
+                          💼 {opp.stage || "Qualification"}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 font-black text-emerald-700 text-sm whitespace-nowrap">
+                        {opp.value || "₹4,50,000"}
+                      </td>
+                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <button
+                          type="button"
+                          onClick={() => handleMoveFollowupToCustomer(opp)}
+                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs cursor-pointer"
+                        >
+                          🎉 Convert to Customer
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-              {filteredConvertedLeads.map((lead) => (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+              {opportunities.map((opp) => (
                 <div
-                  key={lead.id}
-                  className="bg-white rounded-3xl border border-emerald-200 shadow-xs hover:border-emerald-500/50 hover:shadow-md transition p-5 sm:p-6 flex flex-col justify-between space-y-4 min-w-0"
+                  key={opp.id || opp.opportunity_id}
+                  className="bg-white rounded-3xl border border-amber-200/80 shadow-xs hover:border-amber-500/50 hover:shadow-md transition p-5 sm:p-6 flex flex-col justify-between space-y-4 min-w-0"
                 >
-                  <div>
-                    <div className="flex items-start justify-between gap-2">
-                      <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
-                        🎉 Converted Customer
+                  <div className="space-y-3.5">
+                    {/* Header: Stage Badge & Deal Value */}
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-200">
+                        💼 Stage: {opp.stage || "Qualification"}
                       </span>
-                      <span className="text-xs sm:text-sm font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200 shrink-0">
-                        {lead.value || "₹4,50,000"}
+                      <span className="text-xs sm:text-sm font-black text-emerald-700 bg-emerald-50 px-3 py-1 rounded-xl border border-emerald-200">
+                        {opp.value || "₹4,50,000"}
                       </span>
                     </div>
 
-                    <div className="mt-3.5">
-                      <h2 className="text-base sm:text-lg font-black text-slate-900 leading-tight truncate">{lead.company}</h2>
-                      <p className="text-xs sm:text-sm font-semibold text-slate-500 mt-0.5 truncate">{lead.person}</p>
+                    {/* Company Name & Product Requirement */}
+                    <div>
+                      <h2 className="text-base sm:text-lg font-black text-slate-900 leading-tight truncate">
+                        🏢 {opp.customer || opp.company || opp.customer_name || "Enterprise Account"}
+                      </h2>
+                      {opp.productRequirement && (
+                        <p className="text-xs font-bold text-amber-800 bg-amber-50/80 border border-amber-200/60 rounded-lg px-2.5 py-1 mt-1.5 inline-block">
+                          📦 Requirement: {opp.productRequirement}
+                        </p>
+                      )}
                     </div>
 
-                    <div className="space-y-2 mt-3.5 text-xs sm:text-sm font-semibold text-slate-600">
+                    {/* Contact & Location Details */}
+                    <div className="bg-slate-50/80 rounded-2xl p-3.5 border border-slate-200/80 space-y-2 text-xs sm:text-sm font-semibold text-slate-700">
                       <div className="flex items-center gap-2">
-                        <Phone size={14} className="text-teal-600 shrink-0" />
-                        <span className="truncate">{lead.phone || "N/A"}</span>
+                        <User size={14} className="text-amber-600 shrink-0" />
+                        <span>Contact Person: <strong className="text-slate-900">{opp.contactPerson || opp.person || "Point of Contact"}</strong></span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <Mail size={14} className="text-teal-600 shrink-0" />
-                        <span className="truncate">{lead.email || "N/A"}</span>
+
+                      {opp.phone && (
+                        <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60">
+                          <Phone size={14} className="text-teal-600 shrink-0" />
+                          <span className="text-slate-800 font-bold">{opp.phone}</span>
+                        </div>
+                      )}
+
+                      <div className="flex items-start gap-2 pt-1 border-t border-slate-200/60">
+                        <MapPin size={14} className="text-blue-600 shrink-0 mt-0.5" />
+                        <span>Location: <strong className="text-slate-800">{opp.address || opp.location || opp.city || "Chennai"}</strong></span>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <MapPin size={14} className="text-teal-600 shrink-0" />
-                        <span className="truncate">{lead.city || "Chennai"}</span>
+
+                      <div className="flex items-center gap-2 pt-1 border-t border-slate-200/60 text-xs">
+                        <span className="text-slate-400 font-bold">Source:</span>
+                        <span className="font-extrabold text-teal-700 bg-teal-50 px-2 py-0.5 rounded border border-teal-200">{opp.source || "Field Research (SE)"}</span>
                       </div>
                     </div>
 
-                    {lead.notes && (
-                      <div className="mt-4 p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-xs">
-                        <p className="font-extrabold text-amber-900 uppercase tracking-wider text-[10px]">Remarks / Notes:</p>
-                        <p className="text-slate-800 font-semibold mt-1 line-clamp-2">{lead.notes}</p>
+                    {/* Remarks */}
+                    {(opp.remarks || opp.notes) && (
+                      <div className="p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-xs">
+                        <p className="font-extrabold text-amber-900 uppercase tracking-wider text-[10px]">RESEARCH NOTES / REMARKS:</p>
+                        <p className="text-slate-800 font-semibold mt-1 leading-relaxed">{opp.remarks || opp.notes}</p>
                       </div>
                     )}
                   </div>
 
-                  <div className="pt-2">
+                  {/* Actions */}
+                  <div className="pt-2 flex flex-col sm:flex-row gap-2">
                     <button
                       type="button"
-                      onClick={() => navigate("/sales/customers")}
-                      className="w-full py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs sm:text-sm flex items-center justify-center gap-2 transition cursor-pointer shadow-xs"
+                      onClick={() => {
+                        setAddForm({
+                          company: opp.customer || opp.company || "",
+                          person: opp.contactPerson || opp.person || "",
+                          phone: opp.phone || "",
+                          email: opp.email || "",
+                          city: opp.address || opp.location || "Chennai",
+                          category: "Hot",
+                          priority: "High",
+                          value: opp.value || "₹4,50,000",
+                          source: opp.source || "Field Research (SE)",
+                          notes: opp.remarks || opp.notes || "",
+                        });
+                        setIsAddModalOpen(true);
+                      }}
+                      className="flex-1 py-2.5 px-3 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
                     >
-                      <UserCheck size={16} /> View Full Customer Profile
+                      <Plus size={14} /> Add as Active Lead 🚀
                     </button>
                   </div>
                 </div>
@@ -1970,6 +2348,8 @@ export default function Leads() {
           )}
         </div>
       )}
+
+
 
       {/* ── POST-VISIT MEETING OUTCOME & REMARKS LOG MODAL ────────────────── */}
       {selectedVisitForOutcome && (
@@ -2382,18 +2762,18 @@ export default function Leads() {
                     type="button"
                     onClick={() => handleChangeCategory(selectedLead.id, "Hot")}
                     className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-1 transition ${selectedLead.category === "Hot"
-                        ? "bg-rose-500 text-white border-rose-600 shadow-xs"
-                        : "bg-white text-rose-700 border-rose-200 hover:bg-rose-50"
+                      ? "bg-emerald-600 text-white border-emerald-700 shadow-xs"
+                      : "bg-white text-emerald-700 border-emerald-200 hover:bg-emerald-50"
                       }`}
                   >
-                    🔥 HOT Lead
+                    🟢 HOT Lead
                   </button>
                   <button
                     type="button"
                     onClick={() => handleChangeCategory(selectedLead.id, "Warm")}
                     className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-1 transition ${selectedLead.category === "Warm"
-                        ? "bg-amber-500 text-white border-amber-600 shadow-xs"
-                        : "bg-white text-amber-700 border-amber-200 hover:bg-amber-50"
+                      ? "bg-amber-500 text-white border-amber-600 shadow-xs"
+                      : "bg-white text-amber-700 border-amber-200 hover:bg-amber-50"
                       }`}
                   >
                     ⚡ WARM Lead
@@ -2402,11 +2782,11 @@ export default function Leads() {
                     type="button"
                     onClick={() => handleChangeCategory(selectedLead.id, "Cold")}
                     className={`py-2 px-3 rounded-xl border flex items-center justify-center gap-1 transition ${selectedLead.category === "Cold"
-                        ? "bg-sky-500 text-white border-sky-600 shadow-xs"
-                        : "bg-white text-sky-700 border-sky-200 hover:bg-sky-50"
+                      ? "bg-rose-500 text-white border-rose-600 shadow-xs"
+                      : "bg-white text-rose-700 border-rose-200 hover:bg-rose-50"
                       }`}
                   >
-                    ❄️ COLD Lead
+                    🔴 COLD Lead
                   </button>
                 </div>
               </div>
@@ -2501,6 +2881,89 @@ export default function Leads() {
                 </div>
               )}
 
+              {/* Visit scheduling form expansion */}
+              {showVisitForm && (
+                <div className="p-4 rounded-2xl bg-teal-50 border border-teal-200 space-y-3 animate-fadeIn">
+                  <span className="text-xs font-black text-teal-900 uppercase tracking-wider block">
+                    📍 Fill Details to Schedule Site Visit:
+                  </span>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-semibold">
+                    <div>
+                      <label className="text-teal-900 font-bold block mb-1">Visit Date</label>
+                      <input
+                        type="date"
+                        required
+                        value={visitDate}
+                        onChange={(e) => setVisitDate(e.target.value)}
+                        className="w-full border border-teal-200 rounded-xl p-2.5 bg-white text-slate-900 font-extrabold focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-teal-900 font-bold block mb-1">Preferred Time</label>
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="text"
+                          placeholder="10:00"
+                          value={visitTimeCustom}
+                          onChange={(e) => setVisitTimeCustom(e.target.value)}
+                          className="w-full border border-teal-200 rounded-xl p-2.5 bg-white text-slate-900 font-extrabold focus:outline-none text-xs"
+                        />
+                        <div className="flex bg-teal-200/70 p-0.5 rounded-xl border border-teal-300 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setVisitTimePeriod("AM")}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                              visitTimePeriod === "AM" ? "bg-teal-700 text-white shadow-xs" : "text-teal-900 hover:bg-teal-200"
+                            }`}
+                          >
+                            AM
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setVisitTimePeriod("PM")}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                              visitTimePeriod === "PM" ? "bg-teal-700 text-white shadow-xs" : "text-teal-900 hover:bg-teal-200"
+                            }`}
+                          >
+                            PM
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs font-semibold">
+                    <div>
+                      <label className="text-teal-900 font-bold block mb-1">Location / Address</label>
+                      <input
+                        type="text"
+                        value={visitLocation}
+                        onChange={(e) => setVisitLocation(e.target.value)}
+                        className="w-full border border-teal-200 rounded-xl p-2.5 bg-white text-slate-900 font-extrabold focus:outline-none"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-teal-900 font-bold block mb-1">Visit Purpose</label>
+                      <input
+                        type="text"
+                        value={visitPurpose}
+                        onChange={(e) => setVisitPurpose(e.target.value)}
+                        className="w-full border border-teal-200 rounded-xl p-2.5 bg-white text-slate-900 font-extrabold focus:outline-none"
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <label className="text-teal-900 font-bold block mb-1">Additional Remarks</label>
+                    <textarea
+                      rows="2"
+                      value={visitRemarks}
+                      onChange={(e) => setVisitRemarks(e.target.value)}
+                      placeholder="Agreed to show product demo at client site..."
+                      className="w-full border border-teal-200 rounded-xl p-2.5 bg-white text-slate-900 font-semibold focus:outline-none text-xs"
+                    />
+                  </div>
+                </div>
+              )}
+
               {/* 4 LEAD OUTCOME ACTIONS */}
               <div className="pt-3 border-t border-slate-100 space-y-3">
                 <span className="text-xs font-black text-slate-500 uppercase tracking-wider block">
@@ -2511,72 +2974,75 @@ export default function Leads() {
                   {/* Action 1: Convert Customer */}
                   <button
                     type="button"
-                    onClick={() => {
-                      const custId = `cust_${Date.now()}`;
-                      const newCustomer = {
-                        id: custId,
-                        leadId: selectedLead.id,
-                        leadNumber: selectedLead.leadNumber || selectedLead.id?.toString().slice(0, 12).toUpperCase(),
-                        name: selectedLead.company,
-                        company: selectedLead.company,
-                        contactPerson: selectedLead.person,
-                        phone: selectedLead.phone,
-                        email: selectedLead.email,
-                        city: selectedLead.city,
-                        status: "Active Customer",
-                        packageTier: "Enterprise Plan",
-                        reachOutReason: selectedLead.notes || "Converted lead account.",
-                        accountManager: userName,
-                        onboardingRemarks: seRemarkInput.trim() || `Converted by ${userName}`,
-                        contractValue: selectedLead.value || "₹4,50,000",
-                      };
-
+                    onClick={async () => {
                       try {
-                        const customers = JSON.parse(localStorage.getItem("tc_customer_accounts") || "[]");
-                        localStorage.setItem("tc_customer_accounts", JSON.stringify([newCustomer, ...customers]));
+                        // Store in localStorage immediately for instant UI feedback
+                        const custLocalId = `cust_${Date.now()}`;
+                        const genLeadNum = selectedLead.leadNumber || selectedLead.id?.toString().slice(0, 12).toUpperCase();
+                        const newCustomer = {
+                          id: custLocalId,
+                          customer_id: custLocalId,
+                          leadId: selectedLead.id,
+                          leadNumber: genLeadNum,
+                          name: selectedLead.company,
+                          company: selectedLead.company,
+                          person: selectedLead.person,
+                          contact_person: selectedLead.person,
+                          phone: selectedLead.phone,
+                          email: selectedLead.email || `${(selectedLead.company || '').toLowerCase().replace(/\s+/g, '')}@example.com`,
+                          city: selectedLead.city || "Chennai",
+                          status: "Active Customer",
+                          packageTier: "Enterprise Suite",
+                          reachOutReason: seRemarkInput.trim() || "Converted Customer Account",
+                          accountManager: userName,
+                          assigned_to: userName,
+                          assigned_to_email: userEmail,
+                          onboardingRemarks: `Converted directly from Leads list by ${userName}.`,
+                          contractValue: selectedLead.value || "₹4,50,000",
+                        };
 
-                        const notifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
-                        const smNotif = {
+                        // Save to localStorage for offline view
+                        const customers = JSON.parse(localStorage.getItem("tc_customer_accounts") || "[]");
+                        localStorage.setItem("tc_customer_accounts", JSON.stringify([newCustomer, ...customers.filter(c => c.name !== selectedLead.company)]));
+
+                        // Manager notification
+                        const existingNotifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
+                        localStorage.setItem("tc_app_notifications", JSON.stringify([{
                           id: `notif_${Date.now()}`,
                           recipientRole: "manager",
-                          title: `🎉 Lead Converted by ${userName}`,
-                          message: `${userName} converted lead "${selectedLead.company}" into an active Customer Account!`,
-                          time: "Just now",
-                          read: false,
-                          type: "Customer",
-                        };
-                        localStorage.setItem("tc_app_notifications", JSON.stringify([smNotif, ...notifs]));
-                      } catch (e) { }
+                          title: `🎉 Deal Won & Converted by ${userName}`,
+                          message: `${userName} converted "${newCustomer.name}" into active Customer Account (${selectedLead.value || '₹4,50,000'})!`,
+                          time: "Just now", read: false, type: "Customer",
+                        }, ...existingNotifs]));
 
-                      // Persist in Supabase
-                      customerAPI.createCustomer({
-                        id: custId,
-                        name: selectedLead.company,
-                        person: selectedLead.person,
-                        phone: selectedLead.phone,
-                        email: selectedLead.email,
-                        city: selectedLead.city,
-                        notes: selectedLead.notes
-                      }).then((savedCust) => {
-                        const realId = savedCust?.customer_id || custId;
-                        setAllLeads((prev) =>
-                          prev.map((l) => l.id === selectedLead.id
-                            ? { ...l, status: "Converted to Customer", customerId: realId }
-                            : l
-                          )
-                        );
-                      }).catch(() => {
-                        setAllLeads((prev) =>
-                          prev.map((l) => l.id === selectedLead.id
-                            ? { ...l, status: "Converted to Customer", customerId: custId }
-                            : l
-                          )
-                        );
-                      });
+                        // Persist to Supabase via backend — use convertLeadToCustomer so
+                        // the backend receives a proper lead_id and resolves the UUID correctly
+                        await crmAPI.convertLeadToCustomer(selectedLead.id, {
+                          name: newCustomer.name,
+                          company_name: newCustomer.company,
+                          contact_person: newCustomer.person,
+                          phone: newCustomer.phone,
+                          email: newCustomer.email,
+                          city: newCustomer.city,
+                          address: newCustomer.city,
+                          notes: newCustomer.reachOutReason,
+                          assigned_to: userName,
+                          assigned_to_email: userEmail,
+                        });
 
-                      setSelectedLead(null);
-                      showToast(`🎉 "${selectedLead.company}" converted to Customer Account!`, "success");
-                      setTimeout(() => navigate("/sales/customers"), 600);
+                        // Remove lead from local active list
+                        setAllLeads((prev) => prev.filter((l) => l.id !== selectedLead.id));
+                        setSelectedLead(null);
+                        showToast(`🎉 "${selectedLead.company}" converted to Customer and saved in Supabase! Moving to Customer page...`, "success");
+                        setTimeout(() => navigate("/sales/customers"), 500);
+                      } catch (err) {
+                        console.warn("Customer conversion error:", err);
+                        // Still mark lead converted in local state and navigate
+                        setAllLeads((prev) => prev.filter((l) => l.id !== selectedLead.id));
+                        setSelectedLead(null);
+                        showToast(`"${selectedLead.company}" converted locally. Check your connection.`, "info");
+                        setTimeout(() => navigate("/sales/customers"), 500);
+                      }
                     }}
                     className="py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center gap-2 transition cursor-pointer shadow-sm"
                   >
@@ -2595,69 +3061,23 @@ export default function Leads() {
                   {/* Action 3: Schedule Visit */}
                   <button
                     type="button"
-                    onClick={async () => {
-                      const newVisitId = `vst_${Date.now()}`;
-                      const newVisit = {
-                        id: newVisitId,
-                        customerName: selectedLead.company,
-                        clientName: selectedLead.company,
-                        contactPerson: selectedLead.person,
-                        phone: selectedLead.phone,
-                        location: selectedLead.city,
-                        visitDate: formatDate(new Date()),
-                        status: "Scheduled",
-                        purpose: "Site Visit / Product Demo",
-                        remark: seRemarkInput.trim() || "Visit scheduled from Lead outcome.",
-                        executiveName: userName,
-                        assignedToEmail: userEmail,
-                      };
-
-                      const payload = {
-                        visit_id: newVisitId,
-                        lead_id: selectedLead.id,
-                        client_name: selectedLead.company,
-                        company_name: selectedLead.company,
-                        purpose: "Site Visit / Product Demo",
-                        visit_date: newVisit.visitDate,
-                        visit_time: "10:00 AM",
-                        location: selectedLead.city || "Chennai",
-                        employee_name: userName,
-                        employee_id: currentUser?.employee_id || null,
-                        assigned_to_email: userEmail,
-                        status: "SCHEDULED",
-                        visit_status: "SCHEDULED",
-                        notes: seRemarkInput.trim() || "Visit scheduled from Lead outcome."
-                      };
-                      console.log("[VISIT FRONTEND] createVisit payload:", payload);
-
-                      try {
-                        // Persist in Supabase first
-                        await visitAPI.createVisit(payload);
-
-                        // Update localStorage and UI state only if API call succeeds
-                        try {
-                          const visits = JSON.parse(localStorage.getItem("tc_sales_visits") || "[]");
-                          localStorage.setItem("tc_sales_visits", JSON.stringify([newVisit, ...visits]));
-                          
-                          const smVisits = JSON.parse(localStorage.getItem("tc_sm_visits") || "[]");
-                          localStorage.setItem("tc_sm_visits", JSON.stringify([newVisit, ...smVisits]));
-                        } catch (e) { }
-
-                        setAllLeads((prev) =>
-                          prev.map((l) => (l.id === selectedLead.id ? { ...l, status: "Follow-up / Visit Scheduled" } : l))
-                        );
-
-                        setSelectedLead(null);
-                        showToast(`📅 Site Visit scheduled for "${selectedLead.company}"!`, "success");
-                        setTimeout(() => navigate("/sales/visits"), 600);
-                      } catch (err) {
-                        console.error("Supabase visits persistence failed:", err);
-                        showToast(`❌ Failed to save visit in database: ${err?.message || "Network Error"}`, "error");
+                    onClick={() => {
+                      if (!showVisitForm) {
+                        setVisitLocation(selectedLead.city || "");
+                        setVisitRemarks(seRemarkInput || "");
+                        setShowVisitForm(true);
+                        setShowFollowupForm(false);
+                      } else {
+                        handleConfirmScheduleVisit(selectedLead);
                       }
                     }}
-                    className="py-3.5 px-4 rounded-2xl bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-300 flex items-center justify-center gap-2 transition cursor-pointer"
+                    className={`py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 transition cursor-pointer font-black ${
+                      showVisitForm
+                        ? "bg-teal-600 hover:bg-teal-700 text-white shadow-md shadow-teal-600/30"
+                        : "bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-300"
+                    }`}
                   >
-                    <Calendar size={18} /> Schedule Visit 📅
+                    <CalendarPlus size={18} /> Schedule Visit 📅
                   </button>
 
                   {/* Action 4: Mark Lost */}
@@ -2815,6 +3235,172 @@ export default function Leads() {
                 Close Audit Timeline
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── ADD OPPORTUNITY MODAL (SE Field Prospecting / Pipeline Discovery) ── */}
+      {isOppModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl border border-slate-200 animate-scaleUp">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5 mb-4">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
+                  <Briefcase size={20} />
+                </div>
+                <div>
+                  <h2 className="text-lg font-black text-slate-900 leading-tight">Log New Sales Opportunity</h2>
+                  <p className="text-xs text-slate-500 font-semibold">Capture field prospect requirement & intelligence.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOppModalOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleAddOpportunity} className="space-y-3.5 text-xs sm:text-sm">
+              {/* Company Name & Source */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-extrabold mb-1">Company / Client Name (*Required)</label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Acme Tech Solutions"
+                    value={oppForm.companyName}
+                    onChange={(e) => setOppForm({ ...oppForm, companyName: e.target.value })}
+                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-extrabold mb-1">Lead / Opp Source</label>
+                  <select
+                    value={oppForm.source}
+                    onChange={(e) => setOppForm({ ...oppForm, source: e.target.value })}
+                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm cursor-pointer"
+                  >
+                    <option value="Field Research (SE)">Field Research (SE)</option>
+                    <option value="Cold Visit">Cold Visit</option>
+                    <option value="Inbound Enquiry">Inbound Enquiry</option>
+                    <option value="Client Referral">Client Referral</option>
+                    <option value="LinkedIn Outreach">LinkedIn Outreach</option>
+                    <option value="Custom">Custom / Other Source</option>
+                  </select>
+                </div>
+
+                {oppForm.source === "Custom" && (
+                  <div className="sm:col-span-2">
+                    <label className="block text-amber-900 font-extrabold mb-1">Specify Custom Source (*Required)</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="e.g. Trade Expo 2026 / Partner Event / WhatsApp Campaign"
+                      value={oppForm.customSource || ""}
+                      onChange={(e) => setOppForm({ ...oppForm, customSource: e.target.value })}
+                      className="w-full h-10 border border-amber-300 rounded-xl px-3 bg-amber-50/50 font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
+                    />
+                  </div>
+                )}
+              </div>
+
+              {/* Product Requirement & Deal Value */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-extrabold mb-1">Product / Requirement (*Why reach out)</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. GPS Tracking Software, CRM Enterprise"
+                    value={oppForm.productRequirement}
+                    onChange={(e) => setOppForm({ ...oppForm, productRequirement: e.target.value })}
+                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-extrabold mb-1">Estimated Deal Value (₹)</label>
+                  <input
+                    type="text"
+                    placeholder="450000"
+                    value={oppForm.value}
+                    onChange={(e) => setOppForm({ ...oppForm, value: e.target.value })}
+                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Contact Person & Phone */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-extrabold mb-1">Point of Contact</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Rajesh Kumar (MD)"
+                    value={oppForm.contactPerson}
+                    onChange={(e) => setOppForm({ ...oppForm, contactPerson: e.target.value })}
+                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-extrabold mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    placeholder="+91 98765 43210"
+                    value={oppForm.phone}
+                    onChange={(e) => setOppForm({ ...oppForm, phone: e.target.value })}
+                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+              </div>
+
+              {/* Location */}
+              <div>
+                <label className="block text-slate-700 font-extrabold mb-1">Location / Address (*Required)</label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Guindy Industrial Estate, Chennai"
+                  value={oppForm.location}
+                  onChange={(e) => setOppForm({ ...oppForm, location: e.target.value })}
+                  className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500"
+                />
+              </div>
+
+              {/* Remarks */}
+              <div>
+                <label className="block text-slate-700 font-extrabold mb-1">Remarks / Research Notes (*Required)</label>
+                <textarea
+                  rows="3"
+                  required
+                  placeholder="e.g. Researched prospect needing 30 GPS units for sales fleet..."
+                  value={oppForm.remarks}
+                  onChange={(e) => setOppForm({ ...oppForm, remarks: e.target.value })}
+                  className="w-full border border-slate-200 rounded-xl p-3 bg-white font-medium focus:outline-none focus:border-amber-500 text-xs"
+                />
+              </div>
+
+              {/* Submit Action */}
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setIsOppModalOpen(false)}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 text-slate-700 font-bold hover:bg-slate-200 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 rounded-xl bg-amber-600 text-white font-extrabold hover:bg-amber-700 transition cursor-pointer shadow-md shadow-amber-600/20"
+                >
+                  Save Opportunity 🎯
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

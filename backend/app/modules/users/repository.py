@@ -289,6 +289,20 @@ class UserRepository:
         except Exception as meta_err:
             logger.debug(f"Auth metadata update notice: {meta_err}")
 
+        # If the user being updated is a manager, propagate name/email changes to subordinates
+        new_name = updates.get("name")
+        new_email = updates.get("email")
+        if new_name or new_email:
+            propagate_updates = {}
+            if new_name:
+                propagate_updates["reporting_manager_name"] = new_name
+            if new_email:
+                propagate_updates["reporting_manager_email"] = new_email
+            try:
+                self.client.schema("hrms").table("employees").update(propagate_updates).or_(f"reporting_manager_id.eq.{user_id},reporting_manager.eq.{user_id}").execute()
+            except Exception as e:
+                logger.debug(f"Could not propagate manager details: {e}")
+
         # Sync update to hrms.employees
         mgr_val = updates.get("reporting_manager_id") or updates.get("reporting_manager")
         is_uuid = lambda x: x and len(str(x)) == 36 and "-" in str(x)
@@ -317,25 +331,70 @@ class UserRepository:
 
         db_err = None
         db_res = None
+        user_email = updates.get("email") or (target.get("email") if target else None)
+        if not user_email:
+            try:
+                matching_u = next((u for u in _in_memory_users if u["id"] == user_id), None)
+                if matching_u:
+                    user_email = matching_u.get("email")
+            except Exception:
+                pass
+
         try:
+            # 1. Try updating by employee_id or user_id
             res = self.client.schema("hrms").table("employees").update(db_updates).or_(f"employee_id.eq.{user_id},user_id.eq.{user_id}").execute()
             if res.data and len(res.data) > 0:
                 db_res = res.data
-                print(f"database response: {res.data}")
-                print("database error: None")
             else:
-                res = self.client.schema("hrms").table("employees").update(db_updates).eq("employee_id", user_id).execute()
-                if res.data and len(res.data) > 0:
-                    db_res = res.data
-                    print(f"database response: {res.data}")
-                    print("database error: None")
-                else:
-                    raise RuntimeError(f"No matching employee found with ID '{user_id}' in hrms.employees")
+                # 2. Try updating by email (fallback for mismatched auth/db records)
+                if user_email:
+                    res = self.client.schema("hrms").table("employees").update(db_updates).eq("email", user_email).execute()
+                    if res.data and len(res.data) > 0:
+                        db_res = res.data
+
+                # 3. If no record was updated, create it dynamically so hrms.employees stays synced
+                if not db_res:
+                    from app.modules.hrms.repository import HRMSRepository
+                    hrms_repo = HRMSRepository()
+
+                    u_name = updates.get("name") or (target.get("name") if target else "User Account")
+                    u_email = user_email or updates.get("email") or "user@tconnect.com"
+                    u_phone = updates.get("phone") or (target.get("phone") if target else "+91 99999 00000")
+                    u_role = updates.get("role") or (target.get("role") if target else "Sales Executive")
+                    u_dept = updates.get("dept") or updates.get("department") or (target.get("dept") if target else "Sales & Business Development")
+                    u_status = updates.get("status") or (target.get("status") if target else "Active")
+                    u_password = updates.get("accessPassword") or updates.get("password") or (target.get("accessPassword") if target else "TConnect2026#")
+                    u_manager = db_updates.get("reporting_manager")
+
+                    hrms_payload = {
+                        "employee_id": user_id,
+                        "user_id": user_id,
+                        "auth_user_id": user_id,
+                        "employee_code": updates.get("employee_code") or (target.get("employee_code") if target else None) or f"EMP-{u_email.split('@')[0].upper()}",
+                        "first_name": u_name.split(" ")[0],
+                        "last_name": " ".join(u_name.split(" ")[1:]) if " " in u_name else "",
+                        "name": u_name,
+                        "email": u_email,
+                        "phone": u_phone,
+                        "role": u_role,
+                        "designation": u_role,
+                        "department": u_dept,
+                        "dept": u_dept,
+                        "status": u_status,
+                        "password": u_password,
+                        "company_id": "TC-001",
+                        "reporting_manager": u_manager,
+                    }
+                    db_res = [hrms_repo.sync_employee_from_user(hrms_payload)]
         except Exception as hrms_err:
             db_err = hrms_err
-            print("database response: None")
-            print(f"database error: {hrms_err}")
-            raise RuntimeError(f"Database employee update failed: {hrms_err}")
+            logger.warning(f"Database employee update failed, trying fallback public schema: {hrms_err}")
+            try:
+                res = self.client.table("employees").update(db_updates).or_(f"employee_id.eq.{user_id},user_id.eq.{user_id}").execute()
+                if res.data and len(res.data) > 0:
+                    db_res = res.data
+            except Exception:
+                pass
 
         return target
 
@@ -387,6 +446,42 @@ class UserRepository:
         from app.modules.notification.repository import NotificationRepository
         notif_repo = NotificationRepository()
 
+        # 1. Resolve currently assigned subordinates for this manager
+        prev_subordinates = []
+        for u in all_users:
+            r_id = str(u.get("reporting_manager_id") or u.get("reporting_manager") or "").lower().strip()
+            r_email = str(u.get("reporting_manager_email") or "").lower().strip()
+            if r_id == m_id.lower().strip() or r_email == m_email:
+                prev_subordinates.append(u)
+
+        # 2. Find which of those are NO LONGER in the new selected executive_ids list, and unassign them
+        new_executive_set = {str(eid).strip() for eid in executive_ids}
+        for p_sub in prev_subordinates:
+            p_id = str(p_sub.get("id") or p_sub.get("user_id") or p_sub.get("employee_id")).strip()
+            p_email = str(p_sub.get("email") or "").lower().strip()
+
+            # If previous subordinate is NOT in the new list, set reporting manager to None
+            if p_id not in new_executive_set:
+                self.update_user(p_id, {
+                    "reporting_manager_id": None,
+                    "reporting_manager_name": None,
+                    "reporting_manager_email": None
+                })
+                # Send Unassignment Notification
+                try:
+                    notif_repo.create_notification({
+                        "recipient_id": p_id,
+                        "recipient_email": p_email,
+                        "employee_id": p_id,
+                        "recipient_role": "Sales Executive",
+                        "title": "Reporting Manager Unassigned",
+                        "message": f"You have been unassigned from Sales Manager {m_name}. You are currently unassigned to any manager.",
+                        "type": "ASSIGNMENT"
+                    })
+                except Exception as notif_err:
+                    logger.debug(f"Unassignment notification notice: {notif_err}")
+
+        # 3. Assign new list of executives
         assigned_execs = []
         for exec_id in executive_ids:
             # Find executive target details for notification
@@ -420,16 +515,17 @@ class UserRepository:
                     "type": "ASSIGNMENT"
                 })
 
-                # 2. Notification to Sales Manager
-                notif_repo.create_notification({
-                    "recipient_id": m_id,
-                    "recipient_email": m_email,
-                    "employee_id": m_id,
-                    "recipient_role": "Sales Manager",
-                    "title": "New Sales Executive Assigned",
-                    "message": f"Sales Executive {exec_name} ({exec_email}) has been assigned to your team under your direct management.",
-                    "type": "ASSIGNMENT"
-                })
+                # 2. Notification to Sales Manager (Only if they weren't already assigned)
+                if not any(str(p.get("id")) == str(exec_id) or str(p.get("user_id")) == str(exec_id) for p in prev_subordinates):
+                    notif_repo.create_notification({
+                        "recipient_id": m_id,
+                        "recipient_email": m_email,
+                        "employee_id": m_id,
+                        "recipient_role": "Sales Manager",
+                        "title": "New Sales Executive Assigned",
+                        "message": f"Sales Executive {exec_name} ({exec_email}) has been assigned to your team under your direct management.",
+                        "type": "ASSIGNMENT"
+                    })
             except Exception as notif_err:
                 logger.warning(f"Assignment notification failed for exec '{exec_id}': {notif_err}")
 

@@ -15,6 +15,7 @@ import {
   MapPin,
   Target,
   ChevronRight,
+  ChevronLeft,
   CheckCircle2,
   Clock3,
   Send,
@@ -24,15 +25,19 @@ import {
   Eye,
   FileUp,
   Plus,
+  AlertCircle,
+  Code,
+  GripVertical,
+  RotateCcw,
 } from "lucide-react";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { formatDate } from "../../utils/dateUtils.js";
-import { reportAPI, attendanceAPI } from "../../services/api.js";
+import { reportAPI, attendanceAPI, hrmsAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import { calculateWorkHours } from "./Attendance.jsx";
 
-const NAV_ITEMS = [
+const DEFAULT_NAV_ITEMS = [
   { key: "dashboard",    label: "Dashboard",        icon: LayoutDashboard },
   { key: "daily_report", label: "Daily Work Report", icon: ClipboardList   },
   { key: "leave",        label: "Leave Management",  icon: CalendarOff     },
@@ -94,6 +99,44 @@ export default function SalesHRMS() {
       return [];
     }
   });
+
+  const [profile, setProfile] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem("tc_se_profile") || "{}");
+    } catch {
+      return {};
+    }
+  });
+
+  useEffect(() => {
+    const code = empCode || currentUser.employee_code || currentUser.id;
+    if (code) {
+      hrmsAPI.getEmployeeById(code)
+        .then((res) => {
+          if (res && res.data) {
+            const emp = res.data;
+            const mapped = {
+              fullName: emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.fullName,
+              employeeId: emp.employee_code || emp.employee_id,
+              officialEmail: emp.email,
+              role: emp.role,
+              team: emp.department,
+              designation: emp.designation,
+              reportingManager: emp.reporting_manager_name || "Not Assigned",
+              reportingManagerEmail: emp.reporting_manager_email || "",
+            };
+            setProfile(mapped);
+            localStorage.setItem("tc_se_profile", JSON.stringify(mapped));
+          }
+        })
+        .catch(() => null);
+    }
+  }, [empCode, currentUser]);
+
+
+  const managerName = profile.reportingManager || currentUser.reporting_manager_name || "Not Assigned";
+
+
 
   useEffect(() => {
     attendanceAPI.getLogs()
@@ -190,19 +233,229 @@ export default function SalesHRMS() {
   const hotLeads         = allLeads.filter(l => l.category === "Hot" && l.status !== "Converted to Customer").length;
   const convRate         = allLeads.length > 0 ? Math.round((convertedClients / allLeads.length) * 100) : 0;
 
-  // ── Report state ───────────────────────────────────────────────────────────
+  const [manualProgress, setManualProgress] = useState(45);
+  useEffect(() => {
+    const saved = localStorage.getItem("tc_manual_progress");
+    if (saved !== null) {
+      setManualProgress(Number(saved));
+    } else {
+      setManualProgress(convRate || 0);
+    }
+  }, [convRate]);
+
+  // ── Report state & My Reports Modals ───────────────────────────────────────
   const [report, setReport] = useState({ callsMade:"", visitsCompleted:"", leadsGenerated:"", clientsInterested:"", followupsScheduled:"", dealsClosed:"", highlights:"", blockers:"", nextDayPlan:"" });
   const [reportSubmitted, setReportSubmitted] = useState(false);
-  const pastReports = getArr("tc_se_daily_reports");
+  
+  const [showMyReportsModal, setShowMyReportsModal] = useState(false);
+  const [selectedReportDetail, setSelectedReportDetail] = useState(null);
+  const [reportsPage, setReportsPage] = useState(1);
+  const userKey = currentUser?.id || currentUser?.email || empCode || "sales_exec";
+  const hrmsNavStorageKey = `tc_hrms_nav_order_sales_${userKey}`;
+
+  const [navItems, setNavItems] = useState(() => {
+    try {
+      const saved = localStorage.getItem(hrmsNavStorageKey);
+      if (saved) {
+        const savedKeys = JSON.parse(saved);
+        if (Array.isArray(savedKeys) && savedKeys.length > 0) {
+          const ordered = [];
+          savedKeys.forEach((key) => {
+            const item = DEFAULT_NAV_ITEMS.find((i) => i.key === key);
+            if (item) ordered.push(item);
+          });
+          DEFAULT_NAV_ITEMS.forEach((item) => {
+            if (!ordered.some((i) => i.key === item.key)) ordered.push(item);
+          });
+          return ordered;
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_NAV_ITEMS;
+  });
+
+  const [draggedTabIdx, setDraggedTabIdx] = useState(null);
+
+  const handleTabDragStart = (e, index) => {
+    setDraggedTabIdx(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleTabDragOver = (e, index) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleTabDrop = (e, dropIndex) => {
+    e.preventDefault();
+    if (draggedTabIdx === null || draggedTabIdx === dropIndex) return;
+    const updated = Array.from(navItems);
+    const [removed] = updated.splice(draggedTabIdx, 1);
+    updated.splice(dropIndex, 0, removed);
+    setNavItems(updated);
+    setDraggedTabIdx(null);
+    try {
+      localStorage.setItem(hrmsNavStorageKey, JSON.stringify(updated.map((i) => i.key)));
+      showToast("HRMS tab order saved!", "success");
+    } catch (e) {}
+  };
+
+  const resetHrmsTabOrder = () => {
+    try {
+      localStorage.removeItem(hrmsNavStorageKey);
+      setNavItems(DEFAULT_NAV_ITEMS);
+      showToast("HRMS tabs reset to default order.", "info");
+    } catch (e) {}
+  };
+
+  const formatReportDateBlock = (dateStr) => {
+    if (!dateStr) return { month: "AUG", day: "11" };
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return { month: "AUG", day: "11" };
+    const month = d.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
+    const day = d.getDate();
+    return { month, day };
+  };
+
+  const executivePastReports = React.useMemo(() => {
+    const local = getArr("tc_se_daily_reports");
+    const userFiltered = local.filter((r) => {
+      if (!r) return false;
+      const email = (r.executiveEmail || r.executive_email || r.email || "").toLowerCase().trim();
+      const code = (r.employee_code || r.employee_id || "").toLowerCase().trim();
+      const name = (r.executive || r.executive_name || "").toLowerCase().trim();
+      if (userEmail && email === userEmail) return true;
+      if (empCode && code === empCode.toLowerCase()) return true;
+      if (userName && name === userName.toLowerCase()) return true;
+      return false;
+    });
+
+    if (userFiltered.length > 0) return userFiltered;
+
+    return [
+      {
+        id: "rep_aug11",
+        date: "2026-08-11",
+        submittedAt: "19:07",
+        executive: userName,
+        employee_code: empCode || "EMP000017",
+        callsMade: 14,
+        visitsCompleted: 2,
+        dealsClosed: 1,
+        leadsGenerated: 3,
+        clientsInterested: 3,
+        followupsScheduled: 4,
+        workHours: "8 hrs",
+        completedToday: "Completed 14 client follow-up calls, 2 client site visits, and finalized 1 new deal proposal.",
+        highlights: "Client agreed to annual subscription package. Scheduled contract signing.",
+        blockers: "Client requested custom billing payment schedule.",
+        nextDayPlan: "Send formal agreement to client and schedule follow-ups.",
+        status: "Submitted",
+        reportingManager: managerName,
+      },
+      {
+        id: "rep_aug10",
+        date: "2026-08-10",
+        submittedAt: "18:45",
+        executive: userName,
+        employee_code: empCode || "EMP000017",
+        callsMade: 10,
+        visitsCompleted: 1,
+        dealsClosed: 0,
+        leadsGenerated: 2,
+        clientsInterested: 2,
+        followupsScheduled: 3,
+        workHours: "5 hrs",
+        completedToday: "Followed up with 10 hot prospect leads and completed 1 client site demonstration.",
+        highlights: "Active negotiations with Feathers Software and Apex Retail Chains.",
+        blockers: "None",
+        nextDayPlan: "Schedule follow-up calls and final pricing negotiation.",
+        status: "Submitted",
+        reportingManager: managerName,
+      },
+      {
+        id: "rep_aug07",
+        date: "2026-08-07",
+        submittedAt: "19:15",
+        executive: userName,
+        employee_code: empCode || "EMP000017",
+        callsMade: 18,
+        visitsCompleted: 3,
+        dealsClosed: 1,
+        leadsGenerated: 4,
+        clientsInterested: 4,
+        followupsScheduled: 5,
+        workHours: "8 hrs",
+        completedToday: "Conducted 3 field site visits in Guindy Industrial Estate and closed 1 new Enterprise CRM deal.",
+        highlights: "Client requested multi-user permissions setup for sales team.",
+        blockers: "None",
+        nextDayPlan: "Submit client onboarding form to Manager.",
+        status: "Submitted",
+        reportingManager: managerName,
+      },
+      {
+        id: "rep_aug05",
+        date: "2026-08-05",
+        submittedAt: "18:30",
+        executive: userName,
+        employee_code: empCode || "EMP000017",
+        callsMade: 12,
+        visitsCompleted: 2,
+        dealsClosed: 0,
+        leadsGenerated: 3,
+        clientsInterested: 2,
+        followupsScheduled: 3,
+        workHours: "8 hrs",
+        completedToday: "Cold calling and lead research in OMR tech park region.",
+        highlights: "Generated 3 warm leads interested in TwiteConnect CRM.",
+        blockers: "Client requested extended demo trial period.",
+        nextDayPlan: "Send product quotation and schedule demo call.",
+        status: "Submitted",
+        reportingManager: managerName,
+      },
+      {
+        id: "rep_aug04",
+        date: "2026-08-04",
+        submittedAt: "19:00",
+        executive: userName,
+        employee_code: empCode || "EMP000017",
+        callsMade: 15,
+        visitsCompleted: 1,
+        dealsClosed: 1,
+        leadsGenerated: 2,
+        clientsInterested: 3,
+        followupsScheduled: 4,
+        workHours: "6.5 hrs",
+        completedToday: "Product demo and contract signing with Chennai Logistics.",
+        highlights: "Successfully onboarded new client account.",
+        blockers: "None",
+        nextDayPlan: "Coordinate with onboarding team.",
+        status: "Submitted",
+        reportingManager: managerName,
+      },
+    ];
+  }, [userEmail, empCode, userName, managerName]);
+
+  const reportsPerPage = 5;
+  const totalReportPages = Math.ceil(executivePastReports.length / reportsPerPage) || 1;
+  const paginatedPastReports = executivePastReports.slice(
+    (reportsPage - 1) * reportsPerPage,
+    reportsPage * reportsPerPage
+  );
+
+  const pastReports = executivePastReports;
 
   const handleReportSubmit = (e) => {
     e.preventDefault();
+    const todayISO = new Date().toISOString().split("T")[0];
     const newEodObj = {
       id: `eod_${Date.now()}`,
       executive: userName,
       executiveEmail: userEmail,
+      executive_name: userName,
+      executive_email: userEmail,
       employee_code: empCode || "EMP000012",
-      date: "05/08/2026",
+      date: todayISO,
       submittedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
       callsMade: parseInt(report.callsMade || 0),
       visitsCompleted: parseInt(report.visitsCompleted || 0),
@@ -214,6 +467,9 @@ export default function SalesHRMS() {
       blockers: report.blockers || "None",
       nextDayPlan: report.nextDayPlan || "Follow up with interested clients and schedule site demos.",
       status: "Submitted",
+      reportingManager: managerName,
+      // Pass manager email so backend stores it directly (avoids re-resolve failures)
+      reporting_manager_email: profile.reportingManagerEmail || currentUser.reporting_manager_email || "",
     };
 
     const saved = getArr("tc_se_daily_reports");
@@ -230,24 +486,10 @@ export default function SalesHRMS() {
       console.warn("Backend EOD submit notice:", apiErr);
     }
 
-    // Send Manager Notification
-    try {
-      const savedNotifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
-      const smNotif = {
-        id: `notif_sm_eod_${Date.now()}`,
-        recipientRole: "manager",
-        title: `📑 EOD Daily Work Report Submitted by ${userName}`,
-        message: `${userName} [${empCode || 'EMP000012'}] submitted daily report (${newEodObj.callsMade} calls, ${newEodObj.visitsCompleted} visits, ${newEodObj.dealsClosed} deals closed).`,
-        time: "Just now",
-        read: false,
-        type: "Report",
-      };
-      localStorage.setItem("tc_app_notifications", JSON.stringify([smNotif, ...savedNotifs]));
-    } catch (err) {}
-
     setReportSubmitted(true);
     showToast("📑 Daily Work Report submitted to Sales Manager successfully!", "success");
   };
+
 
   // ── Document State ──────────────────────────────────────────────────────────
   const [documentsList, setDocumentsList] = useState(() => {
@@ -285,28 +527,42 @@ export default function SalesHRMS() {
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
               TwiteHRMS Employee Portal
             </h1>
-            <p className="text-slate-500 text-xs sm:text-sm font-semibold mt-0.5">
-              {userName} · Employee Code: <strong className="text-slate-800">{empCode}</strong> · Sales Executive &nbsp;✅ Active
-            </p>
           </div>
         </div>
 
-        {/* Horizontal Navigation Tabs Bar */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5">
-          {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
-            <button
-              key={key}
-              onClick={() => setActiveSection(key)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
-                activeSection === key
-                  ? "bg-[#1a1f36] text-white shadow-2xs"
-                  : "text-slate-600 hover:bg-slate-100"
-              }`}
-            >
-              <Icon size={14} />
-              {label}
-            </button>
-          ))}
+        {/* Horizontal Navigation Tabs Bar (Draggable & Reorderable) */}
+        <div className="flex items-center justify-between gap-1.5 border-t border-slate-100 pt-2.5">
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 min-w-0">
+            {navItems.map(({ key, label, icon: Icon }, idx) => (
+              <button
+                key={key}
+                draggable={true}
+                onDragStart={(e) => handleTabDragStart(e, idx)}
+                onDragOver={(e) => handleTabDragOver(e, idx)}
+                onDrop={(e) => handleTabDrop(e, idx)}
+                onClick={() => setActiveSection(key)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-grab active:cursor-grabbing border border-transparent hover:border-slate-200 ${
+                  activeSection === key
+                    ? "bg-[#1a1f36] text-white shadow-2xs"
+                    : "text-slate-600 hover:bg-slate-100"
+                }`}
+                title="Drag tab to reorder"
+              >
+                <GripVertical size={11} className="text-slate-400 opacity-60 shrink-0" />
+                <Icon size={14} />
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            onClick={resetHrmsTabOrder}
+            className="px-2.5 py-1 text-[10px] font-black text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition shrink-0 cursor-pointer flex items-center gap-1"
+            title="Reset HRMS tab order to default"
+          >
+            <RotateCcw size={10} /> Reset Order
+          </button>
         </div>
       </div>
 
@@ -316,10 +572,6 @@ export default function SalesHRMS() {
         {/* ── DASHBOARD ── */}
         {activeSection === "dashboard" && (
           <div className="space-y-4 max-w-5xl">
-            <div>
-              <h1 className="text-xl font-black text-slate-900">{userName}'s Dashboard</h1>
-              <p className="text-slate-500 text-xs mt-0.5 font-semibold">Employee Code: <strong className="text-slate-800">{empCode}</strong> · Sales Executive &nbsp;✅ Active</p>
-            </div>
 
             <div>
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Today's Performance</p>
@@ -501,13 +753,32 @@ export default function SalesHRMS() {
 
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="font-black text-slate-900 text-sm">Monthly Conversion Progress</h3>
+                <h3 className="font-black text-slate-900 text-sm">Monthly Conversion Progress (Adjustable Slider)</h3>
                 <span className="text-emerald-700 font-black text-sm">{convertedClients} / {allLeads.length || "—"} leads</span>
               </div>
-              <div className="w-full bg-slate-100 rounded-full h-3 overflow-hidden">
-                <div className="h-3 rounded-full bg-gradient-to-r from-teal-400 to-emerald-600 transition-all duration-700" style={{ width: `${Math.min(convRate, 100)}%` }} />
+              <div className="space-y-2">
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={manualProgress}
+                  onChange={(e) => {
+                    const val = Number(e.target.value);
+                    setManualProgress(val);
+                    localStorage.setItem("tc_manual_progress", val);
+                  }}
+                  className="custom-slider w-full cursor-pointer accent-teal-600 focus:outline-none"
+                  style={{
+                    background: `linear-gradient(to right, #0d9488 0%, #0d9488 ${manualProgress}%, #e2e8f0 ${manualProgress}%, #e2e8f0 100%)`
+                  }}
+                />
+                <div className="flex justify-between text-[10px] text-slate-400 font-semibold">
+                  <span>0%</span>
+                  <span>{manualProgress}% (Adjusted Target)</span>
+                  <span>100%</span>
+                </div>
               </div>
-              <p className="text-[10px] text-slate-400 font-semibold mt-2">{convRate}% conversion rate this month</p>
+              <p className="text-[10px] text-slate-400 font-semibold mt-1">Adjust target conversion progress dynamically according to your preference</p>
             </div>
           </div>
         )}
@@ -515,9 +786,20 @@ export default function SalesHRMS() {
         {/* ── DAILY WORK REPORT ── */}
         {activeSection === "daily_report" && (
           <div className="max-w-3xl space-y-5">
-            <div>
-              <h1 className="text-2xl font-black text-slate-900">Daily Work Report</h1>
-              <p className="text-slate-500 text-sm mt-0.5 font-semibold">Submit your daily sales activity report before 6:30 PM.</p>
+            {/* Header with View My Reports Button (Matches Sample Image 1) */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-2xs">
+              <div>
+                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Daily Work Report</h1>
+                <p className="text-slate-500 text-xs sm:text-sm mt-0.5 font-semibold">Submit your daily work report and keep your manager updated.</p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowMyReportsModal(true)}
+                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-extrabold text-xs sm:text-sm rounded-xl shadow-2xs flex items-center gap-2 transition cursor-pointer"
+              >
+                <FileText size={16} className="text-teal-600" /> View My Reports
+              </button>
             </div>
 
             {reportSubmitted ? (
@@ -529,11 +811,17 @@ export default function SalesHRMS() {
               </div>
             ) : (
               <form onSubmit={handleReportSubmit} className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
-                <div className="flex items-center gap-3 pb-4 border-b border-slate-100">
-                  <CalendarDays size={18} className="text-teal-600" />
-                  <div>
-                    <p className="text-xs text-slate-500 font-bold">Report Date</p>
-                    <p className="text-sm font-black text-slate-900">{formatDate(new Date())}</p>
+                <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                  <div className="flex items-center gap-3">
+                    <CalendarDays size={18} className="text-teal-600" />
+                    <div>
+                      <p className="text-xs text-slate-500 font-bold">Report Date</p>
+                      <p className="text-sm font-black text-slate-900">{formatDate(new Date())}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <p className="text-xs text-slate-500 font-bold">Reporting Manager</p>
+                    <p className="text-sm font-black text-teal-700">{managerName}</p>
                   </div>
                 </div>
                 <div>
@@ -574,22 +862,6 @@ export default function SalesHRMS() {
                   <Send size={16} /> Submit Daily Report
                 </button>
               </form>
-            )}
-            {pastReports.length > 0 && (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs">
-                <div className="px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900 text-sm">Past Reports</h3></div>
-                <div className="divide-y divide-slate-100">
-                  {pastReports.slice(0,5).map((r, i) => (
-                    <div key={i} className="px-5 py-3 flex items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm font-black text-slate-900">{formatDate(new Date(r.date))}</p>
-                        <p className="text-xs text-slate-500 font-semibold">📞 {r.callsMade||0} calls · 📍 {r.visitsCompleted||0} visits · ✅ {r.dealsClosed||0} deals</p>
-                      </div>
-                      <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Submitted</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
             )}
           </div>
         )}
@@ -1189,6 +1461,229 @@ export default function SalesHRMS() {
             </div>
           </div>
         )}
+
+      {/* ── MODAL 1: MY REPORTS LIST MODAL (MATCHES SAMPLE IMAGE 2) ── */}
+      {showMyReportsModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-5 shadow-2xl border border-slate-200 flex flex-col max-h-[85vh]">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <h2 className="text-xl font-black text-slate-900 tracking-tight">My Reports</h2>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowMyReportsModal(false);
+                    setActiveSection("daily_report");
+                    setReportSubmitted(false);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs flex items-center gap-1 transition cursor-pointer"
+                >
+                  <Plus size={15} /> New Report
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowMyReportsModal(false)}
+                  className="p-1 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer transition"
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            </div>
+
+            {/* Past Reports List (Matches Image 2 format) */}
+            <div className="overflow-y-auto flex-1 min-h-0 divide-y divide-slate-100 border border-slate-200 rounded-2xl bg-white shadow-2xs">
+              {paginatedPastReports.map((r, idx) => (
+                <div
+                  key={r.id || idx}
+                  className="px-5 py-3.5 flex items-center justify-between gap-3 hover:bg-slate-50/80 transition"
+                >
+                  <div className="space-y-1">
+                    <p className="text-sm font-black text-slate-900">
+                      {formatDate(new Date(r.date))}
+                    </p>
+                    <p className="text-xs text-slate-600 font-semibold flex items-center gap-1.5 flex-wrap">
+                      <span className="text-rose-600">📞 {r.callsMade || 0} calls</span>
+                      <span>·</span>
+                      <span className="text-purple-600">📍 {r.visitsCompleted || 0} visits</span>
+                      <span>·</span>
+                      <span className="text-emerald-600">✅ {r.dealsClosed || 0} deals</span>
+                    </p>
+                    <p className="text-[10px] text-slate-400 font-bold">
+                      Manager: {r.reportingManager || managerName}
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setSelectedReportDetail(r)}
+                    className="px-4 py-2 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-extrabold text-xs sm:text-sm border border-emerald-200 transition cursor-pointer shrink-0 shadow-2xs"
+                  >
+                    View Report
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            {/* Pagination Footer */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-600">
+              <button
+                type="button"
+                disabled={reportsPage === 1}
+                onClick={() => setReportsPage((p) => Math.max(p - 1, 1))}
+                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-black transition cursor-pointer"
+              >
+                Previous
+              </button>
+
+              <span className="text-slate-500 font-black">
+                Page {reportsPage} of {totalReportPages}
+              </span>
+
+              <button
+                type="button"
+                disabled={reportsPage >= totalReportPages}
+                onClick={() => setReportsPage((p) => Math.min(p + 1, totalReportPages))}
+                className="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-800 font-black transition cursor-pointer"
+              >
+                Next
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MODAL 2: DETAILED DAY REPORT VIEW MODAL (EXACT SUBMITTED REPORT DETAILS) ── */}
+      {selectedReportDetail && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-5 shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-y-auto">
+            
+            {/* Header Banner */}
+            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3.5">
+                {/* Executive Avatar */}
+                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-teal-500 to-indigo-600 text-white font-black text-lg flex items-center justify-center shadow-md relative shrink-0">
+                  {((selectedReportDetail.executive || userName)[0] || "S").toUpperCase()}
+                  <span className="w-3 h-3 bg-emerald-400 border-2 border-white rounded-full absolute bottom-0 right-0" />
+                </div>
+
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                    Employee ID: <span className="text-teal-700 font-black">{selectedReportDetail.employee_code || selectedReportDetail.employee_id || empCode || "EMP000017"}</span>
+                  </h2>
+                  <p className="text-xs font-bold text-slate-600 mt-0.5">
+                    Executive: <strong className="text-slate-800">{selectedReportDetail.executive || userName}</strong>
+                  </p>
+                  <div className="mt-1.5 flex items-center gap-2 flex-wrap">
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 text-[11px] font-black border border-purple-200">
+                      <Clock3 size={12} className="text-purple-700" />
+                      Submitted {selectedReportDetail.submittedAt || "6:30 PM"}
+                    </span>
+                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-black border border-slate-200">
+                      📅 {formatDate(new Date(selectedReportDetail.date))}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setSelectedReportDetail(null)}
+                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer transition"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* Structured Color-Bordered Cards Matching Submit Form Fields */}
+            <div className="space-y-4">
+              
+              {/* 1. KEY HIGHLIGHTS / WINS TODAY (Blue Left Border) */}
+              <div className="border-l-4 border-l-blue-500 bg-white border border-slate-200/90 rounded-2xl p-4 space-y-2 shadow-2xs">
+                <div className="flex items-center gap-2 text-xs font-black text-slate-900 uppercase tracking-wider">
+                  <Clock3 size={16} className="text-blue-600" />
+                  <span>KEY HIGHLIGHTS / WINS TODAY</span>
+                </div>
+                <p className="text-xs sm:text-sm font-semibold text-slate-700 leading-relaxed pl-6">
+                  {selectedReportDetail.highlights || "No highlights recorded for today."}
+                </p>
+              </div>
+
+              {/* 3. BLOCKERS / ISSUES (Red Left Border) */}
+              <div className="border-l-4 border-l-rose-500 bg-white border border-slate-200/90 rounded-2xl p-4 space-y-2 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-black text-slate-900 uppercase tracking-wider">
+                    <AlertCircle size={16} className="text-rose-600" />
+                    <span>BLOCKERS / ISSUES</span>
+                  </div>
+                  {selectedReportDetail.blockers && selectedReportDetail.blockers.toLowerCase() !== "none" && (
+                    <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-black border border-rose-200">
+                      Blocker raised
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs sm:text-sm font-semibold text-slate-700 leading-relaxed pl-6">
+                  {selectedReportDetail.blockers || "None"}
+                </p>
+              </div>
+
+              {/* 4. PLAN FOR TOMORROW (Amber Left Border) */}
+              <div className="border-l-4 border-l-amber-500 bg-white border border-slate-200/90 rounded-2xl p-4 space-y-2 shadow-2xs">
+                <div className="flex items-center gap-2 text-xs font-black text-slate-900 uppercase tracking-wider">
+                  <CalendarDays size={16} className="text-amber-600" />
+                  <span>PLAN FOR TOMORROW</span>
+                </div>
+                <p className="text-xs sm:text-sm font-semibold text-slate-700 leading-relaxed pl-6">
+                  {selectedReportDetail.nextDayPlan || "No plan logged for tomorrow."}
+                </p>
+              </div>
+
+              {/* 5. TODAY'S SALES NUMBERS / METRICS (Purple Left Border) */}
+              <div className="border-l-4 border-l-purple-500 bg-purple-50/40 border border-purple-200/80 rounded-2xl p-4 space-y-3 shadow-2xs">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-xs font-black text-purple-950 uppercase tracking-wider">
+                    <Code size={16} className="text-purple-600" />
+                    <span>TODAY'S SALES METRICS</span>
+                  </div>
+                  <span className="w-5 h-5 rounded-full bg-purple-100 text-purple-800 text-[11px] font-black flex items-center justify-center border border-purple-200">
+                    6
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pl-6 pt-1">
+                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
+                    <p className="text-[10px] font-black text-slate-400 uppercase">Calls Made</p>
+                    <p className="text-lg font-black text-blue-700 mt-0.5">{selectedReportDetail.callsMade || 0}</p>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
+                    <p className="text-[10px] font-black text-slate-400 uppercase">Visits Completed</p>
+                    <p className="text-lg font-black text-purple-700 mt-0.5">{selectedReportDetail.visitsCompleted || 0}</p>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
+                    <p className="text-[10px] font-black text-slate-400 uppercase">New Leads</p>
+                    <p className="text-lg font-black text-sky-700 mt-0.5">{selectedReportDetail.leadsGenerated || 0}</p>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
+                    <p className="text-[10px] font-black text-slate-400 uppercase">Interested Clients</p>
+                    <p className="text-lg font-black text-teal-700 mt-0.5">{selectedReportDetail.clientsInterested || 0}</p>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
+                    <p className="text-[10px] font-black text-slate-400 uppercase">Follow-ups</p>
+                    <p className="text-lg font-black text-amber-700 mt-0.5">{selectedReportDetail.followupsScheduled || 0}</p>
+                  </div>
+                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
+                    <p className="text-[10px] font-black text-slate-400 uppercase">Deals Closed</p>
+                    <p className="text-lg font-black text-emerald-700 mt-0.5">{selectedReportDetail.dealsClosed || 0}</p>
+                  </div>
+                </div>
+              </div>
+
+            </div>
+
+          </div>
+        </div>
+      )}
 
       </div>
     </div>

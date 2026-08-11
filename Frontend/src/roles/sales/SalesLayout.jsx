@@ -36,8 +36,10 @@ import {
   HeartPulse,
   Code2,
   AlertCircle,
+  GripVertical,
+  RotateCcw,
 } from "lucide-react";
-import { notificationAPI } from "../../services/api.js";
+import { notificationAPI, hrmsAPI } from "../../services/api.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { clearUserCache } from "../../utils/userScope.js";
 import TwiteConnectLogo from "../../common/TwiteConnectLogo.jsx";
@@ -90,6 +92,81 @@ const DOCUMENT_DEFAULTS = [
   { id: "doc_se4", name: "Driving License (Field Visit)", status: "pending", fileUrl: null, fileName: "" },
   { id: "doc_se5", name: "Bank Passbook / Cheque", status: "pending", fileUrl: null, fileName: "" },
 ];
+
+// Helper mappings between Supabase snake_case and Frontend camelCase
+const mapDbToFrontend = (emp) => {
+  if (!emp) return {};
+  return {
+    fullName: emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.fullName,
+    employeeId: emp.employee_code || emp.employee_id || emp.employeeId,
+    officialEmail: emp.email || emp.officialEmail,
+    phone: emp.phone || emp.mobile || emp.phone,
+    role: emp.role || emp.role,
+    team: emp.department || emp.team,
+    designation: emp.designation || emp.designation,
+    gender: emp.gender || emp.gender,
+    employmentType: emp.employment_type || emp.employmentType,
+    employmentStatus: emp.is_active ? "Active" : "Inactive",
+    joinDate: emp.joining_date || emp.joinDate,
+    workMode: emp.work_mode || emp.workMode,
+    workLocation: emp.work_location || emp.workLocation,
+    reportingManager: emp.reporting_manager_name || emp.reporting_manager_email || emp.reportingManager,
+    dob: emp.date_of_birth || emp.dob,
+    maritalStatus: emp.marital_status || emp.maritalStatus,
+    bloodGroup: emp.blood_group || emp.bloodGroup,
+    panId: emp.pan_id || emp.panId,
+    personalEmail: emp.personal_email || emp.personalEmail,
+    alternateContact: emp.alternate_contact || emp.alternateContact,
+    currentAddress: emp.current_address || emp.currentAddress,
+    permanentAddress: emp.permanent_address || emp.permanentAddress,
+    primarySkills: emp.primary_skills || emp.primarySkills,
+    secondarySkills: emp.secondary_skills || emp.secondarySkills,
+    tools: emp.tools || emp.tools,
+    emergencyName: emp.emergency_name || emp.emergencyName,
+    emergencyRelationship: emp.emergency_relationship || emp.emergencyRelationship,
+    emergencyContact: emp.emergency_contact || emp.emergencyContact,
+    accountHolder: emp.account_holder || emp.accountHolder,
+    bankName: emp.bank_name || emp.bankName,
+    accountNumber: emp.account_number || emp.accountNumber,
+    ifsc: emp.ifsc || emp.ifsc,
+    branch: emp.branch || emp.branch,
+  };
+};
+
+const mapFrontendToDb = (prof) => {
+  const [first_name, ...last_name_parts] = (prof.fullName || "").split(" ");
+  const last_name = last_name_parts.join(" ") || ".";
+  return {
+    first_name: first_name || "Sales",
+    last_name: last_name || "Executive",
+    name: prof.fullName,
+    phone: prof.phone,
+    mobile: prof.phone,
+    gender: prof.gender,
+    employment_type: prof.employmentType,
+    work_mode: prof.workMode,
+    work_location: prof.workLocation,
+    date_of_birth: prof.dob,
+    marital_status: prof.maritalStatus,
+    blood_group: prof.bloodGroup,
+    pan_id: prof.panId,
+    personal_email: prof.personalEmail,
+    alternate_contact: prof.alternateContact,
+    current_address: prof.currentAddress,
+    permanent_address: prof.permanentAddress,
+    primary_skills: prof.primarySkills,
+    secondary_skills: prof.secondarySkills,
+    tools: prof.tools,
+    emergency_name: prof.emergencyName,
+    emergency_relationship: prof.emergencyRelationship,
+    emergency_contact: prof.emergencyContact,
+    account_holder: prof.accountHolder,
+    bank_name: prof.bankName,
+    account_number: prof.accountNumber,
+    ifsc: prof.ifsc,
+    branch: prof.branch,
+  };
+};
 
 export default function SalesLayout() {
   const { showToast } = useToast();
@@ -167,14 +244,14 @@ export default function SalesLayout() {
   // ── Profile Data State ────────────────────────────────────────────────────
   const [profile, setProfile] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem("tc_se_profile") || "{}");
+      const saved = localStorage.getItem("tc_se_profile");
       return {
         ...PROFILE_DEFAULTS,
         fullName: seName,
         officialEmail: seEmail,
         employeeId: empCode,
         accountHolder: seName,
-        ...saved,
+        ...(saved ? JSON.parse(saved) : {}),
       };
     } catch {
       return { ...PROFILE_DEFAULTS, fullName: seName, officialEmail: seEmail, employeeId: empCode, accountHolder: seName };
@@ -183,25 +260,61 @@ export default function SalesLayout() {
 
   useEffect(() => {
     if (!myProfileOpen) return;
-    setProfile((p) => ({
-      ...p,
-      fullName: p.fullName || seName,
-      officialEmail: p.officialEmail || seEmail,
-      employeeId: p.employeeId || empCode,
-      accountHolder: p.accountHolder || seName,
-    }));
-  }, [myProfileOpen, seName, seEmail, empCode]);
+    
+    // Load local cache immediately
+    try {
+      const saved = localStorage.getItem("tc_se_profile");
+      if (saved) {
+        setProfile(JSON.parse(saved));
+      }
+      const savedPhoto = localStorage.getItem("tc_se_photo");
+      if (savedPhoto) {
+        setProfilePhoto(savedPhoto);
+      }
+    } catch (e) {}
 
-  const saveProfile = () => {
+    // Fetch live data from Supabase
+    const code = empCode || user.employee_code || user.id || "EMP000012";
+    hrmsAPI.getEmployeeById(code)
+      .then((res) => {
+        if (res && res.data) {
+          const emp = res.data;
+          const mapped = {
+            ...PROFILE_DEFAULTS,
+            ...mapDbToFrontend(emp),
+          };
+          setProfile(mapped);
+          localStorage.setItem("tc_se_profile", JSON.stringify(mapped));
+          if (emp.profile_photo) {
+            setProfilePhoto(emp.profile_photo);
+            localStorage.setItem("tc_se_photo", emp.profile_photo);
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not retrieve online profile data:", err);
+      });
+  }, [myProfileOpen, empCode, user.employee_code, user.id]);
+
+  const saveProfile = async () => {
     try {
       localStorage.setItem("tc_se_profile", JSON.stringify(profile));
-    } catch (err) { }
+      const code = empCode || user.employee_code || user.id || "EMP000012";
+      const dbPayload = mapFrontendToDb(profile);
+      if (profilePhoto) {
+        dbPayload.profile_photo = profilePhoto;
+      }
+      await hrmsAPI.updateEmployee(code, dbPayload);
+      showToast("Profile synced online to Supabase!", "success");
+    } catch (err) {
+      console.error(err);
+      showToast("Profile updated locally, online sync failed.", "warning");
+    }
     setEditMode(false);
-    showToast("Profile updated successfully!", "success");
   };
 
-  const fp = (field) =>
-    editMode ? (
+  const fp = (field, readOnly = false) =>
+    editMode && !readOnly ? (
       <input
         value={profile[field] || ""}
         onChange={(e) => setProfile((p) => ({ ...p, [field]: e.target.value }))}
@@ -239,6 +352,83 @@ export default function SalesLayout() {
     } catch (e) { }
   }, [user.email]);
 
+  const DEFAULT_MENUS = [
+    { title: "Dashboard", icon: LayoutDashboard, path: "/sales/dashboard" },
+    { title: "Smart Map", icon: MapPin, path: "/sales/map" },
+    { title: "Leads", icon: Users, path: "/sales/leads" },
+    { title: "Customers", icon: UserCheck, path: "/sales/customers" },
+    { title: "Client Log", icon: ClipboardList, path: "/sales/client-log" },
+    { title: "Attendance", icon: MapPinned, path: "/sales/attendance" },
+    { title: "Expenses", icon: BadgeDollarSign, path: "/sales/expenses" },
+    { title: "HRMS", icon: ShieldCheck, path: "/sales/hrms" },
+    { title: "Tasks", icon: CheckSquare, path: "/sales/todo" },
+  ];
+
+  const userKey = user.id || user.email || user.employee_code || "sales_exec";
+  const sidebarStorageKey = `tc_sidebar_order_sales_${userKey}`;
+
+  const [isCustomizingSidebar, setIsCustomizingSidebar] = useState(false);
+  const [menus, setMenus] = useState(() => {
+    try {
+      const saved = localStorage.getItem(sidebarStorageKey);
+      if (saved) {
+        const savedPaths = JSON.parse(saved);
+        if (Array.isArray(savedPaths) && savedPaths.length > 0) {
+          const ordered = [];
+          savedPaths.forEach((path) => {
+            const found = DEFAULT_MENUS.find((m) => m.path === path || m.title === path);
+            if (found) ordered.push(found);
+          });
+          DEFAULT_MENUS.forEach((m) => {
+            if (!ordered.some((item) => item.path === m.path)) ordered.push(m);
+          });
+          return ordered;
+        }
+      }
+    } catch (e) {}
+    return DEFAULT_MENUS;
+  });
+
+  const [draggedMenuIdx, setDraggedMenuIdx] = useState(null);
+
+  const handleDragStartMenu = (e, index) => {
+    setDraggedMenuIdx(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+
+  const handleDragOverMenu = (e, index) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "move";
+  };
+
+  const handleDropMenu = (e, dropIndex) => {
+    e.preventDefault();
+    if (draggedMenuIdx === null || draggedMenuIdx === dropIndex) return;
+    const updated = Array.from(menus);
+    const [removed] = updated.splice(draggedMenuIdx, 1);
+    updated.splice(dropIndex, 0, removed);
+    setMenus(updated);
+    setDraggedMenuIdx(null);
+  };
+
+  const saveSidebarOrder = () => {
+    try {
+      const paths = menus.map((m) => m.path);
+      localStorage.setItem(sidebarStorageKey, JSON.stringify(paths));
+      setIsCustomizingSidebar(false);
+      showToast("Sidebar menu order saved!", "success");
+    } catch (e) {}
+  };
+
+  const resetSidebarOrder = () => {
+    try {
+      localStorage.removeItem(sidebarStorageKey);
+      setMenus(DEFAULT_MENUS);
+      setIsCustomizingSidebar(false);
+      showToast("Sidebar menu order reset to default.", "info");
+    } catch (e) {}
+  };
+
   useEffect(() => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -253,35 +443,6 @@ export default function SalesLayout() {
     showToast("Logged out successfully", "info");
     window.location.href = "/";
   };
-
-  const menus = [
-    { title: "Dashboard", icon: LayoutDashboard, path: "/sales/dashboard" },
-    { title: "Smart Map", icon: MapPin, path: "/sales/map" },
-    { title: "Leads", icon: Users, path: "/sales/leads" },
-    { title: "Customers", icon: UserCheck, path: "/sales/customers" },
-    { title: "Client Log", icon: ClipboardList, path: "/sales/client-log" },
-    { title: "Attendance", icon: MapPinned, path: "/sales/attendance" },
-    { title: "Expenses", icon: BadgeDollarSign, path: "/sales/expenses" },
-    { title: "HRMS", icon: ShieldCheck, path: "/sales/hrms" },
-    { title: "Tasks", icon: CheckSquare, path: "/sales/todo" },
-  ];
-
-  const Section = ({ icon: Icon, title, color = "teal", children }) => (
-    <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4 shadow-2xs">
-      <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-        <Icon size={16} className={`text-${color}-600`} />
-        <h3 className="font-black text-slate-900 text-sm">{title}</h3>
-      </div>
-      {children}
-    </div>
-  );
-
-  const Field = ({ label, field }) => (
-    <div>
-      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
-      {fp(field)}
-    </div>
-  );
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
@@ -303,25 +464,84 @@ export default function SalesLayout() {
           </button>
         </div>
 
+        {/* Customization Action Bar (Visible when customizing) */}
+        {isCustomizingSidebar && open && (
+          <div className="p-2.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-1.5 shrink-0 animate-fadeIn">
+            <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider">Reorder Menu</span>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={resetSidebarOrder}
+                className="px-2 py-1 text-[10px] font-black bg-white hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 transition cursor-pointer flex items-center gap-1"
+                title="Reset to Default"
+              >
+                <RotateCcw size={10} /> Reset
+              </button>
+              <button
+                type="button"
+                onClick={saveSidebarOrder}
+                className="px-2.5 py-1 text-[10px] font-black bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition cursor-pointer shadow-2xs"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
+
         <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {menus.map((m) => (
-            <NavLink
+          {menus.map((m, idx) => (
+            <div
               key={m.path}
-              to={m.path}
-              onClick={() => isMobile && setOpen(false)}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-black transition ${isActive ? "bg-teal-600 text-white shadow-md shadow-teal-600/30" : "text-slate-600 hover:bg-teal-50 hover:text-teal-900"
-                } ${!open ? "justify-center" : ""}`
-              }
-              title={!open ? m.title : undefined}
+              draggable={isCustomizingSidebar}
+              onDragStart={(e) => handleDragStartMenu(e, idx)}
+              onDragOver={(e) => handleDragOverMenu(e, idx)}
+              onDrop={(e) => handleDropMenu(e, idx)}
+              className={`flex items-center gap-1 rounded-xl transition ${
+                isCustomizingSidebar ? "cursor-grab active:cursor-grabbing hover:bg-amber-100/50 p-0.5 border border-dashed border-amber-300" : ""
+              }`}
             >
-              <m.icon size={18} className="flex-shrink-0" />
-              {open && <span className="truncate">{m.title}</span>}
-            </NavLink>
+              {isCustomizingSidebar && open && (
+                <GripVertical size={14} className="text-amber-600 shrink-0 ml-1 opacity-70" />
+              )}
+              <NavLink
+                to={m.path}
+                onClick={(e) => {
+                  if (isCustomizingSidebar) e.preventDefault();
+                  else if (isMobile) setOpen(false);
+                }}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-black transition flex-1 min-w-0 ${
+                    isActive && !isCustomizingSidebar
+                      ? "bg-teal-600 text-white shadow-md shadow-teal-600/30"
+                      : "text-slate-600 hover:bg-teal-50 hover:text-teal-900"
+                  } ${!open ? "justify-center" : ""}`
+                }
+                title={!open ? m.title : undefined}
+              >
+                <m.icon size={18} className="flex-shrink-0" />
+                {open && <span className="truncate">{m.title}</span>}
+              </NavLink>
+            </div>
           ))}
         </div>
 
-        <div className="p-3 border-t border-slate-100 flex-shrink-0">
+        {/* Bottom Sidebar Footer Controls */}
+        <div className="p-3 border-t border-slate-100 flex-shrink-0 space-y-2">
+          {open && (
+            <button
+              type="button"
+              onClick={() => setIsCustomizingSidebar((prev) => !prev)}
+              className={`w-full py-2 px-3 rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                isCustomizingSidebar
+                  ? "bg-amber-600 text-white shadow-2xs"
+                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
+              }`}
+            >
+              <GripVertical size={14} />
+              {isCustomizingSidebar ? "Cancel Reorder" : "Customize Sidebar"}
+            </button>
+          )}
+
           {open ? (
             <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200">
               {gpsActive ? <Wifi size={16} className="text-green-600 shrink-0" /> : <WifiOff size={16} className="text-slate-400 shrink-0" />}
@@ -334,7 +554,18 @@ export default function SalesLayout() {
               {gpsActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0 ml-auto" />}
             </div>
           ) : (
-            <div className="flex justify-center">
+            <div className="flex flex-col items-center gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setOpen(true);
+                  setIsCustomizingSidebar(true);
+                }}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
+                title="Customize Sidebar"
+              >
+                <GripVertical size={16} />
+              </button>
               {gpsActive ? <Wifi size={18} className="text-green-600" /> : <WifiOff size={18} className="text-slate-400" />}
             </div>
           )}
@@ -586,65 +817,65 @@ export default function SalesLayout() {
               {/* Work Details */}
               <Section icon={Briefcase} title="Work Details">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                  <Field label="Full Name" field="fullName" />
-                  <Field label="Employee ID" field="employeeId" />
-                  <Field label="Official Email" field="officialEmail" />
-                  <Field label="Phone Number" field="phone" />
-                  <Field label="Role" field="role" />
-                  <Field label="Team" field="team" />
-                  <Field label="Designation" field="designation" />
-                  <Field label="Gender" field="gender" />
-                  <Field label="Employment Type" field="employmentType" />
-                  <Field label="Employment Status" field="employmentStatus" />
-                  <Field label="Join Date" field="joinDate" />
-                  <Field label="Work Mode" field="workMode" />
-                  <Field label="Work Location" field="workLocation" />
-                  <Field label="Reporting Manager" field="reportingManager" />
+                  <Field label="Full Name" value={profile.fullName} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, fullName: val }))} />
+                  <Field label="Employee ID" value={profile.employeeId} editMode={editMode} readOnly={true} onChange={(val) => setProfile((p) => ({ ...p, employeeId: val }))} />
+                  <Field label="Official Email" value={profile.officialEmail} editMode={editMode} readOnly={true} onChange={(val) => setProfile((p) => ({ ...p, officialEmail: val }))} />
+                  <Field label="Phone Number" value={profile.phone} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, phone: val }))} />
+                  <Field label="Role" value={profile.role} editMode={editMode} readOnly={true} onChange={(val) => setProfile((p) => ({ ...p, role: val }))} />
+                  <Field label="Team" value={profile.team} editMode={editMode} readOnly={true} onChange={(val) => setProfile((p) => ({ ...p, team: val }))} />
+                  <Field label="Designation" value={profile.designation} editMode={editMode} readOnly={true} onChange={(val) => setProfile((p) => ({ ...p, designation: val }))} />
+                  <Field label="Gender" value={profile.gender} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, gender: val }))} />
+                  <Field label="Employment Type" value={profile.employmentType} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, employmentType: val }))} />
+                  <Field label="Employment Status" value={profile.employmentStatus} editMode={editMode} readOnly={true} onChange={(val) => setProfile((p) => ({ ...p, employmentStatus: val }))} />
+                  <Field label="Join Date" value={profile.joinDate} editMode={editMode} readOnly={true} onChange={(val) => setProfile((p) => ({ ...p, joinDate: val }))} />
+                  <Field label="Work Mode" value={profile.workMode} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, workMode: val }))} />
+                  <Field label="Work Location" value={profile.workLocation} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, workLocation: val }))} />
+                  <Field label="Reporting Manager" value={profile.reportingManager} editMode={editMode} readOnly={true} onChange={(val) => setProfile((p) => ({ ...p, reportingManager: val }))} />
                 </div>
               </Section>
 
               {/* Personal Details */}
               <Section icon={HeartPulse} title="Personal Details">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                  <Field label="Date of Birth" field="dob" />
-                  <Field label="Marital Status" field="maritalStatus" />
-                  <Field label="Blood Group" field="bloodGroup" />
-                  <Field label="PAN ID" field="panId" />
-                  <Field label="Personal Email" field="personalEmail" />
-                  <Field label="Alternate Contact" field="alternateContact" />
+                  <Field label="Date of Birth" value={profile.dob} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, dob: val }))} />
+                  <Field label="Marital Status" value={profile.maritalStatus} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, maritalStatus: val }))} />
+                  <Field label="Blood Group" value={profile.bloodGroup} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, bloodGroup: val }))} />
+                  <Field label="PAN ID" value={profile.panId} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, panId: val }))} />
+                  <Field label="Personal Email" value={profile.personalEmail} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, personalEmail: val }))} />
+                  <Field label="Alternate Contact" value={profile.alternateContact} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, alternateContact: val }))} />
                 </div>
                 <div className="grid grid-cols-1 gap-4 mt-2">
-                  <Field label="Current Address" field="currentAddress" />
-                  <Field label="Permanent Address" field="permanentAddress" />
+                  <Field label="Current Address" value={profile.currentAddress} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, currentAddress: val }))} />
+                  <Field label="Permanent Address" value={profile.permanentAddress} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, permanentAddress: val }))} />
                 </div>
               </Section>
 
               {/* Skills & Technologies */}
               <Section icon={Code2} title="Skills & Technologies">
                 <div className="grid grid-cols-1 gap-4">
-                  <Field label="Primary Skills" field="primarySkills" />
-                  <Field label="Secondary Skills" field="secondarySkills" />
-                  <Field label="Tools & Technologies" field="tools" />
+                  <Field label="Primary Skills" value={profile.primarySkills} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, primarySkills: val }))} />
+                  <Field label="Secondary Skills" value={profile.secondarySkills} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, secondarySkills: val }))} />
+                  <Field label="Tools & Technologies" value={profile.tools} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, tools: val }))} />
                 </div>
               </Section>
 
               {/* Emergency Contact */}
               <Section icon={AlertCircle} title="Emergency Contact" color="rose">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                  <Field label="Name" field="emergencyName" />
-                  <Field label="Relationship" field="emergencyRelationship" />
-                  <Field label="Contact Number" field="emergencyContact" />
+                  <Field label="Name" value={profile.emergencyName} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, emergencyName: val }))} />
+                  <Field label="Relationship" value={profile.emergencyRelationship} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, emergencyRelationship: val }))} />
+                  <Field label="Contact Number" value={profile.emergencyContact} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, emergencyContact: val }))} />
                 </div>
               </Section>
 
               {/* Bank Details */}
               <Section icon={CreditCard} title="Bank Details" color="emerald">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                  <Field label="Account Holder" field="accountHolder" />
-                  <Field label="Bank Name" field="bankName" />
-                  <Field label="Account Number" field="accountNumber" />
-                  <Field label="IFSC Code" field="ifsc" />
-                  <Field label="Branch" field="branch" />
+                  <Field label="Account Holder" value={profile.accountHolder} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, accountHolder: val }))} />
+                  <Field label="Bank Name" value={profile.bankName} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, bankName: val }))} />
+                  <Field label="Account Number" value={profile.accountNumber} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, accountNumber: val }))} />
+                  <Field label="IFSC Code" value={profile.ifsc} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, ifsc: val }))} />
+                  <Field label="Branch" value={profile.branch} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, branch: val }))} />
                 </div>
               </Section>
 
@@ -771,3 +1002,33 @@ export default function SalesLayout() {
     </div>
   );
 }
+
+// ── Root Level Sub-Components (fixes React focus loss bug) ──────────────────
+const Section = ({ icon: Icon, title, color = "teal", children }) => (
+  <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4 shadow-2xs">
+    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+      <Icon size={16} className={`text-${color}-600`} />
+      <h3 className="font-black text-slate-900 text-sm">{title}</h3>
+    </div>
+    {children}
+  </div>
+);
+
+const Field = ({ label, value, editMode, onChange, readOnly = false }) => (
+  <div>
+    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
+    {editMode ? (
+      <input
+        value={value || ""}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={readOnly}
+        readOnly={readOnly}
+        className={`text-sm font-semibold text-slate-900 border-b border-teal-500 focus:outline-none bg-transparent w-full ${
+          readOnly ? "opacity-60 cursor-not-allowed border-dashed border-slate-300" : ""
+        }`}
+      />
+    ) : (
+      <span className="text-sm font-semibold text-slate-900">{value || "—"}</span>
+    )}
+  </div>
+);

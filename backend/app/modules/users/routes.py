@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, status, HTTPException
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
+from app.core.scoping import get_allowed_user_identifiers, is_record_accessible, normalize_user_role
 from app.modules.users.schemas import UserCreate, UserUpdate, UserResponse, AssignManagerRequest
 from app.modules.users.service import UserService
 from app.modules.settings.permissions import CanManageSettings
@@ -14,9 +15,9 @@ def get_service() -> UserService:
 
 
 def _require_admin_or_superadmin(user_payload: dict):
-    role = str(user_payload.get("role") or "").strip().lower()
-    if role not in ("admin", "super admin", "system admin", "ceo", "ceo / founder"):
-        raise ForbiddenException("Only Admin or Super Admin can assign Sales Executives to a Sales Manager.")
+    role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+    if role not in ("admin", "super_admin", "ceo"):
+        raise ForbiddenException("Only Admin or Super Admin/CEO can assign Sales Executives to a Sales Manager.")
 
 
 @router.get("", response_model=StandardResponse)
@@ -24,10 +25,16 @@ async def get_all_users(
     user_payload: dict = Depends(get_current_user_payload),
     service: UserService = Depends(get_service)
 ):
-    """Retrieve all system employee user accounts."""
-    users_list = service.get_users()
+    """Retrieve system employee user accounts scoped to the authenticated user's role and team."""
+    all_users = service.get_users()
+    allowed = get_allowed_user_identifiers(user_payload)
+    if allowed is not None:
+        scoped_users = [u for u in all_users if is_record_accessible(u, allowed)]
+    else:
+        scoped_users = all_users
+
     return StandardResponse.success_response(
-        data=users_list,
+        data=scoped_users,
         message="System user accounts retrieved successfully"
     )
 
@@ -38,7 +45,7 @@ async def assign_sales_executives(
     user_payload: dict = Depends(get_current_user_payload),
     service: UserService = Depends(get_service)
 ):
-    """Assign one or more Sales Executives to a Sales Manager (Admin / Super Admin only)."""
+    """Assign one or more Sales Executives to a Sales Manager (Admin / Super Admin / CEO only)."""
     _require_admin_or_superadmin(user_payload)
     try:
         res = service.assign_sales_executives(data)
@@ -57,7 +64,27 @@ async def get_assigned_executives(
     user_payload: dict = Depends(get_current_user_payload),
     service: UserService = Depends(get_service)
 ):
-    """Get all Sales Executives assigned to a specific Sales Manager."""
+    """Get all Sales Executives assigned to a specific Sales Manager (Manager team isolation enforced)."""
+    caller_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+    caller_id = str(user_payload.get("sub") or user_payload.get("user_id") or "").strip()
+    caller_email = str(user_payload.get("email") or "").lower().strip()
+    caller_code = str(user_payload.get("employee_code") or user_payload.get("employee_id") or "").strip()
+
+    # Sales Executives cannot inspect team assignments
+    if caller_role == "sales_executive":
+        raise ForbiddenException("Sales Executives are not authorized to view team management records.")
+
+    # Sales Managers can ONLY view their own team
+    if caller_role == "sales_manager":
+        m_clean = str(manager_id).lower().strip()
+        is_own_team = (
+            m_clean in (caller_id.lower(), caller_email, caller_code.lower())
+            or caller_id.lower() == m_clean
+            or caller_email == m_clean
+        )
+        if not is_own_team:
+            raise ForbiddenException("Sales Managers can only access their own assigned team members.")
+
     execs = service.get_assigned_executives_for_manager(manager_id)
     return StandardResponse.success_response(
         data=execs,
@@ -72,7 +99,7 @@ async def create_user(
     rbac: None = Depends(CanManageSettings),
     service: UserService = Depends(get_service)
 ):
-    """Create a new employee user portal account with access email and password."""
+    """Create a new employee user portal account."""
     created = service.create_user(data)
     return StandardResponse.success_response(
         data=created,

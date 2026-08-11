@@ -22,19 +22,39 @@ async def get_current_user_payload(
         raise UnauthorizedException(f"Invalid or expired JWT authentication token: {str(e)}")
 
 
+def _normalize_role(role_str: str) -> str:
+    """Normalize role strings safely across system variations."""
+    r = str(role_str or "").lower().strip().replace("_", " ").replace("-", " ")
+    if any(k in r for k in ["super admin", "superadmin", "system admin"]):
+        return "super_admin"
+    if any(k in r for k in ["ceo", "founder"]):
+        return "ceo"
+    if "admin" in r:
+        return "admin"
+    if "manager" in r:
+        return "sales_manager"
+    return "sales_executive"
+
+
 class RequireRoles:
     """
     Dependency guard to check user roles for RBAC.
-    The 'Admin' and 'Super Admin' roles always pass through as they are admin-level access.
+    Normalizes roles safely so Super Admin, CEO, Admin, Manager, and Executive
+    permissions are accurately evaluated without bypassing role-specific restrictions.
     """
     def __init__(self, allowed_roles: List[RoleEnum]):
-        self.allowed_roles = [r.value if hasattr(r, 'value') else r for r in allowed_roles]
+        self.allowed_roles = set()
+        for r in allowed_roles:
+            val = r.value if hasattr(r, 'value') else str(r)
+            self.allowed_roles.add(_normalize_role(val))
 
     async def __call__(self, payload: dict = Depends(get_current_user_payload)) -> None:
-        user_role = payload.get("user_metadata", {}).get("role") or payload.get("role") or "Admin"
-        # Admin and Super Admin roles always have full access
-        if user_role in ("Admin", "Super Admin", "System Admin"):
-            return
-        if user_role and user_role not in self.allowed_roles:
-            raise ForbiddenException(f"User role '{user_role}' does not have access to this resource.")
+        raw_role = payload.get("user_metadata", {}).get("role") or payload.get("role") or "Sales Executive"
+        user_norm_role = _normalize_role(raw_role)
 
+        # Super Admin and CEO always have master access
+        if user_norm_role in ("super_admin", "ceo"):
+            return
+
+        if user_norm_role not in self.allowed_roles:
+            raise ForbiddenException(f"User role '{raw_role}' does not have access to this resource.")

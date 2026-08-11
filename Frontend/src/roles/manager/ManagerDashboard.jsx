@@ -1,1336 +1,1274 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { formatDate } from '../../utils/dateUtils.js'
-import { exportToCSV, exportToExcel, exportToPDF } from '../../utils/exportUtils.js'
-import { useToast } from '../../common/ToastContext.jsx'
-import useCurrentUser from '../../hooks/useCurrentUser.js'
-import { useManagerFilter } from './ManagerFilterContext.jsx'
 import {
-  CalendarDays,
-  PhoneCall,
+  Users,
+  IndianRupee,
   Target,
-  CheckCircle2,
-  TrendingUp,
+  Building2,
   MapPin,
   Clock,
   Plus,
   Download,
-  Filter,
   Search,
   RefreshCw,
-  Navigation,
   Sparkles,
-  Flame,
-  Zap,
-  Snowflake,
-  UserCheck,
-  Building2,
-  Bell,
-  FileText,
-  Route,
-  Activity,
-  Award,
-  ChevronRight,
-  Users,
-  DollarSign,
-  Receipt,
-  UserX,
-  PieChart,
-  Percent,
-  Eye,
-  X,
-  CheckCircle,
-  XCircle,
-  Briefcase,
-  Calendar,
   Phone,
   Mail,
   ShieldCheck,
+  TrendingUp,
+  Award,
+  ChevronRight,
+  Eye,
+  X,
+  FileText,
+  Calendar,
+  UserCheck,
+  AlertCircle,
+  Briefcase,
+  Layers,
+  Activity,
+  Percent,
 } from 'lucide-react'
-
-// Live Sales Executives Data - populated dynamically from assigned team & backend telemetry
-const EXECUTIVE_PROFILES = []
+import { hrmsAPI, crmAPI, customerAPI, visitAPI, salesAPI, attendanceAPI } from '../../services/api.js'
+import { useToast } from '../../common/ToastContext.jsx'
+import useCurrentUser from '../../hooks/useCurrentUser.js'
+import { formatDate, getDateFilterRange, isDateWithinFilterRange } from '../../utils/dateUtils.js'
+import { exportToCSV, exportToExcel, exportToPDF } from '../../utils/exportUtils.js'
+import DateRangeFilter from '../../common/DateRangeFilter.jsx'
 
 export default function ManagerDashboard() {
   const navigate = useNavigate()
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
 
-  const [searchQuery, setSearchQuery] = useState('')
-  const [showExportMenu, setShowExportMenu] = useState(false)
+  const managerId = String(currentUser.id || currentUser.user_id || currentUser.employee_code || '').trim()
+  const managerEmail = (currentUser.email || '').toLowerCase().trim()
+  const managerName = currentUser.name || currentUser.full_name || 'Sales Manager'
+  const todayFormatted = formatDate(new Date())
+
+  // ── Global Date Filter State ────────────────────────────────────────────────
+  const [dateFilterMode, setDateFilterMode] = useState('This Month')
+  const [customStartDate, setCustomStartDate] = useState('')
+  const [customEndDate, setCustomEndDate] = useState('')
+
+  const activeDateRange = useMemo(() => {
+    return getDateFilterRange(dateFilterMode, customStartDate, customEndDate)
+  }, [dateFilterMode, customStartDate, customEndDate])
+
+  // ── Core Raw Data States ────────────────────────────────────────────────────
+  const [allEmployees, setAllEmployees] = useState([])
+  const [allLeads, setAllLeads] = useState([])
+  const [allCustomers, setAllCustomers] = useState([])
+  const [allVisits, setAllVisits] = useState([])
+  const [allTargets, setAllTargets] = useState([])
+  const [allAttendance, setAllAttendance] = useState([])
+  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
-  const [selectedExec, setSelectedExec] = useState(null)
 
-  // Total Leads & Executive Audit Modal States
-  const [showTotalLeadsModal, setShowTotalLeadsModal] = useState(false)
-  const [showTotalExecutiveModal, setShowTotalExecutiveModal] = useState(false)
-  const [leadTempTab, setLeadTempTab] = useState('All') // 'All' | 'Hot' | 'Warm' | 'Cold'
+  // ── UI Modal & Filter States ────────────────────────────────────────────────
+  const [searchQuery, setSearchQuery] = useState('')
+  const [selectedExecutiveDetail, setSelectedExecutiveDetail] = useState(null)
+  const [showAddTargetModal, setShowAddTargetModal] = useState(false)
+  const [showExportMenu, setShowExportMenu] = useState(false)
+  const [activeSection, setActiveSection] = useState(null) // null | 'executives' | 'targets' | 'leads' | 'visits'
+  const [leadTab, setLeadTab] = useState('Hot') // 'Hot' | 'Warm' | 'Cold'
+  const [visitSearch, setVisitSearch] = useState('')
+  const [visitTodayOnly, setVisitTodayOnly] = useState(false)
 
-  // ── Monthly Target Settings State ──────────────────────────────────────────
-  const [targetConfig, setTargetConfig] = useState(() => {
+  // ── Add Target Form State ───────────────────────────────────────────────────
+  const [targetForm, setTargetForm] = useState({
+    executive_id: '',
+    target_amount: 500000,
+    period: 'Monthly',
+    start_date: new Date().toISOString().slice(0, 10),
+    end_date: new Date(new Date().getFullYear(), new Date().getMonth() + 1, 0).toISOString().slice(0, 10),
+    notes: '',
+  })
+
+  // ── Fetch All Live Data on Mount ────────────────────────────────────────────
+  const loadDashboardData = async () => {
     try {
-      const saved = localStorage.getItem('tc_monthly_sales_target')
-      if (saved) return JSON.parse(saved)
-    } catch {}
-    return { revenueTarget: 500000, dealsTarget: 10, visitsTarget: 8, month: 'August 2026' }
-  })
-  const [showTargetModal, setShowTargetModal] = useState(false)
-  const [tempRevenueTarget, setTempRevenueTarget] = useState(targetConfig.revenueTarget)
-  const [tempDealsTarget, setTempDealsTarget] = useState(targetConfig.dealsTarget)
+      setLoading(true)
+      const [empRes, leadsRes, custRes, visitsRes, targetsRes, attRes] = await Promise.allSettled([
+        hrmsAPI.getEmployees(),
+        crmAPI.getLeads(),
+        customerAPI.getCustomers(),
+        visitAPI.getVisits(),
+        salesAPI.getTargets(),
+        attendanceAPI.getLiveAttendance ? attendanceAPI.getLiveAttendance() : Promise.resolve([]),
+      ])
 
-  const handleSaveTarget = (e) => {
-    e?.preventDefault?.()
-    const revNum = Number(tempRevenueTarget) || 500000
-    const dealNum = Number(tempDealsTarget) || 10
-    const newConfig = {
-      ...targetConfig,
-      revenueTarget: revNum,
-      dealsTarget: dealNum,
-      updatedAt: new Date().toISOString(),
-      setBy: managerName || 'Sales Manager'
+      const emps = empRes.status === 'fulfilled' ? (Array.isArray(empRes.value) ? empRes.value : empRes.value?.data || []) : []
+      const leads = leadsRes.status === 'fulfilled' ? (Array.isArray(leadsRes.value) ? leadsRes.value : leadsRes.value?.data || []).map(l => ({ ...l, id: l.lead_id || l.id })) : []
+      const custs = custRes.status === 'fulfilled' ? (Array.isArray(custRes.value) ? custRes.value : custRes.value?.data || []) : []
+      const visits = visitsRes.status === 'fulfilled' ? (Array.isArray(visitsRes.value) ? visitsRes.value : visitsRes.value?.data || []) : []
+      const targets = targetsRes.status === 'fulfilled' ? (Array.isArray(targetsRes.value) ? targetsRes.value : targetsRes.value?.data || []) : []
+      const atts = attRes.status === 'fulfilled' ? (Array.isArray(attRes.value) ? attRes.value : attRes.value?.data || []) : []
+
+      setAllEmployees(emps)
+      setAllLeads(leads)
+      setAllCustomers(custs)
+      setAllVisits(visits)
+      setAllTargets(targets)
+      setAllAttendance(atts)
+    } catch (err) {
+      console.warn('Dashboard data fetch notice:', err)
+    } finally {
+      setLoading(false)
+      setRefreshing(false)
     }
-    setTargetConfig(newConfig)
-    localStorage.setItem('tc_monthly_sales_target', JSON.stringify(newConfig))
-    setShowTargetModal(false)
-    showToast(`🎯 Monthly Sales Target fixed at ₹${revNum.toLocaleString('en-IN')}! Updated on Executive Dashboards.`, 'success')
   }
 
-  // ── Executive Revenue & Incentive Breakdown Modal State ─────────────────────
-  const [showRevenueBreakdownModal, setShowRevenueBreakdownModal] = useState(false)
-  const [executivesList, setExecutivesList] = useState([])
-
-  // Live KPI Dynamic Counters & Leads Data
-  const [liveLeadsList, setLiveLeadsList] = useState([])
-  const [totalLeadsCount, setTotalLeadsCount] = useState(0)
-  const [hotLeadsCount, setHotLeadsCount] = useState(0)
-  const [warmLeadsCount, setWarmLeadsCount] = useState(0)
-  const [coldLeadsCount, setColdLeadsCount] = useState(0)
-  const [totalDealsCount, setTotalDealsCount] = useState(0)
-  const [totalRevenue, setTotalRevenue] = useState(0)
-  const [totalCustomersCount, setTotalCustomersCount] = useState(0)
-  const [totalVisitsCount, setTotalVisitsCount] = useState(0)
-
   useEffect(() => {
-    // Load dynamic executives
-    import('../../services/api.js').then(({ hrmsAPI }) => {
-      hrmsAPI.getEmployees().then((res) => {
-        const raw = Array.isArray(res) ? res : res?.data || []
-        const execs = raw.filter((u) => {
-          const r = (u.role || u.designation || '').toLowerCase()
-          return r.includes('sales') || r.includes('executive') || r.includes('field') || r.includes('se')
-        })
-        if (execs.length > 0) setExecutivesList(execs)
-      }).catch(() => null)
-    })
+    loadDashboardData()
   }, [])
 
   useEffect(() => {
-    // Load live leads summary
-    import('../../services/api.js').then(({ crmAPI, customerAPI, visitAPI }) => {
-      crmAPI.getLeads().then((res) => {
-        const raw = Array.isArray(res) ? res : res?.data || []
-        setLiveLeadsList(raw)
-        setTotalLeadsCount(raw.length)
-        setHotLeadsCount(raw.filter(x => String(x.category || x.priority || '').toLowerCase() === 'hot').length)
-        setWarmLeadsCount(raw.filter(x => String(x.category || x.priority || '').toLowerCase() === 'warm').length)
-        setColdLeadsCount(raw.filter(x => String(x.category || x.priority || '').toLowerCase() === 'cold').length)
-      }).catch(() => {})
-
-      customerAPI.getCustomers().then((res) => {
-        const raw = Array.isArray(res) ? res : res?.data || []
-        setTotalCustomersCount(raw.length)
-      }).catch(() => {})
-
-      visitAPI.getVisits().then((res) => {
-        const raw = Array.isArray(res) ? res : res?.data || []
-        setTotalVisitsCount(raw.length)
-      }).catch(() => {})
-    })
-  }, [])
-
-  // Compute live executive revenue & incentives from live leads and customers
-  const executiveRevenueList = React.useMemo(() => {
-    const execMap = new Map()
-
-    // 1. Seed from dynamic assigned executives
-    executivesList.forEach((ex) => {
-      const key = (ex.email || ex.name || '').toLowerCase().trim()
-      execMap.set(key, {
-        id: ex.id || ex.employee_code,
-        name: ex.name || ex.full_name || 'Sales Executive',
-        email: ex.email || '',
-        code: ex.employee_code || ex.employee_id || 'EMP000012',
-        convertedDeals: 0,
-        totalRevenue: 0,
-        incentiveTier: 'Starter Tier',
-        totalIncentive: 0
-      })
-    })
-
-    // Fallback default executives if list is empty
-    if (execMap.size === 0) {
-      [
-        { name: 'Ashwini E', email: 'ashwini@tconnect.com', code: 'EMP000012' },
-        { name: 'Ravi Kumar', email: 'ravi@tconnect.com', code: 'EMP000014' },
-        { name: 'Karthik S', email: 'karthik@tconnect.com', code: 'EMP000015' }
-      ].forEach((ex) => {
-        execMap.set(ex.email, {
-          id: ex.code,
-          name: ex.name,
-          email: ex.email,
-          code: ex.code,
-          convertedDeals: 0,
-          totalRevenue: 0,
-          incentiveTier: 'Starter Tier',
-          totalIncentive: 0
-        })
-      })
+    if (activeSection) {
+      setTimeout(() => {
+        const el = document.getElementById(`${activeSection}-section`)
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }, 100)
     }
-
-    // 2. Tally won deals and revenue from liveLeadsList
-    liveLeadsList.forEach((lead) => {
-      const isWon = String(lead.status || '').toLowerCase().includes('converted') || String(lead.status || '').toLowerCase().includes('won') || String(lead.status || '').toLowerCase().includes('customer')
-      if (isWon) {
-        const assEmail = (lead.assignedToEmail || lead.assigned_to_email || lead.executiveEmail || lead.email || '').toLowerCase().trim()
-        const assName = (lead.assignedTo || lead.assigned_to || lead.executive || '').toLowerCase().trim()
-        const leadVal = Number(lead.value || lead.deal_value || lead.amount || 25000)
-
-        let matched = false
-        for (let [key, obj] of execMap.entries()) {
-          if (key === assEmail || obj.name.toLowerCase().includes(assName) || (assName && assName.includes(obj.name.toLowerCase()))) {
-            obj.convertedDeals += 1
-            obj.totalRevenue += leadVal
-            matched = true
-            break
-          }
-        }
-        if (!matched && execMap.size > 0) {
-          const firstObj = execMap.values().next().value
-          if (firstObj) {
-            firstObj.convertedDeals += 1
-            firstObj.totalRevenue += leadVal
-          }
-        }
-      }
-    })
-
-    // 3. Calculate Incentives based on closed deals & revenue generated
-    const list = Array.from(execMap.values()).map((ex) => {
-      const deals = ex.convertedDeals
-      let tier = 'Starter Tier (2% / ₹500)'
-      let perDealRate = 500
-      let pctCommission = 0.02
-
-      if (deals >= 15) {
-        tier = 'Senior Tier (5% / ₹2,000)'
-        perDealRate = 2000
-        pctCommission = 0.05
-      } else if (deals >= 5) {
-        tier = 'Mid Tier (3.5% / ₹1,000)'
-        perDealRate = 1000
-        pctCommission = 0.035
-      } else {
-        tier = 'Starter Tier (2% / ₹500)'
-        perDealRate = 500
-        pctCommission = 0.02
-      }
-
-      const flatIncentive = deals * perDealRate
-      const pctIncentive = Math.round(ex.totalRevenue * pctCommission)
-      const finalIncentive = flatIncentive > 0 ? flatIncentive : pctIncentive
-
-      return {
-        ...ex,
-        incentiveTier: tier,
-        totalIncentive: finalIncentive
-      }
-    })
-
-    return list
-  }, [executivesList, liveLeadsList])
-
-  // Day Wise Filter State
-  const [dayFilter, setDayFilter] = useState('Today') // 'Today' | 'Yesterday' | 'This Week' | 'This Month' | 'Custom Date'
-  const [customDate, setCustomDate] = useState('')
-
-  const getGreeting = () => {
-    const hour = new Date().getHours()
-    if (hour < 12) return 'Good Morning'
-    if (hour < 17) return 'Good Afternoon'
-    return 'Good Evening'
-  }
-
-  const managerName = currentUser.name || 'Sales Manager'
-  const todayDate = formatDate(new Date())
-
-  const filteredPerformers = EXECUTIVE_PROFILES.filter((p) => {
-    const searchKw = searchQuery.toLowerCase()
-    return (
-      !searchKw ||
-      p.name.toLowerCase().includes(searchKw) ||
-      p.code.toLowerCase().includes(searchKw) ||
-      p.location.toLowerCase().includes(searchKw)
-    )
-  })
+  }, [activeSection])
 
   const handleRefresh = () => {
     setRefreshing(true)
-    setTimeout(() => {
-      setRefreshing(false)
-      showToast('TwiteConnect live field telemetry refreshed successfully!', 'success')
-    }, 600)
+    loadDashboardData().then(() => {
+      showToast('Dashboard data refreshed live from Supabase!', 'success')
+    })
   }
 
+  // ── 1. DYNAMIC ASSIGNED EXECUTIVES SCOPING (Source of Truth: HRMS Assignment)
+  const assignedExecutives = useMemo(() => {
+    if (!allEmployees.length) return []
+
+    return allEmployees.filter((emp) => {
+      if (!emp) return false
+
+      const empManagerId = String(emp.reporting_manager_id || emp.reporting_manager || '').trim()
+      const empManagerEmail = String(emp.reporting_manager_email || '').toLowerCase().trim()
+      const empManagerName = String(emp.reporting_manager_name || '').toLowerCase().trim()
+
+      const myId = String(currentUser.id || '').trim()
+      const myUserId = String(currentUser.user_id || '').trim()
+      const myCode = String(currentUser.employee_code || '').trim()
+      const myEmail = String(currentUser.email || '').toLowerCase().trim()
+      const myName = String(currentUser.name || currentUser.full_name || '').toLowerCase().trim()
+
+      const idMatch = !!(empManagerId && (
+        (myId && empManagerId === myId) ||
+        (myUserId && empManagerId === myUserId) ||
+        (myCode && empManagerId === myCode)
+      ))
+
+      const emailMatch = !!(empManagerEmail && myEmail && empManagerEmail === myEmail)
+
+      const nameMatch = !!(empManagerName && myName && empManagerName === myName)
+
+      return idMatch || emailMatch || nameMatch
+    })
+  }, [allEmployees, currentUser])
+
+  // Helper set to match records owned by assigned executives
+  const assignedIdentifiers = useMemo(() => {
+    const emails = new Set()
+    const names = new Set()
+    const codes = new Set()
+    const ids = new Set()
+
+    assignedExecutives.forEach((ex) => {
+      if (ex.email) emails.add(ex.email.toLowerCase().trim())
+      if (ex.name || ex.full_name) names.add((ex.name || ex.full_name).toLowerCase().trim())
+      if (ex.employee_code || ex.employee_id) codes.add((ex.employee_code || ex.employee_id).toLowerCase().trim())
+      if (ex.id) ids.add(String(ex.id).trim())
+    })
+
+    return { emails, names, codes, ids }
+  }, [assignedExecutives])
+
+  const matchesAssignedTeam = (item) => {
+    if (!item) return false
+    if (assignedExecutives.length === 0) return true // Fallback if no specific assignment set
+
+    const iEmail = String(item.assigned_to_email || item.assignedToEmail || item.executiveEmail || item.email || '').toLowerCase().trim()
+    const iName = String(item.assigned_to || item.assignedTo || item.executive || item.person || '').toLowerCase().trim()
+    const iCode = String(item.employee_code || item.employee_id || item.employeeId || '').toLowerCase().trim()
+    const iId = String(item.user_id || item.userId || item.executive_id || '').trim()
+
+    if (iEmail && assignedIdentifiers.emails.has(iEmail)) return true
+    if (iCode && assignedIdentifiers.codes.has(iCode)) return true
+    if (iId && assignedIdentifiers.ids.has(iId)) return true
+    if (iName) {
+      for (let n of assignedIdentifiers.names) {
+        if (iName.includes(n) || n.includes(iName)) return true
+      }
+    }
+
+    return false
+  }
+
+  // ── 2. FILTERED TEAM DATA (Within Date Range) ───────────────────────────────
+  const filteredTeamLeads = useMemo(() => {
+    return allLeads.filter((l) => {
+      const match = matchesAssignedTeam(l)
+      const inDate = isDateWithinFilterRange(l.createdAt || l.date || l.created_at, activeDateRange)
+      return match && inDate
+    })
+  }, [allLeads, activeDateRange, assignedIdentifiers])
+
+  const filteredTeamCustomers = useMemo(() => {
+    return allCustomers.filter((c) => {
+      const match = matchesAssignedTeam(c)
+      const inDate = isDateWithinFilterRange(c.created_at || c.onboardDate || c.date, activeDateRange)
+      return match && inDate
+    })
+  }, [allCustomers, activeDateRange, assignedIdentifiers])
+
+  const filteredTeamVisits = useMemo(() => {
+    return allVisits.filter((v) => {
+      const match = matchesAssignedTeam(v)
+      const inDate = isDateWithinFilterRange(v.date || v.visit_date || v.created_at, activeDateRange)
+      return match && inDate
+    })
+  }, [allVisits, activeDateRange, assignedIdentifiers])
+
+  const displayedVisits = useMemo(() => {
+    return filteredTeamVisits.filter((v) => {
+      if (!v) return false
+      const q = visitSearch.toLowerCase().trim()
+      const cName = (v.customer_name || v.company || v.title || '').toLowerCase()
+      const poc = (v.poc_name || v.person || v.contact_person || '').toLowerCase()
+      const execName = (v.assigned_to || v.executive || '').toLowerCase()
+      const execEmail = (v.assigned_to_email || v.email || '').toLowerCase()
+      const loc = (v.location || v.city || v.address || '').toLowerCase()
+      const prod = (v.product || v.product_name || v.title || '').toLowerCase()
+
+      const matchesSearch = !q ||
+        cName.includes(q) ||
+        poc.includes(q) ||
+        execName.includes(q) ||
+        execEmail.includes(q) ||
+        loc.includes(q) ||
+        prod.includes(q)
+
+      let matchesToday = true
+      if (visitTodayOnly) {
+        const todayStr = new Date().toISOString().slice(0, 10) // YYYY-MM-DD
+        const vDateStr = String(v.visit_date || v.visitDate || v.date || '')
+        let vDate = vDateStr.split('T')[0].split(' ')[0]
+        if (vDate.includes('/')) {
+          const parts = vDate.split('/')
+          if (parts.length === 3) {
+            if (parts[2].length === 4) {
+              vDate = `${parts[2]}-${parts[1]}-${parts[0]}`
+            } else if (parts[0].length === 4) {
+              vDate = `${parts[0]}-${parts[1]}-${parts[2]}`
+            }
+          }
+        }
+        matchesToday = vDate === todayStr
+      }
+
+      return matchesSearch && matchesToday
+    })
+  }, [filteredTeamVisits, visitSearch, visitTodayOnly])
+
+  // ── 3. COMBINED TEAM REVENUE CALCULATION ────────────────────────────────────
+  // Formula: SUM(revenue generated by all currently assigned Sales Executives in the selected date range)
+  const totalTeamRevenue = useMemo(() => {
+    let sum = 0
+
+    // Won Leads
+    filteredTeamLeads.forEach((lead) => {
+      const isWon = String(lead.status || '').toLowerCase().match(/won|converted|customer/i)
+      if (isWon) {
+        const valStr = String(lead.value || lead.deal_value || lead.amount || '0').replace(/[₹,]/g, '').trim()
+        const val = parseFloat(valStr) || 0
+        sum += val
+      }
+    })
+
+    // Converted Customers with contract value
+    filteredTeamCustomers.forEach((cust) => {
+      const valStr = String(cust.contractValue || cust.contract_value || cust.revenue || '0').replace(/[₹,]/g, '').trim()
+      const val = parseFloat(valStr) || 0
+      // Avoid double counting if already in won leads
+      if (!cust.lead_id && !cust.leadId) {
+        sum += val
+      }
+    })
+
+    return sum
+  }, [filteredTeamLeads, filteredTeamCustomers])
+
+  // ── 4. SALES TARGET VS ACHIEVED CALCULATIONS ────────────────────────────────
+  const teamTargetsSummary = useMemo(() => {
+    let totalTarget = 0
+
+    // Match targets for assigned executives
+    const relevantTargets = allTargets.filter((t) => {
+      const eEmail = String(t.executive_email || '').toLowerCase().trim()
+      const eId = String(t.executive_id || '').trim()
+      return (eEmail && assignedIdentifiers.emails.has(eEmail)) || (eId && assignedIdentifiers.ids.has(eId))
+    })
+
+    if (relevantTargets.length > 0) {
+      relevantTargets.forEach((t) => {
+        totalTarget += parseFloat(t.target_amount) || 0
+      })
+    } else {
+      // Default baseline based on assigned executives count
+      totalTarget = (assignedExecutives.length || 1) * 500000
+    }
+
+    const achieved = totalTeamRevenue
+    const remaining = Math.max(0, totalTarget - achieved)
+    const achievementPct = totalTarget > 0 ? Math.min(100, Math.round((achieved / totalTarget) * 1000) / 10) : 0
+
+    return {
+      target: totalTarget,
+      achieved,
+      remaining,
+      achievementPct,
+      list: relevantTargets,
+    }
+  }, [allTargets, assignedIdentifiers, assignedExecutives, totalTeamRevenue])
+
+  // ── 5. PER-EXECUTIVE METRIC BREAKDOWN ───────────────────────────────────────
+  const executiveMetricsList = useMemo(() => {
+    return assignedExecutives.map((exec) => {
+      const execEmail = String(exec.email || '').toLowerCase().trim()
+      const execName = String(exec.name || exec.full_name || 'Executive').toLowerCase().trim()
+      const execId = String(exec.id || exec.employee_code || '').trim()
+
+      const matchThisExec = (item) => {
+        const itemEmail = String(item.assigned_to_email || item.assignedToEmail || item.executiveEmail || item.email || '').toLowerCase().trim()
+        const itemName = String(item.assigned_to || item.assignedTo || item.executive || '').toLowerCase().trim()
+        const itemId = String(item.user_id || item.userId || item.executive_id || '').trim()
+
+        if (execEmail && itemEmail === execEmail) return true
+        if (execId && itemId === execId) return true
+        if (execName && (itemName.includes(execName) || execName.includes(itemName))) return true
+        return false
+      }
+
+      // Executive's filtered items
+      const execLeads = filteredTeamLeads.filter(matchThisExec)
+      const execCustomers = filteredTeamCustomers.filter(matchThisExec)
+      const execVisits = filteredTeamVisits.filter(matchThisExec)
+
+      // Revenue generated
+      let execRevenue = 0
+      execLeads.forEach((l) => {
+        if (String(l.status || '').toLowerCase().match(/won|converted|customer/i)) {
+          const v = parseFloat(String(l.value || l.deal_value || l.amount || '0').replace(/[₹,]/g, '')) || 0
+          execRevenue += v
+        }
+      })
+      execCustomers.forEach((c) => {
+        if (!c.lead_id && !c.leadId) {
+          const v = parseFloat(String(c.contractValue || c.contract_value || c.revenue || '0').replace(/[₹,]/g, '')) || 0
+          execRevenue += v
+        }
+      })
+
+      // Target for this executive
+      const targetObj = allTargets.find(
+        (t) => String(t.executive_email || '').toLowerCase().trim() === execEmail || String(t.executive_id || '').trim() === execId
+      )
+      const execTarget = targetObj ? parseFloat(targetObj.target_amount) : 500000
+      const execAchievePct = execTarget > 0 ? Math.min(100, Math.round((execRevenue / execTarget) * 1000) / 10) : 0
+
+      // Attendance status
+      const attRecord = allAttendance.find(
+        (a) => String(a.employee_id || a.employee_code || '').trim() === execId || String(a.email || '').toLowerCase().trim() === execEmail
+      )
+      const attStatus = attRecord ? (attRecord.status || 'Present') : 'Present'
+
+      return {
+        id: exec.id || exec.employee_code,
+        employee_code: exec.employee_code || exec.employee_id || 'EMP-100',
+        name: exec.name || exec.full_name || 'Sales Executive',
+        department: exec.department || exec.dept || 'Sales & BD',
+        designation: exec.designation || exec.role || 'Sales Executive',
+        phone: exec.phone || exec.mobile || '+91 98765 00000',
+        email: exec.email || 'executive@tconnect.com',
+        status: exec.status || 'Active',
+        attendanceStatus: attStatus,
+        leadsCount: execLeads.length,
+        customersCount: execCustomers.length,
+        visitsCount: execVisits.length,
+        revenue: execRevenue,
+        targetAmount: execTarget,
+        achievementPct: execAchievePct,
+        rawEmployee: exec,
+      }
+    })
+  }, [assignedExecutives, filteredTeamLeads, filteredTeamCustomers, filteredTeamVisits, allTargets, allAttendance])
+
+  // Filtered by Search Query
+  const displayedExecutives = useMemo(() => {
+    const q = searchQuery.toLowerCase().trim()
+    if (!q) return executiveMetricsList
+    return executiveMetricsList.filter(
+      (e) =>
+        e.name.toLowerCase().includes(q) ||
+        e.employee_code.toLowerCase().includes(q) ||
+        e.department.toLowerCase().includes(q) ||
+        e.phone.includes(q)
+    )
+  }, [executiveMetricsList, searchQuery])
+
+  // Deduplicated Team Leads (avoids showing duplicates from double-clicks)
+  const deduplicatedTeamLeads = useMemo(() => {
+    const seen = new Set()
+    return filteredTeamLeads.filter((lead) => {
+      if (!lead) return false
+      const exec = String(lead.assigned_to || lead.assignedTo || lead.executive || '').toLowerCase().trim()
+      const client = String(lead.contact_person || lead.contact_name || lead.person || '').toLowerCase().trim()
+      const company = String(lead.company_name || lead.company || '').toLowerCase().trim()
+      const product = String(lead.title || lead.product || lead.product_name || '').toLowerCase().trim()
+
+      const key = `${exec}|${client}|${company}|${product}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [filteredTeamLeads])
+
+  // Leads Filtered by Current Selected Tab (Hot, Warm, Cold)
+  const leadsByTab = useMemo(() => {
+    const getLeadCat = (lead) => {
+      const cat = String(lead.category || lead.priority || lead.status || '').toLowerCase().trim()
+      if (cat.includes('hot') || cat.includes('high') || cat === 'won' || cat === 'converted') return 'hot'
+      if (cat.includes('warm') || cat.includes('medium')) return 'warm'
+      return 'cold'
+    }
+    const target = leadTab.toLowerCase().trim()
+    return deduplicatedTeamLeads.filter((lead) => getLeadCat(lead) === target)
+  }, [deduplicatedTeamLeads, leadTab])
+
+  // ── 6. ADD SALES TARGET HANDLER ─────────────────────────────────────────────
+  const handleCreateTarget = async (e) => {
+    e.preventDefault()
+    if (!targetForm.executive_id) {
+      showToast('Please select a Sales Executive.', 'error')
+      return
+    }
+
+    const selectedExec = assignedExecutives.find(
+      (ex) => String(ex.id || ex.employee_code) === String(targetForm.executive_id)
+    )
+
+    try {
+      const payload = {
+        manager_id: managerId,
+        manager_name: managerName,
+        manager_email: managerEmail,
+        executive_id: targetForm.executive_id,
+        executive_code: selectedExec?.employee_code || selectedExec?.employee_id || 'EMP-100',
+        executive_name: selectedExec?.name || selectedExec?.full_name || 'Sales Executive',
+        executive_email: selectedExec?.email || '',
+        target_amount: Number(targetForm.target_amount) || 500000,
+        period: targetForm.period,
+        start_date: targetForm.start_date,
+        end_date: targetForm.end_date,
+        notes: targetForm.notes,
+        status: 'Active',
+      }
+
+      const res = await salesAPI.createTarget(payload)
+      setAllTargets((prev) => [res, ...prev.filter((t) => t.id !== res.id)])
+      setShowAddTargetModal(false)
+      showToast(`🎯 Sales target of ₹${Number(targetForm.target_amount).toLocaleString('en-IN')} assigned to ${payload.executive_name}! Saved to Supabase.`, 'success')
+    } catch (err) {
+      console.error(err)
+      showToast('Error saving target to Supabase.', 'error')
+    }
+  }
+
+  // ── Quick Actions Data ──────────────────────────────────────────────────────
+  const quickActions = [
+    {
+      title: 'View My Executives',
+      desc: `${assignedExecutives.length} assigned members`,
+      icon: Users,
+      color: 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100',
+      action: () => {
+        setActiveSection('executives')
+        setTimeout(() => {
+          const el = document.getElementById('executives-section')
+          if (el) el.scrollIntoView({ behavior: 'smooth' })
+        }, 100)
+      },
+    },
+    {
+      title: 'Attendance',
+      desc: 'Live biometric & field check-ins',
+      icon: Clock,
+      color: 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100',
+      action: () => navigate('/manager/attendance'),
+    },
+    {
+      title: 'Add Sales Target',
+      desc: 'Set revenue quota in Supabase',
+      icon: Target,
+      color: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',
+      action: () => {
+        setActiveSection('targets')
+        setShowAddTargetModal(true)
+      },
+    },
+    {
+      title: 'View Reports',
+      desc: 'Analytics & EOD reports',
+      icon: FileText,
+      color: 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100',
+      action: () => navigate('/manager/reports'),
+    },
+  ]
+
   return (
-    <div className="space-y-4 font-sans text-slate-900 bg-slate-50 min-h-screen pb-12">
+    <div className="space-y-5 font-sans text-slate-900 bg-slate-50/50 min-h-screen pb-16">
+      {/* ── 1. COMPACT HERO GREETING & GLOBAL DATE FILTER ─────────────────── */}
+      <div className="bg-white border border-slate-200 p-4 sm:p-5 rounded-2xl shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+        <div className="space-y-1">
 
-      {/* ── Enterprise Manager Hero Greeting Header (Thin 1px Border) ── */}
-      <div className="bg-white border border-slate-200 p-4 sm:p-5 rounded-2xl shadow-2xs flex flex-col lg:flex-row lg:items-center justify-between gap-4 relative overflow-hidden">
-        <div className="space-y-1 max-w-2xl relative z-10">
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="bg-[#0c4160] text-white text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border border-[#0c4160] flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-[#f4b41a] animate-pulse" /> {todayDate}
-            </span>
-          </div>
-
-          <h1 className="text-xl lg:text-2xl font-black text-[#1d2731] tracking-tight leading-tight">
-            {getGreeting()}, <span className="text-[#0c4160] font-black">{managerName}</span> 👋
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+            Sales Manager Overview
           </h1>
-
-          <p className="text-[11px] text-slate-500 font-semibold leading-normal">
-            From Lead to Closure — Manage every sales interaction, executive visit, expense approval, and revenue target with TwiteConnect.
+          <p className="text-xs text-slate-500 font-semibold">
+            Track performance, attendance, won revenue, and sales quotas for your assigned sales team.
           </p>
         </div>
 
-        {/* Action Controls */}
-        <div className="flex items-center gap-2 flex-wrap shrink-0 relative z-10">
-          {/* Day Wise Filter Dropdown */}
-          <div className="flex items-center gap-1.5 bg-[#f8fafc] border border-slate-300 rounded-xl px-2.5 py-1.5 text-xs font-black text-[#1d2731]">
-            <CalendarDays size={14} className="text-[#0c4160]" />
-            <span className="text-[10px] font-extrabold text-[#0c4160]">Period:</span>
-            <select
-              value={dayFilter}
-              onChange={(e) => setDayFilter(e.target.value)}
-              className="bg-transparent font-black text-[#1d2731] focus:outline-none cursor-pointer text-xs"
-            >
-              <option value="Today">Today</option>
-              <option value="Yesterday">Yesterday</option>
-              <option value="This Week">This Week</option>
-              <option value="This Month">This Month</option>
-              <option value="Custom Date">Custom Date</option>
-            </select>
-          </div>
-
-          {/* Custom Date Input */}
-          {dayFilter === 'Custom Date' && (
-            <input
-              type="date"
-              value={customDate}
-              onChange={(e) => setCustomDate(e.target.value)}
-              className="h-8 bg-white border border-slate-300 rounded-xl px-2 text-xs font-bold focus:outline-none text-[#1d2731]"
-            />
-          )}
+        {/* Global Date Filter Controls */}
+        <div className="flex flex-wrap items-center gap-2">
+          <DateRangeFilter
+            selectedMode={dateFilterMode}
+            onChangeMode={(mode) => setDateFilterMode(mode)}
+            customStartDate={customStartDate}
+            customEndDate={customEndDate}
+            onApplyCustom={(s, e) => {
+              setCustomStartDate(s)
+              setCustomEndDate(e)
+              setDateFilterMode('Custom')
+            }}
+            onClear={() => {
+              setDateFilterMode('This Month')
+              setCustomStartDate('')
+              setCustomEndDate('')
+            }}
+          />
 
           <button
-            onClick={() => navigate('/manager/attendance')}
-            className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
-          >
-            📹 Mark Attendance
-          </button>
-
-          <button
-            onClick={() => navigate('/manager/team')}
-            className="px-3.5 py-1.5 rounded-xl bg-[#0c4160] hover:bg-[#082d43] text-white font-black text-xs shadow-2xs flex items-center gap-1.5 cursor-pointer transition"
-          >
-            <FileText size={14} /> View Team Reports
-          </button>
-
-          {/* Export Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              className="px-3.5 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs flex items-center gap-1.5 cursor-pointer transition border border-slate-800 shadow-2xs"
-            >
-              <Download size={14} />
-              <span>Export Report</span>
-              <span className="text-[9px]">▼</span>
-            </button>
-
-            {showExportMenu && (
-              <div className="absolute right-0 mt-1.5 w-48 bg-white text-slate-900 border border-slate-200 rounded-xl shadow-2xl z-50 p-1 flex flex-col gap-0.5">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const exportRows = filteredPerformers.map((p) => ({
-                      Representative: p.name,
-                      Field_Visits: p.visits.completed,
-                      Won_Value: p.leads.wonRevenue,
-                      Status: p.status,
-                      Location: p.location,
-                      Report_Date: todayDate,
-                    }))
-                    exportToPDF(`TwiteConnect_Manager_Report_${new Date().toISOString().slice(0, 10)}`, 'TwiteConnect Performance & Field Analytics Report', exportRows)
-                    setShowExportMenu(false)
-                  }}
-                  className="px-3 py-2 rounded-lg text-left text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-900 flex items-center gap-2 transition cursor-pointer"
-                >
-                  📄 Export as PDF
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const exportRows = filteredPerformers.map((p) => ({
-                      Representative: p.name,
-                      Field_Visits: p.visits.completed,
-                      Won_Value: p.leads.wonRevenue,
-                      Status: p.status,
-                      Location: p.location,
-                      Report_Date: todayDate,
-                    }))
-                    exportToExcel(`TwiteConnect_Manager_Report_${new Date().toISOString().slice(0, 10)}.xls`, exportRows)
-                    setShowExportMenu(false)
-                  }}
-                  className="px-3 py-2 rounded-lg text-left text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-900 flex items-center gap-2 transition cursor-pointer"
-                >
-                  📊 Export as Excel (.xls)
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    const exportRows = filteredPerformers.map((p) => ({
-                      Representative: p.name,
-                      Field_Visits: p.visits.completed,
-                      Won_Value: p.leads.wonRevenue,
-                      Status: p.status,
-                      Location: p.location,
-                      Report_Date: todayDate,
-                    }))
-                    exportToCSV(`TwiteConnect_Manager_Report_${new Date().toISOString().slice(0, 10)}.csv`, exportRows)
-                    setShowExportMenu(false)
-                  }}
-                  className="px-3 py-2 rounded-lg text-left text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-900 flex items-center gap-2 transition cursor-pointer"
-                >
-                  📝 Export as CSV (.csv)
-                </button>
-              </div>
-            )}
-          </div>
-
-          <button
+            type="button"
             onClick={handleRefresh}
-            className="p-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 cursor-pointer transition"
-            title="Refresh Field Feed"
+            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition cursor-pointer"
+            title="Refresh Live Data"
           >
-            <RefreshCw size={14} className={refreshing ? 'animate-spin text-amber-700' : ''} />
+            <RefreshCw size={14} className={refreshing ? 'animate-spin text-amber-600' : ''} />
           </button>
         </div>
       </div>
 
-      {/* ── MONTHLY SALES TARGET BAR (MANAGER TARGET SETTING WIDGET) ────── */}
-      <div className="bg-gradient-to-r from-amber-50 via-amber-100/50 to-white border border-amber-300 p-4 rounded-2xl shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
-            <Target size={20} />
+      {/* ── 2. COMPACT, SIMPLE KPI CARDS ──────────────────────────────────── */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+        {/* Card 1: Total Revenue */}
+        <div className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 hover:border-amber-400 transition">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Total Revenue</span>
+            <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+              <IndianRupee size={13} />
+            </div>
           </div>
           <div>
+            <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+              ₹{totalTeamRevenue.toLocaleString('en-IN')}
+            </div>
+            <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5 mt-0.5">
+              <TrendingUp size={11} /> Team Won Sales
+            </span>
+          </div>
+        </div>
+
+        {/* Card 2: Total Leads */}
+        <div
+          onClick={() => setActiveSection(activeSection === 'leads' ? null : 'leads')}
+          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${
+            activeSection === 'leads'
+              ? 'bg-violet-50/70 border-violet-500 ring-2 ring-violet-500/20'
+              : 'bg-white border-slate-200 hover:border-violet-400'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Total Leads</span>
+            <div className="w-6 h-6 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center font-bold animate-pulse">
+              <Layers size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+              {deduplicatedTeamLeads.length}
+            </div>
+            <span className="text-[10px] font-bold text-violet-600 mt-0.5 block">
+              In Selected Period (Click to View)
+            </span>
+          </div>
+        </div>
+
+        {/* Card 3: Total Customers */}
+        <div className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 hover:border-teal-400 transition">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Customers</span>
+            <div className="w-6 h-6 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center font-bold">
+              <Building2 size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+              {filteredTeamCustomers.length}
+            </div>
+            <span className="text-[10px] font-bold text-teal-600 mt-0.5 block">
+              Active Client Accounts
+            </span>
+          </div>
+        </div>
+
+        {/* Card 4: Visits */}
+        <div
+          onClick={() => setActiveSection(activeSection === 'visits' ? null : 'visits')}
+          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${
+            activeSection === 'visits'
+              ? 'bg-rose-50/70 border-rose-500 ring-2 ring-rose-500/20'
+              : 'bg-white border-slate-200 hover:border-rose-400'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Field Visits</span>
+            <div className="w-6 h-6 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+              <MapPin size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+              {filteredTeamVisits.length}
+            </div>
+            <span className="text-[10px] font-bold text-rose-600 mt-0.5 block">
+              In Selected Period (Click to View)
+            </span>
+          </div>
+        </div>
+
+        {/* Card 5: Target Achievement */}
+        <div
+          onClick={() => setActiveSection(activeSection === 'targets' ? null : 'targets')}
+          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${
+            activeSection === 'targets'
+              ? 'bg-amber-50/70 border-amber-500 ring-2 ring-amber-500/20'
+              : 'bg-white border-slate-200 hover:border-amber-400'
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Achievement</span>
+            <div className="w-6 h-6 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center font-bold animate-pulse">
+              <Target size={13} />
+            </div>
+          </div>
+          <div>
+            <div className="text-base sm:text-lg font-black text-amber-900 tracking-tight">
+              {teamTargetsSummary.achievementPct}%
+            </div>
+            <span className="text-[10px] font-bold text-amber-700 mt-0.5 block">
+              ₹{(teamTargetsSummary.achieved / 100000).toFixed(1)}L / {(teamTargetsSummary.target / 100000).toFixed(1)}L
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 3. QUICK ACTIONS BAR ─────────────────────────────────────────── */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+            <Activity size={13} className="text-amber-600" /> Quick Actions
+          </h2>
+        </div>
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2.5">
+          {quickActions.map((qa) => {
+            const Icon = qa.icon
+            return (
+              <button
+                key={qa.title}
+                type="button"
+                onClick={qa.action}
+                className={`p-3 rounded-2xl border transition text-left flex flex-col justify-between gap-2 cursor-pointer shadow-2xs ${qa.color}`}
+              >
+                <div className="w-8 h-8 rounded-xl bg-white shadow-2xs flex items-center justify-center shrink-0">
+                  <Icon size={16} />
+                </div>
+                <div>
+                  <div className="text-xs font-black leading-tight text-slate-900">{qa.title}</div>
+                  <div className="text-[10px] font-semibold text-slate-500 mt-0.5 truncate">{qa.desc}</div>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {/* ── 4. SALES TARGET PROGRESS CARD ────────────────────────────────── */}
+      {activeSection === 'targets' && (
+        <div className="bg-white border border-slate-200 p-4 sm:p-5 rounded-2xl shadow-2xs space-y-3 animate-in fade-in duration-200">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
-              <h3 className="text-sm font-black text-slate-900">Monthly Sales Target ({targetConfig.month || 'August 2026'})</h3>
-              <span className="bg-amber-100 text-amber-900 border border-amber-300 text-[10px] font-black px-2 py-0.5 rounded-full">
-                Fixed by {targetConfig.setBy || 'Sales Manager'}
+              <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-2xs">
+                <Target size={16} />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  Team Sales Target & Quota Performance
+                  <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                    Supabase sales.sales_target
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-500 font-semibold">
+                  Dynamic target tracking for {assignedExecutives.length} assigned sales executives.
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setShowAddTargetModal(true)}
+                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+              >
+                <Plus size={13} /> Add Sales Target
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSection(null)}
+                className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
+                title="Close section"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          </div>
+
+          {/* 4-Column Target Metrics Display */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 pt-1">
+            <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Total Target</span>
+              <span className="text-sm sm:text-base font-black text-slate-900 mt-0.5 block">
+                ₹{teamTargetsSummary.target.toLocaleString('en-IN')}
               </span>
             </div>
-            <p className="text-xs text-slate-600 font-semibold mt-0.5">
-              Target Fixed: <span className="font-black text-slate-900">₹{Number(targetConfig.revenueTarget).toLocaleString('en-IN')}</span> Revenue · <span className="font-black text-slate-900">{targetConfig.dealsTarget} Deals</span> / Month. Synced to Executive Dashboards.
-            </p>
-          </div>
-        </div>
 
-        <button
-          onClick={() => {
-            setTempRevenueTarget(targetConfig.revenueTarget)
-            setTempDealsTarget(targetConfig.dealsTarget)
-            setShowTargetModal(true)
-          }}
-          className="px-4 py-2 rounded-xl bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
-        >
-          <Target size={15} /> Fix Monthly Target Value
-        </button>
-      </div>
-
-      {/* ── ROW 1: Total Leads, Total Deals, Total Revenue (3 CARDS) ────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-        {/* 1. Total Team Leads */}
-        <div
-          onClick={() => setShowTotalLeadsModal(true)}
-          className="bg-[#fffdf5] border border-amber-300 p-3.5 rounded-xl shadow-2xs space-y-1.5 cursor-pointer hover:-translate-y-0.5 hover:shadow-sm hover:border-amber-400 transition-all duration-200 group relative overflow-hidden flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#7c2d12]">Total Team Leads</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-100 text-[#b45309] flex items-center justify-center font-bold group-hover:scale-110 transition">
-              <Target size={14} />
-            </div>
-          </div>
-          <div>
-            <h2 className="text-xl font-black font-sans tracking-tight text-slate-900">{totalLeadsCount} Leads</h2>
-            <p className="text-[10px] text-slate-600 font-semibold">Click to view Hot, Warm & Cold details</p>
-          </div>
-          <div className="flex items-center gap-1 pt-0.5 flex-wrap">
-            <span className="px-1.5 py-0.2 rounded-full bg-rose-100 text-rose-800 text-[9px] font-black border border-rose-200">🔥 {hotLeadsCount}</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-amber-100 text-amber-900 text-[9px] font-black border border-amber-300">⚡ {warmLeadsCount}</span>
-            <span className="px-1.5 py-0.2 rounded-full bg-sky-100 text-sky-800 text-[9px] font-black border border-sky-200">❄️ {coldLeadsCount}</span>
-          </div>
-        </div>
-
-        {/* 2. Total Deals */}
-        <div
-          onClick={() => navigate('/manager/opportunities')}
-          className="bg-[#fffdf5] border border-amber-300 p-3.5 rounded-xl shadow-2xs space-y-1.5 cursor-pointer hover:-translate-y-0.5 hover:shadow-sm hover:border-amber-400 transition-all duration-200 group flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-amber-900">Total Deals</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-100 text-[#b45309] flex items-center justify-center font-bold text-xs group-hover:scale-110 transition">
-              <TrendingUp size={14} />
-            </div>
-          </div>
-          <div>
-            <h2 className="text-xl font-black font-sans tracking-tight text-slate-900">{totalDealsCount} Active Deals</h2>
-            <p className="text-[10px] text-slate-600 font-semibold">Pipeline: ₹0.00</p>
-          </div>
-          <span className="inline-block px-2 py-0.2 rounded-full bg-amber-100 text-[#b45309] text-[9px] font-black border border-amber-300 w-fit">
-            ⚡ Proposal & Demo Stage
-          </span>
-        </div>
-
-        {/* 3. Total Revenue (CLICK OPENS EXECUTIVE REVENUE & INCENTIVE BREAKDOWN MODAL) */}
-        <div
-          onClick={() => setShowRevenueBreakdownModal(true)}
-          className="bg-[#fffdf5] border border-amber-300 p-3.5 rounded-xl shadow-2xs space-y-1.5 cursor-pointer hover:-translate-y-0.5 hover:shadow-sm hover:border-amber-400 transition-all duration-200 group flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#7c2d12]">Total Revenue</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-100 text-[#b45309] flex items-center justify-center font-bold group-hover:scale-110 transition">
-              <DollarSign size={14} />
-            </div>
-          </div>
-          <div>
-            <h2 className="text-xl font-black font-sans tracking-tight text-slate-900">₹{totalRevenue.toLocaleString('en-IN')}</h2>
-            <p className="text-[10px] text-amber-800 font-bold underline">Click for Executive Revenue & Incentives breakdown ➔</p>
-          </div>
-          <div className="w-full bg-amber-200/60 h-1.5 rounded-full overflow-hidden mt-0.5">
-            <div className="bg-[#b45309] h-full rounded-full w-[100%]" />
-          </div>
-        </div>
-      </div>
-
-      {/* ── ROW 2: Customers, Total Visit, On Field Visit (3 CARDS) ────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-        {/* 4. Total Customers */}
-        <div
-          onClick={() => navigate('/manager/customers')}
-          className="bg-[#fffdf5] border border-amber-300 p-3.5 rounded-xl shadow-2xs space-y-1.5 cursor-pointer hover:-translate-y-0.5 hover:shadow-sm hover:border-amber-400 transition-all duration-200 flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#7c2d12]">Total Customers</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-100 text-[#b45309] flex items-center justify-center font-bold">
-              <Building2 size={14} />
-            </div>
-          </div>
-          <div>
-            <h2 className="text-xl font-black font-sans tracking-tight text-slate-900">{totalCustomersCount} Clients</h2>
-            <p className="text-[10px] text-slate-600 font-semibold">Active Accounts</p>
-          </div>
-          <span className="text-[9px] font-black text-[#b45309] bg-amber-100 px-2 py-0.2 rounded-full border border-amber-300 inline-block w-fit">
-            View Accounts &rarr;
-          </span>
-        </div>
-
-        {/* 5. Total Visit (Today's Total Visit) */}
-        <div
-          onClick={() => navigate('/manager/visits')}
-          className="bg-[#fffdf5] border border-amber-300 p-3.5 rounded-xl shadow-2xs space-y-1.5 cursor-pointer hover:-translate-y-0.5 hover:shadow-sm hover:border-amber-400 transition-all duration-200 flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#7c2d12]">Today's Total Visit</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-100 text-[#b45309] flex items-center justify-center font-bold">
-              <MapPin size={14} />
-            </div>
-          </div>
-          <div>
-            <h2 className="text-xl font-black font-sans tracking-tight text-slate-900">{totalVisitsCount} Visits</h2>
-            <p className="text-[10px] text-slate-600 font-semibold">Live field visits</p>
-          </div>
-          <span className="text-[9px] font-black text-[#b45309] bg-amber-100 px-2 py-0.2 rounded-full border border-amber-300 inline-block w-fit">
-            Visit Audit &rarr;
-          </span>
-        </div>
-
-        {/* 6. On Field Visit */}
-        <div
-          onClick={() => navigate('/manager/visits')}
-          className="bg-[#fffdf5] border border-amber-300 p-3.5 rounded-xl shadow-2xs space-y-1.5 cursor-pointer hover:-translate-y-0.5 hover:shadow-sm hover:border-amber-400 transition-all duration-200 flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">On Fields Visit</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-100 text-[#b45309] flex items-center justify-center font-bold">
-              <Navigation size={14} />
-            </div>
-          </div>
-          <div>
-            <h3 className="text-xl font-black font-sans text-[#b45309]">3 Checked-In</h3>
-            <span className="text-[10px] text-[#b45309] font-black">Active GPS Telemetry</span>
-          </div>
-          <span className="text-[9px] font-black text-[#b45309] bg-amber-100 px-2 py-0.2 rounded-full border border-amber-300 inline-block w-fit">
-            Field GPS &rarr;
-          </span>
-        </div>
-      </div>
-
-      {/* ── ROW 2: Present & Absent, Total Executive, Reimbursement (3 CARDS) ────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-        {/* 5. Present & Absent */}
-        <div
-          onClick={() => navigate('/manager/attendance')}
-          className="bg-[#fffdf5] border border-amber-300 p-3.5 rounded-xl shadow-2xs space-y-1.5 cursor-pointer hover:-translate-y-0.5 hover:shadow-sm hover:border-amber-400 transition-all duration-200 flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-500">Present & Absent</span>
-            <div className="w-7 h-7 rounded-lg bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold">
-              <UserCheck size={14} />
-            </div>
-          </div>
-          <div>
-            <h3 className="text-xl font-black font-sans text-emerald-700">4 Present · 0 Absent</h3>
-            <span className="text-[10px] text-emerald-700 font-black">100% Team Attendance</span>
-          </div>
-          <span className="text-[9px] font-black text-emerald-800 bg-emerald-100 px-2 py-0.2 rounded-full border border-emerald-300 inline-block w-fit">
-            Attendance &rarr;
-          </span>
-        </div>
-
-        {/* 6. Total Executive (Clicking opens Executive 360° Audit Table Modal) */}
-        <div
-          onClick={() => setShowTotalExecutiveModal(true)}
-          className="bg-[#fffdf5] border border-amber-300 p-3.5 rounded-xl shadow-2xs space-y-1.5 cursor-pointer hover:-translate-y-0.5 hover:shadow-sm hover:border-amber-400 transition-all duration-200 group flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#7c2d12]">Total Executive</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-100 text-[#b45309] flex items-center justify-center font-bold group-hover:scale-110 transition">
-              <Users size={14} />
-            </div>
-          </div>
-          <div>
-            <h3 className="text-xl font-black font-sans text-slate-900">4 Execs</h3>
-            <p className="text-[10px] text-slate-600 font-semibold">Click to view 360° Audit & Field Telemetry</p>
-          </div>
-          <span className="text-[9px] font-black text-[#b45309] bg-amber-100 px-2 py-0.2 rounded-full border border-amber-300 inline-block w-fit">
-            View Executive Audit &rarr;
-          </span>
-        </div>
-
-        {/* 7. Reimbursement (Formerly Expense Claims) */}
-        <div
-          onClick={() => navigate('/manager/expenses')}
-          className="bg-[#fffdf5] border border-amber-300 p-3.5 rounded-xl shadow-2xs space-y-1.5 cursor-pointer hover:-translate-y-0.5 hover:shadow-sm hover:border-amber-400 transition-all duration-200 flex flex-col justify-between"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-extrabold uppercase tracking-wider text-[#7c2d12]">Reimbursement</span>
-            <div className="w-7 h-7 rounded-lg bg-amber-100 text-[#b45309] flex items-center justify-center font-bold">
-              <Receipt size={14} />
-            </div>
-          </div>
-          <div>
-            <h2 className="text-xl font-black font-sans tracking-tight text-slate-900">₹8,500</h2>
-            <p className="text-[10px] text-slate-600 font-semibold">4 Claims Awaiting Approval</p>
-          </div>
-          <span className="text-[9px] font-black text-[#b45309] bg-amber-100 px-2 py-0.2 rounded-full border border-amber-300 inline-block w-fit">
-            Review Reimbursement &rarr;
-          </span>
-        </div>
-      </div>
-
-      {/* ══════════════════════════════════════════════════════════════════════
-          COMPREHENSIVE EXECUTIVE 360° AUDIT DOSSIER MODAL
-      ══════════════════════════════════════════════════════════════════════ */}
-      {selectedExec && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 z-50 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-5 sm:p-7 space-y-5 shadow-2xl max-h-[92vh] overflow-y-auto my-auto">
-            {/* Modal Header */}
-            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3.5">
-                <div className="w-14 h-14 rounded-2xl bg-amber-500 text-white font-black text-xl flex items-center justify-center shadow-md ring-4 ring-amber-400/20 shrink-0">
-                  {selectedExec.name.split(' ').map((n) => n[0]).join('')}
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-xl font-black text-slate-900">{selectedExec.name}</h3>
-                    <span className="text-xs font-mono font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
-                      [{selectedExec.code}]
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                    {selectedExec.role} · {selectedExec.email} · {selectedExec.phone}
-                  </p>
-                </div>
-              </div>
-
-              <button
-                onClick={() => setSelectedExec(null)}
-                className="p-2 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition cursor-pointer"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Section 1: Attendance & GPS Telemetry */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                  <Clock size={15} className="text-[#b45309]" /> Attendance & GPS Check-In/Out
-                </span>
-                <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                  ● {selectedExec.status}
-                </span>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                  <span className="text-[9px] font-extrabold text-slate-400 block uppercase">Check-In</span>
-                  <span className="font-black text-emerald-700">{selectedExec.attendance.checkIn}</span>
-                </div>
-                <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                  <span className="text-[9px] font-extrabold text-slate-400 block uppercase">Check-Out</span>
-                  <span className="font-black text-slate-700">{selectedExec.attendance.checkOut}</span>
-                </div>
-                <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                  <span className="text-[9px] font-extrabold text-slate-400 block uppercase">Working Hours</span>
-                  <span className="font-black text-amber-800">{selectedExec.attendance.workingHours}</span>
-                </div>
-                <div className="bg-white p-2.5 rounded-xl border border-slate-200">
-                  <span className="text-[9px] font-extrabold text-slate-400 block uppercase">Selfie & GPS</span>
-                  <span className="font-black text-emerald-700">✓ Verified</span>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-1.5 text-xs text-slate-700 bg-white p-2.5 rounded-xl border border-slate-200 font-medium">
-                <MapPin size={14} className="text-rose-500 shrink-0" />
-                <span>{selectedExec.attendance.currentGps}</span>
-              </div>
-            </div>
-
-            {/* Section 2: Lead Portfolio & Categorization */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-              <span className="text-xs font-black text-slate-900 flex items-center gap-1.5 border-b border-slate-200 pb-2">
-                <Target size={15} className="text-[#b45309]" /> Lead Portfolio & Won Revenue
+            <div className="p-3 bg-emerald-50/60 rounded-xl border border-emerald-200">
+              <span className="text-[10px] font-black text-emerald-700 uppercase tracking-wider block">Achieved Revenue</span>
+              <span className="text-sm sm:text-base font-black text-emerald-900 mt-0.5 block">
+                ₹{teamTargetsSummary.achieved.toLocaleString('en-IN')}
               </span>
-
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                <div className="bg-white p-2.5 rounded-xl border border-rose-200 space-y-0.5">
-                  <span className="text-[9px] font-extrabold text-rose-700 block uppercase">🔥 Hot Leads</span>
-                  <span className="text-lg font-black text-rose-700">{selectedExec.leads.hot}</span>
-                </div>
-                <div className="bg-white p-2.5 rounded-xl border border-amber-200 space-y-0.5">
-                  <span className="text-[9px] font-extrabold text-amber-800 block uppercase">⚡ Warm Leads</span>
-                  <span className="text-lg font-black text-amber-800">{selectedExec.leads.warm}</span>
-                </div>
-                <div className="bg-white p-2.5 rounded-xl border border-sky-200 space-y-0.5">
-                  <span className="text-[9px] font-extrabold text-sky-700 block uppercase">❄️ Cold Leads</span>
-                  <span className="text-lg font-black text-sky-700">{selectedExec.leads.cold}</span>
-                </div>
-                <div className="bg-white p-2.5 rounded-xl border border-emerald-200 space-y-0.5">
-                  <span className="text-[9px] font-extrabold text-emerald-700 block uppercase">Revenue Won</span>
-                  <span className="text-lg font-black text-emerald-700">{selectedExec.leads.wonRevenue}</span>
-                </div>
-              </div>
             </div>
 
-            {/* Section 3: Today's Field Visits Log */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                  <MapPin size={15} className="text-[#b45309]" /> Today's Field Visit Logs ({selectedExec.visits.completed}/{selectedExec.visits.total})
-                </span>
-                <button
-                  onClick={() => { setSelectedExec(null); navigate('/manager/visits') }}
-                  className="text-[10px] font-black text-[#b45309] hover:underline cursor-pointer"
-                >
-                  Full Visit Audit →
-                </button>
-              </div>
-
-              <div className="space-y-2.5 text-xs">
-                {selectedExec.visits.todayVisits.map((v, i) => (
-                  <div key={i} className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
-                    <div className="flex items-center justify-between font-black">
-                      <span className="text-slate-900">{v.client}</span>
-                      <span className={`px-2 py-0.5 rounded-full text-[9px] border ${v.status === 'Completed' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>
-                        {v.status} ({v.time})
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-600 font-medium">Purpose: <strong>{v.purpose}</strong></p>
-                    <p className="text-[11px] text-slate-500 italic">"{v.remarks}"</p>
-                  </div>
-                ))}
-              </div>
+            <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200">
+              <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">Remaining Quota</span>
+              <span className="text-sm sm:text-base font-black text-amber-950 mt-0.5 block">
+                ₹{teamTargetsSummary.remaining.toLocaleString('en-IN')}
+              </span>
             </div>
 
-            {/* Section 4: EOD Daily Work Report */}
-            {selectedExec.eodReport && (
-              <div className="bg-amber-50/60 border border-amber-200 rounded-2xl p-4 space-y-2 text-xs">
-                <span className="font-black text-amber-950 flex items-center gap-1.5 border-b border-amber-200 pb-1.5">
-                  <FileText size={14} className="text-[#b45309]" /> EOD Daily Work Report ({selectedExec.eodReport.date})
-                </span>
-                <div>
-                  <span className="text-[10px] font-bold text-amber-900 uppercase block">Highlights / Wins</span>
-                  <p className="text-slate-800 font-medium">{selectedExec.eodReport.highlights}</p>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold text-amber-900 uppercase block">Blockers / Issues</span>
-                  <p className="text-slate-800 font-medium">{selectedExec.eodReport.blockers}</p>
-                </div>
-                <div>
-                  <span className="text-[10px] font-bold text-amber-900 uppercase block">Tomorrow's Plan</span>
-                  <p className="text-slate-800 font-medium">{selectedExec.eodReport.nextDayPlan}</p>
-                </div>
-              </div>
-            )}
-
-            {/* Modal Footer Actions */}
-            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-              <button
-                onClick={() => setSelectedExec(null)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs cursor-pointer hover:bg-slate-800 transition"
-              >
-                Close Audit Dossier
-              </button>
+            <div className="p-3 bg-blue-50/60 rounded-xl border border-blue-200">
+              <span className="text-[10px] font-black text-blue-700 uppercase tracking-wider block">Achievement %</span>
+              <span className="text-sm sm:text-base font-black text-blue-950 mt-0.5 block">
+                {teamTargetsSummary.achievementPct}%
+              </span>
             </div>
           </div>
-        </div>
-      )}
 
-      {/* ── Total Leads Temperature Breakdown Modal ─────────────────────────────── */}
-      {showTotalLeadsModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 space-y-5 shadow-2xl border border-amber-200 max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-[#b45309] flex items-center justify-center font-black">
-                  <Target size={22} />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Total Team Leads Audit</h3>
-                  <p className="text-xs text-slate-500 font-semibold">Detailed breakdown of Hot 🔥, Warm ⚡, and Cold ❄️ deals across team</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowTotalLeadsModal(false)}
-                className="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100 cursor-pointer transition"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Temperature Summary Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              {/* Hot Leads */}
+          {/* Progress Bar */}
+          <div className="space-y-1 pt-1">
+            <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden border border-slate-200">
               <div
-                onClick={() => setLeadTempTab('Hot')}
-                className={`p-4 rounded-2xl border transition cursor-pointer ${
-                  leadTempTab === 'Hot' ? 'bg-rose-50 border-rose-400 ring-2 ring-rose-400/30' : 'bg-slate-50 border-slate-200 hover:border-rose-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-rose-800 uppercase tracking-wider flex items-center gap-1">
-                    🔥 Hot Leads
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full bg-rose-200 text-rose-900 text-[10px] font-black">16% of total</span>
-                </div>
-                <h4 className="text-2xl font-black text-slate-900 mt-2">10 Deals</h4>
-                <p className="text-[11px] text-slate-600 font-semibold mt-0.5">Pipeline Value: ₹45,50,000</p>
-              </div>
-
-              {/* Warm Leads */}
-              <div
-                onClick={() => setLeadTempTab('Warm')}
-                className={`p-4 rounded-2xl border transition cursor-pointer ${
-                  leadTempTab === 'Warm' ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-400/30' : 'bg-slate-50 border-slate-200 hover:border-amber-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-amber-900 uppercase tracking-wider flex items-center gap-1">
-                    ⚡ Warm Leads
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-900 text-[10px] font-black">36% of total</span>
-                </div>
-                <h4 className="text-2xl font-black text-slate-900 mt-2">23 Deals</h4>
-                <p className="text-[11px] text-slate-600 font-semibold mt-0.5">Pipeline Value: ₹24,50,000</p>
-              </div>
-
-              {/* Cold Leads */}
-              <div
-                onClick={() => setLeadTempTab('Cold')}
-                className={`p-4 rounded-2xl border transition cursor-pointer ${
-                  leadTempTab === 'Cold' ? 'bg-sky-50 border-sky-400 ring-2 ring-sky-400/30' : 'bg-slate-50 border-slate-200 hover:border-sky-300'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <span className="text-xs font-black text-sky-900 uppercase tracking-wider flex items-center gap-1">
-                    ❄️ Cold Leads
-                  </span>
-                  <span className="px-2 py-0.5 rounded-full bg-sky-200 text-sky-900 text-[10px] font-black">48% of total</span>
-                </div>
-                <h4 className="text-2xl font-black text-slate-900 mt-2">31 Leads</h4>
-                <p className="text-[11px] text-slate-600 font-semibold mt-0.5">Pipeline Value: ₹18,20,000</p>
-              </div>
-            </div>
-
-            {/* Filter Tabs */}
-            <div className="flex items-center justify-between flex-wrap gap-2 border-b border-slate-100 pb-2">
-              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl">
-                {['All', 'Hot', 'Warm', 'Cold'].map((tab) => (
-                  <button
-                    key={tab}
-                    onClick={() => setLeadTempTab(tab)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
-                      leadTempTab === tab
-                        ? tab === 'Hot'
-                          ? 'bg-rose-600 text-white shadow-xs'
-                          : tab === 'Warm'
-                          ? 'bg-[#ca8a04] text-white shadow-xs'
-                          : tab === 'Cold'
-                          ? 'bg-sky-600 text-white shadow-xs'
-                          : 'bg-slate-900 text-white shadow-xs'
-                        : 'text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {tab === 'Hot' ? '🔥 Hot (10)' : tab === 'Warm' ? '⚡ Warm (23)' : tab === 'Cold' ? '❄️ Cold (31)' : 'All Leads (64)'}
-                  </button>
-                ))}
-              </div>
-
-              <button
-                onClick={() => { setShowTotalLeadsModal(false); navigate('/manager/leads') }}
-                className="text-xs font-black text-[#ca8a04] hover:underline cursor-pointer flex items-center gap-1"
-              >
-                Go to Team Lead Directory →
-              </button>
-            </div>
-
-            {/* Detailed Leads List Table */}
-            <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 border-b border-slate-200 text-slate-700 font-black text-[11px] uppercase tracking-wider">
-                  <tr>
-                    <th className="p-3">Company & Contact</th>
-                    <th className="p-3">Temperature</th>
-                    <th className="p-3">Expected Value</th>
-                    <th className="p-3">Assigned Exec</th>
-                    <th className="p-3">Stage</th>
-                    <th className="p-3">City</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-bold">
-                  {liveLeadsList.length === 0 ? (
-                    <tr>
-                      <td colSpan="6" className="p-12 text-center text-slate-500 font-bold">
-                        No team leads found in Supabase database. New leads created by your assigned Sales Executives will appear here dynamically.
-                      </td>
-                    </tr>
-                  ) : (
-                    liveLeadsList
-                      .map((l, idx) => ({
-                        id: l.id || l.lead_id || `LD-${101 + idx}`,
-                        company: l.companyName || l.company_name || l.company || l.client_name || 'Client Business',
-                        contact: l.pocName || l.poc_name || l.contact_person || 'POC Contact',
-                        phone: l.pocPhone || l.poc_phone || l.mobile || l.phone || '+91 98401 12345',
-                        temperature: (l.category || l.priority || 'Warm').charAt(0).toUpperCase() + (l.category || l.priority || 'Warm').slice(1).toLowerCase(),
-                        value: l.budget || l.expected_value || l.deal_value || '₹10,00,000',
-                        assignedTo: l.assignedTo || l.assigned_to || l.executive || 'Sales Executive',
-                        stage: l.status || l.stage || 'In Progress',
-                        city: l.city || l.address || 'Chennai',
-                      }))
-                      .filter((l) => leadTempTab === 'All' || l.temperature.toLowerCase() === leadTempTab.toLowerCase())
-                      .map((item) => (
-                        <tr key={item.id} className="hover:bg-amber-50/50 transition">
-                          <td className="p-3">
-                            <div className="font-black text-slate-900">{item.company}</div>
-                            <div className="text-[11px] text-slate-500 font-semibold">{item.contact} • {item.phone}</div>
-                          </td>
-                          <td className="p-3">
-                            <span
-                              className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${
-                                item.temperature === 'Hot'
-                                  ? 'bg-rose-100 text-rose-800 border-rose-300'
-                                  : item.temperature === 'Warm'
-                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
-                                  : 'bg-sky-100 text-sky-800 border-sky-300'
-                              }`}
-                            >
-                              {item.temperature === 'Hot' ? '🔥 Hot' : item.temperature === 'Warm' ? '⚡ Warm' : '❄️ Cold'}
-                            </span>
-                          </td>
-                          <td className="p-3 font-black text-slate-900">{item.value}</td>
-                          <td className="p-3 font-extrabold text-slate-700">{item.assignedTo}</td>
-                          <td className="p-3 font-semibold text-slate-600">{item.stage}</td>
-                          <td className="p-3 font-semibold text-slate-500">{item.city}</td>
-                        </tr>
-                      ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-              <span className="text-xs text-slate-500 font-semibold">Showing {leadTempTab} leads breakdown</span>
-              <button
-                onClick={() => setShowTotalLeadsModal(false)}
-                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs transition cursor-pointer"
-              >
-                Close Audit View
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Total Executive 360° Telemetry & Audit Modal ─────────────────────────────── */}
-      {showTotalExecutiveModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-3xl max-w-5xl w-full p-6 space-y-5 shadow-2xl border border-amber-200 max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-amber-100 text-[#b45309] flex items-center justify-center font-black">
-                  <Award size={22} />
-                </div>
-                <div>
-                  <h3 className="text-xl font-black text-slate-900 tracking-tight">Executive Performance 360° Telemetry & Audit</h3>
-                  <p className="text-xs text-slate-500 font-semibold">Click any Sales Executive to open their complete activity dossier & field log</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setShowTotalExecutiveModal(false)}
-                className="p-2 text-slate-400 hover:text-slate-700 rounded-xl hover:bg-slate-100 cursor-pointer transition"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Search Control */}
-            <div className="relative max-w-md">
-              <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Search executive name, employee code, location..."
-                className="w-full h-10 bg-amber-50/50 border border-amber-300 rounded-xl pl-9 pr-4 text-xs font-semibold focus:outline-none focus:border-amber-500 text-slate-900"
+                className="bg-gradient-to-r from-amber-500 to-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                style={{ width: `${Math.min(100, teamTargetsSummary.achievementPct)}%` }}
               />
             </div>
+            <div className="flex justify-between text-[10px] font-bold text-slate-400">
+              <span>0%</span>
+              <span>Target Achieved: {teamTargetsSummary.achievementPct}%</span>
+              <span>100%</span>
+            </div>
+          </div>
+        </div>
+      )}
 
-            {/* Executive Table */}
-            <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+      {/* ── 4b. DYNAMIC LEADS DETAILS SECTION ─────────────────────────────── */}
+      {activeSection === 'leads' && (
+        <div id="leads-section" className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden space-y-4 p-4 sm:p-5 animate-in fade-in duration-200">
+          <div className="relative flex items-center justify-center border-b border-slate-100 pb-3">
+            {/* Center Toggles */}
+            <div className="inline-flex p-1 bg-slate-100 rounded-xl">
+              {[
+                { name: 'Hot', color: 'bg-emerald-600 text-white shadow-xs' },
+                { name: 'Warm', color: 'bg-yellow-500 text-yellow-950 shadow-xs' },
+                { name: 'Cold', color: 'bg-rose-600 text-white shadow-xs' }
+              ].map((t) => {
+                const active = leadTab === t.name
+                const getLeadCat = (l) => {
+                  const cat = String(l.category || l.priority || l.status || '').toLowerCase().trim()
+                  if (cat.includes('hot') || cat.includes('high') || cat === 'won' || cat === 'converted') return 'hot'
+                  if (cat.includes('warm') || cat.includes('medium')) return 'warm'
+                  return 'cold'
+                }
+                return (
+                  <button
+                    key={t.name}
+                    type="button"
+                    onClick={() => setLeadTab(t.name)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                      active ? t.color : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    {t.name} ({
+                      deduplicatedTeamLeads.filter((l) => getLeadCat(l) === t.name.toLowerCase()).length
+                    })
+                  </button>
+                )
+              })}
+            </div>
+
+            {/* Absolute close button on the right */}
+            <button
+              type="button"
+              onClick={() => setActiveSection(null)}
+              className="absolute right-0 p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
+              title="Close section"
+            >
+              <X size={15} />
+            </button>
+          </div>
+
+          {/* Leads Table */}
+          {leadsByTab.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 font-bold space-y-2">
+              <AlertCircle size={32} className="mx-auto text-slate-300" />
+              <p className="text-xs">No {leadTab} leads found in the selected date range.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse min-w-[700px]">
                 <thead>
-                  <tr className="bg-amber-50/80 text-[10px] font-black uppercase text-amber-950 border-b border-amber-300">
-                    <th className="py-3.5 px-4">Sales Executive</th>
-                    <th className="py-3.5 px-4 text-center">Visits (Done/Total)</th>
-                    <th className="py-3.5 px-4 text-center">Leads (🔥/⚡/❄️)</th>
-                    <th className="py-3.5 px-4">Revenue Won</th>
-                    <th className="py-3.5 px-4 text-right">Field Status & Audit</th>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                    <th className="py-3 px-3">Date</th>
+                    <th className="py-3 px-3">Executive Name</th>
+                    <th className="py-3 px-3">Client Name & Company</th>
+                    <th className="py-3 px-3">Product</th>
+                    <th className="py-3 px-3">Remarks</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
-                  {filteredPerformers.map((p, idx) => (
-                    <tr
-                      key={p.id}
-                      onClick={() => {
-                        setSelectedExec(p)
-                      }}
-                      className="hover:bg-amber-50/40 transition cursor-pointer group"
-                    >
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <span className="w-7 h-7 rounded-full bg-amber-100 font-black text-amber-900 text-xs flex items-center justify-center border border-amber-300">
-                            #{idx + 1}
-                          </span>
-                          <div>
-                            <p className="font-black text-slate-900 leading-tight group-hover:text-[#b45309] transition flex items-center gap-1.5">
-                              {p.name}
-                              <span className="bg-amber-100 text-amber-900 text-[9px] font-mono px-1.5 py-0.2 rounded border border-amber-300">
-                                [{p.code}]
-                              </span>
-                            </p>
-                            <p className="text-[10px] text-slate-500 font-medium flex items-center gap-1 mt-0.5">
-                              <MapPin size={10} className="text-amber-700" /> {p.location}
-                            </p>
-                          </div>
+                  {leadsByTab.map((lead) => (
+                    <tr key={lead.id} className="hover:bg-slate-50/80 transition">
+                      <td className="py-3 px-3 font-bold text-slate-900">
+                        {formatDate(lead.created_at || lead.createdAt || lead.date)}
+                      </td>
+                      <td className="py-3 px-3 text-slate-800 font-bold">
+                        👤 {lead.assigned_to || lead.assignedTo || lead.executive || 'Unassigned'}
+                      </td>
+                      <td className="py-3 px-3">
+                        <div className="font-bold text-slate-900">
+                          {lead.contact_name || lead.contact_person || lead.person || 'N/A'}
+                        </div>
+                        <div className="text-[10px] text-slate-400 font-medium">
+                          🏢 {lead.company_name || lead.company || 'N/A'}
                         </div>
                       </td>
-
-                      <td className="py-3.5 px-4 text-center">
-                        <span className="font-black text-slate-900">{p.visits.completed}</span>
-                        <span className="text-slate-400 font-normal">/{p.visits.total}</span>
+                      <td className="py-3 px-3 font-bold text-slate-900">
+                        📦 {lead.title || lead.product || 'CRM Software'}
                       </td>
-
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="inline-flex items-center gap-1 bg-slate-50 px-2 py-0.5 rounded-lg border border-slate-200 text-[10px] font-black">
-                          <span className="text-rose-600">🔥 {p.leads.hot}</span>
-                          <span className="text-slate-300">|</span>
-                          <span className="text-amber-600">⚡ {p.leads.warm}</span>
-                          <span className="text-slate-300">|</span>
-                          <span className="text-sky-600">❄️ {p.leads.cold}</span>
-                        </div>
-                      </td>
-
-                      <td className="py-3.5 px-4 font-black text-emerald-700">{p.leads.wonRevenue}</td>
-
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <span
-                            className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                              p.status === 'On Field'
-                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                : p.status === 'In Office'
-                                  ? 'bg-sky-100 text-sky-800 border-sky-300'
-                                  : 'bg-amber-100 text-amber-900 border-amber-300'
-                            }`}
-                          >
-                            {p.status}
-                          </span>
-                          <button className="px-2.5 py-1 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] shadow-2xs cursor-pointer transition flex items-center gap-1">
-                            <Eye size={12} /> View Dossier
-                          </button>
-                        </div>
+                      <td className="py-3 px-3 text-slate-500 font-medium max-w-xs truncate" title={lead.notes || lead.remarks}>
+                        {lead.notes || lead.remarks || 'No remarks recorded.'}
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-
-            {/* Modal Footer */}
-            <div className="flex justify-end pt-2 border-t border-slate-100">
-              <button
-                onClick={() => setShowTotalExecutiveModal(false)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs cursor-pointer hover:bg-slate-800 transition"
-              >
-                Close Audit View
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
-      {/* ── 1. EXECUTIVE REVENUE & INCENTIVE BREAKDOWN MODAL ── */}
-      {showRevenueBreakdownModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-4xl w-full p-6 space-y-6 shadow-2xl border border-slate-200 max-h-[90vh] overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+      {/* ── 4c. DYNAMIC VISITS DETAILS SECTION ─────────────────────────────── */}
+      {activeSection === 'visits' && (
+        <div id="visits-section" className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden space-y-4 p-4 sm:p-5 animate-in fade-in duration-200">
+          <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+            <div className="flex items-center gap-2">
+              <div className="w-8 h-8 rounded-xl bg-rose-500 text-white flex items-center justify-center font-bold shadow-2xs">
+                <MapPin size={16} />
+              </div>
               <div>
-                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <Award className="w-6 h-6 text-[#ca8a04]" /> Executive Revenue & Incentive Breakdown
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                  Team Field Visits Overview
+                  <span className="text-[10px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full">
+                    Live Telemetry
+                  </span>
                 </h3>
-                <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                  Detailed view of revenue generated by each Sales Executive and their incentive payable tier.
+                <p className="text-[11px] text-slate-500 font-semibold">
+                  Visits scheduled or logged by your assigned sales representatives.
                 </p>
               </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 pr-8">
+              {/* Search Bar */}
+              <div className="relative w-48 sm:w-64">
+                <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search visits, SE, client, product..."
+                  value={visitSearch}
+                  onChange={(e) => setVisitSearch(e.target.value)}
+                  className="w-full h-9 pl-9 pr-4 bg-slate-50 hover:bg-slate-100/70 focus:bg-white border border-slate-200 focus:border-rose-500 rounded-xl text-xs font-bold text-slate-950 focus:outline-none transition-all placeholder:text-slate-400 placeholder:font-semibold"
+                />
+              </div>
+
+              {/* Today Toggle Pill */}
               <button
-                onClick={() => setShowRevenueBreakdownModal(false)}
-                className="p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+                type="button"
+                onClick={() => setVisitTodayOnly(!visitTodayOnly)}
+                className={`h-9 px-4 rounded-xl text-xs font-black transition cursor-pointer border flex items-center gap-1.5 ${
+                  visitTodayOnly
+                    ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
+                    : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                }`}
               >
-                <X size={18} />
+                <Clock size={13} />
+                Today
               </button>
             </div>
 
-            {/* Summary KPI Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-              <div className="bg-amber-50/80 border border-amber-200 p-4 rounded-2xl">
-                <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">Total Team Revenue</span>
-                <span className="text-2xl font-black text-slate-900">₹{totalRevenue.toLocaleString('en-IN')}</span>
-                <span className="text-[10px] text-amber-700 font-semibold block mt-0.5">From Won & Converted Deals</span>
-              </div>
-              <div className="bg-emerald-50/80 border border-emerald-200 p-4 rounded-2xl">
-                <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">Total Deals Won</span>
-                <span className="text-2xl font-black text-emerald-950">
-                  {executiveRevenueList.reduce((acc, curr) => acc + curr.convertedDeals, 0)} Deals
-                </span>
-                <span className="text-[10px] text-emerald-700 font-semibold block mt-0.5">Across All Executives</span>
-              </div>
-              <div className="bg-purple-50/80 border border-purple-200 p-4 rounded-2xl">
-                <span className="text-[10px] font-black text-purple-800 uppercase tracking-wider block">Total Incentives Payable</span>
-                <span className="text-2xl font-black text-purple-950">
-                  ₹{executiveRevenueList.reduce((acc, curr) => acc + curr.totalIncentive, 0).toLocaleString('en-IN')}
-                </span>
-                <span className="text-[10px] text-purple-700 font-semibold block mt-0.5">Based on Tier Rules</span>
-              </div>
-            </div>
+            {/* Absolute close button on the right */}
+            <button
+              type="button"
+              onClick={() => setActiveSection(null)}
+              className="absolute right-0 top-0 p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
+              title="Close section"
+            >
+              <X size={15} />
+            </button>
+          </div>
 
-            {/* Incentive Rules Banner */}
-            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs text-slate-700 font-medium space-y-1">
-              <span className="font-black text-slate-900 uppercase text-[10px] tracking-wider block">💡 Incentive Calculation Tiers:</span>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 text-[11px] pt-1">
-                <div className="bg-white p-2 rounded-xl border border-slate-200">
-                  <span className="font-bold text-slate-800">1 - 4 Deals:</span> Starter Tier (2% or ₹500/deal)
-                </div>
-                <div className="bg-white p-2 rounded-xl border border-slate-200">
-                  <span className="font-bold text-slate-800">5 - 14 Deals:</span> Mid Tier (3.5% or ₹1,000/deal)
-                </div>
-                <div className="bg-white p-2 rounded-xl border border-slate-200">
-                  <span className="font-bold text-slate-800">15+ Deals:</span> Senior Tier (5% or ₹2,000/deal)
-                </div>
-              </div>
+          {/* Visits Table */}
+          {displayedVisits.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 font-bold space-y-2">
+              <AlertCircle size={32} className="mx-auto text-slate-300 animate-pulse" />
+              <p className="text-xs">No visits found matching the filter criteria.</p>
             </div>
-
-            {/* Executive Breakdown Table */}
-            <div className="overflow-x-auto border border-slate-200 rounded-2xl">
-              <table className="w-full text-left border-collapse min-w-[650px]">
+          ) : (
+            <div className="overflow-x-auto border border-slate-100 rounded-xl">
+              <table className="w-full text-left border-collapse min-w-[700px]">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-[11px] font-black text-slate-500 uppercase tracking-wider">
-                    <th className="py-3 px-4">Sales Executive</th>
-                    <th className="py-3 px-4 text-center">Deals Won</th>
-                    <th className="py-3 px-4 text-right">Revenue Generated</th>
-                    <th className="py-3 px-4 text-center">Incentive Tier</th>
-                    <th className="py-3 px-4 text-right">Total Incentive</th>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                    <th className="py-3 px-4">Date of Visit Scheduled</th>
+                    <th className="py-3 px-4">Name of Executive</th>
+                    <th className="py-3 px-4">Client Name & Company Name</th>
+                    <th className="py-3 px-4">Product</th>
+                    <th className="py-3 px-4">Location</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-800">
-                  {executiveRevenueList.map((ex, idx) => (
-                    <tr key={idx} className="hover:bg-slate-50/80 transition">
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="w-8 h-8 rounded-full bg-amber-100 text-amber-900 font-black text-xs flex items-center justify-center border border-amber-300">
-                            {ex.name[0]}
+                <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+                  {displayedVisits.map((v) => {
+                    const vDateStr = v.visit_date || v.visitDate || v.date || v.created_at
+                    const formattedDate = formatDate(vDateStr)
+                    const timeStr = v.visit_time || v.time || ''
+                    return (
+                      <tr key={v.id || v.visit_id} className="hover:bg-slate-50/80 transition">
+                        <td className="py-3 px-4 font-bold text-slate-900">
+                          {formattedDate} {timeStr && `• ${timeStr}`}
+                        </td>
+                        <td className="py-3 px-4 text-slate-800 font-bold">
+                          👤 {v.assigned_to || v.executive || 'Unassigned'}
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-900">
+                            {v.poc_name || v.contact_person || v.person || 'N/A'}
                           </div>
-                          <div>
-                            <p className="font-black text-slate-900">{ex.name}</p>
-                            <p className="text-[10px] text-slate-500 font-mono">[{ex.code}] · {ex.email}</p>
+                          <div className="text-[10px] text-slate-400 font-medium">
+                            🏢 {v.customer_name || v.company || 'N/A'}
                           </div>
+                        </td>
+                        <td className="py-3 px-4 font-bold text-slate-900">
+                          📦 {v.product || v.product_name || v.title || 'CRM Software'}
+                        </td>
+                        <td className="py-3 px-4 font-medium text-slate-600">
+                          📍 {v.location || v.city || v.address || 'Chennai'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── 5. ASSIGNED SALES EXECUTIVES DETAILS TABLE ─────────────────────── */}
+      {activeSection === 'executives' && (
+        <div id="executives-section" className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden space-y-3 p-4 sm:p-5 animate-in fade-in duration-200">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+            <div>
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
+                <Users size={16} className="text-blue-600" />
+                Assigned Sales Executives ({displayedExecutives.length})
+              </h3>
+              <p className="text-[11px] text-slate-500 font-semibold">
+                Live data scoped strictly from Admin HRMS reporting manager assignments.
+              </p>
+            </div>
+
+            {/* Search Input & Close Action */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative w-full sm:w-64">
+                <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search executive, code, dept..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveSection(null)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
+                title="Close section"
+              >
+                <X size={15} />
+              </button>
+            </div>
+          </div>
+
+          {displayedExecutives.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 font-bold space-y-2">
+              <AlertCircle size={32} className="mx-auto text-slate-300" />
+              <p className="text-xs">No Sales Executives assigned under your profile in HRMS.</p>
+              <p className="text-[10px] text-slate-400">
+                When Admin assigns an executive to your reporting manager account, they will automatically appear here.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse min-w-[860px]">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
+                    <th className="py-3 px-3">Executive</th>
+                    <th className="py-3 px-3">Contact & Dept</th>
+                    <th className="py-3 px-3">Attendance</th>
+                    <th className="py-3 px-3 text-center">Leads</th>
+                    <th className="py-3 px-3 text-center">Customers</th>
+                    <th className="py-3 px-3 text-center">Visits</th>
+                    <th className="py-3 px-3 text-right">Won Revenue</th>
+                    <th className="py-3 px-3 text-right">Target %</th>
+                    <th className="py-3 px-3 text-right">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
+                  {displayedExecutives.map((exec) => (
+                    <tr key={exec.id} className="hover:bg-slate-50/80 transition">
+                      {/* Executive */}
+                      <td className="py-3 px-3">
+                        <div className="font-black text-slate-900 text-xs">{exec.name}</div>
+                        <div className="text-[10px] font-black text-blue-700 bg-blue-50 border border-blue-200 px-1.5 py-0.2 rounded-md inline-block mt-0.5">
+                          🪪 {exec.employee_code}
                         </div>
                       </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className="px-2.5 py-1 rounded-full bg-emerald-100 text-emerald-900 text-xs font-black border border-emerald-300">
-                          {ex.convertedDeals} Won
+
+                      {/* Contact & Dept */}
+                      <td className="py-3 px-3">
+                        <div className="text-[11px] font-bold text-slate-800">{exec.phone}</div>
+                        <div className="text-[10px] text-slate-400 font-medium">{exec.department} · {exec.designation}</div>
+                      </td>
+
+                      {/* Attendance */}
+                      <td className="py-3 px-3">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          {exec.attendanceStatus}
                         </span>
                       </td>
-                      <td className="py-3.5 px-4 text-right font-black text-slate-900 text-sm">
-                        ₹{ex.totalRevenue.toLocaleString('en-IN')}
+
+                      {/* Leads */}
+                      <td className="py-3 px-3 text-center font-bold text-slate-800">
+                        {exec.leadsCount}
                       </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <span className="px-2.5 py-0.5 rounded-md bg-purple-50 text-purple-900 text-[10px] font-extrabold border border-purple-200">
-                          {ex.incentiveTier}
-                        </span>
+
+                      {/* Customers */}
+                      <td className="py-3 px-3 text-center font-bold text-slate-800">
+                        {exec.customersCount}
                       </td>
-                      <td className="py-3.5 px-4 text-right font-black text-emerald-700 text-sm">
-                        ₹{ex.totalIncentive.toLocaleString('en-IN')}
+
+                      {/* Visits */}
+                      <td className="py-3 px-3 text-center font-bold text-slate-800">
+                        {exec.visitsCount}
+                      </td>
+
+                      {/* Won Revenue */}
+                      <td className="py-3 px-3 text-right font-black text-emerald-700">
+                        ₹{exec.revenue.toLocaleString('en-IN')}
+                      </td>
+
+                      {/* Target % */}
+                      <td className="py-3 px-3 text-right">
+                        <div className="font-black text-slate-900 text-xs">{exec.achievementPct}%</div>
+                        <div className="text-[9px] text-slate-400">of ₹{(exec.targetAmount / 100000).toFixed(1)}L</div>
+                      </td>
+
+                      {/* Action */}
+                      <td className="py-3 px-3 text-right">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedExecutiveDetail(exec)}
+                          className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-extrabold text-[11px] inline-flex items-center gap-1 border border-slate-200 transition cursor-pointer"
+                        >
+                          <Eye size={12} /> View Details
+                        </button>
                       </td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-
-            {/* Action Footer */}
-            <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => {
-                  const exportRows = executiveRevenueList.map((ex) => ({
-                    Executive_Name: ex.name,
-                    Employee_Code: ex.code,
-                    Email: ex.email,
-                    Deals_Won: ex.convertedDeals,
-                    Revenue_Generated: ex.totalRevenue,
-                    Incentive_Tier: ex.incentiveTier,
-                    Total_Incentive: ex.totalIncentive
-                  }))
-                  exportToCSV(`TwiteConnect_Executive_Incentives_${new Date().toISOString().slice(0, 10)}.csv`, exportRows)
-                  showToast('Exported Executive Revenue & Incentives to CSV!', 'success')
-                }}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs cursor-pointer flex items-center gap-1.5"
-              >
-                <Download size={14} /> Export Incentives CSV
-              </button>
-              <button
-                onClick={() => setShowRevenueBreakdownModal(false)}
-                className="px-5 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs cursor-pointer shadow-xs"
-              >
-                Close View
-              </button>
-            </div>
-          </div>
+          )}
         </div>
       )}
 
-      {/* ── 2. FIX MONTHLY SALES TARGET MODAL ── */}
-      {showTargetModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-200">
+      {/* ── 6. ADD SALES TARGET MODAL ─────────────────────────────────────── */}
+      {showAddTargetModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                <Target className="w-5 h-5 text-[#ca8a04]" /> Fix Monthly Sales Target
-              </h3>
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
+                  <Target size={16} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Add Sales Quota / Target</h3>
+                  <p className="text-xs text-slate-500 font-semibold">Persists directly to Supabase sales.sales_target</p>
+                </div>
+              </div>
               <button
-                onClick={() => setShowTargetModal(false)}
+                type="button"
+                onClick={() => setShowAddTargetModal(false)}
                 className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
               >
                 <X size={18} />
               </button>
             </div>
 
-            <form onSubmit={handleSaveTarget} className="space-y-4">
-              <div>
-                <label className="text-xs font-black text-slate-800 block mb-1">
-                  Monthly Revenue Target (₹)
+            <form onSubmit={handleCreateTarget} className="space-y-3.5 text-xs font-semibold">
+              {/* Sales Executive Selector */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider">
+                  Select Sales Executive <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={targetForm.executive_id}
+                  onChange={(e) => setTargetForm({ ...targetForm, executive_id: e.target.value })}
+                  className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                  required
+                >
+                  <option value="">-- Choose Assigned Executive --</option>
+                  {assignedExecutives.map((ex) => (
+                    <option key={ex.id || ex.employee_code} value={ex.id || ex.employee_code}>
+                      {ex.name || ex.full_name} ({ex.employee_code || ex.employee_id || 'EMP'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Target Amount */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider">
+                  Target Amount (₹) <span className="text-rose-500">*</span>
                 </label>
                 <input
                   type="number"
-                  value={tempRevenueTarget}
-                  onChange={(e) => setTempRevenueTarget(e.target.value)}
-                  placeholder="e.g. 500000"
-                  className="w-full border-2 border-slate-300 focus:border-amber-500 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 bg-slate-50 focus:bg-white focus:outline-none"
-                  required
-                />
-                <span className="text-[10px] text-slate-500 font-semibold block mt-1">
-                  Current value: ₹{Number(tempRevenueTarget || 0).toLocaleString('en-IN')}
-                </span>
-              </div>
-
-              <div>
-                <label className="text-xs font-black text-slate-800 block mb-1">
-                  Monthly Converted Deals Target
-                </label>
-                <input
-                  type="number"
-                  value={tempDealsTarget}
-                  onChange={(e) => setTempDealsTarget(e.target.value)}
-                  placeholder="e.g. 10"
-                  className="w-full border-2 border-slate-300 focus:border-amber-500 rounded-xl px-3.5 py-2 text-sm font-bold text-slate-900 bg-slate-50 focus:bg-white focus:outline-none"
+                  min="10000"
+                  step="5000"
+                  value={targetForm.target_amount}
+                  onChange={(e) => setTargetForm({ ...targetForm, target_amount: e.target.value })}
+                  className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
                   required
                 />
               </div>
 
-              <div className="bg-amber-50 border border-amber-300 p-3 rounded-xl text-xs text-amber-950 font-medium">
-                ⚡ Once fixed, this target value will immediately reflect on all Sales Executive Dashboards in their target completion charts.
+              {/* Target Period & Dates Grid */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider">Period</label>
+                  <select
+                    value={targetForm.period}
+                    onChange={(e) => setTargetForm({ ...targetForm, period: e.target.value })}
+                    className="w-full h-9 px-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                  >
+                    <option value="Monthly">Monthly</option>
+                    <option value="Quarterly">Quarterly</option>
+                    <option value="Annual">Annual</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider">Start Date</label>
+                  <input
+                    type="date"
+                    value={targetForm.start_date}
+                    onChange={(e) => setTargetForm({ ...targetForm, start_date: e.target.value })}
+                    className="w-full h-9 px-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-black text-slate-700 uppercase tracking-wider">End Date</label>
+                  <input
+                    type="date"
+                    value={targetForm.end_date}
+                    onChange={(e) => setTargetForm({ ...targetForm, end_date: e.target.value })}
+                    className="w-full h-9 px-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                  />
+                </div>
               </div>
 
-              <div className="flex items-center justify-end gap-3 pt-2">
+              {/* Notes */}
+              <div className="space-y-1">
+                <label className="text-[11px] font-black text-slate-700 uppercase tracking-wider">Optional Notes / Key Deliverables</label>
+                <textarea
+                  rows={2}
+                  placeholder="e.g. Focus on enterprise CRM conversion and GPS fleet onboarding..."
+                  value={targetForm.notes}
+                  onChange={(e) => setTargetForm({ ...targetForm, notes: e.target.value })}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-amber-500 resize-none"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setShowTargetModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                  onClick={() => setShowAddTargetModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs cursor-pointer shadow-xs"
+                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
                 >
-                  Fix & Save Target
+                  <Target size={14} /> Save Target in Supabase
                 </button>
               </div>
             </form>
@@ -1338,6 +1276,77 @@ export default function ManagerDashboard() {
         </div>
       )}
 
+      {/* ── 7. EXECUTIVE DETAILS AUDIT MODAL ──────────────────────────────── */}
+      {selectedExecutiveDetail && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-black text-slate-900">{selectedExecutiveDetail.name}</h3>
+                <p className="text-xs text-blue-600 font-bold">
+                  {selectedExecutiveDetail.employee_code} · {selectedExecutiveDetail.designation}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedExecutiveDetail(null)}
+                className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs font-semibold text-slate-700">
+              <div className="grid grid-cols-2 gap-2.5">
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <span className="text-[10px] font-black text-slate-400 uppercase">Phone</span>
+                  <p className="text-xs font-bold text-slate-900 mt-0.5">{selectedExecutiveDetail.phone}</p>
+                </div>
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80">
+                  <span className="text-[10px] font-black text-slate-400 uppercase">Email</span>
+                  <p className="text-xs font-bold text-slate-900 mt-0.5 truncate">{selectedExecutiveDetail.email}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2.5">
+                <div className="p-3 bg-violet-50/60 rounded-xl border border-violet-200 text-center">
+                  <span className="text-[10px] font-black text-violet-700 uppercase">Leads</span>
+                  <p className="text-sm font-black text-violet-950 mt-0.5">{selectedExecutiveDetail.leadsCount}</p>
+                </div>
+                <div className="p-3 bg-teal-50/60 rounded-xl border border-teal-200 text-center">
+                  <span className="text-[10px] font-black text-teal-700 uppercase">Customers</span>
+                  <p className="text-sm font-black text-teal-950 mt-0.5">{selectedExecutiveDetail.customersCount}</p>
+                </div>
+                <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-200 text-center">
+                  <span className="text-[10px] font-black text-rose-700 uppercase">Visits</span>
+                  <p className="text-sm font-black text-rose-950 mt-0.5">{selectedExecutiveDetail.visitsCount}</p>
+                </div>
+              </div>
+
+              <div className="p-3 bg-emerald-50/70 rounded-xl border border-emerald-200 flex items-center justify-between">
+                <div>
+                  <span className="text-[10px] font-black text-emerald-800 uppercase">Won Sales Generated</span>
+                  <p className="text-base font-black text-emerald-950">₹{selectedExecutiveDetail.revenue.toLocaleString('en-IN')}</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-black text-emerald-800 uppercase">Target Achievement</span>
+                  <p className="text-base font-black text-emerald-950">{selectedExecutiveDetail.achievementPct}%</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setSelectedExecutiveDetail(null)}
+                className="px-4 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs shadow-xs hover:bg-slate-800 transition cursor-pointer"
+              >
+                Close Audit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
