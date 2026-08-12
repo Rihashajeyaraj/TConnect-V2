@@ -355,6 +355,15 @@ class HRMSRepository:
             "status": data.get("status", "Active"),
         }
 
+        if data.get("reporting_manager"):
+            emp_record["reporting_manager"] = data["reporting_manager"]
+        if data.get("reporting_manager_id"):
+            emp_record["reporting_manager_id"] = data["reporting_manager_id"]
+        if data.get("reporting_manager_name"):
+            emp_record["reporting_manager_name"] = data["reporting_manager_name"]
+        if data.get("reporting_manager_email"):
+            emp_record["reporting_manager_email"] = data["reporting_manager_email"]
+
         db_result = self._insert_employee_record(emp_record)
         if db_result:
             emp_record.update(db_result)

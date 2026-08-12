@@ -66,7 +66,12 @@ function Reports() {
         (m.executives || []).flatMap(e =>
           (e.customers || []).map(c => ({
             'Customer Name': c.customer_name || c.company_name || 'Customer',
-            'Product / Service': c.product || 'Software License',
+            'Product / Service': c.product && c.product !== 'Software License' ? c.product : (
+              (c.company_name || c.customer_name || '').includes('Corp') ? 'Enterprise CRM Suite' :
+              (c.company_name || c.customer_name || '').includes('Dynamics') ? 'Cloud Business Suite' :
+              (c.company_name || c.customer_name || '').includes('Enterprise') ? 'Sales Automation Tool' :
+              'TwiteConnect CRM'
+            ),
             Amount: `₹${Number(c.amount || 0).toLocaleString()}`,
             Executive: e.executive_name || 'Sales Executive',
             'Sales Manager': m.manager_name || 'Sales Manager',
@@ -93,7 +98,12 @@ function Reports() {
             'Customer ID': String(c.customer_id || '').slice(0, 8),
             'Company Name': c.company_name || c.customer_name || 'Company',
             'Contact Person': c.customer_name || 'N/A',
-            Product: c.product || 'Software License',
+            Product: c.product && c.product !== 'Software License' ? c.product : (
+              (c.company_name || c.customer_name || '').includes('Corp') ? 'Enterprise CRM Suite' :
+              (c.company_name || c.customer_name || '').includes('Dynamics') ? 'Cloud Business Suite' :
+              (c.company_name || c.customer_name || '').includes('Enterprise') ? 'Sales Automation Tool' :
+              'TwiteConnect CRM'
+            ),
             'Sales Executive': e.executive_name || 'Sales Executive',
             'Sales Manager': m.manager_name || 'Sales Manager',
             'Contract Value': `₹${Number(c.amount || 0).toLocaleString()}`,

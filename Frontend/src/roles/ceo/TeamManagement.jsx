@@ -41,6 +41,9 @@ function TeamManagement() {
     role: 'Sales Executive',
     department: 'Sales & BD',
     manager: '',
+    reporting_manager_id: '',
+    reporting_manager_name: '',
+    reporting_manager_email: '',
     status: 'Active',
   })
 
@@ -71,6 +74,9 @@ function TeamManagement() {
             role: eRole,
             department: e.dept || e.department || 'Sales & BD',
             manager: e.reporting_manager_name || (eRole.includes('Manager') || eRole.includes('Admin') ? 'CEO Office' : 'Direct / Unassigned'),
+            reporting_manager_id: e.reporting_manager_id || '',
+            reporting_manager_name: e.reporting_manager_name || '',
+            reporting_manager_email: e.reporting_manager_email || '',
             deals_won: 0,
             revenue: 0,
             status: e.status || 'Active',
@@ -96,14 +102,14 @@ function TeamManagement() {
       m.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (m.manager || '').toLowerCase().includes(searchQuery.toLowerCase())
 
-    const matchesRole = activeTab === 'All' || activeTab === 'hierarchy' || m.role === activeTab
+    const matchesRole = activeTab === 'All' || activeTab === 'hierarchy' || (activeTab === 'Admin' ? (m.role === 'Admin' || m.role === 'Super Admin' || m.role === 'System Admin') : m.role === activeTab)
 
     return matchesSearch && matchesRole
   })
 
   // Counts
   const totalStaff = team.length
-  const totalAdmins = team.filter((m) => m.role === 'Admin').length
+  const totalAdmins = team.filter((m) => m.role === 'Admin' || m.role === 'Super Admin' || m.role === 'System Admin').length
   const totalManagers = team.filter((m) => m.role === 'Sales Manager').length
   const totalExecutives = team.filter((m) => m.role === 'Sales Executive').length
 
@@ -116,6 +122,9 @@ function TeamManagement() {
       role: 'Sales Executive',
       department: 'Sales & BD',
       manager: '',
+      reporting_manager_id: '',
+      reporting_manager_name: '',
+      reporting_manager_email: '',
       status: 'Active',
     })
     setShowModal(true)
@@ -130,34 +139,152 @@ function TeamManagement() {
       role: emp.role,
       department: emp.department,
       manager: emp.manager,
+      reporting_manager_id: emp.reporting_manager_id || '',
+      reporting_manager_name: emp.reporting_manager_name || '',
+      reporting_manager_email: emp.reporting_manager_email || '',
       status: emp.status,
     })
     setShowModal(true)
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     if (!formData.name || !formData.email) {
       showToast('Please provide employee name and email', 'error')
       return
     }
 
+    const mId = formData.reporting_manager_id || null
+    const mName = formData.reporting_manager_name || null
+    const mEmail = formData.reporting_manager_email || null
+
     if (editingEmp) {
+      // Update local state optimistically
       setTeam((prev) =>
-        prev.map((m) => (m.id === editingEmp.id ? { ...m, ...formData } : m))
+        prev.map((m) =>
+          m.id === editingEmp.id
+            ? {
+                ...m,
+                name: formData.name,
+                email: formData.email,
+                phone: formData.phone,
+                role: formData.role,
+                department: formData.department,
+                manager: mName || (formData.role.includes('Manager') || formData.role.includes('Admin') ? 'CEO Office' : 'Direct / Unassigned'),
+                reporting_manager_id: mId,
+                reporting_manager_name: mName,
+                reporting_manager_email: mEmail,
+                status: formData.status,
+              }
+            : m
+        )
       )
-      showToast(`Updated employee ${formData.name}`, 'success')
+      setShowModal(false)
+
+      try {
+        await userAPI.updateUser(editingEmp.id, {
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          role: formData.role,
+          dept: formData.department,
+          status: formData.status,
+          reporting_manager_id: mId,
+          reporting_manager_name: mName,
+          reporting_manager_email: mEmail,
+        })
+        showToast(`Employee "${formData.name}" details updated successfully!`, 'success')
+      } catch (err) {
+        showToast('Updated employee details locally', 'info')
+      }
     } else {
+      const tempId = `EMP-TEMP-${Date.now()}`
       const newEmp = {
-        id: `EMP-00${team.length + 1}`,
-        ...formData,
+        id: tempId,
+        name: formData.name,
+        email: formData.email,
+        phone: formData.phone,
+        role: formData.role,
+        department: formData.department,
+        manager: mName || (formData.role.includes('Manager') || formData.role.includes('Admin') ? 'CEO Office' : 'Direct / Unassigned'),
+        reporting_manager_id: mId,
+        reporting_manager_name: mName,
+        reporting_manager_email: mEmail,
+        status: formData.status,
         deals_won: 0,
         revenue: 0,
       }
       setTeam((prev) => [newEmp, ...prev])
-      showToast(`Added new employee ${formData.name}`, 'success')
+      setShowModal(false)
+
+      const autoEmpId = `EMP${String(team.length + 1).padStart(6, '0')}`
+
+      try {
+        await userAPI.createUser({
+          employee_code: autoEmpId,
+          name: formData.name,
+          email: formData.email,
+          phone: formData.phone,
+          role: formData.role,
+          dept: formData.department,
+          status: formData.status,
+          reporting_manager_id: mId,
+          reporting_manager_name: mName,
+          reporting_manager_email: mEmail,
+        })
+        showToast(`Employee "${formData.name}" onboarded and added to HRMS!`, 'success')
+
+        // Reload fresh team data
+        const freshRes = await userAPI.getUsers().catch(() => null)
+        if (freshRes && freshRes.data) {
+          const mapped = freshRes.data.map((e, idx) => {
+            const eRole = e.role || 'Sales Executive'
+            const eName = e.name || e.full_name || e.email?.split('@')[0] || 'Team Member'
+            const eId = e.id || e.employee_id || `USR-${idx + 1}`
+            const myExecutives = freshRes.data
+              .filter(u => u.reporting_manager_name === eName || u.reporting_manager_id === eId)
+              .map(u => u.name || u.email)
+            return {
+              id: eId,
+              name: eName,
+              email: e.email || '',
+              phone: e.phone || '',
+              role: eRole,
+              department: e.dept || e.department || 'Sales & BD',
+              manager: e.reporting_manager_name || (eRole.includes('Manager') || eRole.includes('Admin') ? 'CEO Office' : 'Direct / Unassigned'),
+              reporting_manager_id: e.reporting_manager_id || '',
+              reporting_manager_name: e.reporting_manager_name || '',
+              reporting_manager_email: e.reporting_manager_email || '',
+              deals_won: 0,
+              revenue: 0,
+              status: e.status || 'Active',
+              executives: myExecutives,
+            }
+          })
+          setTeam(mapped)
+        }
+      } catch (err) {
+        showToast('Onboarded new employee locally', 'info')
+      }
     }
-    setShowModal(false)
+  }
+
+  const handleToggleDeactivate = async (emp) => {
+    const nextStatus = emp.status === 'Active' ? 'Deactivated' : 'Active'
+    
+    // Update local state optimistically
+    setTeam((prev) =>
+      prev.map((m) => (m.id === emp.id ? { ...m, status: nextStatus } : m))
+    )
+
+    try {
+      await userAPI.updateUser(emp.id, {
+        status: nextStatus
+      })
+      showToast(`Employee "${emp.name}" status updated to ${nextStatus}!`, 'success')
+    } catch (err) {
+      showToast('Updated employee status locally', 'info')
+    }
   }
 
   // Managers with their respective executives for hierarchy tree
@@ -265,7 +392,7 @@ function TeamManagement() {
         <div className="grid gap-6 lg:grid-cols-2">
           {managers.map((mgr) => {
             const reportingExecs = team.filter(
-              (m) => m.role === 'Sales Executive' && m.manager === mgr.name
+              (m) => m.role === 'Sales Executive' && (m.reporting_manager_id === mgr.id || m.manager === mgr.name)
             )
             const managerTotalRevenue = reportingExecs.reduce((acc, curr) => acc + curr.revenue, 0)
             const managerTotalDeals = reportingExecs.reduce((acc, curr) => acc + curr.deals_won, 0)
@@ -364,8 +491,8 @@ function TeamManagement() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredTeam.map((emp) => (
-                <tr key={emp.id} className="hover:bg-slate-50/70 transition">
+              {filteredTeam.map((emp, idx) => (
+                <tr key={`${emp.id}-${idx}`} className="hover:bg-slate-50/70 transition">
                   <td className="py-3">
                     <p className="font-extrabold text-slate-900">{emp.name}</p>
                     <p className="text-[10px] text-slate-400">{emp.email}</p>
@@ -390,18 +517,39 @@ function TeamManagement() {
                     ₹{emp.revenue.toLocaleString()}
                   </td>
                   <td className="py-3">
-                    <span className="inline-flex rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700 border border-emerald-200">
+                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black border ${
+                      emp.status?.toLowerCase() === 'active'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : 'bg-rose-50 text-rose-700 border-rose-200'
+                    }`}>
                       {emp.status}
                     </span>
                   </td>
                   <td className="py-3 text-right">
-                    <button
-                      onClick={() => handleOpenEdit(emp)}
-                      className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition"
-                      title="Edit Employee"
-                    >
-                      <Edit2 className="size-4" />
-                    </button>
+                    <div className="flex items-center justify-end gap-1">
+                      <button
+                        onClick={() => handleOpenEdit(emp)}
+                        className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition"
+                        title="Edit Employee"
+                      >
+                        <Edit2 className="size-3.5" />
+                      </button>
+                      <button
+                        onClick={() => handleToggleDeactivate(emp)}
+                        className={`rounded-lg p-1.5 transition ${
+                          emp.status === 'Active'
+                            ? 'text-rose-500 hover:bg-rose-50 hover:text-rose-700'
+                            : 'text-emerald-500 hover:bg-emerald-50 hover:text-emerald-700'
+                        }`}
+                        title={emp.status === 'Active' ? 'Deactivate Employee' : 'Activate Employee'}
+                      >
+                        {emp.status === 'Active' ? (
+                          <XCircle className="size-3.5" />
+                        ) : (
+                          <CheckCircle2 className="size-3.5" />
+                        )}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               ))}
@@ -477,14 +625,42 @@ function TeamManagement() {
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Reporting Manager</label>
                   <select
-                    value={formData.manager}
-                    onChange={(e) => setFormData({ ...formData, manager: e.target.value })}
+                    value={formData.reporting_manager_id || formData.manager}
+                    onChange={(e) => {
+                      const val = e.target.value
+                      if (val === 'CEO Office') {
+                        setFormData({
+                          ...formData,
+                          manager: 'CEO Office',
+                          reporting_manager_id: 'CEO Office',
+                          reporting_manager_name: 'CEO Office',
+                          reporting_manager_email: '',
+                        })
+                      } else if (!val) {
+                        setFormData({
+                          ...formData,
+                          manager: '',
+                          reporting_manager_id: '',
+                          reporting_manager_name: '',
+                          reporting_manager_email: '',
+                        })
+                      } else {
+                        const matched = team.find(m => m.id === val || m.name === val)
+                        setFormData({
+                          ...formData,
+                          manager: matched?.name || val,
+                          reporting_manager_id: matched?.id || val,
+                          reporting_manager_name: matched?.name || val,
+                          reporting_manager_email: matched?.email || '',
+                        })
+                      }
+                    }}
                     className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-800 outline-none bg-slate-50"
                   >
                     <option value="">Select Manager / CEO Office</option>
                     <option value="CEO Office">CEO Office</option>
                     {managers.map(m => (
-                      <option key={m.id || m.name} value={m.name}>{m.name}</option>
+                      <option key={m.id || m.name} value={m.id}>{m.name}</option>
                     ))}
                   </select>
                 </div>

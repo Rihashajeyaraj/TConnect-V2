@@ -25,16 +25,18 @@ import {
   Eye,
   FileUp,
   Plus,
+  ShieldCheck,
 } from "lucide-react";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { formatDate } from "../../utils/dateUtils.js";
 import { reportAPI, attendanceAPI, hrmsAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
-import { calculateWorkHours } from "./Attendance.jsx";
+import Attendance, { calculateWorkHours } from "./Attendance.jsx";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "attendance", label: "Attendance Portal", icon: UserCheck },
   { key: "daily_report", label: "Daily Work Report", icon: ClipboardList },
   { key: "leave", label: "Leave Management", icon: CalendarOff },
   { key: "calendar", label: "Holiday Calendar", icon: CalendarDays },
@@ -209,7 +211,8 @@ export default function SalesHRMS() {
   }, [empCode, currentUser]);
 
 
-  const managerName = profile.reportingManager || currentUser.reporting_manager_name || "Not Assigned";
+  const isUserAdmin = currentUser.role?.includes('Admin') || profile.role?.includes('Admin');
+  const managerName = isUserAdmin ? 'Dr. Twite Executive' : (profile.reportingManager && profile.reportingManager !== "Not Assigned" ? profile.reportingManager : (currentUser.reporting_manager_name || "Not Assigned"));
 
 
 
@@ -403,7 +406,7 @@ export default function SalesHRMS() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              TwiteHRMS Employee Portal
+              {isUserAdmin ? "TwiteHRMS Admin Portal" : "TwiteHRMS Employee Portal"}
             </h1>
           </div>
         </div>
@@ -447,19 +450,33 @@ export default function SalesHRMS() {
       {/* ── MAIN SECTION CONTENT ────────────────────────────────── */}
       <div className="w-full">
 
+        {/* ── ATTENDANCE PORTAL ── */}
+        {activeSection === "attendance" && (
+          <div className="max-w-5xl">
+            <Attendance />
+          </div>
+        )}
+
         {/* ── DASHBOARD ── */}
         {activeSection === "dashboard" && (
           <div className="space-y-4 max-w-5xl">
 
             <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Today's Performance</p>
+              <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">
+                {isUserAdmin ? "Today's Operations Summary" : "Today's Performance"}
+              </p>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-                {[
-                  { label: "Calls Made", value: allFollowups.length, icon: Phone, bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
-                  { label: "Visits Done", value: allVisits.length, icon: MapPin, bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
-                  { label: "Clients Said OK", value: convertedClients, icon: UserCheck, bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700" },
-                  { label: "Hot Leads Active", value: hotLeads, icon: Target, bg: "bg-rose-50 border-rose-200", text: "text-rose-700" },
-                ].map(({ label, value, icon: Icon, bg, text }) => (
+                {(isUserAdmin ? [
+                  { label: "Users Managed", value: "23", icon: Users, bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
+                  { label: "System Audits", value: "148", icon: ShieldCheck, bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
+                  { label: "Pending Requests", value: String(myLeaveRequests.filter(r => r.status === "Pending").length), icon: Clock3, bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700" },
+                  { label: "System Status", value: "Active", icon: Activity, bg: "bg-rose-50 border-rose-200", text: "text-rose-700" },
+                ] : [
+                  { label: "Calls Made", value: String(allFollowups.length), icon: Phone, bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
+                  { label: "Visits Done", value: String(allVisits.length), icon: MapPin, bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
+                  { label: "Clients Said OK", value: String(convertedClients), icon: UserCheck, bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700" },
+                  { label: "Hot Leads Active", value: String(hotLeads), icon: Target, bg: "bg-rose-50 border-rose-200", text: "text-rose-700" },
+                ]).map(({ label, value, icon: Icon, bg, text }) => (
                   <div key={label} className={`bg-white rounded-xl p-2.5 sm:p-3 border shadow-2xs ${bg}`}>
                     <div className="flex items-start justify-between">
                       <div>
@@ -475,23 +492,25 @@ export default function SalesHRMS() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-              {[
-                { label: "Total My Leads", value: allLeads.length, icon: Users, color: "sky" },
-                { label: "Active Customers", value: allCustomers.length, icon: UserCheck, color: "emerald" },
-                { label: "Conversion Rate", value: `${convRate}%`, icon: TrendingUp, color: "violet" },
-              ].map(({ label, value, icon: Icon, color }) => (
-                <div key={label} className={`bg-white rounded-xl p-2.5 sm:p-3 border border-${color}-200 shadow-2xs flex items-center gap-3`}>
-                  <div className={`w-8 h-8 rounded-lg bg-${color}-50 text-${color}-700 flex items-center justify-center shrink-0`}>
-                    <Icon size={16} />
+            {!isUserAdmin && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
+                {[
+                  { label: "Total My Leads", value: allLeads.length, icon: Users, color: "sky" },
+                  { label: "Active Customers", value: allCustomers.length, icon: UserCheck, color: "emerald" },
+                  { label: "Conversion Rate", value: `${convRate}%`, icon: TrendingUp, color: "violet" },
+                ].map(({ label, value, icon: Icon, color }) => (
+                  <div key={label} className={`bg-white rounded-xl p-2.5 sm:p-3 border border-${color}-200 shadow-2xs flex items-center gap-3`}>
+                    <div className={`w-8 h-8 rounded-lg bg-${color}-50 text-${color}-700 flex items-center justify-center shrink-0`}>
+                      <Icon size={16} />
+                    </div>
+                    <div>
+                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{label}</p>
+                      <h2 className={`text-lg sm:text-xl font-black text-${color}-700`}>{value}</h2>
+                    </div>
                   </div>
-                  <div>
-                    <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{label}</p>
-                    <h2 className={`text-lg sm:text-xl font-black text-${color}-700`}>{value}</h2>
-                  </div>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
 
             {/* ── 1. ATTENDANCE SUMMARY CARDS (COMPACT INLINE CARDS) ── */}
             <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-2xs space-y-2.5">
@@ -520,7 +539,7 @@ export default function SalesHRMS() {
                 <h2 className="text-base font-black text-slate-900">Attendance Report</h2>
                 <button
                   type="button"
-                  onClick={() => window.location.href = "/sales/attendance"}
+                  onClick={() => setActiveSection("attendance")}
                   className="px-3 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs transition cursor-pointer shadow-2xs"
                 >
                   Mark Attendance Now 📹
@@ -628,35 +647,37 @@ export default function SalesHRMS() {
               </div>
             </div>
 
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="font-black text-slate-900 text-sm">Monthly Conversion Progress (Adjustable Slider)</h3>
-                <span className="text-emerald-700 font-black text-sm">{convertedClients} / {allLeads.length || "—"} leads</span>
-              </div>
-              <div className="space-y-2">
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={manualProgress}
-                  onChange={(e) => {
-                    const val = Number(e.target.value);
-                    setManualProgress(val);
-                    localStorage.setItem("tc_manual_progress", val);
-                  }}
-                  className="custom-slider w-full cursor-pointer accent-teal-600 focus:outline-none"
-                  style={{
-                    background: `linear-gradient(to right, #0d9488 0%, #0d9488 ${manualProgress}%, #e2e8f0 ${manualProgress}%, #e2e8f0 100%)`
-                  }}
-                />
-                <div className="flex justify-between text-[10px] text-slate-400 font-semibold">
-                  <span>0%</span>
-                  <span>{manualProgress}% (Adjusted Target)</span>
-                  <span>100%</span>
+            {!isUserAdmin && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-black text-slate-900 text-sm">Monthly Conversion Progress (Adjustable Slider)</h3>
+                  <span className="text-emerald-700 font-black text-sm">{convertedClients} / {allLeads.length || "—"} leads</span>
                 </div>
+                <div className="space-y-2">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={manualProgress}
+                    onChange={(e) => {
+                      const val = Number(e.target.value);
+                      setManualProgress(val);
+                      localStorage.setItem("tc_manual_progress", val);
+                    }}
+                    className="custom-slider w-full cursor-pointer accent-teal-600 focus:outline-none"
+                    style={{
+                      background: `linear-gradient(to right, #0d9488 0%, #0d9488 ${manualProgress}%, #e2e8f0 ${manualProgress}%, #e2e8f0 100%)`
+                    }}
+                  />
+                  <div className="flex justify-between text-[10px] text-slate-400 font-semibold">
+                    <span>0%</span>
+                    <span>{manualProgress}% (Adjusted Target)</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+                <p className="text-[10px] text-slate-400 font-semibold mt-1">Adjust target conversion progress dynamically according to your preference</p>
               </div>
-              <p className="text-[10px] text-slate-400 font-semibold mt-1">Adjust target conversion progress dynamically according to your preference</p>
-            </div>
+            )}
           </div>
         )}
 
@@ -665,7 +686,9 @@ export default function SalesHRMS() {
           <div className="max-w-3xl space-y-5">
             <div>
               <h1 className="text-2xl font-black text-slate-900">Daily Work Report</h1>
-              <p className="text-slate-500 text-sm mt-0.5 font-semibold">Submit your daily sales activity report before 6:30 PM.</p>
+              <p className="text-slate-500 text-sm mt-0.5 font-semibold">
+                Submit your daily {isUserAdmin ? "operations" : "sales activity"} report before 6:30 PM.
+              </p>
             </div>
 
             {reportSubmitted ? (
@@ -691,21 +714,28 @@ export default function SalesHRMS() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-3">Today's Numbers</p>
+                  <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-3">
+                    {isUserAdmin ? "Today's Operational Metrics" : "Today's Numbers"}
+                  </p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                    {[
+                    {(isUserAdmin ? [
+                      { field: "usersOnboarded", label: "Users Onboarded", icon: UserCheck, ph: "e.g. 2" },
+                      { field: "roleChanges", label: "Role Changes", icon: ShieldCheck, ph: "e.g. 1" },
+                      { field: "ticketsResolved", label: "Tasks Resolved", icon: CheckCircle2, ph: "e.g. 5" },
+                      { field: "maintenanceHours", label: "Maintenance Hours", icon: Clock3, ph: "e.g. 4" },
+                    ] : [
                       { field: "callsMade", label: "Calls Made", icon: Phone, ph: "e.g. 12" },
                       { field: "visitsCompleted", label: "Visits Completed", icon: MapPin, ph: "e.g. 2" },
                       { field: "leadsGenerated", label: "New Leads", icon: Users, ph: "e.g. 5" },
                       { field: "clientsInterested", label: "Clients Interested", icon: UserCheck, ph: "e.g. 3" },
                       { field: "followupsScheduled", label: "Follow-ups Scheduled", icon: Clock3, ph: "e.g. 4" },
                       { field: "dealsClosed", label: "Deals Closed (Won)", icon: CheckCircle2, ph: "e.g. 1" },
-                    ].map(({ field, label, icon: Icon, ph }) => (
+                    ]).map(({ field, label, icon: Icon, ph }) => (
                       <div key={field} className="border border-slate-200 rounded-xl p-3 space-y-1.5">
                         <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 uppercase tracking-wider">
                           <Icon size={12} className="text-teal-600" /> {label}
                         </div>
-                        <input type="number" min="0" placeholder={ph} value={report[field]}
+                        <input type="number" min="0" placeholder={ph} value={report[field] || ""}
                           onChange={e => setReport(p => ({ ...p, [field]: e.target.value }))}
                           className="w-full text-xl font-black text-slate-900 border-0 focus:outline-none bg-transparent" />
                       </div>
@@ -713,13 +743,13 @@ export default function SalesHRMS() {
                   </div>
                 </div>
                 {[
-                  { field: "highlights", label: "Key Highlights / Wins Today", ph: "Best calls, site visits, promising leads..." },
-                  { field: "blockers", label: "Blockers / Issues", ph: "Challenges, rejections, travel issues..." },
-                  { field: "nextDayPlan", label: "Tomorrow's Plan", ph: "Which clients to call, follow up..." },
+                  { field: "highlights", label: isUserAdmin ? "Key Actions & Operations Highlights" : "Key Highlights / Wins Today", ph: isUserAdmin ? "User additions, system logs audited, permissions updated..." : "Best calls, site visits, promising leads..." },
+                  { field: "blockers", label: isUserAdmin ? "Operational Blockers / System Alerts" : "Blockers / Issues", ph: isUserAdmin ? "Server latency, DB access limits, user authentication issues..." : "Challenges, rejections, travel issues..." },
+                  { field: "nextDayPlan", label: isUserAdmin ? "Tomorrow's Operational Plan" : "Tomorrow's Plan", ph: isUserAdmin ? "Perform security check, sync employee records, verify logs..." : "Which clients to call, follow up..." },
                 ].map(({ field, label, ph }) => (
                   <div key={field}>
                     <label className="text-xs font-black text-slate-700 uppercase tracking-wider block mb-1.5">{label}</label>
-                    <textarea rows={3} placeholder={ph} value={report[field]}
+                    <textarea rows={3} placeholder={ph} value={report[field] || ""}
                       onChange={e => setReport(p => ({ ...p, [field]: e.target.value }))}
                       className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:border-teal-500 resize-none bg-slate-50 focus:bg-white transition" />
                   </div>
@@ -915,7 +945,7 @@ export default function SalesHRMS() {
                   <CalendarDays size={20} className="text-teal-600" /> My Leave & Permission Management
                 </h2>
                 <p className="text-xs text-slate-500 font-semibold mt-1">
-                  Apply for Full-Day Leave, Half-Day Permission, or Short 2-Hour Permission. Requests route directly to your assigned Sales Manager for approval.
+                  Apply for Full-Day Leave, Half-Day Permission, or Short 2-Hour Permission. Requests route directly to {isUserAdmin ? "the CEO" : "your assigned Sales Manager"} for approval.
                 </p>
               </div>
 
@@ -952,7 +982,7 @@ export default function SalesHRMS() {
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-base font-black text-slate-900">My Leave & Permission Requests History</h3>
-                <span className="text-xs text-slate-500 font-bold">Live Status from Sales Manager</span>
+                <span className="text-xs text-slate-500 font-bold">Live Status from {isUserAdmin ? "CEO" : "Sales Manager"}</span>
               </div>
 
               <div className="overflow-x-auto">

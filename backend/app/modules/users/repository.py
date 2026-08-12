@@ -355,6 +355,11 @@ class UserRepository:
             db_updates["status"] = updates["status"]
         if "reporting_manager_id" in updates or "reporting_manager" in updates:
             db_updates["reporting_manager"] = str(mgr_val) if is_uuid(mgr_val) else None
+            db_updates["reporting_manager_id"] = str(mgr_val) if mgr_val else None
+        if "reporting_manager_name" in updates:
+            db_updates["reporting_manager_name"] = updates["reporting_manager_name"]
+        if "reporting_manager_email" in updates:
+            db_updates["reporting_manager_email"] = updates["reporting_manager_email"]
 
         print("[REPORTING MANAGER]")
         print(f"employee_id: {user_id}")

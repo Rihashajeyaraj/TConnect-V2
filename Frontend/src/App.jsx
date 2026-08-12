@@ -108,8 +108,8 @@ function App() {
               <Route path="company" element={<CompanyOverview />} />
               <Route path="users" element={<UserManagement />} />
               <Route path="roles" element={<RoleManagement />} />
-              <Route path="hrms" element={<CeoHrms />} />
-              <Route path="attendance" element={<Attendance />} />
+              <Route path="hrms" element={<HRMS />} />
+              <Route path="attendance" element={<Navigate to="/admin/hrms?tab=attendance" replace />} />
               <Route path="reports" element={<CeoReports />} />
               <Route path="audit" element={<AuditLogs />} />
               <Route path="settings" element={
@@ -150,7 +150,7 @@ function App() {
               <Route index element={<Dashboard />} />
               <Route path="dashboard" element={<Dashboard />} />
               <Route path="map" element={<SmartClientMap />} />
-              <Route path="attendance" element={<Attendance />} />
+              <Route path="attendance" element={<Navigate to="/sales/hrms?tab=attendance" replace />} />
               <Route path="customers" element={<Customers />} />
               <Route path="client-log" element={<ClientLog />} />
               <Route path="visits" element={<ClientLog />} />

@@ -402,7 +402,73 @@ class CustomerRepository:
         return None
 
     def update_customer(self, cust_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
-        for payload in [updates, {k: v for k, v in updates.items() if v is not None}]:
+        db_updates = {}
+        
+        # 1. Normalize company name
+        comp = updates.get("company_name") or updates.get("company") or updates.get("name")
+        if comp:
+            db_updates["name"] = comp
+            db_updates["company"] = comp
+            db_updates["company_name"] = comp
+            
+        # 2. Normalize contact person
+        person = updates.get("contact_person") or updates.get("person") or updates.get("contactPerson")
+        if person:
+            db_updates["contact_person"] = person
+            db_updates["person"] = person
+            
+        # 3. Normalize email & phone
+        if "email" in updates:
+            db_updates["email"] = updates["email"]
+        if "phone" in updates:
+            db_updates["phone"] = updates["phone"]
+        elif "mobile" in updates:
+            db_updates["phone"] = updates["mobile"]
+            
+        # 4. Normalize city & location
+        city = updates.get("city") or updates.get("location")
+        if city:
+            db_updates["city"] = city
+            db_updates["location"] = city
+        if "address" in updates:
+            db_updates["address"] = updates["address"]
+            
+        # 5. Normalize executive assignment
+        exec_val = updates.get("sales_executive") or updates.get("sales_executive_name") or updates.get("executive_name") or updates.get("assignedExecutive") or updates.get("assigned_to")
+        if exec_val:
+            db_updates["sales_executive"] = exec_val
+            
+        # 6. Normalize manager assignment
+        mgr_val = updates.get("sales_manager") or updates.get("sales_manager_name") or updates.get("manager_name")
+        if mgr_val:
+            db_updates["sales_manager"] = mgr_val
+            
+        # 7. Normalize contract value
+        rev_val = updates.get("contract_value") or updates.get("revenue") or updates.get("contractValue") or updates.get("value")
+        if rev_val is not None:
+            if isinstance(rev_val, (int, float)):
+                db_updates["contract_value"] = float(rev_val)
+            else:
+                try:
+                    clean_val = "".join(c for c in str(rev_val) if c.isdigit() or c == '.')
+                    db_updates["contract_value"] = float(clean_val) if clean_val else 0.0
+                except ValueError:
+                    db_updates["contract_value"] = 0.0
+                    
+        # 8. Normalize status & notes
+        if "status" in updates:
+            db_updates["status"] = updates["status"]
+        notes = updates.get("notes") or updates.get("reachOutReason") or updates.get("specialRemarks")
+        if notes:
+            db_updates["notes"] = notes
+            
+        # 9. Carry GPS coordinates
+        if "latitude" in updates:
+            db_updates["latitude"] = updates["latitude"]
+        if "longitude" in updates:
+            db_updates["longitude"] = updates["longitude"]
+
+        for payload in [db_updates, {k: v for k, v in db_updates.items() if v is not None}]:
             try:
                 res = self.supabase.schema("crm").table("customers").update(payload).or_(f"id.eq.{cust_id},customer_id.eq.{cust_id}").execute()
                 if res.data and len(res.data) > 0:

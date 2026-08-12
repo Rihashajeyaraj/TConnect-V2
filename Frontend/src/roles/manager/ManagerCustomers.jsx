@@ -30,6 +30,8 @@ import { formatDate } from '../../utils/dateUtils.js'
 import { exportToCSV, exportToExcel, exportToPDF } from '../../utils/exportUtils.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import { useManagerFilter } from './ManagerFilterContext.jsx'
+import { customerAPI, userAPI } from '../../services/api.js'
+import useCurrentUser from '../../hooks/useCurrentUser.js'
 
 const DEFAULT_MANAGER_CUSTOMERS = []
 
@@ -63,6 +65,9 @@ export default function ManagerCustomers() {
     specialRemarks: '',
   })
 
+  const currentUser = useCurrentUser()
+  const [executives, setExecutives] = useState([])
+
   const [customerList, setCustomerList] = useState(() => {
     try {
       const saved = localStorage.getItem('tc_customer_accounts')
@@ -90,6 +95,112 @@ export default function ManagerCustomers() {
       localStorage.setItem('tc_customer_accounts', JSON.stringify(customerList))
     } catch (e) { }
   }, [customerList])
+
+  // Get current manager info helper
+  const getStoredUser = () => {
+    try {
+      const u = localStorage.getItem('user') || localStorage.getItem('tc_user')
+      return u ? JSON.parse(u) : {}
+    } catch (e) { return {} }
+  }
+
+  // Load executives and customers from backend API
+  useEffect(() => {
+    // 1. Fetch executives reporting to manager
+    userAPI.getUsers()
+      .then(res => {
+        const raw = res?.data || []
+        const mgrUser = getStoredUser()
+        const mgrEmail = (mgrUser.email || currentUser?.email || '').toLowerCase().trim()
+        const mgrId = (mgrUser.id || mgrUser.employee_id || mgrUser.user_id || currentUser?.id || '').toLowerCase().trim()
+        const mgrName = (mgrUser.name || mgrUser.full_name || currentUser?.name || '').toLowerCase().trim()
+
+        const assigned = raw.filter(e => {
+          const rId = String(e.reporting_manager_id || '').toLowerCase().trim()
+          const rEmail = String(e.reporting_manager_email || '').toLowerCase().trim()
+          const rName = String(e.reporting_manager_name || '').toLowerCase().trim()
+          
+          return (
+            (rId && rId === mgrId) ||
+            (rEmail && rEmail === mgrEmail) ||
+            (rName && mgrName && rName.includes(mgrName.split(' ')[0]))
+          )
+        })
+        setExecutives(assigned)
+        if (assigned.length > 0) {
+          setNewCust(prev => ({ ...prev, assignedExecutive: assigned[0].name }))
+        }
+      })
+      .catch(err => {
+        console.error("Failed to load executives for manager:", err)
+      })
+
+    // 2. Fetch customers and merge with local
+    customerAPI.getCustomers()
+      .then(res => {
+        const raw = Array.isArray(res) ? res : (res?.data || [])
+        const normalized = raw.map(c => ({
+          id: c.customer_id || c.id,
+          customer_id: c.customer_id || c.id,
+          name: c.name || c.company || c.company_name || "Client Account",
+          company: c.company || c.name || c.company_name || "Client Account",
+          contactPerson: c.person || c.contactPerson || c.contact_person || "—",
+          phone: c.phone || c.mobile || "—",
+          email: c.email || "—",
+          city: c.city || (c.billing_address || "").split(",")[0] || "Chennai",
+          status: c.status || "Active",
+          assignedExecutive: c.sales_executive_name || c.executive_name || c.assignedExecutive || "—",
+          revenue: c.contractValue || c.revenue || (c.contract_value ? `₹${c.contract_value.toLocaleString()}` : "₹5,00,000"),
+          tier: c.packageTier || c.tier || "Standard Corporate Pack",
+          reachOutReason: c.notes || c.reachOutReason || "Onboarded customer account.",
+          lastVisitDate: c.lastVisitDate || c.date || "",
+          totalVisits: c.totalVisits || 1,
+          paymentStatus: c.paymentStatus || "Paid (Current)",
+          specialRemarks: c.specialRemarks || c.notes || "Newly onboarded client account.",
+          remarksHistory: c.remarksHistory || [],
+        }))
+
+        setCustomerList(prev => {
+          const merged = [...normalized]
+          // Sync any local records that don't exist in Supabase database
+          prev.forEach(lc => {
+            const exists = merged.some(
+              sc =>
+                (sc.customer_id && sc.customer_id === lc.customer_id) ||
+                (sc.id && sc.id === lc.id) ||
+                ((sc.name || "").toLowerCase().trim() === (lc.name || lc.company || "").toLowerCase().trim())
+            )
+            if (!exists && lc.name) {
+              merged.push(lc)
+              customerAPI.createCustomer({
+                name: lc.name || lc.company,
+                company: lc.name || lc.company,
+                company_name: lc.name || lc.company,
+                person: lc.contactPerson,
+                contact_person: lc.contactPerson,
+                phone: lc.phone,
+                mobile: lc.phone,
+                email: lc.email,
+                city: lc.city,
+                status: lc.status,
+                sales_executive_name: lc.assignedExecutive,
+                executive_name: lc.assignedExecutive,
+                revenue: lc.revenue,
+                contractValue: lc.revenue,
+                packageTier: lc.tier,
+                notes: lc.reachOutReason,
+                specialRemarks: lc.specialRemarks,
+                remarksHistory: lc.remarksHistory,
+              }).catch(() => null)
+            }
+          })
+          return merged
+        })
+      })
+      .catch(err => {
+        console.error("Failed to load customers from Supabase:", err)
+      })
+  }, [currentUser])
 
   const filteredCustomers = customerList.filter((cust) => {
     const searchKw = search.toLowerCase()
@@ -145,7 +256,7 @@ export default function ManagerCustomers() {
   const activeCount = customerList.filter((c) => c.status === 'Active').length
   const enterpriseCount = customerList.filter((c) => (c.tier || '').toLowerCase().includes('enterprise')).length
 
-  const handleCreateCustomer = (e) => {
+  const handleCreateCustomer = async (e) => {
     e.preventDefault()
     if (!newCust.name.trim() || !newCust.contactPerson.trim() || !newCust.phone.trim()) {
       showToast('Please fill all required customer fields!', 'error')
@@ -173,22 +284,50 @@ export default function ManagerCustomers() {
       ],
     }
 
+    // Save to local state first
     setCustomerList((prev) => [createdRecord, ...prev])
     setShowAddModal(false)
+
+    // Save to Supabase DB via customerAPI
+    try {
+      await customerAPI.createCustomer({
+        name: createdRecord.name,
+        company: createdRecord.name,
+        company_name: createdRecord.name,
+        person: createdRecord.contactPerson,
+        contact_person: createdRecord.contactPerson,
+        phone: createdRecord.phone,
+        mobile: createdRecord.phone,
+        email: createdRecord.email,
+        city: createdRecord.city,
+        status: createdRecord.status,
+        sales_executive_name: createdRecord.assignedExecutive,
+        executive_name: createdRecord.assignedExecutive,
+        revenue: createdRecord.revenue,
+        contractValue: createdRecord.revenue,
+        packageTier: createdRecord.tier,
+        notes: createdRecord.reachOutReason,
+        specialRemarks: createdRecord.specialRemarks,
+        remarksHistory: createdRecord.remarksHistory,
+      })
+      showToast(`Customer "${createdRecord.name}" successfully onboarded and saved to database!`, 'success')
+    } catch (err) {
+      showToast(`Customer onboarded locally: ${err.message || err}`, 'info')
+    }
+
     setNewCust({
       name: '',
       contactPerson: '',
       phone: '',
       email: '',
       city: 'Chennai',
-      assignedExecutive: 'Ashwini E',
+      assignedExecutive: executives.length > 0 ? executives[0].name : 'Ashwini E',
       revenue: '₹5,00,000',
       tier: 'Standard Corporate Pack',
       status: 'Active',
       reachOutReason: '',
       specialRemarks: '',
     })
-    showToast(`Customer "${createdRecord.name}" onboarded and assigned to ${createdRecord.assignedExecutive}!`, 'success')
   }
 
   return (
@@ -781,12 +920,21 @@ export default function ManagerCustomers() {
                     onChange={(e) => setNewCust({ ...newCust, assignedExecutive: e.target.value })}
                     className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl px-2 text-xs font-bold focus:outline-none cursor-pointer"
                   >
-                    <option value="Ashwini E">Ashwini E</option>
-                    <option value="Suresh Raina">Suresh Raina</option>
-                    <option value="Vikram Singh">Vikram Singh</option>
-                    <option value="Abi hastro">Abi hastro</option>
-                    <option value="Ananya Roy">Ananya Roy</option>
-                    <option value="Karthik Raja">Karthik Raja</option>
+                    {executives.map((ex) => (
+                      <option key={ex.id || ex.name} value={ex.name}>
+                        {ex.name}
+                      </option>
+                    ))}
+                    {executives.length === 0 && (
+                      <>
+                        <option value="Ashwini E">Ashwini E</option>
+                        <option value="Suresh Raina">Suresh Raina</option>
+                        <option value="Vikram Singh">Vikram Singh</option>
+                        <option value="Abi hastro">Abi hastro</option>
+                        <option value="Ananya Roy">Ananya Roy</option>
+                        <option value="Karthik Raja">Karthik Raja</option>
+                      </>
+                    )}
                   </select>
                 </div>
                 <div>

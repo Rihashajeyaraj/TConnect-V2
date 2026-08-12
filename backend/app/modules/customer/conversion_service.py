@@ -361,8 +361,36 @@ class CustomerConversionService:
         address = contact.get("address") or city
         lead_id = contact.get("lead_id")
         assigned_to_name = (
-            contact.get("assigned_to") or (user_payload or {}).get("name") or ""
+            contact.get("assigned_to") or contact.get("sales_executive") or contact.get("sales_executive_name") or contact.get("executive_name") or (user_payload or {}).get("name") or ""
         )
+
+        # Parse contract value
+        raw_val = contact.get("contract_value") or contact.get("revenue") or contact.get("contractValue") or contact.get("value") or 0.0
+        contract_value = 0.0
+        if raw_val:
+            if isinstance(raw_val, (int, float)):
+                contract_value = float(raw_val)
+            else:
+                try:
+                    clean_val = "".join(c for c in str(raw_val) if c.isdigit() or c == '.')
+                    contract_value = float(clean_val) if clean_val else 0.0
+                except ValueError:
+                    contract_value = 0.0
+
+        # Resolve sales manager
+        sales_mgr = contact.get("sales_manager") or contact.get("sales_manager_name") or ""
+        if not sales_mgr and assigned_to_name:
+            try:
+                from app.modules.users.repository import UserRepository
+                all_users = UserRepository().get_all_users()
+                exec_name_clean = str(assigned_to_name).lower().strip()
+                for u in all_users:
+                    u_name = str(u.get("name") or u.get("full_name") or "").lower().strip()
+                    if u_name == exec_name_clean:
+                        sales_mgr = u.get("reporting_manager_name")
+                        break
+            except Exception:
+                pass
 
         full_payload = {
             "id": customer_uuid,
@@ -379,8 +407,10 @@ class CustomerConversionService:
             "address": address,
             "city": city,
             "sales_executive": assigned_to_name if assigned_to_name else None,
-            "status": "Active Customer",
-            "notes": contact.get("notes") or f"Customer account for {company}",
+            "sales_manager": sales_mgr if sales_mgr else None,
+            "contract_value": contract_value,
+            "status": contact.get("status") or "Active Customer",
+            "notes": contact.get("notes") or contact.get("reachOutReason") or f"Customer account for {company}",
         }
 
         logger.info(
