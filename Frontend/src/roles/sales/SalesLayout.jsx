@@ -36,6 +36,7 @@ import {
   HeartPulse,
   Code2,
   AlertCircle,
+  GripVertical,
 } from "lucide-react";
 import { notificationAPI, hrmsAPI } from "../../services/api.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
@@ -377,7 +378,87 @@ export default function SalesLayout() {
     { title: "Tasks", icon: CheckSquare, path: "/sales/todo" },
   ];
 
+  const userEmail = (user?.email || "").toLowerCase().trim();
+  const [sidebarItems, setSidebarItems] = useState(() => {
+    const saved = localStorage.getItem(`tc_sidebar_order_sales_${userEmail}`);
+    if (saved) {
+      try {
+        const titles = JSON.parse(saved);
+        const ordered = [];
+        titles.forEach(title => {
+          const match = menus.find(m => m.title === title);
+          if (match) ordered.push(match);
+        });
+        menus.forEach(m => {
+          if (!ordered.some(o => o.title === m.title)) {
+            ordered.push(m);
+          }
+        });
+        return ordered;
+      } catch (e) {
+        return menus;
+      }
+    }
+    return menus;
+  });
 
+  useEffect(() => {
+    const saved = localStorage.getItem(`tc_sidebar_order_sales_${userEmail}`);
+    if (saved) {
+      try {
+        const titles = JSON.parse(saved);
+        const ordered = [];
+        titles.forEach(title => {
+          const match = menus.find(m => m.title === title);
+          if (match) ordered.push(match);
+        });
+        menus.forEach(m => {
+          if (!ordered.some(o => o.title === m.title)) {
+            ordered.push(m);
+          }
+        });
+        setSidebarItems(ordered);
+      } catch (e) {
+        setSidebarItems(menus);
+      }
+    } else {
+      setSidebarItems(menus);
+    }
+  }, [userEmail]);
+
+  const [isCustomizing, setIsCustomizing] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState(null);
+
+  const handleDragStart = (e, index) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+  };
+  const handleDrop = (e, index) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+    const reordered = [...sidebarItems];
+    const [draggedItem] = reordered.splice(draggedIndex, 1);
+    reordered.splice(index, 0, draggedItem);
+    setSidebarItems(reordered);
+  };
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
+  const saveCustomization = () => {
+    const titles = sidebarItems.map(item => item.title);
+    localStorage.setItem(`tc_sidebar_order_sales_${userEmail}`, JSON.stringify(titles));
+    setIsCustomizing(false);
+    showToast("Sidebar layout order saved successfully!", "success");
+  };
+  const resetCustomization = () => {
+    localStorage.removeItem(`tc_sidebar_order_sales_${userEmail}`);
+    setSidebarItems(menus);
+    setIsCustomizing(false);
+    showToast("Sidebar layout reset to default.", "info");
+  };
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
@@ -400,21 +481,67 @@ export default function SalesLayout() {
         </div>
 
         <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {menus.map((m) => (
-            <NavLink
+          {sidebarItems.map((m, index) => (
+            <div
               key={m.path}
-              to={m.path}
-              onClick={() => isMobile && setOpen(false)}
-              className={({ isActive }) =>
-                `flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-black transition ${isActive ? "bg-teal-600 text-white shadow-md shadow-teal-600/30" : "text-slate-600 hover:bg-teal-50 hover:text-teal-900"
-                } ${!open ? "justify-center" : ""}`
-              }
-              title={!open ? m.title : undefined}
+              draggable={isCustomizing}
+              onDragStart={(e) => handleDragStart(e, index)}
+              onDragOver={(e) => handleDragOver(e, index)}
+              onDrop={(e) => handleDrop(e, index)}
+              onDragEnd={handleDragEnd}
+              className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-teal-200 rounded-xl" : ""}`}
             >
-              <m.icon size={18} className="flex-shrink-0" />
-              {open && <span className="truncate">{m.title}</span>}
-            </NavLink>
+              <NavLink
+                to={isCustomizing ? "#" : m.path}
+                onClick={(e) => {
+                  if (isCustomizing) {
+                    e.preventDefault();
+                    return;
+                  }
+                  if (isMobile) setOpen(false);
+                }}
+                className={({ isActive }) =>
+                  `flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-black transition ${!isCustomizing && isActive ? "bg-teal-600 text-white shadow-md shadow-teal-600/30" : "text-slate-600 hover:bg-teal-50 hover:text-teal-900"
+                  } ${!open ? "justify-center" : ""}`
+                }
+                title={!open ? m.title : undefined}
+              >
+                {isCustomizing && open && <GripVertical size={14} className="text-slate-400 shrink-0 mr-1" />}
+                <m.icon size={18} className="flex-shrink-0" />
+                {open && <span className="truncate">{m.title}</span>}
+              </NavLink>
+            </div>
           ))}
+          {open && (
+            <div className="pt-2">
+              {isCustomizing ? (
+                <div className="pt-2 border-t border-slate-100 space-y-1.5 px-1">
+                  <button
+                    type="button"
+                    onClick={saveCustomization}
+                    className="w-full py-2 px-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[11px] font-black transition cursor-pointer"
+                  >
+                    Save Order
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetCustomization}
+                    className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[11px] font-black transition cursor-pointer"
+                  >
+                    Reset Default
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsCustomizing(true)}
+                  className="w-full py-2 px-3 border border-dashed border-slate-200 hover:border-teal-400 text-slate-500 hover:text-teal-600 rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>⚙️ Customize Sidebar</span>
+                </button>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="p-3 border-t border-slate-100 flex-shrink-0">

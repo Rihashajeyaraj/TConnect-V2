@@ -233,7 +233,7 @@ export default function Leads() {
       })
       .catch(() => null);
   }, []);
-  useEffect(() => {
+  const fetchLeads = () => {
     crmAPI.getLeads()
       .then((res) => {
         const raw = Array.isArray(res) ? res : (res?.data || []);
@@ -268,6 +268,9 @@ export default function Leads() {
             notes: l.notes || l.remarks || "",
             customerId: l.customer_id || null,
             source: l.source || "Supabase",
+            latitude: l.latitude || null,
+            longitude: l.longitude || null,
+            full_address: l.address || null,
             createdAt: l.created_at ? formatDate(l.created_at) : formatDate(new Date()),
           };
         });
@@ -282,12 +285,20 @@ export default function Leads() {
                 (ac.company && ac.company.toLowerCase() === (lc.company || "").toLowerCase())
             )
           );
-          return deduplicateLeadsList([...apiLeads, ...localOnly]);
+          const merged = deduplicateLeadsList([...apiLeads, ...localOnly]);
+          try {
+            localStorage.setItem("tc_sm_leads", JSON.stringify(merged));
+          } catch (e) { }
+          return merged;
         });
       })
       .catch((err) => {
-        console.log("Using stored leads fallback:", err);
+        console.warn("Using stored leads fallback:", err);
       });
+  };
+
+  useEffect(() => {
+    fetchLeads();
   }, []);
 
   const [search, setSearch] = useState("");
@@ -348,8 +359,8 @@ export default function Leads() {
     source: "Field Research (SE)",
     targetList: "Leads", // "Leads" | "Opportunities"
     notes: "",
-    latitude: 13.0067,
-    longitude: 80.2570,
+    latitude: null,
+    longitude: null,
     landmark: "",
     full_address: "",
   });
@@ -516,6 +527,10 @@ export default function Leads() {
 
     const selectedProd = addForm.product?.trim() || "TwiteConnect CRM";
 
+    // Clean and validate coordinates to avoid NaN or fabricated coordinates
+    const lat = (addForm.latitude != null && !isNaN(Number(addForm.latitude))) ? Number(addForm.latitude) : null;
+    const lng = (addForm.longitude != null && !isNaN(Number(addForm.longitude))) ? Number(addForm.longitude) : null;
+
     const payload = {
       company_name: addForm.company.trim(),
       company: addForm.company.trim(),
@@ -535,11 +550,8 @@ export default function Leads() {
       assigned_to: userName,
       assigned_to_email: userEmail,
       employee_code: userEmpCode,
-      // Exact GPS coordinates from Location Picker
-      ...(addForm.latitude && addForm.longitude ? {
-        latitude: Number(addForm.latitude),
-        longitude: Number(addForm.longitude),
-      } : {}),
+      latitude: lat,
+      longitude: lng,
     };
 
     let serverLeadId = `lead_${Date.now()}`;
@@ -547,13 +559,17 @@ export default function Leads() {
 
     try {
       const apiRes = await crmAPI.createLead(payload);
-      if (apiRes && (apiRes.data || apiRes.lead_id || apiRes.id)) {
-        const leadData = apiRes.data || apiRes;
-        serverLeadId = leadData.lead_id || leadData.id || serverLeadId;
-        serverLeadNum = leadData.lead_number || serverLeadNum;
+      const leadData = apiRes?.data || apiRes;
+      if (!leadData || (!leadData.lead_id && !leadData.id)) {
+        throw new Error(apiRes?.message || "Failed to persist Lead record on the backend database.");
       }
+      serverLeadId = leadData.lead_id || leadData.id;
+      serverLeadNum = leadData.lead_number || serverLeadNum;
     } catch (apiErr) {
-      console.warn("Backend API notice when creating lead:", apiErr);
+      console.error("Backend API error when creating lead:", apiErr);
+      const errorDetail = apiErr?.response?.data?.detail || apiErr?.detail || apiErr?.message || "Connection error or internal server failure.";
+      showToast(`❌ Lead creation failed: ${errorDetail}`, "error");
+      return; // ABORT submission so local state is not updated with invalid data
     }
 
     const newLeadObj = {
@@ -575,8 +591,8 @@ export default function Leads() {
       status: "New",
       source: addForm.source || "Field Research (SE)",
       notes: payload.notes,
-      latitude: addForm.latitude || null,
-      longitude: addForm.longitude || null,
+      latitude: lat,
+      longitude: lng,
       full_address: addForm.full_address || null,
       customerId: null,
       createdAt: formatDate(new Date()),
@@ -584,6 +600,11 @@ export default function Leads() {
         { note: `Lead created by ${userName} via ${addForm.source || 'Field Research'}. Requirement: ${selectedProd}`, date: "Just now", author: userName }
       ],
     };
+
+    // Auto-trigger list sync from DB
+    setTimeout(() => {
+      fetchLeads();
+    }, 100);
 
     // If "Opportunity List" is selected, save directly to Opportunities in Client Log!
     if (addForm.targetList === "Opportunities") {
@@ -658,25 +679,11 @@ export default function Leads() {
       source: "Field Research (SE)",
       targetList: "Leads",
       notes: "",
+      latitude: null,
+      longitude: null,
+      full_address: "",
     });
     setIsAddModalOpen(false);
-
-    // Notification to Sales Manager disabled by policy rules (only Converted Customer & Visits allowed)
-    setIsAddModalOpen(false);
-
-    setIsAddModalOpen(false);
-    setAddForm({
-      company: "",
-      person: "",
-      phone: "",
-      email: "",
-      city: "",
-      category: "Hot",
-      priority: "High",
-      value: "₹4,50,000",
-      notes: "",
-    });
-    showToast(`🎉 New Lead "${newLeadObj.company}" added successfully!`, "success");
   };
 
   // ── Add Opportunity Action ───────────────────────────────────────────────
@@ -2583,6 +2590,41 @@ export default function Leads() {
                 <p><strong className="text-slate-900">Estimated Deal Value:</strong> <span className="text-emerald-600 font-extrabold">{selectedLead.value || "₹4,50,000"}</span></p>
               </div>
 
+              {/* Location Section */}
+              <div className="p-3.5 bg-blue-50 border-2 border-blue-200 rounded-2xl space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <MapPin size={14} className="text-blue-600" />
+                    <span className="text-[10px] font-black text-blue-900 uppercase tracking-wider">Exact Location (Smart Map)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditLocationPickerOpen(true)}
+                    className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[10px] flex items-center gap-1 shadow-xs transition cursor-pointer"
+                  >
+                    <MapPin size={11} /> {selectedLead.latitude ? 'Update Location' : 'Set Location'}
+                  </button>
+                </div>
+                {selectedLead.latitude && selectedLead.longitude ? (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" />
+                    <div>
+                      {selectedLead.full_address && (
+                        <p className="text-[11px] font-semibold text-slate-700 truncate">{selectedLead.full_address}</p>
+                      )}
+                      <p className="text-[10px] font-bold font-mono text-slate-400">
+                        {Number(selectedLead.latitude).toFixed(6)}, {Number(selectedLead.longitude).toFixed(6)}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-amber-600 text-[11px] font-bold">
+                    <AlertCircle size={12} className="flex-shrink-0" />
+                    No exact location. Click "Set Location" to enable routing in Smart Map.
+                  </div>
+                )}
+              </div>
+
               {/* Lifecycle Timeline History Viewer Button */}
               <div className="p-3.5 rounded-2xl bg-indigo-50/80 border border-indigo-200 flex items-center justify-between">
                 <div>
@@ -3186,8 +3228,26 @@ export default function Leads() {
         initialLng={selectedLead?.longitude || 80.2570}
         initialAddress={selectedLead?.full_address || selectedLead?.address || ''}
         title="Update Lead Location"
-        onConfirm={(lat, lng, address) => {
-          setSelectedLead(prev => prev ? ({ ...prev, latitude: lat, longitude: lng, full_address: address }) : prev);
+        onConfirm={async (lat, lng, address) => {
+          if (!selectedLead) return;
+          const updated = { ...selectedLead, latitude: lat, longitude: lng, full_address: address };
+          setSelectedLead(updated);
+          setAllLeads(prev => prev.map(l => l.id === updated.id ? updated : l));
+
+          try {
+            await crmAPI.updateLead(updated.id, {
+              latitude: lat,
+              longitude: lng,
+              address: address,
+              city: address.split(",")[0] || selectedLead.city,
+            });
+            showToast("📍 Lead location updated successfully!", "success");
+            // Reload database lists
+            fetchLeads();
+          } catch (err) {
+            console.error("Failed to save location updates to backend database:", err);
+            showToast("Failed to save location updates to database.", "error");
+          }
           setIsEditLocationPickerOpen(false);
         }}
       />

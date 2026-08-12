@@ -59,13 +59,15 @@ def run_tests():
 
     # ── 2. TEST CUSTOMER CREATION & PERSISTENCE ────────────────────────────────
     print("\n--- 2. Testing Customer Creation & Supabase Persistence ---")
+    import random
+    rand_phone = f"+91 98765 {random.randint(10000, 99999)}"
     cust_payload = CustomerCreate(
         name=f"GlobalTech Corp {unique_suffix}",
         company_name=f"GlobalTech Corp {unique_suffix}",
         contact_person="Suresh Raina",
         person="Suresh Raina",
         email=f"suresh_{unique_suffix.lower()}@globaltech.com",
-        phone="+91 98765 22222",
+        phone=rand_phone,
         city="Bengaluru",
         address="Bengaluru Tech Park",
         lead_id=lead_id,
@@ -75,12 +77,13 @@ def run_tests():
         employee_code="EMP-101"
     )
 
-    created_cust = cust_service.create_customer(cust_payload)
+    created_cust_res = cust_service.create_customer(cust_payload)
+    created_cust = created_cust_res.get("customer") if "customer" in created_cust_res else created_cust_res
     cust_id = created_cust.get("customer_id") or created_cust.get("id")
     print(f"[PASS] Customer Created via Service: ID={cust_id}, Company='{created_cust.get('name')}'")
 
     # Verify directly in Supabase table "customers"
-    res_cust = supabase.table("customers").select("*").eq("customer_id", cust_id).execute()
+    res_cust = supabase.schema("crm").table("customers").select("*").eq("customer_id", cust_id).execute()
     assert res_cust.data and len(res_cust.data) > 0, "Customer was NOT found in Supabase 'customers' table!"
     db_cust = res_cust.data[0]
     assert db_cust["customer_id"] == cust_id, "Customer ID mismatch in Supabase!"

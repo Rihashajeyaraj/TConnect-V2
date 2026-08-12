@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import {
   Briefcase,
@@ -25,7 +26,102 @@ import { exportToCSV } from '../../utils/exportUtils.js'
 
 function CeoHrms({ initialTab = 'employees' }) {
   const { showToast } = useToast()
-  const [activeTab, setActiveTab] = useState(initialTab) // 'employees' | 'leaves' | 'permissions' | 'attendance' | 'approval_history'
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeTab = searchParams.get('tab') || initialTab // 'employees' | 'leaves' | 'permissions' | 'attendance' | 'approval_history'
+  const setActiveTab = (val) => setSearchParams({ tab: val })
+
+  const user = (() => {
+    try {
+      return JSON.parse(localStorage.getItem('user') || '{}');
+    } catch {
+      return {};
+    }
+  })();
+  const userEmail = (user.email || '').toLowerCase().trim();
+
+  const DEFAULT_CEO_TABS = [
+    { id: 'employees', label: 'Employees Directory', icon: Users },
+    { id: 'leaves', label: 'Leave Requests', icon: Calendar },
+    { id: 'permissions', label: 'Permission Requests', icon: Clock },
+    { id: 'attendance', label: 'Attendance Summary', icon: UserCheck },
+    { id: 'approval_history', label: 'Clearance History', icon: History },
+  ];
+
+  const [hrmsTabs, setHrmsTabs] = useState(() => {
+    const saved = localStorage.getItem(`tc_hrms_order_ceo_${userEmail}`);
+    if (saved) {
+      try {
+        const keys = JSON.parse(saved);
+        const ordered = [];
+        keys.forEach(k => {
+          const match = DEFAULT_CEO_TABS.find(n => n.id === k);
+          if (match) ordered.push(match);
+        });
+        DEFAULT_CEO_TABS.forEach(n => {
+          if (!ordered.some(o => o.id === n.id)) {
+            ordered.push(n);
+          }
+        });
+        return ordered;
+      } catch (e) {
+        return DEFAULT_CEO_TABS;
+      }
+    }
+    return DEFAULT_CEO_TABS;
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`tc_hrms_order_ceo_${userEmail}`);
+    if (saved) {
+      try {
+        const keys = JSON.parse(saved);
+        const ordered = [];
+        keys.forEach(k => {
+          const match = DEFAULT_CEO_TABS.find(n => n.id === k);
+          if (match) ordered.push(match);
+        });
+        DEFAULT_CEO_TABS.forEach(n => {
+          if (!ordered.some(o => o.id === n.id)) {
+            ordered.push(n);
+          }
+        });
+        setHrmsTabs(ordered);
+      } catch (e) {
+        setHrmsTabs(DEFAULT_CEO_TABS);
+      }
+    } else {
+      setHrmsTabs(DEFAULT_CEO_TABS);
+    }
+  }, [userEmail]);
+
+  const [draggedTabKey, setDraggedTabKey] = useState(null);
+
+  const handleTabDragStart = (e, index) => {
+    setDraggedTabKey(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleTabDragOver = (e, index) => {
+    e.preventDefault();
+  };
+  const handleTabDrop = (e, index) => {
+    e.preventDefault();
+    if (draggedTabKey === null || draggedTabKey === index) return;
+    const reordered = [...hrmsTabs];
+    const [draggedItem] = reordered.splice(draggedTabKey, 1);
+    reordered.splice(index, 0, draggedItem);
+    setHrmsTabs(reordered);
+    const keys = reordered.map(item => item.id);
+    localStorage.setItem(`tc_hrms_order_ceo_${userEmail}`, JSON.stringify(keys));
+    showToast("HRMS tab order updated!", "success");
+  };
+  const handleTabDragEnd = () => {
+    setDraggedTabKey(null);
+  };
+  const resetHrmsTabs = () => {
+    localStorage.removeItem(`tc_hrms_order_ceo_${userEmail}`);
+    setHrmsTabs(DEFAULT_CEO_TABS);
+    showToast("HRMS tabs reset to default.", "info");
+  };
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -242,6 +338,19 @@ function CeoHrms({ initialTab = 'employees' }) {
   const pendingLeaves = leaveRequests.filter((l) => l.status === 'Pending')
   const pendingPermissions = permissionRequests.filter((p) => p.status === 'Pending')
 
+  const getBadgeValue = (id) => {
+    if (id === 'employees') return employees.length
+    if (id === 'leaves') return pendingLeaves.length
+    if (id === 'permissions') return pendingPermissions.length
+    return null
+  }
+
+  const hasAlert = (id) => {
+    if (id === 'leaves') return pendingLeaves.length > 0
+    if (id === 'permissions') return pendingPermissions.length > 0
+    return false
+  }
+
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 pb-12">
       {/* Header */}
@@ -270,41 +379,55 @@ function CeoHrms({ initialTab = 'employees' }) {
 
       {/* Primary HRMS Navigation Tabs */}
       <div className="flex items-center gap-1.5 overflow-x-auto bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs">
-        {[
-          { id: 'employees', label: 'Employees Directory', icon: Users, badge: employees.length },
-          { id: 'leaves', label: 'Leave Requests', icon: Calendar, badge: pendingLeaves.length, alert: pendingLeaves.length > 0 },
-          { id: 'permissions', label: 'Permission Requests', icon: Clock, badge: pendingPermissions.length, alert: pendingPermissions.length > 0 },
-          { id: 'attendance', label: 'Attendance Summary', icon: UserCheck },
-          { id: 'approval_history', label: 'Approval Status & Audit', icon: History },
-        ].map((tab) => {
-          const Icon = tab.icon
-          const isActive = activeTab === tab.id
+        {hrmsTabs.map((tabItem, index) => {
+          const Icon = tabItem.icon
+          const isActive = activeTab === tabItem.id
+          const badgeVal = getBadgeValue ? getBadgeValue(tabItem.id) : (tabItem.id === 'employees' ? employees.length : tabItem.id === 'leaves' ? pendingLeaves.length : tabItem.id === 'permissions' ? pendingPermissions.length : null)
+          const alertVal = hasAlert ? hasAlert(tabItem.id) : (tabItem.id === 'leaves' ? pendingLeaves.length > 0 : tabItem.id === 'permissions' ? pendingPermissions.length > 0 : false)
           return (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${isActive
-                  ? 'bg-[#004749] text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
+            <div
+              key={tabItem.id}
+              draggable="true"
+              onDragStart={(e) => handleTabDragStart(e, index)}
+              onDragOver={(e) => handleTabDragOver(e, index)}
+              onDrop={(e) => handleTabDrop(e, index)}
+              onDragEnd={handleTabDragEnd}
+              className={`flex items-center transition cursor-pointer ${
+                draggedTabKey === index ? 'opacity-40' : ''
+              }`}
             >
-              <Icon className="size-4" />
-              <span>{tab.label}</span>
-              {tab.badge !== undefined && (
-                <span
-                  className={`rounded-full px-2 py-0.2 text-[10px] font-black ${isActive
-                      ? 'bg-white text-[#004749]'
-                      : tab.alert
-                        ? 'bg-[#540000] text-white'
-                        : 'bg-slate-200 text-slate-700'
-                    }`}
-                >
-                  {tab.badge}
-                </span>
-              )}
-            </button>
+              <button
+                onClick={() => setActiveTab(tabItem.id)}
+                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${isActive
+                    ? 'bg-[#004749] text-white shadow-xs'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+              >
+                <Icon className="size-4" />
+                <span>{tabItem.label}</span>
+                {badgeVal !== null && badgeVal !== undefined && (
+                  <span
+                    className={`rounded-full px-2 py-0.2 text-[10px] font-black ${isActive
+                        ? 'bg-white text-[#004749]'
+                        : alertVal
+                          ? 'bg-[#540000] text-white'
+                          : 'bg-slate-200 text-slate-700'
+                      }`}
+                  >
+                    {badgeVal}
+                  </span>
+                )}
+              </button>
+            </div>
           )
         })}
+        <button
+          type="button"
+          onClick={resetHrmsTabs}
+          className="ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
+        >
+          Reset Order
+        </button>
       </div>
 
       {/* ── TAB 1: EMPLOYEES DIRECTORY ────────────────────────── */}

@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     # Biometrics
     BIOMETRIC_SERVICE_URL: str = "http://76.13.242.108:8012"
 
+    # Smart Map
+    CLIENT_ROUTE_ALERT_RADIUS_KM: float = 2.0
+    GOOGLE_MAPS_API_KEY: str = ""
+    GPS_ACCURACY_THRESHOLD: float = 100.0
+
 
     # Security
     SECRET_KEY: str = "twiteconnect-super-secret-key-change-in-production"

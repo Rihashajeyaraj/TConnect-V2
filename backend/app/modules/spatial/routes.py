@@ -401,3 +401,115 @@ def update_executive_location(payload: Dict[str, Any] = Body(...)):
 
     return {"success": True, "location": entry}
 
+
+@router.post("/route")
+def compute_route(payload: Dict[str, Any] = Body(...)):
+    """
+    Computes a route from origin to destination.
+    Tries Google Maps Routes API (traffic-aware) first if key is configured,
+    and falls back to non-traffic response.
+    """
+    from app.core.config import settings as app_settings
+    import requests
+
+    origin = payload.get("origin") or {}
+    dest = payload.get("destination") or {}
+
+    orig_lat = origin.get("latitude") or origin.get("lat")
+    orig_lng = origin.get("longitude") or origin.get("lng")
+    dest_lat = dest.get("latitude") or dest.get("lat")
+    dest_lng = dest.get("longitude") or dest.get("lng")
+
+    if orig_lat is None or orig_lng is None or dest_lat is None or dest_lng is None:
+        raise HTTPException(status_code=400, detail="Missing origin or destination coordinates")
+
+    api_key = app_settings.GOOGLE_MAPS_API_KEY
+    if not api_key:
+        return {
+            "success": False,
+            "message": "Google Maps API Key not configured. Traffic routing unavailable.",
+            "traffic_aware": False,
+            "provider": "google"
+        }
+
+    # Prepare Google Routes API request
+    url = "https://routes.googleapis.com/v1/computeRoutes"
+    headers = {
+        "Content-Type": "application/json",
+        "X-Goog-Api-Key": api_key,
+        "X-Goog-FieldMask": "routes.distanceMeters,routes.duration,routes.staticDuration,routes.polyline.encodedPolyline"
+    }
+
+    body = {
+        "origin": {
+            "location": {
+                "latLng": {
+                    "latitude": float(orig_lat),
+                    "longitude": float(orig_lng)
+                }
+            }
+        },
+        "destination": {
+            "location": {
+                "latLng": {
+                    "latitude": float(dest_lat),
+                    "longitude": float(dest_lng)
+                }
+            }
+        },
+        "travelMode": "DRIVE",
+        "routingPreference": "TRAFFIC_AWARE_OPTIMAL"
+    }
+
+    try:
+        r = requests.post(url, headers=headers, json=body, timeout=8)
+        if r.status_code != 200:
+            logger.warning(f"Google Routes API status {r.status_code}: {r.text}")
+            return {
+                "success": False,
+                "message": f"Google Routes API returned status {r.status_code}",
+                "traffic_aware": False,
+                "provider": "google"
+            }
+
+        res_data = r.json()
+        routes = res_data.get("routes")
+        if not routes:
+            return {
+                "success": False,
+                "message": "No routes returned from Google Maps.",
+                "traffic_aware": False,
+                "provider": "google"
+            }
+
+        route = routes[0]
+        dist_meters = route.get("distanceMeters") or 0
+        dur_str = route.get("duration") or "0s"
+        static_dur_str = route.get("staticDuration") or dur_str
+
+        def parse_duration_seconds(d_str: str) -> float:
+            return float(d_str.rstrip("s"))
+
+        duration_sec = parse_duration_seconds(dur_str)
+        static_duration_sec = parse_duration_seconds(static_dur_str)
+
+        return {
+            "success": True,
+            "distance_km": round(dist_meters / 1000.0, 2),
+            "eta_minutes": max(1, math.ceil(duration_sec / 60.0)),
+            "static_eta_minutes": max(1, math.ceil(static_duration_sec / 60.0)),
+            "traffic_aware": True,
+            "polyline": route.get("polyline", {}).get("encodedPolyline") or "",
+            "provider": "google"
+        }
+
+    except Exception as e:
+        logger.error(f"Google Routes API exception: {e}")
+        return {
+            "success": False,
+            "message": f"Google Routes API exception: {str(e)}",
+            "traffic_aware": False,
+            "provider": "google"
+        }
+
+

@@ -59,7 +59,7 @@ export default function ManagerAttendance() {
       setLoading(true)
       const [empRes, attRes] = await Promise.allSettled([
         hrmsAPI.getEmployees(),
-        attendanceAPI.getLiveAttendance ? attendanceAPI.getLiveAttendance() : Promise.resolve([]),
+        attendanceAPI.getLogs ? attendanceAPI.getLogs() : Promise.resolve([]),
       ])
 
       const emps = empRes.status === 'fulfilled' ? (Array.isArray(empRes.value) ? empRes.value : empRes.value?.data || []) : []
@@ -118,9 +118,12 @@ export default function ManagerAttendance() {
               designation: a.designation || a.role || 'Sales Executive',
               status: a.status || (a.check_in ? 'Present' : 'Absent'),
               checkInTime: a.check_in_time || a.checkInTime || '09:00 AM',
-              checkOutTime: a.check_out_time || a.checkOutTime || '06:00 PM',
-              workingHours: a.working_hours || a.workingHours || '9h 00m',
-              gpsLocation: a.location || a.gps_location || 'Field Location, Chennai (Verified)',
+              checkOutTime: a.check_out_time || a.checkOutTime || '—',
+              workingHours: a.total_working_hours || a.workHours || a.workingHours || 'In Progress',
+              loginLocation: a.check_in_address || a.location || 'Office Check-In',
+              logoutLocation: a.check_out_address || '—',
+              remarks: a.remarks || a.notes || '—',
+              gpsLocation: a.check_in_address || a.location || 'Field Location, Chennai',
               selfieUploaded: true,
               date: a.date ? formatDate(a.date) : formatDate(new Date()),
             })
@@ -292,14 +295,16 @@ export default function ManagerAttendance() {
       ) : viewMode === 'table' ? (
         <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden">
           <div className="overflow-x-auto">
-            <table className="w-full text-left border-collapse min-w-[760px]">
+            <table className="w-full text-left border-collapse min-w-[960px]">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
                   <th className="py-3 px-4">Executive</th>
                   <th className="py-3 px-4">Date</th>
                   <th className="py-3 px-4">Check-In / Out</th>
-                  <th className="py-3 px-4">Working Hours</th>
-                  <th className="py-3 px-4">Verified GPS Location</th>
+                  <th className="py-3 px-4">Duration</th>
+                  <th className="py-3 px-4 min-w-[200px]">Check-In Location</th>
+                  <th className="py-3 px-4 min-w-[200px]">Check-Out Location</th>
+                  <th className="py-3 px-4 min-w-[150px]">Remarks</th>
                   <th className="py-3 px-4">Status</th>
                   <th className="py-3 px-4 text-right">Action</th>
                 </tr>
@@ -321,10 +326,19 @@ export default function ManagerAttendance() {
                       {log.workingHours}
                     </td>
                     <td className="py-3 px-4 text-[11px] text-slate-600 max-w-xs truncate">
-                      <span className="inline-flex items-center gap-1 text-slate-700">
+                      <span className="inline-flex items-center gap-1 text-slate-700 leading-snug">
                         <MapPin size={11} className="text-emerald-600 shrink-0" />
-                        {log.gpsLocation}
+                        {log.loginLocation}
                       </span>
+                    </td>
+                    <td className="py-3 px-4 text-[11px] text-slate-600 max-w-xs truncate">
+                      <span className="inline-flex items-center gap-1 text-slate-700 leading-snug">
+                        <MapPin size={11} className="text-rose-600 shrink-0" />
+                        {log.logoutLocation}
+                      </span>
+                    </td>
+                    <td className="py-3 px-4 text-[11px] text-teal-700 font-bold max-w-[150px] truncate">
+                      {log.remarks}
                     </td>
                     <td className="py-3 px-4">
                       <span className={`inline-flex items-center gap-1 text-[10px] font-extrabold px-2.5 py-0.5 rounded-full border ${STATUS_COLORS[log.status] || STATUS_COLORS.Present}`}>
@@ -422,12 +436,29 @@ export default function ManagerAttendance() {
               </div>
 
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1">
-                <span className="text-[10px] font-black text-slate-400 uppercase">Verified GPS Geofence Tag</span>
+                <span className="text-[10px] font-black text-slate-400 uppercase">Check-In Location</span>
                 <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
                   <MapPin size={13} className="text-emerald-600 shrink-0" />
-                  {selectedItem.gpsLocation}
+                  {selectedItem.loginLocation || selectedItem.gpsLocation}
                 </p>
               </div>
+
+              {selectedItem.logoutLocation && selectedItem.logoutLocation !== "—" && (
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 uppercase">Check-Out Location</span>
+                  <p className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
+                    <MapPin size={13} className="text-rose-600 shrink-0" />
+                    {selectedItem.logoutLocation}
+                  </p>
+                </div>
+              )}
+
+              {selectedItem.remarks && selectedItem.remarks !== "—" && (
+                <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-1">
+                  <span className="text-[10px] font-black text-slate-400 uppercase">Executive Remarks / Client Visit Notes</span>
+                  <p className="text-xs font-bold text-teal-900 bg-teal-50/50 p-2 rounded-lg border border-teal-100/50">{selectedItem.remarks}</p>
+                </div>
+              )}
             </div>
 
             <div className="flex items-center justify-end pt-2 border-t border-slate-100">

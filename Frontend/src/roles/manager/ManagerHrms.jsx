@@ -36,6 +36,7 @@ import {
   PlusCircle,
 } from 'lucide-react'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
+import { useSearchParams } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import { attendanceAPI } from '../../services/api.js'
 import { calculateWorkHours } from '../sales/Attendance.jsx'
@@ -125,7 +126,85 @@ export default function ManagerHrms() {
   const managerName = currentUser.name || currentUser.full_name || 'Sales Manager'
   const managerEmail = (currentUser.email || '').toLowerCase().trim()
   const empCode = currentUser.employee_code || currentUser.employee_id || 'MGR-001'
-  const [activeSection, setActiveSection] = useState('dashboard')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const activeSection = searchParams.get('tab') || 'dashboard'
+  const setActiveSection = (val) => setSearchParams({ tab: val })
+
+  const [hrmsTabs, setHrmsTabs] = useState(() => {
+    const saved = localStorage.getItem(`tc_hrms_order_manager_${managerEmail}`);
+    if (saved) {
+      try {
+        const keys = JSON.parse(saved);
+        const ordered = [];
+        keys.forEach(k => {
+          const match = NAV_ITEMS.find(n => n.key === k);
+          if (match) ordered.push(match);
+        });
+        NAV_ITEMS.forEach(n => {
+          if (!ordered.some(o => o.key === n.key)) {
+            ordered.push(n);
+          }
+        });
+        return ordered;
+      } catch (e) {
+        return NAV_ITEMS;
+      }
+    }
+    return NAV_ITEMS;
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`tc_hrms_order_manager_${managerEmail}`);
+    if (saved) {
+      try {
+        const keys = JSON.parse(saved);
+        const ordered = [];
+        keys.forEach(k => {
+          const match = NAV_ITEMS.find(n => n.key === k);
+          if (match) ordered.push(match);
+        });
+        NAV_ITEMS.forEach(n => {
+          if (!ordered.some(o => o.key === n.key)) {
+            ordered.push(n);
+          }
+        });
+        setHrmsTabs(ordered);
+      } catch (e) {
+        setHrmsTabs(NAV_ITEMS);
+      }
+    } else {
+      setHrmsTabs(NAV_ITEMS);
+    }
+  }, [managerEmail]);
+
+  const [draggedTabKey, setDraggedTabKey] = useState(null);
+
+  const handleTabDragStart = (e, index) => {
+    setDraggedTabKey(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleTabDragOver = (e, index) => {
+    e.preventDefault();
+  };
+  const handleTabDrop = (e, index) => {
+    e.preventDefault();
+    if (draggedTabKey === null || draggedTabKey === index) return;
+    const reordered = [...hrmsTabs];
+    const [draggedItem] = reordered.splice(draggedTabKey, 1);
+    reordered.splice(index, 0, draggedItem);
+    setHrmsTabs(reordered);
+    const keys = reordered.map(item => item.key);
+    localStorage.setItem(`tc_hrms_order_manager_${managerEmail}`, JSON.stringify(keys));
+    showToast("HRMS tab order updated!", "success");
+  };
+  const handleTabDragEnd = () => {
+    setDraggedTabKey(null);
+  };
+  const resetHrmsTabs = () => {
+    localStorage.removeItem(`tc_hrms_order_manager_${managerEmail}`);
+    setHrmsTabs(NAV_ITEMS);
+    showToast("HRMS tabs reset to default.", "info");
+  };
 
   // ── Attendance State for My Dashboard ─────────────────────────────────────
   const [realAttendanceLogs, setRealAttendanceLogs] = useState(() => {
@@ -285,17 +364,35 @@ export default function ManagerHrms() {
 
         {/* HORIZONTAL NAV TABS */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-3">
-          {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
-            <button
+          {hrmsTabs.map(({ key, label, icon: Icon }, index) => (
+            <div
               key={key}
-              onClick={() => setActiveSection(key)}
-              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-pointer ${activeSection === key ? 'bg-[#ca8a04] text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-amber-50 hover:text-amber-900'
-                }`}
+              draggable="true"
+              onDragStart={(e) => handleTabDragStart(e, index)}
+              onDragOver={(e) => handleTabDragOver(e, index)}
+              onDrop={(e) => handleTabDrop(e, index)}
+              onDragEnd={handleTabDragEnd}
+              className={`flex items-center transition cursor-pointer ${
+                draggedTabKey === index ? 'opacity-40' : ''
+              }`}
             >
-              <Icon size={14} />
-              {label}
-            </button>
+              <button
+                onClick={() => setActiveSection(key)}
+                className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-pointer ${activeSection === key ? 'bg-[#ca8a04] text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-amber-50 hover:text-amber-900'
+                  }`}
+              >
+                <Icon size={14} />
+                {label}
+              </button>
+            </div>
           ))}
+          <button
+            type="button"
+            onClick={resetHrmsTabs}
+            className="ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
+          >
+            Reset Order
+          </button>
         </div>
       </div>
 

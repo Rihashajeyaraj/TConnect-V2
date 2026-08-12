@@ -21,6 +21,7 @@ import {
   Shield,
   Activity,
   CheckCircle2,
+  GripVertical,
 } from 'lucide-react'
 
 import useCurrentUser from '../../hooks/useCurrentUser.js'
@@ -51,6 +52,88 @@ function CeoLayout() {
 
   const location = useLocation()
   const navigate = useNavigate()
+
+  const userEmail = (currentUser?.email || "").toLowerCase().trim();
+  const [sidebarItems, setSidebarItems] = useState(() => {
+    const saved = localStorage.getItem(`tc_sidebar_order_ceo_${userEmail}`);
+    if (saved) {
+      try {
+        const labels = JSON.parse(saved);
+        const ordered = [];
+        labels.forEach(label => {
+          const match = navItems.find(n => n.label === label);
+          if (match) ordered.push(match);
+        });
+        navItems.forEach(n => {
+          if (!ordered.some(o => o.label === n.label)) {
+            ordered.push(n);
+          }
+        });
+        return ordered;
+      } catch (e) {
+        return navItems;
+      }
+    }
+    return navItems;
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`tc_sidebar_order_ceo_${userEmail}`);
+    if (saved) {
+      try {
+        const labels = JSON.parse(saved);
+        const ordered = [];
+        labels.forEach(label => {
+          const match = navItems.find(n => n.label === label);
+          if (match) ordered.push(match);
+        });
+        navItems.forEach(n => {
+          if (!ordered.some(o => o.label === n.label)) {
+            ordered.push(n);
+          }
+        });
+        setSidebarItems(ordered);
+      } catch (e) {
+        setSidebarItems(navItems);
+      }
+    } else {
+      setSidebarItems(navItems);
+    }
+  }, [userEmail]);
+
+  const [isCustomizing, setIsCustomizing] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState(null);
+
+  const handleDragStart = (e, index) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+  };
+  const handleDrop = (e, index) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+    const reordered = [...sidebarItems];
+    const [draggedItem] = reordered.splice(draggedIndex, 1);
+    reordered.splice(index, 0, draggedItem);
+    setSidebarItems(reordered);
+  };
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
+  const saveCustomization = () => {
+    const labels = sidebarItems.map(item => item.label);
+    localStorage.setItem(`tc_sidebar_order_ceo_${userEmail}`, JSON.stringify(labels));
+    setIsCustomizing(false);
+    showToast("Sidebar layout order saved successfully!", "success");
+  };
+  const resetCustomization = () => {
+    localStorage.removeItem(`tc_sidebar_order_ceo_${userEmail}`);
+    setSidebarItems(navItems);
+    setIsCustomizing(false);
+    showToast("Sidebar layout reset to default.", "info");
+  };
 
   const currentDate = new Date().toLocaleDateString('en-US', {
     weekday: 'long',
@@ -178,46 +261,92 @@ function CeoLayout() {
 
         {/* Navigation List - 9 Executive Items */}
         <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1.5 bg-[#004749] scrollbar-thin scrollbar-thumb-[#013b3f]">
-          {navItems.map((item) => {
+          {sidebarItems.map((item, index) => {
             const Icon = item.icon
             const active = isNavActive(item.path)
             return (
-              <Link
+              <div
                 key={item.path}
-                to={item.path}
-                onClick={() => setSidebarOpen(false)}
-                title={isSidebarCollapsed ? item.label : ''}
-                className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 group relative ${
-                  active
-                    ? 'bg-[#b09b72] text-[#004749] font-bold shadow-md shadow-black/10 border border-[#b09b72]'
-                    : 'text-[#d8d8d8] hover:bg-[#013b3f]/35 hover:text-white'
-                }`}
+                draggable={isCustomizing}
+                onDragStart={(e) => handleDragStart(e, index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDrop={(e) => handleDrop(e, index)}
+                onDragEnd={handleDragEnd}
+                className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-[#b09b72]/20 rounded-xl" : ""}`}
               >
-                <Icon
-                  className={`size-5 shrink-0 transition-transform group-hover:scale-105 ${
-                    active ? 'text-[#004749]' : 'text-[#b09b72]/80 group-hover:text-white'
+                <Link
+                  to={isCustomizing ? "#" : item.path}
+                  onClick={(e) => {
+                    if (isCustomizing) {
+                      e.preventDefault();
+                      return;
+                    }
+                    setSidebarOpen(false);
+                  }}
+                  title={isSidebarCollapsed ? item.label : ''}
+                  className={`flex items-center gap-3 rounded-xl px-3.5 py-2.5 text-sm font-semibold transition-all duration-150 group relative ${
+                    !isCustomizing && active
+                      ? 'bg-[#b09b72] text-[#004749] font-bold shadow-md shadow-black/10 border border-[#b09b72]'
+                      : 'text-[#d8d8d8] hover:bg-[#013b3f]/35 hover:text-white'
                   }`}
-                />
-                {!isSidebarCollapsed && (
-                  <span className="truncate flex-1 text-left">{item.label}</span>
-                )}
-                {!isSidebarCollapsed && item.badge && (
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
-                      active
-                        ? 'bg-[#004749] text-white'
-                        : 'bg-[#540000] text-white shadow-xs'
+                >
+                  {isCustomizing && !isSidebarCollapsed && <GripVertical size={14} className="text-white/40 shrink-0" />}
+                  <Icon
+                    className={`size-5 shrink-0 transition-transform group-hover:scale-105 ${
+                      !isCustomizing && active ? 'text-[#004749]' : 'text-[#b09b72]/80 group-hover:text-white'
                     }`}
-                  >
-                    {item.badge}
-                  </span>
-                )}
-                {isSidebarCollapsed && item.badge && (
-                  <span className="absolute top-2 right-2 size-2 rounded-full bg-[#540000]" />
-                )}
-              </Link>
+                  />
+                  {!isSidebarCollapsed && (
+                    <span className="truncate flex-1 text-left">{item.label}</span>
+                  )}
+                  {!isSidebarCollapsed && item.badge && (
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[10px] font-extrabold ${
+                        !isCustomizing && active
+                          ? 'bg-[#004749] text-white'
+                          : 'bg-[#540000] text-white shadow-xs'
+                      }`}
+                    >
+                      {item.badge}
+                    </span>
+                  )}
+                  {isSidebarCollapsed && item.badge && (
+                    <span className="absolute top-2 right-2 size-2 rounded-full bg-[#540000]" />
+                  )}
+                </Link>
+              </div>
             )
           })}
+          {!isSidebarCollapsed && (
+            <div className="pt-2">
+              {isCustomizing ? (
+                <div className="pt-2 border-t border-[#013b3f]/50 space-y-1.5">
+                  <button
+                    type="button"
+                    onClick={saveCustomization}
+                    className="w-full py-2 px-3 bg-[#b09b72] hover:bg-[#a08b62] text-[#004749] rounded-xl text-xs font-black transition cursor-pointer"
+                  >
+                    Save Order
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetCustomization}
+                    className="w-full py-2 px-3 bg-[#013b3f] hover:bg-[#024c52] text-white rounded-xl text-xs font-black transition cursor-pointer"
+                  >
+                    Reset Default
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsCustomizing(true)}
+                  className="w-full py-2 px-3 border border-dashed border-[#b09b72]/30 hover:border-[#b09b72] text-[#d8d8d8] hover:text-white rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>⚙️ Customize Sidebar</span>
+                </button>
+              )}
+            </div>
+          )}
         </nav>
 
         {/* Sidebar Footer: CEO Profile & Chief Executive Officer designation & Logout */}

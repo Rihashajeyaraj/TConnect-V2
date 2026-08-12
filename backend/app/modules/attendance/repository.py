@@ -283,6 +283,52 @@ class AttendanceRepository:
         addr = data.get("check_out_address") or "Adyar IT Corridor, Chennai"
         hrs = data.get("total_working_hours") or "9.0 hrs"
 
+        def calculate_duration_backend(in_time: str, out_time: str) -> str:
+            from datetime import datetime
+            formats = ["%I:%M:%S %p", "%I:%M %p", "%H:%M:%S", "%H:%M"]
+            t1, t2 = None, None
+            for fmt in formats:
+                if not t1:
+                    try:
+                        t1 = datetime.strptime(in_time.strip(), fmt)
+                    except Exception:
+                        pass
+                if not t2:
+                    try:
+                        t2 = datetime.strptime(out_time.strip(), fmt)
+                    except Exception:
+                        pass
+            if t1 and t2:
+                diff = t2 - t1
+                secs = diff.total_seconds()
+                if secs < 0:
+                    secs += 24 * 3600
+                h = int(secs // 3600)
+                m = int((secs % 3600) // 60)
+                if h > 0:
+                    return f"{h}h {m}m"
+                return f"{m}m"
+            return "—"
+
+        # Try to find the active check-in record for this employee from Supabase
+        active_id = None
+        in_time_str = None
+        try:
+            res_list = self.supabase.schema("hrms").table("attendance").select("*").eq("employee_id", emp_id).order("created_at", desc=True).execute()
+            if res_list.data:
+                for row in res_list.data:
+                    c_out = row.get("check_out_time")
+                    c_status = row.get("attendance_status") or row.get("status")
+                    if not c_out or c_out == "—" or str(c_status).lower() == "logged in":
+                        active_id = row.get("id")
+                        in_time_str = row.get("check_in_time") or row.get("punch_in_time")
+                        break
+        except Exception as e:
+            logger.warning(f"Error querying active attendance logs: {e}")
+
+        if in_time_str:
+            hrs = calculate_duration_backend(in_time_str, out_time)
+
         # Update in memory record
         for a in _in_memory_attendance:
             if (att_id and str(a.get("id")) == str(att_id)) or (str(a.get("employee_id")) == emp_id and (not a.get("check_out_time") or a.get("check_out_time") == "—")):
@@ -294,9 +340,30 @@ class AttendanceRepository:
                 a["total_working_hours"] = hrs
                 a["attendance_status"] = "Logged off"
                 a["status"] = "Logged off"
-                return a
+                a["remarks"] = data.get("notes") or data.get("remarks") or a.get("remarks")
+                a["notes"] = data.get("notes") or data.get("remarks") or a.get("notes")
+                break
 
-        # Update in Supabase hrms.attendance
+        # Update in Supabase hrms.attendance by specific active ID
+        if active_id:
+            try:
+                res = self.supabase.schema("hrms").table("attendance").update({
+                    "check_out_time": out_time,
+                    "punch_out_time": out_time,
+                    "check_out_latitude": float(lat),
+                    "check_out_longitude": float(lng),
+                    "check_out_address": addr,
+                    "total_working_hours": hrs,
+                    "attendance_status": "Logged off",
+                    "status": "Logged off",
+                    "notes": data.get("notes") or data.get("remarks") or "Attendance Check-Out logged with GPS"
+                }).eq("id", active_id).execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            except Exception as e:
+                logger.warning(f"Error updating active log by ID in hrms: {e}")
+
+        # Fallback to update in hrms.attendance by date
         try:
             res = self.supabase.schema("hrms").table("attendance").update({
                 "check_out_time": out_time,
@@ -306,7 +373,8 @@ class AttendanceRepository:
                 "check_out_address": addr,
                 "total_working_hours": hrs,
                 "attendance_status": "Logged off",
-                "status": "Logged off"
+                "status": "Logged off",
+                "notes": data.get("notes") or data.get("remarks") or "Attendance Check-Out logged with GPS"
             }).eq("employee_id", emp_id).eq("attendance_date", today_date).execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
@@ -320,7 +388,8 @@ class AttendanceRepository:
                     "check_out_address": addr,
                     "total_working_hours": hrs,
                     "attendance_status": "Logged off",
-                    "status": "Logged off"
+                    "status": "Logged off",
+                    "notes": data.get("notes") or data.get("remarks") or "Attendance Check-Out logged with GPS"
                 }).eq("employee_id", emp_id).eq("attendance_date", today_date).execute()
                 if res.data and len(res.data) > 0:
                     return res.data[0]

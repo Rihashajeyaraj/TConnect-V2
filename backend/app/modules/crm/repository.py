@@ -187,6 +187,7 @@ class CRMRepository:
         logger.info(f"[CRM INSERT REQUEST] Attempting insert into crm.leads with payload: {payload}")
 
         # 1. Primary: crm.leads
+        primary_err = None
         try:
             res = self.supabase.schema("crm").table("leads").insert(payload).execute()
             if res.data and len(res.data) > 0:
@@ -202,9 +203,11 @@ class CRMRepository:
                 out_lead["reporting_manager_email"] = mgr_email
                 return out_lead
         except Exception as e:
-            logger.debug(f"crm.leads insert notice: {e}")
+            primary_err = str(e)
+            logger.warning(f"crm.leads insert failure: {e}")
 
         # 2. Fallback: public.leads table
+        fallback_err = None
         try:
             res = self.supabase.table("leads").insert(payload).execute()
             if res.data and len(res.data) > 0:
@@ -220,16 +223,15 @@ class CRMRepository:
                 out_lead["reporting_manager_email"] = mgr_email
                 return out_lead
         except Exception as e:
+            fallback_err = str(e)
             logger.error(f"Error creating lead in public.leads: {e}")
 
-        payload["id"] = lead_id
-        payload["company"] = company_val
-        payload["person"] = person_val
-        payload["assigned_to"] = assigned_to_raw
-        payload["assigned_to_email"] = assigned_to_email
-        payload["employee_code"] = employee_code
-        _in_memory_leads.append(payload)
-        return payload
+        from fastapi import HTTPException
+        err_msg = primary_err or fallback_err or "Unknown database error"
+        raise HTTPException(
+            status_code=400,
+            detail=f"Database persistence failed. Supabase error details: {err_msg}"
+        )
 
     def update_lead(self, lead_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         # Helper to sanitize and map input payload fields to actual db columns

@@ -247,6 +247,7 @@ export const userAPI = {
 export const settingsAPI = {
   getSettings: () => request('/settings/business'),
   updateSettings: (data) => request('/settings/business', { method: 'PUT', body: JSON.stringify(data) }),
+  getConfig: () => request('/settings/config'),
 }
 
 export const spatialAPI = {
@@ -258,6 +259,8 @@ export const spatialAPI = {
     request('/spatial/geofence-check', { method: 'POST', body: JSON.stringify({ lat, lng, geofence_threshold_meters: thresholdMeters }) }),
   updateLocation: (data) =>
     request('/spatial/update-location', { method: 'POST', body: JSON.stringify(data) }),
+  getRoute: (origin, destination) =>
+    request('/spatial/route', { method: 'POST', body: JSON.stringify({ origin, destination }) }),
 }
 
 export const salesAPI = {

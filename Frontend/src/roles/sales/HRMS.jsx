@@ -1,5 +1,6 @@
 // HRMS Module - Sales Executive Portal
 import React, { useState, useEffect } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   LayoutDashboard,
   ClipboardList,
@@ -72,7 +73,86 @@ export default function SalesHRMS() {
   const empCode = currentUser.employee_code || currentUser.employee_id || `EMP-${userEmail ? userEmail.split('@')[0].toUpperCase() : '001'}`;
   const userId = currentUser.id || currentUser.user_id || "";
 
-  const [activeSection, setActiveSection] = useState("dashboard");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeSection = searchParams.get("tab") || "dashboard";
+  const setActiveSection = (val) => setSearchParams({ tab: val });
+
+  const [hrmsTabs, setHrmsTabs] = useState(() => {
+    const saved = localStorage.getItem(`tc_hrms_order_sales_${userEmail}`);
+    if (saved) {
+      try {
+        const keys = JSON.parse(saved);
+        const ordered = [];
+        keys.forEach(k => {
+          const match = NAV_ITEMS.find(n => n.key === k);
+          if (match) ordered.push(match);
+        });
+        NAV_ITEMS.forEach(n => {
+          if (!ordered.some(o => o.key === n.key)) {
+            ordered.push(n);
+          }
+        });
+        return ordered;
+      } catch (e) {
+        return NAV_ITEMS;
+      }
+    }
+    return NAV_ITEMS;
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`tc_hrms_order_sales_${userEmail}`);
+    if (saved) {
+      try {
+        const keys = JSON.parse(saved);
+        const ordered = [];
+        keys.forEach(k => {
+          const match = NAV_ITEMS.find(n => n.key === k);
+          if (match) ordered.push(match);
+        });
+        NAV_ITEMS.forEach(n => {
+          if (!ordered.some(o => o.key === n.key)) {
+            ordered.push(n);
+          }
+        });
+        setHrmsTabs(ordered);
+      } catch (e) {
+        setHrmsTabs(NAV_ITEMS);
+      }
+    } else {
+      setHrmsTabs(NAV_ITEMS);
+    }
+  }, [userEmail]);
+
+  const [draggedTabKey, setDraggedTabKey] = useState(null);
+
+  const handleTabDragStart = (e, index) => {
+    setDraggedTabKey(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleTabDragOver = (e, index) => {
+    e.preventDefault();
+  };
+  const handleTabDrop = (e, index) => {
+    e.preventDefault();
+    if (draggedTabKey === null || draggedTabKey === index) return;
+    const reordered = [...hrmsTabs];
+    const [draggedItem] = reordered.splice(draggedTabKey, 1);
+    reordered.splice(index, 0, draggedItem);
+    setHrmsTabs(reordered);
+    const keys = reordered.map(item => item.key);
+    localStorage.setItem(`tc_hrms_order_sales_${userEmail}`, JSON.stringify(keys));
+    showToast("HRMS tab order updated!", "success");
+  };
+  const handleTabDragEnd = () => {
+    setDraggedTabKey(null);
+  };
+  const resetHrmsTabs = () => {
+    localStorage.removeItem(`tc_hrms_order_sales_${userEmail}`);
+    setHrmsTabs(NAV_ITEMS);
+    showToast("HRMS tabs reset to default.", "info");
+  };
+
   const [reportFilterMode, setReportFilterMode] = useState("THIS MONTH");
   const [customDateFilter, setCustomDateFilter] = useState("");
 
@@ -330,19 +410,37 @@ export default function SalesHRMS() {
 
         {/* Horizontal Navigation Tabs Bar */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5">
-          {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
-            <button
+          {hrmsTabs.map(({ key, label, icon: Icon }, index) => (
+            <div
               key={key}
-              onClick={() => setActiveSection(key)}
-              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer ${activeSection === key
-                  ? "bg-[#1a1f36] text-white shadow-2xs"
-                  : "text-slate-600 hover:bg-slate-100"
-                }`}
+              draggable="true"
+              onDragStart={(e) => handleTabDragStart(e, index)}
+              onDragOver={(e) => handleTabDragOver(e, index)}
+              onDrop={(e) => handleTabDrop(e, index)}
+              onDragEnd={handleTabDragEnd}
+              className={`flex items-center transition cursor-pointer ${
+                draggedTabKey === index ? "opacity-40" : ""
+              }`}
             >
-              <Icon size={14} />
-              {label}
-            </button>
+              <button
+                onClick={() => setActiveSection(key)}
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer ${activeSection === key
+                    ? "bg-[#1a1f36] text-white shadow-2xs"
+                    : "text-slate-600 hover:bg-slate-100"
+                  }`}
+              >
+                <Icon size={14} />
+                {label}
+              </button>
+            </div>
           ))}
+          <button
+            type="button"
+            onClick={resetHrmsTabs}
+            className="ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
+          >
+            Reset Order
+          </button>
         </div>
       </div>
 

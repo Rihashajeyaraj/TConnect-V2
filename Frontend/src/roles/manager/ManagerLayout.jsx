@@ -32,6 +32,7 @@ import {
   Pencil,
   Save,
   Camera,
+  GripVertical,
 } from 'lucide-react'
 import TwiteConnectLogo from '../../common/TwiteConnectLogo.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
@@ -132,6 +133,88 @@ export default function ManagerLayout() {
   }
   const location = useLocation()
   const navigate = useNavigate()
+
+  const userEmail = (currentUser?.email || "").toLowerCase().trim();
+  const [sidebarItems, setSidebarItems] = useState(() => {
+    const saved = localStorage.getItem(`tc_sidebar_order_manager_${userEmail}`);
+    if (saved) {
+      try {
+        const labels = JSON.parse(saved);
+        const ordered = [];
+        labels.forEach(label => {
+          const match = navItems.find(n => n.label === label);
+          if (match) ordered.push(match);
+        });
+        navItems.forEach(n => {
+          if (!ordered.some(o => o.label === n.label)) {
+            ordered.push(n);
+          }
+        });
+        return ordered;
+      } catch (e) {
+        return navItems;
+      }
+    }
+    return navItems;
+  });
+
+  useEffect(() => {
+    const saved = localStorage.getItem(`tc_sidebar_order_manager_${userEmail}`);
+    if (saved) {
+      try {
+        const labels = JSON.parse(saved);
+        const ordered = [];
+        labels.forEach(label => {
+          const match = navItems.find(n => n.label === label);
+          if (match) ordered.push(match);
+        });
+        navItems.forEach(n => {
+          if (!ordered.some(o => o.label === n.label)) {
+            ordered.push(n);
+          }
+        });
+        setSidebarItems(ordered);
+      } catch (e) {
+        setSidebarItems(navItems);
+      }
+    } else {
+      setSidebarItems(navItems);
+    }
+  }, [userEmail]);
+
+  const [isCustomizing, setIsCustomizing] = useState(false);
+  const [draggedIndex, setDraggedIndex] = useState(null);
+
+  const handleDragStart = (e, index) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = "move";
+  };
+  const handleDragOver = (e, index) => {
+    e.preventDefault();
+  };
+  const handleDrop = (e, index) => {
+    e.preventDefault();
+    if (draggedIndex === null || draggedIndex === index) return;
+    const reordered = [...sidebarItems];
+    const [draggedItem] = reordered.splice(draggedIndex, 1);
+    reordered.splice(index, 0, draggedItem);
+    setSidebarItems(reordered);
+  };
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+  };
+  const saveCustomization = () => {
+    const labels = sidebarItems.map(item => item.label);
+    localStorage.setItem(`tc_sidebar_order_manager_${userEmail}`, JSON.stringify(labels));
+    setIsCustomizing(false);
+    showToast("Sidebar layout order saved successfully!", "success");
+  };
+  const resetCustomization = () => {
+    localStorage.removeItem(`tc_sidebar_order_manager_${userEmail}`);
+    setSidebarItems(navItems);
+    setIsCustomizing(false);
+    showToast("Sidebar layout reset to default.", "info");
+  };
 
   const managerName = currentUser.name || 'Sales Manager'
   const managerRole = currentUser.role || 'Sales Manager'
@@ -324,24 +407,68 @@ export default function ManagerLayout() {
 
         <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 shrink-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="p-4 space-y-2 overflow-y-auto max-h-[calc(100vh-4rem)]">
-            {navItems.map((item) => {
+            {sidebarItems.map((item, index) => {
               const Icon = item.icon
               const isActive = location.pathname === item.path
               return (
-                <Link
+                <div
                   key={item.path}
-                  to={item.path}
-                  onClick={() => setSidebarOpen(false)}
-                  className={`flex items-center gap-3.5 px-4 py-3 rounded-2xl font-semibold text-sm transition ${isActive
-                      ? 'bg-[#0b3c5d] text-white shadow-md shadow-blue-900/25 border-l-4 border-[#f5ab27]'
-                      : 'text-slate-700 hover:bg-slate-100 hover:text-[#0b3c5d]'
-                    }`}
+                  draggable={isCustomizing}
+                  onDragStart={(e) => handleDragStart(e, index)}
+                  onDragOver={(e) => handleDragOver(e, index)}
+                  onDrop={(e) => handleDrop(e, index)}
+                  onDragEnd={handleDragEnd}
+                  className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-[#0b3c5d]/20 rounded-2xl" : ""}`}
                 >
-                  <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-[#f5ab27]' : 'text-[#0b3c5d]'}`} />
-                  <span className="truncate tracking-tight">{item.label}</span>
-                </Link>
+                  <Link
+                    to={isCustomizing ? "#" : item.path}
+                    onClick={(e) => {
+                      if (isCustomizing) {
+                        e.preventDefault();
+                        return;
+                      }
+                      setSidebarOpen(false);
+                    }}
+                    className={`flex items-center gap-3.5 px-4 py-3 rounded-2xl font-semibold text-sm transition ${!isCustomizing && isActive
+                        ? 'bg-[#0b3c5d] text-white shadow-md shadow-blue-900/25 border-l-4 border-[#f5ab27]'
+                        : 'text-slate-700 hover:bg-slate-100 hover:text-[#0b3c5d]'
+                      }`}
+                  >
+                    {isCustomizing && <GripVertical size={15} className="text-slate-400 shrink-0" />}
+                    <Icon className={`w-5 h-5 shrink-0 ${!isCustomizing && isActive ? 'text-[#f5ab27]' : 'text-[#0b3c5d]'}`} />
+                    <span className="truncate tracking-tight">{item.label}</span>
+                  </Link>
+                </div>
               )
             })}
+            <div className="pt-2">
+              {isCustomizing ? (
+                <div className="pt-2 border-t border-slate-100 space-y-1.5 px-1">
+                  <button
+                    type="button"
+                    onClick={saveCustomization}
+                    className="w-full py-2 px-3 bg-[#0b3c5d] hover:bg-[#072438] text-white rounded-xl text-xs font-black transition cursor-pointer"
+                  >
+                    Save Order
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetCustomization}
+                    className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black transition cursor-pointer"
+                  >
+                    Reset Default
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsCustomizing(true)}
+                  className="w-full py-2 px-3 border border-dashed border-slate-200 hover:border-[#f5ab27] text-slate-500 hover:text-[#0b3c5d] rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                >
+                  <span>⚙️ Customize Sidebar</span>
+                </button>
+              )}
+            </div>
           </div>
         </aside>
 

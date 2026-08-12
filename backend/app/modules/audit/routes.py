@@ -38,7 +38,7 @@ async def list_audit_logs(
         "limit": limit,
         "offset": offset,
     }
-    logs = service.list_logs_filtered({k: v for k, v in filters.items() if v is not None})
+    logs = service.list_logs_filtered({k: v for k, v in filters.items() if v is not None}, user_payload)
     return StandardResponse.success_response(
         data=logs,
         message=f"Audit logs retrieved successfully ({len(logs)} records)"

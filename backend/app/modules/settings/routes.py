@@ -9,6 +9,21 @@ from app.modules.audit.service import create_audit_log
 router = APIRouter(prefix="/settings", tags=["Application Settings"])
 
 
+@router.get("/config", response_model=StandardResponse)
+async def get_public_config(
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """Get non-sensitive application settings and configuration."""
+    from app.core.config import settings as app_settings
+    return StandardResponse.success_response(
+        data={
+            "client_route_alert_radius_km": app_settings.CLIENT_ROUTE_ALERT_RADIUS_KM,
+            "gps_accuracy_threshold": app_settings.GPS_ACCURACY_THRESHOLD,
+        },
+        message="Public configuration retrieved successfully"
+    )
+
+
 def get_service() -> SettingsService:
     return SettingsService()
 

@@ -10,8 +10,8 @@ class AuditService:
     def list_logs(self) -> List[Dict[str, Any]]:
         return self.repo.get_logs()
 
-    def list_logs_filtered(self, filters: Dict[str, Any]) -> List[Dict[str, Any]]:
-        return self.repo.get_logs_filtered(filters)
+    def list_logs_filtered(self, filters: Dict[str, Any], user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        return self.repo.get_logs_filtered(filters, user_payload)
 
     def create_log(self, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         return self.repo.create_log(data, user_payload)
