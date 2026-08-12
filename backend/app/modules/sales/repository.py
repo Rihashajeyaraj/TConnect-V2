@@ -151,3 +151,181 @@ class SalesTargetRepository:
         global _in_memory_targets
         _in_memory_targets = [t for t in _in_memory_targets if str(t.get("id")) != str(target_id)]
         return True
+
+    def get_team_revenue_breakdown(
+        self,
+        user_payload: Dict[str, Any],
+        mode: str = "This Month",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        target_manager_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        from datetime import timedelta
+        from app.modules.users.repository import UserRepository
+        from app.modules.crm.repository import CRMRepository
+        from app.modules.customer.repository import CustomerRepository
+        from app.exceptions.base import ForbiddenException
+
+        user_repo = UserRepository()
+        crm_repo = CRMRepository()
+        cust_repo = CustomerRepository()
+
+        caller_id = str((user_payload or {}).get("sub") or (user_payload or {}).get("user_id") or "").strip()
+        caller_email = str((user_payload or {}).get("email") or "").lower().strip()
+        caller_role = str((user_payload or {}).get("role") or "").strip()
+
+        is_manager = caller_role in ("Sales Manager", "sales_manager", "Manager")
+        is_admin_or_ceo = caller_role in ("Admin", "Super Admin", "System Admin", "CEO", "ceo")
+
+        if is_manager:
+            effective_mgr_identifier = caller_id or caller_email
+            mgr_user = None
+            try:
+                mgr_user = user_repo.get_user_by_id(caller_id) or user_repo.get_user_by_email(caller_email)
+            except Exception:
+                pass
+            mgr_name = (mgr_user or {}).get("name") or (mgr_user or {}).get("full_name") or "Sales Manager"
+            mgr_id = str((mgr_user or {}).get("id") or caller_id)
+            mgr_email = str((mgr_user or {}).get("email") or caller_email).lower().strip()
+        elif is_admin_or_ceo:
+            effective_mgr_identifier = target_manager_id or caller_id or caller_email
+            mgr_user = None
+            try:
+                mgr_user = user_repo.get_user_by_id(effective_mgr_identifier) or user_repo.get_user_by_email(effective_mgr_identifier)
+            except Exception:
+                pass
+            mgr_name = (mgr_user or {}).get("name") or (mgr_user or {}).get("full_name") or "Sales Manager"
+            mgr_id = str((mgr_user or {}).get("id") or effective_mgr_identifier)
+            mgr_email = str((mgr_user or {}).get("email") or "").lower().strip()
+        else:
+            raise ForbiddenException("Only Sales Managers and Administrators can access team revenue breakdown.")
+
+        assigned_execs = []
+        try:
+            assigned_execs = user_repo.get_assigned_executives_for_manager(effective_mgr_identifier) or []
+        except Exception as e:
+            logger.warning(f"get_assigned_executives notice: {e}")
+
+        now = datetime.now()
+        clean_mode = (mode or "This Month").strip()
+        if clean_mode == "Today":
+            s_date_str = now.strftime("%Y-%m-%d")
+            e_date_str = now.strftime("%Y-%m-%d")
+        elif clean_mode == "This Week":
+            from datetime import timedelta as _td
+            start_of_week = now.date() - _td(days=now.weekday())
+            s_date_str = start_of_week.strftime("%Y-%m-%d")
+            e_date_str = now.strftime("%Y-%m-%d")
+        elif clean_mode == "This Month":
+            s_date_str = now.strftime("%Y-%m-01")
+            e_date_str = now.strftime("%Y-%m-%d")
+        elif clean_mode == "Custom" or (start_date and end_date):
+            s_date_str = start_date or now.strftime("%Y-%m-01")
+            e_date_str = end_date or now.strftime("%Y-%m-%d")
+        else:
+            s_date_str = now.strftime("%Y-%m-01")
+            e_date_str = now.strftime("%Y-%m-%d")
+
+        raw_leads = []
+        raw_customers = []
+        try:
+            raw_leads = crm_repo.get_all_leads() or []
+        except Exception:
+            pass
+        try:
+            raw_customers = cust_repo.get_all_customers() or []
+        except Exception:
+            pass
+
+        def in_range(date_val):
+            if not date_val:
+                return True
+            d = str(date_val).split("T")[0].split(" ")[0].strip()
+            if s_date_str and d < s_date_str:
+                return False
+            if e_date_str and d > e_date_str:
+                return False
+            return True
+
+        executives_result = []
+        total_team_revenue = 0.0
+        total_team_incentive = 0.0
+
+        for exec_user in assigned_execs:
+            exec_id = str(exec_user.get("id") or exec_user.get("user_id") or exec_user.get("employee_id") or "").strip()
+            exec_code = str(exec_user.get("employee_code") or exec_user.get("employee_id") or "").strip()
+            exec_name = str(exec_user.get("name") or exec_user.get("full_name") or "Sales Executive").strip()
+            exec_email = str(exec_user.get("email") or "").lower().strip()
+
+            def match_exec(item, _id=exec_id, _code=exec_code, _email=exec_email, _name=exec_name):
+                i_email = str(item.get("assigned_to_email") or item.get("assignedToEmail") or item.get("email") or "").lower().strip()
+                i_id = str(item.get("user_id") or item.get("userId") or item.get("executive_id") or item.get("employee_id") or "").strip()
+                i_name = str(item.get("assigned_to") or item.get("assignedTo") or item.get("executive") or "").lower().strip()
+                if _email and i_email == _email:
+                    return True
+                if _id and i_id == _id:
+                    return True
+                if _code and i_id == _code:
+                    return True
+                if _name and len(_name) > 3 and _name.lower() in i_name:
+                    return True
+                return False
+
+            exec_revenue = 0.0
+            deals_count = 0
+
+            for lead in raw_leads:
+                if match_exec(lead):
+                    if any(w in str(lead.get("status") or "").lower() for w in ["won", "converted", "customer"]):
+                        l_date = lead.get("updated_at") or lead.get("created_at") or lead.get("date")
+                        if in_range(l_date):
+                            raw = str(lead.get("value") or lead.get("deal_value") or lead.get("amount") or "0")
+                            try:
+                                val = float(raw.replace("₹", "").replace(",", "").strip())
+                            except (ValueError, TypeError):
+                                val = 0.0
+                            exec_revenue += val
+                            deals_count += 1
+
+            for cust in raw_customers:
+                if match_exec(cust):
+                    if not (cust.get("lead_id") or cust.get("leadId")):
+                        c_date = cust.get("created_at") or cust.get("updated_at") or cust.get("date")
+                        if in_range(c_date):
+                            raw = str(cust.get("contract_value") or cust.get("contractValue") or cust.get("revenue") or "0")
+                            try:
+                                val = float(raw.replace("₹", "").replace(",", "").strip())
+                            except (ValueError, TypeError):
+                                val = 0.0
+                            exec_revenue += val
+                            deals_count += 1
+
+            exec_incentive = round(exec_revenue * 0.05, 2)
+            total_team_revenue += exec_revenue
+            total_team_incentive += exec_incentive
+
+            executives_result.append({
+                "employee_id": exec_id or exec_code or "EMP-000",
+                "employee_code": exec_code or exec_id or "EMP-000",
+                "name": exec_name,
+                "email": exec_email,
+                "revenue": round(exec_revenue, 2),
+                "incentive": exec_incentive,
+                "deals_count": deals_count,
+            })
+
+        return {
+            "manager_id": mgr_id,
+            "manager_name": mgr_name,
+            "manager_email": mgr_email,
+            "period": {
+                "mode": clean_mode,
+                "start_date": s_date_str,
+                "end_date": e_date_str,
+            },
+            "executives": executives_result,
+            "total_revenue": round(total_team_revenue, 2),
+            "total_incentive": round(total_team_incentive, 2),
+            "incentive_rate_pct": 5.0,
+        }
+

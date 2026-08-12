@@ -112,6 +112,43 @@ class AuthService:
         email   = (credentials.email or "").strip().lower()
         password = (credentials.password or "").strip()
 
+        try:
+            res = self._login_impl(email, password)
+            # Log successful login
+            try:
+                from app.modules.audit.service import create_audit_log
+                user_payload = {
+                    "sub": res["user"]["employee_id"],
+                    "email": email,
+                    "role": res["user"]["role"],
+                    "user_metadata": {
+                        "role": res["user"]["role"],
+                        "full_name": res["user"]["employee_name"]
+                    }
+                }
+                create_audit_log(
+                    "LOGIN", "auth.users", user_payload,
+                    entity_id=res["user"]["employee_id"],
+                    module="Authentication",
+                    description=f"User {email} logged in successfully",
+                )
+            except Exception as audit_err:
+                logger.warning(f"Failed to create login success audit: {audit_err}")
+            return res
+        except Exception as e:
+            # Log failed login
+            try:
+                from app.modules.audit.service import create_audit_log
+                create_audit_log(
+                    "FAILED_LOGIN", "auth.users", {"email": email, "role": "Unknown"},
+                    module="Authentication",
+                    description=f"Failed login attempt for user: {email}",
+                )
+            except Exception as audit_err:
+                logger.warning(f"Failed to create login failure audit: {audit_err}")
+            raise e
+
+    def _login_impl(self, email: str, password: str) -> Dict[str, Any]:
         if not email or not password:
             raise UnauthorizedException("Invalid Username or Password.")
 

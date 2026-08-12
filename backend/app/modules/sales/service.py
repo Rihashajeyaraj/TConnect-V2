@@ -26,3 +26,20 @@ class SalesTargetService:
 
     def delete_target(self, target_id: str) -> bool:
         return self.repository.delete_target(target_id)
+
+    def get_team_revenue_breakdown(
+        self,
+        user_payload: Dict[str, Any],
+        mode: str = "This Month",
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+        target_manager_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        return self.repository.get_team_revenue_breakdown(
+            user_payload=user_payload,
+            mode=mode,
+            start_date=start_date,
+            end_date=end_date,
+            target_manager_id=target_manager_id,
+        )
+

@@ -31,6 +31,7 @@ const navItems = [
   { label: 'Role Management', icon: ShieldCheck, path: '/admin/roles' },
   { label: 'HRMS', icon: UserCheck2, path: '/admin/hrms' },
   { label: 'Reports & Analytics', icon: FileText, path: '/admin/reports' },
+  { label: 'Security & Audit Logs', icon: ShieldCheck, path: '/admin/audit' },
   { label: 'Settings', icon: Settings, path: '/admin/settings' },
 ]
 

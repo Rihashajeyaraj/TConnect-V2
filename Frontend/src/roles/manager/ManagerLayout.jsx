@@ -32,14 +32,12 @@ import {
   Pencil,
   Save,
   Camera,
-  GripVertical,
-  RotateCcw,
 } from 'lucide-react'
 import TwiteConnectLogo from '../../common/TwiteConnectLogo.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { clearUserCache } from '../../utils/userScope.js'
 
-const DEFAULT_NAV_ITEMS = [
+const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/manager' },
   { label: 'Smart Radar Map', icon: MapPin, path: '/manager/map' },
   { label: 'Team Lead Reports', icon: Target, path: '/manager/leads' },
@@ -102,71 +100,6 @@ const DOCUMENT_DEFAULTS = [
 export default function ManagerLayout() {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
-  const userKey = currentUser?.id || currentUser?.email || currentUser?.employee_code || 'manager'
-  const sidebarStorageKey = `tc_sidebar_order_manager_${userKey}`
-
-  const [isCustomizingSidebar, setIsCustomizingSidebar] = useState(false)
-  const [navItems, setNavItems] = useState(() => {
-    try {
-      const saved = localStorage.getItem(sidebarStorageKey)
-      if (saved) {
-        const savedPaths = JSON.parse(saved)
-        if (Array.isArray(savedPaths) && savedPaths.length > 0) {
-          const ordered = []
-          savedPaths.forEach((path) => {
-            const found = DEFAULT_NAV_ITEMS.find((m) => m.path === path || m.label === path)
-            if (found) ordered.push(found)
-          })
-          DEFAULT_NAV_ITEMS.forEach((m) => {
-            if (!ordered.some((item) => item.path === m.path)) ordered.push(m)
-          })
-          return ordered
-        }
-      }
-    } catch (e) {}
-    return DEFAULT_NAV_ITEMS
-  })
-
-  const [draggedMenuIdx, setDraggedMenuIdx] = useState(null)
-
-  const handleDragStartMenu = (e, index) => {
-    setDraggedMenuIdx(index)
-    e.dataTransfer.effectAllowed = 'move'
-  }
-
-  const handleDragOverMenu = (e, index) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  }
-
-  const handleDropMenu = (e, dropIndex) => {
-    e.preventDefault()
-    if (draggedMenuIdx === null || draggedMenuIdx === dropIndex) return
-    const updated = Array.from(navItems)
-    const [removed] = updated.splice(draggedMenuIdx, 1)
-    updated.splice(dropIndex, 0, removed)
-    setNavItems(updated)
-    setDraggedMenuIdx(null)
-  }
-
-  const saveSidebarOrder = () => {
-    try {
-      const paths = navItems.map((m) => m.path)
-      localStorage.setItem(sidebarStorageKey, JSON.stringify(paths))
-      setIsCustomizingSidebar(false)
-      showToast('Sidebar menu order saved!', 'success')
-    } catch (e) {}
-  }
-
-  const resetSidebarOrder = () => {
-    try {
-      localStorage.removeItem(sidebarStorageKey)
-      setNavItems(DEFAULT_NAV_ITEMS)
-      setIsCustomizingSidebar(false)
-      showToast('Sidebar menu order reset to default.', 'info')
-    } catch (e) {}
-  }
-
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [myProfileOpen, setMyProfileOpen] = useState(false)
@@ -389,81 +322,26 @@ export default function ManagerLayout() {
           <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 lg:hidden transition-opacity" />
         )}
 
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 shrink-0 flex flex-col ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-          {isCustomizingSidebar && (
-            <div className="p-2.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-1.5 shrink-0 animate-fadeIn">
-              <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider">Reorder Menu</span>
-              <div className="flex items-center gap-1">
-                <button
-                  type="button"
-                  onClick={resetSidebarOrder}
-                  className="px-2 py-1 text-[10px] font-black bg-white hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 transition cursor-pointer flex items-center gap-1"
-                  title="Reset to Default"
-                >
-                  <RotateCcw size={10} /> Reset
-                </button>
-                <button
-                  type="button"
-                  onClick={saveSidebarOrder}
-                  className="px-2.5 py-1 text-[10px] font-black bg-[#0b3c5d] hover:bg-[#082a42] text-white rounded-lg transition cursor-pointer shadow-2xs"
-                >
-                  Save
-                </button>
-              </div>
-            </div>
-          )}
-
-          <div className="p-4 space-y-1 overflow-y-auto flex-1">
-            {navItems.map((item, idx) => {
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 shrink-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          <div className="p-4 space-y-2 overflow-y-auto max-h-[calc(100vh-4rem)]">
+            {navItems.map((item) => {
               const Icon = item.icon
               const isActive = location.pathname === item.path
               return (
-                <div
+                <Link
                   key={item.path}
-                  draggable={isCustomizingSidebar}
-                  onDragStart={(e) => handleDragStartMenu(e, idx)}
-                  onDragOver={(e) => handleDragOverMenu(e, idx)}
-                  onDrop={(e) => handleDropMenu(e, idx)}
-                  className={`flex items-center gap-1 rounded-2xl transition ${
-                    isCustomizingSidebar ? "cursor-grab active:cursor-grabbing hover:bg-amber-100/50 p-0.5 border border-dashed border-amber-300" : ""
-                  }`}
-                >
-                  {isCustomizingSidebar && (
-                    <GripVertical size={16} className="text-amber-600 shrink-0 ml-1 opacity-70" />
-                  )}
-                  <Link
-                    to={item.path}
-                    onClick={(e) => {
-                      if (isCustomizingSidebar) e.preventDefault()
-                      else setSidebarOpen(false)
-                    }}
-                    className={`flex items-center gap-3.5 px-4 py-3 rounded-2xl font-semibold text-sm transition flex-1 min-w-0 ${
-                      isActive && !isCustomizingSidebar
-                        ? 'bg-[#0b3c5d] text-white shadow-md shadow-blue-900/25 border-l-4 border-[#f5ab27]'
-                        : 'text-slate-700 hover:bg-slate-100 hover:text-[#0b3c5d]'
+                  to={item.path}
+                  onClick={() => setSidebarOpen(false)}
+                  className={`flex items-center gap-3.5 px-4 py-3 rounded-2xl font-semibold text-sm transition ${isActive
+                      ? 'bg-[#0b3c5d] text-white shadow-md shadow-blue-900/25 border-l-4 border-[#f5ab27]'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-[#0b3c5d]'
                     }`}
-                  >
-                    <Icon className={`w-5 h-5 shrink-0 ${isActive && !isCustomizingSidebar ? 'text-[#f5ab27]' : 'text-[#0b3c5d]'}`} />
-                    <span className="truncate tracking-tight">{item.label}</span>
-                  </Link>
-                </div>
+                >
+                  <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-[#f5ab27]' : 'text-[#0b3c5d]'}`} />
+                  <span className="truncate tracking-tight">{item.label}</span>
+                </Link>
               )
             })}
-          </div>
-
-          <div className="p-3 border-t border-slate-100 shrink-0">
-            <button
-              type="button"
-              onClick={() => setIsCustomizingSidebar((prev) => !prev)}
-              className={`w-full py-2 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                isCustomizingSidebar
-                  ? "bg-amber-600 text-white shadow-2xs"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-              }`}
-            >
-              <GripVertical size={14} />
-              {isCustomizingSidebar ? "Cancel Reorder" : "Customize Sidebar"}
-            </button>
           </div>
         </aside>
 

@@ -4,6 +4,7 @@ from app.core.dependencies import get_current_user_payload
 from app.modules.visit.schemas import VisitCreate, VisitCheckIn, VisitCheckOut, VisitResponse
 from app.modules.visit.service import VisitService
 from app.modules.visit.permissions import CanViewVisits, CanRecordVisits
+from app.modules.audit.service import create_audit_log
 
 router = APIRouter(prefix="/visits", tags=["Visit Management"])
 
@@ -73,19 +74,13 @@ async def schedule_visit(
 ):
     """Schedule a new client visit."""
     visit = service.create_visit(data, user_payload)
-    
-    # Audit logging
-    try:
-        from app.modules.audit.repository import AuditRepository
-        AuditRepository().create_log({
-            "action": "CREATE_VISIT",
-            "entity_type": "field_management.visits",
-            "entity_id": visit.get("id") or visit.get("visit_id") or "",
-            "details": {"client_name": visit.get("client_name"), "purpose": visit.get("purpose")}
-        }, user_payload)
-    except Exception:
-        pass
-
+    create_audit_log(
+        "VISIT_CREATED", "field_management.visits", user_payload,
+        entity_id=str(visit.get("id") or visit.get("visit_id") or ""),
+        module="Field Management",
+        description=f"Visit scheduled: {getattr(data, 'client_name', '') or getattr(data, 'purpose', '')}",
+        new_value={"purpose": getattr(data, "purpose", None), "scheduled_date": getattr(data, "scheduled_date", None)},
+    )
     return StandardResponse.success_response(
         data=visit,
         message="Visit scheduled successfully"
@@ -102,19 +97,13 @@ async def check_in_visit(
 ):
     """Check-in to a field visit with geo-location and authorization check."""
     visit = service.check_in(visit_id, data, user_payload)
-
-    # Audit logging
-    try:
-        from app.modules.audit.repository import AuditRepository
-        AuditRepository().create_log({
-            "action": "CHECK_IN_VISIT",
-            "entity_type": "field_management.visits",
-            "entity_id": visit_id,
-            "details": {"latitude": data.latitude, "longitude": data.longitude}
-        }, user_payload)
-    except Exception:
-        pass
-
+    create_audit_log(
+        "VISIT_CHECK_IN", "field_management.visits", user_payload,
+        entity_id=visit_id,
+        module="Field Management",
+        description=f"Checked in to visit {visit_id}",
+        new_value={"latitude": data.latitude, "longitude": data.longitude},
+    )
     return StandardResponse.success_response(
         data=visit,
         message="Checked into visit successfully"
@@ -131,19 +120,13 @@ async def check_out_visit(
 ):
     """Check-out of a field visit with authorization check."""
     visit = service.check_out(visit_id, data, user_payload)
-
-    # Audit logging
-    try:
-        from app.modules.audit.repository import AuditRepository
-        AuditRepository().create_log({
-            "action": "CHECK_OUT_VISIT",
-            "entity_type": "field_management.visits",
-            "entity_id": visit_id,
-            "details": {"outcome": data.outcome}
-        }, user_payload)
-    except Exception:
-        pass
-
+    create_audit_log(
+        "VISIT_CHECK_OUT", "field_management.visits", user_payload,
+        entity_id=visit_id,
+        module="Field Management",
+        description=f"Checked out of visit {visit_id}",
+        new_value={"outcome": data.outcome},
+    )
     return StandardResponse.success_response(
         data=visit,
         message="Checked out of visit successfully"
@@ -160,19 +143,13 @@ async def complete_visit(
 ):
     """Submit complete SE Visit Completion Form with authorization check."""
     visit = service.complete_visit(visit_id, data, user_payload)
-
-    # Audit logging
-    try:
-        from app.modules.audit.repository import AuditRepository
-        AuditRepository().create_log({
-            "action": "COMPLETE_VISIT",
-            "entity_type": "field_management.visits",
-            "entity_id": visit_id,
-            "details": data
-        }, user_payload)
-    except Exception:
-        pass
-
+    create_audit_log(
+        "VISIT_COMPLETED", "field_management.visits", user_payload,
+        entity_id=visit_id,
+        module="Field Management",
+        description=f"Visit completion form submitted: {visit_id}",
+        new_value=data if isinstance(data, dict) else {},
+    )
     return StandardResponse.success_response(
         data=visit,
         message="Visit completion form submitted successfully"

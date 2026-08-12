@@ -53,8 +53,8 @@ const MOCK_KPIS = {
   pending_followups: 0,
   today_visits: 0,
   today_visits_target: 8,
-  attendance_status: "Present",
-  check_in_time: "09:10 AM",
+  attendance_status: "Not Marked",
+  check_in_time: null,
   target_achievement_pct: 0,
   expenses_pending_amount: 0,
   revenue_achievement_pct: 0,
@@ -317,16 +317,21 @@ export default function Dashboard() {
         type: v.purpose || "Site Visit"
       }));
 
-      // My Attendance checking
-      const myAtt = attLogs.filter(matchesUser);
-      const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-      const todayISOStr = new Date().toISOString().slice(0, 10);
+      // My Attendance checking — only count a record if it's actually from today
+      const myAtt = attLogs.filter(matchesUser)
+      const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
+      const todayISOStr = new Date().toISOString().slice(0, 10)
+      // Strictly match today only — do NOT fall back to any random record
       const todayAtt = myAtt.find(a => {
-        const d = String(a.date || a.attendance_date || "");
-        return d.includes(todayStr) || d.includes(todayISOStr);
-      }) || myAtt[0];
+        const d = String(a.date || a.attendance_date || "")
+        return d.includes(todayStr) || d.includes(todayISOStr)
+      }) || null   // null = not marked today
 
-      const attCheckInTime = todayAtt?.loginTime || todayAtt?.check_in_time || "09:00 AM";
+      const isMarkedToday = !!todayAtt
+      const attStatus = isMarkedToday ? (todayAtt.status || "Present") : "Not Marked"
+      const attCheckInTime = isMarkedToday ? (todayAtt.loginTime || todayAtt.check_in_time || null) : null
+      const attCheckOutTime = isMarkedToday ? (todayAtt.logoutTime || todayAtt.check_out_time || null) : null
+      const attWorkHours = isMarkedToday ? (todayAtt.workHours || todayAtt.total_working_hours || null) : null
 
       const dynamicKpis = {
         my_leads: totalMyLeads,
@@ -335,10 +340,10 @@ export default function Dashboard() {
         today_followups: todayFollowupsList.length,
         today_visits: todayVisitsList.length,
         today_visits_target: 8,
-        attendance_status: "Present",
+        attendance_status: attStatus,
         check_in_time: attCheckInTime,
-        check_out_time: todayAtt ? (todayAtt.logoutTime || todayAtt.check_out_time || "—") : "—",
-        work_hours: todayAtt ? (todayAtt.workHours || todayAtt.total_working_hours || "8.5 hrs") : "8.5 hrs",
+        check_out_time: attCheckOutTime,
+        work_hours: attWorkHours,
         expenses_pending_amount: pendingExpensesAmount,
         today_schedule: todaySchedule,
         revenue_achievement_pct: conversionPct > 0 ? conversionPct : 0,
@@ -638,19 +643,32 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* Attendance (Emerald Theme) */}
           <div
             onClick={() => navigate("/sales/attendance")}
-            className="bg-gradient-to-br from-emerald-100/80 to-teal-50/60 rounded-2xl p-5 shadow-xs border-2 border-emerald-200 flex flex-col justify-between cursor-pointer"
+            className={`rounded-2xl p-5 shadow-xs border-2 flex flex-col justify-between cursor-pointer transition ${
+              k.attendance_status === "Present"
+                ? "bg-gradient-to-br from-emerald-100/80 to-teal-50/60 border-emerald-200 hover:border-emerald-400"
+                : "bg-gradient-to-br from-rose-50/80 to-red-50/60 border-rose-200 hover:border-rose-400"
+            }`}
           >
             <div>
-              <p className="text-emerald-900 text-xs uppercase tracking-wider font-extrabold mb-1">Attendance</p>
-              <h2 className={`text-2xl font-black ${k.attendance_status === "Present" ? "text-emerald-700" : "text-red-600"}`}>
-                {k.attendance_status}
+              <p className={`text-xs uppercase tracking-wider font-extrabold mb-1 ${k.attendance_status === 'Present' ? 'text-emerald-900' : 'text-rose-900'}`}>Attendance</p>
+              <h2 className={`text-2xl font-black ${
+                k.attendance_status === "Present" ? "text-emerald-700" :
+                k.attendance_status === "Not Marked" ? "text-rose-600" : "text-amber-700"
+              }`}>
+                {k.attendance_status === "Present" ? "✅ Present" :
+                 k.attendance_status === "Not Marked" ? "⚠️ Not Marked" :
+                 k.attendance_status}
               </h2>
-              {k.check_in_time && (
+              {k.attendance_status === "Present" && k.check_in_time && (
                 <p className="text-slate-600 text-xs font-semibold mt-1 flex items-center gap-1">
                   <Clock3 size={13} className="text-emerald-700" /> Checked In {k.check_in_time}
+                </p>
+              )}
+              {k.attendance_status === "Not Marked" && (
+                <p className="text-rose-700 text-xs font-bold mt-1 flex items-center gap-1">
+                  <AlertCircle size={13} /> Tap to mark attendance
                 </p>
               )}
             </div>

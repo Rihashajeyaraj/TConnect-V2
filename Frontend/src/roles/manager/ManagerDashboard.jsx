@@ -75,6 +75,15 @@ export default function ManagerDashboard() {
   const [visitSearch, setVisitSearch] = useState('')
   const [visitTodayOnly, setVisitTodayOnly] = useState(false)
 
+  // ── Total Revenue Drill-Down State ──────────────────────────────────────────
+  const [showRevenueBreakdownModal, setShowRevenueBreakdownModal] = useState(false)
+  const [revenueBreakdownData, setRevenueBreakdownData] = useState(null)
+  const [revenueBreakdownLoading, setRevenueBreakdownLoading] = useState(false)
+  // Modal-local date filter (independent of main dashboard filter)
+  const [modalDateMode, setModalDateMode] = useState('This Month')
+  const [modalCustomStart, setModalCustomStart] = useState('')
+  const [modalCustomEnd, setModalCustomEnd] = useState('')
+
   // ── Add Target Form State ───────────────────────────────────────────────────
   const [targetForm, setTargetForm] = useState({
     executive_id: '',
@@ -407,6 +416,57 @@ export default function ManagerDashboard() {
     })
   }, [assignedExecutives, filteredTeamLeads, filteredTeamCustomers, filteredTeamVisits, allTargets, allAttendance])
 
+  // ── Fetch Revenue Breakdown for My Team Revenue Modal ──────────────────────
+  const fetchRevenueBreakdown = async () => {
+    try {
+      setRevenueBreakdownLoading(true)
+      const params = { mode: modalDateMode }
+      if (modalDateMode === 'Custom') {
+        if (modalCustomStart) params.start_date = modalCustomStart
+        if (modalCustomEnd) params.end_date = modalCustomEnd
+      }
+      const res = await salesAPI.getTeamRevenueBreakdown(params)
+      const breakdown = res.data || res || null
+      setRevenueBreakdownData(breakdown)
+    } catch (err) {
+      console.warn('Backend team revenue breakdown fetch notice, using local fallback:', err)
+      const fallbackExecs = executiveMetricsList.map((e) => ({
+        employee_id: e.employee_code || e.id,
+        employee_code: e.employee_code || e.id,
+        name: e.name,
+        email: e.email,
+        revenue: e.revenue,
+        incentive: Math.round(e.revenue * 0.05),
+        deals_count: e.leadsCount + e.customersCount,
+      }))
+      const sumRev = fallbackExecs.reduce((acc, curr) => acc + (curr.revenue || 0), 0)
+      const sumInc = fallbackExecs.reduce((acc, curr) => acc + (curr.incentive || 0), 0)
+      const fmtDate = (d) => d ? d.toISOString().slice(0, 10) : ''
+      setRevenueBreakdownData({
+        manager_id: managerId,
+        manager_name: managerName,
+        period: {
+          mode: dateFilterMode,
+          start_date: fmtDate(activeDateRange.start),
+          end_date: fmtDate(activeDateRange.end),
+        },
+        executives: fallbackExecs,
+        total_revenue: sumRev,
+        total_incentive: sumInc,
+        incentive_rate_pct: 5.0,
+      })
+    } finally {
+      setRevenueBreakdownLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (!showRevenueBreakdownModal) return
+    // For Custom mode, only auto-fetch when both dates are filled
+    if (modalDateMode === 'Custom' && (!modalCustomStart || !modalCustomEnd)) return
+    fetchRevenueBreakdown()
+  }, [modalDateMode, modalCustomStart, modalCustomEnd, showRevenueBreakdownModal])
+
   // Filtered by Search Query
   const displayedExecutives = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
@@ -575,11 +635,15 @@ export default function ManagerDashboard() {
 
       {/* ── 2. COMPACT, SIMPLE KPI CARDS ──────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-        {/* Card 1: Total Revenue */}
-        <div className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 hover:border-amber-400 transition">
+        {/* Card 1: Total Revenue — Clickable Drill-down */}
+        <div
+          onClick={() => { setShowRevenueBreakdownModal(true); fetchRevenueBreakdown() }}
+          className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 hover:border-amber-400 hover:shadow-md transition cursor-pointer group"
+          title="Click to view My Team Revenue breakdown"
+        >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Total Revenue</span>
-            <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider group-hover:text-amber-700 transition">Total Revenue</span>
+            <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold group-hover:bg-amber-100 group-hover:text-amber-700 transition">
               <IndianRupee size={13} />
             </div>
           </div>
@@ -587,8 +651,8 @@ export default function ManagerDashboard() {
             <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
               ₹{totalTeamRevenue.toLocaleString('en-IN')}
             </div>
-            <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5 mt-0.5">
-              <TrendingUp size={11} /> Team Won Sales
+            <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5 mt-0.5 group-hover:text-amber-700 transition">
+              <TrendingUp size={11} /> Click for Team Drill-down 📊
             </span>
           </div>
         </div>
@@ -596,11 +660,10 @@ export default function ManagerDashboard() {
         {/* Card 2: Total Leads */}
         <div
           onClick={() => setActiveSection(activeSection === 'leads' ? null : 'leads')}
-          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${
-            activeSection === 'leads'
+          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${activeSection === 'leads'
               ? 'bg-violet-50/70 border-violet-500 ring-2 ring-violet-500/20'
               : 'bg-white border-slate-200 hover:border-violet-400'
-          }`}
+            }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Total Leads</span>
@@ -639,11 +702,10 @@ export default function ManagerDashboard() {
         {/* Card 4: Visits */}
         <div
           onClick={() => setActiveSection(activeSection === 'visits' ? null : 'visits')}
-          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${
-            activeSection === 'visits'
+          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${activeSection === 'visits'
               ? 'bg-rose-50/70 border-rose-500 ring-2 ring-rose-500/20'
               : 'bg-white border-slate-200 hover:border-rose-400'
-          }`}
+            }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Field Visits</span>
@@ -664,11 +726,10 @@ export default function ManagerDashboard() {
         {/* Card 5: Target Achievement */}
         <div
           onClick={() => setActiveSection(activeSection === 'targets' ? null : 'targets')}
-          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${
-            activeSection === 'targets'
+          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${activeSection === 'targets'
               ? 'bg-amber-50/70 border-amber-500 ring-2 ring-amber-500/20'
               : 'bg-white border-slate-200 hover:border-amber-400'
-          }`}
+            }`}
         >
           <div className="flex items-center justify-between">
             <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Achievement</span>
@@ -829,9 +890,8 @@ export default function ManagerDashboard() {
                     key={t.name}
                     type="button"
                     onClick={() => setLeadTab(t.name)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
-                      active ? t.color : 'text-slate-500 hover:text-slate-800'
-                    }`}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${active ? t.color : 'text-slate-500 hover:text-slate-800'
+                      }`}
                   >
                     {t.name} ({
                       deduplicatedTeamLeads.filter((l) => getLeadCat(l) === t.name.toLowerCase()).length
@@ -940,11 +1000,10 @@ export default function ManagerDashboard() {
               <button
                 type="button"
                 onClick={() => setVisitTodayOnly(!visitTodayOnly)}
-                className={`h-9 px-4 rounded-xl text-xs font-black transition cursor-pointer border flex items-center gap-1.5 ${
-                  visitTodayOnly
+                className={`h-9 px-4 rounded-xl text-xs font-black transition cursor-pointer border flex items-center gap-1.5 ${visitTodayOnly
                     ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                }`}
+                  }`}
               >
                 <Clock size={13} />
                 Today
@@ -1342,6 +1401,177 @@ export default function ManagerDashboard() {
                 className="px-4 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs shadow-xs hover:bg-slate-800 transition cursor-pointer"
               >
                 Close Audit
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── MY TEAM REVENUE BREAKDOWN MODAL ──────────────────────────────── */}
+      {showRevenueBreakdownModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 z-50" onClick={(e) => { if (e.target === e.currentTarget) setShowRevenueBreakdownModal(false) }}>
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 sm:p-7 space-y-5 shadow-2xl max-h-[90vh] overflow-y-auto">
+
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-200 flex items-center justify-center shadow-sm shrink-0">
+                  <IndianRupee size={22} />
+                </div>
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 tracking-tight">My Team Revenue</h2>
+                  <p className="text-xs font-semibold text-slate-500 mt-0.5">
+                    Revenue &amp; incentive breakdown by Sales Executive
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowRevenueBreakdownModal(false)}
+                className="p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition cursor-pointer shrink-0"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Date Filter Bar */}
+            <div className="space-y-2.5">
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {['Today', 'This Week', 'This Month', 'Custom'].map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => { setModalDateMode(m); if (m !== 'Custom') setModalCustomStart(''); if (m !== 'Custom') setModalCustomEnd('') }}
+                    className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer border ${
+                      modalDateMode === m
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                        : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-400 hover:text-emerald-700'
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+              {modalDateMode === 'Custom' && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0">From</label>
+                    <input
+                      type="date"
+                      value={modalCustomStart}
+                      onChange={(e) => setModalCustomStart(e.target.value)}
+                      className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition cursor-pointer"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0">To</label>
+                    <input
+                      type="date"
+                      value={modalCustomEnd}
+                      onChange={(e) => setModalCustomEnd(e.target.value)}
+                      className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition cursor-pointer"
+                    />
+                  </div>
+                  <button
+                    type="button"
+                    onClick={fetchRevenueBreakdown}
+                    disabled={!modalCustomStart || !modalCustomEnd}
+                    className="px-3 py-1.5 rounded-xl text-[11px] font-black bg-slate-900 text-white border border-slate-900 hover:bg-slate-800 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    Apply
+                  </button>
+                </div>
+              )}
+              {revenueBreakdownData?.period?.start_date && (
+                <p className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
+                  <Calendar size={11} className="text-amber-500" />
+                  Showing: <strong className="text-slate-600 ml-0.5">{revenueBreakdownData.period.start_date}</strong>
+                  <span className="text-slate-300">→</span>
+                  <strong className="text-slate-600">{revenueBreakdownData.period.end_date}</strong>
+                </p>
+              )}
+            </div>
+
+            {/* Content */}
+            {revenueBreakdownLoading ? (
+              <div className="py-12 text-center space-y-3">
+                <div className="w-8 h-8 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mx-auto" />
+                <p className="text-xs font-semibold text-slate-500">Fetching team revenue &amp; incentive breakdown...</p>
+              </div>
+            ) : (
+              <div className="space-y-5">
+                {/* KPI Summary */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-teal-50 border border-emerald-200">
+                    <span className="text-[10px] font-black text-emerald-900 uppercase tracking-wider block">Total Team Revenue Generated</span>
+                    <p className="text-2xl font-black text-emerald-950 mt-1">₹{(revenueBreakdownData?.total_revenue || 0).toLocaleString('en-IN')}</p>
+                    <span className="text-[11px] text-emerald-700 block mt-0.5">Sum of all assigned executive revenues</span>
+                  </div>
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200">
+                    <span className="text-[10px] font-black text-indigo-900 uppercase tracking-wider block">Total Executive Incentive (5%)</span>
+                    <p className="text-2xl font-black text-indigo-950 mt-1">₹{(revenueBreakdownData?.total_incentive || 0).toLocaleString('en-IN')}</p>
+                    <span className="text-[11px] text-indigo-700 block mt-0.5">Standard 5% commission on generated sales</span>
+                  </div>
+                </div>
+
+                {/* Executive Table */}
+                <div className="rounded-2xl border border-slate-200 overflow-hidden">
+                  {(!revenueBreakdownData?.executives || revenueBreakdownData.executives.length === 0) ? (
+                    <div className="p-10 text-center">
+                      <div className="text-3xl mb-2">📊</div>
+                      <p className="text-sm font-bold text-slate-500">No Sales Executives assigned or no revenue for this period.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead className="bg-slate-50 border-b border-slate-200">
+                          <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+                            <th className="py-3 px-4 text-left">#</th>
+                            <th className="py-3 px-4 text-left">Sales Executive</th>
+                            <th className="py-3 px-4 text-right">Revenue Generated</th>
+                            <th className="py-3 px-4 text-right text-emerald-700">Incentive (5%)</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {revenueBreakdownData.executives.map((exec, idx) => (
+                            <tr key={exec.employee_id || idx} className="hover:bg-slate-50/70 transition">
+                              <td className="py-3.5 px-4 text-slate-400 font-bold">{idx + 1}</td>
+                              <td className="py-3.5 px-4">
+                                <div className="font-black text-slate-900">{exec.name}</div>
+                                <div className="flex items-center gap-1.5 mt-0.5">
+                                  <span className="text-[10px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-slate-600">{exec.employee_code || exec.employee_id}</span>
+                                  {exec.email && <span className="text-[11px] text-slate-400 truncate max-w-[160px]">{exec.email}</span>}
+                                </div>
+                              </td>
+                              <td className="py-3.5 px-4 text-right font-black text-slate-900 whitespace-nowrap">₹{(exec.revenue || 0).toLocaleString('en-IN')}</td>
+                              <td className="py-3.5 px-4 text-right font-black text-emerald-700 whitespace-nowrap">₹{(exec.incentive || 0).toLocaleString('en-IN')}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot className="bg-slate-100 border-t-2 border-slate-300">
+                          <tr className="font-black text-sm text-slate-800">
+                            <td className="py-3.5 px-4" colSpan={2}>
+                              <span className="text-[10px] uppercase tracking-widest text-slate-600 font-black">TOTAL REVENUE GENERATED</span>
+                            </td>
+                            <td className="py-3.5 px-4 text-right text-slate-950 whitespace-nowrap">₹{(revenueBreakdownData?.total_revenue || 0).toLocaleString('en-IN')}</td>
+                            <td className="py-3.5 px-4 text-right text-emerald-800 whitespace-nowrap">₹{(revenueBreakdownData?.total_incentive || 0).toLocaleString('en-IN')}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Footer */}
+            <div className="pt-3 border-t border-slate-100 flex items-center justify-end">
+              <button
+                type="button"
+                onClick={() => setShowRevenueBreakdownModal(false)}
+                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition cursor-pointer"
+              >
+                Close Revenue View
               </button>
             </div>
           </div>

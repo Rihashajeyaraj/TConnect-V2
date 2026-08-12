@@ -5,6 +5,7 @@ from app.core.scoping import get_allowed_user_identifiers, is_record_accessible,
 from app.modules.hrms.schemas import EmployeeCreate, EmployeeUpdate, EmployeeResponse
 from app.modules.hrms.service import HRMSService
 from app.modules.hrms.permissions import CanViewEmployees, CanManageEmployees
+from app.modules.audit.service import create_audit_log
 
 router = APIRouter(prefix="/hrms", tags=["HRMS"])
 
@@ -42,6 +43,13 @@ async def create_employee(
 ):
     """Create a new employee profile."""
     emp = service.create_employee(data)
+    create_audit_log(
+        "EMPLOYEE_CREATED", "hrms.employees", user_payload,
+        entity_id=str(emp.get("employee_id") or emp.get("id") or ""),
+        module="HRMS",
+        description=f"Employee created: {data.name or data.employee_code or ''}",
+        new_value={"name": data.name, "role": data.role, "email": data.email, "employee_code": data.employee_code},
+    )
     return StandardResponse.success_response(
         data=emp,
         message="Employee created successfully"
@@ -88,6 +96,20 @@ async def update_employee(
             raise HTTPException(status_code=403, detail="Not authorized to manage other employees' profiles")
 
     updated = service.update_employee(emp_id, data)
+    update_dict = data.model_dump(exclude_none=True)
+    status_val = str(update_dict.get("status") or "").lower()
+    if "role" in update_dict:
+        action = "EMPLOYEE_ROLE_CHANGED"
+    elif status_val in ("inactive", "deactivated", "terminated", "disabled"):
+        action = "EMPLOYEE_DEACTIVATED"
+    else:
+        action = "EMPLOYEE_UPDATED"
+    create_audit_log(
+        action, "hrms.employees", user_payload,
+        entity_id=emp_id, module="HRMS",
+        description=f"Employee {action.lower().replace('_', ' ')}: {emp_id}",
+        new_value={k: v for k, v in update_dict.items() if k in ("role", "status", "department", "reporting_manager")},
+    )
     return StandardResponse.success_response(
         data=updated,
         message="Employee profile updated successfully"
@@ -103,6 +125,11 @@ async def delete_employee(
 ):
     """Delete employee profile."""
     service.delete_employee(emp_id)
+    create_audit_log(
+        "EMPLOYEE_DELETED", "hrms.employees", user_payload,
+        entity_id=emp_id, module="HRMS",
+        description=f"Employee {emp_id} deleted",
+    )
     return StandardResponse.success_response(
         data={"deleted": True},
         message="Employee profile deleted successfully"

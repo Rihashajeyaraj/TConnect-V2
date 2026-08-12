@@ -673,14 +673,12 @@ export default function Leads() {
       return;
     }
 
-    const finalSource = oppForm.source === "Custom" ? (oppForm.customSource?.trim() || "Custom Source") : oppForm.source;
-
     const newOpp = {
       id: `opp_${Date.now()}`,
       date: formatDate(new Date()),
       customer: oppForm.companyName.trim(),
       company: oppForm.companyName.trim(),
-      source: finalSource,
+      source: oppForm.source,
       productRequirement: oppForm.productRequirement,
       contactPerson: oppForm.contactPerson.trim(),
       phone: oppForm.phone.trim(),
@@ -699,7 +697,7 @@ export default function Leads() {
     try {
       const savedOpps = JSON.parse(localStorage.getItem("tc_sales_opportunities") || "[]");
       localStorage.setItem("tc_sales_opportunities", JSON.stringify([newOpp, ...savedOpps]));
-    } catch (err) {}
+    } catch (err) { }
 
     try {
       pipelineAPI.createOpportunity({
@@ -722,13 +720,12 @@ export default function Leads() {
         assigned_to: userName,
         assigned_to_email: userEmail
       }).catch(() => null);
-    } catch (err) {}
+    } catch (err) { }
 
     setIsOppModalOpen(false);
     setOppForm({
       companyName: "",
       source: "Field Research (SE)",
-      customSource: "",
       productRequirement: "",
       contactPerson: "",
       phone: "",
@@ -1285,115 +1282,93 @@ export default function Leads() {
         </button>
       </div>
 
-      {/* Single Spacious Category Filter Toggle Bar (Total | HOT [Green] | WARM [Yellow] | COLD [Red]) */}
-      <div className="bg-white rounded-3xl p-2.5 sm:p-3 border border-slate-200 shadow-xs max-w-5xl">
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-          {/* 1. Total Leads Toggle */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("leads");
-              setCategoryFilter("All");
-              setStatusFilter("All");
-              showToast("Showing ALL Leads!", "info");
-            }}
-            className={`px-4 py-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2.5 transition cursor-pointer border-2 ${
-              categoryFilter === "All"
-                ? "bg-[#0b3c5d] text-white border-[#0b3c5d] shadow-md shadow-blue-950/25"
-                : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Users size={18} className={categoryFilter === "All" ? "text-amber-400" : "text-[#0b3c5d]"} />
-              <span className="uppercase tracking-wider text-[11px] sm:text-xs">TOTAL LEADS</span>
+      {/* Sleek & Interactive Metric Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+        {/* Total My Leads Card -> Shows ALL HOT, WARM, COLD leads in Tabular View */}
+        <div
+          onClick={() => {
+            setActiveTab("leads");
+            setCategoryFilter("All");
+            setStatusFilter("All");
+            showToast("Showing ALL (Hot, Warm, Cold) leads in tabular column view!", "info");
+          }}
+          className="bg-white rounded-2xl p-3 sm:p-3.5 shadow-xs border-2 border-blue-200 hover:border-blue-500 hover:shadow-md transition cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-blue-900 text-[10px] font-extrabold uppercase tracking-wider">Total My Leads</p>
+              <h2 className="text-xl sm:text-2xl font-black text-blue-950 mt-0.5">{totalAssigned}</h2>
             </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-black ${
-              categoryFilter === "All" ? "bg-white/20 text-white" : "bg-slate-200 text-slate-800"
-            }`}>
-              {totalAssigned}
-            </span>
-          </button>
+            <div className="w-8 h-8 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center font-bold shrink-0">
+              <Users size={16} />
+            </div>
+          </div>
+        </div>
 
-          {/* 2. HOT Leads Toggle (GREEN) */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("leads");
-              setCategoryFilter("Hot");
-              showToast("Filtered by 🟢 HOT Leads!", "info");
-            }}
-            className={`px-4 py-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2.5 transition cursor-pointer border-2 ${
-              categoryFilter === "Hot"
-                ? "bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-600/35"
-                : "bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Flame size={18} className={categoryFilter === "Hot" ? "text-emerald-200" : "text-emerald-600"} />
-              <span className="uppercase tracking-wider text-[11px] sm:text-xs">HOT</span>
+        {/* Hot Leads Card */}
+        <div
+          onClick={() => {
+            setActiveTab("leads");
+            setCategoryFilter("Hot");
+            showToast("Filtered by 🔥 Hot Leads!", "info");
+          }}
+          className="bg-rose-50/60 rounded-2xl p-3 sm:p-3.5 shadow-xs border-2 border-rose-200 hover:border-rose-500 hover:shadow-md transition cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-rose-700 text-[10px] font-extrabold uppercase tracking-wider">🔥 My Hot Leads</p>
+              <h2 className="text-xl sm:text-2xl font-black text-rose-700 mt-0.5">{hotCount}</h2>
             </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-black ${
-              categoryFilter === "Hot" ? "bg-white/20 text-white" : "bg-emerald-200/90 text-emerald-950"
-            }`}>
-              {hotCount}
-            </span>
-          </button>
+            <div className="w-8 h-8 rounded-xl bg-rose-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+              <Flame size={16} />
+            </div>
+          </div>
+        </div>
 
-          {/* 3. WARM Leads Toggle (YELLOW / AMBER) */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("leads");
-              setCategoryFilter("Warm");
-              showToast("Filtered by ⚡ WARM Leads!", "info");
-            }}
-            className={`px-4 py-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2.5 transition cursor-pointer border-2 ${
-              categoryFilter === "Warm"
-                ? "bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/35"
-                : "bg-amber-50 text-amber-900 border-amber-200 hover:bg-amber-100"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Zap size={18} className={categoryFilter === "Warm" ? "text-amber-200" : "text-amber-600"} />
-              <span className="uppercase tracking-wider text-[11px] sm:text-xs">WARM</span>
+        {/* Warm Leads Card */}
+        <div
+          onClick={() => {
+            setActiveTab("leads");
+            setCategoryFilter("Warm");
+            showToast("Filtered by ⚡ Warm Leads!", "info");
+          }}
+          className="bg-amber-50/60 rounded-2xl p-3 sm:p-3.5 shadow-xs border-2 border-amber-200 hover:border-amber-500 hover:shadow-md transition cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-amber-700 text-[10px] font-extrabold uppercase tracking-wider">⚡ My Warm Leads</p>
+              <h2 className="text-xl sm:text-2xl font-black text-amber-700 mt-0.5">{warmCount}</h2>
             </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-black ${
-              categoryFilter === "Warm" ? "bg-white/20 text-white" : "bg-amber-200/90 text-amber-950"
-            }`}>
-              {warmCount}
-            </span>
-          </button>
+            <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+              <Zap size={16} />
+            </div>
+          </div>
+        </div>
 
-          {/* 4. COLD Leads Toggle (RED) */}
-          <button
-            type="button"
-            onClick={() => {
-              setActiveTab("leads");
-              setCategoryFilter("Cold");
-              showToast("Filtered by 🔴 COLD Leads!", "info");
-            }}
-            className={`px-4 py-4 rounded-2xl font-black text-xs sm:text-sm flex items-center justify-between gap-2.5 transition cursor-pointer border-2 ${
-              categoryFilter === "Cold"
-                ? "bg-red-600 text-white border-red-600 shadow-md shadow-red-600/35"
-                : "bg-red-50 text-red-800 border-red-200 hover:bg-red-100"
-            }`}
-          >
-            <div className="flex items-center gap-2">
-              <Snowflake size={18} className={categoryFilter === "Cold" ? "text-red-200" : "text-red-600"} />
-              <span className="uppercase tracking-wider text-[11px] sm:text-xs">COLD</span>
+        {/* Cold Leads Card */}
+        <div
+          onClick={() => {
+            setActiveTab("leads");
+            setCategoryFilter("Cold");
+            showToast("Filtered by ❄️ Cold Leads!", "info");
+          }}
+          className="bg-sky-50/60 rounded-2xl p-3 sm:p-3.5 shadow-xs border-2 border-sky-200 hover:border-sky-500 hover:shadow-md transition cursor-pointer"
+        >
+          <div className="flex items-center justify-between">
+            <div>
+              <p className="text-sky-700 text-[10px] font-extrabold uppercase tracking-wider">❄️ My Cold Leads</p>
+              <h2 className="text-xl sm:text-2xl font-black text-sky-700 mt-0.5">{coldCount}</h2>
             </div>
-            <span className={`px-3 py-1 rounded-full text-xs font-black ${
-              categoryFilter === "Cold" ? "bg-white/20 text-white" : "bg-red-200/90 text-red-950"
-            }`}>
-              {coldCount}
-            </span>
-          </button>
+            <div className="w-8 h-8 rounded-xl bg-sky-500 text-white flex items-center justify-center font-bold shadow-xs shrink-0">
+              <Zap size={16} />
+            </div>
+          </div>
         </div>
       </div>
 
       {/* ── TOGGLE TAB BAR INSIDE LEADS PAGE (Leads | Followups | Visits | Opportunities) ── */}
-      <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto overflow-x-auto shrink-0">
+      <div className="bg-white rounded-2xl p-2 border border-slate-200 shadow-xs flex items-center overflow-x-auto">
+        <div className="flex items-center gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto">
           <button
             type="button"
             onClick={() => setActiveTab("leads")}
@@ -1442,32 +1417,6 @@ export default function Leads() {
             <span>Opportunities ({opportunities.length})</span>
           </button>
         </div>
-
-        {/* Global View Mode Switcher: Cards vs Table (Default: Table) */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shrink-0 ml-auto">
-          <button
-            type="button"
-            onClick={() => setViewMode("grid")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${viewMode === "grid"
-              ? "bg-white text-teal-700 shadow-xs border border-slate-200"
-              : "text-slate-500 hover:text-slate-800"
-              }`}
-            title="Cards View"
-          >
-            <LayoutGrid size={14} /> Cards
-          </button>
-          <button
-            type="button"
-            onClick={() => setViewMode("list")}
-            className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${viewMode === "list"
-              ? "bg-white text-teal-700 shadow-xs border border-slate-200"
-              : "text-slate-500 hover:text-slate-800"
-              }`}
-            title="Table View (Default)"
-          >
-            <List size={14} /> Table View
-          </button>
-        </div>
       </div>
 
       {/* ── TAB 1: MY ASSIGNED LEADS VIEW ──────────────────────────────────────── */}
@@ -1501,6 +1450,32 @@ export default function Leads() {
                   <option value="Cold">❄️ Cold Leads</option>
                   <option value="Other">🌐 Other Category</option>
                 </select>
+              </div>
+
+              {/* View Mode Toggle: Grid Cards vs Compact Table List */}
+              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 ml-auto">
+                <button
+                  type="button"
+                  onClick={() => setViewMode("grid")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${viewMode === "grid"
+                    ? "bg-white text-teal-700 shadow-xs border border-slate-200"
+                    : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  title="Grid Cards View"
+                >
+                  <LayoutGrid size={14} /> Cards
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode("list")}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-black flex items-center gap-1.5 transition cursor-pointer ${viewMode === "list"
+                    ? "bg-white text-teal-700 shadow-xs border border-slate-200"
+                    : "text-slate-500 hover:text-slate-800"
+                    }`}
+                  title="Spacious Table List View"
+                >
+                  <List size={14} /> Table
+                </button>
               </div>
             </div>
           </div>
@@ -1780,80 +1755,6 @@ export default function Leads() {
             <div className="bg-white rounded-3xl p-10 text-center text-slate-400 font-semibold text-xs sm:text-sm border border-slate-200">
               No follow-ups currently scheduled. Move a lead to follow-ups from the Assigned Leads tab above.
             </div>
-          ) : viewMode === "list" ? (
-            <div className="bg-white rounded-3xl border border-purple-200 shadow-xs overflow-x-auto">
-              <table className="w-full text-left font-semibold text-xs text-slate-800">
-                <thead className="border-b border-purple-100 text-purple-900 font-black text-[10px] uppercase tracking-wider bg-purple-50/70">
-                  <tr>
-                    <th className="py-3 px-4">COMPANY / CLIENT</th>
-                    <th className="py-3 px-4">CONTACT & PHONE</th>
-                    <th className="py-3 px-4">CITY</th>
-                    <th className="py-3 px-4">SCHEDULED DATE & TIME</th>
-                    <th className="py-3 px-4 min-w-[200px]">REMARKS / CALL NOTES</th>
-                    <th className="py-3 px-4 text-right">OUTCOME ACTIONS</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-purple-50">
-                  {myFollowups.map((item) => (
-                    <tr key={item.id} className="hover:bg-purple-50/30 transition">
-                      <td className="py-3.5 px-4 font-black text-slate-900 text-sm whitespace-nowrap">
-                        {item.company}
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="font-extrabold text-slate-900">{item.person}</div>
-                        <div className="text-[11px] text-slate-500 font-semibold">{item.phone}</div>
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-700 whitespace-nowrap">
-                        {item.city}
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="px-2.5 py-1 rounded-lg bg-purple-100 text-purple-800 font-black text-[11px] border border-purple-200">
-                          📅 {item.scheduledDate} @ {item.scheduledTime || "02:30 PM"}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600 font-semibold text-xs leading-snug">
-                        {item.remark || "Client requested follow-up discussion."}
-                      </td>
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                          <button
-                            type="button"
-                            onClick={() => handleClassifyFollowupToCategory(item, "Hot")}
-                            className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-extrabold text-[11px] cursor-pointer"
-                          >
-                            🔥 Hot
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleClassifyFollowupToCategory(item, "Warm")}
-                            className="px-2 py-1 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 font-extrabold text-[11px] cursor-pointer"
-                          >
-                            ⚡ Warm
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              handleMoveFollowupToVisit(item);
-                              setActiveTab("visits");
-                            }}
-                            className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-[11px] cursor-pointer"
-                          >
-                            📅 Move to Visit
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleMoveFollowupToCustomer(item)}
-                            className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] cursor-pointer"
-                          >
-                            🎉 Convert
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {myFollowups.map((item) => (
@@ -1980,81 +1881,6 @@ export default function Leads() {
           {myVisits.length === 0 ? (
             <div className="bg-white rounded-3xl p-10 text-center text-slate-400 font-semibold text-xs sm:text-sm border border-slate-200">
               No site visits currently scheduled. Click "Move to Visit Page" on any lead or follow-up call to see it here!
-            </div>
-          ) : viewMode === "list" ? (
-            <div className="bg-white rounded-3xl border border-blue-200 shadow-xs overflow-x-auto">
-              <table className="w-full text-left font-semibold text-xs text-slate-800">
-                <thead className="border-b border-blue-100 text-blue-900 font-black text-[10px] uppercase tracking-wider bg-blue-50/70">
-                  <tr>
-                    <th className="py-3 px-4">CLIENT ACCOUNT</th>
-                    <th className="py-3 px-4">CONTACT & PHONE</th>
-                    <th className="py-3 px-4">LOCATION</th>
-                    <th className="py-3 px-4">VISIT TIMING</th>
-                    <th className="py-3 px-4">STATUS</th>
-                    <th className="py-3 px-4 min-w-[180px]">PURPOSE & REMARKS</th>
-                    <th className="py-3 px-4 text-right">ACTIONS</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-blue-50">
-                  {myVisits.map((v) => (
-                    <tr key={v.id} className="hover:bg-blue-50/30 transition">
-                      <td className="py-3.5 px-4 font-black text-slate-900 text-sm whitespace-nowrap">
-                        🏢 {v.customer || v.client || v.company || "Client Account"}
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="font-extrabold text-slate-900">{v.person || v.contactPerson || "Contact Person"}</div>
-                        <div className="text-[11px] text-slate-500 font-semibold">{v.phone || "—"}</div>
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-700 whitespace-nowrap">
-                        📍 {v.location || v.address || v.city || "Chennai"}
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="font-extrabold text-slate-800">
-                          📅 {v.date || v.scheduledDate || "Today"} @ {v.time || v.scheduledTime || "10:00 AM"}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className={`px-2.5 py-1 rounded-full text-[10px] font-black border ${
-                          v.status === "Completed" ? "bg-emerald-100 text-emerald-800 border-emerald-200" : "bg-amber-100 text-amber-800 border-amber-200"
-                        }`}>
-                          {v.status === "Completed" ? "✅ Completed" : "📅 Scheduled"}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 text-slate-600 font-semibold text-xs leading-snug">
-                        <div className="font-bold text-slate-800">{v.purpose || "Product Demo"}</div>
-                        {v.notes && <div className="text-[11px] text-slate-500 truncate max-w-[200px]">{v.notes}</div>}
-                      </td>
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedVisitForOutcome(v);
-                              setVisitOutcomeForm({
-                                personMet: v.personMet || v.person || v.contactPerson || v.contact || "",
-                                discussionNotes: v.discussionNotes || "",
-                                leadFeedback: v.leadFeedback || "",
-                                outcomeStatus: "Won",
-                                agreedValue: v.value || "₹4,50,000",
-                              });
-                            }}
-                            className="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs cursor-pointer"
-                          >
-                            📝 Log Outcome
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleMoveFollowupToCustomer(v)}
-                            className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs cursor-pointer"
-                          >
-                            🎉 Convert
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -2201,58 +2027,6 @@ export default function Leads() {
           {opportunities.length === 0 ? (
             <div className="bg-white rounded-3xl p-10 text-center text-slate-400 font-semibold text-xs sm:text-sm border border-slate-200">
               No active sales opportunities found. Click "Add Opportunity" above to create one!
-            </div>
-          ) : viewMode === "list" ? (
-            <div className="bg-white rounded-3xl border border-amber-200 shadow-xs overflow-x-auto">
-              <table className="w-full text-left font-semibold text-xs text-slate-800">
-                <thead className="border-b border-amber-100 text-amber-900 font-black text-[10px] uppercase tracking-wider bg-amber-50/70">
-                  <tr>
-                    <th className="py-3 px-4">PROSPECT / COMPANY</th>
-                    <th className="py-3 px-4">REQUIREMENT / PRODUCT</th>
-                    <th className="py-3 px-4">CONTACT & PHONE</th>
-                    <th className="py-3 px-4">LOCATION</th>
-                    <th className="py-3 px-4">STAGE</th>
-                    <th className="py-3 px-4">DEAL VALUE</th>
-                    <th className="py-3 px-4 text-right">ACTIONS</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-amber-50">
-                  {opportunities.map((opp) => (
-                    <tr key={opp.id || opp.opportunity_id} className="hover:bg-amber-50/30 transition">
-                      <td className="py-3.5 px-4 font-black text-slate-900 text-sm whitespace-nowrap">
-                        🏢 {opp.customer || opp.company || "Prospect Account"}
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-amber-900 whitespace-nowrap">
-                        {opp.productRequirement || "TwiteConnect CRM"}
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <div className="font-extrabold text-slate-900">{opp.contactPerson || "Contact Person"}</div>
-                        <div className="text-[11px] text-slate-500 font-semibold">{opp.phone || "—"}</div>
-                      </td>
-                      <td className="py-3.5 px-4 font-bold text-slate-700 whitespace-nowrap">
-                        📍 {opp.location || opp.address || "Chennai"}
-                      </td>
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-900 font-black text-[11px] border border-amber-200">
-                          💼 {opp.stage || "Qualification"}
-                        </span>
-                      </td>
-                      <td className="py-3.5 px-4 font-black text-emerald-700 text-sm whitespace-nowrap">
-                        {opp.value || "₹4,50,000"}
-                      </td>
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
-                        <button
-                          type="button"
-                          onClick={() => handleMoveFollowupToCustomer(opp)}
-                          className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs cursor-pointer"
-                        >
-                          🎉 Convert to Customer
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
@@ -2912,18 +2686,16 @@ export default function Leads() {
                           <button
                             type="button"
                             onClick={() => setVisitTimePeriod("AM")}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
-                              visitTimePeriod === "AM" ? "bg-teal-700 text-white shadow-xs" : "text-teal-900 hover:bg-teal-200"
-                            }`}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${visitTimePeriod === "AM" ? "bg-teal-700 text-white shadow-xs" : "text-teal-900 hover:bg-teal-200"
+                              }`}
                           >
                             AM
                           </button>
                           <button
                             type="button"
                             onClick={() => setVisitTimePeriod("PM")}
-                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
-                              visitTimePeriod === "PM" ? "bg-teal-700 text-white shadow-xs" : "text-teal-900 hover:bg-teal-200"
-                            }`}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${visitTimePeriod === "PM" ? "bg-teal-700 text-white shadow-xs" : "text-teal-900 hover:bg-teal-200"
+                              }`}
                           >
                             PM
                           </button>
@@ -3071,11 +2843,10 @@ export default function Leads() {
                         handleConfirmScheduleVisit(selectedLead);
                       }
                     }}
-                    className={`py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 transition cursor-pointer font-black ${
-                      showVisitForm
+                    className={`py-3.5 px-4 rounded-2xl flex items-center justify-center gap-2 transition cursor-pointer font-black ${showVisitForm
                         ? "bg-teal-600 hover:bg-teal-700 text-white shadow-md shadow-teal-600/30"
                         : "bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-300"
-                    }`}
+                      }`}
                   >
                     <CalendarPlus size={18} /> Schedule Visit 📅
                   </button>
@@ -3289,23 +3060,8 @@ export default function Leads() {
                     <option value="Inbound Enquiry">Inbound Enquiry</option>
                     <option value="Client Referral">Client Referral</option>
                     <option value="LinkedIn Outreach">LinkedIn Outreach</option>
-                    <option value="Custom">Custom / Other Source</option>
                   </select>
                 </div>
-
-                {oppForm.source === "Custom" && (
-                  <div className="sm:col-span-2">
-                    <label className="block text-amber-900 font-extrabold mb-1">Specify Custom Source (*Required)</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="e.g. Trade Expo 2026 / Partner Event / WhatsApp Campaign"
-                      value={oppForm.customSource || ""}
-                      onChange={(e) => setOppForm({ ...oppForm, customSource: e.target.value })}
-                      className="w-full h-10 border border-amber-300 rounded-xl px-3 bg-amber-50/50 font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
-                    />
-                  </div>
-                )}
               </div>
 
               {/* Product Requirement & Deal Value */}

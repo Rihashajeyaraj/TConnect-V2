@@ -36,8 +36,6 @@ import {
   HeartPulse,
   Code2,
   AlertCircle,
-  GripVertical,
-  RotateCcw,
 } from "lucide-react";
 import { notificationAPI, hrmsAPI } from "../../services/api.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
@@ -260,7 +258,7 @@ export default function SalesLayout() {
 
   useEffect(() => {
     if (!myProfileOpen) return;
-    
+
     // Load local cache immediately
     try {
       const saved = localStorage.getItem("tc_se_profile");
@@ -271,7 +269,7 @@ export default function SalesLayout() {
       if (savedPhoto) {
         setProfilePhoto(savedPhoto);
       }
-    } catch (e) {}
+    } catch (e) { }
 
     // Fetch live data from Supabase
     const code = empCode || user.employee_code || user.id || "EMP000012";
@@ -352,83 +350,6 @@ export default function SalesLayout() {
     } catch (e) { }
   }, [user.email]);
 
-  const DEFAULT_MENUS = [
-    { title: "Dashboard", icon: LayoutDashboard, path: "/sales/dashboard" },
-    { title: "Smart Map", icon: MapPin, path: "/sales/map" },
-    { title: "Leads", icon: Users, path: "/sales/leads" },
-    { title: "Customers", icon: UserCheck, path: "/sales/customers" },
-    { title: "Client Log", icon: ClipboardList, path: "/sales/client-log" },
-    { title: "Attendance", icon: MapPinned, path: "/sales/attendance" },
-    { title: "Expenses", icon: BadgeDollarSign, path: "/sales/expenses" },
-    { title: "HRMS", icon: ShieldCheck, path: "/sales/hrms" },
-    { title: "Tasks", icon: CheckSquare, path: "/sales/todo" },
-  ];
-
-  const userKey = user.id || user.email || user.employee_code || "sales_exec";
-  const sidebarStorageKey = `tc_sidebar_order_sales_${userKey}`;
-
-  const [isCustomizingSidebar, setIsCustomizingSidebar] = useState(false);
-  const [menus, setMenus] = useState(() => {
-    try {
-      const saved = localStorage.getItem(sidebarStorageKey);
-      if (saved) {
-        const savedPaths = JSON.parse(saved);
-        if (Array.isArray(savedPaths) && savedPaths.length > 0) {
-          const ordered = [];
-          savedPaths.forEach((path) => {
-            const found = DEFAULT_MENUS.find((m) => m.path === path || m.title === path);
-            if (found) ordered.push(found);
-          });
-          DEFAULT_MENUS.forEach((m) => {
-            if (!ordered.some((item) => item.path === m.path)) ordered.push(m);
-          });
-          return ordered;
-        }
-      }
-    } catch (e) {}
-    return DEFAULT_MENUS;
-  });
-
-  const [draggedMenuIdx, setDraggedMenuIdx] = useState(null);
-
-  const handleDragStartMenu = (e, index) => {
-    setDraggedMenuIdx(index);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleDragOverMenu = (e, index) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  };
-
-  const handleDropMenu = (e, dropIndex) => {
-    e.preventDefault();
-    if (draggedMenuIdx === null || draggedMenuIdx === dropIndex) return;
-    const updated = Array.from(menus);
-    const [removed] = updated.splice(draggedMenuIdx, 1);
-    updated.splice(dropIndex, 0, removed);
-    setMenus(updated);
-    setDraggedMenuIdx(null);
-  };
-
-  const saveSidebarOrder = () => {
-    try {
-      const paths = menus.map((m) => m.path);
-      localStorage.setItem(sidebarStorageKey, JSON.stringify(paths));
-      setIsCustomizingSidebar(false);
-      showToast("Sidebar menu order saved!", "success");
-    } catch (e) {}
-  };
-
-  const resetSidebarOrder = () => {
-    try {
-      localStorage.removeItem(sidebarStorageKey);
-      setMenus(DEFAULT_MENUS);
-      setIsCustomizingSidebar(false);
-      showToast("Sidebar menu order reset to default.", "info");
-    } catch (e) {}
-  };
-
   useEffect(() => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
@@ -443,6 +364,20 @@ export default function SalesLayout() {
     showToast("Logged out successfully", "info");
     window.location.href = "/";
   };
+
+  const menus = [
+    { title: "Dashboard", icon: LayoutDashboard, path: "/sales/dashboard" },
+    { title: "Smart Map", icon: MapPin, path: "/sales/map" },
+    { title: "Leads", icon: Users, path: "/sales/leads" },
+    { title: "Customers", icon: UserCheck, path: "/sales/customers" },
+    { title: "Client Log", icon: ClipboardList, path: "/sales/client-log" },
+    { title: "Attendance", icon: MapPinned, path: "/sales/attendance" },
+    { title: "Expenses", icon: BadgeDollarSign, path: "/sales/expenses" },
+    { title: "HRMS", icon: ShieldCheck, path: "/sales/hrms" },
+    { title: "Tasks", icon: CheckSquare, path: "/sales/todo" },
+  ];
+
+
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
@@ -464,84 +399,25 @@ export default function SalesLayout() {
           </button>
         </div>
 
-        {/* Customization Action Bar (Visible when customizing) */}
-        {isCustomizingSidebar && open && (
-          <div className="p-2.5 bg-amber-50 border-b border-amber-200 flex items-center justify-between gap-1.5 shrink-0 animate-fadeIn">
-            <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider">Reorder Menu</span>
-            <div className="flex items-center gap-1">
-              <button
-                type="button"
-                onClick={resetSidebarOrder}
-                className="px-2 py-1 text-[10px] font-black bg-white hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 transition cursor-pointer flex items-center gap-1"
-                title="Reset to Default"
-              >
-                <RotateCcw size={10} /> Reset
-              </button>
-              <button
-                type="button"
-                onClick={saveSidebarOrder}
-                className="px-2.5 py-1 text-[10px] font-black bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition cursor-pointer shadow-2xs"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        )}
-
         <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {menus.map((m, idx) => (
-            <div
+          {menus.map((m) => (
+            <NavLink
               key={m.path}
-              draggable={isCustomizingSidebar}
-              onDragStart={(e) => handleDragStartMenu(e, idx)}
-              onDragOver={(e) => handleDragOverMenu(e, idx)}
-              onDrop={(e) => handleDropMenu(e, idx)}
-              className={`flex items-center gap-1 rounded-xl transition ${
-                isCustomizingSidebar ? "cursor-grab active:cursor-grabbing hover:bg-amber-100/50 p-0.5 border border-dashed border-amber-300" : ""
-              }`}
+              to={m.path}
+              onClick={() => isMobile && setOpen(false)}
+              className={({ isActive }) =>
+                `flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-black transition ${isActive ? "bg-teal-600 text-white shadow-md shadow-teal-600/30" : "text-slate-600 hover:bg-teal-50 hover:text-teal-900"
+                } ${!open ? "justify-center" : ""}`
+              }
+              title={!open ? m.title : undefined}
             >
-              {isCustomizingSidebar && open && (
-                <GripVertical size={14} className="text-amber-600 shrink-0 ml-1 opacity-70" />
-              )}
-              <NavLink
-                to={m.path}
-                onClick={(e) => {
-                  if (isCustomizingSidebar) e.preventDefault();
-                  else if (isMobile) setOpen(false);
-                }}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-black transition flex-1 min-w-0 ${
-                    isActive && !isCustomizingSidebar
-                      ? "bg-teal-600 text-white shadow-md shadow-teal-600/30"
-                      : "text-slate-600 hover:bg-teal-50 hover:text-teal-900"
-                  } ${!open ? "justify-center" : ""}`
-                }
-                title={!open ? m.title : undefined}
-              >
-                <m.icon size={18} className="flex-shrink-0" />
-                {open && <span className="truncate">{m.title}</span>}
-              </NavLink>
-            </div>
+              <m.icon size={18} className="flex-shrink-0" />
+              {open && <span className="truncate">{m.title}</span>}
+            </NavLink>
           ))}
         </div>
 
-        {/* Bottom Sidebar Footer Controls */}
-        <div className="p-3 border-t border-slate-100 flex-shrink-0 space-y-2">
-          {open && (
-            <button
-              type="button"
-              onClick={() => setIsCustomizingSidebar((prev) => !prev)}
-              className={`w-full py-2 px-3 rounded-xl text-[11px] font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                isCustomizingSidebar
-                  ? "bg-amber-600 text-white shadow-2xs"
-                  : "bg-slate-100 hover:bg-slate-200 text-slate-700"
-              }`}
-            >
-              <GripVertical size={14} />
-              {isCustomizingSidebar ? "Cancel Reorder" : "Customize Sidebar"}
-            </button>
-          )}
-
+        <div className="p-3 border-t border-slate-100 flex-shrink-0">
           {open ? (
             <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200">
               {gpsActive ? <Wifi size={16} className="text-green-600 shrink-0" /> : <WifiOff size={16} className="text-slate-400 shrink-0" />}
@@ -554,18 +430,7 @@ export default function SalesLayout() {
               {gpsActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0 ml-auto" />}
             </div>
           ) : (
-            <div className="flex flex-col items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setOpen(true);
-                  setIsCustomizingSidebar(true);
-                }}
-                className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition"
-                title="Customize Sidebar"
-              >
-                <GripVertical size={16} />
-              </button>
+            <div className="flex justify-center">
               {gpsActive ? <Wifi size={18} className="text-green-600" /> : <WifiOff size={18} className="text-slate-400" />}
             </div>
           )}
@@ -1023,9 +888,8 @@ const Field = ({ label, value, editMode, onChange, readOnly = false }) => (
         onChange={(e) => onChange(e.target.value)}
         disabled={readOnly}
         readOnly={readOnly}
-        className={`text-sm font-semibold text-slate-900 border-b border-teal-500 focus:outline-none bg-transparent w-full ${
-          readOnly ? "opacity-60 cursor-not-allowed border-dashed border-slate-300" : ""
-        }`}
+        className={`text-sm font-semibold text-slate-900 border-b border-teal-500 focus:outline-none bg-transparent w-full ${readOnly ? "opacity-60 cursor-not-allowed border-dashed border-slate-300" : ""
+          }`}
       />
     ) : (
       <span className="text-sm font-semibold text-slate-900">{value || "—"}</span>

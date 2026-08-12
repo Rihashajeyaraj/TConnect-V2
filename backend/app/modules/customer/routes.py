@@ -9,6 +9,7 @@ from app.modules.customer.schemas import (
 )
 from app.modules.customer.service import CustomerService
 from app.modules.customer.permissions import CanViewCustomers, CanManageCustomers
+from app.modules.audit.service import create_audit_log
 
 router = APIRouter(prefix="/customer", tags=["Customer Management"])
 
@@ -66,6 +67,13 @@ async def create_customer(
     """
     try:
         result = service.create_customer(data)
+        create_audit_log(
+            "CUSTOMER_CREATED", "crm.customers", user_payload,
+            entity_id=str(result.get("customer_id") or result.get("id") or ""),
+            module="Customer",
+            description=f"Customer created: {data.name or data.company or ''}",
+            new_value={"name": data.name, "company": data.company, "email": data.email},
+        )
         return StandardResponse.success_response(
             data=result,
             message="Customer created successfully",
@@ -104,6 +112,14 @@ async def convert_lead_to_customer(
     try:
         result = service.convert_lead_to_customer(lead_id, extra, user_payload)
         msg = "Lead converted to Customer" if result["created"] else "Customer already exists (returned existing)"
+        create_audit_log(
+            "LEAD_CONVERTED", "crm.customers", user_payload,
+            entity_id=str(result.get("customer", {}).get("id") or lead_id),
+            module="CRM",
+            description=f"Lead {lead_id} converted to Customer",
+            previous_value={"status": "Lead"},
+            new_value={"status": "Customer", "lead_id": lead_id, "created": result["created"]},
+        )
         return StandardResponse.success_response(data=result, message=msg)
     except ValueError as e:
         code = status.HTTP_404_NOT_FOUND if "not found" in str(e).lower() else status.HTTP_400_BAD_REQUEST
@@ -144,6 +160,14 @@ async def convert_followup_to_customer(
             if result["created"]
             else "Customer already exists (returned existing, follow-up linked)"
         )
+        create_audit_log(
+            "FOLLOWUP_CONVERTED", "crm.customers", user_payload,
+            entity_id=str(result.get("customer", {}).get("id") or followup_id),
+            module="CRM",
+            description=f"Follow-up {followup_id} converted to Customer",
+            previous_value={"status": "Follow-up"},
+            new_value={"status": "Customer", "followup_id": followup_id, "created": result["created"]},
+        )
         return StandardResponse.success_response(data=result, message=msg)
     except ValueError as e:
         code = status.HTTP_404_NOT_FOUND if "not found" in str(e).lower() else status.HTTP_400_BAD_REQUEST
@@ -183,6 +207,14 @@ async def convert_visit_to_customer(
             if result["created"]
             else "Customer already exists (returned existing, visit linked)"
         )
+        create_audit_log(
+            "VISIT_CONVERTED", "crm.customers", user_payload,
+            entity_id=str(result.get("customer", {}).get("id") or visit_id),
+            module="Field Management",
+            description=f"Visit {visit_id} converted to Customer",
+            previous_value={"status": "Visit"},
+            new_value={"status": "Customer", "visit_id": visit_id, "created": result["created"]},
+        )
         return StandardResponse.success_response(data=result, message=msg)
     except ValueError as e:
         code = status.HTTP_404_NOT_FOUND if "not found" in str(e).lower() else status.HTTP_400_BAD_REQUEST
@@ -202,7 +234,37 @@ async def update_customer(
     service: CustomerService = Depends(get_service),
 ):
     """Update customer contact details."""
+    # Fetch existing customer to compare assignments
+    try:
+        existing_cust = service.get_customer(cust_id)
+        prev_assigned = existing_cust.get("assigned_to") or existing_cust.get("assigned_to_email")
+    except Exception:
+        existing_cust = None
+        prev_assigned = None
+
     updated = service.update_customer(cust_id, data)
+    update_dict = data.model_dump(exclude_none=True)
+    
+    new_assigned = update_dict.get("assigned_to") or update_dict.get("assigned_to_email")
+
+    if new_assigned and new_assigned != prev_assigned:
+        action = "CUSTOMER_ASSIGNED" if not prev_assigned else "CUSTOMER_REASSIGNED"
+        desc = f"Customer {cust_id} {action.lower().replace('_', ' ')} to {new_assigned}"
+        prev_val = {"assigned_to": prev_assigned}
+        new_val = {"assigned_to": new_assigned}
+    else:
+        action = "CUSTOMER_UPDATED"
+        desc = f"Customer {cust_id} updated"
+        prev_val = {"details": {k: existing_cust.get(k) for k in update_dict.keys() if existing_cust} if existing_cust else None}
+        new_val = update_dict
+
+    create_audit_log(
+        action, "crm.customers", user_payload,
+        entity_id=cust_id, module="Customer",
+        description=desc,
+        previous_value=prev_val,
+        new_value=new_val,
+    )
     return StandardResponse.success_response(
         data=updated,
         message="Customer updated successfully",
@@ -218,6 +280,11 @@ async def delete_customer(
 ):
     """Delete a customer account record from crm.customers."""
     service.delete_customer(cust_id)
+    create_audit_log(
+        "CUSTOMER_DELETED", "crm.customers", user_payload,
+        entity_id=cust_id, module="Customer",
+        description=f"Customer {cust_id} deleted",
+    )
     return StandardResponse.success_response(
         data={"deleted_id": cust_id},
         message="Customer deleted successfully",

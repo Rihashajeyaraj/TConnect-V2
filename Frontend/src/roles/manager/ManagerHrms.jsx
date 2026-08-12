@@ -34,38 +34,36 @@ import {
   RefreshCw,
   Download,
   PlusCircle,
-  GripVertical,
-  RotateCcw,
 } from 'lucide-react'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import { attendanceAPI } from '../../services/api.js'
 import { calculateWorkHours } from '../sales/Attendance.jsx'
 
-const DEFAULT_NAV_ITEMS = [
-  { key: 'dashboard',   label: 'My Dashboard',        icon: LayoutDashboard },
-  { key: 'team_leave',  label: 'Team Leave Approval', icon: UserCheck      },
-  { key: 'leave',       label: 'My Leave',            icon: CalendarOff    },
-  { key: 'calendar',    label: 'Holiday Calendar',    icon: CalendarDays   },
-  { key: 'handbook',    label: 'Manager Handbook',    icon: BookOpen       },
-  { key: 'activity',    label: 'Activity Logs',       icon: Activity       },
+const NAV_ITEMS = [
+  { key: 'dashboard', label: 'My Dashboard', icon: LayoutDashboard },
+  { key: 'team_leave', label: 'Team Leave Approval', icon: UserCheck },
+  { key: 'leave', label: 'My Leave', icon: CalendarOff },
+  { key: 'calendar', label: 'Holiday Calendar', icon: CalendarDays },
+  { key: 'handbook', label: 'Manager Handbook', icon: BookOpen },
+  { key: 'activity', label: 'Activity Logs', icon: Activity },
 ]
 
 const HOLIDAYS = [
-  { date: '15 Aug 2026', name: 'Independence Day',    type: 'National' },
-  { date: '02 Oct 2026', name: 'Gandhi Jayanti',      type: 'National' },
-  { date: '24 Oct 2026', name: 'Diwali',              type: 'Festival' },
-  { date: '25 Dec 2026', name: 'Christmas',           type: 'Festival' },
-  { date: '01 Jan 2027', name: 'New Year',            type: 'Festival' },
-  { date: '14 Jan 2027', name: 'Pongal',              type: 'Regional' },
+  { date: '15 Aug 2026', name: 'Independence Day', type: 'National' },
+  { date: '02 Oct 2026', name: 'Gandhi Jayanti', type: 'National' },
+  { date: '24 Oct 2026', name: 'Diwali', type: 'Festival' },
+  { date: '25 Dec 2026', name: 'Christmas', type: 'Festival' },
+  { date: '01 Jan 2027', name: 'New Year', type: 'Festival' },
+  { date: '14 Jan 2027', name: 'Pongal', type: 'Regional' },
 ]
 
 const HANDBOOK = [
-  { title: 'Team Management',     icon: '👥', content: 'Conduct weekly 1-on-1 sessions with each SE. Review daily EOD reports by 7 PM. Flag blockers immediately.' },
-  { title: 'Lead Oversight',      icon: '🎯', content: 'Review all new leads within 24 hours. Reassign stale leads (no contact > 3 days). Approve lead category changes from SE.' },
+  { title: 'Team Management', icon: '👥', content: 'Conduct weekly 1-on-1 sessions with each SE. Review daily EOD reports by 7 PM. Flag blockers immediately.' },
+  { title: 'Lead Oversight', icon: '🎯', content: 'Review all new leads within 24 hours. Reassign stale leads (no contact > 3 days). Approve lead category changes from SE.' },
   { title: 'Visit Audit Process', icon: '🗺️', content: 'Review GPS check-in/out for each SE. Flag visits without selfie or GPS location. Audit visit quality monthly.' },
-  { title: 'Expense Approvals',   icon: '💰', content: 'Review all expense claims within 48 hours. Reject without receipt. Approve only field visit related expenses. Max ₹5,000/claim without MD approval.' },
-  { title: 'Leave Policy',        icon: '📅', content: 'Manager must approve or reject leave in 24 hours. Max 2 team members on leave simultaneously. Manager leave requires MD approval.' },
+  { title: 'Expense Approvals', icon: '💰', content: 'Review all expense claims within 48 hours. Reject without receipt. Approve only field visit related expenses. Max ₹5,000/claim without MD approval.' },
+  { title: 'Leave Policy', icon: '📅', content: 'Manager must approve or reject leave in 24 hours. Max 2 team members on leave simultaneously. Manager leave requires MD approval.' },
   { title: 'Performance Targets', icon: '📊', content: 'Team Monthly Revenue Target: ₹25L. Each SE minimum 3 field visits/week. Weekly conversion rate target: 35%+.' },
   { title: 'Escalation Protocol', icon: '⚠️', content: 'Escalate large deals >₹10L to Regional Manager. Client complaints must be resolved within 48 hours. Escalate absentees >2 consecutive days.' },
   { title: 'Ethics & Compliance', icon: '🛡️', content: 'No unauthorized discounts beyond approved slabs. All deals must be logged in TwiteConnect. Confidential client data not to be shared externally.' },
@@ -114,78 +112,20 @@ const DEFAULT_TEAM_LEAVE_REQUESTS = [
 const LEAVE_TYPES = ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Emergency Leave', 'Half Day', 'Work From Home']
 
 const LEAVE_BALANCE = [
-  { type: 'Casual Leave',   total: 12, used: 3,  remaining: 9  },
-  { type: 'Sick Leave',     total: 10, used: 1,  remaining: 9  },
-  { type: 'Earned Leave',   total: 20, used: 5,  remaining: 15 },
-  { type: 'Emergency Leave',total: 5,  used: 0,  remaining: 5  },
+  { type: 'Casual Leave', total: 12, used: 3, remaining: 9 },
+  { type: 'Sick Leave', total: 10, used: 1, remaining: 9 },
+  { type: 'Earned Leave', total: 20, used: 5, remaining: 15 },
+  { type: 'Emergency Leave', total: 5, used: 0, remaining: 5 },
 ]
 
 export default function ManagerHrms() {
   const currentUser = useCurrentUser()
   const { showToast } = useToast()
 
-  const managerName  = currentUser.name || currentUser.full_name || 'Sales Manager'
+  const managerName = currentUser.name || currentUser.full_name || 'Sales Manager'
   const managerEmail = (currentUser.email || '').toLowerCase().trim()
-  const empCode      = currentUser.employee_code || currentUser.employee_id || 'MGR-001'
+  const empCode = currentUser.employee_code || currentUser.employee_id || 'MGR-001'
   const [activeSection, setActiveSection] = useState('dashboard')
-
-  const userKey = currentUser?.id || currentUser?.email || empCode || 'manager'
-  const hrmsNavStorageKey = `tc_hrms_nav_order_manager_${userKey}`
-
-  const [navItems, setNavItems] = useState(() => {
-    try {
-      const saved = localStorage.getItem(hrmsNavStorageKey)
-      if (saved) {
-        const savedKeys = JSON.parse(saved)
-        if (Array.isArray(savedKeys) && savedKeys.length > 0) {
-          const ordered = []
-          savedKeys.forEach((key) => {
-            const item = DEFAULT_NAV_ITEMS.find((i) => i.key === key)
-            if (item) ordered.push(item)
-          })
-          DEFAULT_NAV_ITEMS.forEach((item) => {
-            if (!ordered.some((i) => i.key === item.key)) ordered.push(item)
-          })
-          return ordered
-        }
-      }
-    } catch (e) {}
-    return DEFAULT_NAV_ITEMS
-  })
-
-  const [draggedTabIdx, setDraggedTabIdx] = useState(null)
-
-  const handleTabDragStart = (e, index) => {
-    setDraggedTabIdx(index)
-    e.dataTransfer.effectAllowed = 'move'
-  }
-
-  const handleTabDragOver = (e, index) => {
-    e.preventDefault()
-    e.dataTransfer.dropEffect = 'move'
-  }
-
-  const handleTabDrop = (e, dropIndex) => {
-    e.preventDefault()
-    if (draggedTabIdx === null || draggedTabIdx === dropIndex) return
-    const updated = Array.from(navItems)
-    const [removed] = updated.splice(draggedTabIdx, 1)
-    updated.splice(dropIndex, 0, removed)
-    setNavItems(updated)
-    setDraggedTabIdx(null)
-    try {
-      localStorage.setItem(hrmsNavStorageKey, JSON.stringify(updated.map((i) => i.key)))
-      showToast('HRMS tab order saved!', 'success')
-    } catch (e) {}
-  }
-
-  const resetHrmsTabOrder = () => {
-    try {
-      localStorage.removeItem(hrmsNavStorageKey)
-      setNavItems(DEFAULT_NAV_ITEMS)
-      showToast('HRMS tabs reset to default order.', 'info')
-    } catch (e) {}
-  }
 
   // ── Attendance State for My Dashboard ─────────────────────────────────────
   const [realAttendanceLogs, setRealAttendanceLogs] = useState(() => {
@@ -238,20 +178,20 @@ export default function ManagerHrms() {
   const [documentsList, setDocumentsList] = useState(() => {
     const saved = getArr('tc_manager_documents')
     return saved.length > 0 ? saved : [
-      { id: 'doc_m1', name: 'Aadhar Card',    status: 'pending', fileUrl: null, fileName: '' },
-      { id: 'doc_m2', name: 'Offer Letter',   status: 'pending', fileUrl: null, fileName: '' },
-      { id: 'doc_m3', name: 'PAN Card',       status: 'pending', fileUrl: null, fileName: '' },
+      { id: 'doc_m1', name: 'Aadhar Card', status: 'pending', fileUrl: null, fileName: '' },
+      { id: 'doc_m2', name: 'Offer Letter', status: 'pending', fileUrl: null, fileName: '' },
+      { id: 'doc_m3', name: 'PAN Card', status: 'pending', fileUrl: null, fileName: '' },
       { id: 'doc_m4', name: 'Manager Agreement', status: 'pending', fileUrl: null, fileName: '' },
     ]
   })
   const [previewDoc, setPreviewDoc] = useState(null)
 
   useEffect(() => {
-    try { localStorage.setItem('tc_manager_documents', JSON.stringify(documentsList)) } catch (e) {}
+    try { localStorage.setItem('tc_manager_documents', JSON.stringify(documentsList)) } catch (e) { }
   }, [documentsList])
 
   useEffect(() => {
-    try { localStorage.setItem('tc_manager_leave_requests', JSON.stringify(myLeaveRequests)) } catch (e) {}
+    try { localStorage.setItem('tc_manager_leave_requests', JSON.stringify(myLeaveRequests)) } catch (e) { }
   }, [myLeaveRequests])
 
   // ── EOD Reports Reviewed ───────────────────────────────────────────────────
@@ -279,7 +219,7 @@ export default function ManagerHrms() {
       r.id === id ? { ...r, status: decision, managerRemark: remark } : r
     )
     setTeamLeaveRequests(updated)
-    try { localStorage.setItem('tc_leave_requests', JSON.stringify(updated)) } catch (e) {}
+    try { localStorage.setItem('tc_leave_requests', JSON.stringify(updated)) } catch (e) { }
     showToast(`Leave request ${decision.toLowerCase()} for ${updated.find((r) => r.id === id)?.executive}!`, decision === 'Approved' ? 'success' : 'error')
   }
 
@@ -290,7 +230,7 @@ export default function ManagerHrms() {
       showToast('Please fill all leave request fields!', 'error'); return
     }
     const from = new Date(myLeaveForm.fromDate)
-    const to   = new Date(myLeaveForm.toDate)
+    const to = new Date(myLeaveForm.toDate)
     const days = Math.max(1, Math.round((to - from) / (1000 * 60 * 60 * 24)) + 1)
     const newReq = {
       id: `MGR_LR_${Date.now()}`,
@@ -310,17 +250,17 @@ export default function ManagerHrms() {
   }
 
   // ── Team Stats derived from localStorage ──────────────────────────────────
-  const allTeamLeads  = getArr('tc_sm_leads').length
-  const allVisits     = getArr('tc_sales_visits').length
-  const allExpenses   = getArr('tc_sm_expenses').length
-  const pendingLeave  = teamLeaveRequests.filter((r) => r.status === 'Pending').length
+  const allTeamLeads = getArr('tc_sm_leads').length
+  const allVisits = getArr('tc_sales_visits').length
+  const allExpenses = getArr('tc_sm_expenses').length
+  const pendingLeave = teamLeaveRequests.filter((r) => r.status === 'Pending').length
 
   // ── Dashboard Stats ────────────────────────────────────────────────────────
   const dashStats = [
-    { label: 'Team Members',       value: 4,              icon: Users,       color: 'blue'   },
-    { label: 'Team Leads Pipeline',value: allTeamLeads,   icon: Target,      color: 'violet' },
-    { label: 'Total Field Visits', value: allVisits,      icon: MapPin,      color: 'emerald'},
-    { label: 'Pending Leave Reqs', value: pendingLeave,   icon: CalendarOff, color: 'amber'  },
+    { label: 'Team Members', value: 4, icon: Users, color: 'blue' },
+    { label: 'Team Leads Pipeline', value: allTeamLeads, icon: Target, color: 'violet' },
+    { label: 'Total Field Visits', value: allVisits, icon: MapPin, color: 'emerald' },
+    { label: 'Pending Leave Reqs', value: pendingLeave, icon: CalendarOff, color: 'amber' },
   ]
 
   return (
@@ -343,37 +283,19 @@ export default function ManagerHrms() {
           </div>
         </div>
 
-        {/* HORIZONTAL NAV TABS (Draggable & Reorderable) */}
-        <div className="flex items-center justify-between gap-1.5 border-t border-slate-100 pt-3">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 min-w-0">
-            {navItems.map(({ key, label, icon: Icon }, idx) => (
-              <button
-                key={key}
-                draggable={true}
-                onDragStart={(e) => handleTabDragStart(e, idx)}
-                onDragOver={(e) => handleTabDragOver(e, idx)}
-                onDrop={(e) => handleTabDrop(e, idx)}
-                onClick={() => setActiveSection(key)}
-                className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-grab active:cursor-grabbing border border-transparent hover:border-amber-200 ${
-                  activeSection === key ? 'bg-[#ca8a04] text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-amber-50 hover:text-amber-900'
+        {/* HORIZONTAL NAV TABS */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-3">
+          {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setActiveSection(key)}
+              className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-pointer ${activeSection === key ? 'bg-[#ca8a04] text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-amber-50 hover:text-amber-900'
                 }`}
-                title="Drag tab to reorder"
-              >
-                <GripVertical size={13} className="text-amber-400 opacity-70 shrink-0" />
-                <Icon size={14} />
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={resetHrmsTabOrder}
-            className="px-2.5 py-1.5 text-[10px] font-black text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition shrink-0 cursor-pointer flex items-center gap-1 border border-slate-200"
-            title="Reset HRMS tab order to default"
-          >
-            <RotateCcw size={11} /> Reset Order
-          </button>
+            >
+              <Icon size={14} />
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -453,9 +375,8 @@ export default function ManagerHrms() {
                     key={mode}
                     type="button"
                     onClick={() => setReportFilterMode(mode)}
-                    className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${
-                      reportFilterMode === mode ? "bg-[#0b3c5d] text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
-                    }`}
+                    className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${reportFilterMode === mode ? "bg-[#0b3c5d] text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
+                      }`}
                   >
                     {mode === "CUSTOM" ? "CUSTOM DATE" : mode}
                   </button>
@@ -649,11 +570,10 @@ export default function ManagerHrms() {
                       <p className="text-slate-500 font-semibold">{r.fromDate} → {r.toDate}</p>
                       <p className="text-slate-400 italic">{r.reason}</p>
                     </div>
-                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border whitespace-nowrap ${
-                      r.status === 'Approved'         ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                      r.status === 'Rejected'         ? 'bg-rose-100 text-rose-800 border-rose-300' :
-                                                        'bg-amber-100 text-amber-800 border-amber-300'
-                    }`}>{r.status}</span>
+                    <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border whitespace-nowrap ${r.status === 'Approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                        r.status === 'Rejected' ? 'bg-rose-100 text-rose-800 border-rose-300' :
+                          'bg-amber-100 text-amber-800 border-amber-300'
+                      }`}>{r.status}</span>
                   </div>
                 ))}
               </div>
@@ -675,9 +595,9 @@ export default function ManagerHrms() {
           {/* Summary */}
           <div className="grid grid-cols-3 gap-3">
             {[
-              { label: 'Pending',  count: teamLeaveRequests.filter(r=>r.status==='Pending').length,   color: 'amber'   },
-              { label: 'Approved', count: teamLeaveRequests.filter(r=>r.status==='Approved').length,  color: 'emerald' },
-              { label: 'Rejected', count: teamLeaveRequests.filter(r=>r.status==='Rejected').length,  color: 'rose'    },
+              { label: 'Pending', count: teamLeaveRequests.filter(r => r.status === 'Pending').length, color: 'amber' },
+              { label: 'Approved', count: teamLeaveRequests.filter(r => r.status === 'Approved').length, color: 'emerald' },
+              { label: 'Rejected', count: teamLeaveRequests.filter(r => r.status === 'Rejected').length, color: 'rose' },
             ].map(({ label, count, color }) => (
               <div key={label} className={`bg-${color}-50 border border-${color}-200 rounded-2xl p-4 text-center`}>
                 <h2 className={`text-3xl font-black text-${color}-700`}>{count}</h2>
@@ -694,10 +614,9 @@ export default function ManagerHrms() {
               </div>
             ) : (
               teamLeaveRequests.map((req) => (
-                <div key={req.id} className={`bg-white border rounded-2xl p-5 shadow-xs space-y-3 ${
-                  req.status === 'Pending' ? 'border-amber-300' :
-                  req.status === 'Approved' ? 'border-emerald-300' : 'border-rose-300'
-                }`}>
+                <div key={req.id} className={`bg-white border rounded-2xl p-5 shadow-xs space-y-3 ${req.status === 'Pending' ? 'border-amber-300' :
+                    req.status === 'Approved' ? 'border-emerald-300' : 'border-rose-300'
+                  }`}>
                   {/* Header */}
                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
                     <div>
@@ -709,11 +628,10 @@ export default function ManagerHrms() {
                       </div>
                       <p className="text-[11px] text-slate-400 mt-0.5">Applied: {req.appliedOn}</p>
                     </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-black border ${
-                      req.status === 'Approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                      req.status === 'Rejected' ? 'bg-rose-100 text-rose-800 border-rose-300' :
-                                                   'bg-amber-100 text-amber-800 border-amber-300'
-                    }`}>{req.status}</span>
+                    <span className={`px-3 py-1 rounded-full text-xs font-black border ${req.status === 'Approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
+                        req.status === 'Rejected' ? 'bg-rose-100 text-rose-800 border-rose-300' :
+                          'bg-amber-100 text-amber-800 border-amber-300'
+                      }`}>{req.status}</span>
                   </div>
 
                   {/* Details */}
@@ -949,11 +867,10 @@ export default function ManagerHrms() {
                   <p className="font-black text-slate-900 text-sm">{h.name}</p>
                   <p className="text-xs text-slate-400 font-mono mt-0.5">{h.date}</p>
                 </div>
-                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
-                  h.type === 'National' ? 'bg-blue-50 text-blue-800 border-blue-200' :
-                  h.type === 'Festival' ? 'bg-amber-50 text-amber-800 border-amber-200' :
-                                          'bg-emerald-50 text-emerald-800 border-emerald-200'
-                }`}>{h.type}</span>
+                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${h.type === 'National' ? 'bg-blue-50 text-blue-800 border-blue-200' :
+                    h.type === 'Festival' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                      'bg-emerald-50 text-emerald-800 border-emerald-200'
+                  }`}>{h.type}</span>
               </div>
             ))}
           </div>

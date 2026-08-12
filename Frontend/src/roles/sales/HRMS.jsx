@@ -15,7 +15,6 @@ import {
   MapPin,
   Target,
   ChevronRight,
-  ChevronLeft,
   CheckCircle2,
   Clock3,
   Send,
@@ -25,10 +24,6 @@ import {
   Eye,
   FileUp,
   Plus,
-  AlertCircle,
-  Code,
-  GripVertical,
-  RotateCcw,
 } from "lucide-react";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
@@ -37,32 +32,32 @@ import { reportAPI, attendanceAPI, hrmsAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import { calculateWorkHours } from "./Attendance.jsx";
 
-const DEFAULT_NAV_ITEMS = [
-  { key: "dashboard",    label: "Dashboard",        icon: LayoutDashboard },
-  { key: "daily_report", label: "Daily Work Report", icon: ClipboardList   },
-  { key: "leave",        label: "Leave Management",  icon: CalendarOff     },
-  { key: "calendar",     label: "Holiday Calendar",  icon: CalendarDays    },
-  { key: "career",       label: "Career Ladder",     icon: TrendingUp      },
-  { key: "handbook",     label: "Twite Handbook",    icon: BookOpen        },
-  { key: "activity",     label: "Activity Logs",     icon: Activity        },
+const NAV_ITEMS = [
+  { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  { key: "daily_report", label: "Daily Work Report", icon: ClipboardList },
+  { key: "leave", label: "Leave Management", icon: CalendarOff },
+  { key: "calendar", label: "Holiday Calendar", icon: CalendarDays },
+  { key: "career", label: "Career Ladder", icon: TrendingUp },
+  { key: "handbook", label: "Twite Handbook", icon: BookOpen },
+  { key: "activity", label: "Activity Logs", icon: Activity },
 ];
 
 const HOLIDAYS = [
-  { date: "15 Aug 2026", name: "Independence Day",  type: "National" },
-  { date: "02 Oct 2026", name: "Gandhi Jayanti",    type: "National" },
-  { date: "24 Oct 2026", name: "Diwali",            type: "Festival" },
-  { date: "25 Dec 2026", name: "Christmas",         type: "Festival" },
-  { date: "01 Jan 2027", name: "New Year",          type: "Festival" },
-  { date: "14 Jan 2027", name: "Pongal",            type: "Regional" },
+  { date: "15 Aug 2026", name: "Independence Day", type: "National" },
+  { date: "02 Oct 2026", name: "Gandhi Jayanti", type: "National" },
+  { date: "24 Oct 2026", name: "Diwali", type: "Festival" },
+  { date: "25 Dec 2026", name: "Christmas", type: "Festival" },
+  { date: "01 Jan 2027", name: "New Year", type: "Festival" },
+  { date: "14 Jan 2027", name: "Pongal", type: "Regional" },
 ];
 
 const HANDBOOK = [
-  { title: "Sales Process",      icon: "📋", content: "Every lead must be logged with accurate contact details. Follow LEAD → FOLLOWUP → VISIT → CUSTOMER pipeline." },
-  { title: "Call Etiquette",     icon: "📞", content: "Introduce clearly. Listen actively. Log call outcome within 30 minutes of every call." },
-  { title: "Visit Protocol",     icon: "🗺️", content: "Confirm visit 1 day prior. Carry brochure. Log GPS check-in/out. Submit visit report same day." },
-  { title: "Lead Classification",icon: "🔥", content: "Hot: Buy within 7 days. Warm: Interested, needs nurturing. Cold: Not interested / no response." },
-  { title: "Commission",         icon: "💰", content: "Starter: ₹500/deal. Mid (5+ deals): ₹1,000/deal. Senior (15+ deals): ₹2,000/deal." },
-  { title: "Daily Reporting",    icon: "📊", content: "Submit Daily Work Report before 6:30 PM every working day. Include calls, visits, pipeline updates." },
+  { title: "Sales Process", icon: "📋", content: "Every lead must be logged with accurate contact details. Follow LEAD → FOLLOWUP → VISIT → CUSTOMER pipeline." },
+  { title: "Call Etiquette", icon: "📞", content: "Introduce clearly. Listen actively. Log call outcome within 30 minutes of every call." },
+  { title: "Visit Protocol", icon: "🗺️", content: "Confirm visit 1 day prior. Carry brochure. Log GPS check-in/out. Submit visit report same day." },
+  { title: "Lead Classification", icon: "🔥", content: "Hot: Buy within 7 days. Warm: Interested, needs nurturing. Cold: Not interested / no response." },
+  { title: "Commission", icon: "💰", content: "Starter: ₹500/deal. Mid (5+ deals): ₹1,000/deal. Senior (15+ deals): ₹2,000/deal." },
+  { title: "Daily Reporting", icon: "📊", content: "Submit Daily Work Report before 6:30 PM every working day. Include calls, visits, pipeline updates." },
 ];
 
 export default function SalesHRMS() {
@@ -230,8 +225,8 @@ export default function SalesHRMS() {
   const allCustomers = getArr("tc_customer_accounts").filter(matchesUser);
 
   const convertedClients = allLeads.filter(l => l.status === "Converted to Customer" || l.status === "Converted").length;
-  const hotLeads         = allLeads.filter(l => l.category === "Hot" && l.status !== "Converted to Customer").length;
-  const convRate         = allLeads.length > 0 ? Math.round((convertedClients / allLeads.length) * 100) : 0;
+  const hotLeads = allLeads.filter(l => l.category === "Hot" && l.status !== "Converted to Customer").length;
+  const convRate = allLeads.length > 0 ? Math.round((convertedClients / allLeads.length) * 100) : 0;
 
   const [manualProgress, setManualProgress] = useState(45);
   useEffect(() => {
@@ -243,207 +238,10 @@ export default function SalesHRMS() {
     }
   }, [convRate]);
 
-  // ── Report state & My Reports Modals ───────────────────────────────────────
-  const [report, setReport] = useState({ callsMade:"", visitsCompleted:"", leadsGenerated:"", clientsInterested:"", followupsScheduled:"", dealsClosed:"", highlights:"", blockers:"", nextDayPlan:"" });
+  // ── Report state ───────────────────────────────────────────────────────────
+  const [report, setReport] = useState({ callsMade: "", visitsCompleted: "", leadsGenerated: "", clientsInterested: "", followupsScheduled: "", dealsClosed: "", highlights: "", blockers: "", nextDayPlan: "" });
   const [reportSubmitted, setReportSubmitted] = useState(false);
-  
-  const [showMyReportsModal, setShowMyReportsModal] = useState(false);
-  const [selectedReportDetail, setSelectedReportDetail] = useState(null);
-  const [reportsPage, setReportsPage] = useState(1);
-  const userKey = currentUser?.id || currentUser?.email || empCode || "sales_exec";
-  const hrmsNavStorageKey = `tc_hrms_nav_order_sales_${userKey}`;
-
-  const [navItems, setNavItems] = useState(() => {
-    try {
-      const saved = localStorage.getItem(hrmsNavStorageKey);
-      if (saved) {
-        const savedKeys = JSON.parse(saved);
-        if (Array.isArray(savedKeys) && savedKeys.length > 0) {
-          const ordered = [];
-          savedKeys.forEach((key) => {
-            const item = DEFAULT_NAV_ITEMS.find((i) => i.key === key);
-            if (item) ordered.push(item);
-          });
-          DEFAULT_NAV_ITEMS.forEach((item) => {
-            if (!ordered.some((i) => i.key === item.key)) ordered.push(item);
-          });
-          return ordered;
-        }
-      }
-    } catch (e) {}
-    return DEFAULT_NAV_ITEMS;
-  });
-
-  const [draggedTabIdx, setDraggedTabIdx] = useState(null);
-
-  const handleTabDragStart = (e, index) => {
-    setDraggedTabIdx(index);
-    e.dataTransfer.effectAllowed = "move";
-  };
-
-  const handleTabDragOver = (e, index) => {
-    e.preventDefault();
-    e.dataTransfer.dropEffect = "move";
-  };
-
-  const handleTabDrop = (e, dropIndex) => {
-    e.preventDefault();
-    if (draggedTabIdx === null || draggedTabIdx === dropIndex) return;
-    const updated = Array.from(navItems);
-    const [removed] = updated.splice(draggedTabIdx, 1);
-    updated.splice(dropIndex, 0, removed);
-    setNavItems(updated);
-    setDraggedTabIdx(null);
-    try {
-      localStorage.setItem(hrmsNavStorageKey, JSON.stringify(updated.map((i) => i.key)));
-      showToast("HRMS tab order saved!", "success");
-    } catch (e) {}
-  };
-
-  const resetHrmsTabOrder = () => {
-    try {
-      localStorage.removeItem(hrmsNavStorageKey);
-      setNavItems(DEFAULT_NAV_ITEMS);
-      showToast("HRMS tabs reset to default order.", "info");
-    } catch (e) {}
-  };
-
-  const formatReportDateBlock = (dateStr) => {
-    if (!dateStr) return { month: "AUG", day: "11" };
-    const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return { month: "AUG", day: "11" };
-    const month = d.toLocaleDateString("en-US", { month: "short" }).toUpperCase();
-    const day = d.getDate();
-    return { month, day };
-  };
-
-  const executivePastReports = React.useMemo(() => {
-    const local = getArr("tc_se_daily_reports");
-    const userFiltered = local.filter((r) => {
-      if (!r) return false;
-      const email = (r.executiveEmail || r.executive_email || r.email || "").toLowerCase().trim();
-      const code = (r.employee_code || r.employee_id || "").toLowerCase().trim();
-      const name = (r.executive || r.executive_name || "").toLowerCase().trim();
-      if (userEmail && email === userEmail) return true;
-      if (empCode && code === empCode.toLowerCase()) return true;
-      if (userName && name === userName.toLowerCase()) return true;
-      return false;
-    });
-
-    if (userFiltered.length > 0) return userFiltered;
-
-    return [
-      {
-        id: "rep_aug11",
-        date: "2026-08-11",
-        submittedAt: "19:07",
-        executive: userName,
-        employee_code: empCode || "EMP000017",
-        callsMade: 14,
-        visitsCompleted: 2,
-        dealsClosed: 1,
-        leadsGenerated: 3,
-        clientsInterested: 3,
-        followupsScheduled: 4,
-        workHours: "8 hrs",
-        completedToday: "Completed 14 client follow-up calls, 2 client site visits, and finalized 1 new deal proposal.",
-        highlights: "Client agreed to annual subscription package. Scheduled contract signing.",
-        blockers: "Client requested custom billing payment schedule.",
-        nextDayPlan: "Send formal agreement to client and schedule follow-ups.",
-        status: "Submitted",
-        reportingManager: managerName,
-      },
-      {
-        id: "rep_aug10",
-        date: "2026-08-10",
-        submittedAt: "18:45",
-        executive: userName,
-        employee_code: empCode || "EMP000017",
-        callsMade: 10,
-        visitsCompleted: 1,
-        dealsClosed: 0,
-        leadsGenerated: 2,
-        clientsInterested: 2,
-        followupsScheduled: 3,
-        workHours: "5 hrs",
-        completedToday: "Followed up with 10 hot prospect leads and completed 1 client site demonstration.",
-        highlights: "Active negotiations with Feathers Software and Apex Retail Chains.",
-        blockers: "None",
-        nextDayPlan: "Schedule follow-up calls and final pricing negotiation.",
-        status: "Submitted",
-        reportingManager: managerName,
-      },
-      {
-        id: "rep_aug07",
-        date: "2026-08-07",
-        submittedAt: "19:15",
-        executive: userName,
-        employee_code: empCode || "EMP000017",
-        callsMade: 18,
-        visitsCompleted: 3,
-        dealsClosed: 1,
-        leadsGenerated: 4,
-        clientsInterested: 4,
-        followupsScheduled: 5,
-        workHours: "8 hrs",
-        completedToday: "Conducted 3 field site visits in Guindy Industrial Estate and closed 1 new Enterprise CRM deal.",
-        highlights: "Client requested multi-user permissions setup for sales team.",
-        blockers: "None",
-        nextDayPlan: "Submit client onboarding form to Manager.",
-        status: "Submitted",
-        reportingManager: managerName,
-      },
-      {
-        id: "rep_aug05",
-        date: "2026-08-05",
-        submittedAt: "18:30",
-        executive: userName,
-        employee_code: empCode || "EMP000017",
-        callsMade: 12,
-        visitsCompleted: 2,
-        dealsClosed: 0,
-        leadsGenerated: 3,
-        clientsInterested: 2,
-        followupsScheduled: 3,
-        workHours: "8 hrs",
-        completedToday: "Cold calling and lead research in OMR tech park region.",
-        highlights: "Generated 3 warm leads interested in TwiteConnect CRM.",
-        blockers: "Client requested extended demo trial period.",
-        nextDayPlan: "Send product quotation and schedule demo call.",
-        status: "Submitted",
-        reportingManager: managerName,
-      },
-      {
-        id: "rep_aug04",
-        date: "2026-08-04",
-        submittedAt: "19:00",
-        executive: userName,
-        employee_code: empCode || "EMP000017",
-        callsMade: 15,
-        visitsCompleted: 1,
-        dealsClosed: 1,
-        leadsGenerated: 2,
-        clientsInterested: 3,
-        followupsScheduled: 4,
-        workHours: "6.5 hrs",
-        completedToday: "Product demo and contract signing with Chennai Logistics.",
-        highlights: "Successfully onboarded new client account.",
-        blockers: "None",
-        nextDayPlan: "Coordinate with onboarding team.",
-        status: "Submitted",
-        reportingManager: managerName,
-      },
-    ];
-  }, [userEmail, empCode, userName, managerName]);
-
-  const reportsPerPage = 5;
-  const totalReportPages = Math.ceil(executivePastReports.length / reportsPerPage) || 1;
-  const paginatedPastReports = executivePastReports.slice(
-    (reportsPage - 1) * reportsPerPage,
-    reportsPage * reportsPerPage
-  );
-
-  const pastReports = executivePastReports;
+  const pastReports = getArr("tc_se_daily_reports");
 
   const handleReportSubmit = (e) => {
     e.preventDefault();
@@ -496,10 +294,10 @@ export default function SalesHRMS() {
     return getArr("tc_se_documents").length > 0
       ? getArr("tc_se_documents")
       : [
-          { id: "doc_1", name: "Aadhar Card", status: "pending", note: "Required document", fileUrl: null, fileName: "" },
-          { id: "doc_2", name: "Offer Letter", status: "pending", note: "Required document", fileUrl: null, fileName: "" },
-          { id: "doc_3", name: "PAN Card", status: "pending", note: "Required document", fileUrl: null, fileName: "" },
-        ];
+        { id: "doc_1", name: "Aadhar Card", status: "pending", note: "Required document", fileUrl: null, fileName: "" },
+        { id: "doc_2", name: "Offer Letter", status: "pending", note: "Required document", fileUrl: null, fileName: "" },
+        { id: "doc_3", name: "PAN Card", status: "pending", note: "Required document", fileUrl: null, fileName: "" },
+      ];
   });
 
   const [previewDoc, setPreviewDoc] = useState(null);
@@ -507,14 +305,14 @@ export default function SalesHRMS() {
   useEffect(() => {
     try {
       localStorage.setItem("tc_se_documents", JSON.stringify(documentsList));
-    } catch (e) {}
+    } catch (e) { }
   }, [documentsList]);
 
   // ── Activity log ───────────────────────────────────────────────────────────
   const activityLog = [
-    ...allLeads.slice(0,3).map(l => ({ icon:"🪪", text:`Lead added: ${l.company}`, time: l.createdAt || "Recently" })),
-    ...allVisits.slice(0,2).map(v => ({ icon:"📍", text:`Visit: ${v.customerName || v.customer}`, time: v.visitDate || "Recently" })),
-    ...allCustomers.slice(0,2).map(c => ({ icon:"🎉", text:`Converted: ${c.name}`, time: c.onboardDate || "Recently" })),
+    ...allLeads.slice(0, 3).map(l => ({ icon: "🪪", text: `Lead added: ${l.company}`, time: l.createdAt || "Recently" })),
+    ...allVisits.slice(0, 2).map(v => ({ icon: "📍", text: `Visit: ${v.customerName || v.customer}`, time: v.visitDate || "Recently" })),
+    ...allCustomers.slice(0, 2).map(c => ({ icon: "🎉", text: `Converted: ${c.name}`, time: c.onboardDate || "Recently" })),
   ].slice(0, 8);
 
   return (
@@ -530,39 +328,21 @@ export default function SalesHRMS() {
           </div>
         </div>
 
-        {/* Horizontal Navigation Tabs Bar (Draggable & Reorderable) */}
-        <div className="flex items-center justify-between gap-1.5 border-t border-slate-100 pt-2.5">
-          <div className="flex items-center gap-1.5 overflow-x-auto pb-1 min-w-0">
-            {navItems.map(({ key, label, icon: Icon }, idx) => (
-              <button
-                key={key}
-                draggable={true}
-                onDragStart={(e) => handleTabDragStart(e, idx)}
-                onDragOver={(e) => handleTabDragOver(e, idx)}
-                onDrop={(e) => handleTabDrop(e, idx)}
-                onClick={() => setActiveSection(key)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-grab active:cursor-grabbing border border-transparent hover:border-slate-200 ${
-                  activeSection === key
-                    ? "bg-[#1a1f36] text-white shadow-2xs"
-                    : "text-slate-600 hover:bg-slate-100"
+        {/* Horizontal Navigation Tabs Bar */}
+        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5">
+          {NAV_ITEMS.map(({ key, label, icon: Icon }) => (
+            <button
+              key={key}
+              onClick={() => setActiveSection(key)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer ${activeSection === key
+                  ? "bg-[#1a1f36] text-white shadow-2xs"
+                  : "text-slate-600 hover:bg-slate-100"
                 }`}
-                title="Drag tab to reorder"
-              >
-                <GripVertical size={11} className="text-slate-400 opacity-60 shrink-0" />
-                <Icon size={14} />
-                {label}
-              </button>
-            ))}
-          </div>
-
-          <button
-            type="button"
-            onClick={resetHrmsTabOrder}
-            className="px-2.5 py-1 text-[10px] font-black text-slate-500 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-lg transition shrink-0 cursor-pointer flex items-center gap-1"
-            title="Reset HRMS tab order to default"
-          >
-            <RotateCcw size={10} /> Reset Order
-          </button>
+            >
+              <Icon size={14} />
+              {label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -577,10 +357,10 @@ export default function SalesHRMS() {
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">Today's Performance</p>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
                 {[
-                  { label:"Calls Made",       value: allFollowups.length, icon: Phone,     bg:"bg-blue-50 border-blue-200",   text:"text-blue-700"   },
-                  { label:"Visits Done",       value: allVisits.length,    icon: MapPin,    bg:"bg-purple-50 border-purple-200", text:"text-purple-700" },
-                  { label:"Clients Said OK",   value: convertedClients,    icon: UserCheck, bg:"bg-emerald-50 border-emerald-200", text:"text-emerald-700" },
-                  { label:"Hot Leads Active",  value: hotLeads,            icon: Target,    bg:"bg-rose-50 border-rose-200",   text:"text-rose-700"   },
+                  { label: "Calls Made", value: allFollowups.length, icon: Phone, bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
+                  { label: "Visits Done", value: allVisits.length, icon: MapPin, bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
+                  { label: "Clients Said OK", value: convertedClients, icon: UserCheck, bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700" },
+                  { label: "Hot Leads Active", value: hotLeads, icon: Target, bg: "bg-rose-50 border-rose-200", text: "text-rose-700" },
                 ].map(({ label, value, icon: Icon, bg, text }) => (
                   <div key={label} className={`bg-white rounded-xl p-2.5 sm:p-3 border shadow-2xs ${bg}`}>
                     <div className="flex items-start justify-between">
@@ -599,9 +379,9 @@ export default function SalesHRMS() {
 
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
               {[
-                { label:"Total My Leads",   value: allLeads.length,     icon: Users,     color:"sky"     },
-                { label:"Active Customers", value: allCustomers.length, icon: UserCheck, color:"emerald" },
-                { label:"Conversion Rate",  value: `${convRate}%`,      icon: TrendingUp,color:"violet"  },
+                { label: "Total My Leads", value: allLeads.length, icon: Users, color: "sky" },
+                { label: "Active Customers", value: allCustomers.length, icon: UserCheck, color: "emerald" },
+                { label: "Conversion Rate", value: `${convRate}%`, icon: TrendingUp, color: "violet" },
               ].map(({ label, value, icon: Icon, color }) => (
                 <div key={label} className={`bg-white rounded-xl p-2.5 sm:p-3 border border-${color}-200 shadow-2xs flex items-center gap-3`}>
                   <div className={`w-8 h-8 rounded-lg bg-${color}-50 text-${color}-700 flex items-center justify-center shrink-0`}>
@@ -657,9 +437,8 @@ export default function SalesHRMS() {
                       key={mode}
                       type="button"
                       onClick={() => setReportFilterMode(mode)}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${
-                        reportFilterMode === mode ? "bg-teal-600 text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
-                      }`}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${reportFilterMode === mode ? "bg-teal-600 text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
+                        }`}
                     >
                       {mode === "CUSTOM" ? "CUSTOM DATE" : mode}
                     </button>
@@ -786,20 +565,9 @@ export default function SalesHRMS() {
         {/* ── DAILY WORK REPORT ── */}
         {activeSection === "daily_report" && (
           <div className="max-w-3xl space-y-5">
-            {/* Header with View My Reports Button (Matches Sample Image 1) */}
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-white rounded-2xl p-4 sm:p-5 border border-slate-200 shadow-2xs">
-              <div>
-                <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">Daily Work Report</h1>
-                <p className="text-slate-500 text-xs sm:text-sm mt-0.5 font-semibold">Submit your daily work report and keep your manager updated.</p>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowMyReportsModal(true)}
-                className="px-4 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-800 font-extrabold text-xs sm:text-sm rounded-xl shadow-2xs flex items-center gap-2 transition cursor-pointer"
-              >
-                <FileText size={16} className="text-teal-600" /> View My Reports
-              </button>
+            <div>
+              <h1 className="text-2xl font-black text-slate-900">Daily Work Report</h1>
+              <p className="text-slate-500 text-sm mt-0.5 font-semibold">Submit your daily sales activity report before 6:30 PM.</p>
             </div>
 
             {reportSubmitted ? (
@@ -828,12 +596,12 @@ export default function SalesHRMS() {
                   <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-3">Today's Numbers</p>
                   <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                     {[
-                      { field:"callsMade",         label:"Calls Made",           icon:Phone,        ph:"e.g. 12" },
-                      { field:"visitsCompleted",    label:"Visits Completed",     icon:MapPin,       ph:"e.g. 2"  },
-                      { field:"leadsGenerated",     label:"New Leads",            icon:Users,        ph:"e.g. 5"  },
-                      { field:"clientsInterested",  label:"Clients Interested",   icon:UserCheck,    ph:"e.g. 3"  },
-                      { field:"followupsScheduled", label:"Follow-ups Scheduled", icon:Clock3,       ph:"e.g. 4"  },
-                      { field:"dealsClosed",        label:"Deals Closed (Won)",   icon:CheckCircle2, ph:"e.g. 1"  },
+                      { field: "callsMade", label: "Calls Made", icon: Phone, ph: "e.g. 12" },
+                      { field: "visitsCompleted", label: "Visits Completed", icon: MapPin, ph: "e.g. 2" },
+                      { field: "leadsGenerated", label: "New Leads", icon: Users, ph: "e.g. 5" },
+                      { field: "clientsInterested", label: "Clients Interested", icon: UserCheck, ph: "e.g. 3" },
+                      { field: "followupsScheduled", label: "Follow-ups Scheduled", icon: Clock3, ph: "e.g. 4" },
+                      { field: "dealsClosed", label: "Deals Closed (Won)", icon: CheckCircle2, ph: "e.g. 1" },
                     ].map(({ field, label, icon: Icon, ph }) => (
                       <div key={field} className="border border-slate-200 rounded-xl p-3 space-y-1.5">
                         <div className="flex items-center gap-1.5 text-[10px] font-black text-slate-500 uppercase tracking-wider">
@@ -847,9 +615,9 @@ export default function SalesHRMS() {
                   </div>
                 </div>
                 {[
-                  { field:"highlights",  label:"Key Highlights / Wins Today", ph:"Best calls, site visits, promising leads..." },
-                  { field:"blockers",    label:"Blockers / Issues",            ph:"Challenges, rejections, travel issues..."  },
-                  { field:"nextDayPlan", label:"Tomorrow's Plan",              ph:"Which clients to call, follow up..."       },
+                  { field: "highlights", label: "Key Highlights / Wins Today", ph: "Best calls, site visits, promising leads..." },
+                  { field: "blockers", label: "Blockers / Issues", ph: "Challenges, rejections, travel issues..." },
+                  { field: "nextDayPlan", label: "Tomorrow's Plan", ph: "Which clients to call, follow up..." },
                 ].map(({ field, label, ph }) => (
                   <div key={field}>
                     <label className="text-xs font-black text-slate-700 uppercase tracking-wider block mb-1.5">{label}</label>
@@ -862,6 +630,23 @@ export default function SalesHRMS() {
                   <Send size={16} /> Submit Daily Report
                 </button>
               </form>
+            )}
+            {pastReports.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs">
+                <div className="px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900 text-sm">Past Reports</h3></div>
+                <div className="divide-y divide-slate-100">
+                  {pastReports.slice(0, 5).map((r, i) => (
+                    <div key={i} className="px-5 py-3 flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-black text-slate-900">{formatDate(new Date(r.date))}</p>
+                        <p className="text-xs text-slate-500 font-semibold">📞 {r.callsMade || 0} calls · 📍 {r.visitsCompleted || 0} visits · ✅ {r.dealsClosed || 0} deals</p>
+                        <p className="text-[10px] text-slate-400 font-bold mt-0.5">Manager: {r.reportingManager || managerName}</p>
+                      </div>
+                      <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Submitted</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             )}
           </div>
         )}
@@ -898,12 +683,12 @@ export default function SalesHRMS() {
                             prev.map((item) =>
                               item.id === doc.id
                                 ? {
-                                    ...item,
-                                    status: "uploaded",
-                                    fileName: file.name,
-                                    fileUrl: base64,
-                                    note: `Uploaded ${new Date().toLocaleDateString("en-GB")}`,
-                                  }
+                                  ...item,
+                                  status: "uploaded",
+                                  fileName: file.name,
+                                  fileUrl: base64,
+                                  note: `Uploaded ${new Date().toLocaleDateString("en-GB")}`,
+                                }
                                 : item
                             )
                           );
@@ -947,7 +732,7 @@ export default function SalesHRMS() {
             {/* Custom Other Document Drag & Drop Box */}
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-3">
               <p className="text-xs font-black text-slate-400 uppercase tracking-wider">Upload Other Document</p>
-              
+
               <input
                 type="file"
                 id="file_input_custom"
@@ -1094,13 +879,12 @@ export default function SalesHRMS() {
                       myLeaveRequests.map((req, idx) => (
                         <tr key={req.id || idx} className="hover:bg-slate-50/80 transition">
                           <td className="py-3.5 px-3">
-                            <span className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black border ${
-                              req.leave_type?.includes("Half")
+                            <span className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black border ${req.leave_type?.includes("Half")
                                 ? "bg-amber-50 text-amber-800 border-amber-200"
                                 : req.leave_type?.includes("Permission")
                                   ? "bg-sky-50 text-sky-800 border-sky-200"
                                   : "bg-emerald-50 text-emerald-800 border-emerald-200"
-                            }`}>
+                              }`}>
                               {req.leave_type}
                             </span>
                           </td>
@@ -1112,13 +896,12 @@ export default function SalesHRMS() {
                             {req.raw_reason || req.reason?.split("|")[0]?.strip?.() || req.reason}
                           </td>
                           <td className="py-3.5 px-3">
-                            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black border ${
-                              req.status?.toLowerCase() === "approved" || req.status?.toLowerCase().includes("approv")
+                            <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black border ${req.status?.toLowerCase() === "approved" || req.status?.toLowerCase().includes("approv")
                                 ? "bg-emerald-100 text-emerald-900 border-emerald-300"
                                 : req.status?.toLowerCase() === "rejected" || req.status?.toLowerCase().includes("reject")
                                   ? "bg-rose-100 text-rose-900 border-rose-300"
                                   : "bg-amber-100 text-amber-950 border-amber-300"
-                            }`}>
+                              }`}>
                               {req.status?.toLowerCase() === "approved" || req.status?.toLowerCase().includes("approv")
                                 ? "✅ Approved"
                                 : req.status?.toLowerCase() === "rejected" || req.status?.toLowerCase().includes("reject")
@@ -1228,11 +1011,10 @@ export default function SalesHRMS() {
                                 setLeaveTimeSlot("Full Day");
                               }
                             }}
-                            className={`py-2 px-2.5 rounded-xl text-xs font-black border transition cursor-pointer ${
-                              leaveType === item.type
+                            className={`py-2 px-2.5 rounded-xl text-xs font-black border transition cursor-pointer ${leaveType === item.type
                                 ? "bg-teal-600 text-white border-teal-600 shadow-2xs"
                                 : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                            }`}
+                              }`}
                           >
                             {item.label}
                           </button>
@@ -1304,11 +1086,10 @@ export default function SalesHRMS() {
                                 key={preset}
                                 type="button"
                                 onClick={() => setLeaveTimeSlot(preset)}
-                                className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold border transition cursor-pointer ${
-                                  leaveTimeSlot === preset
+                                className={`py-1.5 px-2 rounded-xl text-[11px] font-extrabold border transition cursor-pointer ${leaveTimeSlot === preset
                                     ? "bg-sky-600 text-white border-sky-600 shadow-2xs"
                                     : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
-                                }`}
+                                  }`}
                               >
                                 {preset}
                               </button>
@@ -1372,18 +1153,18 @@ export default function SalesHRMS() {
           <div className="max-w-2xl space-y-5">
             <h1 className="text-2xl font-black text-slate-900">Holiday Calendar 2026–27</h1>
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100">
-              {HOLIDAYS.map(h=>(
+              {HOLIDAYS.map(h => (
                 <div key={h.date} className="px-5 py-3.5 flex items-center justify-between gap-3">
                   <div className="flex items-center gap-3">
                     <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-lg shrink-0">
-                      {h.type==="National"?"🇮🇳":h.type==="Festival"?"🎉":"🌅"}
+                      {h.type === "National" ? "🇮🇳" : h.type === "Festival" ? "🎉" : "🌅"}
                     </div>
                     <div>
                       <p className="text-sm font-black text-slate-900">{h.name}</p>
                       <p className="text-[11px] text-slate-500 font-semibold">{h.date}</p>
                     </div>
                   </div>
-                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${h.type==="National"?"bg-blue-50 text-blue-700 border-blue-200":h.type==="Festival"?"bg-amber-50 text-amber-700 border-amber-200":"bg-violet-50 text-violet-700 border-violet-200"}`}>{h.type}</span>
+                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${h.type === "National" ? "bg-blue-50 text-blue-700 border-blue-200" : h.type === "Festival" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-violet-50 text-violet-700 border-violet-200"}`}>{h.type}</span>
                 </div>
               ))}
             </div>
@@ -1397,22 +1178,22 @@ export default function SalesHRMS() {
             <p className="text-slate-500 text-sm font-semibold">Your growth path at TwiteConnect based on deals closed.</p>
             <div className="space-y-3">
               {[
-                { level:"1", title:"Sales Executive Trainee",  target:"0–5 deals",  done: convertedClients>5,  current: convertedClients<=5  },
-                { level:"2", title:"Sales Executive",          target:"6–15 deals", done: convertedClients>15, current: convertedClients>5&&convertedClients<=15 },
-                { level:"3", title:"Senior Sales Executive",   target:"16–30 deals",done: convertedClients>30, current: convertedClients>15&&convertedClients<=30 },
-                { level:"4", title:"Sales Team Lead",          target:"31+ deals",  done: false,               current: convertedClients>30 },
-                { level:"5", title:"Sales Manager",            target:"Promotion",  done: false,               current: false },
-              ].map(step=>(
-                <div key={step.level} className={`flex items-center gap-4 p-4 rounded-2xl border transition ${step.current?"bg-teal-50 border-teal-300":step.done?"bg-emerald-50 border-emerald-200":"bg-white border-slate-200"}`}>
-                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${step.done?"bg-emerald-600 text-white":step.current?"bg-teal-600 text-white":"bg-slate-100 text-slate-400"}`}>
-                    {step.done?<CheckCircle2 size={18}/>:step.level}
+                { level: "1", title: "Sales Executive Trainee", target: "0–5 deals", done: convertedClients > 5, current: convertedClients <= 5 },
+                { level: "2", title: "Sales Executive", target: "6–15 deals", done: convertedClients > 15, current: convertedClients > 5 && convertedClients <= 15 },
+                { level: "3", title: "Senior Sales Executive", target: "16–30 deals", done: convertedClients > 30, current: convertedClients > 15 && convertedClients <= 30 },
+                { level: "4", title: "Sales Team Lead", target: "31+ deals", done: false, current: convertedClients > 30 },
+                { level: "5", title: "Sales Manager", target: "Promotion", done: false, current: false },
+              ].map(step => (
+                <div key={step.level} className={`flex items-center gap-4 p-4 rounded-2xl border transition ${step.current ? "bg-teal-50 border-teal-300" : step.done ? "bg-emerald-50 border-emerald-200" : "bg-white border-slate-200"}`}>
+                  <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${step.done ? "bg-emerald-600 text-white" : step.current ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-400"}`}>
+                    {step.done ? <CheckCircle2 size={18} /> : step.level}
                   </div>
                   <div className="flex-1 min-w-0">
-                    <p className={`font-black text-sm ${step.current?"text-teal-900":step.done?"text-emerald-900":"text-slate-500"}`}>{step.title}</p>
+                    <p className={`font-black text-sm ${step.current ? "text-teal-900" : step.done ? "text-emerald-900" : "text-slate-500"}`}>{step.title}</p>
                     <p className="text-[11px] font-semibold text-slate-400">{step.target}</p>
                   </div>
-                  {step.current&&<span className="text-[10px] font-black text-teal-700 bg-teal-100 px-2.5 py-0.5 rounded-full border border-teal-300 shrink-0">Current Level</span>}
-                  {step.done&&<span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 shrink-0">✅ Achieved</span>}
+                  {step.current && <span className="text-[10px] font-black text-teal-700 bg-teal-100 px-2.5 py-0.5 rounded-full border border-teal-300 shrink-0">Current Level</span>}
+                  {step.done && <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200 shrink-0">✅ Achieved</span>}
                 </div>
               ))}
             </div>
@@ -1430,7 +1211,7 @@ export default function SalesHRMS() {
             <h1 className="text-2xl font-black text-slate-900">Twite Sales Handbook</h1>
             <p className="text-slate-500 text-sm font-semibold">Guidelines, processes, and policies for TwiteConnect Sales Executives.</p>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {HANDBOOK.map(s=>(
+              {HANDBOOK.map(s => (
                 <div key={s.title} className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-2">
                   <div className="flex items-center gap-2"><span className="text-xl">{s.icon}</span><h3 className="font-black text-slate-900 text-sm">{s.title}</h3></div>
                   <p className="text-xs text-slate-600 font-semibold leading-relaxed">{s.content}</p>
@@ -1446,9 +1227,9 @@ export default function SalesHRMS() {
             <h1 className="text-2xl font-black text-slate-900">Activity Logs</h1>
             <p className="text-slate-500 text-sm font-semibold">All your recent actions — leads, visits, and conversions.</p>
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100">
-              {!activityLog.length?(
+              {!activityLog.length ? (
                 <p className="text-center text-slate-400 text-sm py-8 font-semibold">No activity recorded yet. Start adding leads!</p>
-              ):activityLog.map((a,i)=>(
+              ) : activityLog.map((a, i) => (
                 <div key={i} className="px-5 py-3.5 flex items-center gap-3">
                   <span className="text-lg shrink-0">{a.icon}</span>
                   <div className="flex-1 min-w-0">
@@ -1461,229 +1242,6 @@ export default function SalesHRMS() {
             </div>
           </div>
         )}
-
-      {/* ── MODAL 1: MY REPORTS LIST MODAL (MATCHES SAMPLE IMAGE 2) ── */}
-      {showMyReportsModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-5 shadow-2xl border border-slate-200 flex flex-col max-h-[85vh]">
-            
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <h2 className="text-xl font-black text-slate-900 tracking-tight">My Reports</h2>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setShowMyReportsModal(false);
-                    setActiveSection("daily_report");
-                    setReportSubmitted(false);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs flex items-center gap-1 transition cursor-pointer"
-                >
-                  <Plus size={15} /> New Report
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowMyReportsModal(false)}
-                  className="p-1 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer transition"
-                >
-                  <X size={20} />
-                </button>
-              </div>
-            </div>
-
-            {/* Past Reports List (Matches Image 2 format) */}
-            <div className="overflow-y-auto flex-1 min-h-0 divide-y divide-slate-100 border border-slate-200 rounded-2xl bg-white shadow-2xs">
-              {paginatedPastReports.map((r, idx) => (
-                <div
-                  key={r.id || idx}
-                  className="px-5 py-3.5 flex items-center justify-between gap-3 hover:bg-slate-50/80 transition"
-                >
-                  <div className="space-y-1">
-                    <p className="text-sm font-black text-slate-900">
-                      {formatDate(new Date(r.date))}
-                    </p>
-                    <p className="text-xs text-slate-600 font-semibold flex items-center gap-1.5 flex-wrap">
-                      <span className="text-rose-600">📞 {r.callsMade || 0} calls</span>
-                      <span>·</span>
-                      <span className="text-purple-600">📍 {r.visitsCompleted || 0} visits</span>
-                      <span>·</span>
-                      <span className="text-emerald-600">✅ {r.dealsClosed || 0} deals</span>
-                    </p>
-                    <p className="text-[10px] text-slate-400 font-bold">
-                      Manager: {r.reportingManager || managerName}
-                    </p>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedReportDetail(r)}
-                    className="px-4 py-2 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-800 font-extrabold text-xs sm:text-sm border border-emerald-200 transition cursor-pointer shrink-0 shadow-2xs"
-                  >
-                    View Report
-                  </button>
-                </div>
-              ))}
-            </div>
-
-            {/* Pagination Footer */}
-            <div className="pt-3 border-t border-slate-100 flex items-center justify-between text-xs font-bold text-slate-600">
-              <button
-                type="button"
-                disabled={reportsPage === 1}
-                onClick={() => setReportsPage((p) => Math.max(p - 1, 1))}
-                className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-black transition cursor-pointer"
-              >
-                Previous
-              </button>
-
-              <span className="text-slate-500 font-black">
-                Page {reportsPage} of {totalReportPages}
-              </span>
-
-              <button
-                type="button"
-                disabled={reportsPage >= totalReportPages}
-                onClick={() => setReportsPage((p) => Math.min(p + 1, totalReportPages))}
-                className="px-4 py-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed text-slate-800 font-black transition cursor-pointer"
-              >
-                Next
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL 2: DETAILED DAY REPORT VIEW MODAL (EXACT SUBMITTED REPORT DETAILS) ── */}
-      {selectedReportDetail && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-5 shadow-2xl border border-slate-200 flex flex-col max-h-[90vh] overflow-y-auto">
-            
-            {/* Header Banner */}
-            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3.5">
-                {/* Executive Avatar */}
-                <div className="w-12 h-12 rounded-full bg-gradient-to-br from-teal-500 to-indigo-600 text-white font-black text-lg flex items-center justify-center shadow-md relative shrink-0">
-                  {((selectedReportDetail.executive || userName)[0] || "S").toUpperCase()}
-                  <span className="w-3 h-3 bg-emerald-400 border-2 border-white rounded-full absolute bottom-0 right-0" />
-                </div>
-
-                <div>
-                  <h2 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-                    Employee ID: <span className="text-teal-700 font-black">{selectedReportDetail.employee_code || selectedReportDetail.employee_id || empCode || "EMP000017"}</span>
-                  </h2>
-                  <p className="text-xs font-bold text-slate-600 mt-0.5">
-                    Executive: <strong className="text-slate-800">{selectedReportDetail.executive || userName}</strong>
-                  </p>
-                  <div className="mt-1.5 flex items-center gap-2 flex-wrap">
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-900 text-[11px] font-black border border-purple-200">
-                      <Clock3 size={12} className="text-purple-700" />
-                      Submitted {selectedReportDetail.submittedAt || "6:30 PM"}
-                    </span>
-                    <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[11px] font-black border border-slate-200">
-                      📅 {formatDate(new Date(selectedReportDetail.date))}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setSelectedReportDetail(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer transition"
-              >
-                <X size={20} />
-              </button>
-            </div>
-
-            {/* Structured Color-Bordered Cards Matching Submit Form Fields */}
-            <div className="space-y-4">
-              
-              {/* 1. KEY HIGHLIGHTS / WINS TODAY (Blue Left Border) */}
-              <div className="border-l-4 border-l-blue-500 bg-white border border-slate-200/90 rounded-2xl p-4 space-y-2 shadow-2xs">
-                <div className="flex items-center gap-2 text-xs font-black text-slate-900 uppercase tracking-wider">
-                  <Clock3 size={16} className="text-blue-600" />
-                  <span>KEY HIGHLIGHTS / WINS TODAY</span>
-                </div>
-                <p className="text-xs sm:text-sm font-semibold text-slate-700 leading-relaxed pl-6">
-                  {selectedReportDetail.highlights || "No highlights recorded for today."}
-                </p>
-              </div>
-
-              {/* 3. BLOCKERS / ISSUES (Red Left Border) */}
-              <div className="border-l-4 border-l-rose-500 bg-white border border-slate-200/90 rounded-2xl p-4 space-y-2 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-black text-slate-900 uppercase tracking-wider">
-                    <AlertCircle size={16} className="text-rose-600" />
-                    <span>BLOCKERS / ISSUES</span>
-                  </div>
-                  {selectedReportDetail.blockers && selectedReportDetail.blockers.toLowerCase() !== "none" && (
-                    <span className="px-2.5 py-0.5 rounded-full bg-rose-100 text-rose-700 text-[10px] font-black border border-rose-200">
-                      Blocker raised
-                    </span>
-                  )}
-                </div>
-                <p className="text-xs sm:text-sm font-semibold text-slate-700 leading-relaxed pl-6">
-                  {selectedReportDetail.blockers || "None"}
-                </p>
-              </div>
-
-              {/* 4. PLAN FOR TOMORROW (Amber Left Border) */}
-              <div className="border-l-4 border-l-amber-500 bg-white border border-slate-200/90 rounded-2xl p-4 space-y-2 shadow-2xs">
-                <div className="flex items-center gap-2 text-xs font-black text-slate-900 uppercase tracking-wider">
-                  <CalendarDays size={16} className="text-amber-600" />
-                  <span>PLAN FOR TOMORROW</span>
-                </div>
-                <p className="text-xs sm:text-sm font-semibold text-slate-700 leading-relaxed pl-6">
-                  {selectedReportDetail.nextDayPlan || "No plan logged for tomorrow."}
-                </p>
-              </div>
-
-              {/* 5. TODAY'S SALES NUMBERS / METRICS (Purple Left Border) */}
-              <div className="border-l-4 border-l-purple-500 bg-purple-50/40 border border-purple-200/80 rounded-2xl p-4 space-y-3 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2 text-xs font-black text-purple-950 uppercase tracking-wider">
-                    <Code size={16} className="text-purple-600" />
-                    <span>TODAY'S SALES METRICS</span>
-                  </div>
-                  <span className="w-5 h-5 rounded-full bg-purple-100 text-purple-800 text-[11px] font-black flex items-center justify-center border border-purple-200">
-                    6
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 pl-6 pt-1">
-                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
-                    <p className="text-[10px] font-black text-slate-400 uppercase">Calls Made</p>
-                    <p className="text-lg font-black text-blue-700 mt-0.5">{selectedReportDetail.callsMade || 0}</p>
-                  </div>
-                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
-                    <p className="text-[10px] font-black text-slate-400 uppercase">Visits Completed</p>
-                    <p className="text-lg font-black text-purple-700 mt-0.5">{selectedReportDetail.visitsCompleted || 0}</p>
-                  </div>
-                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
-                    <p className="text-[10px] font-black text-slate-400 uppercase">New Leads</p>
-                    <p className="text-lg font-black text-sky-700 mt-0.5">{selectedReportDetail.leadsGenerated || 0}</p>
-                  </div>
-                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
-                    <p className="text-[10px] font-black text-slate-400 uppercase">Interested Clients</p>
-                    <p className="text-lg font-black text-teal-700 mt-0.5">{selectedReportDetail.clientsInterested || 0}</p>
-                  </div>
-                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
-                    <p className="text-[10px] font-black text-slate-400 uppercase">Follow-ups</p>
-                    <p className="text-lg font-black text-amber-700 mt-0.5">{selectedReportDetail.followupsScheduled || 0}</p>
-                  </div>
-                  <div className="bg-white p-2.5 rounded-xl border border-purple-100 shadow-2xs">
-                    <p className="text-[10px] font-black text-slate-400 uppercase">Deals Closed</p>
-                    <p className="text-lg font-black text-emerald-700 mt-0.5">{selectedReportDetail.dealsClosed || 0}</p>
-                  </div>
-                </div>
-              </div>
-
-            </div>
-
-          </div>
-        </div>
-      )}
 
       </div>
     </div>

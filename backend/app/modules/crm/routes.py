@@ -4,6 +4,7 @@ from app.core.dependencies import get_current_user_payload
 from app.modules.crm.schemas import LeadCreate, LeadUpdate, LeadResponse
 from app.modules.crm.service import CRMService
 from app.modules.crm.permissions import CanViewLeads, CanManageLeads
+from app.modules.audit.service import create_audit_log
 
 router = APIRouter(prefix="/crm", tags=["CRM"])
 
@@ -73,6 +74,13 @@ async def create_lead(
 ):
     """Create a new CRM lead."""
     lead = service.create_lead(data, user_payload)
+    create_audit_log(
+        "LEAD_CREATED", "crm.leads", user_payload,
+        entity_id=str(lead.get("lead_id") or lead.get("id") or ""),
+        module="CRM",
+        description=f"Lead created: {data.company_name or data.contact_person or 'New Lead'}",
+        new_value={"company": data.company_name, "status": data.status or "Hot"},
+    )
     return StandardResponse.success_response(
         data=lead,
         message="Lead created successfully"
@@ -103,7 +111,47 @@ async def update_lead(
     service: CRMService = Depends(get_service)
 ):
     """Update lead details with authorization check."""
+    # Fetch existing lead to compare status and assignments
+    try:
+        existing_lead = service.get_lead(lead_id, user_payload)
+        prev_assigned = existing_lead.get("assigned_to")
+        prev_status = existing_lead.get("status")
+    except Exception:
+        existing_lead = None
+        prev_assigned = None
+        prev_status = None
+
     updated = service.update_lead(lead_id, data, user_payload)
+    update_dict = data.model_dump(exclude_none=True)
+    
+    new_assigned = update_dict.get("assigned_to")
+    new_status = update_dict.get("status")
+
+    # Determine action and description based on fields updated
+    if new_assigned and new_assigned != prev_assigned:
+        action = "LEAD_ASSIGNED" if not prev_assigned else "LEAD_REASSIGNED"
+        desc = f"Lead {lead_id} {action.lower().replace('_', ' ')} to {new_assigned}"
+        prev_val = {"assigned_to": prev_assigned}
+        new_val = {"assigned_to": new_assigned}
+    elif new_status and new_status != prev_status:
+        action = "LEAD_STATUS_CHANGED"
+        desc = f"Lead {lead_id} status changed from '{prev_status}' to '{new_status}'"
+        prev_val = {"status": prev_status}
+        new_val = {"status": new_status}
+    else:
+        action = "LEAD_UPDATED"
+        desc = f"Lead updated: {lead_id}"
+        prev_val = {"details": {k: existing_lead.get(k) for k in update_dict.keys() if existing_lead} if existing_lead else None}
+        new_val = update_dict
+
+    create_audit_log(
+        action, "crm.leads", user_payload,
+        entity_id=lead_id,
+        module="CRM",
+        description=desc,
+        previous_value=prev_val,
+        new_value=new_val,
+    )
     return StandardResponse.success_response(
         data=updated,
         message="Lead details updated successfully"
@@ -119,6 +167,11 @@ async def delete_lead(
 ):
     """Delete a CRM lead with authorization check."""
     service.delete_lead(lead_id, user_payload)
+    create_audit_log(
+        "LEAD_DELETED", "crm.leads", user_payload,
+        entity_id=lead_id, module="CRM",
+        description=f"Lead deleted: {lead_id}",
+    )
     return StandardResponse.success_response(
         data={"deleted": True},
         message="Lead deleted successfully"
@@ -149,6 +202,13 @@ async def create_followup(
 ):
     """Create a new follow-up in CRM."""
     flw = service.create_followup(data, user_payload)
+    create_audit_log(
+        "FOLLOWUP_CREATED", "crm.followups", user_payload,
+        entity_id=str(flw.get("followup_id") or flw.get("id") or ""),
+        module="CRM",
+        description=f"Follow-up scheduled for lead: {data.get('lead_id', '')}",
+        new_value={"lead_id": data.get("lead_id"), "date": data.get("scheduledDate") or data.get("date")},
+    )
     return StandardResponse.success_response(
         data=flw,
         message="Follow-up scheduled successfully"
@@ -165,6 +225,19 @@ async def update_followup(
 ):
     """Update follow-up details or outcome with authorization check."""
     updated = service.update_followup(followup_id, data, user_payload)
+    status_val = str(data.get("status") or "").lower()
+    if status_val == "converted":
+        action = "FOLLOWUP_CONVERTED"
+    elif status_val == "completed" or status_val == "done":
+        action = "FOLLOWUP_COMPLETED"
+    else:
+        action = "FOLLOWUP_UPDATED"
+    create_audit_log(
+        action, "crm.followups", user_payload,
+        entity_id=followup_id, module="CRM",
+        description=f"Follow-up {action.lower().replace('_', ' ')}: {followup_id}",
+        new_value={"status": data.get("status"), "outcome": data.get("outcome")},
+    )
     return StandardResponse.success_response(
         data=updated,
         message="Follow-up updated successfully"
@@ -180,6 +253,11 @@ async def delete_followup(
 ):
     """Delete a follow-up with authorization check."""
     service.delete_followup(followup_id, user_payload)
+    create_audit_log(
+        "FOLLOWUP_DELETED", "crm.followups", user_payload,
+        entity_id=followup_id, module="CRM",
+        description=f"Follow-up deleted: {followup_id}",
+    )
     return StandardResponse.success_response(
         data={"deleted": True},
         message="Follow-up removed successfully"

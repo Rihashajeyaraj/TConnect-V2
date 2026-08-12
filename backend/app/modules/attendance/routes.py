@@ -4,6 +4,7 @@ from app.core.dependencies import get_current_user_payload
 from app.modules.attendance.schemas import ClockInRequest, ClockOutRequest, EnrollmentRequest
 from app.modules.attendance.service import AttendanceService
 from app.modules.attendance.permissions import CanViewAttendance, CanRecordAttendance
+from app.modules.audit.service import create_audit_log
 
 router = APIRouter(prefix="/attendance", tags=["Attendance Management"])
 
@@ -113,18 +114,13 @@ async def clock_in(
     data.employee_name = str(user_payload.get("name") or user_payload.get("full_name") or "Sales Executive")
 
     log = service.clock_in(user_id, data)
-
-    try:
-        from app.modules.audit.repository import AuditRepository
-        AuditRepository().create_log({
-            "action": "CLOCK_IN",
-            "entity_type": "hrms.attendance_logs",
-            "entity_id": log.get("id") or log.get("attendance_id") or "",
-            "details": {"latitude": data.latitude, "longitude": data.longitude, "work_location": data.work_location}
-        }, user_payload)
-    except Exception:
-        pass
-
+    create_audit_log(
+        "ATTENDANCE_UPDATED", "hrms.attendance_logs", user_payload,
+        entity_id=str(log.get("id") or log.get("attendance_id") or ""),
+        module="HRMS",
+        description=f"Clock-in recorded for {data.employee_id}",
+        new_value={"event": "clock_in", "latitude": data.latitude, "longitude": data.longitude, "work_location": data.work_location},
+    )
     return StandardResponse.success_response(
         data=log,
         message="Clocked in successfully"
@@ -143,18 +139,13 @@ async def clock_out(
     data.employee_id = str(user_payload.get("employee_code") or user_payload.get("employee_id") or user_id)
 
     log = service.clock_out(user_id, data)
-
-    try:
-        from app.modules.audit.repository import AuditRepository
-        AuditRepository().create_log({
-            "action": "CLOCK_OUT",
-            "entity_type": "hrms.attendance_logs",
-            "entity_id": log.get("id") or log.get("attendance_id") or "",
-            "details": {"latitude": data.latitude, "longitude": data.longitude}
-        }, user_payload)
-    except Exception:
-        pass
-
+    create_audit_log(
+        "ATTENDANCE_UPDATED", "hrms.attendance_logs", user_payload,
+        entity_id=str(log.get("id") or log.get("attendance_id") or ""),
+        module="HRMS",
+        description=f"Clock-out recorded for {data.employee_id}",
+        new_value={"event": "clock_out", "latitude": data.latitude, "longitude": data.longitude},
+    )
     return StandardResponse.success_response(
         data=log,
         message="Clocked out successfully"
@@ -181,18 +172,13 @@ async def submit_leave_request(
         data["employee_code"] = user_code
 
     result = service.submit_leave_request(data, user_payload)
-
-    try:
-        from app.modules.audit.repository import AuditRepository
-        AuditRepository().create_log({
-            "action": "SUBMIT_LEAVE",
-            "entity_type": "hrms.leave_requests",
-            "entity_id": result.get("id") or result.get("leave_request_id") or "",
-            "details": {"leave_type": result.get("leave_type"), "from_date": result.get("from_date"), "to_date": result.get("to_date")}
-        }, user_payload)
-    except Exception:
-        pass
-
+    create_audit_log(
+        "LEAVE_CREATED", "hrms.leave_requests", user_payload,
+        entity_id=str(result.get("id") or result.get("leave_request_id") or ""),
+        module="HRMS",
+        description=f"Leave request submitted: {result.get('leave_type', '')} from {result.get('from_date', '')} to {result.get('to_date', '')}",
+        new_value={"leave_type": result.get("leave_type"), "from_date": result.get("from_date"), "to_date": result.get("to_date"), "status": "Pending"},
+    )
     return StandardResponse.success_response(
         data=result,
         message="Leave / Permission request submitted successfully"
@@ -227,16 +213,23 @@ async def update_leave_status(
     except Exception as e:
         raise HTTPException(status_code=400 if "not found" not in str(e).lower() else 404, detail=str(e))
 
-    try:
-        from app.modules.audit.repository import AuditRepository
-        AuditRepository().create_log({
-            "action": f"{new_status.upper()}_LEAVE",
-            "entity_type": "hrms.leave_requests",
-            "entity_id": request_id,
-            "details": {"status": new_status, "comment": comment}
-        }, user_payload)
-    except Exception:
-        pass
+    # Derive correct audit action
+    status_upper = new_status.upper()
+    if status_upper == "APPROVED":
+        audit_action = "LEAVE_APPROVED"
+    elif status_upper in ("REJECTED", "DENIED"):
+        audit_action = "LEAVE_REJECTED"
+    else:
+        audit_action = f"LEAVE_{status_upper}"
+
+    create_audit_log(
+        audit_action, "hrms.leave_requests", user_payload,
+        entity_id=request_id,
+        module="HRMS",
+        description=f"Leave request {new_status.lower()} by manager",
+        previous_value={"status": "Pending"},
+        new_value={"status": new_status, "comment": comment},
+    )
 
     return StandardResponse.success_response(
         data=result,

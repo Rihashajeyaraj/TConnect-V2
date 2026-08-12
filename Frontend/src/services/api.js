@@ -234,9 +234,6 @@ export const todoAPI = {
   deleteTodo: (id) => request(`/todo/${id}`, { method: 'DELETE' }),
 }
 
-export const auditAPI = {
-  getLogs: () => request('/audit/logs'),
-}
 
 export const userAPI = {
   getUsers: () => request('/users'),
@@ -268,8 +265,29 @@ export const salesAPI = {
   createTarget: (data) => request('/sales/targets', { method: 'POST', body: JSON.stringify(data) }),
   updateTarget: (id, data) => request(`/sales/targets/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteTarget: (id) => request(`/sales/targets/${id}`, { method: 'DELETE' }),
+  getTeamRevenueBreakdown: (params = {}) => {
+    const query = new URLSearchParams(params).toString()
+    return request(`/sales/revenue-breakdown${query ? `?${query}` : ''}`)
+  },
 }
 
 export const usersAPI = userAPI
+
+export const auditAPI = {
+  getLogs: (filters = {}) => {
+    const params = new URLSearchParams()
+    if (filters.user_email) params.append('user_email', filters.user_email)
+    if (filters.role) params.append('role', filters.role)
+    if (filters.action) params.append('action', filters.action)
+    if (filters.entity_type) params.append('entity_type', filters.entity_type)
+    if (filters.from_date) params.append('from_date', filters.from_date)
+    if (filters.to_date) params.append('to_date', filters.to_date)
+    if (filters.limit) params.append('limit', filters.limit)
+    if (filters.offset) params.append('offset', filters.offset)
+    const qs = params.toString()
+    return request(`/audit/logs${qs ? `?${qs}` : ''}`)
+  },
+  logEvent: (data) => request('/audit/log', { method: 'POST', body: JSON.stringify(data) }),
+}
 
 export default { request }

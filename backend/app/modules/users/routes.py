@@ -6,6 +6,8 @@ from app.modules.users.schemas import UserCreate, UserUpdate, UserResponse, Assi
 from app.modules.users.service import UserService
 from app.modules.settings.permissions import CanManageSettings
 from app.exceptions.base import ForbiddenException
+from app.modules.audit.service import create_audit_log
+from app.core.logger import logger
 
 router = APIRouter(prefix="/users", tags=["User Account Management"])
 
@@ -47,10 +49,36 @@ async def assign_sales_executives(
 ):
     """Assign one or more Sales Executives to a Sales Manager (Admin / Super Admin / CEO only)."""
     _require_admin_or_superadmin(user_payload)
+    
+    # Fetch existing executives to compare managers before change
+    executives_before = {}
+    try:
+        all_users = service.get_users()
+        for u in all_users:
+            if str(u.get("id")) in data.executive_ids or str(u.get("employee_id")) in data.executive_ids:
+                executives_before[str(u.get("id"))] = u.get("reporting_manager_name")
+                executives_before[str(u.get("employee_id"))] = u.get("reporting_manager_name")
+    except Exception as e:
+        logger.warning(f"Failed to fetch users before assignment comparison: {e}")
+
     try:
         res = service.assign_sales_executives(data)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+    # Log MANAGER_ASSIGNED/MANAGER_CHANGED for each executive
+    manager_name = res.get("manager_name") or "Sales Manager"
+    for exec_id in data.executive_ids:
+        prev_mgr = executives_before.get(str(exec_id))
+        action = "MANAGER_CHANGED" if (prev_mgr and prev_mgr != manager_name) else "MANAGER_ASSIGNED"
+        create_audit_log(
+            action, "hrms.employees", user_payload,
+            entity_id=str(exec_id),
+            module="User Management",
+            description=f"Executive {exec_id} assigned to Manager {manager_name} (previous: {prev_mgr or 'None'})",
+            previous_value={"reporting_manager": prev_mgr},
+            new_value={"reporting_manager": manager_name},
+        )
 
     return StandardResponse.success_response(
         data=res,
@@ -101,6 +129,13 @@ async def create_user(
 ):
     """Create a new employee user portal account."""
     created = service.create_user(data)
+    create_audit_log(
+        "USER_CREATED", "hrms.employees", user_payload,
+        entity_id=str(created.get("id") or created.get("employee_id") or ""),
+        module="User Management",
+        description=f"User account created: {data.email}",
+        new_value={"name": data.name, "email": data.email, "role": data.role},
+    )
     return StandardResponse.success_response(
         data=created,
         message="Employee portal access user account created successfully"
@@ -117,6 +152,13 @@ async def update_user(
 ):
     """Update employee user account credentials and details."""
     updated = service.update_user(user_id, data)
+    update_dict = data.model_dump(exclude_none=True)
+    create_audit_log(
+        "USER_UPDATED", "hrms.employees", user_payload,
+        entity_id=user_id, module="User Management",
+        description=f"User {user_id} updated",
+        new_value={k: v for k, v in update_dict.items() if k not in ("password", "accessPassword")},
+    )
     return StandardResponse.success_response(
         data=updated,
         message="Employee user account updated successfully"
@@ -132,6 +174,11 @@ async def delete_user(
 ):
     """Delete employee user account."""
     service.delete_user(user_id)
+    create_audit_log(
+        "USER_DELETED", "hrms.employees", user_payload,
+        entity_id=user_id, module="User Management",
+        description=f"User {user_id} deleted",
+    )
     return StandardResponse.success_response(
         data={"id": user_id},
         message="Employee user account deleted successfully"
