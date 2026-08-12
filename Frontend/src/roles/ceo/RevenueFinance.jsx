@@ -47,8 +47,8 @@ const MONTHLY_FINANCE_TREND = [
 ]
 
 const MANAGER_REVENUE = [
-  { name: 'Vikram Singh (South Region)', revenue: 1650000, target: 2000000, percentage: '58.1%', color: '#004749' },
-  { name: 'Suresh V (Tech & West Region)', revenue: 1190000, target: 1500000, percentage: '41.9%', color: '#b09b72' },
+  { name: 'Vikram Singh (South Region)', revenue: 1650000, target: 2000000, percentage: '58.1%', color: '#832D51' },
+  { name: 'Suresh V (Tech & West Region)', revenue: 1190000, target: 1500000, percentage: '41.9%', color: '#EA6993' },
 ]
 
 const EXECUTIVE_REVENUE = [
@@ -118,7 +118,7 @@ function RevenueFinance() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-teal-50 text-[#004749]">
+            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
               <DollarSign className="size-4.5" />
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -133,7 +133,7 @@ function RevenueFinance() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => handleExport('pdf')}
-            className="flex items-center gap-1.5 rounded-xl bg-[#004749] hover:bg-[#013b3f] text-white px-4 py-2 text-xs font-black transition shadow-xs"
+            className="flex items-center gap-1.5 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white px-4 py-2 text-xs font-black transition shadow-xs"
           >
             <Download className="size-3.5" />
             Export Statement
@@ -164,12 +164,12 @@ function RevenueFinance() {
         <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Monthly Revenue</span>
-            <span className="grid size-8 place-items-center rounded-lg bg-teal-50 text-[#004749]">
+            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
               <Calendar className="size-4" />
             </span>
           </div>
           <div className="mt-3">
-            <p className="text-3xl font-black text-[#004749]">₹{monthlyRevenue.toLocaleString()}</p>
+            <p className="text-3xl font-black text-[#832D51]">₹{monthlyRevenue.toLocaleString()}</p>
             <p className="text-xs font-semibold text-slate-400 mt-1">Current Active Month</p>
           </div>
         </div>
@@ -192,14 +192,14 @@ function RevenueFinance() {
         <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Net Profit & Margin</span>
-            <span className="grid size-8 place-items-center rounded-lg bg-amber-50 text-[#b09b72]">
+            <span className="grid size-8 place-items-center rounded-lg bg-amber-50 text-[#EA6993]">
               <Wallet className="size-4" />
             </span>
           </div>
           <div className="mt-3">
             <p className="text-3xl font-black text-slate-900">₹{netProfit.toLocaleString()}</p>
-            <div className="mt-1 flex items-center gap-1.5 text-xs font-bold text-[#004749]">
-              <span className="bg-teal-100/80 px-1.5 py-0.5 rounded text-[10px]">{profitMargin}% Net Margin</span>
+            <div className="mt-1 flex items-center gap-1.5 text-xs font-bold text-[#832D51]">
+              <span className="bg-[#F8CAE4]/40/80 px-1.5 py-0.5 rounded text-[10px]">{profitMargin}% Net Margin</span>
             </div>
           </div>
         </div>
@@ -224,7 +224,7 @@ function RevenueFinance() {
         <div className="space-y-1.5 pt-2">
           <div className="h-4 w-full rounded-full bg-slate-100 overflow-hidden p-0.5 border border-slate-200">
             <div
-              className="h-full rounded-full bg-gradient-to-r from-[#004749] via-[#013b3f] to-[#b09b72]"
+              className="h-full rounded-full bg-gradient-to-r from-[#832D51] via-[#6a2240] to-[#EA6993]"
               style={{ width: `${targetAchievement}%` }}
             />
           </div>
@@ -246,7 +246,7 @@ function RevenueFinance() {
           </div>
           <div className="flex items-center gap-4 text-xs font-bold">
             <div className="flex items-center gap-1.5">
-              <span className="size-3 rounded-full bg-[#004749]" />
+              <span className="size-3 rounded-full bg-[#832D51]" />
               <span className="text-slate-600">Revenue</span>
             </div>
             <div className="flex items-center gap-1.5">
@@ -254,7 +254,7 @@ function RevenueFinance() {
               <span className="text-slate-600">Expenses</span>
             </div>
             <div className="flex items-center gap-1.5">
-              <span className="size-3 rounded-full bg-[#b09b72]" />
+              <span className="size-3 rounded-full bg-[#EA6993]" />
               <span className="text-slate-600">Net Profit</span>
             </div>
           </div>
@@ -280,9 +280,9 @@ function RevenueFinance() {
                   borderRadius: '12px',
                 }}
               />
-              <Bar dataKey="revenue" fill="#004749" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="revenue" fill="#832D51" radius={[4, 4, 0, 0]} />
               <Bar dataKey="expenses" fill="#f43f5e" radius={[4, 4, 0, 0]} />
-              <Bar dataKey="profit" fill="#b09b72" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="profit" fill="#EA6993" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
@@ -340,7 +340,7 @@ function RevenueFinance() {
                   <p className="font-extrabold text-slate-900">{exec.name}</p>
                   <p className="text-[10px] text-slate-400">{exec.deals} Deals Won · {exec.share} share</p>
                 </div>
-                <span className="font-black text-[#004749]">₹{exec.revenue.toLocaleString()}</span>
+                <span className="font-black text-[#832D51]">₹{exec.revenue.toLocaleString()}</span>
               </div>
             ))}
           </div>

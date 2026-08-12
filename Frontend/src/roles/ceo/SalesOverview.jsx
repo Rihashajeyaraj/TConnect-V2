@@ -37,7 +37,7 @@ const STAGES = ['Lead', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost']
 
 const STAGE_CONFIG = {
   Lead: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', bar: '#3b82f6' },
-  Qualified: { bg: 'bg-teal-50', text: 'text-teal-700', border: 'border-teal-200', bar: '#0d9488' },
+  Qualified: { bg: 'bg-[#F8CAE4]/20', text: 'text-[#EA6993]', border: 'border-[#EA6993]/30', bar: '#0d9488' },
   Proposal: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', bar: '#9333ea' },
   Negotiation: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', bar: '#d97706' },
   Won: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', bar: '#10b981' },
@@ -178,7 +178,7 @@ function SalesOverview({ initialSection }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-teal-50 text-[#004749]">
+            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
               <TrendingUp className="size-4.5" />
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -195,7 +195,7 @@ function SalesOverview({ initialSection }) {
             <button
               onClick={() => setViewMode('kanban')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
-                viewMode === 'kanban' ? 'bg-[#004749] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                viewMode === 'kanban' ? 'bg-[#832D51] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <Kanban className="size-3.5" />
@@ -204,7 +204,7 @@ function SalesOverview({ initialSection }) {
             <button
               onClick={() => setViewMode('table')}
               className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
-                viewMode === 'table' ? 'bg-[#004749] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                viewMode === 'table' ? 'bg-[#832D51] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <ListFilter className="size-3.5" />
@@ -225,8 +225,8 @@ function SalesOverview({ initialSection }) {
               <p className="text-xs font-semibold text-slate-500 mt-0.5">Ingested Leads</p>
             </div>
             <div className="text-right">
-              <p className="text-xl font-extrabold text-[#004749]">{qualifiedLeads}</p>
-              <p className="text-xs font-bold text-teal-700 mt-0.5">Qualified (60.5%)</p>
+              <p className="text-xl font-extrabold text-[#832D51]">{qualifiedLeads}</p>
+              <p className="text-xs font-bold text-[#EA6993] mt-0.5">Qualified (60.5%)</p>
             </div>
           </div>
         </div>
@@ -283,7 +283,7 @@ function SalesOverview({ initialSection }) {
             placeholder="Search deals, companies, reps..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#004749]"
+            className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
           />
         </div>
 
@@ -355,7 +355,7 @@ function SalesOverview({ initialSection }) {
                       </div>
 
                       <div className="flex items-baseline justify-between text-xs">
-                        <span className="font-extrabold text-[#004749]">
+                        <span className="font-extrabold text-[#832D51]">
                           ₹{Number(opp.value).toLocaleString()}
                         </span>
                         <span className="text-[10px] font-bold text-slate-400">
@@ -420,7 +420,7 @@ function SalesOverview({ initialSection }) {
                 return (
                   <tr key={opp.id} className="hover:bg-slate-50/70 transition">
                     <td className="py-3 font-extrabold text-slate-900">{opp.company}</td>
-                    <td className="py-3 font-black text-[#004749]">₹{Number(opp.value).toLocaleString()}</td>
+                    <td className="py-3 font-black text-[#832D51]">₹{Number(opp.value).toLocaleString()}</td>
                     <td className="py-3">
                       <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black ${conf.bg} ${conf.text} border ${conf.border}`}>
                         {opp.stage}
@@ -463,7 +463,7 @@ function SalesOverview({ initialSection }) {
                 Team assigned leads, won revenue, and win rates
               </p>
             </div>
-            <Award className="size-5 text-[#004749]" />
+            <Award className="size-5 text-[#832D51]" />
           </div>
 
           <div className="space-y-4">
@@ -474,7 +474,7 @@ function SalesOverview({ initialSection }) {
                     <h4 className="text-sm font-black text-slate-900">{mgr.name}</h4>
                     <span className="text-xs text-slate-500">{mgr.region}</span>
                   </div>
-                  <span className="rounded-md bg-teal-50 px-2.5 py-1 text-xs font-black text-[#004749]">
+                  <span className="rounded-md bg-[#F8CAE4]/20 px-2.5 py-1 text-xs font-black text-[#832D51]">
                     {mgr.winRate}% Win Rate
                   </span>
                 </div>
@@ -494,7 +494,7 @@ function SalesOverview({ initialSection }) {
                   </div>
                   <div>
                     <span className="text-[10px] uppercase font-bold text-slate-400">Pipeline</span>
-                    <p className="font-extrabold text-[#004749] mt-0.5">₹{(mgr.pipeline / 100000).toFixed(1)}L</p>
+                    <p className="font-extrabold text-[#832D51] mt-0.5">₹{(mgr.pipeline / 100000).toFixed(1)}L</p>
                   </div>
                 </div>
               </div>
@@ -513,7 +513,7 @@ function SalesOverview({ initialSection }) {
                 Field visits, deals converted, and revenue contribution
               </p>
             </div>
-            <Users className="size-5 text-[#b09b72]" />
+            <Users className="size-5 text-[#EA6993]" />
           </div>
 
           <div className="space-y-3">

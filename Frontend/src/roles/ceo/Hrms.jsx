@@ -357,7 +357,7 @@ function CeoHrms({ initialTab = 'employees' }) {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-teal-50 text-[#004749]">
+            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/30 text-[#832D51]">
               <Briefcase className="size-4.5" />
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -371,7 +371,7 @@ function CeoHrms({ initialTab = 'employees' }) {
 
         {/* Quick Pending Counter */}
         <div className="flex items-center gap-2">
-          <span className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-1.5 text-xs font-bold text-amber-800">
+          <span className="rounded-xl bg-[#F8CAE4]/20 border border-[#EA6993]/20 px-3 py-1.5 text-xs font-bold text-[#832D51]">
             {pendingLeaves.length + pendingPermissions.length} Pending Clearances
           </span>
         </div>
@@ -399,7 +399,7 @@ function CeoHrms({ initialTab = 'employees' }) {
               <button
                 onClick={() => setActiveTab(tabItem.id)}
                 className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${isActive
-                    ? 'bg-[#004749] text-white shadow-xs'
+                    ? 'bg-[#832D51] text-white shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`}
               >
@@ -408,9 +408,9 @@ function CeoHrms({ initialTab = 'employees' }) {
                 {badgeVal !== null && badgeVal !== undefined && (
                   <span
                     className={`rounded-full px-2 py-0.2 text-[10px] font-black ${isActive
-                        ? 'bg-white text-[#004749]'
+                        ? 'bg-white text-[#832D51]'
                         : alertVal
-                          ? 'bg-[#540000] text-white'
+                          ? 'bg-[#EA6993] text-white'
                           : 'bg-slate-200 text-slate-700'
                       }`}
                   >
@@ -448,7 +448,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                 placeholder="Search staff, role, department..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#004749]"
+                className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
               />
             </div>
           </div>
@@ -472,7 +472,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                       <p className="text-[10px] text-slate-400">{emp.email}</p>
                     </td>
                     <td className="py-3">
-                      <span className="inline-flex rounded-md bg-teal-50 px-2 py-0.5 text-[10px] font-black text-[#004749]">
+                      <span className="inline-flex rounded-md bg-[#F8CAE4]/20 px-2 py-0.5 text-[10px] font-black text-[#832D51]">
                         {emp.role}
                       </span>
                     </td>
@@ -503,7 +503,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                 Review and approve/reject staff leave applications
               </p>
             </div>
-            <span className="rounded-full bg-[#540000]/10 px-3 py-1 text-xs font-black text-[#540000]">
+            <span className="rounded-full bg-[#3a7d63]/10 px-3 py-1 text-xs font-black text-[#3a7d63]">
               {pendingLeaves.length} Pending Actions
             </span>
           </div>
@@ -553,7 +553,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                           </button>
                           <button
                             onClick={() => handleOpenReview(leave, 'Approved')}
-                            className="rounded-lg bg-[#004749] text-white px-3 py-1 text-xs font-bold hover:bg-[#013b3f]"
+                            className="rounded-lg bg-[#832D51] text-white px-3 py-1 text-xs font-bold hover:bg-[#6a2240]"
                           >
                             Approve
                           </button>
@@ -584,7 +584,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                 Review early exits, half-days, and on-duty customer field permissions
               </p>
             </div>
-            <span className="rounded-full bg-[#540000]/10 px-3 py-1 text-xs font-black text-[#540000]">
+            <span className="rounded-full bg-[#3a7d63]/10 px-3 py-1 text-xs font-black text-[#3a7d63]">
               {pendingPermissions.length} Pending Actions
             </span>
           </div>
@@ -634,7 +634,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                           </button>
                           <button
                             onClick={() => handleOpenReview(perm, 'Approved')}
-                            className="rounded-lg bg-[#004749] text-white px-3 py-1 text-xs font-bold hover:bg-[#013b3f]"
+                            className="rounded-lg bg-[#832D51] text-white px-3 py-1 text-xs font-bold hover:bg-[#6a2240]"
                           >
                             Approve
                           </button>
@@ -702,7 +702,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                     return (
                       <tr key={log.id} className="hover:bg-slate-50/70 transition">
                         <td className="py-3 font-extrabold text-slate-900">{log.name}</td>
-                        <td className="py-3 font-bold text-[#004749]">{log.clockIn}</td>
+                        <td className="py-3 font-bold text-[#832D51]">{log.clockIn}</td>
                         <td className="py-3 font-bold text-slate-600">{log.clockOut || '—'}</td>
                         <td className="py-3 font-semibold text-slate-700">{log.workHours || 'In Progress'}</td>
                         <td className="py-3 text-slate-500">{log.mode || 'Biometric'}</td>
@@ -794,7 +794,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                   value={reviewRemarks}
                   onChange={(e) => setReviewRemarks(e.target.value)}
                   placeholder="e.g. Approved. Ensure critical deals are handed over."
-                  className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#004749]"
+                  className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#832D51]"
                   rows={3}
                 />
               </div>
@@ -809,7 +809,7 @@ function CeoHrms({ initialTab = 'employees' }) {
               </button>
               <button
                 onClick={handleConfirmDecision}
-                className={`rounded-xl px-5 py-2 text-xs font-bold text-white shadow-xs ${reviewAction === 'Approved' ? 'bg-[#004749] hover:bg-[#013b3f]' : 'bg-rose-600 hover:bg-rose-700'
+                className={`rounded-xl px-5 py-2 text-xs font-bold text-white shadow-xs ${reviewAction === 'Approved' ? 'bg-[#832D51] hover:bg-[#6a2240]' : 'bg-rose-600 hover:bg-rose-700'
                   }`}
               >
                 Confirm {reviewAction}

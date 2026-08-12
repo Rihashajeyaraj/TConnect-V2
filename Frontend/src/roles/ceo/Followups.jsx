@@ -101,7 +101,7 @@ export default function CEOFollowups() {
       <div className="bg-white border border-slate-200 p-6 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
         <div>
           <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-            <PhoneCall className="w-6 h-6 text-[#004749]" /> Team Follow-Ups & Call Reminders
+            <PhoneCall className="w-6 h-6 text-[#832D51]" /> Team Follow-Ups & Call Reminders
           </h1>
           <p className="text-xs text-slate-500 font-bold mt-1">
             Monitor company-wide call schedules, client follow-ups, overdue alerts, and executive interaction notes.
@@ -122,7 +122,7 @@ export default function CEOFollowups() {
             <button
               onClick={() => setViewMode('cards')}
               className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1.5 transition cursor-pointer ${
-                viewMode === 'cards' ? 'bg-[#004749] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                viewMode === 'cards' ? 'bg-[#832D51] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               <LayoutGrid size={12} /> Cards
@@ -130,7 +130,7 @@ export default function CEOFollowups() {
             <button
               onClick={() => setViewMode('table')}
               className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center gap-1.5 transition cursor-pointer ${
-                viewMode === 'table' ? 'bg-[#004749] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
+                viewMode === 'table' ? 'bg-[#832D51] text-white shadow-xs' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
               <Table size={12} /> Table
@@ -141,8 +141,8 @@ export default function CEOFollowups() {
 
       {/* KPI SUMMARY CARDS */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-[#b09b72]/5 border border-[#b09b72]/20 p-4 rounded-xl shadow-xs space-y-1">
-          <span className="text-[9px] font-black uppercase tracking-wider text-[#b09b72]">Pending Calls</span>
+        <div className="bg-[#EA6993]/5 border border-[#EA6993]/20 p-4 rounded-xl shadow-xs space-y-1">
+          <span className="text-[9px] font-black uppercase tracking-wider text-[#EA6993]">Pending Calls</span>
           <h2 className="text-2xl font-black text-slate-900">{totalPending}</h2>
         </div>
         <div className="bg-emerald-50 border border-emerald-250 p-4 rounded-xl shadow-xs space-y-1">
@@ -153,8 +153,8 @@ export default function CEOFollowups() {
           <span className="text-[9px] font-black uppercase tracking-wider text-rose-800">Overdue Reminders</span>
           <h2 className="text-2xl font-black text-rose-600">{totalOverdue}</h2>
         </div>
-        <div className="bg-[#004749]/5 border border-[#004749]/20 p-4 rounded-xl shadow-xs space-y-1">
-          <span className="text-[9px] font-black uppercase tracking-wider text-[#004749]">High Priority</span>
+        <div className="bg-[#832D51]/5 border border-[#832D51]/20 p-4 rounded-xl shadow-xs space-y-1">
+          <span className="text-[9px] font-black uppercase tracking-wider text-[#832D51]">High Priority</span>
           <h2 className="text-2xl font-black text-slate-900">{totalHigh}</h2>
         </div>
       </div>
@@ -168,7 +168,7 @@ export default function CEOFollowups() {
             placeholder="Search customer, representative, notes..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#004749]"
+            className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#832D51]"
           />
         </div>
 
@@ -199,7 +199,7 @@ export default function CEOFollowups() {
             filteredFollowups.map((item) => (
               <div
                 key={item.id}
-                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs hover:border-[#004749]/35 transition space-y-3"
+                className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs hover:border-[#832D51]/35 transition space-y-3"
               >
                 <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                   <div>
@@ -213,7 +213,7 @@ export default function CEOFollowups() {
                   </div>
 
                   <div className="text-right">
-                    <span className="text-[9px] font-bold text-[#004749] bg-[#004749]/5 px-2 py-1 rounded-md border border-[#004749]/15">
+                    <span className="text-[9px] font-bold text-[#832D51] bg-[#832D51]/5 px-2 py-1 rounded-md border border-[#832D51]/15">
                       SE: {item.executive}
                     </span>
                   </div>
@@ -226,7 +226,7 @@ export default function CEOFollowups() {
                   </div>
                   <div>
                     <span className="text-[8px] text-slate-400 block uppercase">Scheduled</span>
-                    <span className="text-teal-700 font-extrabold">{item.scheduledTime}</span>
+                    <span className="text-[#EA6993] font-extrabold">{item.scheduledTime}</span>
                   </div>
                   <div>
                     <span className="text-[8px] text-slate-400 block uppercase">Priority</span>
@@ -274,7 +274,7 @@ export default function CEOFollowups() {
                           {item.employeeCode}
                         </span>
                       </td>
-                      <td className="px-5 py-3.5 text-[#004749]">{item.executive}</td>
+                      <td className="px-5 py-3.5 text-[#832D51]">{item.executive}</td>
                       <td className="px-5 py-3.5 text-slate-650">{item.type}</td>
                       <td className="px-5 py-3.5 text-slate-800">{item.scheduledTime}</td>
                       <td className="px-5 py-3.5">
@@ -288,7 +288,7 @@ export default function CEOFollowups() {
                       <td className="px-5 py-3.5 text-center">
                         <button
                           onClick={() => setSelectedItem(item)}
-                          className="px-2.5 py-1.5 rounded-xl bg-[#004749] hover:bg-[#003638] text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition active:scale-95 flex items-center gap-1 mx-auto"
+                          className="px-2.5 py-1.5 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition active:scale-95 flex items-center gap-1 mx-auto"
                         >
                           <Eye size={12} /> View
                         </button>
@@ -308,7 +308,7 @@ export default function CEOFollowups() {
           <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full p-6 space-y-4 shadow-2xl animate-in zoom-in-95 duration-150 text-slate-900 text-xs font-bold">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                <PhoneCall className="w-5 h-5 text-[#004749]" /> Follow-Up Log Detail
+                <PhoneCall className="w-5 h-5 text-[#832D51]" /> Follow-Up Log Detail
               </h3>
               <button onClick={() => setSelectedItem(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-900 hover:bg-slate-100 transition cursor-pointer">
                 <X size={18} />
@@ -329,7 +329,7 @@ export default function CEOFollowups() {
               <div className="grid grid-cols-2 gap-3 pt-2">
                 <div>
                   <span className="text-[9px] text-slate-400 block uppercase">REPRESENTATIVE</span>
-                  <p className="text-xs text-[#004749] mt-0.5">{selectedItem.executive}</p>
+                  <p className="text-xs text-[#832D51] mt-0.5">{selectedItem.executive}</p>
                 </div>
                 <div>
                   <span className="text-[9px] text-slate-400 block uppercase">EMPLOYEE CODE</span>

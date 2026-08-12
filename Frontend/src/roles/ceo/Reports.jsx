@@ -128,7 +128,7 @@ function Reports() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-teal-50 text-[#004749]">
+            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
               <FileText className="size-4.5" />
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -144,7 +144,7 @@ function Reports() {
         <div className="flex items-center gap-2">
           <button
             onClick={() => handleExport('pdf')}
-            className="flex items-center gap-1.5 rounded-xl bg-[#004749] hover:bg-[#013b3f] text-white px-3.5 py-2 text-xs font-black transition shadow-xs"
+            className="flex items-center gap-1.5 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white px-3.5 py-2 text-xs font-black transition shadow-xs"
           >
             <Download className="size-3.5" />
             Export PDF
@@ -184,7 +184,7 @@ function Reports() {
               onClick={() => setSelectedReportKey(tab.key)}
               className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
                 isActive
-                  ? 'bg-[#004749] text-white shadow-xs'
+                  ? 'bg-[#832D51] text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -205,7 +205,7 @@ function Reports() {
               placeholder={`Search in ${activeDataset.title}...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#004749]"
+              className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
             />
           </div>
         </div>
@@ -238,7 +238,7 @@ function Reports() {
               Showing {filteredRows.length} verified records for {dateFilter}
             </p>
           </div>
-          <span className="rounded-full bg-teal-50 px-3 py-1 text-xs font-black text-[#004749]">
+          <span className="rounded-full bg-[#F8CAE4]/20 px-3 py-1 text-xs font-black text-[#832D51]">
             {filteredRows.length} Records
           </span>
         </div>
@@ -262,7 +262,7 @@ function Reports() {
                       {cIdx === 0 ? (
                         <span className="font-black text-slate-900">{row[col]}</span>
                       ) : col.includes('Value') || col.includes('Amount') || col.includes('Revenue') ? (
-                        <span className="font-black text-[#004749]">{row[col]}</span>
+                        <span className="font-black text-[#832D51]">{row[col]}</span>
                       ) : col === 'Stage' || col === 'Status' ? (
                         <span
                           className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${

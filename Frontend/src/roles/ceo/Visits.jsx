@@ -381,10 +381,10 @@ export default function CEOVisits() {
   return (
     <div className="mx-auto max-w-[1400px] space-y-6 text-slate-900 font-sans pb-12 animate-in fade-in duration-200">
       {/* HEADER PANEL */}
-      <div className="bg-gradient-to-r from-[#004749]/10 via-white to-[#004749]/5 border-2 border-[#004749]/20 p-6 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
+      <div className="bg-gradient-to-r from-[#832D51]/10 via-white to-[#832D51]/5 border-2 border-[#832D51]/20 p-6 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
         <div>
           <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-            <MapPin className="w-7 h-7 text-[#004749]" /> Telemetry & Field Visits Audit
+            <MapPin className="w-7 h-7 text-[#832D51]" /> Telemetry & Field Visits Audit
           </h1>
           <p className="text-xs text-slate-500 font-bold mt-1">
             Real-time GPS check-ins, field logs, client requirements, and audit details for all Sales Executives.
@@ -393,7 +393,7 @@ export default function CEOVisits() {
 
         <button
           onClick={fetchTeamAuditData}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#004749] hover:bg-[#003638] text-white font-black text-xs shadow-md transition cursor-pointer"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white font-black text-xs shadow-md transition cursor-pointer"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh Telemetry
         </button>
@@ -402,8 +402,8 @@ export default function CEOVisits() {
       {/* VISIT SUMMARY CARDS */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-4">
         {/* Scheduled Card */}
-        <div className="bg-[#b09b72]/5 border border-[#b09b72]/20 p-4 rounded-xl shadow-xs hover:scale-[1.02] transition">
-          <span className="text-[10px] font-black uppercase tracking-wider text-[#b09b72]">Scheduled</span>
+        <div className="bg-[#EA6993]/5 border border-[#EA6993]/20 p-4 rounded-xl shadow-xs hover:scale-[1.02] transition">
+          <span className="text-[10px] font-black uppercase tracking-wider text-[#EA6993]">Scheduled</span>
           <h2 className="text-2xl font-black text-slate-900 mt-1">{summary.scheduled_today}</h2>
           <p className="text-[10px] text-slate-400 font-bold mt-1">Today's Appointments</p>
         </div>
@@ -416,8 +416,8 @@ export default function CEOVisits() {
         </div>
 
         {/* Active Card */}
-        <div className="bg-[#004749]/5 border border-[#004749]/20 p-4 rounded-xl shadow-xs hover:scale-[1.02] transition">
-          <span className="text-[10px] font-black uppercase tracking-wider text-[#004749]">Pending / Active</span>
+        <div className="bg-[#832D51]/5 border border-[#832D51]/20 p-4 rounded-xl shadow-xs hover:scale-[1.02] transition">
+          <span className="text-[10px] font-black uppercase tracking-wider text-[#832D51]">Pending / Active</span>
           <h2 className="text-2xl font-black text-slate-900 mt-1">{summary.pending_visits}</h2>
           <p className="text-[10px] text-slate-400 font-bold mt-1">Checked-In/In Progress</p>
         </div>
@@ -471,7 +471,7 @@ export default function CEOVisits() {
                   setPage(1)
                 }}
                 placeholder="SE Name / Code..."
-                className="bg-white border border-[#004749]/40 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#004749] w-[180px] shadow-2xs"
+                className="bg-white border border-[#832D51]/40 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-900 focus:outline-none focus:border-[#832D51] w-[180px] shadow-2xs"
                 autoFocus
               />
             )}
@@ -488,7 +488,7 @@ export default function CEOVisits() {
                 setPage(1)
               }}
               placeholder="Search Customer, ID, SE Name, EMP Code..."
-              className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-[#004749] font-bold"
+              className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-[#832D51] font-bold"
             />
           </div>
         </div>
@@ -516,8 +516,8 @@ export default function CEOVisits() {
           </div>
 
           {/* Linear Date Filters */}
-          <div className="flex items-center gap-1 bg-[#004749]/5 p-1 rounded-xl border border-[#004749]/20">
-            <span className="text-[10px] font-black text-[#004749] px-2">Date:</span>
+          <div className="flex items-center gap-1 bg-[#832D51]/5 p-1 rounded-xl border border-[#832D51]/20">
+            <span className="text-[10px] font-black text-[#832D51] px-2">Date:</span>
             {['All', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
               <button
                 key={tab}
@@ -525,7 +525,7 @@ export default function CEOVisits() {
                 onClick={() => handleLinearDateFilter(tab)}
                 className={`px-3 py-1 text-[10px] font-black uppercase rounded-lg transition cursor-pointer ${
                   dateFilterTab === tab
-                    ? 'bg-[#004749] text-white shadow-xs'
+                    ? 'bg-[#832D51] text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-950'
                 }`}
               >
@@ -535,7 +535,7 @@ export default function CEOVisits() {
           </div>
 
           {dateFilterTab === 'Custom' && (
-            <div className="flex items-center gap-2 bg-[#004749]/5 border border-[#004749]/20 rounded-xl px-3 py-1.5 font-bold">
+            <div className="flex items-center gap-2 bg-[#832D51]/5 border border-[#832D51]/20 rounded-xl px-3 py-1.5 font-bold">
               <span className="text-slate-500">From:</span>
               <input
                 type="date"
@@ -592,7 +592,7 @@ export default function CEOVisits() {
               {loading ? (
                 <tr>
                   <td colSpan="6" className="text-center py-16 text-slate-400">
-                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#004749] mb-2" />
+                    <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#832D51] mb-2" />
                     <span className="text-xs font-bold text-slate-400">Syncing field telemetry from Supabase...</span>
                   </td>
                 </tr>
@@ -634,7 +634,7 @@ export default function CEOVisits() {
                     <td className="px-6 py-4 text-center">
                       <button
                         onClick={() => setSelectedAuditModal(visit)}
-                        className="px-3 py-1.5 rounded-xl bg-[#004749] hover:bg-[#003638] text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition active:scale-95 flex items-center gap-1 mx-auto"
+                        className="px-3 py-1.5 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition active:scale-95 flex items-center gap-1 mx-auto"
                       >
                         <Eye size={12} /> Audit Details
                       </button>
@@ -682,7 +682,7 @@ export default function CEOVisits() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[9px] font-black uppercase text-[#004749] bg-[#004749]/5 px-2 py-0.5 rounded border border-[#004749]/15">
+                  <span className="text-[9px] font-black uppercase text-[#832D51] bg-[#832D51]/5 px-2 py-0.5 rounded border border-[#832D51]/15">
                     Field Telemetry Audit
                   </span>
                   <span className="text-[9px] font-mono font-black text-slate-500 bg-slate-50 px-2 py-0.5 rounded border border-slate-200">
@@ -690,7 +690,7 @@ export default function CEOVisits() {
                   </span>
                 </div>
                 <h3 className="text-lg font-black text-slate-900 mt-1 flex items-center gap-2">
-                  <Building2 className="w-5 h-5 text-[#004749]" /> {selectedAuditModal.customer_name}
+                  <Building2 className="w-5 h-5 text-[#832D51]" /> {selectedAuditModal.customer_name}
                 </h3>
               </div>
               <button 
@@ -707,7 +707,7 @@ export default function CEOVisits() {
                 <span className="text-[9px] font-black uppercase text-slate-400">Assigned Sales Executive</span>
                 <p className="font-black text-slate-900 text-sm">{selectedAuditModal.assigned_to}</p>
                 <p className="text-[10px] text-slate-500 font-mono">{selectedAuditModal.assigned_to_email}</p>
-                <p className="text-[10px] text-[#004749] font-black mt-1">Emp Code: {selectedAuditModal.employee_code}</p>
+                <p className="text-[10px] text-[#832D51] font-black mt-1">Emp Code: {selectedAuditModal.employee_code}</p>
               </div>
 
               <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
@@ -719,8 +719,8 @@ export default function CEOVisits() {
             </div>
 
             {/* Telemetry Check-in GPS Data */}
-            <div className="p-4 rounded-xl border border-[#b09b72]/30 bg-[#b09b72]/5 space-y-3">
-              <span className="text-[10px] font-black text-[#b09b72] uppercase tracking-wider block">GPS Verified Check-in Telemetry</span>
+            <div className="p-4 rounded-xl border border-[#EA6993]/30 bg-[#EA6993]/5 space-y-3">
+              <span className="text-[10px] font-black text-[#EA6993] uppercase tracking-wider block">GPS Verified Check-in Telemetry</span>
               
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>

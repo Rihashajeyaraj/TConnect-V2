@@ -243,7 +243,7 @@ function TeamManagement() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-teal-50 text-[#004749]">
+            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
               <Users2 className="size-4.5" />
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -257,7 +257,7 @@ function TeamManagement() {
 
         <button
           onClick={handleOpenAdd}
-          className="flex items-center gap-2 rounded-xl bg-[#004749] hover:bg-[#013b3f] text-white px-4 py-2.5 text-xs font-black transition shadow-xs"
+          className="flex items-center gap-2 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white px-4 py-2.5 text-xs font-black transition shadow-xs"
         >
           <Plus className="size-4" />
           Add Employee / Rep
@@ -288,8 +288,8 @@ function TeamManagement() {
         <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Sales Managers</span>
           <div className="mt-3 flex items-baseline justify-between">
-            <p className="text-3xl font-black text-[#004749]">{totalManagers}</p>
-            <span className="text-xs font-bold text-teal-700">Team Leaders</span>
+            <p className="text-3xl font-black text-[#832D51]">{totalManagers}</p>
+            <span className="text-xs font-bold text-[#EA6993]">Team Leaders</span>
           </div>
         </div>
 
@@ -297,7 +297,7 @@ function TeamManagement() {
         <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Sales Executives</span>
           <div className="mt-3 flex items-baseline justify-between">
-            <p className="text-3xl font-black text-[#b09b72]">{totalExecutives}</p>
+            <p className="text-3xl font-black text-[#EA6993]">{totalExecutives}</p>
             <span className="text-xs font-bold text-amber-700">Field / Inside Sales</span>
           </div>
         </div>
@@ -312,7 +312,7 @@ function TeamManagement() {
               onClick={() => setActiveTab(tab)}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
                 activeTab === tab
-                  ? 'bg-[#004749] text-white shadow-xs'
+                  ? 'bg-[#832D51] text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -328,7 +328,7 @@ function TeamManagement() {
             placeholder="Search staff, designation, manager..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#004749]"
+            className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
           />
         </div>
       </div>
@@ -352,13 +352,13 @@ function TeamManagement() {
                 {/* Manager Node Header */}
                 <div className="flex items-start justify-between border-b border-slate-100 pb-4">
                   <div className="flex items-center gap-3">
-                    <span className="grid size-12 place-items-center rounded-2xl bg-[#004749] text-white font-black text-sm shadow-sm">
+                    <span className="grid size-12 place-items-center rounded-2xl bg-[#832D51] text-white font-black text-sm shadow-sm">
                       {mgr.name.split(' ').map((n) => n[0]).join('')}
                     </span>
                     <div>
                       <div className="flex items-center gap-2">
                         <h3 className="text-base font-black text-slate-900">{mgr.name}</h3>
-                        <span className="rounded bg-teal-50 px-2 py-0.5 text-[10px] font-black text-[#004749]">
+                        <span className="rounded bg-[#F8CAE4]/20 px-2 py-0.5 text-[10px] font-black text-[#832D51]">
                           Sales Manager
                         </span>
                       </div>
@@ -450,7 +450,7 @@ function TeamManagement() {
                         emp.role === 'Admin'
                           ? 'bg-purple-50 text-purple-700 border border-purple-200'
                           : emp.role === 'Sales Manager'
-                          ? 'bg-teal-50 text-[#004749] border border-teal-200'
+                          ? 'bg-[#F8CAE4]/20 text-[#832D51] border border-[#EA6993]/30'
                           : 'bg-amber-50 text-amber-800 border border-amber-200'
                       }`}
                     >
@@ -460,7 +460,7 @@ function TeamManagement() {
                   <td className="py-3 text-slate-700">{emp.department}</td>
                   <td className="py-3 text-slate-600 font-bold">{emp.manager || 'None'}</td>
                   <td className="py-3 font-extrabold text-slate-900">{emp.deals_won}</td>
-                  <td className="py-3 font-black text-[#004749]">
+                  <td className="py-3 font-black text-[#832D51]">
                     ₹{emp.revenue.toLocaleString()}
                   </td>
                   <td className="py-3">
@@ -508,7 +508,7 @@ function TeamManagement() {
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="e.g. Rahul Verma"
-                  className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#004749]"
+                  className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#832D51]"
                 />
               </div>
 
@@ -520,7 +520,7 @@ function TeamManagement() {
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="email@tconnect.com"
-                    className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#004749]"
+                    className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#832D51]"
                   />
                 </div>
                 <div>
@@ -530,7 +530,7 @@ function TeamManagement() {
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
                     placeholder="+91 99999 88888"
-                    className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#004749]"
+                    className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#832D51]"
                   />
                 </div>
               </div>
@@ -572,7 +572,7 @@ function TeamManagement() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-[#004749] px-5 py-2 font-bold text-white hover:bg-[#013b3f]"
+                  className="rounded-xl bg-[#832D51] px-5 py-2 font-bold text-white hover:bg-[#6a2240]"
                 >
                   Save Employee
                 </button>

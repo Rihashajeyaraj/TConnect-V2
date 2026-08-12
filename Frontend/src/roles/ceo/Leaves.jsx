@@ -113,7 +113,7 @@ function Leaves() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
         <div>
           <h2 className="text-xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <Calendar className="w-5 h-5 text-[#004749]" /> Executive Leave Management
+            <Calendar className="w-5 h-5 text-[#832D51]" /> Executive Leave Management
           </h2>
           <p className="mt-0.5 text-xs font-semibold text-slate-500">
             Review and approve leave requests submitted by corporate Admins and Sales Managers.
@@ -130,7 +130,7 @@ function Leaves() {
             placeholder="Search by corporate representative..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-xs font-bold text-slate-900 outline-none transition focus:border-[#b09b72] focus:bg-white"
+            className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-xs font-bold text-slate-900 outline-none transition focus:border-[#EA6993] focus:bg-white"
           />
         </div>
         <select
@@ -166,7 +166,7 @@ function Leaves() {
               <tr key={l.id} className="hover:bg-slate-50/50 transition">
                 <td className="px-6 py-4 text-slate-900 font-bold">{l.name}</td>
                 <td className="px-6 py-4">
-                  <span className="bg-[#b09b72]/10 text-[#938160] px-2 py-0.5 rounded-lg text-[9px] font-black uppercase">
+                  <span className="bg-[#EA6993]/10 text-[#938160] px-2 py-0.5 rounded-lg text-[9px] font-black uppercase">
                     {l.role}
                   </span>
                 </td>
@@ -243,7 +243,7 @@ function Leaves() {
                   value={remarks}
                   onChange={(e) => setRemarks(e.target.value)}
                   placeholder="Add corporate reason or note for this decision..."
-                  className="w-full h-20 rounded-xl border border-slate-200 p-3 font-bold text-slate-900 outline-none focus:border-[#b09b72] resize-none"
+                  className="w-full h-20 rounded-xl border border-slate-200 p-3 font-bold text-slate-900 outline-none focus:border-[#EA6993] resize-none"
                 />
               </div>
 

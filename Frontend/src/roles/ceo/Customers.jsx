@@ -220,7 +220,7 @@ function CeoCustomers() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-teal-50 text-[#004749]">
+            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
               <Building2 className="size-4.5" />
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -248,8 +248,8 @@ function CeoCustomers() {
         <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
           <span className="text-xs font-bold uppercase tracking-wider text-slate-500">New Customers</span>
           <div className="mt-3">
-            <p className="text-3xl font-black text-[#004749]">+{newCustomersCount}</p>
-            <p className="text-xs font-bold text-teal-700 mt-0.5">Onboarded in Recent Cycle</p>
+            <p className="text-3xl font-black text-[#832D51]">+{newCustomersCount}</p>
+            <p className="text-xs font-bold text-[#EA6993] mt-0.5">Onboarded in Recent Cycle</p>
           </div>
         </div>
 
@@ -271,7 +271,7 @@ function CeoCustomers() {
             <p className="text-3xl font-black text-slate-900">
               ₹{(totalCustomerRevenue / 100000).toFixed(1)}L
             </p>
-            <p className="text-xs font-bold text-[#004749] mt-0.5">Cumulative Contract Value</p>
+            <p className="text-xs font-bold text-[#832D51] mt-0.5">Cumulative Contract Value</p>
           </div>
         </div>
       </div>
@@ -289,7 +289,7 @@ function CeoCustomers() {
                 Monthly new customer additions and cumulative client expansion
               </p>
             </div>
-            <TrendingUp className="size-5 text-[#004749]" />
+            <TrendingUp className="size-5 text-[#832D51]" />
           </div>
 
           <div className="h-64 w-full">
@@ -297,8 +297,8 @@ function CeoCustomers() {
               <AreaChart data={ACQUISITION_TREND}>
                 <defs>
                   <linearGradient id="custGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#004749" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#004749" stopOpacity={0.0} />
+                    <stop offset="5%" stopColor="#832D51" stopOpacity={0.35} />
+                    <stop offset="95%" stopColor="#832D51" stopOpacity={0.0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
@@ -312,7 +312,7 @@ function CeoCustomers() {
                     borderRadius: '12px',
                   }}
                 />
-                <Area type="monotone" dataKey="totalCustomers" stroke="#004749" strokeWidth={3} fillOpacity={1} fill="url(#custGrad)" />
+                <Area type="monotone" dataKey="totalCustomers" stroke="#832D51" strokeWidth={3} fillOpacity={1} fill="url(#custGrad)" />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -325,7 +325,7 @@ function CeoCustomers() {
               <h3 className="text-base font-extrabold text-slate-900 tracking-tight">
                 Top Accounts Leaderboard
               </h3>
-              <Award className="size-5 text-[#b09b72]" />
+              <Award className="size-5 text-[#EA6993]" />
             </div>
 
             <div className="space-y-3">
@@ -335,7 +335,7 @@ function CeoCustomers() {
                   className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-xs"
                 >
                   <div className="flex items-center gap-2.5">
-                    <span className="grid size-6 place-items-center rounded-full bg-[#004749] text-[10px] font-black text-white">
+                    <span className="grid size-6 place-items-center rounded-full bg-[#832D51] text-[10px] font-black text-white">
                       #{idx + 1}
                     </span>
                     <div>
@@ -344,7 +344,7 @@ function CeoCustomers() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="font-black text-[#004749]">₹{cust.revenue.toLocaleString()}</span>
+                    <span className="font-black text-[#832D51]">₹{cust.revenue.toLocaleString()}</span>
                     <p className="text-[10px] text-slate-400">{cust.sales_manager}</p>
                   </div>
                 </div>
@@ -375,7 +375,7 @@ function CeoCustomers() {
                 placeholder="Search customers..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#004749]"
+                className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
               />
             </div>
 
@@ -442,7 +442,7 @@ function CeoCustomers() {
                     <p className="font-bold text-slate-800">{cust.sales_executive}</p>
                     <p className="text-[10px] text-slate-400">Mgr: {cust.sales_manager}</p>
                   </td>
-                  <td className="py-3.5 font-black text-[#004749]">
+                  <td className="py-3.5 font-black text-[#832D51]">
                     ₹{cust.revenue.toLocaleString()}
                   </td>
                   <td className="py-3.5 text-slate-500 font-medium">{cust.onboarding_date}</td>
@@ -464,7 +464,7 @@ function CeoCustomers() {
                         setSelectedCust(cust)
                         setShowLifecycleModal(true)
                       }}
-                      className="inline-flex items-center gap-1 rounded-lg bg-teal-50 px-2.5 py-1 text-xs font-black text-[#004749] hover:bg-teal-100 transition"
+                      className="inline-flex items-center gap-1 rounded-lg bg-[#F8CAE4]/20 px-2.5 py-1 text-xs font-black text-[#832D51] hover:bg-[#F8CAE4]/40 transition"
                     >
                       <Eye className="size-3.5" />
                       View Journey
@@ -483,7 +483,7 @@ function CeoCustomers() {
           <div className="w-full max-w-2xl rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6">
             <div className="flex items-start justify-between border-b border-slate-100 pb-4">
               <div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#004749] bg-teal-50 px-2 py-0.5 rounded">
+                <span className="text-[10px] font-black uppercase tracking-widest text-[#832D51] bg-[#F8CAE4]/20 px-2 py-0.5 rounded">
                   Customer Lifecycle Journey
                 </span>
                 <h3 className="text-xl font-black text-slate-900 mt-1">{selectedCust.company}</h3>
@@ -518,13 +518,13 @@ function CeoCustomers() {
               {/* Step 2: Visits & Field Demo */}
               <div className="flex gap-4">
                 <div className="flex flex-col items-center">
-                  <span className="grid size-8 place-items-center rounded-full bg-teal-100 text-teal-700 font-bold text-xs">
+                  <span className="grid size-8 place-items-center rounded-full bg-[#F8CAE4]/40 text-[#EA6993] font-bold text-xs">
                     2
                   </span>
                   <div className="w-0.5 flex-1 bg-slate-200 my-1" />
                 </div>
                 <div className="bg-slate-50 rounded-2xl p-4 flex-1 border border-slate-200/70">
-                  <span className="text-xs font-black text-teal-700">Stage 2: Client Demos & Spatial Visits</span>
+                  <span className="text-xs font-black text-[#EA6993]">Stage 2: Client Demos & Spatial Visits</span>
                   <p className="text-xs text-slate-600 mt-1">
                     On-site architectural demos and requirements gathering executed at {selectedCust.location}.
                   </p>
@@ -553,7 +553,7 @@ function CeoCustomers() {
             <div className="flex justify-end pt-2">
               <button
                 onClick={() => setShowLifecycleModal(false)}
-                className="rounded-xl bg-[#004749] px-5 py-2 text-xs font-bold text-white transition hover:bg-[#013b3f]"
+                className="rounded-xl bg-[#832D51] px-5 py-2 text-xs font-bold text-white transition hover:bg-[#6a2240]"
               >
                 Close Inspector
               </button>

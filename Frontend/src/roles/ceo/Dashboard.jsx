@@ -82,10 +82,10 @@ function CeoDashboard() {
   ])
 
   const [salesFunnelData, setSalesFunnelData] = useState([
-    { stage: 'Total Ingested Leads', count: 142, value: '₹1.25 Cr', percentage: '100%', color: '#004749' },
-    { stage: 'Qualified Prospects', count: 86, value: '₹78.0 Lakhs', percentage: '60.5%', color: '#013b3f' },
-    { stage: 'Active Opportunities', count: 45, value: '₹42.5 Lakhs', percentage: '31.6%', color: '#b09b72' },
-    { stage: 'Won Closed Deals', count: 24, value: '₹28.4 Lakhs', percentage: '16.9%', color: '#540000' },
+    { stage: 'Total Ingested Leads', count: 142, value: '₹1.25 Cr', percentage: '100%', color: '#832D51' },
+    { stage: 'Qualified Prospects', count: 86, value: '₹78.0 Lakhs', percentage: '60.5%', color: '#6a2240' },
+    { stage: 'Active Opportunities', count: 45, value: '₹42.5 Lakhs', percentage: '31.6%', color: '#EA6993' },
+    { stage: 'Won Closed Deals', count: 24, value: '₹28.4 Lakhs', percentage: '16.9%', color: '#3a7d63' },
   ])
 
   const [managerPerformance, setManagerPerformance] = useState([
@@ -120,7 +120,7 @@ function CeoDashboard() {
 
   const [recentActivities, setRecentActivities] = useState([
     { id: 1, type: 'deal', title: 'Enterprise CRM Contract Signed', company: 'Apex Technologies Pvt Ltd', amount: '₹4,50,000', rep: 'Ananya Roy', time: '15 mins ago', icon: Award, color: 'text-amber-600 bg-amber-50' },
-    { id: 2, type: 'visit', title: 'Strategic On-site Demo Completed', company: 'Global Corp Solutions', amount: 'Pipeline: ₹2.5L', rep: 'Karthik Raja', time: '45 mins ago', icon: Target, color: 'text-teal-600 bg-teal-50' },
+    { id: 2, type: 'visit', title: 'Strategic On-site Demo Completed', company: 'Global Corp Solutions', amount: 'Pipeline: ₹2.5L', rep: 'Karthik Raja', time: '45 mins ago', icon: Target, color: 'text-[#EA6993] bg-[#F8CAE4]/20' },
     { id: 3, type: 'lead', title: 'New Enterprise Inbound Lead Registered', company: 'Zenith Logistics Hub', amount: 'Warm Category', rep: 'Marketing Portal', time: '2 hours ago', icon: Users, color: 'text-blue-600 bg-blue-50' },
     { id: 4, type: 'payment', title: 'Quarterly Renewal Retainer Received', company: 'Vertex Systems', amount: '₹3,00,000', rep: 'Finance Desk', time: '3 hours ago', icon: DollarSign, color: 'text-emerald-600 bg-emerald-50' },
   ])
@@ -301,7 +301,7 @@ function CeoDashboard() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-7 place-items-center rounded-lg bg-teal-50 text-[#004749]">
+            <span className="grid size-7 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
               <Sparkles className="size-4" />
             </span>
             <h1 className="text-xl font-black text-slate-900 tracking-tight">
@@ -321,7 +321,7 @@ function CeoDashboard() {
                 key={t}
                 onClick={() => setTimeRange(t)}
                 className={`px-3 py-1.5 rounded-lg transition ${
-                  timeRange === t ? 'bg-[#004749] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                  timeRange === t ? 'bg-[#832D51] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 {t}
@@ -351,8 +351,8 @@ function CeoDashboard() {
               onClick={() => setActiveKpi(kpi.id)}
               className={`text-left rounded-2xl p-4 transition-all duration-200 relative overflow-hidden group cursor-pointer border ${
                 isSelected
-                  ? 'bg-[#004749] text-white border-[#004749] shadow-lg shadow-[#004749]/20 ring-2 ring-[#b09b72]'
-                  : 'bg-white text-slate-900 border-slate-200/90 hover:border-[#004749]/50 hover:shadow-md'
+                  ? 'bg-[#832D51] text-white border-[#832D51] shadow-lg shadow-[#832D51]/20 ring-2 ring-[#EA6993]'
+                  : 'bg-white text-slate-900 border-slate-200/90 hover:border-[#832D51]/50 hover:shadow-md'
               }`}
             >
               {/* Header */}
@@ -368,7 +368,7 @@ function CeoDashboard() {
                   className={`grid size-8 place-items-center rounded-xl transition ${
                     isSelected
                       ? 'bg-white/15 text-white'
-                      : 'bg-slate-100 text-slate-600 group-hover:bg-teal-50 group-hover:text-[#004749]'
+                      : 'bg-slate-100 text-slate-600 group-hover:bg-[#F8CAE4]/20 group-hover:text-[#832D51]'
                   }`}
                 >
                   <Icon className="size-4" />
@@ -387,7 +387,7 @@ function CeoDashboard() {
                   <span
                     className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider ${
                       isSelected
-                        ? 'bg-[#b09b72] text-[#004749]'
+                        ? 'bg-[#EA6993] text-[#832D51]'
                         : 'bg-slate-100 text-slate-600'
                     }`}
                   >
@@ -398,7 +398,7 @@ function CeoDashboard() {
 
               {/* Bottom active indicator bar */}
               {isSelected && (
-                <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#b09b72]" />
+                <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#EA6993]" />
               )}
             </button>
           )
@@ -411,7 +411,7 @@ function CeoDashboard() {
         {/* Dynamic Display Header */}
         <div className="flex items-center justify-between border-b border-slate-100 pb-4">
           <div className="flex items-center gap-2.5">
-            <span className="grid size-8 place-items-center rounded-xl bg-teal-50 text-[#004749]">
+            <span className="grid size-8 place-items-center rounded-xl bg-[#F8CAE4]/20 text-[#832D51]">
               <Eye className="size-4.5" />
             </span>
             <div>
@@ -433,22 +433,22 @@ function CeoDashboard() {
 
           <div className="flex items-center gap-2">
             {activeKpi === 'revenue' && (
-              <Link to="/ceo/revenue-finance" className="text-xs font-bold text-[#004749] hover:underline flex items-center gap-1">
+              <Link to="/ceo/revenue-finance" className="text-xs font-bold text-[#832D51] hover:underline flex items-center gap-1">
                 Full Finance Statement <ChevronRight className="size-3.5" />
               </Link>
             )}
             {activeKpi === 'customers' && (
-              <Link to="/ceo/customers" className="text-xs font-bold text-[#004749] hover:underline flex items-center gap-1">
+              <Link to="/ceo/customers" className="text-xs font-bold text-[#832D51] hover:underline flex items-center gap-1">
                 Customer Database <ChevronRight className="size-3.5" />
               </Link>
             )}
             {activeKpi === 'leads' && (
-              <Link to="/ceo/sales-overview" className="text-xs font-bold text-[#004749] hover:underline flex items-center gap-1">
+              <Link to="/ceo/sales-overview" className="text-xs font-bold text-[#832D51] hover:underline flex items-center gap-1">
                 Sales Pipeline <ChevronRight className="size-3.5" />
               </Link>
             )}
             {activeKpi === 'approvals' && (
-              <Link to="/ceo/hrms" className="text-xs font-bold text-[#004749] hover:underline flex items-center gap-1">
+              <Link to="/ceo/hrms" className="text-xs font-bold text-[#832D51] hover:underline flex items-center gap-1">
                 Full HRMS Hub <ChevronRight className="size-3.5" />
               </Link>
             )}
@@ -463,16 +463,16 @@ function CeoDashboard() {
                 <AreaChart data={revenueTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                   <defs>
                     <linearGradient id="revenueGradMinimal" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#004749" stopOpacity={0.4} />
-                      <stop offset="95%" stopColor="#004749" stopOpacity={0.0} />
+                      <stop offset="5%" stopColor="#832D51" stopOpacity={0.4} />
+                      <stop offset="95%" stopColor="#832D51" stopOpacity={0.0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                   <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} tickLine={false} />
                   <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} tickFormatter={(val) => `₹${val / 1000}k`} />
                   <Tooltip formatter={(val) => [`₹${Number(val).toLocaleString()}`, 'Revenue']} />
-                  <Area type="monotone" dataKey="revenue" stroke="#004749" strokeWidth={3} fill="url(#revenueGradMinimal)" />
-                  <Area type="monotone" dataKey="target" stroke="#b09b72" strokeWidth={2} strokeDasharray="4 4" fill="none" />
+                  <Area type="monotone" dataKey="revenue" stroke="#832D51" strokeWidth={3} fill="url(#revenueGradMinimal)" />
+                  <Area type="monotone" dataKey="target" stroke="#EA6993" strokeWidth={2} strokeDasharray="4 4" fill="none" />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -486,7 +486,7 @@ function CeoDashboard() {
                       <h4 className="text-sm font-black text-slate-900">{mgr.name}</h4>
                       <p className="text-xs text-slate-500">{mgr.region}</p>
                     </div>
-                    <span className="rounded bg-teal-50 px-2 py-0.5 text-xs font-black text-[#004749]">
+                    <span className="rounded bg-[#F8CAE4]/20 px-2 py-0.5 text-xs font-black text-[#832D51]">
                       {mgr.achievement}% Quota
                     </span>
                   </div>
@@ -517,7 +517,7 @@ function CeoDashboard() {
                       <p className="font-extrabold text-slate-900">{c.company}</p>
                       <p className="text-[10px] text-slate-400">{c.location} · Rep: {c.rep}</p>
                     </div>
-                    <span className="font-black text-[#004749]">{c.value}</span>
+                    <span className="font-black text-[#832D51]">{c.value}</span>
                   </div>
                 ))}
               </div>
@@ -532,7 +532,7 @@ function CeoDashboard() {
                     <p className="text-[11px] font-bold text-slate-500 mt-1">Total Active Clients</p>
                   </div>
                   <div className="bg-white p-4 rounded-xl border border-slate-200/70">
-                    <span className="text-2xl font-black text-teal-700">+{metrics.newCustomers}</span>
+                    <span className="text-2xl font-black text-[#EA6993]">+{metrics.newCustomers}</span>
                     <p className="text-[11px] font-bold text-slate-500 mt-1">New This Quarter</p>
                   </div>
                 </div>
@@ -552,13 +552,13 @@ function CeoDashboard() {
                 <div key={i} className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-1">
                   <span className="text-[10px] font-bold uppercase text-slate-400">{f.stage}</span>
                   <p className="text-xl font-black text-slate-900">{f.count}</p>
-                  <p className="text-xs font-bold text-[#004749]">{f.value}</p>
+                  <p className="text-xs font-bold text-[#832D51]">{f.value}</p>
                 </div>
               ))}
             </div>
-            <div className="rounded-2xl bg-teal-50/60 p-4 border border-teal-200 flex items-center justify-between text-xs">
-              <span className="font-bold text-[#004749]">Cumulative Funnel Win Rate: {metrics.conversionRate}%</span>
-              <Link to="/ceo/sales-overview" className="font-black text-[#004749] hover:underline">Open Pipeline Kanban →</Link>
+            <div className="rounded-2xl bg-[#F8CAE4]/20/60 p-4 border border-[#EA6993]/30 flex items-center justify-between text-xs">
+              <span className="font-bold text-[#832D51]">Cumulative Funnel Win Rate: {metrics.conversionRate}%</span>
+              <Link to="/ceo/sales-overview" className="font-black text-[#832D51] hover:underline">Open Pipeline Kanban →</Link>
             </div>
           </div>
         )}
@@ -569,7 +569,7 @@ function CeoDashboard() {
             <div className="grid gap-4 sm:grid-cols-3">
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-center">
                 <span className="text-[11px] font-bold text-slate-500 uppercase">Total Weighted Pipeline</span>
-                <p className="text-2xl font-black text-[#004749] mt-1">₹42.50 Lakhs</p>
+                <p className="text-2xl font-black text-[#832D51] mt-1">₹42.50 Lakhs</p>
               </div>
               <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-center">
                 <span className="text-[11px] font-bold text-slate-500 uppercase">Active Proposal Stage</span>
@@ -588,11 +588,11 @@ function CeoDashboard() {
           <div className="space-y-4">
             <div className="flex justify-between text-xs font-bold">
               <span className="text-slate-600">Annual Target Benchmark</span>
-              <span className="text-[#004749] font-black">{targetPercentage}% (₹2.84 Cr / ₹3.50 Cr)</span>
+              <span className="text-[#832D51] font-black">{targetPercentage}% (₹2.84 Cr / ₹3.50 Cr)</span>
             </div>
             <div className="h-4 w-full rounded-full bg-slate-100 overflow-hidden p-0.5 border border-slate-200">
               <div
-                className="h-full rounded-full bg-gradient-to-r from-[#004749] via-[#013b3f] to-[#b09b72]"
+                className="h-full rounded-full bg-gradient-to-r from-[#832D51] via-[#6a2240] to-[#EA6993]"
                 style={{ width: `${targetPercentage}%` }}
               />
             </div>
@@ -644,7 +644,7 @@ function CeoDashboard() {
                 <div key={req.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs">
                   <div>
                     <div className="flex items-center gap-2">
-                      <span className="rounded bg-teal-50 px-1.5 py-0.2 text-[9px] font-black text-[#004749] uppercase">
+                      <span className="rounded bg-[#F8CAE4]/20 px-1.5 py-0.2 text-[9px] font-black text-[#832D51] uppercase">
                         {req.category}
                       </span>
                       <span className="font-extrabold text-slate-900">{req.name} ({req.role})</span>
@@ -660,7 +660,7 @@ function CeoDashboard() {
                     </button>
                     <button
                       onClick={() => handleQuickApproval(req.id, req.type, 'Approved')}
-                      className="rounded-lg bg-[#004749] text-white px-3 py-1 text-[11px] font-bold hover:bg-[#013b3f]"
+                      className="rounded-lg bg-[#832D51] text-white px-3 py-1 text-[11px] font-bold hover:bg-[#6a2240]"
                     >
                       Approve
                     </button>
@@ -688,7 +688,7 @@ function CeoDashboard() {
                     </div>
                   </div>
                   <div className="text-right">
-                    <span className="font-black text-[#004749]">{act.amount}</span>
+                    <span className="font-black text-[#832D51]">{act.amount}</span>
                     <p className="text-[9px] text-slate-400">{act.time}</p>
                   </div>
                 </div>

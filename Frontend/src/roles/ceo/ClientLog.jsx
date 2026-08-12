@@ -165,7 +165,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
           date: formatDateString(v.visit_date || v.scheduled_date || v.created_at),
           description: `Site visit completed by Sales Executive ${cust.sales_executive || 'SE'}. Check-in verification: GPS location logged. Status: ${v.status || 'Completed'}. Remarks: ${v.notes || 'Meeting completed successfully.'}`,
           icon: Calendar,
-          color: 'bg-[#b09b72]'
+          color: 'bg-[#EA6993]'
         })
       })
     } else {
@@ -174,7 +174,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
         date: formatDateString(cust.created_at),
         description: `GPS verified Client Site Visit completed by Sales Executive ${cust.sales_executive || 'SE'}. Product requirements gathered and logged.`,
         icon: Calendar,
-        color: 'bg-[#b09b72]'
+        color: 'bg-[#EA6993]'
       })
     }
 
@@ -217,7 +217,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
             className="p-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 transition cursor-pointer"
             title="Refresh Registry"
           >
-            <RefreshCw size={15} className={refreshing ? 'animate-spin text-[#004749]' : ''} />
+            <RefreshCw size={15} className={refreshing ? 'animate-spin text-[#832D51]' : ''} />
           </button>
         </div>
       </div>
@@ -229,8 +229,8 @@ export default function ClientLog({ initialSection = 'leads' }) {
           onClick={() => handleCardClick('leads')}
           className={`rounded-2xl border p-6 shadow-md transition-all duration-300 cursor-pointer group flex items-center justify-between hover:scale-[1.01] hover:shadow-lg ${
             activeSection === 'leads' && showTable 
-              ? 'bg-gradient-to-br from-[#b09b72] to-[#8d764b] text-white border-none ring-4 ring-[#b09b72]/20' 
-              : 'border-[#b09b72]/20 bg-[#b09b72]/5 hover:bg-[#b09b72]/10 text-[#b09b72]'
+              ? 'bg-gradient-to-br from-[#EA6993] to-[#8d764b] text-white border-none ring-4 ring-[#EA6993]/20' 
+              : 'border-[#EA6993]/20 bg-[#EA6993]/5 hover:bg-[#EA6993]/10 text-[#EA6993]'
           }`}
         >
           <div>
@@ -253,7 +253,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
           <span className={`grid size-12 place-items-center rounded-xl transition-transform duration-300 group-hover:scale-110 shadow-xs ${
             activeSection === 'leads' && showTable 
               ? 'bg-white/20 text-white' 
-              : 'bg-[#b09b72]/15 text-[#b09b72]'
+              : 'bg-[#EA6993]/15 text-[#EA6993]'
           }`}>
             <Target className="size-5" />
           </span>
@@ -264,8 +264,8 @@ export default function ClientLog({ initialSection = 'leads' }) {
           onClick={() => handleCardClick('customers')}
           className={`rounded-2xl border p-6 shadow-md transition-all duration-300 cursor-pointer group flex items-center justify-between hover:scale-[1.01] hover:shadow-lg ${
             activeSection === 'customers' && showTable 
-              ? 'bg-gradient-to-br from-[#004749] to-[#002f31] text-white border-none ring-4 ring-[#004749]/20' 
-              : 'border-[#004749]/20 bg-[#004749]/5 hover:bg-[#004749]/10 text-[#004749]'
+              ? 'bg-gradient-to-br from-[#832D51] to-[#002f31] text-white border-none ring-4 ring-[#832D51]/20' 
+              : 'border-[#832D51]/20 bg-[#832D51]/5 hover:bg-[#832D51]/10 text-[#832D51]'
           }`}
         >
           <div>
@@ -288,7 +288,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
           <span className={`grid size-12 place-items-center rounded-xl transition-transform duration-300 group-hover:scale-110 shadow-xs ${
             activeSection === 'customers' && showTable 
               ? 'bg-white/20 text-white' 
-              : 'bg-[#004749]/15 text-[#004749]'
+              : 'bg-[#832D51]/15 text-[#832D51]'
           }`}>
             <Users className="size-5" />
           </span>
@@ -311,7 +311,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
                       onClick={() => setLeadsCategory(cat)}
                       className={`px-4 py-1.5 text-xs font-black uppercase rounded-lg transition cursor-pointer ${
                         leadsCategory === cat
-                          ? 'bg-[#004749] text-white shadow-xs'
+                          ? 'bg-[#832D51] text-white shadow-xs'
                           : 'text-slate-500 hover:text-slate-955'
                       }`}
                     >
@@ -350,7 +350,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
                       {loading ? (
                         <tr>
                           <td colSpan="6" className="text-center py-12">
-                            <RefreshCw className="size-6 animate-spin text-[#004749] mx-auto" />
+                            <RefreshCw className="size-6 animate-spin text-[#832D51] mx-auto" />
                             <p className="text-xs text-slate-400 font-bold mt-2">Loading leads...</p>
                           </td>
                         </tr>
@@ -364,7 +364,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
                             <td className="px-6 py-4 text-slate-500 font-semibold">
                               {formatDateString(lead.date || lead.created_at)}
                             </td>
-                            <td className="px-6 py-4 text-[#540000] font-black">
+                            <td className="px-6 py-4 text-[#3a7d63] font-black">
                               {lead.sales_manager || lead.manager_name || 'Direct/Unassigned'}
                             </td>
                             <td className="px-6 py-4 text-slate-900 font-black">
@@ -443,7 +443,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
                       {loading ? (
                         <tr>
                           <td colSpan="8" className="text-center py-12">
-                            <RefreshCw className="size-6 animate-spin text-[#004749] mx-auto" />
+                            <RefreshCw className="size-6 animate-spin text-[#832D51] mx-auto" />
                             <p className="text-xs text-slate-400 font-bold mt-2">Loading customers...</p>
                           </td>
                         </tr>
@@ -457,7 +457,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
                             <td className="px-6 py-4 text-slate-500 font-semibold">
                               {formatDateString(cust.created_at || cust.date)}
                             </td>
-                            <td className="px-6 py-4 text-[#540000] font-black">
+                            <td className="px-6 py-4 text-[#3a7d63] font-black">
                               {cust.sales_manager || 'Direct/Unassigned'}
                             </td>
                             <td className="px-6 py-4 text-slate-900 font-black">
@@ -485,7 +485,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
                                   setSelectedCust(cust)
                                   setIsLifecycleModalOpen(true)
                                 }}
-                                className="px-3 py-1.5 rounded-xl bg-[#004749] hover:bg-[#003638] text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition active:scale-95"
+                                className="px-3 py-1.5 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition active:scale-95"
                               >
                                 View Cycle
                               </button>
@@ -516,7 +516,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
               <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-6">
                 <div>
                   <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-                    <Briefcase className="size-5 text-[#004749]" />
+                    <Briefcase className="size-5 text-[#832D51]" />
                     <span>Customer Conversion Cycle</span>
                   </h3>
                   <p className="text-xs font-semibold text-slate-400 mt-1">Lifecycle timeline for {selectedCust.company || selectedCust.name}</p>

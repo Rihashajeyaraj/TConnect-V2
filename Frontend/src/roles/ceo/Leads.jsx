@@ -81,7 +81,7 @@ function Leads() {
             className="p-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 transition cursor-pointer"
             title="Refresh Leads"
           >
-            <RefreshCw size={15} className={refreshing ? 'animate-spin text-[#004749]' : ''} />
+            <RefreshCw size={15} className={refreshing ? 'animate-spin text-[#832D51]' : ''} />
           </button>
         </div>
       </div>
@@ -93,7 +93,7 @@ function Leads() {
             setShowTable(!showTable)
           }}
           className={`rounded-2xl border p-6 shadow-sm hover:shadow-md transition duration-300 cursor-pointer group flex items-center justify-between ${
-            showTable ? 'border-[#004749] bg-slate-50/40' : 'border-[#b09b72]/40 bg-white'
+            showTable ? 'border-[#832D51] bg-slate-50/40' : 'border-[#EA6993]/40 bg-white'
           }`}
         >
           <div>
@@ -105,7 +105,7 @@ function Leads() {
             </p>
           </div>
           <span className={`grid size-12 place-items-center rounded-xl shadow-2xs group-hover:scale-105 transition ${
-            showTable ? 'bg-[#004749]/10 border border-[#004749]/20 text-[#004749]' : 'bg-[#b09b72]/10 border border-[#b09b72]/20 text-[#b09b72]'
+            showTable ? 'bg-[#832D51]/10 border border-[#832D51]/20 text-[#832D51]' : 'bg-[#EA6993]/10 border border-[#EA6993]/20 text-[#EA6993]'
           }`}>
             <Target className="size-5" />
           </span>
@@ -125,7 +125,7 @@ function Leads() {
                   onClick={() => setCategoryFilter(cat)}
                   className={`px-4 py-1.5 text-xs font-black uppercase rounded-lg transition cursor-pointer ${
                     categoryFilter === cat
-                      ? 'bg-[#004749] text-white shadow-xs'
+                      ? 'bg-[#832D51] text-white shadow-xs'
                       : 'text-slate-500 hover:text-slate-955'
                   }`}
                 >
@@ -165,7 +165,7 @@ function Leads() {
                   {loading ? (
                     <tr>
                       <td colSpan="6" className="text-center py-12">
-                        <RefreshCw className="size-6 animate-spin text-[#004749] mx-auto" />
+                        <RefreshCw className="size-6 animate-spin text-[#832D51] mx-auto" />
                         <p className="text-xs text-slate-400 font-bold mt-2">Loading leads registry...</p>
                       </td>
                     </tr>
@@ -179,7 +179,7 @@ function Leads() {
                         <td className="px-6 py-4 text-slate-500 font-semibold">
                           {formatDateString(lead.date || lead.created_at)}
                         </td>
-                        <td className="px-6 py-4 text-[#540000] font-black">
+                        <td className="px-6 py-4 text-[#3a7d63] font-black">
                           {lead.sales_manager || lead.manager_name || 'Direct/Unassigned'}
                         </td>
                         <td className="px-6 py-4 text-slate-900 font-black">

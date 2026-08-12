@@ -84,7 +84,7 @@ const CATEGORY_CONFIG = {
   LEAVE_APPROVAL: { label: 'Leave Approvals', icon: Calendar, color: 'text-purple-600 bg-purple-50 border-purple-200' },
   PERMISSION_REQUEST: { label: 'Permission Requests', icon: Clock, color: 'text-amber-600 bg-amber-50 border-amber-200' },
   MAJOR_DEAL: { label: 'Major Deals', icon: Award, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-  CUSTOMER_UPDATE: { label: 'Customer Updates', icon: Building2, color: 'text-teal-600 bg-teal-50 border-teal-200' },
+  CUSTOMER_UPDATE: { label: 'Customer Updates', icon: Building2, color: 'text-[#EA6993] bg-[#F8CAE4]/20 border-[#EA6993]/30' },
   TARGET_ACHIEVEMENT: { label: 'Target Achievements', icon: DollarSign, color: 'text-blue-600 bg-blue-50 border-blue-200' },
   SYSTEM_ALERT: { label: 'System Alerts', icon: ShieldAlert, color: 'text-slate-600 bg-slate-100 border-slate-200' },
 }
@@ -124,7 +124,7 @@ function CeoNotifications() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-teal-50 text-[#004749]">
+            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
               <Bell className="size-4.5" />
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -167,13 +167,13 @@ function CeoNotifications() {
               onClick={() => setSelectedCategory(tab.key)}
               className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
                 isActive
-                  ? 'bg-[#004749] text-white shadow-xs'
+                  ? 'bg-[#832D51] text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
               <span>{tab.label}</span>
               {tab.badge !== undefined && tab.badge > 0 && (
-                <span className={`rounded-full px-2 py-0.2 text-[10px] font-black ${isActive ? 'bg-white text-[#004749]' : 'bg-[#540000] text-white'}`}>
+                <span className={`rounded-full px-2 py-0.2 text-[10px] font-black ${isActive ? 'bg-white text-[#832D51]' : 'bg-[#3a7d63] text-white'}`}>
                   {tab.badge}
                 </span>
               )}
@@ -194,7 +194,7 @@ function CeoNotifications() {
               onClick={() => markItemRead(notif.id)}
               className={`rounded-2xl border p-5 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
                 notif.unread
-                  ? 'border-[#004749]/30 bg-white shadow-xs ring-1 ring-[#004749]/10'
+                  ? 'border-[#832D51]/30 bg-white shadow-xs ring-1 ring-[#832D51]/10'
                   : 'border-slate-200/80 bg-white/70 opacity-90'
               }`}
             >
@@ -209,7 +209,7 @@ function CeoNotifications() {
                     </span>
                     <h3 className="text-sm font-black text-slate-900">{notif.title}</h3>
                     {notif.unread && (
-                      <span className="size-2 rounded-full bg-[#540000]" />
+                      <span className="size-2 rounded-full bg-[#3a7d63]" />
                     )}
                   </div>
                   <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">{notif.description}</p>
@@ -235,7 +235,7 @@ function CeoNotifications() {
                         e.stopPropagation()
                         handleAction(notif.id, 'Approved')
                       }}
-                      className="rounded-xl bg-[#004749] text-white px-3.5 py-1.5 text-xs font-bold hover:bg-[#013b3f] transition shadow-xs"
+                      className="rounded-xl bg-[#832D51] text-white px-3.5 py-1.5 text-xs font-bold hover:bg-[#6a2240] transition shadow-xs"
                     >
                       Approve
                     </button>

@@ -119,7 +119,7 @@ function CeoSettings() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-teal-50 text-[#004749]">
+            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
               <SettingsIcon className="size-4.5" />
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -134,7 +134,7 @@ function CeoSettings() {
         <button
           onClick={handleSave}
           disabled={saving}
-          className="flex items-center gap-2 rounded-xl bg-[#004749] hover:bg-[#013b3f] text-white px-5 py-2.5 text-xs font-black transition shadow-xs"
+          className="flex items-center gap-2 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white px-5 py-2.5 text-xs font-black transition shadow-xs"
         >
           <Save className="size-4" />
           {saving ? 'Saving...' : 'Save Preferences'}
@@ -158,7 +158,7 @@ function CeoSettings() {
               onClick={() => setActiveTab(tab.key)}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
                 isActive
-                  ? 'bg-[#004749] text-white shadow-xs'
+                  ? 'bg-[#832D51] text-white shadow-xs'
                   : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
               }`}
             >
@@ -186,7 +186,7 @@ function CeoSettings() {
                 type="text"
                 value={companyDetails.company_name}
                 onChange={(e) => setCompanyDetails({ ...companyDetails, company_name: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#004749]"
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#832D51]"
               />
             </div>
 
@@ -196,7 +196,7 @@ function CeoSettings() {
                 type="text"
                 value={companyDetails.legal_name}
                 onChange={(e) => setCompanyDetails({ ...companyDetails, legal_name: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#004749]"
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#832D51]"
               />
             </div>
 
@@ -206,7 +206,7 @@ function CeoSettings() {
                 type="text"
                 value={companyDetails.gst_no}
                 onChange={(e) => setCompanyDetails({ ...companyDetails, gst_no: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#004749]"
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#832D51]"
               />
             </div>
 
@@ -216,7 +216,7 @@ function CeoSettings() {
                 type="text"
                 value={companyDetails.pan_no}
                 onChange={(e) => setCompanyDetails({ ...companyDetails, pan_no: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#004749]"
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#832D51]"
               />
             </div>
 
@@ -226,7 +226,7 @@ function CeoSettings() {
                 type="email"
                 value={companyDetails.email}
                 onChange={(e) => setCompanyDetails({ ...companyDetails, email: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-900 outline-none focus:border-[#004749]"
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-900 outline-none focus:border-[#832D51]"
               />
             </div>
 
@@ -236,7 +236,7 @@ function CeoSettings() {
                 type="text"
                 value={companyDetails.phone}
                 onChange={(e) => setCompanyDetails({ ...companyDetails, phone: e.target.value })}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-900 outline-none focus:border-[#004749]"
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-900 outline-none focus:border-[#832D51]"
               />
             </div>
 
@@ -246,7 +246,7 @@ function CeoSettings() {
                 value={companyDetails.address}
                 onChange={(e) => setCompanyDetails({ ...companyDetails, address: e.target.value })}
                 rows={2}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-900 outline-none focus:border-[#004749]"
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-900 outline-none focus:border-[#832D51]"
               />
             </div>
 
@@ -296,7 +296,7 @@ function CeoSettings() {
                   <p className="text-[11px] text-slate-500 mt-0.5">Department Head: {dept.lead} · {dept.staffCount} Staff</p>
                 </div>
                 <div className="text-right">
-                  <span className="font-black text-[#004749] text-sm">{dept.budget}</span>
+                  <span className="font-black text-[#832D51] text-sm">{dept.budget}</span>
                   <p className="text-[10px] text-slate-400">Allocated Budget</p>
                 </div>
               </div>
@@ -361,7 +361,7 @@ function CeoSettings() {
                 type="number"
                 value={salesTargets.annualTarget}
                 onChange={(e) => setSalesTargets({ ...salesTargets, annualTarget: Number(e.target.value) })}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#004749]"
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#832D51]"
               />
             </div>
 
@@ -371,7 +371,7 @@ function CeoSettings() {
                 type="number"
                 value={salesTargets.managerSouthTarget}
                 onChange={(e) => setSalesTargets({ ...salesTargets, managerSouthTarget: Number(e.target.value) })}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#004749]"
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#832D51]"
               />
             </div>
 
@@ -381,7 +381,7 @@ function CeoSettings() {
                 type="number"
                 value={salesTargets.managerWestTarget}
                 onChange={(e) => setSalesTargets({ ...salesTargets, managerWestTarget: Number(e.target.value) })}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#004749]"
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#832D51]"
               />
             </div>
 
@@ -391,7 +391,7 @@ function CeoSettings() {
                 type="number"
                 value={salesTargets.executiveMinMonthly}
                 onChange={(e) => setSalesTargets({ ...salesTargets, executiveMinMonthly: Number(e.target.value) })}
-                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#004749]"
+                className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-900 outline-none focus:border-[#832D51]"
               />
             </div>
           </div>
@@ -418,7 +418,7 @@ function CeoSettings() {
                 type="checkbox"
                 checked={generalSettings.biometricVerificationRequired}
                 onChange={(e) => setGeneralSettings({ ...generalSettings, biometricVerificationRequired: e.target.checked })}
-                className="size-4 accent-[#004749]"
+                className="size-4 accent-[#832D51]"
               />
             </div>
 
@@ -444,7 +444,7 @@ function CeoSettings() {
                 type="checkbox"
                 checked={generalSettings.emailAlertsEnabled}
                 onChange={(e) => setGeneralSettings({ ...generalSettings, emailAlertsEnabled: e.target.checked })}
-                className="size-4 accent-[#004749]"
+                className="size-4 accent-[#832D51]"
               />
             </div>
           </div>
