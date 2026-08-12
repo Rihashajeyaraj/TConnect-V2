@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     SUPABASE_SERVICE_ROLE_KEY: str = ""
     SUPABASE_JWT_SECRET: str = ""
 
+    # Biometrics
+    BIOMETRIC_SERVICE_URL: str = "http://76.13.242.108:8012"
+
+
     # Security
     SECRET_KEY: str = "twiteconnect-super-secret-key-change-in-production"
     ALGORITHM: str = "HS256"

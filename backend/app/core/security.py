@@ -38,6 +38,32 @@ def create_access_token(data: Dict[str, Any]) -> str:
     return jose.jwt.encode(data, secret, algorithm=settings.ALGORITHM)
 
 
+def create_biometric_token(employee_id: str, employee_name: str, device_user_id: str) -> str:
+    """Create a short-lived cryptographically signed token verifying a successful face match."""
+    import time
+    payload = {
+        "verified_employee_id": str(employee_id),
+        "verified_employee_name": str(employee_name),
+        "device_user_id": str(device_user_id),
+        "type": "biometric_verification",
+        "exp": int(time.time()) + 300, # 5 minutes expiry
+        "matched_at": int(time.time())
+    }
+    # Use settings.SECRET_KEY to sign
+    return jose.jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+
+
+def verify_biometric_token(token: str) -> Dict[str, Any]:
+    """Verify and decode a biometric match token. Raises ValueError if invalid/expired."""
+    try:
+        payload = jose.jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        if payload.get("type") != "biometric_verification":
+            raise ValueError("Invalid token type")
+        return payload
+    except Exception as e:
+        raise ValueError(f"Invalid or expired verification token: {str(e)}")
+
+
 def verify_supabase_jwt(token: str) -> Dict[str, Any]:
     """
     Decodes and verifies JWT Bearer token issued by Supabase Auth.

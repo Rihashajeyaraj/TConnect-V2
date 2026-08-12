@@ -181,6 +181,9 @@ class CustomerConversionService:
                 lead.get("assigned_to_email") or extra.get("assigned_to_email") or ""
             ),
             "notes": f"Converted from Lead | Lead#: {lead.get('lead_number', '')}",
+            # Carry exact GPS coordinates from the source lead
+            "latitude": extra.get("latitude") or lead.get("latitude"),
+            "longitude": extra.get("longitude") or lead.get("longitude"),
         }
         return contact, lead_id
 

@@ -168,6 +168,19 @@ class CRMRepository:
             "created_by": assigned_to_uuid,
             "is_active": True,
         }
+        # Persist exact GPS coordinates if provided
+        lat = data.get("latitude")
+        lng = data.get("longitude")
+        if lat is not None:
+            try:
+                payload["latitude"] = float(lat)
+            except (TypeError, ValueError):
+                pass
+        if lng is not None:
+            try:
+                payload["longitude"] = float(lng)
+            except (TypeError, ValueError):
+                pass
         if val_str.isdigit():
             payload["expected_value"] = float(val_str)
 
@@ -303,7 +316,8 @@ class CRMRepository:
                 "lead_source_id", "lead_status_id", "assigned_to", "expected_value",
                 "remarks", "next_followup_date", "created_by", "updated_by", "is_active",
                 "is_deleted", "created_at", "updated_at", "notes", "documents", "activities",
-                "contact_name", "contact_email", "contact_phone", "converted_to_customer_id", "converted_at"
+                "contact_name", "contact_email", "contact_phone", "converted_to_customer_id", "converted_at",
+                "latitude", "longitude",
             }
             return {k: v for k, v in p.items() if k in allowed_keys}
 

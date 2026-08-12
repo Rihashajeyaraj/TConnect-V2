@@ -24,7 +24,8 @@ import {
   Eye,
   Smile,
   ArrowRight,
-  ShieldAlert
+  ShieldAlert,
+  ScanFace
 } from "lucide-react";
 import { useToast } from "../../common/ToastContext.jsx";
 import { attendanceAPI } from "../../services/api.js";
@@ -84,6 +85,12 @@ export default function Attendance() {
   const [isEnrolled, setIsEnrolled] = useState(true);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
   const [enrolledTemplateVector, setEnrolledTemplateVector] = useState(null);
+
+  // Biometric 1:N Verification State
+  const [matchStatus, setMatchStatus] = useState("PENDING"); // PENDING, DETECTING, MATCHED, FAILED, SPOOF
+  const [verificationToken, setVerificationToken] = useState(null);
+  const [matchedEmployeeName, setMatchedEmployeeName] = useState("");
+  const [matchedEmployeeId, setMatchedEmployeeId] = useState("");
 
   // Camera & Video Analysis State
   const [isCameraActive, setIsCameraActive] = useState(true);
@@ -283,50 +290,109 @@ export default function Attendance() {
 
   // 5. Complete First-Time Face Enrollment
   const handleEnrollSubmit = async () => {
-    try {
-      const faceVector = engineRef.current.generateFaceFeatureVector(canvasRef.current);
-      setEnrolledTemplateVector(faceVector);
+    if (!canvasRef.current) {
+      showToast("Camera not ready or frame capture failed.", "error");
+      return;
+    }
+    
+    setIsLogging(true);
+    showToast("Processing biometric face enrollment... Please wait.", "info");
 
-      try {
-        await attendanceAPI.enroll({
-          employee_id: userEmpCode,
-          employee_name: userName,
-          face_data_url: "data:image/png;base64,encoded_facial_hash",
-          face_template_vector: faceVector,
-          device_info: navigator.userAgent,
-          liveness_verified: true,
-        });
-      } catch (err) {}
+    try {
+      // Capture actual frame base64 image data URL from canvas
+      const faceDataUrl = canvasRef.current.toDataURL("image/jpeg", 0.9);
+
+      await attendanceAPI.enroll({
+        employee_id: userEmpCode,
+        employee_name: userName,
+        face_data_url: faceDataUrl,
+        device_info: navigator.userAgent,
+        liveness_verified: true,
+      });
 
       localStorage.setItem(`tc_attendance_enrolled_${userEmpCode}`, "true");
       localStorage.setItem("tc_attendance_enrolled", "true");
       setIsEnrolled(true);
       setShowEnrollModal(false);
-      showToast("🎉 One-Time Facial Enrollment Completed Successfully!", "success");
+      showToast("🎉 Biometric Face Enrollment Completed Successfully!", "success");
     } catch (err) {
-      localStorage.setItem("tc_attendance_enrolled", "true");
-      setIsEnrolled(true);
-      setShowEnrollModal(false);
-      showToast("🎉 One-Time Facial Enrollment Completed Successfully!", "success");
+      const errMsg = err?.message || "Biometric service failed to parse or extract face.";
+      showToast(`❌ Enrollment failed: ${errMsg}`, "error");
+    } finally {
+      setIsLogging(false);
     }
   };
 
+  // 5B. Perform 1:N Biometric Face Matching
+  const handleFaceMatch = async () => {
+    if (!canvasRef.current) {
+      showToast("Camera not ready or frame capture failed.", "error");
+      return;
+    }
+
+    setMatchStatus("DETECTING");
+    setIsLogging(true);
+    showToast("Scanning face... Please stay still.", "info");
+
+    try {
+      const faceDataUrl = canvasRef.current.toDataURL("image/jpeg", 0.9);
+      
+      const res = await attendanceAPI.matchFace({
+        images: [faceDataUrl]
+      });
+
+      if (res && res.data && res.data.verified) {
+        setVerificationToken(res.data.verification_token);
+        setMatchedEmployeeName(res.data.matched_employee_name);
+        setMatchedEmployeeId(res.data.matched_employee_id);
+        setMatchStatus("MATCHED");
+        showToast(`🎉 Face recognized: ${res.data.matched_employee_name}`, "success");
+      } else {
+        setMatchStatus("FAILED");
+        showToast("❌ Face not recognized. Please try again.", "error");
+      }
+    } catch (err) {
+      console.error("Match error:", err);
+      const errMsg = err?.message || err?.detail || "Face unrecognized.";
+      if (errMsg.toLowerCase().includes("spoof") || errMsg.toLowerCase().includes("liveness")) {
+        setMatchStatus("SPOOF");
+        showToast("❌ Spoof detected. Please use your real face.", "error");
+      } else {
+        setMatchStatus("FAILED");
+        showToast(`❌ Verification failed: ${errMsg}`, "error");
+      }
+    } finally {
+      setIsLogging(false);
+    }
+  };
+
+  const resetFaceMatch = () => {
+    setMatchStatus("PENDING");
+    setVerificationToken(null);
+    setMatchedEmployeeName("");
+    setMatchedEmployeeId("");
+    setLivenessStatus("PENDING");
+  };
+
   // 6. Trigger Anti-Spoofing Liveness Verification Workflow
-  const startLivenessCheck = (actionType) => {
+  const startLivenessScan = () => {
     // Pick random anti-spoofing challenge prompt
     const randomChallenge = LIVENESS_CHALLENGES[Math.floor(Math.random() * LIVENESS_CHALLENGES.length)];
     setActiveChallenge(randomChallenge);
     setLivenessStatus("VERIFYING");
-    setLivenessProgress(35);
-
-    // Complete liveness check & execute attendance punch
-    setTimeout(() => {
-      setLivenessProgress(100);
-      setLivenessStatus("PASSED");
-      setFaceAlignmentFeedback("Face Verified Successfully.");
-      executeAttendancePunch(actionType);
-    }, 1200);
+    setLivenessProgress(10);
+    setMatchStatus("PENDING");
+    setVerificationToken(null);
+    setMatchedEmployeeName("");
+    setMatchedEmployeeId("");
   };
+
+  // Automatically trigger biometric matching once liveness passes
+  useEffect(() => {
+    if (livenessStatus === "PASSED" && matchStatus === "PENDING") {
+      handleFaceMatch();
+    }
+  }, [livenessStatus]);
 
   // 7. Execute Verified Biometric Attendance Punch (Check-In / Check-Out)
   const executeAttendancePunch = async (type) => {
@@ -337,8 +403,8 @@ export default function Attendance() {
     const userRemarks = punchRemarks.trim() || "Normal Attendance Punch";
 
     const payloadBase = {
-      employee_id: userEmpCode,
-      employee_name: userName,
+      employee_id: matchedEmployeeId || userEmpCode,
+      employee_name: matchedEmployeeName || userName,
       attendance_date: new Date().toISOString().slice(0, 10),
       latitude: gpsCoords.lat,
       longitude: gpsCoords.lng,
@@ -348,6 +414,7 @@ export default function Attendance() {
       liveness_score: 0.98,
       remarks: userRemarks,
       notes: userRemarks,
+      verification_token: verificationToken,
     };
 
     if (type === "LOGIN") {
@@ -383,8 +450,8 @@ export default function Attendance() {
       setSuccessModalData({
         title: "Logged in successfully!",
         type: "Check-In (Logged In)",
-        employee: userName,
-        empId: userEmpCode,
+        employee: matchedEmployeeName || userName,
+        empId: matchedEmployeeId || userEmpCode,
         time: nowStr,
         date: todayDateStr,
         location: currentLocation,
@@ -437,8 +504,8 @@ export default function Attendance() {
       setSuccessModalData({
         title: "Logged off successfully!",
         type: "Check-Out (Logged Off)",
-        employee: userName,
-        empId: userEmpCode,
+        employee: matchedEmployeeName || userName,
+        empId: matchedEmployeeId || userEmpCode,
         time: nowStr,
         date: todayDateStr,
         location: currentLocation,
@@ -452,6 +519,7 @@ export default function Attendance() {
     setPunchRemarks("");
     setIsLogging(false);
     setLivenessStatus("PENDING");
+    resetFaceMatch();
   };
 
   // 8. Render Leaflet Map Preview Modal
@@ -576,7 +644,13 @@ export default function Attendance() {
             {/* Real-time Guidance Feedback Pill */}
             <div className="absolute top-2 sm:top-3 left-1/2 -translate-x-1/2 bg-slate-900/85 backdrop-blur-md text-white px-3 py-1 rounded-full text-[11px] font-black flex items-center gap-1.5 border border-white/20 shadow-lg z-20 max-w-[92%] text-center truncate">
               {isFaceAligned ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" />}
-              <span className="truncate">{faceAlignmentFeedback}</span>
+              <span className="truncate">
+                {matchStatus === "DETECTING" ? "Detecting face..." :
+                 matchStatus === "MATCHED" ? `Face recognized: ${matchedEmployeeName}` :
+                 matchStatus === "FAILED" ? "Face not recognized. Please try again." :
+                 matchStatus === "SPOOF" ? "Spoof detected. Please use your real face." :
+                 faceAlignmentFeedback}
+              </span>
             </div>
 
             {/* Liveness Verification Active Challenge Banner */}
@@ -608,26 +682,60 @@ export default function Attendance() {
             />
           </div>
 
-          {/* Action Buttons: CHECK IN & CHECK OUT */}
-          <div className="grid grid-cols-2 gap-4">
+          {/* Action Buttons: CHECK IN & CHECK OUT or ENROLL */}
+          {!isEnrolled ? (
             <button
               type="button"
-              disabled={isLogging}
-              onClick={() => startLivenessCheck("LOGIN")}
-              className="py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+              disabled={isLogging || !isFaceAligned}
+              onClick={handleEnrollSubmit}
+              className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-pulse"
             >
-              <CheckCircle2 size={16} /> Check In (Face + GPS)
+              <ShieldCheck size={16} /> {isLogging ? "Processing Enrollment..." : "Register My Face Now 📹"}
             </button>
+          ) : (
+            <div className="space-y-3">
+              {matchStatus !== "MATCHED" ? (
+                <button
+                  type="button"
+                  disabled={isLogging || !isFaceAligned || livenessStatus === "VERIFYING" || matchStatus === "DETECTING"}
+                  onClick={startLivenessScan}
+                  className="w-full py-3.5 px-4 rounded-2xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-pulse"
+                >
+                  <ScanFace size={16} /> {livenessStatus === "VERIFYING" ? "Verifying Liveness..." : matchStatus === "DETECTING" ? "Detecting face..." : "Scan & Verify My Face 📹"}
+                </button>
+              ) : (
+                <div className="space-y-3 font-semibold">
+                  <div className="grid grid-cols-2 gap-4">
+                    <button
+                      type="button"
+                      disabled={isLogging}
+                      onClick={() => executeAttendancePunch("LOGIN")}
+                      className="py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-fadeIn"
+                    >
+                      <CheckCircle2 size={16} /> Check In (Face + GPS)
+                    </button>
 
-            <button
-              type="button"
-              disabled={isLogging}
-              onClick={() => startLivenessCheck("LOGOUT")}
-              className="py-3.5 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95"
-            >
-              <Clock size={16} /> Check Out (Face + GPS)
-            </button>
-          </div>
+                    <button
+                      type="button"
+                      disabled={isLogging}
+                      onClick={() => executeAttendancePunch("LOGOUT")}
+                      className="py-3.5 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-fadeIn"
+                    >
+                      <Clock size={16} /> Check Out (Face + GPS)
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={resetFaceMatch}
+                    className="w-full py-2 px-4 rounded-xl border border-dashed border-slate-300 hover:bg-slate-50 text-slate-500 font-extrabold text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+                  >
+                    <RefreshCw size={14} /> Scan Different Employee Face 🔄
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Live Telemetry Info Cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
@@ -903,10 +1011,10 @@ export default function Attendance() {
 
             <button
               type="button"
-              onClick={handleEnrollSubmit}
+              onClick={() => setShowEnrollModal(false)}
               className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer active:scale-95"
             >
-              Complete Biometric Enrollment Now 🎉
+              Begin Face Registration 📹
             </button>
           </div>
         </div>

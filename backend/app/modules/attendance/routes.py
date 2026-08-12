@@ -39,6 +39,53 @@ async def enroll_employee(
     data.employee_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "EMP000012")
     data.employee_name = str(user_payload.get("name") or "Sales Executive")
 
+    # 1. Parse base64 image data URL
+    if not data.face_data_url or "base64," not in data.face_data_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid face_data_url. Expected base64-encoded image data URL."
+        )
+
+    try:
+        import base64
+        header, encoded = data.face_data_url.split("base64,", 1)
+        image_bytes = base64.b64decode(encoded)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to decode base64 image: {str(e)}"
+        )
+
+    # 2. Extract biometric vectors
+    from app.modules.attendance.biometric_client import BiometricClient
+    bio_client = BiometricClient()
+    extract_res = bio_client.extract_vectors(image_bytes)
+
+    if not extract_res.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Biometric service vector extraction failed: {extract_res.get('message', 'Unknown error')}"
+        )
+
+    vector = extract_res.get("face_encoding")
+    
+    # 3. Validate extracted vector
+    if not isinstance(vector, list) or len(vector) != 512:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid biometric template vector size: {len(vector) if isinstance(vector, list) else 'not a list'} (expected exactly 512 dimensions)."
+        )
+
+    # Validate that all elements are numbers
+    if not all(isinstance(x, (int, float)) for x in vector):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Biometric template vector contains non-numeric values."
+        )
+
+    # Set the extracted vector into the request model to be stored in the DB
+    data.face_template_vector = vector
+
     result = service.enroll(data)
     return StandardResponse.success_response(
         data=result,
@@ -74,16 +121,93 @@ async def match_face(
     service: AttendanceService = Depends(get_service)
 ):
     """Match live facial feature template against enrolled employee template."""
-    emp_id = user_payload.get("employee_code") or user_payload.get("sub") or "EMP000012"
+    base64_images = data.get("images") or []
+    if not base64_images:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No camera frames provided."
+        )
+
+    # 1. Query all valid enrollments from DB
+    valid_enrollments = service.repo.get_all_enrollments()
+    if not valid_enrollments:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="No enrolled faces found in database. Please complete enrollment first."
+        )
+
+    # 2. Build candidate list JSON
+    import json
+    candidates = []
+    for enr in valid_enrollments:
+        candidates.append({
+            "id": enr["employee_id"],
+            "face_encoding": enr["face_template_vector"]
+        })
+    candidate_list_str = json.dumps(candidates)
+
+    # 3. Decode base64 images
+    import base64
+    image_bytes_list = []
+    for data_url in base64_images:
+        try:
+            if "base64," in data_url:
+                header, encoded = data_url.split("base64,", 1)
+                image_bytes_list.append(base64.b64decode(encoded))
+            else:
+                image_bytes_list.append(base64.b64decode(data_url))
+        except Exception:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid image format in frames."
+            )
+
+    # 4. Call Biometric Client
+    from app.modules.attendance.biometric_client import BiometricClient
+    bio_client = BiometricClient()
+    match_res = bio_client.match_face(image_bytes_list, candidate_list_str)
+
+    if not match_res.get("success"):
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Biometric matching service error: {match_res.get('message')}"
+        )
+
+    if not match_res.get("verified"):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Face unrecognized or similarity score below required security threshold."
+        )
+
+    matched_id = match_res.get("matched_id")
+    # Fetch employee details for name mapping
+    matched_enr = next((e for e in valid_enrollments if e["employee_id"] == matched_id), None)
+    if not matched_enr:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Matched employee enrollment not found in database."
+        )
     
+    matched_name = matched_enr.get("employee_name") or "Sales Executive"
+
+    # 5. Generate secure verification token
+    from app.core.security import create_biometric_token
+    device_user_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "")
+    token = create_biometric_token(
+        employee_id=matched_id,
+        employee_name=matched_name,
+        device_user_id=device_user_id
+    )
+
     return StandardResponse.success_response(
         data={
-            "matched": True,
-            "confidence": 0.96,
-            "verified_employee_id": emp_id,
-            "message": "Facial match confirmed"
+            "verified": True,
+            "matched_employee_id": matched_id,
+            "matched_employee_name": matched_name,
+            "similarity_score": match_res.get("similarity_score", 0.99),
+            "verification_token": token
         },
-        message="Face match evaluation completed"
+        message=f"Biometric match verified successfully as {matched_name}."
     )
 
 
@@ -109,17 +233,46 @@ async def clock_in(
     service: AttendanceService = Depends(get_service)
 ):
     """Record clock-in with GPS location for the authenticated user."""
-    user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
-    data.employee_id = str(user_payload.get("employee_code") or user_payload.get("employee_id") or user_id)
-    data.employee_name = str(user_payload.get("name") or user_payload.get("full_name") or "Sales Executive")
+    actor_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "")
+    
+    if data.verification_token:
+        from app.core.security import verify_biometric_token
+        try:
+            token_payload = verify_biometric_token(data.verification_token)
+            verified_id = token_payload.get("verified_employee_id")
+            verified_name = token_payload.get("verified_employee_name")
+            
+            target_employee_id = verified_id
+            target_employee_name = verified_name
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(ve)
+            )
+    else:
+        user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
+        target_employee_id = str(user_payload.get("employee_code") or user_payload.get("employee_id") or user_id)
+        target_employee_name = str(user_payload.get("name") or user_payload.get("full_name") or "Sales Executive")
 
-    log = service.clock_in(user_id, data)
+    data.employee_id = target_employee_id
+    data.employee_name = target_employee_name
+
+    db_user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
+    log = service.clock_in(db_user_id, data)
+    
     create_audit_log(
         "ATTENDANCE_UPDATED", "hrms.attendance_logs", user_payload,
         entity_id=str(log.get("id") or log.get("attendance_id") or ""),
         module="HRMS",
-        description=f"Clock-in recorded for {data.employee_id}",
-        new_value={"event": "clock_in", "latitude": data.latitude, "longitude": data.longitude, "work_location": data.work_location},
+        description=f"Clock-in recorded for {data.employee_id} (Actor: {actor_id})",
+        new_value={
+            "event": "clock_in", 
+            "latitude": data.latitude, 
+            "longitude": data.longitude, 
+            "work_location": getattr(data, "work_location", getattr(data, "location_name", None)),
+            "device_actor": actor_id,
+            "target_employee": target_employee_id
+        },
     )
     return StandardResponse.success_response(
         data=log,
@@ -135,16 +288,41 @@ async def clock_out(
     service: AttendanceService = Depends(get_service)
 ):
     """Record clock-out with GPS location for the authenticated user."""
-    user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
-    data.employee_id = str(user_payload.get("employee_code") or user_payload.get("employee_id") or user_id)
+    actor_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "")
+    
+    if data.verification_token:
+        from app.core.security import verify_biometric_token
+        try:
+            token_payload = verify_biometric_token(data.verification_token)
+            verified_id = token_payload.get("verified_employee_id")
+            
+            target_employee_id = verified_id
+        except ValueError as ve:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=str(ve)
+            )
+    else:
+        user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
+        target_employee_id = str(user_payload.get("employee_code") or user_payload.get("employee_id") or user_id)
 
-    log = service.clock_out(user_id, data)
+    data.employee_id = target_employee_id
+
+    db_user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
+    log = service.clock_out(db_user_id, data)
+    
     create_audit_log(
         "ATTENDANCE_UPDATED", "hrms.attendance_logs", user_payload,
         entity_id=str(log.get("id") or log.get("attendance_id") or ""),
         module="HRMS",
-        description=f"Clock-out recorded for {data.employee_id}",
-        new_value={"event": "clock_out", "latitude": data.latitude, "longitude": data.longitude},
+        description=f"Clock-out recorded for {data.employee_id} (Actor: {actor_id})",
+        new_value={
+            "event": "clock_out", 
+            "latitude": data.latitude, 
+            "longitude": data.longitude,
+            "device_actor": actor_id,
+            "target_employee": target_employee_id
+        },
     )
     return StandardResponse.success_response(
         data=log,

@@ -39,12 +39,14 @@ import {
   ChevronRight,
   Briefcase,
   ClipboardList,
+  AlertCircle,
 } from "lucide-react";
 import { crmAPI, visitAPI, customerAPI, pipelineAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { formatDate } from "../../utils/dateUtils.js";
+import LocationPickerModal from "../../common/LocationPickerModal.jsx";
 
 const INITIAL_LEADS = []; // Active list of leads
 const INITIAL_FOLLOWUPS = [];
@@ -327,6 +329,10 @@ export default function Leads() {
     agreedValue: "₹4,50,000",
   });
 
+  // Location Picker Modal state (for Add Lead)
+  const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
+  const [isEditLocationPickerOpen, setIsEditLocationPickerOpen] = useState(false);
+
   // Add Lead Modal State
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [addForm, setAddForm] = useState({
@@ -529,6 +535,11 @@ export default function Leads() {
       assigned_to: userName,
       assigned_to_email: userEmail,
       employee_code: userEmpCode,
+      // Exact GPS coordinates from Location Picker
+      ...(addForm.latitude && addForm.longitude ? {
+        latitude: Number(addForm.latitude),
+        longitude: Number(addForm.longitude),
+      } : {}),
     };
 
     let serverLeadId = `lead_${Date.now()}`;
@@ -564,6 +575,9 @@ export default function Leads() {
       status: "New",
       source: addForm.source || "Field Research (SE)",
       notes: payload.notes,
+      latitude: addForm.latitude || null,
+      longitude: addForm.longitude || null,
+      full_address: addForm.full_address || null,
       customerId: null,
       createdAt: formatDate(new Date()),
       executiveRemarks: [
@@ -2385,69 +2399,53 @@ export default function Leads() {
                 </div>
               </div>
 
-              {/* ── 📍 GPS LOCATION CAPTURE WIDGET ── */}
-              <div className="bg-blue-50/80 border-2 border-blue-200 rounded-3xl p-4.5 space-y-3">
+              {/* ── 📍 LOCATION PICKER WIDGET ── */}
+              <div className="bg-blue-50/80 border-2 border-blue-200 rounded-3xl p-4 space-y-3">
                 <div className="flex items-center justify-between flex-wrap gap-2">
                   <div className="flex items-center gap-2">
                     <MapPin className="w-5 h-5 text-blue-600" />
-                    <label className="text-xs font-black text-blue-950 uppercase tracking-wider block">
-                      Exact Client GPS Coordinates (*Required for Radar Map)
+                    <label className="text-xs font-black text-blue-950 uppercase tracking-wider">
+                      Exact Client Location (for Smart Map)
                     </label>
                   </div>
                   <button
                     type="button"
-                    onClick={handleUseCurrentGps}
-                    className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                    onClick={() => setIsLocationPickerOpen(true)}
+                    className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
                   >
-                    <Navigation size={13} /> Use Current GPS Location
+                    <MapPin size={13} /> Pick Location on Map
                   </button>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="text-slate-600 font-bold block mb-1">Latitude</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={addForm.latitude || 13.0067}
-                      onChange={(e) => setAddForm({ ...addForm, latitude: Number(e.target.value) })}
-                      className="w-full border border-blue-200 rounded-xl px-3 py-2 text-xs font-mono font-bold bg-white text-slate-900 focus:outline-none focus:border-blue-500"
-                    />
+                {addForm.latitude && addForm.longitude ? (
+                  <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-2xl p-3">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 size={16} className="text-emerald-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-emerald-700 uppercase tracking-wide">Location Confirmed</p>
+                      {addForm.full_address && (
+                        <p className="text-[11px] font-semibold text-slate-700 truncate mt-0.5">{addForm.full_address}</p>
+                      )}
+                      <p className="text-[10px] font-bold text-slate-500 mt-0.5 font-mono">
+                        {Number(addForm.latitude).toFixed(6)}, {Number(addForm.longitude).toFixed(6)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAddForm({ ...addForm, latitude: null, longitude: null, full_address: '' })}
+                      className="ml-auto p-1 text-slate-300 hover:text-rose-500 transition flex-shrink-0"
+                      title="Clear location"
+                    >
+                      <X size={13} />
+                    </button>
                   </div>
-                  <div>
-                    <label className="text-slate-600 font-bold block mb-1">Longitude</label>
-                    <input
-                      type="number"
-                      step="any"
-                      value={addForm.longitude || 80.2570}
-                      onChange={(e) => setAddForm({ ...addForm, longitude: Number(e.target.value) })}
-                      className="w-full border border-blue-200 rounded-xl px-3 py-2 text-xs font-mono font-bold bg-white text-slate-900 focus:outline-none focus:border-blue-500"
-                    />
+                ) : (
+                  <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold px-1">
+                    <AlertCircle size={13} className="text-amber-400" />
+                    No location selected. Click "Pick Location on Map" to set exact coordinates.
                   </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="text-slate-600 font-bold block mb-1">Landmark (Optional)</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Near Tidel Park Gate 2"
-                      value={addForm.landmark || ''}
-                      onChange={(e) => setAddForm({ ...addForm, landmark: e.target.value })}
-                      className="w-full border border-blue-200 rounded-xl px-3 py-2 text-xs font-semibold bg-white text-slate-900 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                  <div>
-                    <label className="text-slate-600 font-bold block mb-1">Full GPS Address</label>
-                    <input
-                      type="text"
-                      placeholder="Captured full street address"
-                      value={addForm.full_address || addForm.city || ''}
-                      onChange={(e) => setAddForm({ ...addForm, full_address: e.target.value })}
-                      className="w-full border border-blue-200 rounded-xl px-3 py-2 text-xs font-semibold bg-white text-slate-900 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                </div>
+                )}
               </div>
 
               <div>
@@ -3160,6 +3158,39 @@ export default function Leads() {
           </div>
         </div>
       )}
+
+      {/* ── Location Picker Modal (Add Lead) ── */}
+      <LocationPickerModal
+        isOpen={isLocationPickerOpen}
+        onClose={() => setIsLocationPickerOpen(false)}
+        initialLat={addForm.latitude || 13.0067}
+        initialLng={addForm.longitude || 80.2570}
+        initialAddress={addForm.full_address || ''}
+        title="Pick Lead Location"
+        onConfirm={(lat, lng, address) => {
+          setAddForm(prev => ({
+            ...prev,
+            latitude: lat,
+            longitude: lng,
+            full_address: address,
+          }));
+          setIsLocationPickerOpen(false);
+        }}
+      />
+
+      {/* ── Location Picker Modal (Edit Lead) ── */}
+      <LocationPickerModal
+        isOpen={isEditLocationPickerOpen}
+        onClose={() => setIsEditLocationPickerOpen(false)}
+        initialLat={selectedLead?.latitude || 13.0067}
+        initialLng={selectedLead?.longitude || 80.2570}
+        initialAddress={selectedLead?.full_address || selectedLead?.address || ''}
+        title="Update Lead Location"
+        onConfirm={(lat, lng, address) => {
+          setSelectedLead(prev => prev ? ({ ...prev, latitude: lat, longitude: lng, full_address: address }) : prev);
+          setIsEditLocationPickerOpen(false);
+        }}
+      />
     </div>
   );
 }

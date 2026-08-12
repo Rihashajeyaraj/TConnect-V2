@@ -260,15 +260,13 @@ export default function SmartClientMap() {
         }
       }
 
-      // Default positioning offsets so they reside near executive
+      // NO random offsets. Keep them null if unresolved
       if (!hasExactCoords) {
-        const offsetLat = (((idx * 7) % 5) - 2) * 0.003
-        const offsetLng = (((idx * 3) % 5) - 2) * 0.003
-        lat = executivePos.lat + offsetLat
-        lng = executivePos.lng + offsetLng
+        lat = null
+        lng = null
       }
 
-      const dist = haversineDistance(lat, lng, executivePos.lat, executivePos.lng)
+      const dist = hasExactCoords ? haversineDistance(lat, lng, executivePos.lat, executivePos.lng) : null
       const title = item.company || item.company_name || item.name || item.client_name || `Client #${idx + 1}`
 
       return {
@@ -284,7 +282,7 @@ export default function SmartClientMap() {
         email: item.email || '',
         status: item.status || 'Active',
         priority: item.category || item.priority || 'Normal',
-        distanceKm: dist.toFixed(1),
+        distanceKm: hasExactCoords ? dist.toFixed(1) : '—',
         last_visited: item.last_visited || item.date || item.visit_date || null,
         next_followup: item.next_followup || item.visit_time || null,
         originalItem: item
@@ -298,7 +296,7 @@ export default function SmartClientMap() {
 
   // Completed Visits list for "Previous Clients" check
   const completedVisits = useMemo(() => {
-    return allVisits.filter(v => v.status === 'COMPLETED' || v.status === 'CHECKED_OUT' || v.status === 'visited')
+    return allVisits.filter(v => (v.status === 'COMPLETED' || v.status === 'CHECKED_OUT' || v.status === 'visited') && v.has_exact_coords)
   }, [allVisits])
 
   // Aggregate List of all active destinations (excluding completed visits)
@@ -365,6 +363,14 @@ export default function SmartClientMap() {
 
   // Handle Stop Addition / Path trigger
   const handleSelectStop = (entity) => {
+    if (!entity.has_exact_coords) {
+      setSelectedStops([])
+      setRoutePath([])
+      setRouteDetails(null)
+      setSelectedEntity(entity)
+      showToast("Cannot route: Exact location is unavailable.", "error")
+      return
+    }
     setSelectedStops([entity])
     setSelectedEntity(entity)
     setSearchQuery('')
@@ -403,6 +409,7 @@ export default function SmartClientMap() {
     if (prevFound) excludedIds.add(prevFound.id)
 
     for (const client of activeDestinations) {
+      if (!client.has_exact_coords) continue;
       if (excludedIds.has(client.id)) continue
       let dStart = haversineDistance(client.latitude, client.longitude, executivePos.lat, executivePos.lng)
       let minD = dStart
@@ -503,6 +510,7 @@ export default function SmartClientMap() {
 
     // Render Markers for selected stops
     selectedStops.forEach(stop => {
+      if (!stop.latitude || !stop.longitude) return
       const stopIcon = L.divIcon({
         html: `
           <div class="w-8 h-8 rounded-full bg-blue-600 border-2 border-white text-white flex items-center justify-center font-black shadow-lg text-xs">
@@ -695,12 +703,26 @@ export default function SmartClientMap() {
             </button>
           </div>
 
-          <div className="space-y-1.5 text-xs text-slate-600 font-semibold bg-slate-50 p-2.5 rounded-xl border border-slate-100">
-            <p className="truncate">📍 {selectedEntity.address}</p>
-            <p>📞 Phone: {selectedEntity.phone}</p>
-            {selectedEntity.last_visited && <p>⏰ Last Visited: {selectedEntity.last_visited}</p>}
-            {selectedEntity.next_followup && <p>📅 Scheduled: {selectedEntity.next_followup}</p>}
-          </div>
+          {!selectedEntity.has_exact_coords ? (
+            <div className="bg-rose-50 border border-rose-200 p-3 rounded-xl flex items-center justify-between text-xs">
+              <span className="text-rose-700 font-extrabold">Exact location unavailable</span>
+              <button
+                onClick={() => {
+                  showToast("Please open the Leads or Customers portal to update the coordinates of this client.", "info")
+                }}
+                className="px-2.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded font-extrabold text-[10px] shadow-sm transition active:scale-95 cursor-pointer"
+              >
+                Update Location
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-1.5 text-xs text-slate-600 font-semibold bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+              <p className="truncate">📍 {selectedEntity.address}</p>
+              <p>📞 Phone: {selectedEntity.phone}</p>
+              {selectedEntity.last_visited && <p>⏰ Last Visited: {selectedEntity.last_visited}</p>}
+              {selectedEntity.next_followup && <p>📅 Scheduled: {selectedEntity.next_followup}</p>}
+            </div>
+          )}
 
           <div className="flex gap-2">
             <a
@@ -709,14 +731,23 @@ export default function SmartClientMap() {
             >
               <PhoneCall size={14} /> Call Client
             </a>
-            <a
-              href={getDirectionsUrl(selectedEntity, executivePos.lat, executivePos.lng)}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
-            >
-              <Navigation size={14} /> Navigate
-            </a>
+            {selectedEntity.has_exact_coords ? (
+              <a
+                href={getDirectionsUrl(selectedEntity, executivePos.lat, executivePos.lng)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+              >
+                <Navigation size={14} /> Navigate
+              </a>
+            ) : (
+              <button
+                disabled
+                className="flex-1 py-2.5 bg-slate-100 text-slate-400 border border-slate-200 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-not-allowed shadow-none"
+              >
+                <Navigation size={14} /> Navigate
+              </button>
+            )}
           </div>
         </div>
       )}

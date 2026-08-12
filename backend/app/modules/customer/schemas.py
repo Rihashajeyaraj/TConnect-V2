@@ -28,6 +28,8 @@ class CustomerCreate(BaseModel):
     value: Optional[str] = None
     revenue: Optional[str] = None
     notes: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
     class Config:
         extra = Extra.allow
@@ -43,6 +45,8 @@ class CustomerUpdate(BaseModel):
     address: Optional[str] = None
     is_active: Optional[bool] = None
     notes: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
     class Config:
         extra = Extra.allow
@@ -70,6 +74,8 @@ class ConversionRequest(BaseModel):
     # Optional lead link for visit/followup conversions
     lead_id: Optional[str] = None
     notes: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
     class Config:
         extra = Extra.allow
@@ -95,3 +101,5 @@ class CustomerResponse(BaseModel):
     industry: Optional[str] = None
     address: Optional[str] = None
     is_active: bool = True
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None

@@ -176,6 +176,19 @@ class CustomerRepository:
             "notes": full_notes,
             "is_active": True,
         }
+        # Carry GPS coordinates from data or from source lead
+        _lat = data.get("latitude") or (lead_info.get("latitude") if lead_info else None)
+        _lng = data.get("longitude") or (lead_info.get("longitude") if lead_info else None)
+        if _lat is not None:
+            try:
+                payload["latitude"] = float(_lat)
+            except (TypeError, ValueError):
+                pass
+        if _lng is not None:
+            try:
+                payload["longitude"] = float(_lng)
+            except (TypeError, ValueError):
+                pass
 
         logger.info(f"[CUSTOMER INSERT] Saving into crm.customers: {payload}")
 
@@ -203,6 +216,8 @@ class CustomerRepository:
                     "notes": full_notes,
                     "status": "Active Customer",
                     "is_active": True,
+                    **({"latitude": payload["latitude"]} if "latitude" in payload else {}),
+                    **({"longitude": payload["longitude"]} if "longitude" in payload else {}),
                 }
                 res_min = self.supabase.schema("crm").table("customers").insert(minimal_payload).execute()
                 if res_min.data and len(res_min.data) > 0:

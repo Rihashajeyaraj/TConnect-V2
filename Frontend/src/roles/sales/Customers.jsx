@@ -25,12 +25,15 @@ import {
   LayoutGrid,
   Table as TableIcon,
   Trash2,
+  CheckCircle2,
+  AlertCircle,
 } from "lucide-react";
 import { customerAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { formatDate } from "../../utils/dateUtils.js";
+import LocationPickerModal from "../../common/LocationPickerModal.jsx";
 
 const DEFAULT_CUSTOMERS = [];
 
@@ -92,6 +95,9 @@ export default function Customers() {
   const [visitTime, setVisitTime] = useState("10:30 AM");
   const [callDiscussion, setCallDiscussion] = useState("");
 
+  // Location picker modal state
+  const [isCustomerLocationPickerOpen, setIsCustomerLocationPickerOpen] = useState(false);
+
   // Persist local custom updates
   useEffect(() => {
     try {
@@ -125,6 +131,8 @@ export default function Customers() {
           accountManager: c.accountManager || c.account_manager || userName,
           contractValue: c.contractValue || c.revenue || "₹4,50,000",
           remarksHistory: c.remarksHistory || [],
+          latitude: c.latitude ?? null,
+          longitude: c.longitude ?? null,
         }));
 
         setCustomerList((prev) => {
@@ -771,6 +779,39 @@ export default function Customers() {
                 <p className="text-xs sm:text-sm text-purple-950 font-medium">{selectedCustomer.onboardingRemarks || "Account active. No special custom flags attached."}</p>
               </div>
 
+              {/* Location Section */}
+              <div className="p-3.5 bg-blue-50 border-2 border-blue-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <MapPin size={14} className="text-blue-600" />
+                    <span className="text-[10px] font-black text-blue-900 uppercase tracking-wider">Exact Location (Smart Map)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomerLocationPickerOpen(true)}
+                    className="px-3 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[10px] flex items-center gap-1 shadow-sm transition cursor-pointer"
+                  >
+                    <MapPin size={11} /> {selectedCustomer.latitude ? 'Update Location' : 'Set Location'}
+                  </button>
+                </div>
+                {selectedCustomer.latitude && selectedCustomer.longitude ? (
+                  <div className="flex items-center gap-2">
+                    <CheckCircle2 size={13} className="text-emerald-600 flex-shrink-0" />
+                    <div>
+                      <p className="text-[11px] font-semibold text-slate-700">{selectedCustomer.city}</p>
+                      <p className="text-[10px] font-bold font-mono text-slate-400">
+                        {Number(selectedCustomer.latitude).toFixed(6)}, {Number(selectedCustomer.longitude).toFixed(6)}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-amber-600 text-[11px] font-bold">
+                    <AlertCircle size={12} className="flex-shrink-0" />
+                    No exact location. Click "Set Location" to enable routing in Smart Map.
+                  </div>
+                )}
+              </div>
+
               {/* 4. Log General Interaction Remark Form */}
               <form onSubmit={handleAddRemark} className="space-y-1.5 pt-2 border-t border-slate-100">
                 <label className="font-extrabold text-slate-900 text-xs sm:text-sm block">Log New Executive Remark / Interaction Note</label>
@@ -881,6 +922,28 @@ export default function Customers() {
           </div>
         </div>
       )}
+
+      {/* ── Customer Location Picker Modal ── */}
+      <LocationPickerModal
+        isOpen={isCustomerLocationPickerOpen}
+        onClose={() => setIsCustomerLocationPickerOpen(false)}
+        initialLat={selectedCustomer?.latitude || 13.0067}
+        initialLng={selectedCustomer?.longitude || 80.2570}
+        initialAddress={selectedCustomer?.city || ''}
+        title="Update Customer Location"
+        onConfirm={(lat, lng, address) => {
+          const updated = { ...selectedCustomer, latitude: lat, longitude: lng, city: selectedCustomer.city || address };
+          setSelectedCustomer(updated);
+          setCustomerList(prev => prev.map(c =>
+            (c.id === updated.id || c.customer_id === updated.customer_id) ? updated : c
+          ));
+          customerAPI.updateCustomer?.(updated.customer_id || updated.id, {
+            latitude: lat,
+            longitude: lng,
+          }).catch(() => null);
+          setIsCustomerLocationPickerOpen(false);
+        }}
+      />
     </div>
   );
 }

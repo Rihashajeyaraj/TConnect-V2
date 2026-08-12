@@ -48,6 +48,7 @@ class ClockInRequest(BaseModel):
     face_match_confidence: Optional[float] = 0.95
     notes: Optional[str] = None
     remarks: Optional[str] = None
+    verification_token: Optional[str] = None
 
 
 class ClockOutRequest(BaseModel):
@@ -68,6 +69,7 @@ class ClockOutRequest(BaseModel):
     liveness_score: Optional[float] = 0.98
     summary: Optional[str] = None
     remarks: Optional[str] = None
+    verification_token: Optional[str] = None
 
 
 class LeaveCreate(BaseModel):

@@ -30,6 +30,8 @@ class LeadCreate(BaseModel):
     employee_id: Optional[str] = None
     employee_code: Optional[str] = None
     notes: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
     class Config:
         extra = Extra.allow
@@ -57,6 +59,8 @@ class LeadUpdate(BaseModel):
     assigned_to: Optional[str] = None
     assigned_to_email: Optional[str] = None
     notes: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None
 
     class Config:
         extra = Extra.allow
@@ -81,3 +85,5 @@ class LeadResponse(BaseModel):
     source: Optional[str] = None
     assigned_to: Optional[str] = None
     notes: Optional[str] = None
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None

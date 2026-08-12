@@ -53,6 +53,29 @@ class AttendanceRepository:
         emp_name = str(data.get("employee_name") or data.get("name") or "Sales Executive")
         now_iso = datetime.utcnow().isoformat()
 
+        # Check and delete existing enrollment to avoid duplicate records
+        existing_id = None
+        try:
+            res = self.supabase.schema("hrms").table("enrollments").select("id").eq("employee_id", emp_id).execute()
+            if res.data and len(res.data) > 0:
+                existing_id = res.data[0].get("id")
+        except Exception:
+            try:
+                res = self.supabase.table("enrollments").select("id").eq("employee_id", emp_id).execute()
+                if res.data and len(res.data) > 0:
+                    existing_id = res.data[0].get("id")
+            except Exception:
+                pass
+
+        if existing_id:
+            try:
+                self.supabase.schema("hrms").table("enrollments").delete().eq("id", existing_id).execute()
+            except Exception:
+                try:
+                    self.supabase.table("enrollments").delete().eq("id", existing_id).execute()
+                except Exception:
+                    pass
+
         entry = {
             "id": f"enroll_{uuid.uuid4()}",
             "employee_id": emp_id,
@@ -82,6 +105,37 @@ class AttendanceRepository:
                 logger.warning(f"Supabase enrollments table insert warning: {e}")
 
         return entry
+
+    def get_all_enrollments(self) -> List[Dict[str, Any]]:
+        """Retrieve all enrolled employees with valid face template vectors."""
+        logs = []
+        try:
+            res = self.supabase.schema("hrms").table("enrollments").select("*").eq("enrolled", True).execute()
+            if res.data is not None:
+                logs = res.data
+        except Exception:
+            try:
+                res = self.supabase.table("enrollments").select("*").eq("enrolled", True).execute()
+                if res.data is not None:
+                    logs = res.data
+            except Exception:
+                pass
+
+        # Merge with in-memory enrollments
+        existing_ids = {str(l.get("employee_id")) for l in logs if l.get("employee_id")}
+        for key, entry in _in_memory_enrollments.items():
+            emp_id = entry.get("employee_id")
+            if emp_id and str(emp_id) not in existing_ids:
+                logs.append(entry)
+
+        # Filter for rows that have a valid 512-dimension vector
+        valid_enrollments = []
+        for entry in logs:
+            vec = entry.get("face_template_vector")
+            if isinstance(vec, list) and len(vec) == 512:
+                valid_enrollments.append(entry)
+
+        return valid_enrollments
 
     # ── 2. ATTENDANCE LOGS ───────────────────────────────────────────────────
     def get_all_logs(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
