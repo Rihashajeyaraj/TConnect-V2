@@ -27,18 +27,37 @@ import {
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { clearUserCache } from '../../utils/userScope.js'
 
-// Exactly the 9 requested CEO main navigation items
+// Exactly the 8 requested CEO main navigation items
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/ceo' },
-  { label: 'Sales Overview', icon: TrendingUp, path: '/ceo/sales-overview' },
   { label: 'Customers', icon: Users, path: '/ceo/customers' },
   { label: 'Team Management', icon: Users2, path: '/ceo/team-management' },
   { label: 'HRMS', icon: Briefcase, path: '/ceo/hrms' },
-  { label: 'Revenue & Finance', icon: DollarSign, path: '/ceo/revenue-finance' },
+  { label: 'Sales & Revenue', icon: TrendingUp, path: '/ceo/sales-revenue' },
   { label: 'Reports', icon: FileText, path: '/ceo/reports' },
   { label: 'Notifications', icon: Bell, path: '/ceo/notifications', badge: '3' },
   { label: 'Settings', icon: Settings, path: '/ceo/settings' },
 ]
+
+const resolveOrderedNavItems = (savedLabels) => {
+  if (!savedLabels || !Array.isArray(savedLabels)) return navItems
+  const normalizedLabels = savedLabels.map((lbl) => {
+    if (lbl === 'Sales Overview' || lbl === 'Revenue & Finance') return 'Sales & Revenue'
+    return lbl
+  })
+  const uniqueLabels = [...new Set(normalizedLabels)]
+  const ordered = []
+  uniqueLabels.forEach((label) => {
+    const match = navItems.find((n) => n.label === label)
+    if (match) ordered.push(match)
+  })
+  navItems.forEach((n) => {
+    if (!ordered.some((o) => o.label === n.label)) {
+      ordered.push(n)
+    }
+  })
+  return ordered
+}
 
 function CeoLayout() {
   const { showToast } = useToast()
@@ -59,17 +78,7 @@ function CeoLayout() {
     if (saved) {
       try {
         const labels = JSON.parse(saved);
-        const ordered = [];
-        labels.forEach(label => {
-          const match = navItems.find(n => n.label === label);
-          if (match) ordered.push(match);
-        });
-        navItems.forEach(n => {
-          if (!ordered.some(o => o.label === n.label)) {
-            ordered.push(n);
-          }
-        });
-        return ordered;
+        return resolveOrderedNavItems(labels);
       } catch (e) {
         return navItems;
       }
@@ -82,17 +91,7 @@ function CeoLayout() {
     if (saved) {
       try {
         const labels = JSON.parse(saved);
-        const ordered = [];
-        labels.forEach(label => {
-          const match = navItems.find(n => n.label === label);
-          if (match) ordered.push(match);
-        });
-        navItems.forEach(n => {
-          if (!ordered.some(o => o.label === n.label)) {
-            ordered.push(n);
-          }
-        });
-        setSidebarItems(ordered);
+        setSidebarItems(resolveOrderedNavItems(labels));
       } catch (e) {
         setSidebarItems(navItems);
       }
@@ -164,14 +163,14 @@ function CeoLayout() {
       const savedLeads = JSON.parse(localStorage.getItem('tc_leads')) || []
       savedLeads.forEach((lead) => {
         if ((lead.name || '').toLowerCase().includes(query) || (lead.company || '').toLowerCase().includes(query)) {
-          results.push({ type: 'lead', title: lead.name || lead.company, path: '/ceo/sales-overview', desc: `Lead at ${lead.company}` })
+          results.push({ type: 'lead', title: lead.name || lead.company, path: '/ceo/sales-revenue', desc: `Lead at ${lead.company}` })
         }
       })
 
       const savedOpps = JSON.parse(localStorage.getItem('tc_opportunities')) || []
       savedOpps.forEach((opp) => {
         if ((opp.company || '').toLowerCase().includes(query)) {
-          results.push({ type: 'opportunity', title: `Deal: ${opp.company}`, path: '/ceo/sales-overview', desc: `Value: ₹${(opp.value || 0).toLocaleString()} (${opp.stage})` })
+          results.push({ type: 'opportunity', title: `Deal: ${opp.company}`, path: '/ceo/sales-revenue', desc: `Value: ₹${(opp.value || 0).toLocaleString()} (${opp.stage})` })
         }
       })
     } catch {
@@ -198,7 +197,7 @@ function CeoLayout() {
 
   const mockSchedule = [
     { id: 1, title: 'Quarterly Executive Review', time: '10:30 AM - 11:30 AM', rep: 'Sales Managers' },
-    { id: 2, title: 'Enterprise Deal Closing (Apex Tech)', time: '02:00 PM - 03:00 PM', rep: 'Vikram Singh' },
+    { id: 2, title: 'Enterprise Deal Review', time: '02:00 PM - 03:00 PM', rep: 'Sales Team' },
     { id: 3, title: 'HR & Approvals Clearance', time: '04:30 PM - 05:00 PM', rep: 'Operations' },
   ]
 

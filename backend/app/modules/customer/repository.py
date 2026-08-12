@@ -66,11 +66,149 @@ class CustomerRepository:
 
         from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
         allowed = get_allowed_user_identifiers(user_payload)
+        res_list = fetched_customers
         if allowed is not None:
             scoped = [c for c in fetched_customers if is_record_accessible(c, allowed)]
-            return scoped if scoped else fetched_customers
+            res_list = scoped if scoped else fetched_customers
 
-        return fetched_customers
+        # Dynamic mapping/enrichment of manager and executive hierarchies
+        try:
+            from app.modules.users.repository import UserRepository
+            all_users = UserRepository().get_all_users()
+            
+            user_map_by_email = {}
+            user_map_by_name = {}
+            for u in all_users:
+                u_email = str(u.get("email") or "").lower().strip()
+                if u_email:
+                    user_map_by_email[u_email] = u
+                u_name = str(u.get("name") or u.get("full_name") or "").lower().strip()
+                if u_name:
+                    user_map_by_name[u_name] = u
+
+            from app.modules.crm.repository import CRMRepository
+            all_leads = CRMRepository().get_all_leads()
+            lead_map = {str(l.get("lead_id") or l.get("id")): l for l in all_leads}
+
+            # Fetch visits
+            visits = []
+            try:
+                res_visits = self.supabase.schema("field_management").table("visits").select("customer_id, check_in_time, status").execute()
+                if res_visits.data:
+                    visits = res_visits.data
+            except Exception:
+                try:
+                    res_visits = self.supabase.table("visits").select("customer_id, check_in_time, status").execute()
+                    if res_visits.data:
+                        visits = res_visits.data
+                except Exception:
+                    pass
+            
+            last_visit_map = {}
+            for v in visits:
+                cid = str(v.get("customer_id") or "")
+                v_time = v.get("check_in_time")
+                if cid and v_time:
+                    if cid not in last_visit_map or v_time > last_visit_map[cid]:
+                        last_visit_map[cid] = v_time[:10]
+                        
+            # Fetch followups
+            followups = []
+            try:
+                res_f = self.supabase.schema("crm").table("followups").select("lead_id, scheduled_date, status").execute()
+                if res_f.data:
+                    followups = res_f.data
+            except Exception:
+                try:
+                    res_f = self.supabase.table("followups").select("lead_id, scheduled_date, status").execute()
+                    if res_f.data:
+                        followups = res_f.data
+                except Exception:
+                    pass
+            
+            next_followup_map = {}
+            for f in followups:
+                lid = str(f.get("lead_id") or "")
+                sched = f.get("scheduled_date")
+                status = str(f.get("status") or "").lower()
+                if lid and sched and "completed" not in status and "cancel" not in status:
+                    if lid not in next_followup_map or sched < next_followup_map[lid]:
+                        next_followup_map[lid] = sched[:10]
+
+            for row in res_list:
+                cid = str(row.get("customer_id") or row.get("id") or "")
+                lid = str(row.get("lead_id") or "")
+                
+                lead = lead_map.get(lid) if lid else None
+                
+                se_email = ""
+                se_name = ""
+                sm_email = ""
+                sm_name = ""
+                product_val = "Software License"
+                
+                if lead:
+                    se_email = str(lead.get("assigned_to_email") or "").lower().strip()
+                    se_name = lead.get("assigned_to") or ""
+                    sm_email = str(lead.get("reporting_manager_email") or "").lower().strip()
+                    product_val = lead.get("product_name") or lead.get("product") or product_val
+                    
+                notes = str(row.get("notes") or "")
+                if not se_name and "AssignedTo:" in notes:
+                    for part in notes.split("|"):
+                        if "AssignedTo:" in part:
+                            se_name = part.split("AssignedTo:")[-1].strip()
+                            
+                se_user = None
+                if se_email:
+                    se_user = user_map_by_email.get(se_email)
+                if not se_user and se_name:
+                    se_user = user_map_by_name.get(se_name.lower().strip())
+                    
+                se_id = ""
+                sm_id = ""
+                if se_user:
+                    se_email = str(se_user.get("email") or "").lower().strip()
+                    se_name = se_user.get("name") or se_name
+                    se_id = str(se_user.get("id") or se_user.get("auth_user_id") or "")
+                    
+                    sm_email = sm_email or str(se_user.get("reporting_manager_email") or "").lower().strip()
+                    sm_name = sm_name or se_user.get("reporting_manager_name") or ""
+                    
+                if sm_email:
+                    sm_user = user_map_by_email.get(sm_email)
+                    if sm_user:
+                        sm_name = sm_name or sm_user.get("name") or ""
+                        sm_id = str(sm_user.get("id") or sm_user.get("auth_user_id") or "")
+                        
+                if not se_name:
+                    se_name = "Direct/Unassigned"
+                if not sm_name:
+                    sm_name = "Direct/Unassigned"
+                    
+                row["customer_id"] = cid
+                row["customer_name"] = row.get("name") or row.get("company") or "Unnamed Customer"
+                row["sales_manager_id"] = sm_id
+                row["sales_manager_name"] = sm_name
+                row["sales_executive_id"] = se_id
+                row["sales_executive_name"] = se_name
+                row["product"] = product_val
+                
+                row["manager_id"] = sm_id
+                row["manager_name"] = sm_name
+                row["executive_id"] = se_id
+                row["executive_name"] = se_name
+                
+                val = float(row.get("contract_value") or row.get("revenue") or row.get("value") or 0.0)
+                row["amount"] = val
+                row["revenue"] = val
+                
+                row["last_visit"] = last_visit_map.get(cid) or "No visits"
+                row["next_followup"] = next_followup_map.get(lid) or "No follow-up"
+        except Exception as e_enrich:
+            logger.warning(f"Error enriching customer details directory: {e_enrich}")
+
+        return res_list
 
     def create_customer(self, data: Dict[str, Any]) -> Dict[str, Any]:
         # 1. Resolve valid lead_id

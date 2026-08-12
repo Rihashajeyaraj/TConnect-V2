@@ -132,3 +132,47 @@ async def acknowledge_eod_report(
         data=result,
         message="EOD report acknowledged successfully"
     )
+
+
+@router.get("/ceo/sales-overview", response_model=StandardResponse)
+async def get_ceo_sales_overview(
+    from_date: str | None = None,
+    to_date: str | None = None,
+    manager_id: str | None = None,
+    executive_id: str | None = None,
+    user_payload: dict = Depends(get_current_user_payload),
+    service: ReportsService = Depends(get_service)
+):
+    """Retrieve full organization sales overview analytics scoped for CEO / Super Admin / Admin."""
+    role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+    if role not in ("super_admin", "ceo", "admin"):
+        raise ForbiddenException("Access to CEO Sales Overview is restricted to Admin, Super Admin, and CEO roles.")
+
+    params = {
+        "from_date": from_date,
+        "to_date": to_date,
+        "manager_id": manager_id,
+        "executive_id": executive_id
+    }
+    data = service.get_ceo_sales_overview(params)
+    return StandardResponse.success_response(
+        data=data,
+        message="CEO Sales Overview details retrieved successfully"
+    )
+
+
+@router.get("/ceo/customers", response_model=StandardResponse)
+async def get_ceo_customer_directory(
+    user_payload: dict = Depends(get_current_user_payload),
+    service: ReportsService = Depends(get_service)
+):
+    """Full Manager → Executive → Customer hierarchy for CEO directory."""
+    role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+    if role not in ("super_admin", "ceo", "admin"):
+        raise ForbiddenException("Access to CEO Customer Directory is restricted to Admin, Super Admin, and CEO roles.")
+
+    data = service.get_ceo_customer_directory()
+    return StandardResponse.success_response(
+        data=data,
+        message="CEO Customer Directory retrieved successfully"
+    )

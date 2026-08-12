@@ -6,19 +6,10 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react'
-import { reportAPI } from '../../services/api.js'
-
-const initialLeads = [
-  { id: '1', name: 'ABC Industries', company: 'ABC Pvt Ltd', category: 'Hot', sales_manager: 'Vikram Singh', sales_executive: 'Ananya Roy', phone: '+91 98765 43210', date: '28 Apr 2026', status: 'New' },
-  { id: '2', name: 'Tech Solutions', company: 'Tech Solutions', category: 'Warm', sales_manager: 'Suresh V', sales_executive: 'Karthik Raja', phone: '+91 87654 32109', date: '28 Apr 2026', status: 'Contacted' },
-  { id: '3', name: 'Global Corp', company: 'Global Corp', category: 'Cold', sales_manager: 'Vikram Singh', sales_executive: 'Ananya Roy', phone: '+91 76543 21098', date: '27 Apr 2026', status: 'Qualified' },
-  { id: '4', name: 'Prime Systems', company: 'Prime Systems', category: 'Hot', sales_manager: 'Suresh V', sales_executive: 'Karthik Raja', phone: '+91 65432 10987', date: '27 Apr 2026', status: 'Proposal' },
-  { id: '5', name: 'Next Gen Tech', company: 'Next Gen Tech', category: 'Warm', sales_manager: 'Vikram Singh', sales_executive: 'Ananya Roy', phone: '+91 54321 09876', date: '26 Apr 2026', status: 'Negotiation' },
-  { id: '6', name: 'Bright Infotech', company: 'Bright Infotech', category: 'Cold', sales_manager: 'Suresh V', sales_executive: 'Karthik Raja', phone: '+91 43210 98765', date: '26 Apr 2026', status: 'Won' },
-]
+import { crmAPI, reportAPI } from '../../services/api.js'
 
 function Leads() {
-  const [leads, setLeads] = useState(initialLeads)
+  const [leads, setLeads] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('All') // 'All', 'Hot', 'Warm', 'Cold'
@@ -28,12 +19,20 @@ function Leads() {
   const loadData = async () => {
     setLoading(true)
     try {
-      const res = await reportAPI.getCeoDashboard()
-      if (res && res.data && res.data.leads) {
-        setLeads(res.data.leads)
+      const res = await crmAPI.getLeads().catch(() => null)
+      if (res && res.data && Array.isArray(res.data)) {
+        setLeads(res.data)
+      } else {
+        const dRes = await reportAPI.getCeoDashboard().catch(() => null)
+        if (dRes && dRes.data && dRes.data.leads) {
+          setLeads(dRes.data.leads)
+        } else {
+          setLeads([])
+        }
       }
     } catch (e) {
       console.error('Error fetching leads:', e)
+      setLeads([])
     } finally {
       setLoading(false)
       setRefreshing(false)

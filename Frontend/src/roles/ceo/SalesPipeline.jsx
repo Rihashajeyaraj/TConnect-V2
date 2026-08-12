@@ -15,18 +15,6 @@ import {
   Trash2,
 } from 'lucide-react'
 
-// Initial mock opportunities
-const initialOpportunities = [
-  { id: '1', company: 'ABC Pvt Ltd', rep: 'John Doe', value: 45000, stage: 'Lead', probability: 30, age: 5 },
-  { id: '2', company: 'Tech Solutions', rep: 'Mary Jane', value: 85000, stage: 'Qualified', probability: 50, age: 12 },
-  { id: '3', company: 'Global Corp', rep: 'Robert Smith', value: 250000, stage: 'Negotiation', probability: 80, age: 24 },
-  { id: '4', company: 'Prime Systems', rep: 'David Brown', value: 65000, stage: 'Proposal', probability: 60, age: 10 },
-  { id: '5', company: 'Next Gen Tech', rep: 'Mary Jane', value: 120000, stage: 'Negotiation', probability: 75, age: 18 },
-  { id: '6', company: 'Vertex Systems', rep: 'David Brown', value: 95000, stage: 'Won', probability: 100, age: 30 },
-  { id: '7', company: 'InnoTech Pvt Ltd', rep: 'Robert Smith', value: 50000, stage: 'Proposal', probability: 40, age: 8 },
-  { id: '8', company: 'Delta Softwares', rep: 'John Doe', value: 35000, stage: 'Lost', probability: 0, age: 15 },
-]
-
 const STAGES = ['Lead', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost']
 
 const STAGE_COLORS = {
@@ -40,23 +28,24 @@ const STAGE_COLORS = {
 
 function SalesPipeline() {
   const { showToast } = useToast()
-  const [opportunities, setOpportunities] = useState(() => {
-    const saved = localStorage.getItem('tc_opportunities')
-    if (saved) return JSON.parse(saved)
-    localStorage.setItem('tc_opportunities', JSON.stringify(initialOpportunities))
-    return initialOpportunities
-  })
+  const [opportunities, setOpportunities] = useState([])
+  const [loading, setLoading] = useState(true)
 
   // Fetch opportunities from Supabase on mount
   useEffect(() => {
+    setLoading(true)
     pipelineAPI.getOpportunities().then((res) => {
-      const opps = res.data || res || []
-      if (Array.isArray(opps) && opps.length > 0) {
+      const opps = res?.data || res || []
+      if (Array.isArray(opps)) {
         setOpportunities(opps)
-        localStorage.setItem('tc_opportunities', JSON.stringify(opps))
+      } else {
+        setOpportunities([])
       }
     }).catch((err) => {
       console.warn("Pipeline API fetch notice:", err)
+      setOpportunities([])
+    }).finally(() => {
+      setLoading(false)
     })
   }, [])
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { Link } from 'react-router-dom'
 import {
   Bell,
@@ -14,112 +14,96 @@ import {
   Check,
   Trash2,
   Filter,
+  RefreshCw,
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
+import { attendanceAPI, notificationAPI } from '../../services/api.js'
 
-const MOCK_CEO_NOTIFICATIONS = [
-  {
-    id: 1,
-    category: 'LEAVE_APPROVAL',
-    title: 'Urgent Leave Approval Request',
-    description: 'Vikram Singh (Sales Manager) requested Sick Leave for 1 Day (Aug 9, 2026) due to medical migraine.',
-    time: '15 mins ago',
-    unread: true,
-    actionable: true,
-    link: '/ceo/hrms',
-  },
-  {
-    id: 2,
-    category: 'MAJOR_DEAL',
-    title: 'Major Enterprise Deal Closed!',
-    description: 'Ananya Roy won contract with Apex Technologies Pvt Ltd valued at ₹4,50,000 for Enterprise CRM implementation.',
-    time: '45 mins ago',
-    unread: true,
-    actionable: false,
-    link: '/ceo/sales-overview',
-  },
-  {
-    id: 3,
-    category: 'PERMISSION_REQUEST',
-    title: 'Client Field Demo Permission Request',
-    description: 'Ananya Roy submitted an Early Departure permission for key account keynote pitch in OMR IT Corridor.',
-    time: '1 hour ago',
-    unread: true,
-    actionable: true,
-    link: '/ceo/hrms',
-  },
-  {
-    id: 4,
-    category: 'TARGET_ACHIEVEMENT',
-    title: 'Regional Sales Milestone Achieved',
-    description: 'South Region led by Vikram Singh crossed 82.5% annual sales achievement target with 14 signed customer accounts.',
-    time: '3 hours ago',
-    unread: false,
-    actionable: false,
-    link: '/ceo/revenue-finance',
-  },
-  {
-    id: 5,
-    category: 'CUSTOMER_UPDATE',
-    title: 'Key Account Retainer Renewed',
-    description: 'Global Corp Solutions renewed their SaaS multi-branch subscription (₹2,50,000) for the upcoming fiscal quarter.',
-    time: '5 hours ago',
-    unread: false,
-    actionable: false,
-    link: '/ceo/customers',
-  },
-  {
-    id: 6,
-    category: 'SYSTEM_ALERT',
-    title: 'Automated Daily Security & Database Backup',
-    description: 'Cloud encrypted database replication completed successfully with 100% integrity across all regional clusters.',
-    time: '1 day ago',
-    unread: false,
-    actionable: false,
-    link: '/ceo/settings',
-  },
-]
-
-const CATEGORY_CONFIG = {
-  LEAVE_APPROVAL: { label: 'Leave Approvals', icon: Calendar, color: 'text-purple-600 bg-purple-50 border-purple-200' },
-  PERMISSION_REQUEST: { label: 'Permission Requests', icon: Clock, color: 'text-amber-600 bg-amber-50 border-amber-200' },
-  MAJOR_DEAL: { label: 'Major Deals', icon: Award, color: 'text-emerald-600 bg-emerald-50 border-emerald-200' },
-  CUSTOMER_UPDATE: { label: 'Customer Updates', icon: Building2, color: 'text-[#EA6993] bg-[#F8CAE4]/20 border-[#EA6993]/30' },
-  TARGET_ACHIEVEMENT: { label: 'Target Achievements', icon: DollarSign, color: 'text-blue-600 bg-blue-50 border-blue-200' },
-  SYSTEM_ALERT: { label: 'System Alerts', icon: ShieldAlert, color: 'text-slate-600 bg-slate-100 border-slate-200' },
-}
-
-function CeoNotifications() {
+function Notifications() {
   const { showToast } = useToast()
-  const [notifications, setNotifications] = useState(MOCK_CEO_NOTIFICATIONS)
-  const [selectedCategory, setSelectedCategory] = useState('ALL')
+  const [notifications, setNotifications] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [activeFilter, setActiveFilter] = useState('ALL') // 'ALL' | 'UNREAD' | 'ACTIONABLE'
 
-  const unreadCount = notifications.filter((n) => n.unread).length
+  const loadNotifications = async () => {
+    setLoading(true)
+    try {
+      const [notifRes, leaveRes] = await Promise.allSettled([
+        notificationAPI?.getNotifications ? notificationAPI.getNotifications() : Promise.resolve({ data: [] }),
+        attendanceAPI.getLeaveRequests(),
+      ])
 
-  // Filtered notifications
-  const filteredNotifs = notifications.filter((n) => {
-    if (selectedCategory === 'ALL') return true
-    return n.category === selectedCategory
-  })
+      const notifs = notifRes.status === 'fulfilled' && notifRes.value?.data && Array.isArray(notifRes.value.data)
+        ? notifRes.value.data
+        : []
+
+      const leaves = leaveRes.status === 'fulfilled' && leaveRes.value?.data && Array.isArray(leaveRes.value.data)
+        ? leaveRes.value.data
+        : []
+
+      // Construct live notification items from pending leaves and real notifications
+      const liveItems = [
+        ...leaves.filter(l => l.status === 'Pending').map((l, i) => ({
+          id: `leave_${l.id || i}`,
+          category: 'LEAVE_APPROVAL',
+          title: 'Pending Leave Approval Request',
+          description: `${l.employee_name || 'Staff Member'} requested ${l.leave_type || 'Leave'} (${l.duration || '1 Day'}). Reason: ${l.reason || 'Personal'}`,
+          time: l.created_at ? String(l.created_at).slice(0, 10) : 'Pending',
+          unread: true,
+          actionable: true,
+          link: '/ceo/hrms',
+        })),
+        ...notifs.map((n, i) => ({
+          id: n.id || `notif_${i}`,
+          category: n.category || 'SYSTEM',
+          title: n.title || 'System Notification',
+          description: n.message || n.description || '',
+          time: n.created_at || 'Recently',
+          unread: n.is_read !== true,
+          actionable: false,
+          link: n.link || '/ceo/dashboard',
+        }))
+      ]
+
+      setNotifications(liveItems)
+    } catch (e) {
+      console.error('Error loading notifications:', e)
+      setNotifications([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadNotifications()
+  }, [])
 
   const markAllRead = () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })))
-    showToast('All notifications marked as read', 'info')
+    showToast('All notifications marked as read', 'success')
   }
 
-  const markItemRead = (id) => {
+  const markSingleRead = (id) => {
     setNotifications((prev) =>
       prev.map((n) => (n.id === id ? { ...n, unread: false } : n))
     )
   }
 
-  const handleAction = (id, decision) => {
+  const deleteNotification = (id) => {
     setNotifications((prev) => prev.filter((n) => n.id !== id))
-    showToast(`Request ${decision} successfully`, decision === 'Approved' ? 'success' : 'info')
+    showToast('Notification dismissed', 'info')
   }
 
+  const filteredNotifications = notifications.filter((n) => {
+    if (activeFilter === 'UNREAD') return n.unread
+    if (activeFilter === 'ACTIONABLE') return n.actionable
+    return true
+  })
+
+  const unreadCount = notifications.filter((n) => n.unread).length
+
   return (
-    <div className="mx-auto max-w-[1600px] space-y-6 pb-12">
+    <div className="mx-auto max-w-[1400px] space-y-6 pb-12">
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
@@ -128,140 +112,121 @@ function CeoNotifications() {
               <Bell className="size-4.5" />
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-              CEO Executive Notification Center
+              Executive Alerts & Notifications
             </h1>
+            {unreadCount > 0 && (
+              <span className="ml-2 rounded-full bg-[#832D51] px-2.5 py-0.5 text-xs font-black text-white">
+                {unreadCount} New
+              </span>
+            )}
           </div>
-          <p className="mt-1 text-xs text-slate-500 font-medium max-w-3xl">
-            Important CEO-level operational alerts: leave & permission clearances, major enterprise deal closures, customer milestone updates, and security logs.
+          <p className="mt-1 text-xs text-slate-500 font-medium max-w-2xl">
+            Real-time feed of pending employee approvals, field check-in alerts, and sales updates.
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
+          <button
+            onClick={loadNotifications}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700 transition cursor-pointer"
+          >
+            <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+
           {unreadCount > 0 && (
             <button
               onClick={markAllRead}
-              className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 px-3.5 py-2 text-xs font-bold transition"
+              className="flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700 transition cursor-pointer"
             >
-              <Check className="size-3.5" />
+              <Check className="size-3.5 text-emerald-600" />
               Mark All Read
             </button>
           )}
         </div>
       </div>
 
-      {/* Category Filter Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs">
-        {[
-          { key: 'ALL', label: 'All Alerts', badge: unreadCount },
-          { key: 'LEAVE_APPROVAL', label: 'Leave Requests' },
-          { key: 'PERMISSION_REQUEST', label: 'Permission Requests' },
-          { key: 'MAJOR_DEAL', label: 'Major Deals' },
-          { key: 'CUSTOMER_UPDATE', label: 'Customer Updates' },
-          { key: 'TARGET_ACHIEVEMENT', label: 'Target Achievements' },
-          { key: 'SYSTEM_ALERT', label: 'System Alerts' },
-        ].map((tab) => {
-          const isActive = selectedCategory === tab.key
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setSelectedCategory(tab.key)}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition whitespace-nowrap ${
-                isActive
-                  ? 'bg-[#832D51] text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <span>{tab.label}</span>
-              {tab.badge !== undefined && tab.badge > 0 && (
-                <span className={`rounded-full px-2 py-0.2 text-[10px] font-black ${isActive ? 'bg-white text-[#832D51]' : 'bg-[#3a7d63] text-white'}`}>
-                  {tab.badge}
-                </span>
-              )}
-            </button>
-          )
-        })}
+      {/* Filter Tabs */}
+      <div className="flex items-center gap-2">
+        {['ALL', 'UNREAD', 'ACTIONABLE'].map((f) => (
+          <button
+            key={f}
+            onClick={() => setActiveFilter(f)}
+            className={`rounded-xl px-4 py-2 text-xs font-bold transition cursor-pointer ${
+              activeFilter === f
+                ? 'bg-[#832D51] text-white shadow-xs'
+                : 'bg-white border border-slate-200/90 text-slate-600 hover:bg-slate-50'
+            }`}
+          >
+            {f === 'ALL' ? 'All Alerts' : f === 'UNREAD' ? 'Unread Only' : 'Action Required'}
+          </button>
+        ))}
       </div>
 
-      {/* Notifications Stream */}
+      {/* Notifications List */}
       <div className="space-y-3">
-        {filteredNotifs.map((notif) => {
-          const conf = CATEGORY_CONFIG[notif.category] || CATEGORY_CONFIG.SYSTEM_ALERT
-          const Icon = conf.icon
-
-          return (
+        {loading ? (
+          <div className="p-12 text-center text-xs font-bold text-slate-400 bg-white border border-slate-200 rounded-2xl">
+            <RefreshCw className="size-6 animate-spin mx-auto mb-2 text-[#832D51]" />
+            Loading real-time notifications...
+          </div>
+        ) : filteredNotifications.length === 0 ? (
+          <div className="rounded-2xl border border-slate-200/90 bg-white p-12 text-center shadow-xs">
+            <CheckCircle2 className="mx-auto size-10 text-emerald-500 mb-2" />
+            <h3 className="text-sm font-black text-slate-900">All caught up!</h3>
+            <p className="text-xs text-slate-500 font-medium mt-1">No alerts or notifications pending in the database.</p>
+          </div>
+        ) : (
+          filteredNotifications.map((notif) => (
             <div
               key={notif.id}
-              onClick={() => markItemRead(notif.id)}
-              className={`rounded-2xl border p-5 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+              className={`rounded-2xl border p-4.5 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
                 notif.unread
-                  ? 'border-[#832D51]/30 bg-white shadow-xs ring-1 ring-[#832D51]/10'
-                  : 'border-slate-200/80 bg-white/70 opacity-90'
+                  ? 'bg-white border-[#832D51]/30 shadow-xs'
+                  : 'bg-slate-50/70 border-slate-200/70'
               }`}
             >
               <div className="flex items-start gap-3.5">
-                <span className={`grid size-10 shrink-0 place-items-center rounded-xl border ${conf.color}`}>
-                  <Icon className="size-5" />
-                </span>
-                <div className="space-y-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="rounded bg-slate-100 px-2 py-0.5 text-[9px] font-black uppercase text-slate-600">
-                      {conf.label}
-                    </span>
-                    <h3 className="text-sm font-black text-slate-900">{notif.title}</h3>
+                <div className="size-9 rounded-xl bg-blue-50 text-blue-700 flex items-center justify-center shrink-0">
+                  <Bell className="size-4.5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-xs font-black text-slate-900">{notif.title}</h3>
                     {notif.unread && (
-                      <span className="size-2 rounded-full bg-[#3a7d63]" />
+                      <span className="size-1.5 rounded-full bg-[#832D51]" />
                     )}
                   </div>
-                  <p className="text-xs text-slate-600 max-w-2xl leading-relaxed">{notif.description}</p>
-                  <p className="text-[10px] text-slate-400 font-medium">{notif.time}</p>
+                  <p className="text-xs text-slate-600 font-medium mt-0.5 max-w-2xl">{notif.description}</p>
+                  <span className="text-[10px] text-slate-400 font-bold mt-1.5 block">{notif.time}</span>
                 </div>
               </div>
 
-              {/* Actions */}
               <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                {notif.actionable ? (
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleAction(notif.id, 'Rejected')
-                      }}
-                      className="rounded-xl px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 transition"
-                    >
-                      Reject
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        handleAction(notif.id, 'Approved')
-                      }}
-                      className="rounded-xl bg-[#832D51] text-white px-3.5 py-1.5 text-xs font-bold hover:bg-[#6a2240] transition shadow-xs"
-                    >
-                      Approve
-                    </button>
-                  </div>
-                ) : (
+                {notif.link && (
                   <Link
                     to={notif.link}
-                    className="rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 px-3.5 py-1.5 text-xs font-bold transition"
+                    onClick={() => markSingleRead(notif.id)}
+                    className="px-3 py-1.5 rounded-lg bg-[#832D51] hover:bg-[#6a2240] text-white text-[11px] font-black transition"
                   >
                     View Details
                   </Link>
                 )}
+                <button
+                  onClick={() => deleteNotification(notif.id)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
+                  title="Dismiss notification"
+                >
+                  <Trash2 className="size-4" />
+                </button>
               </div>
             </div>
-          )
-        })}
-
-        {filteredNotifs.length === 0 && (
-          <div className="rounded-2xl border border-slate-200 bg-white p-12 text-center text-slate-400">
-            <CheckCircle2 className="size-10 mx-auto text-emerald-500 mb-2 opacity-80" />
-            <p className="text-sm font-bold text-slate-700">No notifications in this category</p>
-          </div>
+          ))
         )}
       </div>
     </div>
   )
 }
 
-export default CeoNotifications
+export default Notifications

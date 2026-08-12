@@ -150,6 +150,9 @@ export const customerAPI = {
     request(`/customer/customers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteCustomer: (id) =>
     request(`/customer/customers/${id}`, { method: 'DELETE' }),
+
+  // CEO full hierarchy: Manager → Executive → Customer
+  getCeoCustomerDirectory: () => request('/reports/ceo/customers'),
 }
 
 export const hrmsAPI = {
@@ -219,6 +222,10 @@ export const reportAPI = {
   getEODReports: () => request('/reports/eod'),
   acknowledgeEODReport: (id, data) => request(`/reports/eod/${id}/acknowledge`, { method: 'POST', body: JSON.stringify(data) }),
   getCeoDashboard: () => request('/reports/ceo-dashboard'),
+  getCeoSalesOverview: (params = {}) => {
+    const query = new URLSearchParams(params).toString()
+    return request(`/reports/ceo/sales-overview${query ? `?${query}` : ''}`)
+  },
 }
 
 export const dashboardAPI = {
@@ -237,6 +244,7 @@ export const todoAPI = {
 
 export const userAPI = {
   getUsers: () => request('/users'),
+  getHierarchy: () => request('/users/hierarchy'),
   createUser: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
   updateUser: (id, data) => request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),

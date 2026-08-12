@@ -8,11 +8,10 @@ import { ToastProvider } from './common/ToastContext.jsx'
 // ── CEO ─────────────────────────────────────────────────────────────
 import CeoLayout from './roles/ceo/CeoLayout.jsx'
 import CeoDashboard from './roles/ceo/Dashboard.jsx'
-import CeoSalesOverview from './roles/ceo/SalesOverview.jsx'
+import CeoSalesRevenue from './roles/ceo/SalesOverview.jsx'
 import CeoCustomers from './roles/ceo/Customers.jsx'
 import CeoTeamManagement from './roles/ceo/TeamManagement.jsx'
 import CeoHrms from './roles/ceo/Hrms.jsx'
-import CeoRevenueFinance from './roles/ceo/RevenueFinance.jsx'
 import CeoReports from './roles/ceo/Reports.jsx'
 import CeoNotifications from './roles/ceo/Notifications.jsx'
 import CeoSettings from './roles/ceo/Settings.jsx'
@@ -78,23 +77,24 @@ function App() {
             <Route path="/ceo" element={<CeoLayout />}>
               <Route index element={<CeoDashboard />} />
               <Route path="dashboard" element={<CeoDashboard />} />
-              <Route path="sales-overview" element={<CeoSalesOverview />} />
               <Route path="customers" element={<CeoCustomers />} />
               <Route path="team-management" element={<CeoTeamManagement />} />
               <Route path="hrms" element={<CeoHrms />} />
-              <Route path="revenue-finance" element={<CeoRevenueFinance />} />
+              <Route path="sales-revenue" element={<CeoSalesRevenue />} />
               <Route path="reports" element={<CeoReports />} />
               <Route path="notifications" element={<CeoNotifications />} />
               <Route path="settings" element={<CeoSettings />} />
 
               {/* Backward compatibility aliases */}
+              <Route path="sales-overview" element={<Navigate to="/ceo/sales-revenue" replace />} />
+              <Route path="revenue-finance" element={<Navigate to="/ceo/sales-revenue" replace />} />
               <Route path="users" element={<CeoTeamManagement />} />
-              <Route path="client-log" element={<CeoSalesOverview />} />
-              <Route path="leads" element={<CeoSalesOverview initialSection="leads" />} />
+              <Route path="client-log" element={<CeoSalesRevenue />} />
+              <Route path="leads" element={<CeoSalesRevenue initialSection="leads" />} />
               <Route path="customer" element={<CeoCustomers />} />
-              <Route path="visits" element={<CeoSalesOverview initialSection="visits" />} />
-              <Route path="followups" element={<CeoSalesOverview initialSection="followups" />} />
-              <Route path="opportunities" element={<CeoSalesOverview initialSection="opportunities" />} />
+              <Route path="visits" element={<CeoSalesRevenue initialSection="visits" />} />
+              <Route path="followups" element={<CeoSalesRevenue initialSection="followups" />} />
+              <Route path="opportunities" element={<CeoSalesRevenue initialSection="opportunities" />} />
               <Route path="employee" element={<CeoTeamManagement />} />
               <Route path="attendance" element={<CeoHrms initialTab="attendance" />} />
               <Route path="leaves" element={<CeoHrms initialTab="leaves" />} />

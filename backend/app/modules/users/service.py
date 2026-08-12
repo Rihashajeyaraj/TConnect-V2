@@ -30,3 +30,6 @@ class UserService:
 
     def get_assigned_executives_for_manager(self, manager_id: str) -> List[Dict[str, Any]]:
         return self.repo.get_assigned_executives_for_manager(manager_id)
+
+    def get_manager_executive_hierarchy(self) -> Dict[str, Any]:
+        return self.repo.get_manager_executive_hierarchy()

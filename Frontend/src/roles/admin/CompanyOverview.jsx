@@ -27,20 +27,10 @@ function CompanyOverview() {
   })
 
   // Branch Management State
-  const [branches, setBranches] = useState([
-    { id: 1, name: 'Chennai Head Office', type: 'Head Office', location: 'OMR Expressway, Chennai', status: 'Active', staffCount: 14 },
-    { id: 2, name: 'Bangalore Regional Office', type: 'Regional Office', location: 'Indiranagar, Bangalore', status: 'Active', staffCount: 8 },
-    { id: 3, name: 'Hyderabad Branch', type: 'Regional Office', location: 'HITEC City, Hyderabad', status: 'Active', staffCount: 6 },
-    { id: 4, name: 'Mumbai Commercial Office', type: 'Regional Office', location: 'BKC, Mumbai', status: 'Active', staffCount: 4 },
-  ])
+  const [branches, setBranches] = useState([])
 
   // Department Management State
-  const [departments, setDepartments] = useState([
-    { id: 1, name: 'Sales & Business Development', lead: 'Rajesh Kumar', staffCount: 12, budget: '₹15,00,000' },
-    { id: 2, name: 'Marketing & Growth', lead: 'Priya Sharma', staffCount: 5, budget: '₹8,00,000' },
-    { id: 3, name: 'Customer Support & Success', lead: 'Karthik Raja', staffCount: 6, budget: '₹6,00,000' },
-    { id: 4, name: 'Finance & Accounts', lead: 'Suresh V', staffCount: 3, budget: '₹5,00,000' },
-  ])
+  const [departments, setDepartments] = useState([])
 
   const [newBranch, setNewBranch] = useState({ name: '', type: 'Regional Office', location: '', staffCount: '' })
   const [newDept, setNewDept] = useState({ name: '', lead: '', staffCount: '' })

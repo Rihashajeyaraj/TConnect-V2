@@ -9,7 +9,7 @@ def normalize_user_role(role_str: str) -> str:
     r = str(role_str or "").lower().strip().replace("_", " ").replace("-", " ")
     if any(k in r for k in ["super admin", "superadmin", "system admin"]):
         return "super_admin"
-    if any(k in r for k in ["ceo", "founder"]):
+    if any(k in r for k in ["ceo", "founder", "chief executive", "managing director", "director"]):
         return "ceo"
     if "admin" in r:
         return "admin"

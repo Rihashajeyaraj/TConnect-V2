@@ -41,12 +41,7 @@ function CeoSettings() {
   })
 
   // 2. Departments State
-  const [departments, setDepartments] = useState([
-    { id: 1, name: 'Sales & Business Development', lead: 'Vikram Singh', staffCount: 12, budget: '₹25,00,000' },
-    { id: 2, name: 'Enterprise Accounts & Tech', lead: 'Suresh V', staffCount: 8, budget: '₹18,00,000' },
-    { id: 3, name: 'Operations & Corporate Admin', lead: 'Priya Sharma', staffCount: 4, budget: '₹10,00,000' },
-    { id: 4, name: 'Customer Success & Support', lead: 'Karthik Raja', staffCount: 6, budget: '₹8,00,000' },
-  ])
+  const [departments, setDepartments] = useState([])
 
   // 3. Roles & Permissions State
   const [permissionsMatrix, setPermissionsMatrix] = useState({
@@ -366,7 +361,7 @@ function CeoSettings() {
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">South Region Quota (Vikram Singh)</label>
+              <label className="block font-bold text-slate-700 mb-1">South Region Quota</label>
               <input
                 type="number"
                 value={salesTargets.managerSouthTarget}
@@ -376,7 +371,7 @@ function CeoSettings() {
             </div>
 
             <div>
-              <label className="block font-bold text-slate-700 mb-1">Tech & West Region Quota (Suresh V)</label>
+              <label className="block font-bold text-slate-700 mb-1">Tech & West Region Quota</label>
               <input
                 type="number"
                 value={salesTargets.managerWestTarget}

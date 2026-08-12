@@ -102,19 +102,46 @@ class ReportsRepository:
             leads_raw = crm_repo.get_all_leads()
             customers_raw = customer_repo.get_all_customers()
 
-            # Map of user email to user metadata
+            # Helper to parse currency/amount strings safely
+            def _parse_amount(v):
+                if v is None:
+                    return 0.0
+                if isinstance(v, (int, float)):
+                    return float(v)
+                s = str(v).replace("₹", "").replace(",", "").replace(" ", "").strip()
+                try:
+                    return float(s)
+                except Exception:
+                    return 0.0
+
+            # Comprehensive user lookup maps from Admin portal
             user_map_by_email = {}
+            user_map_by_name = {}
+            user_map_by_id = {}
+            manager_names_map = {}
+
             for u in all_users:
                 u_email = str(u.get("email") or "").lower().strip()
+                u_name = str(u.get("name") or u.get("full_name") or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()).strip()
+                u_id = str(u.get("id") or u.get("employee_id") or u.get("employee_code") or "").lower().strip()
+                u_role = str(u.get("role") or "").lower()
+
                 if u_email:
                     user_map_by_email[u_email] = u
+                if u_name:
+                    user_map_by_name[u_name.lower()] = u
+                if u_id:
+                    user_map_by_id[u_id] = u
 
-            # Map of manager email to manager name
-            manager_names_by_email = {}
-            for u in all_users:
-                u_role = str(u.get("role") or "").lower()
-                if "manager" in u_role or "admin" in u_role:
-                    manager_names_by_email[str(u.get("email") or "").lower().strip()] = u.get("name")
+                if "manager" in u_role or "admin" in u_role or "ceo" in u_role:
+                    if u_email:
+                        manager_names_map[u_email] = u_name
+                    if u_name:
+                        manager_names_map[u_name.lower()] = u_name
+                    if u_id:
+                        manager_names_map[u_id] = u_name
+
+            manager_names_by_email = manager_names_map
 
             # Enrich leads
             leads = []
@@ -134,52 +161,91 @@ class ReportsRepository:
                 row["category"] = cat
 
                 # Resolve SM and SE Names
-                se_email = str(row.get("assigned_to_email") or "").lower().strip()
-                se_user = user_map_by_email.get(se_email)
-                se_name = row.get("assigned_to") or (se_user.get("name") if se_user else "Direct/Unassigned")
-                row["sales_executive"] = se_name
-                row["sales_executive_email"] = se_email
+                se_email = str(row.get("assigned_to_email") or row.get("sales_executive_email") or "").lower().strip()
+                raw_se = row.get("assigned_to") or row.get("sales_executive") or row.get("assignedExecutive") or row.get("accountManager") or ""
+                se_user = None
+                if se_email and se_email in user_map_by_email:
+                    se_user = user_map_by_email[se_email]
+                elif raw_se and raw_se.lower().strip() in user_map_by_name:
+                    se_user = user_map_by_name[raw_se.lower().strip()]
+                elif raw_se and raw_se.lower().strip() in user_map_by_id:
+                    se_user = user_map_by_id[raw_se.lower().strip()]
 
-                sm_email = str(row.get("reporting_manager_email") or "").lower().strip()
+                se_name = se_user.get("name") if se_user else (raw_se or "Direct/Unassigned")
+                row["sales_executive"] = se_name
+                row["sales_executive_email"] = se_email or (se_user.get("email") if se_user else "")
+
+                sm_email = str(row.get("reporting_manager_email") or row.get("sales_manager_email") or "").lower().strip()
                 if not sm_email and se_user:
                     sm_email = str(se_user.get("reporting_manager_email") or "").lower().strip()
                 row["reporting_manager_email"] = sm_email
 
-                sm_name = manager_names_by_email.get(sm_email)
+                sm_name = manager_names_map.get(sm_email)
                 if not sm_name and se_user:
                     sm_name = se_user.get("reporting_manager_name")
                 if not sm_name:
-                    sm_name = "Direct/Unassigned" if not sm_email else sm_email.split("@")[0].replace(".", " ").title()
+                    raw_sm = row.get("sales_manager") or row.get("manager_name") or row.get("manager")
+                    if raw_sm and raw_sm.lower().strip() in manager_names_map:
+                        sm_name = manager_names_map[raw_sm.lower().strip()]
+                    else:
+                        sm_name = raw_sm or ("Direct/Unassigned" if not sm_email else sm_email.split("@")[0].replace(".", " ").title())
                 row["sales_manager"] = sm_name
 
                 leads.append(row)
 
-            # Enrich customers
+            # Enrich customers from all executive and manager records
             customers = []
+            seen_cust_keys = set()
             for c in customers_raw:
                 row = dict(c)
-                # Resolve SM and SE Names
-                se_email = str(row.get("assigned_to_email") or "").lower().strip()
-                se_user = user_map_by_email.get(se_email)
-                se_name = row.get("assigned_to") or (se_user.get("name") if se_user else "Direct/Unassigned")
-                row["sales_executive"] = se_name
-                row["sales_executive_email"] = se_email
+                cust_name = row.get("name") or row.get("company") or row.get("company_name") or "Customer Account"
+                cust_key = str(row.get("id") or row.get("customer_id") or cust_name).lower().strip()
+                if cust_key in seen_cust_keys:
+                    continue
+                seen_cust_keys.add(cust_key)
 
-                sm_email = str(row.get("reporting_manager_email") or "").lower().strip()
+                # Resolve Sales Executive from Admin users
+                se_email = str(row.get("assigned_to_email") or row.get("sales_executive_email") or row.get("executive_email") or "").lower().strip()
+                raw_se = row.get("assigned_to") or row.get("sales_executive") or row.get("assignedExecutive") or row.get("accountManager") or row.get("account_manager") or row.get("executive") or ""
+                
+                se_user = None
+                if se_email and se_email in user_map_by_email:
+                    se_user = user_map_by_email[se_email]
+                elif raw_se and raw_se.lower().strip() in user_map_by_name:
+                    se_user = user_map_by_name[raw_se.lower().strip()]
+                elif raw_se and raw_se.lower().strip() in user_map_by_id:
+                    se_user = user_map_by_id[raw_se.lower().strip()]
+
+                se_name = se_user.get("name") if se_user else (raw_se or "Direct/Unassigned")
+                row["sales_executive"] = se_name
+                row["sales_executive_email"] = se_email or (se_user.get("email") if se_user else "")
+
+                # Resolve Sales Manager
+                sm_email = str(row.get("reporting_manager_email") or row.get("sales_manager_email") or "").lower().strip()
                 if not sm_email and se_user:
                     sm_email = str(se_user.get("reporting_manager_email") or "").lower().strip()
                 row["reporting_manager_email"] = sm_email
 
-                sm_name = manager_names_by_email.get(sm_email)
+                sm_name = manager_names_map.get(sm_email)
                 if not sm_name and se_user:
                     sm_name = se_user.get("reporting_manager_name")
+                    if not sm_name and "manager" in str(se_user.get("role") or "").lower():
+                        sm_name = se_user.get("name")
                 if not sm_name:
-                    sm_name = "Direct/Unassigned" if not sm_email else sm_email.split("@")[0].replace(".", " ").title()
+                    raw_sm = row.get("sales_manager") or row.get("reporting_manager_name") or row.get("manager_name") or row.get("manager")
+                    if raw_sm and raw_sm.lower().strip() in manager_names_map:
+                        sm_name = manager_names_map[raw_sm.lower().strip()]
+                    else:
+                        sm_name = raw_sm or ("Direct/Unassigned" if not sm_email else sm_email.split("@")[0].replace(".", " ").title())
                 row["sales_manager"] = sm_name
 
-                # Contract Value
-                val = float(row.get("contract_value") or row.get("annual_revenue") or row.get("value") or 0.0)
+                # Product & Package Tier
+                row["product"] = row.get("product") or row.get("packageTier") or row.get("tier") or row.get("product_name") or "Enterprise Plan"
+
+                # Contract Value / Revenue parsing
+                val = _parse_amount(row.get("contract_value") or row.get("revenue") or row.get("contractValue") or row.get("annual_revenue") or row.get("value") or row.get("amount") or 0.0)
                 row["contract_value"] = val
+                row["amount"] = val
 
                 customers.append(row)
 
@@ -333,7 +399,7 @@ class ReportsRepository:
                 rev_by_company[comp] = rev_by_company.get(comp, 0.0) + val
                 rev_by_product[prod] = rev_by_product.get(prod, 0.0) + val
 
-            # Charts trends
+            # Charts trends from actual database opportunities
             months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
             monthly_trend = []
             for idx, m in enumerate(months):
@@ -344,23 +410,24 @@ class ReportsRepository:
                     if str(o.get("stage", "")).upper() in ("CLOSED_WON", "CLOSED WON", "WON")
                     and (o.get("created_at") or o.get("updated_at") or today_str)[5:7] == m_str
                 )
-                target_val = 300000.0 + (idx * 25000.0)
-                monthly_trend.append({"month": m, "revenue": rev_val if rev_val > 0 else 100000.0 + (idx * 45000.0), "target": target_val})
+                target_val = 500000.0
+                monthly_trend.append({"month": m, "revenue": rev_val, "target": target_val})
 
             # Yearly Trend
+            this_yr_int = datetime.utcnow().year
             yearly_trend = [
-                {"year": "2024", "revenue": 1850000.0, "target": 2000000.0},
-                {"year": "2025", "revenue": 2400000.0, "target": 2500000.0},
-                {"year": "2026", "revenue": total_rev if total_rev > 0 else 2482000.0, "target": 3000000.0}
+                {"year": str(this_yr_int - 2), "revenue": 0.0, "target": 1000000.0},
+                {"year": str(this_yr_int - 1), "revenue": 0.0, "target": 2000000.0},
+                {"year": str(this_yr_int), "revenue": total_rev, "target": 3000000.0}
             ]
 
-            # Lead sources counts
+            # Lead sources counts from real CRM leads
             lead_sources_counts = {}
             for l in leads:
-                src = str(l.get("source") or "Direct/Walk-in").strip().title()
+                src = str(l.get("source") or l.get("lead_source") or "Direct/Walk-in").strip().title()
                 lead_sources_counts[src] = lead_sources_counts.get(src, 0) + 1
             
-            colors = ["#004749", "#b09b72", "#540000", "#111111", "#4f46e5", "#0891b2", "#059669"]
+            colors = ["#832D51", "#EA6993", "#3a7d63", "#0891b2", "#d97706", "#4f46e5", "#64748b"]
             lead_sources = []
             for idx, (src_name, count) in enumerate(lead_sources_counts.items()):
                 lead_sources.append({
@@ -368,108 +435,301 @@ class ReportsRepository:
                     "value": count,
                     "color": colors[idx % len(colors)]
                 })
-            if not lead_sources:
-                lead_sources = [
-                    { "name": 'Website', "value": 12, "color": '#004749' },
-                    { "name": 'Referral', "value": 8, "color": '#b09b72' },
-                    { "name": 'Cold Call', "value": 5, "color": '#540000' },
-                    { "name": 'Walk-In', "value": 3, "color": '#111111' },
-                ]
 
-            # Team Rank List
+            # Team Rank List from real users
             top_managers = []
             top_executives = []
 
-            for name, rev in rev_by_manager.items():
-                top_managers.append({
-                    "name": name,
-                    "revenue": rev,
-                    "sales": len([o for o in opportunities if o.get("sales_manager") == name and str(o.get("stage", "")).upper() in ("CLOSED_WON", "CLOSED WON", "WON")]),
-                    "teamSize": 4,
-                    "conversionRate": 68.5
-                })
-            if not top_managers:
-                top_managers = [
-                    {"name": "Vikram Singh", "revenue": 1450000.0, "sales": 8, "teamSize": 5, "conversionRate": 72.4},
-                    {"name": "Suresh V", "revenue": 1032000.0, "sales": 6, "teamSize": 4, "conversionRate": 65.0}
-                ]
+            # Populate managers from actual system managers
+            for u in all_users:
+                u_role = str(u.get("role") or "").lower()
+                u_name = u.get("name") or "Sales Manager"
+                if "manager" in u_role:
+                    u_rev = rev_by_manager.get(u_name, 0.0)
+                    mgr_sales = len([o for o in opportunities if o.get("sales_manager") == u_name and str(o.get("stage", "")).upper() in ("CLOSED_WON", "CLOSED WON", "WON")])
+                    top_managers.append({
+                        "name": u_name,
+                        "revenue": u_rev,
+                        "sales": mgr_sales,
+                        "teamSize": len([e for e in all_users if str(e.get("reporting_manager_name") or "").lower() == u_name.lower()]),
+                        "conversionRate": round((mgr_sales / max(1, len(leads))) * 100, 1) if leads else 0.0
+                    })
 
-            for name, rev in rev_by_executive.items():
-                top_executives.append({
-                    "name": name,
-                    "leads": 24,
-                    "visits": 18,
-                    "customers": 6,
-                    "revenue": rev,
-                    "rating": 4.8
-                })
-            if not top_executives:
-                top_executives = [
-                    {"name": "Ananya Roy", "leads": 28, "visits": 21, "customers": 8, "revenue": 850000.0, "rating": 4.9},
-                    {"name": "Karthik Raja", "leads": 22, "visits": 16, "customers": 5, "revenue": 602000.0, "rating": 4.6}
-                ]
+            # Populate executives from actual system executives
+            for u in all_users:
+                u_role = str(u.get("role") or "").lower()
+                u_name = u.get("name") or "Sales Executive"
+                if "executive" in u_role:
+                    u_rev = rev_by_executive.get(u_name, 0.0)
+                    u_leads = len([l for l in leads if str(l.get("sales_executive") or l.get("assigned_to") or "").lower() == u_name.lower()])
+                    u_custs = len([c for c in customers if str(c.get("sales_executive") or c.get("assigned_to") or "").lower() == u_name.lower()])
+                    top_executives.append({
+                        "name": u_name,
+                        "leads": u_leads,
+                        "visits": len([v for v in visits if str(v.get("sales_executive") or v.get("executive") or "").lower() == u_name.lower()]),
+                        "customers": u_custs,
+                        "revenue": u_rev,
+                        "rating": 5.0
+                    })
 
-            # In-memory leaves / attendance fallbacks
-            from app.modules.attendance.repository import _in_memory_leave_requests
-            all_leaves = list(_in_memory_leave_requests)
-            if not all_leaves:
-                all_leaves = [
-                    {"id": "leave_1", "executive_name": "Vikram Singh", "employee_code": "EMP-002", "leave_type": "Sick Leave", "from_date": today_str, "to_date": today_str, "duration": "1 Day", "reason": "Severe Migraine", "status": "Pending", "created_at": today_str},
-                    {"id": "leave_2", "executive_name": "Suresh V", "employee_code": "EMP-004", "leave_type": "Casual Leave", "from_date": today_str, "to_date": today_str, "duration": "1 Day", "reason": "Family Function", "status": "Pending", "created_at": today_str}
-                ]
+            # Sort by revenue descending
+            top_managers.sort(key=lambda x: x["revenue"], reverse=True)
+            top_executives.sort(key=lambda x: x["revenue"], reverse=True)
+
+            # Real pending leaves & permissions
+            leave_requests_raw = []
+            try:
+                from app.modules.attendance.repository import AttendanceRepository
+                attendance_repo = AttendanceRepository()
+                leave_requests_raw = attendance_repo.get_leave_requests()
+            except Exception as e:
+                logger.debug(f"Could not load real leave requests: {e}")
+                from app.modules.attendance.repository import _in_memory_leave_requests
+                leave_requests_raw = list(_in_memory_leave_requests)
+
+            # 1. Employees List
+            employees_list = []
+            for e in employees:
+                emp_id = e.get("employee_code") or e.get("employee_id") or e.get("id") or "EMP"
+                emp_name = e.get("name") or f"{e.get('first_name', '')} {e.get('last_name', '')}".strip() or e.get("fullName") or "Unnamed Employee"
+                emp_role = e.get("role") or e.get("designation") or "Staff"
+                employees_list.append({
+                    "employee_id": emp_id,
+                    "name": emp_name,
+                    "role": emp_role
+                })
+
+            # 2. Customers List
+            customers_list = []
+            for c in customers:
+                customers_list.append({
+                    "sales_manager": c.get("sales_manager") or "Direct/Unassigned",
+                    "sales_executive": c.get("sales_executive") or "Direct/Unassigned",
+                    "name": c.get("name") or c.get("company") or "Unnamed Customer",
+                    "details": f"Email: {c.get('email', 'N/A')}, Phone: {c.get('phone', 'N/A')}, City: {c.get('city', 'N/A')}",
+                    "product": c.get("product") or c.get("product_name") or "Software License",
+                    "amount": float(c.get("contract_value") or 0.0)
+                })
+
+            # 3. Won Sales Opportunities
+            won_opportunities_list = []
+            for o in opportunities:
+                is_won = str(o.get("stage", "")).upper() in ("CLOSED_WON", "CLOSED WON", "WON")
+                if not is_won:
+                    continue
+                val = float(o.get("value") or o.get("amount") or 0.0)
+                created_str = o.get("created_at") or o.get("updated_at") or today_str
+                opp_date = created_str[:10]
+                
+                # Resolve manager and executive
+                exec_email = str(o.get("assigned_to_email") or o.get("owner_email") or "").lower().strip()
+                se_user = user_map_by_email.get(exec_email)
+                exec_name = o.get("assigned_to_name") or o.get("owner_id") or (se_user.get("name") if se_user else None) or o.get("assigned_to") or "Unassigned"
+                
+                sm_email = str(o.get("reporting_manager_email") or "").lower().strip()
+                if not sm_email and se_user:
+                    sm_email = str(se_user.get("reporting_manager_email") or "").lower().strip()
+                
+                mgr = manager_names_by_email.get(sm_email)
+                if not mgr and se_user:
+                    mgr = se_user.get("reporting_manager_name")
+                if not mgr:
+                    mgr = o.get("sales_manager") or o.get("manager_name") or ("Direct/Unassigned" if not sm_email else sm_email.split("@")[0].replace(".", " ").title())
+                
+                won_opportunities_list.append({
+                    "date": opp_date,
+                    "sales_manager": mgr,
+                    "sales_executive": exec_name,
+                    "client_name_details": f"{o.get('company', 'Direct')} ({o.get('customer_name') or 'N/A'})",
+                    "product": o.get("product_name") or o.get("service_type") or "Software License",
+                    "amount": val
+                })
+
+            # 4. Revenue Records (dynamic, from real database)
+            revenue_records = []
+            
+            # Won Opportunities
+            for o in opportunities:
+                is_won = str(o.get("stage", "")).upper() in ("CLOSED_WON", "CLOSED WON", "WON")
+                if not is_won:
+                    continue
+                val = float(o.get("value") or o.get("amount") or 0.0)
+                if val <= 0:
+                    continue
+                
+                created_str = o.get("created_at") or o.get("updated_at") or today_str
+                opp_date = created_str[:10]
+                
+                exec_email = str(o.get("assigned_to_email") or o.get("owner_email") or "").lower().strip()
+                se_user = user_map_by_email.get(exec_email)
+                exec_name = o.get("assigned_to_name") or o.get("owner_id") or (se_user.get("name") if se_user else None) or o.get("assigned_to") or "Unassigned"
+                
+                sm_email = str(o.get("reporting_manager_email") or "").lower().strip()
+                if not sm_email and se_user:
+                    sm_email = str(se_user.get("reporting_manager_email") or "").lower().strip()
+                
+                mgr = manager_names_by_email.get(sm_email)
+                if not mgr and se_user:
+                    mgr = se_user.get("reporting_manager_name")
+                if not mgr:
+                    mgr = o.get("sales_manager") or o.get("manager_name") or ("Direct/Unassigned" if not sm_email else sm_email.split("@")[0].replace(".", " ").title())
+                
+                revenue_records.append({
+                    "date": opp_date,
+                    "sales_manager": mgr,
+                    "sales_executive": exec_name,
+                    "amount": val
+                })
+                
+            # Add Customer contract values to match the application's definition
+            for c in customers:
+                val = float(c.get("contract_value") or 0.0)
+                if val <= 0:
+                    continue
+                created_str = c.get("created_at") or today_str
+                cust_date = created_str[:10]
+                
+                exec_name = c.get("sales_executive") or "Direct/Unassigned"
+                mgr_name = c.get("sales_manager") or "Direct/Unassigned"
+                
+                revenue_records.append({
+                    "date": cust_date,
+                    "sales_manager": mgr_name,
+                    "sales_executive": exec_name,
+                    "amount": val
+                })
+
+            # Ensure every executive and manager from Admin portal is present in the ledger
+            covered_execs = {str(r.get("sales_executive") or "").lower().strip() for r in revenue_records}
+            for u in all_users:
+                u_name = str(u.get("name") or u.get("full_name") or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()).strip()
+                if not u_name:
+                    continue
+                u_key = u_name.lower().strip()
+                u_role = str(u.get("role") or "").lower()
+                if "ceo" in u_role or "super admin" in u_role:
+                    continue
+
+                if u_key not in covered_execs:
+                    covered_execs.add(u_key)
+                    sm_name = u.get("reporting_manager_name")
+                    if not sm_name:
+                        sm_email = str(u.get("reporting_manager_email") or "").lower().strip()
+                        sm_name = manager_names_map.get(sm_email)
+                    if not sm_name and "manager" in u_role:
+                        sm_name = u_name
+                    if not sm_name:
+                        sm_name = "Sales Manager"
+
+                    revenue_records.append({
+                        "date": today_str,
+                        "sales_manager": sm_name,
+                        "sales_executive": u_name,
+                        "amount": 0.0
+                    })
+
+            # 5. Pending Approvals
+            pending_approvals_list = []
+            for lr in leave_requests_raw:
+                if str(lr.get("status", "")).lower() != "pending":
+                    continue
+                
+                exec_email = str(lr.get("executive_email") or lr.get("email") or "").lower().strip()
+                se_user = user_map_by_email.get(exec_email)
+                role_str = "Sales Executive"
+                if se_user:
+                    role_str = se_user.get("role") or "Sales Executive"
+                
+                pending_approvals_list.append({
+                    "id": lr.get("id") or lr.get("leave_id") or lr.get("leave_request_id"),
+                    "employee_name": lr.get("employee_name") or lr.get("executive_name") or "Staff",
+                    "role": role_str,
+                    "request_type": lr.get("leave_type") or "Full Day Leave",
+                    "date": f"{lr.get('from_date', '')} to {lr.get('to_date', '')}" if lr.get('from_date') != lr.get('to_date') else str(lr.get('from_date', '')),
+                    "status": "Pending"
+                })
 
             return {
+                "metrics": {
+                    "totalRevenue": total_rev,
+                    "monthlyRevenue": monthly_rev,
+                    "annualTarget": 35000000.0,
+                    "targetAchieved": total_rev,
+                    "totalCustomers": total_cust,
+                    "newCustomers": new_cust,
+                    "activeLeads": total_leads,
+                    "wonDeals": won_deals,
+                    "lostDeals": lost_deals,
+                    "pipelineValue": sum(float(o.get("value") or 0.0) for o in opportunities if str(o.get("stage", "")).upper() not in ("CLOSED_WON", "CLOSED WON", "WON", "CLOSED_LOST", "CLOSED LOST", "LOST")),
+                    "conversionRate": conversion_rate,
+                    "totalEmployees": total_emp,
+                    "activeEmployees": active_emp,
+                },
+                "revenueTrends": monthly_trend,
+                "managerPerformance": top_managers,
+                "executivePerformance": top_executives,
+                "salesFunnelData": [
+                    {"stage": "Total Ingested Leads", "count": total_leads, "value": f"₹{total_leads * 50000:,}", "percentage": "100%", "color": "#832D51"},
+                    {"stage": "Qualified Prospects", "count": qualified_leads, "value": f"₹{qualified_leads * 40000:,}", "percentage": f"{round((qualified_leads / max(1, total_leads)) * 100, 1)}%", "color": "#6a2240"},
+                    {"stage": "Active Opportunities", "count": opportunities_count, "value": f"₹{int(sum(float(o.get('value') or 0.0) for o in opportunities)):,}", "percentage": f"{round((opportunities_count / max(1, total_leads)) * 100, 1)}%", "color": "#EA6993"},
+                    {"stage": "Won Closed Deals", "count": won_deals, "value": f"₹{int(total_rev):,}", "percentage": f"{conversion_rate}%", "color": "#3a7d63"},
+                ],
                 "employeeSummary": {
-                    "totalEmployees": total_emp if total_emp > 0 else 12,
-                    "activeEmployees": active_emp if active_emp > 0 else 10,
-                    "inactiveEmployees": inactive_emp if inactive_emp > 0 else 2,
-                    "presentToday": present_today if present_today > 0 else 8,
-                    "absentToday": absent_today if absent_today > 0 else 2,
-                    "onLeave": on_leave if on_leave > 0 else 1,
-                    "lateCheckIns": late_check_ins if late_check_ins > 0 else 1,
-                    "newEmployeesThisMonth": new_emp_this_month if new_emp_this_month > 0 else 2,
+                    "totalEmployees": total_emp,
+                    "activeEmployees": active_emp,
+                    "inactiveEmployees": inactive_emp,
+                    "presentToday": present_today,
+                    "absentToday": absent_today,
+                    "onLeave": on_leave,
+                    "lateCheckIns": late_check_ins,
+                    "newEmployeesThisMonth": new_emp_this_month,
+                    "employeesList": employees_list,
                 },
                 "customerSummary": {
-                    "totalCustomers": total_cust if total_cust > 0 else 18,
-                    "activeCustomers": active_cust if active_cust > 0 else 16,
-                    "newCustomers": new_cust if new_cust > 0 else 2,
-                    "lostCustomers": lost_cust if lost_cust > 0 else 1,
-                    "customersBySalesManager": cust_by_manager if cust_by_manager else {"Vikram Singh": 8, "Suresh V": 6},
-                    "customersBySalesExecutive": cust_by_exec if cust_by_exec else {"Ananya Roy": 6, "Karthik Raja": 5},
+                    "totalCustomers": total_cust,
+                    "activeCustomers": active_cust,
+                    "newCustomers": new_cust,
+                    "lostCustomers": lost_cust,
+                    "customersBySalesManager": cust_by_manager,
+                    "customersBySalesExecutive": cust_by_exec,
+                    "customersList": customers_list,
+                    "wonOpportunitiesList": won_opportunities_list,
                 },
                 "leadSummary": {
-                    "totalLeads": total_leads if total_leads > 0 else 42,
-                    "newLeads": new_leads if new_leads > 0 else 12,
-                    "qualifiedLeads": qualified_leads if qualified_leads > 0 else 18,
-                    "opportunities": opportunities_count if opportunities_count > 0 else 14,
-                    "wonDeals": won_deals if won_deals > 0 else 8,
-                    "lostDeals": lost_deals if lost_deals > 0 else 3,
-                    "conversionRate": conversion_rate if conversion_rate > 0.0 else 57.1,
+                    "totalLeads": total_leads,
+                    "newLeads": new_leads,
+                    "qualifiedLeads": qualified_leads,
+                    "opportunities": opportunities_count,
+                    "wonDeals": won_deals,
+                    "lostDeals": lost_deals,
+                    "conversionRate": conversion_rate,
                 },
                 "revenueSummary": {
-                    "totalRevenue": total_rev if total_rev > 0 else 2482000.0,
-                    "monthlyRevenue": monthly_rev if monthly_rev > 0 else 450000.0,
-                    "quarterlyRevenue": quarterly_rev if quarterly_rev > 0 else 1250000.0,
-                    "annualRevenue": annual_rev if annual_rev > 0 else 2482000.0,
+                    "totalRevenue": total_rev,
+                    "monthlyRevenue": monthly_rev,
+                    "quarterlyRevenue": quarterly_rev,
+                    "annualRevenue": annual_rev,
                     "breakdown": {
-                        "manager": rev_by_manager if rev_by_manager else {"Vikram Singh": 1450000.0, "Suresh V": 1032000.0},
-                        "executive": rev_by_executive if rev_by_executive else {"Ananya Roy": 850000.0, "Karthik Raja": 602000.0},
-                        "customer": rev_by_customer if rev_by_customer else {"Apex Tech": 450000.0, "Global Corp": 250000.0},
-                        "company": rev_by_company if rev_by_company else {"Apex Tech": 450000.0, "Global Corp": 250000.0},
-                        "product": rev_by_product if rev_by_product else {"Enterprise License": 1800000.0, "SaaS Subscription": 682000.0}
+                        "manager": rev_by_manager,
+                        "executive": rev_by_executive,
+                        "customer": rev_by_customer,
+                        "company": rev_by_company,
+                        "product": rev_by_product
                     },
                     "monthlyRevenueTrend": monthly_trend,
                     "yearlyRevenueTrend": yearly_trend,
+                    "revenueRecords": revenue_records,
                 },
                 "teamPerformance": {
                     "topSalesManagers": top_managers,
                     "topSalesExecutives": top_executives,
                 },
                 "companyDetails": org_settings,
-                "leaveRequests": all_leaves,
+                "leaveRequests": leave_requests_raw,
                 "leads": leads,
                 "customers": customers,
-                "leadSources": lead_sources
+                "leadSources": lead_sources,
+                "pendingApprovals": pending_approvals_list
             }
         except Exception as e:
             logger.error(f"Error calculating CEO dashboard stats: {e}")
@@ -967,3 +1227,681 @@ class ReportsRepository:
                 r["managerComment"] = comment or "Acknowledged by Sales Manager"
                 return r
         return {}
+
+    def get_ceo_sales_overview(self, from_date: str = None, to_date: str = None, manager_id: str = None, executive_id: str = None) -> Dict[str, Any]:
+        """
+        Calculates organization-wide CEO Sales Overview KPIs and tables.
+        Applies date range filters first, resolves manager/executive hierarchies,
+        compiles performance matrices, and executes structural reconciliation checks.
+        """
+        from datetime import datetime, date, timedelta
+
+        # 1. Parse Date Boundaries (Default to "This Month")
+        today = datetime.utcnow().date()
+        start_date = None
+        end_date = None
+
+        if from_date:
+            try:
+                start_date = datetime.strptime(from_date, "%Y-%m-%d").date()
+            except Exception:
+                pass
+        if to_date:
+            try:
+                end_date = datetime.strptime(to_date, "%Y-%m-%d").date()
+            except Exception:
+                pass
+
+        if not start_date or not end_date:
+            start_date = date(today.year, today.month, 1)
+            end_date = today
+
+        # 2. Fetch all raw datasets from respective repositories
+        from app.modules.users.repository import UserRepository
+        from app.modules.customer.repository import CustomerRepository
+        from app.modules.pipeline.repository import PipelineRepository
+
+        all_users = UserRepository().get_all_users()
+        all_customers = CustomerRepository().get_all_customers()
+        all_opportunities = PipelineRepository().get_all_opportunities()
+
+        # 3. Create User Maps
+        user_map_by_email = {}
+        user_map_by_name = {}
+        user_map_by_id = {}
+        
+        for u in all_users:
+            u_email = str(u.get("email") or "").lower().strip()
+            if u_email:
+                user_map_by_email[u_email] = u
+            u_name = str(u.get("name") or u.get("full_name") or "").lower().strip()
+            if u_name:
+                user_map_by_name[u_name] = u
+            u_id = str(u.get("id") or u.get("auth_user_id") or "")
+            if u_id:
+                user_map_by_id[u_id] = u
+
+        # Map manager names/emails
+        manager_names_by_email = {}
+        for u in all_users:
+            u_role = str(u.get("role") or "").lower()
+            if "manager" in u_role or "admin" in u_role:
+                manager_names_by_email[str(u.get("email") or "").lower().strip()] = u.get("name")
+
+        # 4. Standard Database Stage Constants
+        WON_STAGES = ["WON", "CLOSED_WON", "CLOSED WON"]
+        LOST_STAGES = ["LOST", "CLOSED_LOST", "CLOSED LOST"]
+
+        # 5. Opportunity Date Classification & Filtering
+        filtered_opportunities = []
+        for o in all_opportunities:
+            stage_str = str(o.get("stage") or "").upper().strip()
+            is_won = stage_str in WON_STAGES
+            is_lost = stage_str in LOST_STAGES
+            
+            # Revenue Date Rule: use updated_at for Won, created_at for others
+            if is_won:
+                date_str = o.get("updated_at") or o.get("created_at") or ""
+            else:
+                date_str = o.get("created_at") or ""
+                
+            if not date_str:
+                continue
+                
+            try:
+                opp_date = datetime.fromisoformat(date_str.replace("Z", "+00:00")).date()
+            except Exception:
+                try:
+                    opp_date = datetime.strptime(date_str[:10], "%Y-%m-%d").date()
+                except Exception:
+                    continue
+                    
+            if not (start_date <= opp_date <= end_date):
+                continue
+
+            # Resolve Manager and Executive Assignments
+            exec_email = str(o.get("assigned_to_email") or o.get("owner_email") or "").lower().strip()
+            se_user = user_map_by_email.get(exec_email)
+            exec_name = o.get("rep") or o.get("assigned_to") or (se_user.get("name") if se_user else None) or "Direct/Unassigned"
+            exec_id = str(se_user.get("id") or se_user.get("auth_user_id") or "") if se_user else ""
+            
+            sm_email = str(o.get("reporting_manager_email") or "").lower().strip()
+            if not sm_email and se_user:
+                sm_email = str(se_user.get("reporting_manager_email") or "").lower().strip()
+                
+            sm_name = manager_names_by_email.get(sm_email)
+            if not sm_name and se_user:
+                sm_name = se_user.get("reporting_manager_name")
+            if not sm_name:
+                sm_name = o.get("sales_manager") or "Direct/Unassigned"
+                
+            sm_id = ""
+            if sm_email:
+                sm_user = user_map_by_email.get(sm_email)
+                if sm_user:
+                    sm_id = str(sm_user.get("id") or sm_user.get("auth_user_id") or "")
+
+            # Store resolved names in the opportunity record
+            o["_resolved_executive_name"] = exec_name
+            o["_resolved_executive_id"] = exec_id
+            o["_resolved_manager_name"] = sm_name
+            o["_resolved_manager_id"] = sm_id
+            o["_resolved_amount"] = float(o.get("value") or o.get("amount") or 0.0)
+            o["_resolved_date"] = opp_date.strftime("%d/%m/%Y")
+            o["_resolved_date_obj"] = opp_date
+
+            # Filter by manager_id / executive_id if specified
+            if manager_id and sm_id != manager_id:
+                continue
+            if executive_id and exec_id != executive_id:
+                continue
+
+            filtered_opportunities.append(o)
+
+        # 6. Customer Date Classification & Filtering
+        filtered_customers = []
+        for c in all_customers:
+            created_str = c.get("created_at") or ""
+            if created_str:
+                try:
+                    c_date = datetime.fromisoformat(created_str.replace("Z", "+00:00")).date()
+                except Exception:
+                    try:
+                        c_date = datetime.strptime(created_str[:10], "%Y-%m-%d").date()
+                    except Exception:
+                        c_date = today
+            else:
+                c_date = today
+
+            if not (start_date <= c_date <= end_date):
+                continue
+
+            # Resolve Manager and Executive for customer
+            exec_name = c.get("sales_executive_name") or c.get("sales_executive") or "Direct/Unassigned"
+            exec_id = c.get("sales_executive_id") or ""
+            
+            se_user = user_map_by_name.get(exec_name.lower().strip())
+            if se_user:
+                exec_id = exec_id or str(se_user.get("id") or se_user.get("auth_user_id") or "")
+                
+            sm_name = c.get("sales_manager_name") or c.get("sales_manager") or "Direct/Unassigned"
+            sm_id = c.get("sales_manager_id") or ""
+            
+            if se_user:
+                sm_name = sm_name if sm_name != "Direct/Unassigned" else (se_user.get("reporting_manager_name") or "Direct/Unassigned")
+                
+            sm_user = user_map_by_name.get(sm_name.lower().strip())
+            if sm_user:
+                sm_id = sm_id or str(sm_user.get("id") or sm_user.get("auth_user_id") or "")
+
+            # Filter by manager_id / executive_id if specified
+            if manager_id and sm_id != manager_id:
+                continue
+            if executive_id and exec_id != executive_id:
+                continue
+
+            c["_resolved_executive_name"] = exec_name
+            c["_resolved_executive_id"] = exec_id
+            c["_resolved_manager_name"] = sm_name
+            c["_resolved_manager_id"] = sm_id
+            c["_resolved_amount"] = float(c.get("amount") or c.get("contract_value") or c.get("revenue") or 0.0)
+
+            filtered_customers.append(c)
+
+        # 7. Aggregate KPI Metrics
+        won_deals = [o for o in filtered_opportunities if str(o.get("stage") or "").upper().strip() in WON_STAGES]
+        lost_deals = [o for o in filtered_opportunities if str(o.get("stage") or "").upper().strip() in LOST_STAGES]
+        open_deals = [o for o in filtered_opportunities if str(o.get("stage") or "").upper().strip() not in (WON_STAGES + LOST_STAGES)]
+
+        total_revenue = sum(o["_resolved_amount"] for o in won_deals)
+        total_pipeline = sum(o["_resolved_amount"] for o in open_deals)
+        total_lost_val = sum(o["_resolved_amount"] for o in lost_deals)
+
+        # Deduplicate customer count dynamically
+        unique_customer_ids = set()
+        for o in filtered_opportunities:
+            cid = o.get("customer_id") or o.get("lead_id")
+            if cid:
+                unique_customer_ids.add(str(cid))
+        for c in filtered_customers:
+            cid = c.get("customer_id") or c.get("id")
+            if cid:
+                unique_customer_ids.add(str(cid))
+        total_customers = len(unique_customer_ids)
+
+        # 8. Detailed Ledger Lists
+        revenue_details = []
+        for o in won_deals:
+            revenue_details.append({
+                "date": o["_resolved_date"],
+                "sales_manager": o["_resolved_manager_name"],
+                "sales_executive": o["_resolved_executive_name"],
+                "customer": o.get("company") or o.get("title") or "Corporate Account",
+                "amount": o["_resolved_amount"]
+            })
+
+        customers_details = []
+        for c in filtered_customers:
+            customers_details.append({
+                "sales_manager": c["_resolved_manager_name"],
+                "sales_executive": c["_resolved_executive_name"],
+                "customer_name": c.get("customer_name") or c.get("name") or "Unnamed Customer",
+                "company": c.get("company") or c.get("company_name") or "Enterprise",
+                "product": c.get("product") or "Software License",
+                "amount": c["_resolved_amount"],
+                "status": c.get("status") or "Active Customer"
+            })
+
+        # 9. Manager and Executive Performance Aggregations
+        manager_perf_map = {}
+        exec_perf_map = {}
+
+        # Pre-populate map entries based on active assignments
+        for o in filtered_opportunities:
+            mgr = o["_resolved_manager_name"]
+            exec_n = o["_resolved_executive_name"]
+            amount = o["_resolved_amount"]
+            stage_str = str(o.get("stage") or "").upper().strip()
+            
+            # Manager map
+            if mgr not in manager_perf_map:
+                manager_perf_map[mgr] = {"manager": mgr, "executives": set(), "customers": set(), "won_deals": 0, "won_revenue": 0.0, "pipeline": 0.0}
+            manager_perf_map[mgr]["executives"].add(exec_n)
+            cid = o.get("customer_id") or o.get("lead_id")
+            if cid:
+                manager_perf_map[mgr]["customers"].add(str(cid))
+                
+            if stage_str in WON_STAGES:
+                manager_perf_map[mgr]["won_deals"] += 1
+                manager_perf_map[mgr]["won_revenue"] += amount
+            elif stage_str not in LOST_STAGES:
+                manager_perf_map[mgr]["pipeline"] += amount
+
+            # Executive map
+            if exec_n not in exec_perf_map:
+                exec_perf_map[exec_n] = {"executive": exec_n, "manager": mgr, "customers": set(), "won_deals": 0, "won_revenue": 0.0, "pipeline": 0.0}
+            if cid:
+                exec_perf_map[exec_n]["customers"].add(str(cid))
+                
+            if stage_str in WON_STAGES:
+                exec_perf_map[exec_n]["won_deals"] += 1
+                exec_perf_map[exec_n]["won_revenue"] += amount
+            elif stage_str not in LOST_STAGES:
+                exec_perf_map[exec_n]["pipeline"] += amount
+
+        # Include details from filtered customers list
+        for c in filtered_customers:
+            mgr = c["_resolved_manager_name"]
+            exec_n = c["_resolved_executive_name"]
+            cid = c.get("customer_id") or c.get("id")
+            
+            if mgr not in manager_perf_map:
+                manager_perf_map[mgr] = {"manager": mgr, "executives": set(), "customers": set(), "won_deals": 0, "won_revenue": 0.0, "pipeline": 0.0}
+            if cid:
+                manager_perf_map[mgr]["customers"].add(str(cid))
+            manager_perf_map[mgr]["executives"].add(exec_n)
+
+            if exec_n not in exec_perf_map:
+                exec_perf_map[exec_n] = {"executive": exec_n, "manager": mgr, "customers": set(), "won_deals": 0, "won_revenue": 0.0, "pipeline": 0.0}
+            if cid:
+                exec_perf_map[exec_n]["customers"].add(str(cid))
+
+        manager_performance = []
+        for key, val in manager_perf_map.items():
+            manager_performance.append({
+                "sales_manager": val["manager"],
+                "executives": len(val["executives"]),
+                "customers": len(val["customers"]),
+                "won_deals": val["won_deals"],
+                "won_revenue": val["won_revenue"],
+                "pipeline": val["pipeline"]
+            })
+
+        executive_performance = []
+        for key, val in exec_perf_map.items():
+            executive_performance.append({
+                "sales_executive": val["executive"],
+                "sales_manager": val["manager"],
+                "customers": len(val["customers"]),
+                "won_deals": val["won_deals"],
+                "won_revenue": val["won_revenue"],
+                "pipeline": val["pipeline"]
+            })
+            
+        # Sort executive performance descending by won revenue
+        executive_performance.sort(key=lambda x: x["won_revenue"], reverse=True)
+
+        # 10. Revenue Trend Calculations (Mon-Sun for small ranges, Week 1-4 for month)
+        date_range_days = (end_date - start_date).days
+        trend_records = []
+
+        if date_range_days <= 7:
+            # Daily view Mon-Sun
+            day_names = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+            daily_rev = {d: 0.0 for d in day_names}
+            for o in won_deals:
+                w_day = o["_resolved_date_obj"].weekday()  # Mon is 0, Sun is 6
+                daily_rev[day_names[w_day]] += o["_resolved_amount"]
+            for d in day_names:
+                trend_records.append({"label": d, "revenue": daily_rev[d]})
+        else:
+            # Weekly segments (Week 1, Week 2, Week 3, Week 4)
+            week_rev = {f"Week {i}": 0.0 for i in range(1, 5)}
+            range_interval = max(1, date_range_days / 4.0)
+            for o in won_deals:
+                days_since_start = (o["_resolved_date_obj"] - start_date).days
+                week_idx = min(3, int(days_since_start / range_interval))
+                week_rev[f"Week {week_idx+1}"] += o["_resolved_amount"]
+            for i in range(1, 5):
+                trend_records.append({"label": f"Week {i}", "revenue": week_rev[f"Week {i}"]})
+
+        # 11. Core Mathematical Reconciliation Checks
+        # Validate totals perfectly match granular lists before shipping
+        sum_rev_details = sum(item["amount"] for item in revenue_details)
+        sum_mgr_revenue = sum(mgr["won_revenue"] for mgr in manager_performance)
+        sum_exec_revenue = sum(exec_n["won_revenue"] for exec_n in executive_performance)
+        
+        assert abs(total_revenue - sum_rev_details) < 0.01, f"Reconciliation Error: total_revenue {total_revenue} != sum_rev_details {sum_rev_details}"
+        assert abs(total_revenue - sum_mgr_revenue) < 0.01, f"Reconciliation Error: total_revenue {total_revenue} != sum_mgr_revenue {sum_mgr_revenue}"
+        assert abs(total_revenue - sum_exec_revenue) < 0.01, f"Reconciliation Error: total_revenue {total_revenue} != sum_exec_revenue {sum_exec_revenue}"
+
+        # 12. Structure and return response
+        return {
+            "metrics": {
+                "total_revenue": total_revenue,
+                "total_customers": total_customers,
+                "total_won_deals": len(won_deals),
+                "total_pipeline_value": total_pipeline
+            },
+            "revenue_details": revenue_details,
+            "customers_details": customers_details,
+            "manager_performance": manager_performance,
+            "executive_performance": executive_performance,
+            "revenue_trend": trend_records,
+            "win_loss_summary": {
+                "won": {
+                    "count": len(won_deals),
+                    "revenue": total_revenue
+                },
+                "lost": {
+                    "count": len(lost_deals),
+                    "value": total_lost_val
+                },
+                "open": {
+                    "count": len(open_deals),
+                    "pipeline": total_pipeline
+                }
+            }
+        }
+
+    def get_ceo_customer_directory(self) -> Dict[str, Any]:
+        """
+        Builds a full Manager → Executive → Customer hierarchy for the CEO directory.
+        Uses real hrms.employees reporting_manager relationships as the source of truth.
+        No hardcoded names. No mock data. All resolved from Supabase.
+        """
+        from app.modules.users.repository import UserRepository
+
+        # ── 1. Load all users with resolved manager relationships ──────────────
+        all_users = UserRepository().get_all_users()
+
+        # Build lookup maps
+        user_by_id: Dict[str, Dict] = {}
+        user_by_email: Dict[str, Dict] = {}
+        user_by_name_lower: Dict[str, Dict] = {}
+        for u in all_users:
+            uid = str(u.get("id") or u.get("auth_user_id") or "").strip()
+            if uid:
+                user_by_id[uid] = u
+            uemail = str(u.get("email") or "").lower().strip()
+            if uemail:
+                user_by_email[uemail] = u
+            uname = str(u.get("name") or u.get("full_name") or "").lower().strip()
+            if uname:
+                user_by_name_lower[uname] = u
+
+        # ── 2. Identify all distinct Sales Managers ────────────────────────────
+        # Managers: users whose role contains 'manager'
+        sales_managers_map: Dict[str, Dict] = {}
+        for u in all_users:
+            role_str = str(u.get("role") or "").lower()
+            uid = str(u.get("id") or u.get("auth_user_id") or "").strip()
+            if "manager" in role_str and uid:
+                sales_managers_map[uid] = u
+
+        # Also find any user referenced as a reporting_manager_id
+        for u in all_users:
+            mgr_id = str(u.get("reporting_manager_id") or "").strip()
+            if mgr_id and mgr_id != "None" and mgr_id in user_by_id:
+                sales_managers_map[mgr_id] = user_by_id[mgr_id]
+
+        # ── 3. Build manager_id → list of executive user dicts ────────────────
+        mgr_to_executives: Dict[str, list] = {mid: [] for mid in sales_managers_map}
+        executives_without_manager = []
+        assigned_executive_ids = set()
+
+        for u in all_users:
+            uid = str(u.get("id") or u.get("auth_user_id") or "").strip()
+            role_str = str(u.get("role") or "").lower()
+            
+            # Skip pure manager records from being listed as their own executive
+            if uid in sales_managers_map and not u.get("reporting_manager_id"):
+                continue
+
+            # Only consider sales executives / team members
+            if "ceo" in role_str or "founder" in role_str or "admin" in role_str:
+                continue
+
+            if uid and uid in assigned_executive_ids:
+                continue
+
+            mgr_id = str(u.get("reporting_manager_id") or "").strip()
+            mgr_name = str(u.get("reporting_manager_name") or "").lower().strip()
+
+            matched_mgr_id = None
+            if mgr_id and mgr_id in mgr_to_executives:
+                matched_mgr_id = mgr_id
+            elif mgr_name:
+                for mid, muser in sales_managers_map.items():
+                    mname = str(muser.get("name") or "").lower().strip()
+                    if mname and mname == mgr_name:
+                        matched_mgr_id = mid
+                        break
+
+            if matched_mgr_id:
+                mgr_to_executives[matched_mgr_id].append(u)
+                if uid:
+                    assigned_executive_ids.add(uid)
+            else:
+                if uid not in assigned_executive_ids:
+                    executives_without_manager.append(u)
+                    if uid:
+                        assigned_executive_ids.add(uid)
+
+        # ── 4. Load leads to help resolve customer attribution ────────────────
+        all_leads_raw = []
+        try:
+            res = self.supabase.schema("crm").table("leads").select("*").execute()
+            if res.data:
+                all_leads_raw = res.data
+        except Exception:
+            pass
+
+        lead_by_id: Dict[str, Dict] = {
+            str(l.get("lead_id") or l.get("id")): l for l in all_leads_raw if (l.get("lead_id") or l.get("id"))
+        }
+
+        # ── 5. Load all customers from crm.customers ──────────────────────────
+        all_customers_raw = []
+        try:
+            res = self.supabase.schema("crm").table("customers").select("*").execute()
+            if res.data:
+                all_customers_raw = res.data
+        except Exception as e:
+            logger.warning(f"ceo_customer_directory: crm.customers fetch error: {e}")
+            try:
+                res = self.supabase.table("customers").select("*").execute()
+                if res.data:
+                    all_customers_raw = res.data
+            except Exception:
+                pass
+
+        # ── 6. Resolve executive owner for each customer ───────────────────────
+        exec_to_customers: Dict[str, list] = {}
+        customers_without_exec = []
+
+        for raw_c in all_customers_raw:
+            cid = str(raw_c.get("customer_id") or raw_c.get("id") or "")
+            cname = raw_c.get("name") or raw_c.get("company") or raw_c.get("company_name") or "Unnamed Customer"
+            company = raw_c.get("company") or raw_c.get("company_name") or cname
+            amount = float(raw_c.get("contract_value") or raw_c.get("amount") or raw_c.get("revenue") or 0.0)
+            status = raw_c.get("status") or "Active Customer"
+            onboard_date = str(raw_c.get("onboarding_date") or raw_c.get("created_at") or "")[:10]
+            product = raw_c.get("product") or raw_c.get("service") or "Software License"
+
+            lid = str(raw_c.get("lead_id") or "").strip()
+            lead = lead_by_id.get(lid) if lid and lid != "None" else None
+            if lead and not raw_c.get("product"):
+                product = lead.get("product_name") or lead.get("product") or product
+
+            # Resolve executive:
+            # 1. lead.assigned_to (UUID or name)
+            # 2. customer.sales_executive (UUID or name)
+            # 3. customer.assigned_to
+            # 4. customer.created_by
+            # 5. lead.created_by
+            exec_user = None
+
+            # Check lead assigned_to first if lead exists
+            if lead:
+                lat = str(lead.get("assigned_to") or "").strip()
+                if lat and lat != "None":
+                    if lat in user_by_id:
+                        exec_user = user_by_id[lat]
+                    elif lat.lower() in user_by_name_lower:
+                        exec_user = user_by_name_lower[lat.lower()]
+                    elif lat in user_by_email:
+                        exec_user = user_by_email[lat]
+
+            # Check customer sales_executive field
+            if not exec_user:
+                se_val = str(raw_c.get("sales_executive") or "").strip()
+                if se_val and se_val not in ("None", "Sales Executive", "Test Runner", "Direct/Unassigned"):
+                    if se_val in user_by_id:
+                        exec_user = user_by_id[se_val]
+                    elif se_val.lower() in user_by_name_lower:
+                        exec_user = user_by_name_lower[se_val.lower()]
+                    elif se_val in user_by_email:
+                        exec_user = user_by_email[se_val]
+
+            # Check customer assigned_to field
+            if not exec_user:
+                cat = str(raw_c.get("assigned_to") or "").strip()
+                if cat and cat != "None":
+                    if cat in user_by_id:
+                        exec_user = user_by_id[cat]
+                    elif cat.lower() in user_by_name_lower:
+                        exec_user = user_by_name_lower[cat.lower()]
+                    elif cat in user_by_email:
+                        exec_user = user_by_email[cat]
+
+            # Check customer created_by
+            if not exec_user:
+                cb = str(raw_c.get("created_by") or "").strip()
+                if cb and cb != "None":
+                    if cb in user_by_id:
+                        exec_user = user_by_id[cb]
+                    elif cb.lower() in user_by_name_lower:
+                        exec_user = user_by_name_lower[cb.lower()]
+
+            # Check lead created_by
+            if not exec_user and lead:
+                lcb = str(lead.get("created_by") or "").strip()
+                if lcb and lcb != "None":
+                    if lcb in user_by_id:
+                        exec_user = user_by_id[lcb]
+                    elif lcb.lower() in user_by_name_lower:
+                        exec_user = user_by_name_lower[lcb.lower()]
+
+            customer_record = {
+                "customer_id": cid,
+                "customer_name": cname,
+                "company_name": company,
+                "product": product,
+                "amount": amount,
+                "status": status,
+                "date": onboard_date,
+            }
+
+            if exec_user:
+                eid = str(exec_user.get("id") or exec_user.get("auth_user_id") or "")
+                customer_record["executive_id"] = eid
+                customer_record["executive_name"] = exec_user.get("name") or "Unnamed Executive"
+                
+                mgr_id_of_exec = str(exec_user.get("reporting_manager_id") or "").strip()
+                mgr_user = user_by_id.get(mgr_id_of_exec) if mgr_id_of_exec else None
+                customer_record["manager_name"] = (mgr_user.get("name") if mgr_user else exec_user.get("reporting_manager_name")) or "Unassigned"
+                
+                if eid not in exec_to_customers:
+                    exec_to_customers[eid] = []
+                exec_to_customers[eid].append(customer_record)
+            else:
+                customer_record["executive_id"] = ""
+                customer_record["executive_name"] = "Unassigned"
+                customer_record["manager_name"] = "Unassigned"
+                customers_without_exec.append(customer_record)
+
+        # ── 7. Assemble the manager hierarchy list ─────────────────────────────
+        managers_list = []
+
+        for mgr_id, mgr_user in sorted(sales_managers_map.items(), key=lambda x: str(x[1].get("name") or "")):
+            mgr_name = mgr_user.get("name") or "Unnamed Manager"
+            executives_for_mgr = mgr_to_executives.get(mgr_id, [])
+
+            exec_list = []
+            mgr_customer_ids = set()
+
+            for exec_user in executives_for_mgr:
+                eid = str(exec_user.get("id") or exec_user.get("auth_user_id") or "")
+                ename = exec_user.get("name") or "Unnamed Executive"
+                exec_customers = exec_to_customers.get(eid, [])
+                exec_cust_ids = set(c["customer_id"] for c in exec_customers)
+                mgr_customer_ids.update(exec_cust_ids)
+
+                exec_list.append({
+                    "executive_id": eid,
+                    "executive_name": ename,
+                    "customer_count": len(exec_customers),
+                    "customers": exec_customers
+                })
+
+            managers_list.append({
+                "manager_id": mgr_id,
+                "manager_name": mgr_name,
+                "executive_count": len(exec_list),
+                "customer_count": len(mgr_customer_ids),
+                "executives": exec_list
+            })
+
+        # ── 8. Unassigned section ─────────────────────────────────────────────
+        unassigned_exec_list = []
+        for u in executives_without_manager:
+            eid = str(u.get("id") or u.get("auth_user_id") or "")
+            ename = u.get("name") or "Unnamed Executive"
+            exec_customers = exec_to_customers.get(eid, [])
+            if exec_customers:
+                unassigned_exec_list.append({
+                    "executive_id": eid,
+                    "executive_name": ename,
+                    "customer_count": len(exec_customers),
+                    "customers": exec_customers
+                })
+
+        # Customers with no exec at all
+        if customers_without_exec:
+            unassigned_exec_list.append({
+                "executive_id": "",
+                "executive_name": "Direct / Unassigned",
+                "customer_count": len(customers_without_exec),
+                "customers": customers_without_exec
+            })
+
+        if unassigned_exec_list:
+            unassigned_cust_ids = set(
+                c["customer_id"]
+                for e in unassigned_exec_list
+                for c in e["customers"]
+            )
+            managers_list.append({
+                "manager_id": "unassigned",
+                "manager_name": "Unassigned / Direct",
+                "executive_count": len(unassigned_exec_list),
+                "customer_count": len(unassigned_cust_ids),
+                "executives": unassigned_exec_list
+            })
+
+        # ── 9. Compute totals ─────────────────────────────────────────────────
+        total_mgrs = len([m for m in managers_list if m["manager_id"] != "unassigned"])
+        total_execs = sum(m["executive_count"] for m in managers_list)
+        total_cust_ids = set()
+        for c in all_customers_raw:
+            cid = c.get("customer_id") or c.get("id")
+            if cid:
+                total_cust_ids.add(str(cid))
+        total_revenue = sum(
+            c["amount"]
+            for m in managers_list
+            for e in m["executives"]
+            for c in e["customers"]
+        )
+
+        return {
+            "managers": managers_list,
+            "totals": {
+                "managers": total_mgrs,
+                "executives": total_execs,
+                "customers": len(total_cust_ids),
+                "revenue": total_revenue
+            }
+        }
+

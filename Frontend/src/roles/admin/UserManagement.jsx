@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import {
   Users,
   Search,
@@ -18,67 +18,15 @@ import {
   EyeOff,
   Copy,
   Info,
+  Layers,
+  Network,
+  UserPlus,
+  ChevronRight,
+  ArrowRight,
+  Sparkles,
 } from 'lucide-react'
 import { hrmsAPI, userAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
-
-const defaultUsers = [
-  {
-    id: 'usr_001',
-    name: 'Admin User',
-    email: 'admin@tconnect.com',
-    phone: '+91 98765 00001',
-    role: 'Super Admin',
-    dept: 'IT & System Admin',
-    status: 'Active',
-    lastLogin: '2 mins ago',
-    accessPassword: 'AdminPassword2026#',
-  },
-  {
-    id: 'usr_002',
-    name: 'Vikram Singh',
-    email: 'vikram.singh@tconnect.com',
-    phone: '+91 98765 12345',
-    role: 'Sales Manager',
-    dept: 'Sales & Business Development',
-    status: 'Active',
-    lastLogin: '1 hour ago',
-    accessPassword: 'ManagerPassword2026#',
-  },
-  {
-    id: 'usr_003',
-    name: 'Ananya Roy',
-    email: 'ananya.roy@tconnect.com',
-    phone: '+91 98765 23456',
-    role: 'Sales Executive',
-    dept: 'Sales & Business Development',
-    status: 'Active',
-    lastLogin: '3 hours ago',
-    accessPassword: 'SalesPassword2026#',
-  },
-  {
-    id: 'usr_004',
-    name: 'Karthik Raja',
-    email: 'karthik.raja@tconnect.com',
-    phone: '+91 98765 34567',
-    role: 'Sales Executive',
-    dept: 'Sales & Business Development',
-    status: 'Active',
-    lastLogin: '1 day ago',
-    accessPassword: 'SalesPassword2026#',
-  },
-  {
-    id: 'usr_005',
-    name: 'Priya Sharma',
-    email: 'priya.sharma@tconnect.com',
-    phone: '+91 98765 45678',
-    role: 'Sales Executive',
-    dept: 'Inside Sales',
-    status: 'Inactive',
-    lastLogin: '5 days ago',
-    accessPassword: 'SalesPassword2026#',
-  },
-]
 
 const ROLE_BADGE_CLASSES = {
   'Super Admin': 'bg-rose-50 text-rose-700 border-rose-200',
@@ -93,7 +41,8 @@ const isProtectedRole = (roleName) => {
 
 function UserManagement() {
   const { showToast } = useToast()
-  const [users, setUsers] = useState(defaultUsers)
+  const [users, setUsers] = useState([])
+  const [activeTab, setActiveTab] = useState('table') // 'table' | 'hierarchy'
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedRole, setSelectedRole] = useState('ALL')
   const [selectedStatus, setSelectedStatus] = useState('ALL')
@@ -133,16 +82,59 @@ function UserManagement() {
   const [assigning, setAssigning] = useState(false)
 
   // Derived lists
-  const salesManagers = users.filter((u) => {
-    const r = (u.role || '').toLowerCase()
-    return r.includes('manager') || r.includes('admin') || r.includes('ceo')
-  })
+  const salesManagers = useMemo(() => {
+    return users.filter((u) => {
+      const r = (u.role || '').toLowerCase()
+      return r.includes('manager') || r.includes('admin') || r.includes('ceo')
+    })
+  }, [users])
 
-  const salesExecutives = users.filter((u) => {
-    const r = (u.role || '').toLowerCase()
-    const isManagerOrAdmin = r.includes('manager') || r.includes('admin') || r.includes('ceo')
-    return (r.includes('executive') || r.includes('specialist') || r.includes('sales')) && !isManagerOrAdmin
-  })
+  const salesExecutives = useMemo(() => {
+    return users.filter((u) => {
+      const r = (u.role || '').toLowerCase()
+      const isManagerOrAdmin = r.includes('manager') || r.includes('admin') || r.includes('ceo')
+      return !isManagerOrAdmin
+    })
+  }, [users])
+
+  // Manager -> Assigned Executives Hierarchy Data
+  const managerHierarchy = useMemo(() => {
+    return salesManagers.map((mgr) => {
+      const mId = String(mgr.id || mgr.employee_id || '').toLowerCase().trim()
+      const mCode = String(mgr.employee_code || '').toLowerCase().trim()
+      const mEmail = String(mgr.email || '').toLowerCase().trim()
+      const mName = String(mgr.name || '').toLowerCase().trim()
+
+      const assigned = salesExecutives.filter((e) => {
+        const rId = String(e.reporting_manager_id || '').toLowerCase().trim()
+        const rEmail = String(e.reporting_manager_email || '').toLowerCase().trim()
+        const rName = String(e.reporting_manager_name || '').toLowerCase().trim()
+
+        return (
+          (mId && rId === mId) ||
+          (mCode && rId === mCode) ||
+          (mEmail && rEmail === mEmail) ||
+          (mName && rName === mName)
+        )
+      })
+
+      return {
+        manager: mgr,
+        assignedExecutives: assigned,
+        count: assigned.length,
+      }
+    })
+  }, [salesManagers, salesExecutives])
+
+  // Unassigned Executives Pool
+  const unassignedExecutives = useMemo(() => {
+    return salesExecutives.filter((e) => {
+      const rId = e.reporting_manager_id
+      const rName = e.reporting_manager_name
+      const rEmail = e.reporting_manager_email
+      return !rId && !rName && !rEmail
+    })
+  }, [salesExecutives])
 
   const handleManagerSelect = (mId) => {
     setSelectedManagerId(mId)
@@ -161,6 +153,11 @@ function UserManagement() {
     } else {
       setSelectedExecIds([])
     }
+  }
+
+  const handleOpenAssignModalForManager = (mId) => {
+    handleManagerSelect(mId)
+    setShowAssignModal(true)
   }
 
   const handleToggleExecSelection = (execId) => {
@@ -233,8 +230,8 @@ function UserManagement() {
     async function loadUsers() {
       try {
         const res = await userAPI.getUsers()
-        if (res && res.data && res.data.length > 0) {
-          setUsers(res.data)
+        if (res && res.data) {
+          setUsers(Array.isArray(res.data) ? res.data : [])
         }
       } catch (err) {
         const saved = localStorage.getItem('tc_app_users')
@@ -469,221 +466,456 @@ function UserManagement() {
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
-            <UserCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Active Portal Users</p>
-            <p className="text-2xl font-extrabold text-slate-900">{activeCount}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
           <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
             <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Sales Managers</p>
-            <p className="text-2xl font-extrabold text-slate-900">{salesManagersCount}</p>
+            <p className="text-2xl font-extrabold text-slate-900">{salesManagers.length}</p>
           </div>
         </div>
 
         <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-purple-50 text-purple-600 rounded-xl border border-purple-100">
-            <Building className="w-5 h-5" />
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
+            <UserCheck className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Sales Executives</p>
-            <p className="text-2xl font-extrabold text-slate-900">{executivesCount}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned Subordinates</p>
+            <p className="text-2xl font-extrabold text-slate-900">{salesExecutives.length - unassignedExecutives.length}</p>
+          </div>
+        </div>
+
+        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
+          <div className={`p-3 rounded-xl border ${unassignedExecutives.length > 0 ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+            <UserX className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Unassigned Pool</p>
+            <p className={`text-2xl font-extrabold ${unassignedExecutives.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{unassignedExecutives.length}</p>
           </div>
         </div>
       </div>
 
-      {/* Filter and Search Bar */}
-      <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row gap-3 justify-between items-center">
-        <div className="relative w-full md:w-80">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search by name, email, department..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-semibold"
-          />
+      {/* View Switcher Tabs */}
+      <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setActiveTab('table')}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer ${
+              activeTab === 'table'
+                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Layers className="w-4 h-4" /> All Users Directory ({users.length})
+          </button>
+          <button
+            onClick={() => setActiveTab('hierarchy')}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer ${
+              activeTab === 'hierarchy'
+                ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/20'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Network className="w-4 h-4" /> Manager & Executive Team Hierarchy ({salesManagers.length} Managers)
+          </button>
         </div>
 
-        <div className="flex flex-wrap gap-2 w-full md:w-auto">
-          {/* Role Filter */}
-          <select
-            value={selectedRole}
-            onChange={(e) => setSelectedRole(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600"
-          >
-            <option value="ALL">All Roles</option>
-            <option value="Super Admin">Super Admin</option>
-            <option value="Sales Manager">Sales Manager</option>
-            <option value="Sales Executive">Sales Executive</option>
-          </select>
-
-          {/* Status Filter */}
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600"
-          >
-            <option value="ALL">All Statuses</option>
-            <option value="Active">Active Users</option>
-            <option value="Inactive">Inactive Users</option>
-          </select>
-        </div>
+        {activeTab === 'hierarchy' && (
+          <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full hidden sm:inline-flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+            Live Manager-Executive Mapping
+          </span>
+        )}
       </div>
 
-      {/* Users Data Table */}
-      <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-700 border-collapse">
-            <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-              <tr>
-                <th className="p-4">User Details</th>
-                <th className="p-4">Access Email</th>
-                <th className="p-4">Role</th>
-                <th className="p-4">Reporting Manager</th>
-                <th className="p-4">Department</th>
-                <th className="p-4">Status</th>
-                <th className="p-4 text-center">Portal Access</th>
-                <th className="p-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-semibold">
-              {filteredUsers.map((user) => {
-                const isProtected = isProtectedRole(user.role)
-                return (
-                  <tr key={user.id} className="hover:bg-slate-50/70 transition">
-                    {/* User Details */}
-                    <td className="p-4">
+      {/* ======================================================== */}
+      {/* VIEW 1: MANAGER & EXECUTIVE HIERARCHY                    */}
+      {/* ======================================================== */}
+      {activeTab === 'hierarchy' && (
+        <div className="space-y-6">
+          {/* Header Info Note */}
+          <div className="bg-gradient-to-r from-indigo-50 via-blue-50 to-purple-50 border border-indigo-200 p-4 rounded-2xl flex items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-xs">
+                <Network className="w-5 h-5" />
+              </div>
+              <div>
+                <h4 className="font-extrabold text-slate-900 text-sm">Manager-to-Executive Relationship Overview</h4>
+                <p className="text-[11px] text-slate-600 font-medium">
+                  Showing all Sales Managers, their assigned executive subordinates, contact details, and portal statuses.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowAssignModal(true)}
+              className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-sm transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+            >
+              <UserPlus className="w-3.5 h-3.5" /> Reassign Subordinates
+            </button>
+          </div>
+
+          {/* Grid of Manager Team Cards */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {managerHierarchy.map(({ manager, assignedExecutives: assigned, count }) => {
+              return (
+                <div
+                  key={manager.id}
+                  className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs hover:shadow-md transition flex flex-col justify-between"
+                >
+                  {/* Manager Header Banner */}
+                  <div className="p-5 bg-gradient-to-r from-slate-900 via-slate-800 to-indigo-950 text-white">
+                    <div className="flex items-start justify-between gap-3">
                       <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-extrabold text-xs flex items-center justify-center shadow-xs shrink-0">
-                          {user.name.split(' ').map((n) => n[0]).join('')}
+                        <div className="w-11 h-11 rounded-2xl bg-indigo-500/30 border border-indigo-400/40 text-indigo-100 font-black text-sm flex items-center justify-center shadow-inner">
+                          {manager.name.split(' ').map((n) => n[0]).join('')}
                         </div>
                         <div>
-                          <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
-                            {user.name}
-                            {isProtected && (
-                              <span title="Protected Account" className="text-amber-500">
-                                <Lock className="w-3 h-3" />
-                              </span>
-                            )}
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-extrabold text-sm text-white tracking-tight">{manager.name}</h3>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-200 border border-indigo-400/30">
+                              {manager.role}
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-300 font-medium flex items-center gap-1.5 mt-0.5">
+                            <Mail className="w-3 h-3 text-indigo-300" /> {manager.email}
                           </p>
-                          <p className="text-[11px] text-slate-400 font-medium">{user.phone}</p>
+                          {manager.phone && (
+                            <p className="text-[10px] text-slate-400 font-medium flex items-center gap-1.5 mt-0.5">
+                              <Phone className="w-3 h-3 text-indigo-300" /> {manager.phone}
+                            </p>
+                          )}
                         </div>
                       </div>
-                    </td>
 
-                    {/* Access Email */}
-                    <td className="p-4">
-                      <span className="inline-flex items-center gap-1.5 text-slate-800 font-bold">
-                        <Mail className="w-3.5 h-3.5 text-blue-600" />
-                        {user.email}
-                      </span>
-                    </td>
-
-                    {/* Role */}
-                    <td className="p-4">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-extrabold ${ROLE_BADGE_CLASSES[user.role] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                        {user.role}
-                      </span>
-                    </td>
-
-                    {/* Reporting Manager */}
-                    <td className="p-4 text-slate-700 font-bold text-xs">
-                      {user.reporting_manager_name ? (
-                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
-                          👤 {user.reporting_manager_name}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 font-medium text-[11px]">Unassigned</span>
-                      )}
-                    </td>
-
-                    {/* Department */}
-                    <td className="p-4 text-slate-600 font-medium">
-                      {user.dept}
-                    </td>
-
-                    {/* Status */}
-                    <td className="p-4">
                       <button
-                        onClick={() => toggleUserStatus(user.id)}
-                        disabled={isProtected}
-                        className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-extrabold transition cursor-pointer ${
-                          user.status === 'Active'
-                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                            : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                        } ${isProtected ? 'opacity-80 cursor-not-allowed' : ''}`}
+                        onClick={() => handleOpenAssignModalForManager(manager.id)}
+                        className="px-3 py-1.5 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer shrink-0"
+                        title="Manage Assigned Sales Executives"
                       >
-                        {user.status === 'Active' ? (
-                          <>
-                            <UserCheck className="w-3 h-3" /> Active
-                          </>
-                        ) : (
-                          <>
-                            <UserX className="w-3 h-3" /> Inactive
-                          </>
-                        )}
+                        <Edit3 className="w-3 h-3" /> Manage Team
                       </button>
-                    </td>
+                    </div>
 
-                    {/* Portal Access Passwords */}
-                    <td className="p-4 text-center">
-                      <button
-                        onClick={() => setShowCredentialsModal(user)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
-                        title="View Portal Credentials"
-                      >
-                        <Key className="w-3 h-3 text-blue-600" /> Access Keys
-                      </button>
-                    </td>
+                    <div className="mt-4 pt-3 border-t border-white/10 flex items-center justify-between text-xs">
+                      <span className="text-slate-300 font-medium">Reporting Team Size</span>
+                      <span className="font-extrabold px-2.5 py-0.5 rounded-md bg-indigo-500 text-white shadow-xs text-xs">
+                        👤 {count} {count === 1 ? 'Executive' : 'Executives'} Assigned
+                      </span>
+                    </div>
+                  </div>
 
-                    {/* Actions */}
-                    <td className="p-4 text-right">
-                      {isProtected ? (
-                        <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">
-                          🔒 Protected
-                        </span>
-                      ) : (
-                        <div className="flex items-center justify-end gap-1.5">
-                          <button
-                            onClick={() => handleOpenEditModal(user)}
-                            className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 rounded-lg transition cursor-pointer"
-                            title="Edit User Account"
+                  {/* Subordinates Section */}
+                  <div className="p-4 flex-1 bg-slate-50/50">
+                    <p className="text-[11px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                      Assigned Sales Executives ({count})
+                    </p>
+
+                    {assigned.length === 0 ? (
+                      <div className="p-6 text-center border border-dashed border-slate-300 rounded-xl bg-white space-y-2">
+                        <p className="text-xs text-slate-500 font-semibold">No Sales Executives assigned to this manager yet.</p>
+                        <button
+                          onClick={() => handleOpenAssignModalForManager(manager.id)}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs inline-flex items-center gap-1 cursor-pointer"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" /> Assign Executives
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+                        {assigned.map((exec) => (
+                          <div
+                            key={exec.id}
+                            className="bg-white border border-slate-200/90 rounded-xl p-3 flex items-center justify-between gap-3 shadow-2xs hover:border-indigo-300 transition"
                           >
-                            <Edit3 className="w-3.5 h-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteUser(user.id)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg transition cursor-pointer"
-                            title="Delete Account"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-700 font-extrabold text-xs flex items-center justify-center border border-emerald-200 shrink-0">
+                                {exec.name.split(' ').map((n) => n[0]).join('')}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-extrabold text-xs text-slate-900 truncate flex items-center gap-1.5">
+                                  {exec.name}
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-full border ${
+                                    exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                                  }`}>
+                                    {exec.status}
+                                  </span>
+                                </p>
+                                <p className="text-[10px] text-slate-500 truncate">{exec.email} · {exec.phone}</p>
+                              </div>
+                            </div>
 
-              {filteredUsers.length === 0 && (
-                <tr>
-                  <td colSpan="7" className="p-8 text-center text-slate-400 font-semibold">
-                    No employee accounts found matching the search or role criteria.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <button
+                                onClick={() => setShowCredentialsModal(exec)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold transition cursor-pointer"
+                                title="View Portal Access Keys"
+                              >
+                                <Key className="w-3 h-3 text-blue-600" />
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditModal(exec)}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition cursor-pointer"
+                                title="Edit Executive"
+                              >
+                                <Edit3 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Unassigned Executives Pool Section */}
+          {unassignedExecutives.length > 0 && (
+            <div className="bg-white border border-amber-200 rounded-2xl p-5 shadow-xs">
+              <div className="flex items-center justify-between gap-3 mb-3">
+                <div className="flex items-center gap-2">
+                  <span className="p-2 bg-amber-100 text-amber-800 rounded-xl font-bold">
+                    <UserX className="w-4 h-4" />
+                  </span>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900">Unassigned Sales Executives ({unassignedExecutives.length})</h3>
+                    <p className="text-[11px] text-slate-500 font-medium">These executives currently do not report to any Sales Manager.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowAssignModal(true)}
+                  className="px-3.5 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs inline-flex items-center gap-1.5 cursor-pointer"
+                >
+                  <UserCheck className="w-3.5 h-3.5" /> Assign to a Manager
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {unassignedExecutives.map((exec) => (
+                  <div
+                    key={exec.id}
+                    className="p-3 bg-amber-50/50 border border-amber-200 rounded-xl flex items-center justify-between gap-2"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-extrabold text-xs text-slate-900 truncate">{exec.name}</p>
+                      <p className="text-[10px] text-slate-600 truncate">{exec.email}</p>
+                      <span className="text-[9px] font-bold text-amber-700 bg-amber-100 px-1.5 py-0.5 rounded-md mt-1 inline-block">
+                        Unassigned
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setShowAssignModal(true)}
+                      className="px-2 py-1 bg-white border border-amber-300 text-amber-800 hover:bg-amber-100 font-bold text-[10px] rounded-lg shadow-2xs cursor-pointer shrink-0"
+                    >
+                      Assign
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* VIEW 2: ALL USERS DIRECTORY TABLE                        */}
+      {/* ======================================================== */}
+      {activeTab === 'table' && (
+        <div className="space-y-4">
+          {/* Filter and Search Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row gap-3 justify-between items-center">
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by name, email, department..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-semibold"
+              />
+            </div>
+
+            <div className="flex flex-wrap gap-2 w-full md:w-auto">
+              {/* Role Filter */}
+              <select
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600"
+              >
+                <option value="ALL">All Roles</option>
+                <option value="Super Admin">Super Admin</option>
+                <option value="Sales Manager">Sales Manager</option>
+                <option value="Sales Executive">Sales Executive</option>
+              </select>
+
+              {/* Status Filter */}
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="Active">Active Users</option>
+                <option value="Inactive">Inactive Users</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Users Data Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs text-slate-700 border-collapse">
+                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                  <tr>
+                    <th className="p-4">User Details</th>
+                    <th className="p-4">Access Email</th>
+                    <th className="p-4">Role</th>
+                    <th className="p-4">Reporting Manager</th>
+                    <th className="p-4">Department</th>
+                    <th className="p-4">Status</th>
+                    <th className="p-4 text-center">Portal Access</th>
+                    <th className="p-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-semibold">
+                  {filteredUsers.map((user) => {
+                    const isProtected = isProtectedRole(user.role)
+                    return (
+                      <tr key={user.id} className="hover:bg-slate-50/70 transition">
+                        {/* User Details */}
+                        <td className="p-4">
+                          <div className="flex items-center gap-3">
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-extrabold text-xs flex items-center justify-center shadow-xs shrink-0">
+                              {user.name.split(' ').map((n) => n[0]).join('')}
+                            </div>
+                            <div>
+                              <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
+                                {user.name}
+                                {isProtected && (
+                                  <span title="Protected Account" className="text-amber-500">
+                                    <Lock className="w-3 h-3" />
+                                  </span>
+                                )}
+                              </p>
+                              <p className="text-[11px] text-slate-400 font-medium">{user.phone}</p>
+                            </div>
+                          </div>
+                        </td>
+
+                        {/* Access Email */}
+                        <td className="p-4">
+                          <span className="inline-flex items-center gap-1.5 text-slate-800 font-bold">
+                            <Mail className="w-3.5 h-3.5 text-blue-600" />
+                            {user.email}
+                          </span>
+                        </td>
+
+                        {/* Role */}
+                        <td className="p-4">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-extrabold ${ROLE_BADGE_CLASSES[user.role] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                            {user.role}
+                          </span>
+                        </td>
+
+                        {/* Reporting Manager */}
+                        <td className="p-4 text-slate-700 font-bold text-xs">
+                          {user.reporting_manager_name ? (
+                            <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
+                              👤 {user.reporting_manager_name}
+                            </span>
+                          ) : (
+                            <button
+                              onClick={() => setShowAssignModal(true)}
+                              className="text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-md text-[10px] font-bold cursor-pointer"
+                            >
+                              + Assign Manager
+                            </button>
+                          )}
+                        </td>
+
+                        {/* Department */}
+                        <td className="p-4 text-slate-600 font-medium">
+                          {user.dept}
+                        </td>
+
+                        {/* Status */}
+                        <td className="p-4">
+                          <button
+                            onClick={() => toggleUserStatus(user.id)}
+                            disabled={isProtected}
+                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-extrabold transition cursor-pointer ${
+                              user.status === 'Active'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                            } ${isProtected ? 'opacity-80 cursor-not-allowed' : ''}`}
+                          >
+                            {user.status === 'Active' ? (
+                              <>
+                                <UserCheck className="w-3 h-3" /> Active
+                              </>
+                            ) : (
+                              <>
+                                <UserX className="w-3 h-3" /> Inactive
+                              </>
+                            )}
+                          </button>
+                        </td>
+
+                        {/* Portal Access Passwords */}
+                        <td className="p-4 text-center">
+                          <button
+                            onClick={() => setShowCredentialsModal(user)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                            title="View Portal Credentials"
+                          >
+                            <Key className="w-3 h-3 text-blue-600" /> Access Keys
+                          </button>
+                        </td>
+
+                        {/* Actions */}
+                        <td className="p-4 text-right">
+                          {isProtected ? (
+                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">
+                              🔒 Protected
+                            </span>
+                          ) : (
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button
+                                onClick={() => handleOpenEditModal(user)}
+                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 rounded-lg transition cursor-pointer"
+                                title="Edit User Account"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" />
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(user.id)}
+                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg transition cursor-pointer"
+                                title="Delete Account"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          )}
+                        </td>
+                      </tr>
+                    )
+                  })}
+
+                  {filteredUsers.length === 0 && (
+                    <tr>
+                      <td colSpan="8" className="p-8 text-center text-slate-400 font-semibold">
+                        No employee accounts found matching the search or role criteria.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add User Modal (Admin Creates Access Email & Password) */}
       {showAddModal && (

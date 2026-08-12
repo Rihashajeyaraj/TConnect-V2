@@ -17,92 +17,123 @@ import {
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
 import { exportToPDF, exportToExcel, exportToCSV } from '../../utils/exportUtils.js'
-
-// Comprehensive Data Stores for all 7 required CEO Reports
-const REPORT_DATASETS = {
-  SALES: {
-    title: 'Sales & Pipeline Report',
-    columns: ['Deal ID', 'Client Name', 'Deal Value', 'Stage', 'Assigned Executive', 'Sales Manager', 'Close Date'],
-    rows: [
-      { 'Deal ID': 'OPP-301', 'Client Name': 'Apex Technologies', 'Deal Value': '₹4,50,000', Stage: 'Won', 'Assigned Executive': 'Ananya Roy', 'Sales Manager': 'Vikram Singh', 'Close Date': '2026-08-05' },
-      { 'Deal ID': 'OPP-302', 'Client Name': 'Global Corp Solutions', 'Deal Value': '₹2,50,000', Stage: 'Won', 'Assigned Executive': 'Karthik Raja', 'Sales Manager': 'Suresh V', 'Close Date': '2026-08-04' },
-      { 'Deal ID': 'OPP-303', 'Client Name': 'Star Tech Solutions', 'Deal Value': '₹6,00,000', Stage: 'Proposal', 'Assigned Executive': 'Ananya Roy', 'Sales Manager': 'Vikram Singh', 'Close Date': '2026-08-20' },
-      { 'Deal ID': 'OPP-304', 'Client Name': 'Techno Systems', 'Deal Value': '₹1,20,000', Stage: 'Negotiation', 'Assigned Executive': 'Robert Smith', 'Sales Manager': 'Vikram Singh', 'Close Date': '2026-08-15' },
-      { 'Deal ID': 'OPP-305', 'Client Name': 'Zenith Logistics', 'Deal Value': '₹3,50,000', Stage: 'Qualified', 'Assigned Executive': 'Mary Jane', 'Sales Manager': 'Suresh V', 'Close Date': '2026-08-22' },
-      { 'Deal ID': 'OPP-306', 'Client Name': 'Delta Softwares', 'Deal Value': '₹1,80,000', Stage: 'Lost', 'Assigned Executive': 'Karthik Raja', 'Sales Manager': 'Suresh V', 'Close Date': '2026-08-01' },
-    ],
-  },
-  REVENUE: {
-    title: 'Revenue & Collections Report',
-    columns: ['Receipt No', 'Customer Name', 'License / Service', 'Amount', 'Sales Manager', 'Transaction Date'],
-    rows: [
-      { 'Receipt No': 'REV-901', 'Customer Name': 'Apex Technologies', 'License / Service': 'Enterprise ERP License', Amount: '₹4,50,000', 'Sales Manager': 'Vikram Singh', 'Transaction Date': '2026-08-05' },
-      { 'Receipt No': 'REV-902', 'Customer Name': 'Global Corp Solutions', 'License / Service': 'SaaS Multi-branch CRM', Amount: '₹2,50,000', 'Sales Manager': 'Suresh V', 'Transaction Date': '2026-08-04' },
-      { 'Receipt No': 'REV-903', 'Customer Name': 'Vertex Systems', 'License / Service': 'Cloud Migration Support', Amount: '₹3,00,000', 'Sales Manager': 'Vikram Singh', 'Transaction Date': '2026-08-01' },
-      { 'Receipt No': 'REV-904', 'Customer Name': 'Star Tech Enterprises', 'License / Service': 'Field Force Module', Amount: '₹3,80,000', 'Sales Manager': 'Vikram Singh', 'Transaction Date': '2026-08-03' },
-    ],
-  },
-  EMPLOYEE_PERFORMANCE: {
-    title: 'Employee Performance Report',
-    columns: ['Employee ID', 'Staff Name', 'Role', 'Visits Completed', 'Deals Won', 'Revenue Contribution', 'Rating'],
-    rows: [
-      { 'Employee ID': 'EMP-003', 'Staff Name': 'Ananya Roy', Role: 'Sales Executive', 'Visits Completed': '28', 'Deals Won': '8', 'Revenue Contribution': '₹9,40,000', Rating: '4.9 / 5.0' },
-      { 'Employee ID': 'EMP-004', 'Staff Name': 'Karthik Raja', Role: 'Sales Executive', 'Visits Completed': '22', 'Deals Won': '6', 'Revenue Contribution': '₹7,10,000', Rating: '4.7 / 5.0' },
-      { 'Employee ID': 'EMP-006', 'Staff Name': 'Robert Smith', Role: 'Sales Executive', 'Visits Completed': '20', 'Deals Won': '6', 'Revenue Contribution': '₹7,10,000', Rating: '4.6 / 5.0' },
-      { 'Employee ID': 'EMP-007', 'Staff Name': 'Mary Jane', Role: 'Sales Executive', 'Visits Completed': '18', 'Deals Won': '4', 'Revenue Contribution': '₹4,80,000', Rating: '4.6 / 5.0' },
-    ],
-  },
-  CUSTOMERS: {
-    title: 'Customer Accounts & SLA Report',
-    columns: ['Customer ID', 'Company Name', 'Primary Contact', 'Location', 'Sales Manager', 'Contract Value', 'Status'],
-    rows: [
-      { 'Customer ID': 'CUST-101', 'Company Name': 'Apex Technologies', 'Primary Contact': 'Rajesh Kumar', Location: 'Chennai, TN', 'Sales Manager': 'Vikram Singh', 'Contract Value': '₹4,50,000', Status: 'Active' },
-      { 'Customer ID': 'CUST-102', 'Company Name': 'Global Corp Solutions', 'Primary Contact': 'Sarah Smith', Location: 'Bangalore, KA', 'Sales Manager': 'Suresh V', 'Contract Value': '₹2,50,000', Status: 'Active' },
-      { 'Customer ID': 'CUST-103', 'Company Name': 'Vertex Systems', 'Primary Contact': 'David Miller', Location: 'Mumbai, MH', 'Sales Manager': 'Vikram Singh', 'Contract Value': '₹3,00,000', Status: 'Active' },
-      { 'Customer ID': 'CUST-104', 'Company Name': 'Star Tech Enterprises', 'Primary Contact': 'Deepa Roy', Location: 'Hyderabad, TS', 'Sales Manager': 'Vikram Singh', 'Contract Value': '₹3,80,000', Status: 'Active' },
-      { 'Customer ID': 'CUST-105', 'Company Name': 'Zenith Logistics', 'Primary Contact': 'Alice Lee', Location: 'Coimbatore, TN', 'Sales Manager': 'Suresh V', 'Contract Value': '₹1,80,000', Status: 'Active' },
-    ],
-  },
-  LEAD_CONVERSION: {
-    title: 'Lead Conversion & Funnel Report',
-    columns: ['Lead ID', 'Lead Company', 'Contact Person', 'Source Channel', 'Status', 'Assigned Rep', 'Conversion Rate'],
-    rows: [
-      { 'Lead ID': 'LEAD-201', 'Lead Company': 'Techno Systems', 'Contact Person': 'Rohan Joshi', 'Source Channel': 'Website Inbound', Status: 'Qualified', 'Assigned Rep': 'Robert Smith', 'Conversion Rate': '75%' },
-      { 'Lead ID': 'LEAD-202', 'Lead Company': 'Alpha Group', 'Contact Person': 'David Brown', 'Source Channel': 'Executive Referral', Status: 'Converted to Deal', 'Assigned Rep': 'Ananya Roy', 'Conversion Rate': '100%' },
-      { 'Lead ID': 'LEAD-203', 'Lead Company': 'Star Tech Solutions', 'Contact Person': 'Deepa Roy', 'Source Channel': 'Direct Outreach', Status: 'Won Customer', 'Assigned Rep': 'Ananya Roy', 'Conversion Rate': '100%' },
-      { 'Lead ID': 'LEAD-204', 'Lead Company': 'Zenith Logistics', 'Contact Person': 'Alice Lee', 'Source Channel': 'Website Inbound', Status: 'Proposal Stage', 'Assigned Rep': 'Mary Jane', 'Conversion Rate': '60%' },
-    ],
-  },
-  MANAGER_PERFORMANCE: {
-    title: 'Manager Performance Report',
-    columns: ['Manager Name', 'Supervised Region', 'Team Size', 'Assigned Leads', 'Won Deals', 'Realized Revenue', 'Target Achievement'],
-    rows: [
-      { 'Manager Name': 'Vikram Singh', 'Supervised Region': 'South Region', 'Team Size': '6 Reps', 'Assigned Leads': '82', 'Won Deals': '14', 'Realized Revenue': '₹16,50,000', 'Target Achievement': '82.5%' },
-      { 'Manager Name': 'Suresh V', 'Supervised Region': 'Tech & Western Region', 'Team Size': '5 Reps', 'Assigned Leads': '60', 'Won Deals': '10', 'Realized Revenue': '₹11,90,000', 'Target Achievement': '79.3%' },
-    ],
-  },
-  EXECUTIVE_PERFORMANCE: {
-    title: 'Executive Performance Report',
-    columns: ['Executive Name', 'Manager', 'Leads Contacted', 'Field Visits', 'Won Deals', 'Revenue Output', 'Win Rate'],
-    rows: [
-      { 'Executive Name': 'Ananya Roy', Manager: 'Vikram Singh', 'Leads Contacted': '44', 'Field Visits': '28', 'Won Deals': '8', 'Revenue Output': '₹9,40,000', 'Win Rate': '88.9%' },
-      { 'Executive Name': 'Karthik Raja', Manager: 'Suresh V', 'Leads Contacted': '36', 'Field Visits': '22', 'Won Deals': '6', 'Revenue Output': '₹7,10,000', 'Win Rate': '75.0%' },
-      { 'Executive Name': 'Robert Smith', Manager: 'Vikram Singh', 'Leads Contacted': '38', 'Field Visits': '20', 'Won Deals': '6', 'Revenue Output': '₹7,10,000', 'Win Rate': '85.7%' },
-      { 'Executive Name': 'Mary Jane', Manager: 'Suresh V', 'Leads Contacted': '24', 'Field Visits': '18', 'Won Deals': '4', 'Revenue Output': '₹4,80,000', 'Win Rate': '80.0%' },
-    ],
-  },
-}
+import { reportAPI, customerAPI, pipelineAPI, visitAPI } from '../../services/api.js'
 
 function Reports() {
   const { showToast } = useToast()
   const [selectedReportKey, setSelectedReportKey] = useState('SALES')
   const [dateFilter, setDateFilter] = useState('This Month')
   const [searchQuery, setSearchQuery] = useState('')
+  const [loading, setLoading] = useState(true)
 
-  const activeDataset = REPORT_DATASETS[selectedReportKey] || REPORT_DATASETS.SALES
+  // Real Database Reports Datasets State
+  const [reportData, setReportData] = useState({
+    SALES: { title: 'Sales & Pipeline Report', columns: ['Deal ID', 'Client Name', 'Deal Value', 'Stage', 'Assigned Executive', 'Sales Manager', 'Close Date'], rows: [] },
+    REVENUE: { title: 'Revenue & Collections Report', columns: ['Customer Name', 'Product / Service', 'Amount', 'Executive', 'Sales Manager', 'Transaction Date'], rows: [] },
+    EMPLOYEE_PERFORMANCE: { title: 'Employee Performance Report', columns: ['Staff Name', 'Role', 'Supervising Manager', 'Customers', 'Revenue Contribution'], rows: [] },
+    CUSTOMERS: { title: 'Customer Accounts Report', columns: ['Customer ID', 'Company Name', 'Contact Person', 'Product', 'Sales Executive', 'Sales Manager', 'Contract Value', 'Status'], rows: [] },
+    CLIENT_LOGS: { title: 'Field Visit & Engagement Logs', columns: ['Visit ID', 'Client Name', 'Executive', 'Location', 'Check-in Time', 'Status'], rows: [] },
+  })
+
+  const loadReportData = async () => {
+    setLoading(true)
+    try {
+      const [dashRes, dirRes, pipeRes, visitRes] = await Promise.allSettled([
+        reportAPI.getCeoDashboard(),
+        customerAPI.getCeoCustomerDirectory(),
+        pipelineAPI.getOpportunities(),
+        visitAPI.getVisits(),
+      ])
+
+      const dashData = dashRes.status === 'fulfilled' && dashRes.value?.data ? dashRes.value.data : null
+      const dirData = dirRes.status === 'fulfilled' && dirRes.value?.data ? dirRes.value.data : null
+      const opps = pipeRes.status === 'fulfilled' && pipeRes.value?.data ? pipeRes.value.data : []
+      const visits = visitRes.status === 'fulfilled' && visitRes.value?.data ? visitRes.value.data : []
+
+      // 1. Sales Report
+      const salesRows = (Array.isArray(opps) ? opps : []).map((o, idx) => ({
+        'Deal ID': o.id || `OPP-${100 + idx}`,
+        'Client Name': o.company || o.company_name || o.client_name || 'Client',
+        'Deal Value': `₹${Number(o.value || 0).toLocaleString()}`,
+        Stage: o.stage || 'Lead',
+        'Assigned Executive': o.rep || o.sales_executive || o.assigned_to || 'Sales Executive',
+        'Sales Manager': o.sales_manager || o.manager_name || 'Sales Manager',
+        'Close Date': o.created_at ? String(o.created_at).slice(0, 10) : 'N/A',
+      }))
+
+      // 2. Revenue Report (from directory customers)
+      const allDirectoryCustomers = (dirData?.managers || []).flatMap(m =>
+        (m.executives || []).flatMap(e =>
+          (e.customers || []).map(c => ({
+            'Customer Name': c.customer_name || c.company_name || 'Customer',
+            'Product / Service': c.product || 'Software License',
+            Amount: `₹${Number(c.amount || 0).toLocaleString()}`,
+            Executive: e.executive_name || 'Sales Executive',
+            'Sales Manager': m.manager_name || 'Sales Manager',
+            'Transaction Date': c.date || 'N/A',
+          }))
+        )
+      )
+
+      // 3. Employee Performance Report
+      const empRows = (dirData?.managers || []).flatMap(m =>
+        (m.executives || []).map(e => ({
+          'Staff Name': e.executive_name || 'Staff Member',
+          Role: 'Sales Executive',
+          'Supervising Manager': m.manager_name || 'Sales Manager',
+          Customers: String(e.customer_count || 0),
+          'Revenue Contribution': `₹${(e.customers || []).reduce((sum, c) => sum + (Number(c.amount) || 0), 0).toLocaleString()}`,
+        }))
+      )
+
+      // 4. Customers Report
+      const custRows = (dirData?.managers || []).flatMap(m =>
+        (m.executives || []).flatMap(e =>
+          (e.customers || []).map(c => ({
+            'Customer ID': String(c.customer_id || '').slice(0, 8),
+            'Company Name': c.company_name || c.customer_name || 'Company',
+            'Contact Person': c.customer_name || 'N/A',
+            Product: c.product || 'Software License',
+            'Sales Executive': e.executive_name || 'Sales Executive',
+            'Sales Manager': m.manager_name || 'Sales Manager',
+            'Contract Value': `₹${Number(c.amount || 0).toLocaleString()}`,
+            Status: c.status || 'Active Customer',
+          }))
+        )
+      )
+
+      // 5. Visits Report
+      const visitRows = (Array.isArray(visits) ? visits : []).map((v, idx) => ({
+        'Visit ID': v.id ? String(v.id).slice(0, 8) : `VIS-${idx + 1}`,
+        'Client Name': v.customer_name || v.client_name || v.company || 'Client Site',
+        Executive: v.sales_executive || v.executive_name || 'Sales Executive',
+        Location: v.location || v.city || 'Field',
+        'Check-in Time': v.check_in_time ? String(v.check_in_time).slice(0, 16).replace('T', ' ') : 'N/A',
+        Status: v.status || 'Checked In',
+      }))
+
+      setReportData({
+        SALES: { title: 'Sales & Pipeline Report', columns: ['Deal ID', 'Client Name', 'Deal Value', 'Stage', 'Assigned Executive', 'Sales Manager', 'Close Date'], rows: salesRows },
+        REVENUE: { title: 'Revenue & Collections Report', columns: ['Customer Name', 'Product / Service', 'Amount', 'Executive', 'Sales Manager', 'Transaction Date'], rows: allDirectoryCustomers },
+        EMPLOYEE_PERFORMANCE: { title: 'Employee Performance Report', columns: ['Staff Name', 'Role', 'Supervising Manager', 'Customers', 'Revenue Contribution'], rows: empRows },
+        CUSTOMERS: { title: 'Customer Accounts Report', columns: ['Customer ID', 'Company Name', 'Contact Person', 'Product', 'Sales Executive', 'Sales Manager', 'Contract Value', 'Status'], rows: custRows },
+        CLIENT_LOGS: { title: 'Field Visit & Engagement Logs', columns: ['Visit ID', 'Client Name', 'Executive', 'Location', 'Check-in Time', 'Status'], rows: visitRows },
+      })
+    } catch (e) {
+      console.error('Error constructing dynamic reports:', e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadReportData()
+  }, [])
+
+  const activeDataset = reportData[selectedReportKey] || reportData.SALES
 
   // Filter rows based on search
-  const filteredRows = activeDataset.rows.filter((row) =>
+  const filteredRows = (activeDataset?.rows || []).filter((row) =>
     Object.values(row).some((val) =>
       String(val).toLowerCase().includes(searchQuery.toLowerCase())
     )
@@ -136,152 +167,105 @@ function Reports() {
             </h1>
           </div>
           <p className="mt-1 text-xs text-slate-500 font-medium max-w-3xl">
-            Generate and export multi-dimensional reports across Sales, Revenue, Employee Performance, Customers, Conversion velocity, and Manager/Executive performance.
+            Live database reports generated from real CRM, HRMS, and Field Force records in Supabase.
           </p>
         </div>
 
-        {/* Multi-format Export Actions */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5">
           <button
-            onClick={() => handleExport('pdf')}
-            className="flex items-center gap-1.5 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white px-3.5 py-2 text-xs font-black transition shadow-xs"
+            onClick={loadReportData}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700 transition cursor-pointer"
           >
-            <Download className="size-3.5" />
-            Export PDF
-          </button>
-          <button
-            onClick={() => handleExport('excel')}
-            className="flex items-center gap-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white px-3.5 py-2 text-xs font-black transition shadow-xs"
-          >
-            <FileSpreadsheet className="size-3.5" />
-            Excel
-          </button>
-          <button
-            onClick={() => handleExport('csv')}
-            className="flex items-center gap-1.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 px-3.5 py-2 text-xs font-bold transition"
-          >
-            CSV
+            <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
           </button>
         </div>
       </div>
 
-      {/* 7 Required Report Module Selector Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs">
-        {[
-          { key: 'SALES', label: 'Sales Reports', icon: TrendingUp },
-          { key: 'REVENUE', label: 'Revenue Reports', icon: DollarSign },
-          { key: 'EMPLOYEE_PERFORMANCE', label: 'Employee Performance', icon: Activity },
-          { key: 'CUSTOMERS', label: 'Customer Reports', icon: Building2 },
-          { key: 'LEAD_CONVERSION', label: 'Lead Conversion', icon: Layers },
-          { key: 'MANAGER_PERFORMANCE', label: 'Manager Performance', icon: Award },
-          { key: 'EXECUTIVE_PERFORMANCE', label: 'Executive Performance', icon: Users },
-        ].map((tab) => {
-          const Icon = tab.icon
-          const isActive = selectedReportKey === tab.key
-          return (
-            <button
-              key={tab.key}
-              onClick={() => setSelectedReportKey(tab.key)}
-              className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
-                isActive
-                  ? 'bg-[#832D51] text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              <Icon className="size-4" />
-              <span>{tab.label}</span>
-            </button>
-          )
-        })}
+      {/* Report Categories Strip */}
+      <div className="flex flex-wrap gap-2">
+        {Object.entries(reportData).map(([key, ds]) => (
+          <button
+            key={key}
+            onClick={() => setSelectedReportKey(key)}
+            className={`px-4 py-2 rounded-xl text-xs font-bold transition cursor-pointer ${
+              selectedReportKey === key
+                ? 'bg-[#832D51] text-white shadow-sm'
+                : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-50'
+            }`}
+          >
+            {ds.title}
+          </button>
+        ))}
       </div>
 
-      {/* Filter & Search Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div className="flex items-center gap-2 w-full sm:w-auto">
-          <div className="relative w-full sm:w-72">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
+      {/* Report Table Card */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="relative flex-1 max-w-sm">
+            <Search className="absolute left-3 top-2.5 size-4 text-slate-400" />
             <input
               type="text"
-              placeholder={`Search in ${activeDataset.title}...`}
+              placeholder="Search within report..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#832D51]"
             />
           </div>
-        </div>
 
-        {/* Date Filter */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs font-bold text-slate-500">Period:</span>
-          <select
-            value={dateFilter}
-            onChange={(e) => setDateFilter(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 outline-none"
-          >
-            <option value="Today">Today</option>
-            <option value="This Week">This Week</option>
-            <option value="This Month">This Month</option>
-            <option value="This Quarter">This Quarter</option>
-            <option value="This Year">This Year</option>
-          </select>
-        </div>
-      </div>
-
-      {/* Report Data Table */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-          <div>
-            <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
-              {activeDataset.title}
-            </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              Showing {filteredRows.length} verified records for {dateFilter}
-            </p>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => handleExport('csv')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition cursor-pointer"
+            >
+              <Download className="size-3.5" /> CSV
+            </button>
+            <button
+              onClick={() => handleExport('excel')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-lg transition cursor-pointer"
+            >
+              <FileSpreadsheet className="size-3.5" /> Excel
+            </button>
+            <button
+              onClick={() => handleExport('pdf')}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#832D51] hover:bg-[#6a2240] text-white font-bold text-xs rounded-lg transition cursor-pointer"
+            >
+              <Download className="size-3.5" /> PDF
+            </button>
           </div>
-          <span className="rounded-full bg-[#F8CAE4]/20 px-3 py-1 text-xs font-black text-[#832D51]">
-            {filteredRows.length} Records
-          </span>
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
-                {activeDataset.columns.map((col, idx) => (
-                  <th key={idx} className="pb-3 px-2">
-                    {col}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredRows.map((row, rIdx) => (
-                <tr key={rIdx} className="hover:bg-slate-50/80 transition">
-                  {activeDataset.columns.map((col, cIdx) => (
-                    <td key={cIdx} className="py-3 px-2 text-slate-700 font-semibold">
-                      {cIdx === 0 ? (
-                        <span className="font-black text-slate-900">{row[col]}</span>
-                      ) : col.includes('Value') || col.includes('Amount') || col.includes('Revenue') ? (
-                        <span className="font-black text-[#832D51]">{row[col]}</span>
-                      ) : col === 'Stage' || col === 'Status' ? (
-                        <span
-                          className={`inline-flex rounded-full px-2 py-0.5 text-[10px] font-black ${
-                            String(row[col]).includes('Won') || String(row[col]).includes('Active')
-                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                              : 'bg-slate-100 text-slate-700'
-                          }`}
-                        >
-                          {row[col]}
-                        </span>
-                      ) : (
-                        row[col]
-                      )}
-                    </td>
+          {loading ? (
+            <div className="p-12 text-center text-xs font-bold text-slate-400">
+              <RefreshCw className="size-6 animate-spin mx-auto mb-2 text-[#832D51]" />
+              Loading database report records...
+            </div>
+          ) : filteredRows.length === 0 ? (
+            <div className="p-12 text-center text-xs font-bold text-slate-400">
+              No records found for this report.
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse text-xs">
+              <thead>
+                <tr className="bg-slate-50/80 border-b border-slate-200/70 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                  {activeDataset.columns.map((c) => (
+                    <th key={c} className="px-4 py-3">{c}</th>
                   ))}
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                {filteredRows.map((r, ri) => (
+                  <tr key={ri} className="hover:bg-slate-50/60 transition">
+                    {activeDataset.columns.map((c) => (
+                      <td key={c} className="px-4 py-3">{r[c] || '--'}</td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

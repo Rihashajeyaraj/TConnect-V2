@@ -13,24 +13,11 @@ import {
 } from 'lucide-react'
 import { reportAPI, visitAPI } from '../../services/api.js'
 
-const initialLeads = [
-  { id: '1', name: 'ABC Industries', company: 'ABC Pvt Ltd', category: 'Hot', sales_manager: 'Vikram Singh', sales_executive: 'Ananya Roy', phone: '+91 98765 43210', date: '28 Apr 2026', status: 'New' },
-  { id: '2', name: 'Tech Solutions', company: 'Tech Solutions', category: 'Warm', sales_manager: 'Suresh V', sales_executive: 'Karthik Raja', phone: '+91 87654 32109', date: '28 Apr 2026', status: 'Contacted' },
-  { id: '3', name: 'Global Corp', company: 'Global Corp', category: 'Cold', sales_manager: 'Vikram Singh', sales_executive: 'Ananya Roy', phone: '+91 76543 21098', date: '27 Apr 2026', status: 'Qualified' },
-  { id: '4', name: 'Prime Systems', company: 'Prime Systems', category: 'Hot', sales_manager: 'Suresh V', sales_executive: 'Karthik Raja', phone: '+91 65432 10987', date: '27 Apr 2026', status: 'Proposal' },
-  { id: '5', name: 'Next Gen Tech', company: 'Next Gen Tech', category: 'Warm', sales_manager: 'Vikram Singh', sales_executive: 'Ananya Roy', phone: '+91 54321 09876', date: '26 Apr 2026', status: 'Negotiation' },
-]
-
-const initialCustomers = [
-  { id: '1', name: 'ABC Pvt Ltd', company: 'ABC Pvt Ltd', sales_manager: 'Vikram Singh', sales_executive: 'Ananya Roy', phone: '+91 98765 43210', email: 'john@abcpvt.com', location: 'Chennai', contract_value: 120000, created_at: '2026-04-28T10:00:00Z', notes: 'Premium Onboarding | Product: TwiteConnect CRM', status: 'Active Customer', lead_id: '1' },
-  { id: '2', name: 'Tech Solutions', company: 'Tech Solutions', sales_manager: 'Suresh V', sales_executive: 'Karthik Raja', phone: '+91 87654 32109', email: 'mary@techsolutions.com', location: 'Bangalore', contract_value: 85000, created_at: '2026-04-28T11:30:00Z', notes: 'Annual SaaS contract | Product: SaaS Subscription', status: 'Active Customer', lead_id: '2' },
-]
-
 export default function ClientLog({ initialSection = 'leads' }) {
   const [activeSection, setActiveSection] = useState(initialSection) // 'leads' or 'customers'
   const [showTable, setShowTable] = useState(true) // Expand table by default
-  const [leads, setLeads] = useState(initialLeads)
-  const [customers, setCustomers] = useState(initialCustomers)
+  const [leads, setLeads] = useState([])
+  const [customers, setCustomers] = useState([])
   const [visits, setVisits] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
@@ -49,8 +36,11 @@ export default function ClientLog({ initialSection = 'leads' }) {
     try {
       const res = await reportAPI.getCeoDashboard()
       if (res && res.data) {
-        if (res.data.leads) setLeads(res.data.leads)
-        if (res.data.customers) setCustomers(res.data.customers)
+        if (res.data.leads) setLeads(Array.isArray(res.data.leads) ? res.data.leads : [])
+        if (res.data.customers) setCustomers(Array.isArray(res.data.customers) ? res.data.customers : [])
+      } else {
+        setLeads([])
+        setCustomers([])
       }
 
       const visitsRes = await visitAPI.getVisits()

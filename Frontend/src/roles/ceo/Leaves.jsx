@@ -52,14 +52,7 @@ function Leaves() {
         })
         setLeaves(loadedLeaves)
       } else {
-        // Fallbacks
-        const fallbackLeaves = [
-          { id: 'leave_1', name: 'Vikram Singh', role: 'Sales Manager', type: 'Sick Leave', start: '2026-08-07', end: '2026-08-07', days: 1, reason: 'Severe Migraine', status: 'Pending', remarks: '' },
-          { id: 'leave_2', name: 'Suresh V', role: 'Sales Manager', type: 'Casual Leave', start: '2026-08-10', end: '2026-08-11', days: 2, reason: 'Family Function', status: 'Pending', remarks: '' },
-          { id: 'leave_3', name: 'Ananya Roy', role: 'Sales Executive', type: 'Paid Leave', start: '2026-08-05', end: '2026-08-05', days: 1, reason: 'Personal work', status: 'Approved', remarks: 'Approved by Manager' },
-          { id: 'leave_4', name: 'John Doe', role: 'Admin', type: 'Casual Leave', start: '2026-08-06', end: '2026-08-06', days: 1, reason: 'Doctor checkup', status: 'Approved', remarks: 'Granted' },
-        ]
-        setLeaves(fallbackLeaves)
+        setLeaves([])
       }
     } catch (e) {
       console.warn('Leaves directory load notice:', e)

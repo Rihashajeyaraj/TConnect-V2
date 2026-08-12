@@ -23,6 +23,9 @@ function ProtectedRoute({ allowedRoles }) {
 
   const isAllowed = isAuthenticated && (!allowedRoles || allowedRoles.length === 0 || allowedRoles.some((r) => {
     const roleLower = r.toLowerCase()
+    if (roleLower === 'ceo' && (userRole.includes('ceo') || userRole.includes('founder') || userRole.includes('chief executive'))) {
+      return true
+    }
     return userRole.includes(roleLower) || roleLower.includes(userRole)
   }))
 
@@ -39,10 +42,10 @@ function ProtectedRoute({ allowedRoles }) {
   }
 
   if (!isAllowed) {
-    if (userRole.includes('admin') || userRole.includes('super')) {
-      return <Navigate to="/admin" replace />
-    } else if (userRole.includes('ceo')) {
+    if (userRole.includes('ceo') || userRole.includes('founder') || userRole.includes('chief executive')) {
       return <Navigate to="/ceo" replace />
+    } else if (userRole.includes('admin') || userRole.includes('super')) {
+      return <Navigate to="/admin" replace />
     } else if (userRole.includes('manager')) {
       return <Navigate to="/manager" replace />
     } else if (userRole.includes('sales') || userRole.includes('executive')) {

@@ -37,34 +37,69 @@ class UserRepository:
             except Exception:
                 pass
 
-        # 2. Build employee ID mapping for reporting manager resolution
-        emp_map = {}
+        # 2. Build employee maps by ID, Email, and Name for reporting manager resolution
+        emp_map_by_id = {}
+        emp_map_by_email = {}
+        emp_map_by_name = {}
         for emp in db_employees:
-            e_id = str(emp.get("employee_id") or emp.get("id") or "")
-            u_id = str(emp.get("user_id") or "")
-            if e_id:
-                emp_map[e_id] = emp
-            if u_id:
-                emp_map[u_id] = emp
+            e_id = str(emp.get("employee_id") or emp.get("id") or emp.get("auth_user_id") or "").strip()
+            u_id = str(emp.get("user_id") or "").strip()
+            e_email = str(emp.get("email") or "").strip().lower()
+            e_name = str(emp.get("name") or f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip() or "").strip().lower()
 
-        # Helper to resolve manager info from reporting_manager UUID
-        def resolve_manager(mgr_uuid):
-            if not mgr_uuid:
-                return None, None, None
-            mgr_str = str(mgr_uuid)
-            if mgr_str in emp_map:
-                mgr = emp_map[mgr_str]
-                m_id = str(mgr.get("employee_id") or mgr.get("id") or mgr.get("user_id") or "")
-                m_name = mgr.get("name") or f"{mgr.get('first_name', '')} {mgr.get('last_name', '')}".strip() or "Sales Manager"
-                m_email = mgr.get("email") or ""
-                return m_id, m_name, m_email
-            return mgr_str, None, None
+            if e_id:
+                emp_map_by_id[e_id] = emp
+            if u_id:
+                emp_map_by_id[u_id] = emp
+            if e_email:
+                emp_map_by_email[e_email] = emp
+            if e_name:
+                emp_map_by_name[e_name] = emp
+
+        # Helper to resolve manager info from all possible manager columns
+        def resolve_manager(emp):
+            m_id = emp.get("reporting_manager_id") or emp.get("manager_id")
+            m_name = emp.get("reporting_manager_name") or emp.get("manager_name")
+            m_email = emp.get("reporting_manager_email") or emp.get("manager_email")
+
+            raw_mgr = emp.get("reporting_manager")
+            if raw_mgr:
+                raw_str = str(raw_mgr).strip()
+                if raw_str in emp_map_by_id:
+                    matched = emp_map_by_id[raw_str]
+                    m_id = m_id or str(matched.get("employee_id") or matched.get("id") or matched.get("user_id") or "")
+                    m_name = m_name or matched.get("name") or f"{matched.get('first_name', '')} {matched.get('last_name', '')}".strip()
+                    m_email = m_email or matched.get("email")
+                elif raw_str.lower() in emp_map_by_email:
+                    matched = emp_map_by_email[raw_str.lower()]
+                    m_id = m_id or str(matched.get("employee_id") or matched.get("id") or matched.get("user_id") or "")
+                    m_name = m_name or matched.get("name") or f"{matched.get('first_name', '')} {matched.get('last_name', '')}".strip()
+                    m_email = m_email or matched.get("email")
+                elif raw_str.lower() in emp_map_by_name:
+                    matched = emp_map_by_name[raw_str.lower()]
+                    m_id = m_id or str(matched.get("employee_id") or matched.get("id") or matched.get("user_id") or "")
+                    m_name = m_name or matched.get("name") or f"{matched.get('first_name', '')} {matched.get('last_name', '')}".strip()
+                    m_email = m_email or matched.get("email")
+                elif not m_name:
+                    m_name = raw_str
+
+            if m_id and str(m_id) in emp_map_by_id:
+                matched = emp_map_by_id[str(m_id)]
+                m_name = m_name or matched.get("name") or f"{matched.get('first_name', '')} {matched.get('last_name', '')}".strip()
+                m_email = m_email or matched.get("email")
+
+            if m_email and str(m_email).lower() in emp_map_by_email:
+                matched = emp_map_by_email[str(m_email).lower()]
+                m_id = m_id or str(matched.get("employee_id") or matched.get("id") or matched.get("user_id") or "")
+                m_name = m_name or matched.get("name") or f"{matched.get('first_name', '')} {matched.get('last_name', '')}".strip()
+
+            return (str(m_id) if m_id else None), m_name, m_email
 
         # 3. Format db users
         db_users = []
         for emp in db_employees:
             emp_id = str(emp.get("employee_id") or emp.get("id") or f"usr_{uuid.uuid4()}")
-            mgr_id, mgr_name, mgr_email = resolve_manager(emp.get("reporting_manager"))
+            mgr_id, mgr_name, mgr_email = resolve_manager(emp)
             
             db_users.append({
                 "id": emp_id,
@@ -545,6 +580,67 @@ class UserRepository:
         for u in all_users:
             r_id = str(u.get("reporting_manager_id") or "").lower().strip()
             r_email = str(u.get("reporting_manager_email") or "").lower().strip()
-            if r_id == m_clean or r_email == m_clean or m_clean in (r_id, r_email):
+            r_name = str(u.get("reporting_manager_name") or "").lower().strip()
+            if r_id == m_clean or r_email == m_clean or r_name == m_clean:
                 assigned.append(u)
         return assigned
+
+    def get_manager_executive_hierarchy(self) -> Dict[str, Any]:
+        """
+        Builds a full Manager -> Assigned Executives hierarchy.
+        Returns all managers with their subordinate executives, plus the unassigned pool.
+        """
+        all_users = self.get_all_users()
+
+        managers = []
+        executives = []
+
+        for u in all_users:
+            r = str(u.get("role") or "").lower()
+            if any(k in r for k in ["manager", "admin", "ceo", "founder"]):
+                managers.append(u)
+            else:
+                executives.append(u)
+
+        hierarchy = []
+        assigned_exec_ids = set()
+
+        for mgr in managers:
+            m_id = str(mgr.get("id") or mgr.get("employee_id") or mgr.get("auth_user_id") or "").strip().lower()
+            m_email = str(mgr.get("email") or "").strip().lower()
+            m_name = str(mgr.get("name") or "").strip().lower()
+
+            assigned = []
+            for exec_u in executives:
+                r_id = str(exec_u.get("reporting_manager_id") or "").strip().lower()
+                r_email = str(exec_u.get("reporting_manager_email") or "").strip().lower()
+                r_name = str(exec_u.get("reporting_manager_name") or "").strip().lower()
+
+                if (m_id and r_id == m_id) or (m_email and r_email == m_email) or (m_name and r_name == m_name):
+                    assigned.append(exec_u)
+                    assigned_exec_ids.add(str(exec_u.get("id") or exec_u.get("employee_id")))
+
+            hierarchy.append({
+                "manager": mgr,
+                "assigned_executives": assigned,
+                "team_size": len(assigned)
+            })
+
+        unassigned_execs = [
+            e for e in executives 
+            if str(e.get("id") or e.get("employee_id")) not in assigned_exec_ids
+            and not e.get("reporting_manager_id") 
+            and not e.get("reporting_manager_name")
+            and not e.get("reporting_manager_email")
+        ]
+
+        return {
+            "managers_count": len(managers),
+            "executives_count": len(executives),
+            "assigned_executives_count": len(assigned_exec_ids),
+            "unassigned_executives_count": len(unassigned_execs),
+            "hierarchy": hierarchy,
+            "unassigned_executives": unassigned_execs,
+            "all_managers": managers,
+            "all_executives": executives
+        }

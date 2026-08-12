@@ -34,7 +34,7 @@ export default function AdminDashboard() {
   const [searchQuery, setSearchQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState('All')
 
-  // Modular Widget Customizer State (Extensible for future modules)
+  // Modular Widget Customizer State
   const [customizerOpen, setCustomizerOpen] = useState(false)
   const [activeWidgets, setActiveWidgets] = useState({
     fieldStats: true,
@@ -42,30 +42,24 @@ export default function AdminDashboard() {
     liveVisits: true,
     attendanceWidget: true,
     expenseWidget: true,
-    systemMetrics: true,
   })
 
   const [stats, setStats] = useState({
-    totalUsers: 18,
-    totalLeads: 28,
-    totalCustomers: 12,
-    salesManagers: 3,
-    salesExecutives: 12,
-    todaysVisits: 8,
-    pendingFollowups: 14,
-    openOpportunities: 9,
-    pipelineValue: 4850000,
-    attendanceSummary: { present: 11, absent: 2, late: 1 },
-    expenseSummary: { pending: 3, approved: 8, totalAmount: 45200 },
-    systemHealth: { apiStatus: 'Operational', dbLatency: '18ms', storage: '82% free' },
+    totalUsers: 0,
+    totalLeads: 0,
+    totalCustomers: 0,
+    salesManagers: 0,
+    salesExecutives: 0,
+    todaysVisits: 0,
+    pendingFollowups: 0,
+    openOpportunities: 0,
+    pipelineValue: 0,
+    attendanceSummary: { present: 0, absent: 0, late: 0 },
+    expenseSummary: { pending: 0, approved: 0, totalAmount: 0 },
   })
 
-  // Sample Field Activity Logs
-  const [fieldActivities, setFieldActivities] = useState([
-    { id: 'act_1', exec: 'Suresh Raina', role: 'Sales Executive', client: 'Apex Tech OMR', location: 'Guindy, Chennai', time: new Date().toISOString(), status: 'Checked In', notes: 'Demonstrated product workflow' },
-    { id: 'act_2', exec: 'Arun Kumar', role: 'Sales Executive', client: 'Bayfront Royal', location: 'Adyar, Chennai', time: new Date(Date.now() - 3600000).toISOString(), status: 'Completed', notes: 'Quotation submitted' },
-    { id: 'act_3', exec: 'Kavitha S.', role: 'Sales Executive', client: 'Global Logistics Inc', location: 'Velachery, Chennai', time: new Date(Date.now() - 7200000).toISOString(), status: 'Pending Review', notes: 'Requires Manager sign-off' },
-  ])
+  // Real Field Activity Logs
+  const [fieldActivities, setFieldActivities] = useState([])
 
   useEffect(() => {
     async function loadAdminDashboardData() {
@@ -81,16 +75,58 @@ export default function AdminDashboard() {
           expenseAPI.getExpenses(),
         ])
 
-        setStats((prev) => ({
-          ...prev,
-          totalLeads: crmRes.status === 'fulfilled' && crmRes.value?.data ? crmRes.value.data.length : 28,
-          totalCustomers: custRes.status === 'fulfilled' && custRes.value?.data ? custRes.value.data.length : 12,
-          totalUsers: empRes.status === 'fulfilled' && empRes.value?.data ? empRes.value.data.length : 18,
-          salesExecutives: empRes.status === 'fulfilled' && empRes.value?.data ? empRes.value.data.filter((e) => (e.role || '').toLowerCase().includes('executive')).length || 12 : 12,
-          salesManagers: empRes.status === 'fulfilled' && empRes.value?.data ? empRes.value.data.filter((e) => (e.role || '').toLowerCase().includes('manager')).length || 3 : 3,
-          todaysVisits: visitRes.status === 'fulfilled' && visitRes.value?.data ? visitRes.value.data.length : 8,
-          openOpportunities: pipeRes.status === 'fulfilled' && pipeRes.value?.data ? pipeRes.value.data.length : 9,
-        }))
+        const leadsList = crmRes.status === 'fulfilled' && crmRes.value?.data ? crmRes.value.data : []
+        const custsList = custRes.status === 'fulfilled' && custRes.value?.data ? custRes.value.data : []
+        const empsList = empRes.status === 'fulfilled' && empRes.value?.data ? empRes.value.data : []
+        const visitsList = visitRes.status === 'fulfilled' && visitRes.value?.data ? visitRes.value.data : []
+        const oppsList = pipeRes.status === 'fulfilled' && pipeRes.value?.data ? pipeRes.value.data : []
+        const attList = attRes.status === 'fulfilled' && attRes.value?.data ? attRes.value.data : []
+        const expList = expRes.status === 'fulfilled' && expRes.value?.data ? expRes.value.data : []
+
+        // Pipeline value
+        const totalPipe = oppsList
+          .filter(o => !['WON', 'CLOSED_WON', 'LOST', 'CLOSED_LOST'].includes(String(o.stage || '').toUpperCase()))
+          .reduce((sum, o) => sum + (Number(o.value) || 0), 0)
+
+        // Attendance stats
+        const presentCount = attList.filter(a => String(a.status || '').toUpperCase() === 'PRESENT').length
+        const lateCount = attList.filter(a => a.clock_in && String(a.clock_in).slice(11, 16) > '09:15').length
+        const absentCount = Math.max(0, empsList.length - presentCount)
+
+        // Expense stats
+        const pendingExp = expList.filter(e => String(e.status || '').toUpperCase() === 'PENDING').length
+        const approvedExp = expList.filter(e => String(e.status || '').toUpperCase() === 'APPROVED').length
+        const expTotal = expList.reduce((sum, e) => sum + (Number(e.amount) || 0), 0)
+
+        setStats({
+          totalLeads: leadsList.length,
+          totalCustomers: custsList.length,
+          totalUsers: empsList.length,
+          salesExecutives: empsList.filter((e) => (e.role || '').toLowerCase().includes('executive')).length,
+          salesManagers: empsList.filter((e) => (e.role || '').toLowerCase().includes('manager')).length,
+          todaysVisits: visitsList.length,
+          openOpportunities: oppsList.length,
+          pipelineValue: totalPipe,
+          pendingFollowups: 0,
+          attendanceSummary: { present: presentCount, absent: absentCount, late: lateCount },
+          expenseSummary: { pending: pendingExp, approved: approvedExp, totalAmount: expTotal },
+        })
+
+        // Map real visits into fieldActivities
+        if (visitsList.length > 0) {
+          setFieldActivities(visitsList.slice(0, 10).map((v, i) => ({
+            id: v.id || `visit_${i}`,
+            exec: v.sales_executive || v.executive_name || v.assigned_to || 'Sales Executive',
+            role: 'Sales Executive',
+            client: v.customer_name || v.client_name || v.company || 'Client Site',
+            location: v.location || v.address || v.city || 'On Field',
+            time: v.check_in_time || v.created_at || new Date().toISOString(),
+            status: v.status || 'Checked In',
+            notes: v.notes || v.remarks || 'Client visit recorded'
+          })))
+        } else {
+          setFieldActivities([])
+        }
       } catch (e) {
         console.error('Error loading admin dashboard data:', e)
       } finally {
@@ -258,7 +294,7 @@ export default function AdminDashboard() {
                 <DollarSign className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-xl font-black text-slate-900 mt-2">₹{(stats.pipelineValue / 100000).toFixed(1)}L</h3>
+            <h3 className="text-xl font-black text-slate-900 mt-2">₹{(stats.pipelineValue).toLocaleString()}</h3>
             <span className="text-[11px] text-amber-600 font-bold">Forecasted Revenue</span>
           </div>
         </div>
@@ -278,26 +314,32 @@ export default function AdminDashboard() {
             </div>
 
             <div className="divide-y divide-slate-100">
-              {fieldActivities.map((act) => (
-                <div key={act.id} className="p-4 hover:bg-slate-50/80 transition flex items-start justify-between gap-4">
-                  <div className="flex items-start gap-3">
-                    <div className="w-9 h-9 rounded-xl bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0">
-                      {act.exec.split(' ').map((n) => n[0]).join('')}
-                    </div>
-                    <div>
-                      <p className="font-extrabold text-slate-900 text-xs">{act.exec} <span className="text-slate-400 font-normal">({act.role})</span></p>
-                      <p className="text-xs text-blue-600 font-bold mt-0.5">{act.client} · <span className="text-slate-600 font-normal">{act.location}</span></p>
-                      <p className="text-[11px] text-slate-500 mt-1 italic">&ldquo;{act.notes}&rdquo;</p>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <span className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase">
-                      {act.status}
-                    </span>
-                    <p className="text-[10px] text-slate-400 mt-1">{formatDate(act.time)}</p>
-                  </div>
+              {fieldActivities.length === 0 ? (
+                <div className="p-8 text-center text-slate-400 font-bold text-xs">
+                  No field visit activities recorded yet.
                 </div>
-              ))}
+              ) : (
+                fieldActivities.map((act) => (
+                  <div key={act.id} className="p-4 hover:bg-slate-50/80 transition flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-9 h-9 rounded-xl bg-blue-600 text-white font-black text-xs flex items-center justify-center shrink-0">
+                        {act.exec.split(' ').map((n) => n[0]).join('')}
+                      </div>
+                      <div>
+                        <p className="font-extrabold text-slate-900 text-xs">{act.exec} <span className="text-slate-400 font-normal">({act.role})</span></p>
+                        <p className="text-xs text-blue-600 font-bold mt-0.5">{act.client} · <span className="text-slate-600 font-normal">{act.location}</span></p>
+                        <p className="text-[11px] text-slate-500 mt-1 italic">&ldquo;{act.notes}&rdquo;</p>
+                      </div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <span className="inline-block px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase">
+                        {act.status}
+                      </span>
+                      <p className="text-[10px] text-slate-400 mt-1">{formatDate(act.time)}</p>
+                    </div>
+                  </div>
+                ))
+              )}
             </div>
           </div>
         )}
@@ -356,7 +398,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-      {/* Customizer Modal for Extensible Future Widgets */}
+      {/* Customizer Modal */}
       {customizerOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 border border-slate-200 shadow-2xl">

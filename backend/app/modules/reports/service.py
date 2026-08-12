@@ -26,3 +26,14 @@ class ReportsService:
 
     def acknowledge_eod_report(self, report_id: str, comment: str = "", user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         return self.repo.acknowledge_eod_report(report_id, comment, user_payload)
+
+    def get_ceo_sales_overview(self, params: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repo.get_ceo_sales_overview(
+            from_date=params.get("from_date"),
+            to_date=params.get("to_date"),
+            manager_id=params.get("manager_id"),
+            executive_id=params.get("executive_id")
+        )
+
+    def get_ceo_customer_directory(self) -> Dict[str, Any]:
+        return self.repo.get_ceo_customer_directory()

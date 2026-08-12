@@ -1,13 +1,15 @@
+import { useState, useEffect } from 'react'
 import {
   TrendingUp,
   TrendingDown,
   ArrowUpRight,
-  TrendingUpIcon,
   Globe,
   Map,
   ShoppingBag,
   Sparkles,
   Award,
+  RefreshCw,
+  DollarSign,
 } from 'lucide-react'
 import {
   ResponsiveContainer,
@@ -28,199 +30,191 @@ import {
   PolarRadiusAxis,
   Radar,
 } from 'recharts'
+import { reportAPI, customerAPI } from '../../services/api.js'
 
-// Forecast data
-const forecastData = [
-  { month: 'Jan', actual: 320000 },
-  { month: 'Feb', actual: 280000 },
-  { month: 'Mar', actual: 410000 },
-  { month: 'Apr', actual: 380000 },
-  { month: 'May', actual: 520000 },
-  { month: 'Jun', actual: 490000 },
-  { month: 'Jul', actual: 572000, projected: 572000 },
-  { month: 'Aug', projected: 610000 },
-  { month: 'Sep', projected: 630000 },
-  { month: 'Oct', projected: 680000 },
-  { month: 'Nov', projected: 720000 },
-  { month: 'Dec', projected: 750000 },
-]
-
-// Product categorization
-const productData = [
-  { name: 'Enterprise License', value: 1250000, color: '#2563eb' },
-  { name: 'SaaS Professional', value: 850000, color: '#10b981' },
-  { name: 'Custom Integrations', value: 250000, color: '#6366f1' },
-  { name: 'Consulting & Setup', value: 132000, color: '#f59e0b' },
-]
-
-// Geographic performance
-const regionData = [
-  { subject: 'North America', A: 120, B: 110, fullMark: 150 },
-  { subject: 'Europe', A: 98, B: 130, fullMark: 150 },
-  { subject: 'Asia Pacific', A: 86, B: 130, fullMark: 150 },
-  { subject: 'Latin America', A: 65, B: 100, fullMark: 150 },
-  { subject: 'Middle East & Africa', A: 45, B: 90, fullMark: 150 },
-]
+const COLORS = ['#832D51', '#EA6993', '#3a7d63', '#0891b2', '#d97706', '#4f46e5', '#64748b']
 
 function ExecutiveSummary() {
+  const [loading, setLoading] = useState(true)
+  const [summaryData, setSummaryData] = useState({
+    totalRevenue: 0,
+    activeLeads: 0,
+    wonDeals: 0,
+    totalCustomers: 0,
+    forecastData: [],
+    productData: [],
+    managerPerformance: [],
+  })
+
+  const loadData = async () => {
+    setLoading(true)
+    try {
+      const [dashRes, dirRes] = await Promise.allSettled([
+        reportAPI.getCeoDashboard(),
+        customerAPI.getCeoCustomerDirectory(),
+      ])
+
+      const dashData = dashRes.status === 'fulfilled' && dashRes.value?.data ? dashRes.value.data : null
+      const dirData = dirRes.status === 'fulfilled' && dirRes.value?.data ? dirRes.value.data : null
+
+      const m = dashData?.metrics || {}
+      const trends = dashData?.revenueTrends || []
+
+      // Extract products distribution from real customers
+      const productCounts = {}
+      ;(dirData?.managers || []).forEach(mgr => {
+        (mgr.executives || []).forEach(ex => {
+          (ex.customers || []).forEach(c => {
+            const p = c.product || 'Software License'
+            productCounts[p] = (productCounts[p] || 0) + (Number(c.amount) || 0)
+          })
+        })
+      })
+
+      const prodData = Object.entries(productCounts).map(([name, val], idx) => ({
+        name,
+        value: val,
+        color: COLORS[idx % COLORS.length]
+      }))
+
+      setSummaryData({
+        totalRevenue: m.totalRevenue || 0,
+        activeLeads: m.activeLeads || 0,
+        wonDeals: m.wonDeals || 0,
+        totalCustomers: dirData?.totals?.customers || m.totalCustomers || 0,
+        forecastData: trends.map(t => ({
+          month: t.month,
+          actual: t.revenue || 0,
+          projected: t.target || 500000
+        })),
+        productData: prodData,
+        managerPerformance: dashData?.managerPerformance || []
+      })
+    } catch (e) {
+      console.error('Error loading executive summary:', e)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    loadData()
+  }, [])
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
       {/* Banner */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs">
         <div>
-          <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Executive Business Summary</h2>
+          <div className="flex items-center gap-2">
+            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
+              <Sparkles className="size-4.5" />
+            </span>
+            <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Executive Performance Brief</h2>
+          </div>
           <p className="mt-1 text-sm text-slate-500 font-medium">
-            Strategic business growth analysis, revenue forecasting, and market segments.
+            Strategic organization-wide performance analysis based on live Supabase CRM & HRMS records.
           </p>
         </div>
+
+        <button
+          onClick={loadData}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700 transition cursor-pointer"
+        >
+          <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+          Refresh Brief
+        </button>
       </div>
 
-      {/* Highlights Grid */}
-      <div className="grid gap-4 sm:grid-cols-3">
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Year-on-Year Growth</p>
-          <div className="flex items-center gap-2">
-            <span className="text-3xl font-extrabold text-slate-900">+24.8%</span>
-            <span className="flex items-center gap-0.5 rounded-lg bg-emerald-50 border border-emerald-100 px-2 py-0.5 text-xs font-bold text-emerald-700">
-              <TrendingUp className="size-3" /> YoY
-            </span>
-          </div>
-          <p className="text-xs font-medium text-slate-500">Exceeding annual baseline target of +18.0%.</p>
+      {/* KPI Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-xs">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Revenue</span>
+          <h3 className="text-2xl font-black text-slate-900 mt-2">₹{summaryData.totalRevenue.toLocaleString()}</h3>
+          <p className="text-xs text-slate-500 font-medium mt-1">Live closed won deals</p>
         </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Projected Q3 Revenue</p>
-          <div className="flex items-center gap-2">
-            <span className="text-3xl font-extrabold text-slate-900">₹1.92M</span>
-            <span className="text-xs font-bold text-blue-600 bg-blue-50 border border-blue-100 rounded-lg px-2 py-0.5">
-              Forecast
-            </span>
-          </div>
-          <p className="text-xs font-medium text-slate-500">Based on active deal pipeline and current win rates.</p>
+        <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-xs">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Total Customers</span>
+          <h3 className="text-2xl font-black text-slate-900 mt-2">{summaryData.totalCustomers}</h3>
+          <p className="text-xs text-slate-500 font-medium mt-1">Active customer accounts</p>
         </div>
-
-        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm space-y-2">
-          <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Top Sector Share</p>
-          <div className="flex items-center gap-2">
-            <span className="text-3xl font-extrabold text-slate-900">54.2%</span>
-            <span className="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 rounded-lg px-2 py-0.5">
-              Enterprise
-            </span>
-          </div>
-          <p className="text-xs font-medium text-slate-500">Enterprise license agreements remain main driver.</p>
+        <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-xs">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Active Leads</span>
+          <h3 className="text-2xl font-black text-slate-900 mt-2">{summaryData.activeLeads}</h3>
+          <p className="text-xs text-slate-500 font-medium mt-1">Open sales pipeline inquiries</p>
+        </div>
+        <div className="bg-white border border-slate-200/80 p-5 rounded-2xl shadow-xs">
+          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Won Deals</span>
+          <h3 className="text-2xl font-black text-slate-900 mt-2">{summaryData.wonDeals}</h3>
+          <p className="text-xs text-slate-500 font-medium mt-1">Total won opportunities</p>
         </div>
       </div>
 
-      {/* Composed Chart: Revenue Actual vs Forecast */}
-      <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm space-y-6">
-        <div>
-          <h3 className="text-lg font-bold text-slate-900">Q3-Q4 Growth Projections</h3>
-          <p className="text-xs font-semibold text-slate-400">Actual revenue (Jan-Jul) plotted alongside projected forecast models (Aug-Dec)</p>
-        </div>
-        <div className="h-80">
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart data={forecastData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis
-                dataKey="month"
-                stroke="#94a3b8"
-                tick={{ fontSize: 11, fontWeight: 600 }}
-                axisLine={false}
-                tickLine={false}
-              />
-              <YAxis
-                stroke="#94a3b8"
-                tick={{ fontSize: 11, fontWeight: 600 }}
-                axisLine={false}
-                tickLine={false}
-                tickFormatter={(value) => `₹${(value / 1000).toFixed(0)}k`}
-              />
-              <Tooltip />
-              {/* Actual revenue */}
-              <Area type="monotone" dataKey="actual" fill="#dbeafe" stroke="#2563eb" strokeWidth={2.5} />
-              {/* Projected forecast */}
-              <Line
-                type="monotone"
-                dataKey="projected"
-                stroke="#10b981"
-                strokeWidth={2}
-                strokeDasharray="5 5"
-                dot={{ stroke: '#10b981', strokeWidth: 2, r: 4, fill: '#fff' }}
-              />
-            </ComposedChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-
-      {/* Double Distribution layout */}
-      <div className="grid gap-6 md:grid-cols-2">
-        {/* Product segments pie */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col justify-between">
-          <div>
-            <h3 className="text-lg font-bold text-slate-900">Revenue by Product Line</h3>
-            <p className="text-xs font-semibold text-slate-400">Segmentation of the total ₹2.48M current revenue</p>
-          </div>
-          <div className="h-64 relative flex items-center justify-center my-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie
-                  data={productData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={70}
-                  outerRadius={90}
-                  paddingAngle={5}
-                  dataKey="value"
-                >
-                  {productData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={entry.color} />
-                  ))}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-            <div className="absolute flex flex-col items-center justify-center">
-              <ShoppingBag className="size-5 text-blue-600 mb-1" />
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">Products</span>
+      {/* Charts Grid */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Revenue Forecast Chart */}
+        <div className="lg:col-span-2 bg-white border border-slate-200/80 p-6 rounded-2xl shadow-xs space-y-4">
+          <div className="flex justify-between items-center">
+            <div>
+              <h3 className="text-base font-extrabold text-slate-900">Revenue Actuals vs Target Run Rate</h3>
+              <p className="text-xs text-slate-400 font-semibold">Monthly performance against targets</p>
             </div>
           </div>
-          <div className="space-y-2 border-t border-slate-100 pt-4">
-            {productData.map((prod) => (
-              <div key={prod.name} className="flex items-center justify-between text-xs font-bold text-slate-500">
-                <div className="flex items-center gap-2">
-                  <span className="size-2.5 rounded-full" style={{ backgroundColor: prod.color }} />
-                  <span>{prod.name}</span>
-                </div>
-                <span className="text-slate-900">₹{(prod.value / 1000).toFixed(0)}k</span>
+
+          <div className="h-72 w-full">
+            {summaryData.forecastData.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-xs text-slate-400 font-bold">
+                No revenue trend data available.
               </div>
-            ))}
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <ComposedChart data={summaryData.forecastData}>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="month" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <YAxis stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <Tooltip formatter={(value) => `₹${Number(value).toLocaleString()}`} />
+                  <Bar dataKey="actual" fill="#832D51" radius={[4, 4, 0, 0]} name="Actual Won" />
+                  <Line type="monotone" dataKey="projected" stroke="#3a7d63" strokeWidth={2} strokeDasharray="4 4" dot={{ r: 3 }} name="Target" />
+                </ComposedChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
-        {/* Geographic radar */}
-        <div className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm flex flex-col justify-between">
+        {/* Product Revenue Share */}
+        <div className="bg-white border border-slate-200/80 p-6 rounded-2xl shadow-xs space-y-4">
           <div>
-            <h3 className="text-lg font-bold text-slate-900">Regional Team Performance</h3>
-            <p className="text-xs font-semibold text-slate-400">Comparison of sales targets met vs client visits completed</p>
+            <h3 className="text-base font-extrabold text-slate-900">Product Portfolio Share</h3>
+            <p className="text-xs text-slate-400 font-semibold">Contract distribution by product</p>
           </div>
-          <div className="h-68 my-4">
-            <ResponsiveContainer width="100%" height="100%">
-              <RadarChart cx="50%" cy="50%" outerRadius="75%" data={regionData}>
-                <PolarGrid stroke="#e2e8f0" />
-                <PolarAngleAxis dataKey="subject" tick={{ fontSize: 10, fontWeight: 700, fill: '#64748b' }} />
-                <PolarRadiusAxis angle={30} domain={[0, 150]} tick={{ fontSize: 9, fill: '#94a3b8' }} />
-                <Radar name="Target Score" dataKey="A" stroke="#2563eb" fill="#3b82f6" fillOpacity={0.2} />
-                <Radar name="Visits Count" dataKey="B" stroke="#10b981" fill="#10b981" fillOpacity={0.15} />
-              </RadarChart>
-            </ResponsiveContainer>
-          </div>
-          <div className="flex items-center justify-center gap-6 border-t border-slate-100 pt-4 text-xs font-bold text-slate-500">
-            <span className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-full bg-blue-500" /> Target Met
-            </span>
-            <span className="flex items-center gap-1.5">
-              <span className="size-2.5 rounded-full bg-emerald-500" /> Client Visits
-            </span>
+
+          <div className="h-72 w-full flex items-center justify-center">
+            {summaryData.productData.length === 0 ? (
+              <div className="text-xs text-slate-400 font-bold text-center">
+                No customer contract products recorded yet.
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={summaryData.productData}
+                    dataKey="value"
+                    nameKey="name"
+                    cx="50%"
+                    cy="50%"
+                    innerRadius={50}
+                    outerRadius={80}
+                    paddingAngle={4}
+                  >
+                    {summaryData.productData.map((entry, idx) => (
+                      <Cell key={`cell-${idx}`} fill={entry.color} />
+                    ))}
+                  </Pie>
+                  <Tooltip formatter={(value) => `₹${Number(value).toLocaleString()}`} />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
       </div>

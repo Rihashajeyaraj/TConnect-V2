@@ -24,102 +24,12 @@ import {
 } from 'lucide-react'
 import { hrmsAPI, userAPI } from '../../services/api.js'
 
-const MOCK_TEAM = [
-  {
-    id: 'EMP-001',
-    name: 'Priya Sharma',
-    email: 'priya@tconnect.com',
-    phone: '+91 98765 11111',
-    role: 'Admin',
-    department: 'Operations',
-    manager: 'CEO Office',
-    deals_won: 0,
-    revenue: 0,
-    status: 'Active',
-  },
-  {
-    id: 'EMP-002',
-    name: 'Vikram Singh',
-    email: 'vikram@tconnect.com',
-    phone: '+91 98765 22222',
-    role: 'Sales Manager',
-    department: 'Sales & BD',
-    region: 'South Region',
-    manager: 'CEO Office',
-    deals_won: 14,
-    revenue: 1650000,
-    status: 'Active',
-    executives: ['Ananya Roy', 'Robert Smith', 'Pooja Nair'],
-  },
-  {
-    id: 'EMP-003',
-    name: 'Suresh V',
-    email: 'suresh@tconnect.com',
-    phone: '+91 98765 33333',
-    role: 'Sales Manager',
-    department: 'Sales & BD',
-    region: 'Western & Tech Hub',
-    manager: 'CEO Office',
-    deals_won: 10,
-    revenue: 1190000,
-    status: 'Active',
-    executives: ['Karthik Raja', 'Mary Jane'],
-  },
-  {
-    id: 'EMP-004',
-    name: 'Ananya Roy',
-    email: 'ananya@tconnect.com',
-    phone: '+91 98765 44444',
-    role: 'Sales Executive',
-    department: 'Field Sales',
-    manager: 'Vikram Singh',
-    deals_won: 8,
-    revenue: 940000,
-    status: 'Active',
-  },
-  {
-    id: 'EMP-005',
-    name: 'Karthik Raja',
-    email: 'karthik@tconnect.com',
-    phone: '+91 98765 55555',
-    role: 'Sales Executive',
-    department: 'Field Sales',
-    manager: 'Suresh V',
-    deals_won: 6,
-    revenue: 710000,
-    status: 'Active',
-  },
-  {
-    id: 'EMP-006',
-    name: 'Robert Smith',
-    email: 'robert@tconnect.com',
-    phone: '+91 98765 66666',
-    role: 'Sales Executive',
-    department: 'Inside Sales',
-    manager: 'Vikram Singh',
-    deals_won: 5,
-    revenue: 620000,
-    status: 'Active',
-  },
-  {
-    id: 'EMP-007',
-    name: 'Mary Jane',
-    email: 'mary@tconnect.com',
-    phone: '+91 98765 77777',
-    role: 'Sales Executive',
-    department: 'Inside Sales',
-    manager: 'Suresh V',
-    deals_won: 4,
-    revenue: 480000,
-    status: 'Active',
-  },
-]
-
 function TeamManagement() {
   const { showToast } = useToast()
-  const [team, setTeam] = useState(MOCK_TEAM)
+  const [team, setTeam] = useState([])
   const [activeTab, setActiveTab] = useState('All') // 'All' | 'Admin' | 'Sales Manager' | 'Sales Executive' | 'hierarchy'
   const [searchQuery, setSearchQuery] = useState('')
+  const [loading, setLoading] = useState(true)
 
   // Add/Edit modal state
   const [showModal, setShowModal] = useState(false)
@@ -129,34 +39,50 @@ function TeamManagement() {
     email: '',
     phone: '',
     role: 'Sales Executive',
-    department: 'Field Sales',
-    manager: 'Vikram Singh',
+    department: 'Sales & BD',
+    manager: '',
     status: 'Active',
   })
 
   // Load backend employees
   useEffect(() => {
     async function loadData() {
+      setLoading(true)
       try {
-        const res = await hrmsAPI.getEmployees().catch(() => null)
-        if (res && res.data && res.data.length > 0) {
-          const mapped = res.data.map((e, idx) => ({
-            id: e.id || `EMP-00${idx + 1}`,
-            name: e.name || e.full_name || 'Staff Member',
-            email: e.email || 'employee@tconnect.com',
-            phone: e.phone || '+91 98765 00000',
-            role: e.role || (idx === 0 ? 'Admin' : idx < 3 ? 'Sales Manager' : 'Sales Executive'),
-            department: e.department || 'Sales & BD',
-            manager: e.manager_name || (idx < 3 ? 'CEO Office' : 'Vikram Singh'),
-            deals_won: e.deals_won || (idx % 2 === 0 ? 6 : 4),
-            revenue: e.revenue || (idx % 2 === 0 ? 650000 : 450000),
+        const res = await userAPI.getUsers().catch(() => null)
+        const userList = res && res.data && Array.isArray(res.data) ? res.data : []
+        
+        // Build team with real reporting manager assignments
+        const mapped = userList.map((e, idx) => {
+          const eRole = e.role || 'Sales Executive'
+          const eName = e.name || e.full_name || e.email?.split('@')[0] || 'Team Member'
+          const eId = e.id || e.employee_id || `USR-${idx + 1}`
+          
+          // Find executives reporting to this user if they are a manager
+          const myExecutives = userList
+            .filter(u => u.reporting_manager_name === eName || u.reporting_manager_id === eId)
+            .map(u => u.name || u.email)
+
+          return {
+            id: eId,
+            name: eName,
+            email: e.email || '',
+            phone: e.phone || '',
+            role: eRole,
+            department: e.dept || e.department || 'Sales & BD',
+            manager: e.reporting_manager_name || (eRole.includes('Manager') || eRole.includes('Admin') ? 'CEO Office' : 'Direct / Unassigned'),
+            deals_won: 0,
+            revenue: 0,
             status: e.status || 'Active',
-            executives: idx === 1 ? ['Ananya Roy', 'Robert Smith'] : idx === 2 ? ['Karthik Raja', 'Mary Jane'] : [],
-          }))
-          setTeam(mapped)
-        }
+            executives: myExecutives,
+          }
+        })
+        setTeam(mapped)
       } catch (err) {
-        console.warn('Using standard executive roster:', err)
+        console.warn('Error loading team roster:', err)
+        setTeam([])
+      } finally {
+        setLoading(false)
       }
     }
     loadData()
@@ -188,8 +114,8 @@ function TeamManagement() {
       email: '',
       phone: '',
       role: 'Sales Executive',
-      department: 'Field Sales',
-      manager: 'Vikram Singh',
+      department: 'Sales & BD',
+      manager: '',
       status: 'Active',
     })
     setShowModal(true)
@@ -555,9 +481,11 @@ function TeamManagement() {
                     onChange={(e) => setFormData({ ...formData, manager: e.target.value })}
                     className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-800 outline-none bg-slate-50"
                   >
+                    <option value="">Select Manager / CEO Office</option>
                     <option value="CEO Office">CEO Office</option>
-                    <option value="Vikram Singh">Vikram Singh</option>
-                    <option value="Suresh V">Suresh V</option>
+                    {managers.map(m => (
+                      <option key={m.id || m.name} value={m.name}>{m.name}</option>
+                    ))}
                   </select>
                 </div>
               </div>

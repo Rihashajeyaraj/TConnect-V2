@@ -41,6 +41,19 @@ async def get_all_users(
     )
 
 
+@router.get("/hierarchy", response_model=StandardResponse)
+async def get_manager_executive_hierarchy(
+    user_payload: dict = Depends(get_current_user_payload),
+    service: UserService = Depends(get_service)
+):
+    """Retrieve full Manager -> Assigned Executives mapping and hierarchy."""
+    data = service.get_manager_executive_hierarchy()
+    return StandardResponse.success_response(
+        data=data,
+        message="Manager and executive hierarchy retrieved successfully"
+    )
+
+
 @router.post("/assign-manager", response_model=StandardResponse)
 async def assign_sales_executives(
     data: AssignManagerRequest,

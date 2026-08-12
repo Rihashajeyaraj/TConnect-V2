@@ -60,14 +60,14 @@ function LoginForm() {
         showToast(`Authentication successful! Welcome ${userObj.full_name || userObj.employee_name || roleLower}.`, 'success')
 
         // Redirect strictly to assigned role portal
-        let targetRoute = '/sales'
-        if (roleLower.includes('ceo')) {
+        let targetRoute = userObj.dashboard || '/sales'
+        if (roleLower.includes('ceo') || roleLower.includes('founder') || roleLower.includes('chief executive')) {
           targetRoute = '/ceo'
         } else if (roleLower.includes('admin') || roleLower.includes('super')) {
           targetRoute = '/admin'
         } else if (roleLower.includes('manager')) {
           targetRoute = '/manager'
-        } else {
+        } else if (roleLower.includes('sales') || roleLower.includes('executive')) {
           targetRoute = '/sales'
         }
 

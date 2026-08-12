@@ -1,10 +1,9 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 import { useToast } from '../../common/ToastContext.jsx'
 import {
   TrendingUp,
   Target,
   Users,
-  Briefcase,
   Search,
   Filter,
   DollarSign,
@@ -16,524 +15,1166 @@ import {
   ChevronRight,
   Plus,
   RefreshCw,
-  Layers,
-  Kanban,
-  ListFilter,
   SlidersHorizontal,
+  Building2,
+  Calendar,
+  X,
+  Sparkles,
+  Info,
+  Wallet,
+  Download,
+  FileSpreadsheet,
+  Receipt,
+  PieChart as PieChartIcon,
+  Layers,
+  Check
 } from 'lucide-react'
-import { crmAPI, pipelineAPI, reportAPI } from '../../services/api.js'
+import {
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+} from 'recharts'
+import { reportAPI, expenseAPI } from '../../services/api.js'
+import { exportToPDF, exportToExcel, exportToCSV } from '../../utils/exportUtils.js'
 
-const DEFAULT_OPPORTUNITIES = [
-  { id: '1', company: 'Apex Technologies', contact: 'Rajesh Kumar', rep: 'Ananya Roy', manager: 'Vikram Singh', value: 450000, stage: 'Won', probability: 100, date: '2026-08-05' },
-  { id: '2', company: 'Global Corp Solutions', contact: 'Sarah Smith', rep: 'Karthik Raja', manager: 'Suresh V', value: 250000, stage: 'Won', probability: 100, date: '2026-08-04' },
-  { id: '3', company: 'Star Tech Solutions', contact: 'Deepa Roy', rep: 'Ananya Roy', manager: 'Vikram Singh', value: 600000, stage: 'Proposal', probability: 60, date: '2026-08-20' },
-  { id: '4', company: 'Techno Systems', contact: 'Rohan Joshi', rep: 'Robert Smith', manager: 'Vikram Singh', value: 120000, stage: 'Negotiation', probability: 75, date: '2026-08-15' },
-  { id: '5', company: 'Zenith Logistics Hub', contact: 'Alice Lee', rep: 'Mary Jane', manager: 'Suresh V', value: 350000, stage: 'Qualified', probability: 50, date: '2026-08-22' },
-  { id: '6', company: 'InnoTech Solutions', contact: 'Vikas Gupta', rep: 'Karthik Raja', manager: 'Suresh V', value: 280000, stage: 'Lead', probability: 30, date: '2026-08-25' },
-  { id: '7', company: 'Prime Industrial Corp', contact: 'Manoj Pillai', rep: 'Robert Smith', manager: 'Vikram Singh', value: 180000, stage: 'Lost', probability: 0, date: '2026-08-01' },
-]
-
-const STAGES = ['Lead', 'Qualified', 'Proposal', 'Negotiation', 'Won', 'Lost']
-
-const STAGE_CONFIG = {
-  Lead: { bg: 'bg-blue-50', text: 'text-blue-700', border: 'border-blue-200', bar: '#3b82f6' },
-  Qualified: { bg: 'bg-[#F8CAE4]/20', text: 'text-[#EA6993]', border: 'border-[#EA6993]/30', bar: '#0d9488' },
-  Proposal: { bg: 'bg-purple-50', text: 'text-purple-700', border: 'border-purple-200', bar: '#9333ea' },
-  Negotiation: { bg: 'bg-amber-50', text: 'text-amber-700', border: 'border-amber-200', bar: '#d97706' },
-  Won: { bg: 'bg-emerald-50', text: 'text-emerald-700', border: 'border-emerald-200', bar: '#10b981' },
-  Lost: { bg: 'bg-rose-50', text: 'text-rose-700', border: 'border-rose-200', bar: '#f43f5e' },
-}
+const ANNUAL_TARGET = 35000000 // ₹3.50 Cr organization target
 
 function SalesOverview({ initialSection }) {
   const { showToast } = useToast()
-  const [opportunities, setOpportunities] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tc_opportunities')
-      return saved ? JSON.parse(saved) : DEFAULT_OPPORTUNITIES
-    } catch {
-      return DEFAULT_OPPORTUNITIES
-    }
-  })
 
-  const [viewMode, setViewMode] = useState('kanban') // 'kanban' | 'table'
+  // Data State
+  const [data, setData] = useState(null)
+  const [dashboardData, setDashboardData] = useState(null)
+  const [rawExpenses, setRawExpenses] = useState([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  // Filters State
+  const [dateFilter, setDateFilter] = useState('This Month')
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [customRangeApplied, setCustomRangeApplied] = useState(null)
+
+  // Interactive Active View State
+  const [activeKpi, setActiveKpi] = useState('revenue') // 'revenue' | 'customers' | 'won' | 'pipeline'
+  const [wonToggle, setWonToggle] = useState(false) // false: All Customers, true: Won Deals only
+
+  // Table filters
   const [searchQuery, setSearchQuery] = useState('')
-  const [selectedStage, setSelectedStage] = useState('All')
-  const [selectedManager, setSelectedManager] = useState('All')
+  const [managerFilter, setManagerFilter] = useState('All')
+  const [executiveFilter, setExecutiveFilter] = useState('All')
 
-  // Calculated Executive Sales KPIs
-  const totalLeads = 142
-  const qualifiedLeads = 86
-  const activeOpportunities = opportunities.filter((o) => o.stage !== 'Won' && o.stage !== 'Lost').length
-  const wonDeals = opportunities.filter((o) => o.stage === 'Won').length
-  const lostDeals = opportunities.filter((o) => o.stage === 'Lost').length
-  const totalPipelineValue = opportunities
-    .filter((o) => o.stage !== 'Lost')
-    .reduce((acc, curr) => acc + (Number(curr.value) || 0), 0)
-  const wonRevenue = opportunities
-    .filter((o) => o.stage === 'Won')
-    .reduce((acc, curr) => acc + (Number(curr.value) || 0), 0)
-  const conversionRate = Math.round((wonDeals / (wonDeals + lostDeals || 1)) * 100)
+  // Date range resolver helper
+  const getFilterDates = (range) => {
+    const today = new Date()
+    const todayStr = today.toISOString().split('T')[0]
 
-  // Manager-wise Performance Summary
-  const managerStats = [
-    {
-      name: 'Vikram Singh',
-      region: 'South Region',
-      assignedLeads: 82,
-      qualified: 52,
-      wonDeals: 14,
-      lostDeals: 2,
-      totalRevenue: 1650000,
-      pipeline: 2450000,
-      winRate: 87.5,
-    },
-    {
-      name: 'Suresh V',
-      region: 'Tech & Western Region',
-      assignedLeads: 60,
-      qualified: 34,
-      wonDeals: 10,
-      lostDeals: 3,
-      totalRevenue: 1190000,
-      pipeline: 1800000,
-      winRate: 76.9,
-    },
-  ]
+    if (range === 'Today') {
+      return { start: todayStr, end: todayStr }
+    }
+    if (range === 'This Week') {
+      const currentDay = today.getDay()
+      const diff = today.getDate() - currentDay + (currentDay === 0 ? -6 : 1)
+      const start = new Date(today.setDate(diff))
+      const end = new Date(start)
+      end.setDate(end.getDate() + 6)
+      return {
+        start: start.toISOString().split('T')[0],
+        end: end.toISOString().split('T')[0],
+      }
+    }
+    if (range === 'This Month') {
+      const start = new Date(today.getFullYear(), today.getMonth(), 1)
+      const end = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      return {
+        start: start.toISOString().split('T')[0],
+        end: end.toISOString().split('T')[0],
+      }
+    }
+    return null
+  }
 
-  // Executive-wise Performance Summary
-  const executiveStats = [
-    {
-      name: 'Ananya Roy',
-      manager: 'Vikram Singh',
-      leads: 44,
-      visits: 28,
-      wonDeals: 8,
-      revenue: 940000,
-      pipeline: 1350000,
-      winRate: 88.9,
-    },
-    {
-      name: 'Karthik Raja',
-      manager: 'Suresh V',
-      leads: 36,
-      visits: 22,
-      wonDeals: 6,
-      revenue: 710000,
-      pipeline: 980000,
-      winRate: 75.0,
-    },
-    {
-      name: 'Robert Smith',
-      manager: 'Vikram Singh',
-      leads: 38,
-      visits: 20,
-      wonDeals: 6,
-      revenue: 710000,
-      pipeline: 1100000,
-      winRate: 85.7,
-    },
-    {
-      name: 'Mary Jane',
-      manager: 'Suresh V',
-      leads: 24,
-      visits: 18,
-      wonDeals: 4,
-      revenue: 480000,
-      pipeline: 820000,
-      winRate: 80.0,
-    },
-  ]
+  const fetchUnifiedData = async () => {
+    try {
+      setLoading(true)
+      setError(null)
 
-  // Filtered Opportunities
-  const filteredOpps = opportunities.filter((opp) => {
-    const matchesSearch =
-      (opp.company || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (opp.rep || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (opp.manager || '').toLowerCase().includes(searchQuery.toLowerCase())
-    const matchesStage = selectedStage === 'All' || opp.stage === selectedStage
-    const matchesManager = selectedManager === 'All' || opp.manager === selectedManager
-    return matchesSearch && matchesStage && matchesManager
-  })
+      let startLimit = null
+      let endLimit = null
 
-  // Handle stage change
-  const handleStageChange = (id, newStage) => {
-    const updated = opportunities.map((opp) => {
-      if (opp.id === id) {
-        return {
-          ...opp,
-          stage: newStage,
-          probability: newStage === 'Won' ? 100 : newStage === 'Lost' ? 0 : opp.probability,
+      if (dateFilter === 'Custom Date') {
+        if (customRangeApplied) {
+          startLimit = customRangeApplied.start
+          endLimit = customRangeApplied.end
+        }
+      } else {
+        const limits = getFilterDates(dateFilter)
+        if (limits) {
+          startLimit = limits.start
+          endLimit = limits.end
         }
       }
-      return opp
+
+      const params = {}
+      if (startLimit) params.from_date = startLimit
+      if (endLimit) params.to_date = endLimit
+
+      const [salesRes, dashRes, expRes] = await Promise.allSettled([
+        reportAPI.getCeoSalesOverview(params),
+        reportAPI.getCeoDashboard(),
+        expenseAPI.getExpenses(),
+      ])
+
+      if (salesRes.status === 'fulfilled' && salesRes.value?.data) {
+        setData(salesRes.value.data)
+      } else if (salesRes.status === 'rejected') {
+        throw salesRes.reason
+      }
+
+      if (dashRes.status === 'fulfilled' && dashRes.value?.data) {
+        setDashboardData(dashRes.value.data)
+      }
+
+      if (expRes.status === 'fulfilled' && expRes.value?.data) {
+        const list = Array.isArray(expRes.value.data) ? expRes.value.data : []
+        setRawExpenses(list)
+      }
+    } catch (err) {
+      console.error('Failed to load Sales & Revenue data:', err)
+      setError(err?.message || 'Server error loading sales & revenue summary')
+      showToast('Error loading Sales & Revenue data', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    fetchUnifiedData()
+  }, [dateFilter, customRangeApplied])
+
+  const handleApplyCustomRange = (e) => {
+    e.preventDefault()
+    if (!fromDate || !toDate) {
+      showToast('Please select both From and To dates', 'warning')
+      return
+    }
+    setCustomRangeApplied({ start: fromDate, end: toDate })
+  }
+
+  // Filtered operational expenses based on active date boundaries
+  const totalOperationalExpenses = useMemo(() => {
+    let startLimit = null
+    let endLimit = null
+
+    if (dateFilter === 'Custom Date') {
+      if (customRangeApplied) {
+        startLimit = customRangeApplied.start
+        endLimit = customRangeApplied.end
+      }
+    } else {
+      const limits = getFilterDates(dateFilter)
+      if (limits) {
+        startLimit = limits.start
+        endLimit = limits.end
+      }
+    }
+
+    if (!rawExpenses || rawExpenses.length === 0) {
+      return Number(dashboardData?.metrics?.totalExpenses || 0)
+    }
+
+    let filtered = rawExpenses
+    if (startLimit && endLimit) {
+      filtered = rawExpenses.filter((e) => {
+        const expDate = e.claim_date || e.date || e.created_at
+        if (!expDate) return true
+        const dStr = String(expDate).substring(0, 10)
+        return dStr >= startLimit && dStr <= endLimit
+      })
+    }
+
+    const sum = filtered.reduce((acc, curr) => acc + Number(curr.amount || 0), 0)
+    return sum > 0 ? sum : Number(dashboardData?.metrics?.totalExpenses || 0)
+  }, [rawExpenses, dateFilter, customRangeApplied, dashboardData])
+
+  // Key Financial & Sales Metrics (Realized, Pipeline, Target, Net Margin)
+  const totalRevenue = Number(data?.metrics?.total_revenue || 0)
+  const totalPipeline = Number(data?.metrics?.total_pipeline_value || 0)
+  const totalCustomersCount = Number(data?.metrics?.total_customers || 0)
+  const totalWonDealsCount = Number(data?.metrics?.total_won_deals || 0)
+
+  const targetAchievementRate =
+    ANNUAL_TARGET > 0 ? ((totalRevenue / ANNUAL_TARGET) * 100).toFixed(1) : '0.0'
+  const netProfit = totalRevenue - totalOperationalExpenses
+  const netProfitMargin =
+    totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0.0'
+
+  // Filter ledger lists in memory
+  const filteredRevenue = useMemo(() => {
+    if (!data?.revenue_details) return []
+    return data.revenue_details.filter((row) => {
+      const matchesSearch =
+        (row.customer || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (row.sales_executive || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (row.sales_manager || '').toLowerCase().includes(searchQuery.toLowerCase())
+      const matchesManager = managerFilter === 'All' || row.sales_manager === managerFilter
+      const matchesExecutive = executiveFilter === 'All' || row.sales_executive === executiveFilter
+      return matchesSearch && matchesManager && matchesExecutive
     })
-    setOpportunities(updated)
-    localStorage.setItem('tc_opportunities', JSON.stringify(updated))
-    showToast(`Deal moved to stage: ${newStage}`, 'success')
+  }, [data?.revenue_details, searchQuery, managerFilter, executiveFilter])
+
+  const filteredCustomers = useMemo(() => {
+    if (!data?.customers_details) return []
+    return data.customers_details.filter((row) => {
+      const matchesSearch =
+        (row.customer_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (row.company || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (row.sales_executive || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (row.sales_manager || '').toLowerCase().includes(searchQuery.toLowerCase())
+      const matchesManager = managerFilter === 'All' || row.sales_manager === managerFilter
+      const matchesExecutive = executiveFilter === 'All' || row.sales_executive === executiveFilter
+      return matchesSearch && matchesManager && matchesExecutive
+    })
+  }, [data?.customers_details, searchQuery, managerFilter, executiveFilter])
+
+  // Calculate live reconciled totals based on displayed rows
+  const liveReconciledRevenue = filteredRevenue.reduce((sum, r) => sum + (r.amount || 0), 0)
+  const liveReconciledCustomersCount = new Set(
+    filteredCustomers.map((c) => c.customer_name || c.company)
+  ).size
+
+  // Extract unique filters from raw response lists
+  const uniqueManagers = Array.from(
+    new Set([
+      ...(data?.revenue_details || []).map((r) => r.sales_manager),
+      ...(data?.customers_details || []).map((c) => c.sales_manager),
+    ])
+  ).filter(Boolean)
+
+  const uniqueExecutives = Array.from(
+    new Set([
+      ...(data?.revenue_details || []).map((r) => r.sales_executive),
+      ...(data?.customers_details || []).map((c) => c.sales_executive),
+    ])
+  ).filter(Boolean)
+
+  // Manager Revenue Share Data for Financial Section
+  const managerRevenueShares = useMemo(() => {
+    if (!data?.manager_performance || data.manager_performance.length === 0) return []
+    return data.manager_performance.map((mgr) => {
+      const wonRev = Number(mgr.won_revenue || 0)
+      const sharePct =
+        totalRevenue > 0 ? ((wonRev / totalRevenue) * 100).toFixed(1) : '0.0'
+      return {
+        manager: mgr.sales_manager,
+        won_revenue: wonRev,
+        won_deals: mgr.won_deals || 0,
+        pipeline: mgr.pipeline || 0,
+        share: `${sharePct}%`,
+        shareNum: Number(sharePct),
+      }
+    })
+  }, [data?.manager_performance, totalRevenue])
+
+  // Top Revenue Closer Executives for Financial Section
+  const executiveLeaderboard = useMemo(() => {
+    if (!data?.executive_performance || data.executive_performance.length === 0) return []
+    return data.executive_performance.map((exec) => {
+      const wonRev = Number(exec.won_revenue || 0)
+      const sharePct =
+        totalRevenue > 0 ? ((wonRev / totalRevenue) * 100).toFixed(1) : '0.0'
+      return {
+        executive: exec.sales_executive,
+        manager: exec.sales_manager,
+        won_revenue: wonRev,
+        won_deals: exec.won_deals || 0,
+        pipeline: exec.pipeline || 0,
+        share: `${sharePct}%`,
+      }
+    })
+  }, [data?.executive_performance, totalRevenue])
+
+  // Financial Statement Export Handler
+  const handleExportStatement = (format) => {
+    const statementRows = [
+      { Metric: 'Total Realized Revenue (Won Deals)', Amount: `₹${totalRevenue.toLocaleString()}` },
+      { Metric: 'Active Open Pipeline', Amount: `₹${totalPipeline.toLocaleString()}` },
+      { Metric: 'Annual Sales Target', Amount: `₹${ANNUAL_TARGET.toLocaleString()} (₹${(ANNUAL_TARGET / 10000000).toFixed(2)} Cr)` },
+      { Metric: 'Target Achievement %', Amount: `${targetAchievementRate}%` },
+      { Metric: 'Total Operational Expenses', Amount: `₹${totalOperationalExpenses.toLocaleString()}` },
+      { Metric: 'Net Profit', Amount: `₹${netProfit.toLocaleString()}` },
+      { Metric: 'Net Margin %', Amount: `${netProfitMargin}%` },
+      { Metric: 'Won Deals Count', Amount: `${totalWonDealsCount} Deals` },
+      { Metric: 'Unique Client Accounts', Amount: `${totalCustomersCount} Accounts` },
+    ]
+
+    if (format === 'csv') {
+      exportToCSV('CEO_Sales_Revenue_Statement', statementRows)
+    } else if (format === 'excel') {
+      exportToExcel('CEO_Sales_Revenue_Statement', statementRows)
+    } else if (format === 'pdf') {
+      exportToPDF(
+        'CEO_Sales_Revenue_Statement',
+        'Twite Connect - CEO Executive Sales & Revenue Statement',
+        statementRows
+      )
+    }
+    showToast(`Financial statement exported as ${format.toUpperCase()}`, 'success')
   }
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 pb-12">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
+      {/* Page Header */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
+            <span className="grid size-8 place-items-center rounded-xl bg-[#F8CAE4]/25 text-[#832D51]">
               <TrendingUp className="size-4.5" />
             </span>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-              Executive Sales Overview & Pipeline
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              Sales & Revenue
             </h1>
           </div>
-          <p className="mt-1 text-xs text-slate-500 font-medium max-w-3xl">
-            Strategic tracking of organizational leads, pipeline opportunities, conversion stages, and manager/executive performance.
+          <p className="text-xs text-slate-500 font-medium mt-1">
+            Unified executive command center: Sales pipeline, won revenue, targets, operational expenses, and net margin
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="flex items-center rounded-xl bg-slate-100 p-1 border border-slate-200 text-xs font-bold">
-            <button
-              onClick={() => setViewMode('kanban')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
-                viewMode === 'kanban' ? 'bg-[#832D51] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <Kanban className="size-3.5" />
-              Pipeline Kanban
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition ${
-                viewMode === 'table' ? 'bg-[#832D51] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <ListFilter className="size-3.5" />
-              Detailed Deals
-            </button>
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Date range switcher */}
+          <div className="flex items-center bg-slate-100 rounded-xl p-1 text-xs font-bold border border-slate-200">
+            {['Today', 'This Week', 'This Month', 'Custom Date'].map((t) => (
+              <button
+                key={t}
+                onClick={() => {
+                  setDateFilter(t)
+                  if (t !== 'Custom Date') setCustomRangeApplied(null)
+                }}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                  dateFilter === t
+                    ? 'bg-[#832D51] text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
           </div>
-        </div>
-      </div>
 
-      {/* Primary Sales KPI Summary Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* 1. Total Leads & Qualified */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Leads & Qualification</span>
-          <div className="mt-3 flex items-baseline justify-between">
-            <div>
-              <p className="text-2xl font-black text-slate-900">{totalLeads}</p>
-              <p className="text-xs font-semibold text-slate-500 mt-0.5">Ingested Leads</p>
-            </div>
-            <div className="text-right">
-              <p className="text-xl font-extrabold text-[#832D51]">{qualifiedLeads}</p>
-              <p className="text-xs font-bold text-[#EA6993] mt-0.5">Qualified (60.5%)</p>
-            </div>
-          </div>
-        </div>
-
-        {/* 2. Active Opportunities */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Active Opportunities</span>
-          <div className="mt-3">
-            <p className="text-2xl font-black text-slate-900">{activeOpportunities} Active Deals</p>
-            <p className="text-xs font-bold text-amber-600 mt-0.5">
-              In Proposal & Negotiation Stages
-            </p>
-          </div>
-        </div>
-
-        {/* 3. Won vs Lost Deals */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Deals Won & Closed</span>
-          <div className="mt-3 flex items-baseline justify-between">
-            <div>
-              <p className="text-2xl font-black text-emerald-600">{wonDeals} Won</p>
-              <p className="text-xs font-bold text-emerald-700 mt-0.5">₹{wonRevenue.toLocaleString()}</p>
-            </div>
-            <div className="text-right">
-              <p className="text-lg font-extrabold text-rose-600">{lostDeals} Lost</p>
-              <p className="text-xs font-semibold text-slate-400 mt-0.5">Drop-offs</p>
-            </div>
-          </div>
-        </div>
-
-        {/* 4. Total Pipeline Value & Conversion Rate */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Pipeline Value & Win Rate</span>
-          <div className="mt-3">
-            <p className="text-2xl font-black text-slate-900">
-              ₹{(totalPipelineValue / 100000).toFixed(1)} Lakhs
-            </p>
-            <div className="mt-1 flex items-center gap-2">
-              <span className="inline-flex rounded bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-700 border border-emerald-200">
-                {conversionRate}% Win Rate
-              </span>
-              <span className="text-xs text-slate-400 font-medium">overall closed</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Filters Bar */}
-      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div className="relative w-full sm:w-80">
-          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-          <input
-            type="text"
-            placeholder="Search deals, companies, reps..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
-          />
-        </div>
-
-        <div className="flex items-center gap-2 w-full sm:w-auto overflow-x-auto">
-          {/* Stage Filter */}
-          <select
-            value={selectedStage}
-            onChange={(e) => setSelectedStage(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 outline-none"
+          <button
+            onClick={fetchUnifiedData}
+            disabled={loading}
+            className="flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-1.5 text-xs font-bold text-slate-700 transition cursor-pointer disabled:opacity-50"
           >
-            <option value="All">All Stages</option>
-            {STAGES.map((st) => (
-              <option key={st} value={st}>
-                {st}
+            <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      {/* Custom Date Form Block */}
+      {dateFilter === 'Custom Date' && (
+        <form
+          onSubmit={handleApplyCustomRange}
+          className="flex items-center gap-3 bg-white p-4 border border-slate-200 rounded-2xl shadow-2xs flex-wrap"
+        >
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-black text-slate-500 uppercase">From</label>
+            <input
+              type="date"
+              value={fromDate}
+              onChange={(e) => setFromDate(e.target.value)}
+              className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
+              required
+            />
+          </div>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-black text-slate-500 uppercase">To</label>
+            <input
+              type="date"
+              value={toDate}
+              onChange={(e) => setToDate(e.target.value)}
+              className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
+              required
+            />
+          </div>
+          <button
+            type="submit"
+            className="bg-[#832D51] hover:bg-[#6a2240] text-white text-xs font-bold px-4 py-1.5 rounded-xl transition cursor-pointer"
+          >
+            Apply Range
+          </button>
+        </form>
+      )}
+
+      {/* ── 1. Top Summary Cards (8 Key Executive KPIs) ────────────────────── */}
+      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Card 1: Total Revenue */}
+        <button
+          onClick={() => {
+            setActiveKpi('revenue')
+            setWonToggle(true)
+          }}
+          className={`text-left rounded-2xl p-4.5 border transition-all duration-200 relative overflow-hidden group cursor-pointer ${
+            activeKpi === 'revenue' && wonToggle
+              ? 'bg-[#832D51] text-white border-[#832D51] shadow-md shadow-[#832D51]/15 ring-2 ring-[#832D51]'
+              : 'bg-white text-slate-900 border-slate-200/90 hover:border-[#832D51]'
+          }`}
+        >
+          <div className="flex justify-between items-start">
+            <span
+              className={`text-[10px] font-black uppercase tracking-wider ${
+                activeKpi === 'revenue' && wonToggle ? 'text-pink-200' : 'text-slate-400'
+              }`}
+            >
+              Total Revenue
+            </span>
+            <span
+              className={`grid size-7 place-items-center rounded-lg ${
+                activeKpi === 'revenue' && wonToggle
+                  ? 'bg-white/20 text-white'
+                  : 'bg-pink-50 text-[#832D51]'
+              }`}
+            >
+              <DollarSign className="size-4" />
+            </span>
+          </div>
+          <p className="text-2xl font-black tracking-tight mt-2.5">
+            ₹{totalRevenue.toLocaleString()}
+          </p>
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100/60">
+            <span
+              className={`text-[10px] font-bold ${
+                activeKpi === 'revenue' && wonToggle ? 'text-pink-100' : 'text-slate-500'
+              }`}
+            >
+              Realized won deals
+            </span>
+            <span className="inline-flex items-center rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-black text-emerald-700">
+              Won
+            </span>
+          </div>
+        </button>
+
+        {/* Card 2: Total Customers */}
+        <button
+          onClick={() => {
+            setActiveKpi('customers')
+            setWonToggle(false)
+          }}
+          className={`text-left rounded-2xl p-4.5 border transition-all duration-200 relative overflow-hidden group cursor-pointer ${
+            activeKpi === 'customers' && !wonToggle
+              ? 'bg-[#832D51] text-white border-[#832D51] shadow-md shadow-[#832D51]/15 ring-2 ring-[#832D51]'
+              : 'bg-white text-slate-900 border-slate-200/90 hover:border-[#832D51]'
+          }`}
+        >
+          <div className="flex justify-between items-start">
+            <span
+              className={`text-[10px] font-black uppercase tracking-wider ${
+                activeKpi === 'customers' && !wonToggle ? 'text-pink-200' : 'text-slate-400'
+              }`}
+            >
+              Total Customers
+            </span>
+            <span
+              className={`grid size-7 place-items-center rounded-lg ${
+                activeKpi === 'customers' && !wonToggle
+                  ? 'bg-white/20 text-white'
+                  : 'bg-blue-50 text-blue-600'
+              }`}
+            >
+              <Building2 className="size-4" />
+            </span>
+          </div>
+          <p className="text-2xl font-black tracking-tight mt-2.5">
+            {totalCustomersCount}
+          </p>
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100/60">
+            <span
+              className={`text-[10px] font-bold ${
+                activeKpi === 'customers' && !wonToggle ? 'text-pink-100' : 'text-slate-500'
+              }`}
+            >
+              Accounts in period
+            </span>
+            <span className="text-[9px] font-black text-slate-400">Directory</span>
+          </div>
+        </button>
+
+        {/* Card 3: Won Deals */}
+        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              Won Deals
+            </span>
+            <span className="grid size-7 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
+              <CheckCircle2 className="size-4" />
+            </span>
+          </div>
+          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
+            {totalWonDealsCount}
+          </p>
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+            <span className="text-[10px] font-bold text-slate-500">Converted orders</span>
+            <span className="text-[9px] font-bold text-emerald-600">Closed</span>
+          </div>
+        </div>
+
+        {/* Card 4: Open Pipeline */}
+        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              Open Pipeline
+            </span>
+            <span className="grid size-7 place-items-center rounded-lg bg-amber-50 text-amber-600">
+              <Clock className="size-4" />
+            </span>
+          </div>
+          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
+            ₹{totalPipeline.toLocaleString()}
+          </p>
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+            <span className="text-[10px] font-bold text-slate-500">In negotiation / proposal</span>
+            <span className="text-[9px] font-bold text-amber-600">Unclosed</span>
+          </div>
+        </div>
+
+        {/* Card 5: Annual Target */}
+        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              Annual Target
+            </span>
+            <span className="grid size-7 place-items-center rounded-lg bg-indigo-50 text-indigo-600">
+              <Target className="size-4" />
+            </span>
+          </div>
+          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
+            ₹{(ANNUAL_TARGET / 10000000).toFixed(2)} Cr
+          </p>
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+            <span className="text-[10px] font-bold text-slate-500">Org sales benchmark</span>
+            <span className="text-[9px] font-bold text-indigo-600">₹3.50 Cr Goal</span>
+          </div>
+        </div>
+
+        {/* Card 6: Target Achievement % */}
+        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              Target Achievement
+            </span>
+            <span className="grid size-7 place-items-center rounded-lg bg-purple-50 text-purple-600">
+              <Award className="size-4" />
+            </span>
+          </div>
+          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
+            {targetAchievementRate}%
+          </p>
+          <div className="mt-2 pt-2 border-t border-slate-100">
+            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+              <div
+                className="h-1.5 rounded-full bg-[#832D51] transition-all duration-500"
+                style={{ width: `${Math.min(100, Number(targetAchievementRate))}%` }}
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Card 7: Operational Expenses */}
+        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              Operational Expenses
+            </span>
+            <span className="grid size-7 place-items-center rounded-lg bg-rose-50 text-rose-600">
+              <Wallet className="size-4" />
+            </span>
+          </div>
+          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
+            ₹{totalOperationalExpenses.toLocaleString()}
+          </p>
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+            <span className="text-[10px] font-bold text-slate-500">Field claims & operations</span>
+            <span className="text-[9px] font-bold text-rose-600">Cost Outlay</span>
+          </div>
+        </div>
+
+        {/* Card 8: Net Margin */}
+        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              Net Margin
+            </span>
+            <span className="grid size-7 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
+              <TrendingUp className="size-4" />
+            </span>
+          </div>
+          <div className="flex items-baseline gap-2 mt-2.5">
+            <p className="text-2xl font-black tracking-tight text-slate-900">
+              {netProfitMargin}%
+            </p>
+            <span className="text-xs font-bold text-slate-500">
+              (₹{netProfit.toLocaleString()})
+            </span>
+          </div>
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+            <span className="text-[10px] font-bold text-slate-500">Realized Rev - Expenses</span>
+            <span className="text-[9px] font-bold text-emerald-600">Net Margin</span>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 2. Sales Performance Section ───────────────────────────────────── */}
+      <div className="bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-6 shadow-xs space-y-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between pb-3 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="grid size-6 place-items-center rounded-lg bg-[#F8CAE4]/25 text-[#832D51]">
+                <SlidersHorizontal className="size-3.5" />
+              </span>
+              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                Sales Performance & Ledger Database
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Live customer accounts, deal closures, and sales breakdown
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <div className="flex bg-slate-100 p-1 rounded-xl text-xs font-bold border border-slate-200">
+              <button
+                onClick={() => setWonToggle(false)}
+                className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                  !wonToggle ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                All Customers ({totalCustomersCount})
+              </button>
+              <button
+                onClick={() => setWonToggle(true)}
+                className={`px-3 py-1 rounded-lg transition cursor-pointer ${
+                  wonToggle ? 'bg-[#832D51] text-white shadow-sm' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Won Deals ({totalWonDealsCount})
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Filters Row */}
+        <div className="grid gap-3 sm:grid-cols-3">
+          <div className="relative">
+            <Search className="absolute left-3 top-2.5 size-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Search customer, company, executive..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#832D51] transition"
+            />
+          </div>
+
+          <select
+            value={managerFilter}
+            onChange={(e) => setManagerFilter(e.target.value)}
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51] cursor-pointer"
+          >
+            <option value="All">All Sales Managers</option>
+            {uniqueManagers.map((m) => (
+              <option key={m} value={m}>
+                {m}
               </option>
             ))}
           </select>
 
-          {/* Manager Filter */}
           <select
-            value={selectedManager}
-            onChange={(e) => setSelectedManager(e.target.value)}
-            className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 outline-none"
+            value={executiveFilter}
+            onChange={(e) => setExecutiveFilter(e.target.value)}
+            className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51] cursor-pointer"
           >
-            <option value="All">All Managers</option>
-            <option value="Vikram Singh">Vikram Singh</option>
-            <option value="Suresh V">Suresh V</option>
+            <option value="All">All Sales Executives</option>
+            {uniqueExecutives.map((ex) => (
+              <option key={ex} value={ex}>
+                {ex}
+              </option>
+            ))}
           </select>
+        </div>
+
+        {/* Detailed Table */}
+        <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-2xs">
+          <div className="overflow-x-auto">
+            {wonToggle ? (
+              // Won Ledger Table
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider">
+                    <th className="px-5 py-3">Closure Date</th>
+                    <th className="px-5 py-3">Sales Manager</th>
+                    <th className="px-5 py-3">Sales Executive</th>
+                    <th className="px-5 py-3">Client / Company</th>
+                    <th className="px-5 py-3 text-right">Realized Won Amount</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {filteredRevenue.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="py-12 text-center text-slate-400 font-bold">
+                        No won transaction records found for the applied filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredRevenue.map((row, i) => (
+                      <tr key={i} className="hover:bg-slate-50/50">
+                        <td className="px-5 py-3.5 text-slate-900 font-bold">{row.date}</td>
+                        <td className="px-5 py-3.5 text-slate-600">{row.sales_manager}</td>
+                        <td className="px-5 py-3.5 text-slate-600">{row.sales_executive}</td>
+                        <td className="px-5 py-3.5 text-slate-900 font-bold">{row.customer}</td>
+                        <td className="px-5 py-3.5 text-right font-black text-[#832D51]">
+                          ₹{(row.amount || 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            ) : (
+              // Customers Directory Table
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider">
+                    <th className="px-5 py-3">Sales Manager</th>
+                    <th className="px-5 py-3">Sales Executive</th>
+                    <th className="px-5 py-3">Customer Name</th>
+                    <th className="px-5 py-3">Company</th>
+                    <th className="px-5 py-3">Product / Service</th>
+                    <th className="px-5 py-3">Status</th>
+                    <th className="px-5 py-3 text-right">Contract Value</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {filteredCustomers.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-slate-400 font-bold">
+                        No customer accounts found for the applied filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCustomers.map((row, i) => (
+                      <tr key={i} className="hover:bg-slate-50/50">
+                        <td className="px-5 py-3.5 text-slate-600">{row.sales_manager}</td>
+                        <td className="px-5 py-3.5 text-slate-600">{row.sales_executive}</td>
+                        <td className="px-5 py-3.5 font-bold text-slate-900">{row.customer_name}</td>
+                        <td className="px-5 py-3.5 text-slate-500">{row.company}</td>
+                        <td className="px-5 py-3.5 text-slate-600">{row.product}</td>
+                        <td className="px-5 py-3.5">
+                          <span className="inline-flex items-center rounded-md bg-[#CFDD9D]/20 px-2 py-0.5 font-extrabold text-[#3a7d63] text-[10px]">
+                            {row.status}
+                          </span>
+                        </td>
+                        <td className="px-5 py-3.5 text-right font-black text-slate-950">
+                          ₹{(row.amount || 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* Reconciled Summary Totals */}
+        <div className="flex justify-end pt-1">
+          <div className="bg-[#F8CAE4]/20 border border-[#EA6993]/20 rounded-2xl px-5 py-2.5 text-right">
+            {wonToggle ? (
+              <>
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">
+                  Filtered Won Revenue
+                </span>
+                <span className="text-lg font-black text-[#832D51] mt-0.5 block">
+                  ₹{liveReconciledRevenue.toLocaleString()}
+                </span>
+              </>
+            ) : (
+              <>
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">
+                  Filtered Customers Count
+                </span>
+                <span className="text-lg font-black text-[#832D51] mt-0.5 block">
+                  {liveReconciledCustomersCount} Clients
+                </span>
+              </>
+            )}
+          </div>
         </div>
       </div>
 
-      {/* Main View: Kanban Board or Table */}
-      {viewMode === 'kanban' ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6 overflow-x-auto pb-2">
-          {STAGES.map((stage) => {
-            const stageOpps = filteredOpps.filter((o) => o.stage === stage)
-            const stageTotal = stageOpps.reduce((acc, curr) => acc + (Number(curr.value) || 0), 0)
-            const conf = STAGE_CONFIG[stage]
-
-            return (
-              <div
-                key={stage}
-                className="flex flex-col rounded-2xl border border-slate-200/90 bg-slate-50/70 p-3 min-w-[240px]"
-              >
-                {/* Column Header */}
-                <div className="flex items-center justify-between border-b border-slate-200 pb-2.5 mb-3">
-                  <div className="flex items-center gap-1.5">
-                    <span className="size-2 rounded-full" style={{ backgroundColor: conf.bar }} />
-                    <span className="text-xs font-black text-slate-900">{stage}</span>
-                  </div>
-                  <span className="rounded-full bg-white px-2 py-0.5 text-[10px] font-black text-slate-600 border border-slate-200">
-                    {stageOpps.length}
-                  </span>
-                </div>
-
-                <div className="text-[11px] font-bold text-slate-500 mb-2 px-1">
-                  Vol: ₹{stageTotal.toLocaleString()}
-                </div>
-
-                {/* Cards List */}
-                <div className="flex-1 space-y-2.5">
-                  {stageOpps.map((opp) => (
-                    <div
-                      key={opp.id}
-                      className="rounded-xl border border-slate-200 bg-white p-3.5 shadow-xs transition hover:shadow-md space-y-2"
-                    >
-                      <div className="flex items-start justify-between">
-                        <h4 className="text-xs font-black text-slate-900 leading-snug">{opp.company}</h4>
-                      </div>
-
-                      <div className="flex items-baseline justify-between text-xs">
-                        <span className="font-extrabold text-[#832D51]">
-                          ₹{Number(opp.value).toLocaleString()}
-                        </span>
-                        <span className="text-[10px] font-bold text-slate-400">
-                          {opp.probability}% Prob
-                        </span>
-                      </div>
-
-                      <div className="border-t border-slate-100 pt-2 text-[10px] space-y-1">
-                        <div className="flex justify-between text-slate-500 font-medium">
-                          <span>Rep: {opp.rep}</span>
-                        </div>
-                        <div className="flex justify-between text-slate-400">
-                          <span>Mgr: {opp.manager}</span>
-                        </div>
-                      </div>
-
-                      {/* Quick Move Dropdown */}
-                      <div className="pt-1 flex justify-end">
-                        <select
-                          value={opp.stage}
-                          onChange={(e) => handleStageChange(opp.id, e.target.value)}
-                          className="rounded bg-slate-100 px-2 py-1 text-[10px] font-bold text-slate-700 outline-none"
-                        >
-                          {STAGES.map((s) => (
-                            <option key={s} value={s}>
-                              Move to {s}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    </div>
-                  ))}
-
-                  {stageOpps.length === 0 && (
-                    <div className="py-8 text-center text-[11px] text-slate-400 font-medium">
-                      No deals in {stage}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      ) : (
-        /* Table View */
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
-                <th className="pb-3">Company / Client</th>
-                <th className="pb-3">Deal Value</th>
-                <th className="pb-3">Stage</th>
-                <th className="pb-3">Assigned Rep</th>
-                <th className="pb-3">Sales Manager</th>
-                <th className="pb-3">Est. Close Date</th>
-                <th className="pb-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredOpps.map((opp) => {
-                const conf = STAGE_CONFIG[opp.stage] || STAGE_CONFIG.Lead
-                return (
-                  <tr key={opp.id} className="hover:bg-slate-50/70 transition">
-                    <td className="py-3 font-extrabold text-slate-900">{opp.company}</td>
-                    <td className="py-3 font-black text-[#832D51]">₹{Number(opp.value).toLocaleString()}</td>
-                    <td className="py-3">
-                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black ${conf.bg} ${conf.text} border ${conf.border}`}>
-                        {opp.stage}
-                      </span>
-                    </td>
-                    <td className="py-3 text-slate-700">{opp.rep}</td>
-                    <td className="py-3 text-slate-500">{opp.manager}</td>
-                    <td className="py-3 text-slate-400">{opp.date || 'Aug 2026'}</td>
-                    <td className="py-3 text-right">
-                      <select
-                        value={opp.stage}
-                        onChange={(e) => handleStageChange(opp.id, e.target.value)}
-                        className="rounded-lg border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] font-bold text-slate-700 outline-none"
-                      >
-                        {STAGES.map((s) => (
-                          <option key={s} value={s}>
-                            {s}
-                          </option>
-                        ))}
-                      </select>
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {/* Performance Section: Manager-wise & Executive-wise Breakdown */}
+      {/* Performance Tables (Manager & Executive) */}
       <div className="grid gap-6 lg:grid-cols-2">
         {/* Manager-wise Performance */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-            <div>
-              <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
-                Manager-wise Sales Performance
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">
-                Team assigned leads, won revenue, and win rates
-              </p>
-            </div>
-            <Award className="size-5 text-[#832D51]" />
+        <div className="bg-white border border-slate-200/90 rounded-3xl p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
+              Sales Manager Performance
+            </h3>
+            <span className="text-[10px] font-bold text-slate-400">Click row to filter</span>
           </div>
-
-          <div className="space-y-4">
-            {managerStats.map((mgr, idx) => (
-              <div key={idx} className="rounded-xl border border-slate-200/80 bg-slate-50/50 p-4">
-                <div className="flex items-center justify-between">
-                  <div>
-                    <h4 className="text-sm font-black text-slate-900">{mgr.name}</h4>
-                    <span className="text-xs text-slate-500">{mgr.region}</span>
-                  </div>
-                  <span className="rounded-md bg-[#F8CAE4]/20 px-2.5 py-1 text-xs font-black text-[#832D51]">
-                    {mgr.winRate}% Win Rate
-                  </span>
-                </div>
-
-                <div className="mt-3 grid grid-cols-4 gap-2 border-t border-slate-200/60 pt-2.5 text-center text-xs">
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Leads</span>
-                    <p className="font-extrabold text-slate-900 mt-0.5">{mgr.assignedLeads}</p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Won</span>
-                    <p className="font-extrabold text-emerald-600 mt-0.5">{mgr.wonDeals}</p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Revenue</span>
-                    <p className="font-extrabold text-slate-900 mt-0.5">₹{(mgr.totalRevenue / 100000).toFixed(1)}L</p>
-                  </div>
-                  <div>
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Pipeline</span>
-                    <p className="font-extrabold text-[#832D51] mt-0.5">₹{(mgr.pipeline / 100000).toFixed(1)}L</p>
-                  </div>
-                </div>
-              </div>
-            ))}
+          <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider">
+                    <th className="px-4 py-2.5">Sales Manager</th>
+                    <th className="px-4 py-2.5 text-center">Execs</th>
+                    <th className="px-4 py-2.5 text-center">Clients</th>
+                    <th className="px-4 py-2.5 text-center">Won</th>
+                    <th className="px-4 py-2.5">Won Revenue</th>
+                    <th className="px-4 py-2.5 text-right">Pipeline</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {!data?.manager_performance || data.manager_performance.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-6 text-center text-slate-400 font-bold">
+                        No manager records found.
+                      </td>
+                    </tr>
+                  ) : (
+                    data.manager_performance.map((mgr, i) => (
+                      <tr
+                        key={i}
+                        onClick={() => setManagerFilter(mgr.sales_manager)}
+                        className={`hover:bg-slate-50/60 cursor-pointer transition ${
+                          managerFilter === mgr.sales_manager ? 'bg-[#F8CAE4]/15' : ''
+                        }`}
+                      >
+                        <td className="px-4 py-3 font-bold text-[#832D51]">{mgr.sales_manager}</td>
+                        <td className="px-4 py-3 text-slate-600 text-center">{mgr.executives}</td>
+                        <td className="px-4 py-3 text-slate-600 text-center">{mgr.customers}</td>
+                        <td className="px-4 py-3 text-emerald-700 font-bold text-center">
+                          {mgr.won_deals}
+                        </td>
+                        <td className="px-4 py-3 font-black text-slate-900">
+                          ₹{mgr.won_revenue.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-right text-slate-500">
+                          ₹{mgr.pipeline.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
 
         {/* Executive-wise Performance */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-            <div>
-              <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
-                Executive-wise Sales Breakdown
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">
-                Field visits, deals converted, and revenue contribution
+        <div className="bg-white border border-slate-200/90 rounded-3xl p-5 shadow-xs space-y-3">
+          <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+            <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
+              Sales Executive Performance
+            </h3>
+            <span className="text-[10px] font-bold text-slate-400">Click row to filter</span>
+          </div>
+          <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-2xs">
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider">
+                    <th className="px-4 py-2.5">Sales Executive</th>
+                    <th className="px-4 py-2.5">Manager</th>
+                    <th className="px-4 py-2.5 text-center">Clients</th>
+                    <th className="px-4 py-2.5 text-center">Won</th>
+                    <th className="px-4 py-2.5">Won Revenue</th>
+                    <th className="px-4 py-2.5 text-right">Pipeline</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {!data?.executive_performance || data.executive_performance.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="py-6 text-center text-slate-400 font-bold">
+                        No executive records found.
+                      </td>
+                    </tr>
+                  ) : (
+                    data.executive_performance.map((exec, i) => (
+                      <tr
+                        key={i}
+                        onClick={() => {
+                          setExecutiveFilter(exec.sales_executive)
+                          setManagerFilter(exec.sales_manager)
+                        }}
+                        className={`hover:bg-slate-50/60 cursor-pointer transition ${
+                          executiveFilter === exec.sales_executive ? 'bg-[#F8CAE4]/15' : ''
+                        }`}
+                      >
+                        <td className="px-4 py-3 font-bold text-slate-900">{exec.sales_executive}</td>
+                        <td className="px-4 py-3 text-slate-500">{exec.sales_manager}</td>
+                        <td className="px-4 py-3 text-slate-600 text-center">{exec.customers}</td>
+                        <td className="px-4 py-3 text-emerald-700 font-bold text-center">
+                          {exec.won_deals}
+                        </td>
+                        <td className="px-4 py-3 font-black text-[#832D51]">
+                          ₹{exec.won_revenue.toLocaleString()}
+                        </td>
+                        <td className="px-4 py-3 text-right text-slate-500">
+                          ₹{exec.pipeline.toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Visual Section & Summaries (Revenue Trend & Win/Loss) */}
+      <div className="grid gap-6 lg:grid-cols-3">
+        {/* Revenue Trend Area Chart */}
+        <div className="bg-white border border-slate-200/90 rounded-3xl p-5 shadow-xs space-y-3 lg:col-span-2">
+          <div className="flex items-center justify-between">
+            <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
+              Revenue Trend
+            </h3>
+            <span className="text-[10px] font-bold text-slate-400">Actual Won Sales</span>
+          </div>
+          <div className="h-60 w-full">
+            {!data?.revenue_trend || data.revenue_trend.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-slate-400 font-bold text-xs">
+                No trend data available for the period
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <AreaChart
+                  data={data.revenue_trend}
+                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
+                >
+                  <defs>
+                    <linearGradient id="trendGradColor" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#832D51" stopOpacity={0.3} />
+                      <stop offset="95%" stopColor="#832D51" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                  <XAxis dataKey="label" stroke="#94a3b8" fontSize={11} tickLine={false} />
+                  <YAxis
+                    stroke="#94a3b8"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
+                  />
+                  <Tooltip formatter={(v) => [`₹${Number(v).toLocaleString()}`, 'Won Revenue']} />
+                  <Area
+                    type="monotone"
+                    dataKey="revenue"
+                    stroke="#832D51"
+                    strokeWidth={2.5}
+                    fill="url(#trendGradColor)"
+                  />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* Win/Loss Summary */}
+        <div className="bg-white border border-slate-200/90 rounded-3xl p-5 shadow-xs space-y-3 flex flex-col justify-between">
+          <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
+            Won / Lost Summary
+          </h3>
+          <div className="space-y-3 flex-1 flex flex-col justify-center">
+            {/* Won summary */}
+            <div className="flex items-center justify-between bg-emerald-50/60 border border-emerald-100 p-3 rounded-2xl">
+              <div>
+                <span className="text-[10px] font-black text-emerald-800 uppercase">
+                  Won Portfolio
+                </span>
+                <p className="text-xs font-bold text-slate-500 mt-0.5">
+                  {data?.win_loss_summary?.won?.count || 0} deals
+                </p>
+              </div>
+              <p className="text-sm font-black text-emerald-700">
+                ₹{(data?.win_loss_summary?.won?.revenue || 0).toLocaleString()}
               </p>
             </div>
-            <Users className="size-5 text-[#EA6993]" />
+
+            {/* Lost summary */}
+            <div className="flex items-center justify-between bg-rose-50/60 border border-rose-100 p-3 rounded-2xl">
+              <div>
+                <span className="text-[10px] font-black text-rose-800 uppercase">
+                  Lost Portfolio
+                </span>
+                <p className="text-xs font-bold text-slate-500 mt-0.5">
+                  {data?.win_loss_summary?.lost?.count || 0} deals
+                </p>
+              </div>
+              <p className="text-sm font-black text-rose-700">
+                ₹{(data?.win_loss_summary?.lost?.value || 0).toLocaleString()}
+              </p>
+            </div>
+
+            {/* Open summary */}
+            <div className="flex items-center justify-between bg-amber-50/60 border border-amber-100 p-3 rounded-2xl">
+              <div>
+                <span className="text-[10px] font-black text-amber-800 uppercase">
+                  Open Pipeline
+                </span>
+                <p className="text-xs font-bold text-slate-500 mt-0.5">
+                  {data?.win_loss_summary?.open?.count || 0} deals
+                </p>
+              </div>
+              <p className="text-sm font-black text-amber-700">
+                ₹{(data?.win_loss_summary?.open?.pipeline || 0).toLocaleString()}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── 3. Financial Performance Section ───────────────────────────────── */}
+      <div className="bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-6 shadow-xs space-y-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="grid size-7 place-items-center rounded-lg bg-[#F8CAE4]/25 text-[#832D51]">
+                <DollarSign className="size-4" />
+              </span>
+              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                Financial Performance & Revenue Share
+              </h2>
+            </div>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Live executive financial statements, manager revenue share, and realized closer matrices
+            </p>
           </div>
 
-          <div className="space-y-3">
-            {executiveStats.map((exec, idx) => (
-              <div key={idx} className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/50 p-3.5 text-xs">
-                <div>
-                  <p className="font-extrabold text-slate-900">{exec.name}</p>
-                  <p className="text-[10px] text-slate-500 font-medium">Mgr: {exec.manager} · {exec.visits} Visits</p>
-                </div>
-                <div className="flex items-center gap-4 text-right">
-                  <div>
-                    <span className="font-black text-slate-900">₹{(exec.revenue / 100000).toFixed(1)}L Won</span>
-                    <p className="text-[10px] text-slate-400">{exec.wonDeals} Closed Deals</p>
-                  </div>
-                  <span className="rounded bg-emerald-50 px-2 py-0.5 text-xs font-black text-emerald-700 border border-emerald-200">
-                    {exec.winRate}%
-                  </span>
-                </div>
+          {/* Export Financial Statement Actions */}
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="text-[11px] font-bold text-slate-400 mr-1">Export Statement:</span>
+            <button
+              onClick={() => handleExportStatement('pdf')}
+              className="flex items-center gap-1 rounded-xl bg-[#832D51] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-[#6a2240] transition cursor-pointer"
+            >
+              <Download className="size-3.5" />
+              PDF
+            </button>
+            <button
+              onClick={() => handleExportStatement('excel')}
+              className="flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 transition cursor-pointer"
+            >
+              <FileSpreadsheet className="size-3.5" />
+              Excel
+            </button>
+            <button
+              onClick={() => handleExportStatement('csv')}
+              className="flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 transition cursor-pointer"
+            >
+              <Receipt className="size-3.5" />
+              CSV
+            </button>
+          </div>
+        </div>
+
+        {/* Manager Contribution & Executive Realized Revenue */}
+        <div className="grid gap-6 lg:grid-cols-2">
+          {/* Sales Manager Revenue Share */}
+          <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+              <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
+                Sales Manager Revenue Share
+              </h3>
+              <span className="text-[10px] font-bold text-slate-400">Won Revenue Portfolio</span>
+            </div>
+
+            {managerRevenueShares.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400 font-bold">
+                No closed revenue records for sales managers in this period.
               </div>
-            ))}
+            ) : (
+              <div className="space-y-3">
+                {managerRevenueShares.map((m) => (
+                  <div
+                    key={m.manager}
+                    className="p-3.5 bg-white border border-slate-200/80 rounded-xl space-y-2 shadow-2xs"
+                  >
+                    <div className="flex justify-between items-center text-xs font-black text-slate-900">
+                      <span className="text-[#832D51]">{m.manager}</span>
+                      <span>
+                        ₹{m.won_revenue.toLocaleString()}{' '}
+                        <span className="text-slate-400 font-bold text-[11px]">({m.share})</span>
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="h-2 rounded-full bg-[#832D51] transition-all duration-500"
+                        style={{ width: `${Math.min(100, m.shareNum)}%` }}
+                      />
+                    </div>
+                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
+                      <span>{m.won_deals} won deals closed</span>
+                      <span>Pipeline: ₹{m.pipeline.toLocaleString()}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Executive Realized Revenue Leaderboard */}
+          <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-5 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
+              <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
+                Executive Realized Revenue
+              </h3>
+              <span className="text-[10px] font-bold text-slate-400">Top Closers</span>
+            </div>
+
+            {executiveLeaderboard.length === 0 ? (
+              <div className="py-8 text-center text-xs text-slate-400 font-bold">
+                No closed revenue records for sales executives in this period.
+              </div>
+            ) : (
+              <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
+                {executiveLeaderboard.map((e, idx) => (
+                  <div
+                    key={e.executive}
+                    className="flex items-center justify-between p-3 bg-white border border-slate-200/80 rounded-xl hover:bg-slate-50 transition shadow-2xs"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="grid size-6 place-items-center rounded-lg bg-slate-100 text-slate-700 text-[10px] font-black">
+                        #{idx + 1}
+                      </span>
+                      <div>
+                        <p className="text-xs font-black text-slate-900">{e.executive}</p>
+                        <p className="text-[10px] text-slate-400 font-semibold">
+                          {e.manager} · {e.won_deals} Won Deals
+                        </p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="text-xs font-black text-slate-950 block">
+                        ₹{e.won_revenue.toLocaleString()}
+                      </span>
+                      <span className="text-[10px] font-bold text-[#832D51]">{e.share} share</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       </div>

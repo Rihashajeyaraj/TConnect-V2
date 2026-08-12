@@ -126,90 +126,22 @@ function CeoHrms({ initialTab = 'employees' }) {
   const [searchQuery, setSearchQuery] = useState('')
 
   // 1. Employees Directory State
-  const [employees, setEmployees] = useState([
-    { id: 'EMP-001', name: 'Vikram Singh', email: 'vikram@tconnect.com', role: 'Sales Manager', department: 'Sales & BD', status: 'Active', checkin: '09:05 AM' },
-    { id: 'EMP-002', name: 'Suresh V', email: 'suresh@tconnect.com', role: 'Sales Manager', department: 'Sales & BD', status: 'Active', checkin: '08:55 AM' },
-    { id: 'EMP-003', name: 'Ananya Roy', email: 'ananya@tconnect.com', role: 'Sales Executive', department: 'Field Sales', status: 'Active', checkin: '09:12 AM' },
-    { id: 'EMP-004', name: 'Karthik Raja', email: 'karthik@tconnect.com', role: 'Sales Executive', department: 'Field Sales', status: 'Active', checkin: '09:18 AM' },
-    { id: 'EMP-005', name: 'Priya Sharma', email: 'priya@tconnect.com', role: 'Admin', department: 'Operations', status: 'Active', checkin: '08:50 AM' },
-    { id: 'EMP-006', name: 'Robert Smith', email: 'robert@tconnect.com', role: 'Sales Executive', department: 'Inside Sales', status: 'Active', checkin: '09:02 AM' },
-  ])
+  const [employees, setEmployees] = useState([])
 
   // 2. Leave Requests State
-  const [leaveRequests, setLeaveRequests] = useState([
-    {
-      id: 'LV-501',
-      employee_name: 'Vikram Singh',
-      role: 'Sales Manager',
-      leave_type: 'Sick Leave',
-      duration: '1 Day (Aug 9, 2026)',
-      reason: 'Severe Migraine and medical checkup',
-      status: 'Pending',
-      submitted_at: '2026-08-08 08:30 AM',
-    },
-    {
-      id: 'LV-502',
-      employee_name: 'Robert Smith',
-      role: 'Sales Executive',
-      leave_type: 'Casual Leave',
-      duration: '2 Days (Aug 12-13, 2026)',
-      reason: 'Family Event in native town',
-      status: 'Pending',
-      submitted_at: '2026-08-07 04:15 PM',
-    },
-    {
-      id: 'LV-503',
-      employee_name: 'Ananya Roy',
-      role: 'Sales Executive',
-      leave_type: 'Paid Leave',
-      duration: '1 Day (Aug 05, 2026)',
-      reason: 'Personal work',
-      status: 'Approved',
-      submitted_at: '2026-08-04 10:00 AM',
-      reviewed_by: 'CEO Office',
-    },
-  ])
+  const [leaveRequests, setLeaveRequests] = useState([])
 
   // 3. Permission Requests State
-  const [permissionRequests, setPermissionRequests] = useState([
-    {
-      id: 'PM-701',
-      employee_name: 'Ananya Roy',
-      role: 'Sales Executive',
-      type: 'Early Departure / Field Call',
-      timing: '04:30 PM to 06:30 PM (2 Hours)',
-      reason: 'Urgent key account closing demo at client HQ in OMR',
-      status: 'Pending',
-      submitted_at: 'Today, 09:15 AM',
-    },
-    {
-      id: 'PM-702',
-      employee_name: 'Karthik Raja',
-      role: 'Sales Executive',
-      type: 'Late In-time Permission',
-      timing: '09:00 AM to 10:30 AM (1.5 Hours)',
-      reason: 'Vehicle breakdown on way to morning field visit',
-      status: 'Approved',
-      submitted_at: 'Yesterday, 08:45 AM',
-      reviewed_by: 'CEO Office',
-    },
-  ])
+  const [permissionRequests, setPermissionRequests] = useState([])
 
   // 4. Attendance Summary State
   const [attendanceSummary, setAttendanceSummary] = useState({
-    totalEmployees: 18,
-    presentToday: 15,
-    lateArrivals: 2,
-    onLeave: 1,
+    totalEmployees: 0,
+    presentToday: 0,
+    lateArrivals: 0,
+    onLeave: 0,
     absent: 0,
-    dailyLogs: [
-      { id: 'ATT-1', name: 'Vikram Singh', clockIn: '09:05 AM', clockOut: 'In Progress', mode: 'Biometric', status: 'Present' },
-      { id: 'ATT-2', name: 'Suresh V', clockIn: '08:55 AM', clockOut: 'In Progress', mode: 'Biometric', status: 'Present' },
-      { id: 'ATT-3', name: 'Ananya Roy', clockIn: '09:12 AM', clockOut: 'In Progress', mode: 'Mobile GPS', status: 'Present' },
-      { id: 'ATT-4', name: 'Karthik Raja', clockIn: '09:18 AM', clockOut: 'In Progress', mode: 'Mobile GPS', status: 'Present (Late)' },
-      { id: 'ATT-5', name: 'Priya Sharma', clockIn: '08:50 AM', clockOut: 'In Progress', mode: 'Biometric', status: 'Present' },
-      { id: 'ATT-6', name: 'Robert Smith', clockIn: '09:02 AM', clockOut: 'In Progress', mode: 'Biometric', status: 'Present' },
-    ],
+    dailyLogs: [],
   })
 
   // Review modal state

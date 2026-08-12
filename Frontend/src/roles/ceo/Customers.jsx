@@ -4,10 +4,8 @@ import {
   Search,
   RefreshCw,
   Building2,
-  TrendingUp,
-  Award,
+  ChevronDown,
   ChevronRight,
-  ArrowUpRight,
   Filter,
   DollarSign,
   Phone,
@@ -15,548 +13,525 @@ import {
   MapPin,
   Calendar,
   X,
-  Target,
-  CheckCircle2,
-  Eye,
+  Sparkles,
+  Info,
+  Layers,
+  UserCheck,
+  Briefcase
 } from 'lucide-react'
-import {
-  AreaChart,
-  Area,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  BarChart,
-  Bar,
-} from 'recharts'
-import { customerAPI, reportAPI, visitAPI } from '../../services/api.js'
+import { customerAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
-
-const MOCK_CUSTOMERS = [
-  {
-    id: 'CUST-101',
-    company: 'Apex Technologies Pvt Ltd',
-    contact: 'Rajesh Kumar',
-    email: 'rajesh@apextech.com',
-    phone: '+91 98765 43210',
-    location: 'Chennai, TN',
-    sales_manager: 'Vikram Singh',
-    sales_executive: 'Ananya Roy',
-    revenue: 450000,
-    status: 'Active Customer',
-    is_new: false,
-    onboarding_date: '2026-04-15',
-    notes: 'Enterprise ERP License & Annual Maintenance contract',
-  },
-  {
-    id: 'CUST-102',
-    company: 'Global Corp Solutions',
-    contact: 'Sarah Smith',
-    email: 'sarah@globalcorp.net',
-    phone: '+91 87654 32109',
-    location: 'Bangalore, KA',
-    sales_manager: 'Suresh V',
-    sales_executive: 'Karthik Raja',
-    revenue: 250000,
-    status: 'Active Customer',
-    is_new: false,
-    onboarding_date: '2026-05-10',
-    notes: 'SaaS Multi-branch CRM Deployment',
-  },
-  {
-    id: 'CUST-103',
-    company: 'Vertex Systems Group',
-    contact: 'David Miller',
-    email: 'david@vertex.org',
-    phone: '+91 76543 21098',
-    location: 'Mumbai, MH',
-    sales_manager: 'Vikram Singh',
-    sales_executive: 'Robert Smith',
-    revenue: 300000,
-    status: 'Active Customer',
-    is_new: true,
-    onboarding_date: '2026-08-01',
-    notes: 'Cloud Migration & Retainer support',
-  },
-  {
-    id: 'CUST-104',
-    company: 'Star Tech Enterprises',
-    contact: 'Deepa Roy',
-    email: 'deepa@startech.in',
-    phone: '+91 99887 76655',
-    location: 'Hyderabad, TS',
-    sales_manager: 'Vikram Singh',
-    sales_executive: 'Ananya Roy',
-    revenue: 380000,
-    status: 'Active Customer',
-    is_new: true,
-    onboarding_date: '2026-08-03',
-    notes: 'Field force tracking system implementation',
-  },
-  {
-    id: 'CUST-105',
-    company: 'Zenith Logistics Hub',
-    contact: 'Alice Lee',
-    email: 'alice@zenith.com',
-    phone: '+91 91234 56789',
-    location: 'Coimbatore, TN',
-    sales_manager: 'Suresh V',
-    sales_executive: 'Mary Jane',
-    revenue: 180000,
-    status: 'Active Customer',
-    is_new: false,
-    onboarding_date: '2026-06-20',
-    notes: 'Logistics tracking software module',
-  },
-  {
-    id: 'CUST-106',
-    company: 'InnoTech Solutions',
-    contact: 'Vikas Gupta',
-    email: 'vikas@innotech.com',
-    phone: '+91 94567 12345',
-    location: 'Bangalore, KA',
-    sales_manager: 'Suresh V',
-    sales_executive: 'Karthik Raja',
-    revenue: 140000,
-    status: 'Inactive',
-    is_new: false,
-    onboarding_date: '2026-03-12',
-    notes: 'Contract expired, under renewal discussion',
-  },
-]
-
-const ACQUISITION_TREND = [
-  { month: 'Jan', newCustomers: 3, totalCustomers: 32, revenue: 320000 },
-  { month: 'Feb', newCustomers: 4, totalCustomers: 36, revenue: 380000 },
-  { month: 'Mar', newCustomers: 3, totalCustomers: 39, revenue: 410000 },
-  { month: 'Apr', newCustomers: 5, totalCustomers: 44, revenue: 490000 },
-  { month: 'May', newCustomers: 4, totalCustomers: 48, revenue: 520000 },
-  { month: 'Jun', newCustomers: 3, totalCustomers: 51, revenue: 510000 },
-  { month: 'Jul', newCustomers: 5, totalCustomers: 56, revenue: 610000 },
-  { month: 'Aug', newCustomers: 4, totalCustomers: 60, revenue: 580000 },
-]
 
 function CeoCustomers() {
   const { showToast } = useToast()
-  const [customers, setCustomers] = useState(MOCK_CUSTOMERS)
-  const [loading, setLoading] = useState(false)
+  
+  // Raw Data State
+  const [data, setData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState(null)
+
+  // Filter States
   const [searchQuery, setSearchQuery] = useState('')
-  const [statusFilter, setStatusFilter] = useState('All') // 'All' | 'Active' | 'New' | 'Inactive'
-  const [managerFilter, setManagerFilter] = useState('All')
+  const [selectedManager, setSelectedManager] = useState('All')
+  const [selectedExecutive, setSelectedExecutive] = useState('All')
+  const [selectedProduct, setSelectedProduct] = useState('All')
 
-  // Customer Lifecycle modal state
+  // Expansion States
+  const [expandedManagers, setExpandedManagers] = useState({})
+  const [expandedExecutives, setExpandedExecutives] = useState({})
+
+  // Detail Drawer State
   const [selectedCust, setSelectedCust] = useState(null)
-  const [showLifecycleModal, setShowLifecycleModal] = useState(false)
 
-  // Fetch real customer data if available
-  useEffect(() => {
-    async function loadCustomers() {
-      try {
-        setLoading(true)
-        const res = await customerAPI.getCustomers().catch(() => null)
-        if (res && res.data && res.data.length > 0) {
-          // Merge with mock fields for rich display
-          const loaded = res.data.map((c, i) => ({
-            id: c.id || `CUST-${100 + i}`,
-            company: c.company_name || c.name || c.company || 'Enterprise Account',
-            contact: c.contact_person || c.contact || 'Primary Contact',
-            email: c.email || 'contact@client.com',
-            phone: c.phone || '+91 98765 00000',
-            location: c.location || c.address || 'Chennai, TN',
-            sales_manager: c.sales_manager || (i % 2 === 0 ? 'Vikram Singh' : 'Suresh V'),
-            sales_executive: c.sales_executive || (i % 2 === 0 ? 'Ananya Roy' : 'Karthik Raja'),
-            revenue: Number(c.contract_value || c.revenue || 250000),
-            status: c.status || 'Active Customer',
-            is_new: i >= res.data.length - 2,
-            onboarding_date: c.created_at ? c.created_at.split('T')[0] : '2026-08-01',
-            notes: c.notes || 'Enterprise Account Services',
-          }))
-          setCustomers(loaded)
-        }
-      } catch (err) {
-        console.warn('Customer directory loaded with fallback store:', err)
-      } finally {
-        setLoading(false)
+  const loadCustomerDirectory = async () => {
+    try {
+      setLoading(true)
+      setError(null)
+      const res = await customerAPI.getCeoCustomerDirectory()
+      if (res && res.data) {
+        setData(res.data)
+        
+        // Auto-expand all managers by default so CEO gets full immediate visibility
+        const mgrExpand = {}
+        const execExpand = {}
+        ;(res.data.managers || []).forEach(m => {
+          mgrExpand[m.manager_id] = true
+          ;(m.executives || []).forEach((e, ei) => {
+            if (e.customer_count > 0) {
+              execExpand[`${m.manager_id}_${e.executive_id || e.executive_name || 'ex'}_${ei}`] = true
+            }
+          })
+        })
+        setExpandedManagers(mgrExpand)
+        setExpandedExecutives(execExpand)
+      } else {
+        setData({ managers: [], totals: { managers: 0, executives: 0, customers: 0, revenue: 0 } })
       }
+    } catch (err) {
+      console.error('Failed to load customer directory:', err)
+      setError(err?.message || 'Failed to fetch customer directory')
+      showToast('Error loading customer directory', 'error')
+    } finally {
+      setLoading(false)
     }
-    loadCustomers()
+  }
+
+  useEffect(() => {
+    loadCustomerDirectory()
   }, [])
 
-  // Filtered customer list
-  const filteredCustomers = customers.filter((c) => {
-    const matchesSearch =
-      c.company.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.contact.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.location.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      c.sales_executive.toLowerCase().includes(searchQuery.toLowerCase())
+  const toggleManagerExpand = (mgrId) => {
+    setExpandedManagers(prev => ({
+      ...prev,
+      [mgrId]: !prev[mgrId]
+    }))
+  }
 
-    const matchesStatus =
-      statusFilter === 'All'
-        ? true
-        : statusFilter === 'New'
-        ? c.is_new
-        : statusFilter === 'Active'
-        ? c.status.includes('Active')
-        : c.status.includes('Inactive')
+  const toggleExecutiveExpand = (key) => {
+    setExpandedExecutives(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }))
+  }
 
-    const matchesManager = managerFilter === 'All' || c.sales_manager === managerFilter
+  // Extract filter dropdown options
+  const managers = data?.managers || []
+  const allManagersList = Array.from(new Set(managers.map(m => m.manager_name))).filter(Boolean)
+  
+  const allExecutivesList = Array.from(new Set(
+    managers.flatMap(m => (m.executives || []).map(e => e.executive_name))
+  )).filter(Boolean)
 
-    return matchesSearch && matchesStatus && matchesManager
-  })
+  const allProductsList = Array.from(new Set(
+    managers.flatMap(m => (m.executives || []).flatMap(e => (e.customers || []).map(c => c.product)))
+  )).filter(Boolean)
 
-  // Executive summary numbers
-  const totalCustomersCount = customers.length
-  const activeCustomersCount = customers.filter((c) => c.status.includes('Active')).length
-  const newCustomersCount = customers.filter((c) => c.is_new).length
-  const totalCustomerRevenue = customers.reduce((acc, curr) => acc + curr.revenue, 0)
+  // Apply filters on hierarchy
+  const q = searchQuery.toLowerCase().trim()
 
-  // Top Customers sorted by revenue
-  const topCustomers = [...customers].sort((a, b) => b.revenue - a.revenue).slice(0, 5)
+  const filteredManagers = managers.map(mgr => {
+    if (selectedManager !== 'All' && mgr.manager_name !== selectedManager) {
+      return null
+    }
+
+    const filteredExecs = (mgr.executives || []).map(exec => {
+      if (selectedExecutive !== 'All' && exec.executive_name !== selectedExecutive) {
+        return null
+      }
+
+      const filteredCustomers = (exec.customers || []).filter(cust => {
+        if (selectedProduct !== 'All' && cust.product !== selectedProduct) {
+          return false
+        }
+        if (q) {
+          const matchCust = (cust.customer_name || '').toLowerCase().includes(q)
+          const matchComp = (cust.company_name || '').toLowerCase().includes(q)
+          const matchExec = (exec.executive_name || '').toLowerCase().includes(q)
+          const matchMgr = (mgr.manager_name || '').toLowerCase().includes(q)
+          const matchProd = (cust.product || '').toLowerCase().includes(q)
+          return matchCust || matchComp || matchExec || matchMgr || matchProd
+        }
+        return true
+      })
+
+      // If search query is active, only include executive if customer matches OR executive name matches
+      if (q && filteredCustomers.length === 0 && !exec.executive_name.toLowerCase().includes(q)) {
+        return null
+      }
+
+      return {
+        ...exec,
+        customer_count: filteredCustomers.length,
+        customers: filteredCustomers
+      }
+    }).filter(Boolean)
+
+    if (filteredExecs.length === 0 && (selectedExecutive !== 'All' || selectedProduct !== 'All' || q)) {
+      // If searching and manager name matches, show manager with 0 execs matching, otherwise hide
+      if (q && mgr.manager_name.toLowerCase().includes(q)) {
+        return {
+          ...mgr,
+          executive_count: 0,
+          customer_count: 0,
+          executives: []
+        }
+      }
+      return null
+    }
+
+    const totalCustsInMgr = new Set(
+      filteredExecs.flatMap(e => e.customers.map(c => c.customer_id))
+    ).size
+
+    return {
+      ...mgr,
+      executive_count: filteredExecs.length,
+      customer_count: totalCustsInMgr,
+      executives: filteredExecs
+    }
+  }).filter(Boolean)
+
+  // Reconciled live totals from filtered data
+  const liveUniqueCustomers = new Set(
+    filteredManagers.flatMap(m => m.executives.flatMap(e => e.customers.map(c => c.customer_id)))
+  ).size
+
+  const liveTotalRevenue = filteredManagers.reduce(
+    (sum, m) => sum + m.executives.reduce(
+      (esum, e) => esum + e.customers.reduce((csum, c) => csum + (c.amount || 0), 0), 0
+    ), 0
+  )
+
+  const liveManagersCount = filteredManagers.filter(m => m.manager_id !== 'unassigned').length
+  const liveExecutivesCount = filteredManagers.reduce((sum, m) => sum + m.executives.length, 0)
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 pb-12">
       {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
+            <span className="grid size-7 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
               <Building2 className="size-4.5" />
             </span>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-              Customer Intelligence & Lifetime Value
+            <h1 className="text-xl font-black text-slate-900 tracking-tight">
+              Customers Directory
             </h1>
           </div>
-          <p className="mt-1 text-xs text-slate-500 font-medium max-w-3xl">
-            Executive database of all corporate clients, onboarding acquisition trends, manager-wise revenue, and customer lifecycle journeys.
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Centralized organization-wide customer directory grouped by Sales Manager & Executive hierarchy
           </p>
         </div>
+
+        <button
+          onClick={loadCustomerDirectory}
+          disabled={loading}
+          className="flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-2 text-xs font-bold text-slate-700 transition cursor-pointer disabled:opacity-50"
+        >
+          <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
+          Refresh Directory
+        </button>
       </div>
 
-      {/* Summary KPI Cards */}
+      {/* Summary KPI Cards Grid */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* 1. All Customers */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">All Customers</span>
-          <div className="mt-3">
-            <p className="text-3xl font-black text-slate-900">{totalCustomersCount}</p>
-            <p className="text-xs font-semibold text-slate-500 mt-0.5">Total Registered Accounts</p>
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Customers</span>
+            <Building2 className="size-4.5 text-[#832D51]" />
           </div>
+          <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
+            {liveUniqueCustomers}
+          </p>
+          <p className="text-[10px] font-bold text-slate-500 mt-1">Unique customer accounts</p>
         </div>
 
-        {/* 2. New Customers This Quarter */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">New Customers</span>
-          <div className="mt-3">
-            <p className="text-3xl font-black text-[#832D51]">+{newCustomersCount}</p>
-            <p className="text-xs font-bold text-[#EA6993] mt-0.5">Onboarded in Recent Cycle</p>
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Revenue Portfolio</span>
+            <DollarSign className="size-4.5 text-emerald-600" />
           </div>
+          <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
+            ₹{liveTotalRevenue.toLocaleString()}
+          </p>
+          <p className="text-[10px] font-bold text-slate-500 mt-1">Contract value portfolio</p>
         </div>
 
-        {/* 3. Active Accounts */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Active Accounts</span>
-          <div className="mt-3">
-            <p className="text-3xl font-black text-emerald-600">{activeCustomersCount}</p>
-            <p className="text-xs font-semibold text-emerald-700 mt-0.5">
-              {Math.round((activeCustomersCount / totalCustomersCount) * 100)}% Retention Rate
-            </p>
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sales Managers</span>
+            <Briefcase className="size-4.5 text-[#832D51]" />
           </div>
+          <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
+            {liveManagersCount}
+          </p>
+          <p className="text-[10px] font-bold text-slate-500 mt-1">Active sales managers</p>
         </div>
 
-        {/* 4. Total Realized Customer Revenue */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Customer Revenue</span>
-          <div className="mt-3">
-            <p className="text-3xl font-black text-slate-900">
-              ₹{(totalCustomerRevenue / 100000).toFixed(1)}L
-            </p>
-            <p className="text-xs font-bold text-[#832D51] mt-0.5">Cumulative Contract Value</p>
+        <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sales Executives</span>
+            <UserCheck className="size-4.5 text-blue-600" />
           </div>
+          <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
+            {liveExecutivesCount}
+          </p>
+          <p className="text-[10px] font-bold text-slate-500 mt-1">Team sales executives</p>
         </div>
       </div>
 
-      {/* Visual Customer Analytics: Acquisition Trend & Top Customers Leaderboard */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Customer Acquisition Trend Chart */}
-        <div className="lg:col-span-2 rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs">
-          <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-            <div>
-              <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
-                Customer Acquisition Growth Trend
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">
-                Monthly new customer additions and cumulative client expansion
-              </p>
-            </div>
-            <TrendingUp className="size-5 text-[#832D51]" />
-          </div>
-
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={ACQUISITION_TREND}>
-                <defs>
-                  <linearGradient id="custGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#832D51" stopOpacity={0.35} />
-                    <stop offset="95%" stopColor="#832D51" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                <XAxis dataKey="month" stroke="#94a3b8" fontSize={12} tickLine={false} />
-                <YAxis stroke="#94a3b8" fontSize={12} tickLine={false} axisLine={false} />
-                <Tooltip
-                  formatter={(val, name) => [val, name === 'newCustomers' ? 'New Additions' : 'Total Customers']}
-                  contentStyle={{
-                    backgroundColor: '#ffffff',
-                    borderColor: '#cbd5e1',
-                    borderRadius: '12px',
-                  }}
-                />
-                <Area type="monotone" dataKey="totalCustomers" stroke="#832D51" strokeWidth={3} fillOpacity={1} fill="url(#custGrad)" />
-              </AreaChart>
-            </ResponsiveContainer>
-          </div>
+      {/* Filters Strip */}
+      <div className="bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="relative">
+          <Search className="absolute left-3 top-2.5 size-4 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search Customer / Company / Executive..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#832D51] transition"
+          />
         </div>
 
-        {/* Top Customers Leaderboard */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs flex flex-col justify-between">
-          <div>
-            <div className="flex items-center justify-between mb-4 border-b border-slate-100 pb-3">
-              <h3 className="text-base font-extrabold text-slate-900 tracking-tight">
-                Top Accounts Leaderboard
-              </h3>
-              <Award className="size-5 text-[#EA6993]" />
-            </div>
+        <select
+          value={selectedManager}
+          onChange={(e) => setSelectedManager(e.target.value)}
+          className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51] cursor-pointer"
+        >
+          <option value="All">All Sales Managers</option>
+          {allManagersList.map(m => (
+            <option key={m} value={m}>{m}</option>
+          ))}
+        </select>
 
-            <div className="space-y-3">
-              {topCustomers.map((cust, idx) => (
-                <div
-                  key={cust.id}
-                  className="flex items-center justify-between rounded-xl border border-slate-100 bg-slate-50/60 p-3 text-xs"
+        <select
+          value={selectedExecutive}
+          onChange={(e) => setSelectedExecutive(e.target.value)}
+          className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51] cursor-pointer"
+        >
+          <option value="All">All Sales Executives</option>
+          {allExecutivesList.map(ex => (
+            <option key={ex} value={ex}>{ex}</option>
+          ))}
+        </select>
+
+        <select
+          value={selectedProduct}
+          onChange={(e) => setSelectedProduct(e.target.value)}
+          className="bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51] cursor-pointer"
+        >
+          <option value="All">All Products</option>
+          {allProductsList.map(p => (
+            <option key={p} value={p}>{p}</option>
+          ))}
+        </select>
+      </div>
+
+      {/* Hierarchical Customer Directory List */}
+      <div className="space-y-4">
+        {loading ? (
+          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400 font-bold text-xs">
+            <RefreshCw className="size-6 animate-spin mx-auto mb-3 text-[#832D51]" />
+            Loading organization customer hierarchy...
+          </div>
+        ) : filteredManagers.length === 0 ? (
+          <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400 font-bold text-xs">
+            No matching manager or customer records found.
+          </div>
+        ) : (
+          filteredManagers.map((mgr) => {
+            const isExpanded = !!expandedManagers[mgr.manager_id]
+
+            return (
+              <div
+                key={mgr.manager_id}
+                className="bg-white border border-slate-200/90 rounded-2xl shadow-xs overflow-hidden transition"
+              >
+                {/* Manager Header Accordion Button */}
+                <button
+                  type="button"
+                  onClick={() => toggleManagerExpand(mgr.manager_id)}
+                  className="w-full flex items-center justify-between p-4.5 bg-slate-50/70 hover:bg-slate-100/70 transition text-left cursor-pointer border-b border-slate-200/70"
                 >
-                  <div className="flex items-center gap-2.5">
-                    <span className="grid size-6 place-items-center rounded-full bg-[#832D51] text-[10px] font-black text-white">
-                      #{idx + 1}
+                  <div className="flex items-center gap-3">
+                    <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/25 text-[#832D51] font-black text-xs">
+                      <Briefcase className="size-4" />
                     </span>
                     <div>
-                      <p className="font-extrabold text-slate-900">{cust.company}</p>
-                      <p className="text-[10px] text-slate-400">{cust.location}</p>
+                      <h2 className="text-sm font-black text-slate-900 tracking-tight">
+                        Sales Manager — {mgr.manager_name}
+                      </h2>
+                      <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                        {mgr.executive_count} {mgr.executive_count === 1 ? 'Executive' : 'Executives'} · {mgr.customer_count} {mgr.customer_count === 1 ? 'Customer' : 'Customers'}
+                      </p>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <span className="font-black text-[#832D51]">₹{cust.revenue.toLocaleString()}</span>
-                    <p className="text-[10px] text-slate-400">{cust.sales_manager}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </div>
 
-      {/* Customer Directory Table with Filters & Lifecycle Inspector */}
-      <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-slate-100 pb-4">
-          <div>
-            <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
-              Customer Accounts Roster
-            </h2>
-            <p className="text-xs text-slate-500 font-medium">
-              Click any customer row to inspect their end-to-end lifecycle journey
-            </p>
-          </div>
-
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            {/* Search */}
-            <div className="relative w-full sm:w-64">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search customers..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
-              />
-            </div>
-
-            {/* Status Filter */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 outline-none"
-            >
-              <option value="All">All Status</option>
-              <option value="Active">Active Accounts</option>
-              <option value="New">New Accounts</option>
-              <option value="Inactive">Inactive</option>
-            </select>
-
-            {/* Manager Filter */}
-            <select
-              value={managerFilter}
-              onChange={(e) => setManagerFilter(e.target.value)}
-              className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-bold text-slate-700 outline-none"
-            >
-              <option value="All">All Managers</option>
-              <option value="Vikram Singh">Vikram Singh</option>
-              <option value="Suresh V">Suresh V</option>
-            </select>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
-                <th className="pb-3">Company & Contact</th>
-                <th className="pb-3">Location</th>
-                <th className="pb-3">Sales Hierarchy</th>
-                <th className="pb-3">Contract Value</th>
-                <th className="pb-3">Onboarded</th>
-                <th className="pb-3">Status</th>
-                <th className="pb-3 text-right">Lifecycle</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredCustomers.map((cust) => (
-                <tr
-                  key={cust.id}
-                  className="hover:bg-slate-50/80 transition cursor-pointer"
-                  onClick={() => {
-                    setSelectedCust(cust)
-                    setShowLifecycleModal(true)
-                  }}
-                >
-                  <td className="py-3.5">
-                    <p className="font-extrabold text-slate-900">{cust.company}</p>
-                    <p className="text-[11px] text-slate-500">{cust.contact} · {cust.phone}</p>
-                  </td>
-                  <td className="py-3.5 text-slate-600">
-                    <div className="flex items-center gap-1">
-                      <MapPin className="size-3.5 text-slate-400" />
-                      {cust.location}
-                    </div>
-                  </td>
-                  <td className="py-3.5">
-                    <p className="font-bold text-slate-800">{cust.sales_executive}</p>
-                    <p className="text-[10px] text-slate-400">Mgr: {cust.sales_manager}</p>
-                  </td>
-                  <td className="py-3.5 font-black text-[#832D51]">
-                    ₹{cust.revenue.toLocaleString()}
-                  </td>
-                  <td className="py-3.5 text-slate-500 font-medium">{cust.onboarding_date}</td>
-                  <td className="py-3.5">
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black ${
-                        cust.status.includes('Active')
-                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                          : 'bg-rose-50 text-rose-700 border border-rose-200'
-                      }`}
-                    >
-                      {cust.status}
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-[#832D51] bg-[#F8CAE4]/20 px-2.5 py-1 rounded-lg">
+                      {isExpanded ? 'Collapse' : 'Expand'}
                     </span>
-                  </td>
-                  <td className="py-3.5 text-right">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        setSelectedCust(cust)
-                        setShowLifecycleModal(true)
-                      }}
-                      className="inline-flex items-center gap-1 rounded-lg bg-[#F8CAE4]/20 px-2.5 py-1 text-xs font-black text-[#832D51] hover:bg-[#F8CAE4]/40 transition"
-                    >
-                      <Eye className="size-3.5" />
-                      View Journey
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    {isExpanded ? (
+                      <ChevronDown className="size-4.5 text-slate-500" />
+                    ) : (
+                      <ChevronRight className="size-4.5 text-slate-500" />
+                    )}
+                  </div>
+                </button>
+
+                {/* Manager Body: List of Executives */}
+                {isExpanded && (
+                  <div className="p-4 space-y-3 bg-white">
+                    {mgr.executives.length === 0 ? (
+                      <p className="text-xs text-slate-400 font-bold py-4 text-center">
+                        No sales executives assigned under this manager.
+                      </p>
+                    ) : (
+                      mgr.executives.map((exec, ei) => {
+                        const execKey = `${mgr.manager_id}_${exec.executive_id || exec.executive_name || 'ex'}_${ei}`
+                        const isExecExpanded = !!expandedExecutives[execKey]
+
+                        return (
+                          <div
+                            key={execKey}
+                            className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs"
+                          >
+                            {/* Executive Accordion Header */}
+                            <button
+                              type="button"
+                              onClick={() => toggleExecutiveExpand(execKey)}
+                              className="w-full flex items-center justify-between px-4 py-3 bg-white hover:bg-slate-50/80 transition text-left cursor-pointer border-b border-slate-100"
+                            >
+                              <div className="flex items-center gap-2.5">
+                                <span className="grid size-6 place-items-center rounded-md bg-blue-50 text-blue-700 font-black text-[11px]">
+                                  <UserCheck className="size-3.5" />
+                                </span>
+                                <div>
+                                  <span className="text-xs font-black text-slate-900">
+                                    Executive: {exec.executive_name}
+                                  </span>
+                                  <span className="text-[11px] text-slate-500 font-bold ml-2">
+                                    ({exec.customer_count} {exec.customer_count === 1 ? 'Customer' : 'Customers'})
+                                  </span>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-1 text-slate-400">
+                                {isExecExpanded ? (
+                                  <ChevronDown className="size-4 text-slate-500" />
+                                ) : (
+                                  <ChevronRight className="size-4 text-slate-500" />
+                                )}
+                              </div>
+                            </button>
+
+                            {/* Executive Body: Customers Table */}
+                            {isExecExpanded && (
+                              <div className="overflow-x-auto">
+                                {exec.customers.length === 0 ? (
+                                  <p className="text-[11px] text-slate-400 font-semibold py-4 text-center">
+                                    No customer accounts assigned to this executive.
+                                  </p>
+                                ) : (
+                                  <table className="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                      <tr className="bg-slate-50/80 border-b border-slate-200/70 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                                        <th className="px-4 py-2.5">Customer Name</th>
+                                        <th className="px-4 py-2.5">Company</th>
+                                        <th className="px-4 py-2.5">Product / Service</th>
+                                        <th className="px-4 py-2.5">Status</th>
+                                        <th className="px-4 py-2.5">Date</th>
+                                        <th className="px-4 py-2.5 text-right">Amount</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 font-medium">
+                                      {exec.customers.map((cust, ci) => (
+                                        <tr
+                                          key={`${execKey}_${cust.customer_id || 'cust'}_${ci}`}
+                                          onClick={() => setSelectedCust(cust)}
+                                          className="hover:bg-slate-50/60 cursor-pointer transition"
+                                        >
+                                          <td className="px-4 py-3 font-bold text-slate-900">
+                                            {cust.customer_name}
+                                          </td>
+                                          <td className="px-4 py-3 text-slate-600">
+                                            {cust.company_name}
+                                          </td>
+                                          <td className="px-4 py-3 text-slate-600">
+                                            {cust.product}
+                                          </td>
+                                          <td className="px-4 py-3">
+                                            <span className="inline-flex items-center rounded-md bg-[#CFDD9D]/20 px-2 py-0.5 font-extrabold text-[#3a7d63] text-[10px]">
+                                              {cust.status}
+                                            </span>
+                                          </td>
+                                          <td className="px-4 py-3 text-slate-500">
+                                            {cust.date || 'N/A'}
+                                          </td>
+                                          <td className="px-4 py-3 text-right font-black text-slate-950">
+                                            ₹{(cust.amount || 0).toLocaleString()}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
       </div>
 
-      {/* Customer Lifecycle Modal */}
-      {showLifecycleModal && selectedCust && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-2xl rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6">
-            <div className="flex items-start justify-between border-b border-slate-100 pb-4">
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-[#832D51] bg-[#F8CAE4]/20 px-2 py-0.5 rounded">
-                  Customer Lifecycle Journey
+      {/* Customer Detail Drawer */}
+      {selectedCust && (
+        <div className="fixed inset-0 z-50 flex justify-end bg-slate-900/30 backdrop-blur-xs transition-opacity">
+          <div className="h-full w-full max-w-md bg-white p-6 shadow-2xl overflow-y-auto space-y-6 animate-in slide-in-from-right duration-200">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/25 text-[#832D51]">
+                  <Building2 className="size-4.5" />
                 </span>
-                <h3 className="text-xl font-black text-slate-900 mt-1">{selectedCust.company}</h3>
-                <p className="text-xs text-slate-500">{selectedCust.contact} · {selectedCust.location}</p>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">
+                    {selectedCust.customer_name}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-semibold">{selectedCust.company_name}</p>
+                </div>
               </div>
               <button
-                onClick={() => setShowLifecycleModal(false)}
-                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
+                type="button"
+                onClick={() => setSelectedCust(null)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
               >
-                <X className="size-5" />
+                <X className="size-4.5" />
               </button>
             </div>
 
-            {/* Lifecycle Stages */}
-            <div className="space-y-4">
-              {/* Step 1: Lead */}
-              <div className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <span className="grid size-8 place-items-center rounded-full bg-blue-100 text-blue-700 font-bold text-xs">
-                    1
-                  </span>
-                  <div className="w-0.5 flex-1 bg-slate-200 my-1" />
+            <div className="space-y-4 text-xs font-semibold">
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-100 space-y-2">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block">
+                  Assignment Hierarchy
+                </span>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-bold">Sales Manager:</span>
+                  <span className="text-slate-900 font-black">{selectedCust.manager_name || 'Unassigned'}</span>
                 </div>
-                <div className="bg-slate-50 rounded-2xl p-4 flex-1 border border-slate-200/70">
-                  <span className="text-xs font-black text-blue-700">Stage 1: Lead Ingestion & Qualification</span>
-                  <p className="text-xs text-slate-600 mt-1">
-                    Registered as high-priority corporate prospect. Handled by {selectedCust.sales_executive} under guidance of {selectedCust.sales_manager}.
-                  </p>
+                <div className="flex justify-between">
+                  <span className="text-slate-500 font-bold">Sales Executive:</span>
+                  <span className="text-slate-900 font-black">{selectedCust.executive_name || 'Unassigned'}</span>
                 </div>
               </div>
 
-              {/* Step 2: Visits & Field Demo */}
-              <div className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <span className="grid size-8 place-items-center rounded-full bg-[#F8CAE4]/40 text-[#EA6993] font-bold text-xs">
-                    2
-                  </span>
-                  <div className="w-0.5 flex-1 bg-slate-200 my-1" />
+              <div className="space-y-3">
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">Product / Service:</span>
+                  <span className="text-slate-900 font-bold">{selectedCust.product}</span>
                 </div>
-                <div className="bg-slate-50 rounded-2xl p-4 flex-1 border border-slate-200/70">
-                  <span className="text-xs font-black text-[#EA6993]">Stage 2: Client Demos & Spatial Visits</span>
-                  <p className="text-xs text-slate-600 mt-1">
-                    On-site architectural demos and requirements gathering executed at {selectedCust.location}.
-                  </p>
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">Contract / Deal Value:</span>
+                  <span className="text-[#832D51] font-black text-sm">₹{(selectedCust.amount || 0).toLocaleString()}</span>
                 </div>
-              </div>
-
-              {/* Step 3: Contract Won */}
-              <div className="flex gap-4">
-                <div className="flex flex-col items-center">
-                  <span className="grid size-8 place-items-center rounded-full bg-emerald-100 text-emerald-700 font-bold text-xs">
-                    3
-                  </span>
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">Account Status:</span>
+                  <span className="text-emerald-700 font-black">{selectedCust.status}</span>
                 </div>
-                <div className="bg-emerald-50/60 rounded-2xl p-4 flex-1 border border-emerald-200">
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-black text-emerald-800">Stage 3: Contract Won & Active SLA</span>
-                    <span className="font-black text-emerald-900 text-sm">₹{selectedCust.revenue.toLocaleString()}</span>
-                  </div>
-                  <p className="text-xs text-emerald-700 mt-1">
-                    Active contract onboarded on {selectedCust.onboarding_date}. {selectedCust.notes}
-                  </p>
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">Onboarding Date:</span>
+                  <span className="text-slate-900 font-bold">{selectedCust.date || 'N/A'}</span>
+                </div>
+                <div className="flex justify-between pb-2 border-b border-slate-100">
+                  <span className="text-slate-500">Customer ID:</span>
+                  <span className="text-slate-400 font-mono text-[10px]">{selectedCust.customer_id}</span>
                 </div>
               </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setShowLifecycleModal(false)}
-                className="rounded-xl bg-[#832D51] px-5 py-2 text-xs font-bold text-white transition hover:bg-[#6a2240]"
-              >
-                Close Inspector
-              </button>
             </div>
           </div>
         </div>
