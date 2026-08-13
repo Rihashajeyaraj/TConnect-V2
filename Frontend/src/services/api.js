@@ -270,6 +270,8 @@ export const spatialAPI = {
     request('/spatial/update-location', { method: 'POST', body: JSON.stringify(data) }),
   getRoute: (origin, destination) =>
     request('/spatial/route', { method: 'POST', body: JSON.stringify({ origin, destination }) }),
+  getTeamLocations: () =>
+    request('/spatial/manager/team-locations'),
 }
 
 export const salesAPI = {
@@ -300,6 +302,10 @@ export const auditAPI = {
     return request(`/audit/logs${qs ? `?${qs}` : ''}`)
   },
   logEvent: (data) => request('/audit/log', { method: 'POST', body: JSON.stringify(data) }),
+}
+
+export const adminAPI = {
+  getKPIs: (period) => request(`/admin/dashboard/kpis?period=${period}`),
 }
 
 export default { request }

@@ -15,7 +15,7 @@ import {
   Server,
   Terminal,
 } from 'lucide-react'
-import { hrmsAPI, attendanceAPI, auditAPI } from '../../services/api.js'
+import { hrmsAPI, attendanceAPI, auditAPI, adminAPI } from '../../services/api.js'
 
 export default function AdminDashboard() {
   const { showToast } = useToast()
@@ -44,19 +44,36 @@ export default function AdminDashboard() {
   // Real System Audit Logs for Stream
   const [systemActivities, setSystemActivities] = useState([])
 
+  // Dynamic backend KPI metrics
+  const [kpiData, setKpiData] = useState({
+    total_users: { value: 0, label: 'Registered Accounts' },
+    administrators: { value: 0, label: 'System Control Roles' },
+    security_audits: { value: 0, label: 'Total Operations Logs' },
+    database_engine: { status: 'Inactive', label: 'Supabase Realtime' },
+    server_health: { uptime: 0.0, status: 'Service Down' }
+  })
+
   useEffect(() => {
     async function loadAdminDashboardData() {
       setLoading(true)
       try {
-        const [empRes, attRes, auditRes] = await Promise.allSettled([
+        const periodParam = dateRange === 'Today' ? 'today' : (dateRange === 'This Week' ? 'week' : (dateRange === 'This Month' ? 'month' : 'all'));
+        
+        const [empRes, attRes, auditRes, kpisRes] = await Promise.allSettled([
           hrmsAPI.getEmployees(),
           attendanceAPI.getLogs(),
           auditAPI.getLogs(),
+          adminAPI.getKPIs(periodParam)
         ])
 
         const empsList = empRes.status === 'fulfilled' && empRes.value?.data ? empRes.value.data : []
         const attList = attRes.status === 'fulfilled' && attRes.value?.data ? attRes.value.data : []
         const auditList = auditRes.status === 'fulfilled' && auditRes.value?.data ? auditRes.value.data : []
+        const kpisObj = kpisRes.status === 'fulfilled' && kpisRes.value?.data ? kpisRes.value.data : null
+
+        if (kpisObj) {
+          setKpiData(kpisObj)
+        }
 
         // Filter and count designations
         const totalAdmins = empsList.filter(e => {
@@ -132,38 +149,6 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6 font-sans text-slate-900">
-      {/* Top Banner & Action Controls */}
-      <div className="bg-gradient-to-r from-slate-900 via-[#1e293b] to-indigo-950 rounded-3xl p-6 lg:p-8 text-white shadow-xl border border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-        <div className="space-y-2">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-500/20 border border-blue-400/30 text-blue-300 text-xs font-bold uppercase tracking-wider">
-            <ShieldCheck className="w-3.5 h-3.5" /> Admin Control Operations
-          </div>
-          <h1 className="text-2xl lg:text-3xl font-black tracking-tight">System Operations Dashboard</h1>
-          <p className="text-slate-300 text-xs sm:text-sm font-medium max-w-2xl">
-            Real-time monitoring of system user accounts, role allocations, security logs, and database connectivity metrics.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-3 shrink-0">
-          {/* Dashboard Customizer Trigger */}
-          <button
-            onClick={() => setCustomizerOpen(true)}
-            className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-bold text-xs flex items-center gap-2 cursor-pointer transition shadow-xs"
-            title="Customizer / Toggle Widgets"
-          >
-            <SlidersHorizontal className="w-4 h-4 text-blue-400" /> Customize View
-          </button>
-
-          {/* Export CSV */}
-          <button
-            onClick={handleExportDashboardCSV}
-            className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/30 cursor-pointer transition"
-          >
-            <Download className="w-4 h-4" /> Export System Report
-          </button>
-        </div>
-      </div>
-
       {/* Filter Toolbar */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
@@ -200,9 +185,15 @@ export default function AdminDashboard() {
 
         <div className="text-xs font-bold text-slate-400 flex items-center gap-2">
           <span>System Engine:</span>
-          <span className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Supabase Connected
-          </span>
+          {kpiData.database_engine.status === 'Active' ? (
+            <span className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
+              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Supabase Connected
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1 text-rose-600 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" /> Supabase Disconnected
+            </span>
+          )}
         </div>
       </div>
 
@@ -217,8 +208,8 @@ export default function AdminDashboard() {
                 <Users className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : stats.totalUsers}</h3>
-            <span className="text-[11px] text-blue-600 font-bold">Registered Accounts</span>
+            <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : kpiData.total_users.value}</h3>
+            <span className="text-[11px] text-blue-600 font-bold">{kpiData.total_users.label}</span>
           </div>
 
           {/* Administrators count */}
@@ -229,8 +220,8 @@ export default function AdminDashboard() {
                 <ShieldCheck className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : stats.adminsCount}</h3>
-            <span className="text-[11px] text-purple-600 font-bold">System Control Roles</span>
+            <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : kpiData.administrators.value}</h3>
+            <span className="text-[11px] text-purple-600 font-bold">{kpiData.administrators.label}</span>
           </div>
 
           {/* Security Audits total */}
@@ -241,8 +232,8 @@ export default function AdminDashboard() {
                 <Terminal className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : stats.auditLogsCount}</h3>
-            <span className="text-[11px] text-slate-600 font-bold">Total Operations Logs</span>
+            <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : kpiData.security_audits.value}</h3>
+            <span className="text-[11px] text-slate-600 font-bold">{kpiData.security_audits.label}</span>
           </div>
 
           {/* DB Status */}
@@ -253,8 +244,10 @@ export default function AdminDashboard() {
                 <Database className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-xl font-black text-emerald-700 mt-2">Active</h3>
-            <span className="text-[11px] text-emerald-600 font-bold">Supabase Realtime</span>
+            <h3 className={`text-xl font-black mt-2 ${kpiData.database_engine.status === 'Active' ? 'text-emerald-700' : 'text-rose-700'}`}>
+              {loading ? '...' : kpiData.database_engine.status}
+            </h3>
+            <span className="text-[11px] text-emerald-600 font-bold">{kpiData.database_engine.label}</span>
           </div>
 
           {/* System Load status */}
@@ -265,11 +258,13 @@ export default function AdminDashboard() {
                 <Server className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-xl font-black text-indigo-900 mt-2">99.9% Uptime</h3>
-            <span className="text-[11px] text-indigo-700 font-bold">All Engines Operational</span>
+            <h3 className={`text-xl font-black mt-2 ${kpiData.server_health.status.includes('Operational') ? 'text-indigo-900' : 'text-rose-900'}`}>
+              {loading ? '...' : `${kpiData.server_health.uptime}% Uptime`}
+            </h3>
+            <span className="text-[11px] text-indigo-700 font-bold">{kpiData.server_health.status}</span>
           </div>
         </div>
-      )}
+      ) }
 
       {/* SECTION 2: Live Security activity feed and Database summaries */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

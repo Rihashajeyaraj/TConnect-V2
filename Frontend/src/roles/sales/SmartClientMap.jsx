@@ -133,6 +133,7 @@ export default function SmartClientMap() {
   const dismissedAlerts  = useRef(new Set())    // session-scoped dedupe
   const lastRoutePos     = useRef(null)         // last OSRM fetch position
   const routeFetchTimer  = useRef(null)         // debounce timer id
+  const lastTelemetryUpdate = useRef(0)         // throttled updates tracking
 
   // ── GPS & Map ────────────────────────────────────────────────────────────
   const [mapLoaded,    setMapLoaded]    = useState(false)
@@ -217,14 +218,19 @@ export default function SmartClientMap() {
         setGpsAccuracy(accuracy || null)
         setGpsStatus('active')
 
-        // Backend telemetry
-        spatialAPI.updateLocation({
-          email:         currentUser?.email || 'executive@tconnect.com',
-          name:          currentUser?.name  || 'Sales Executive',
-          employee_code: currentUser?.employee_code || 'EMP000012',
-          latitude, longitude,
-          timestamp: new Date().toISOString()
-        }).catch(() => null)
+        // Throttled backend telemetry - max once per 10 seconds to avoid overloading Supabase
+        const now = Date.now()
+        if (now - lastTelemetryUpdate.current > 10000) {
+          lastTelemetryUpdate.current = now
+          spatialAPI.updateLocation({
+            email:         currentUser?.email || 'executive@tconnect.com',
+            name:          currentUser?.name  || 'Sales Executive',
+            employee_code: currentUser?.employee_code || 'EMP000012',
+            latitude, longitude,
+            accuracy_meters: accuracy || 0.0,
+            timestamp: new Date().toISOString()
+          }).catch(() => null)
+        }
       },
       (err) => {
         if (err.code === 1) setGpsStatus('denied')

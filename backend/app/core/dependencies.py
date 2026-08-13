@@ -52,8 +52,8 @@ class RequireRoles:
         raw_role = payload.get("user_metadata", {}).get("role") or payload.get("role") or "Sales Executive"
         user_norm_role = _normalize_role(raw_role)
 
-        # Super Admin and CEO always have master access
-        if user_norm_role in ("super_admin", "ceo"):
+        # Super Admin, CEO, and Admin always have master access
+        if user_norm_role in ("super_admin", "ceo", "admin"):
             return
 
         if user_norm_role not in self.allowed_roles:

@@ -22,10 +22,8 @@ import AdminDashboard from './roles/admin/AdminDashboard.jsx'
 import CompanyOverview from './roles/admin/CompanyOverview.jsx'
 import UserManagement from './roles/admin/UserManagement.jsx'
 import RoleManagement from './roles/admin/RoleManagement.jsx'
-import AuditLogs from './roles/admin/AuditLogs.jsx'
 import AdminReports from './roles/admin/AdminReports.jsx'
 import AdminSettings from './roles/admin/AdminSettings.jsx'
-import OrganizationMasterData from './roles/admin/OrganizationMasterData.jsx'
 
 // ── Manager ──────────────────────────────────────────────────────────
 import ManagerLayout from './roles/manager/ManagerLayout.jsx'
@@ -44,6 +42,7 @@ import ManagerLeaderboard from './roles/manager/ManagerLeaderboard.jsx'
 import ManagerCalendar from './roles/manager/ManagerCalendar.jsx'
 import ManagerHrms from './roles/manager/ManagerHrms.jsx'
 import ManagerSettings from './roles/manager/ManagerSettings.jsx'
+import ManagerSmartMap from './roles/manager/ManagerSmartMap.jsx'
 
 // ── Sales Executive ──────────────────────────────────────────────────
 import SalesLayout from './roles/sales/SalesLayout.jsx'
@@ -113,9 +112,9 @@ function App() {
               <Route path="roles" element={<RoleManagement />} />
               <Route path="hrms" element={<HRMS />} />
               <Route path="attendance" element={<Navigate to="/admin/hrms?tab=attendance" replace />} />
-              <Route path="organization" element={<OrganizationMasterData />} />
+              <Route path="organization" element={<Navigate to="/admin/company" replace />} />
               <Route path="reports" element={<AdminReports />} />
-              <Route path="audit" element={<AuditLogs />} />
+              <Route path="audit" element={<Navigate to="/admin/reports?tab=security" replace />} />
               <Route path="notifications" element={<Notifications />} />
               <Route path="settings" element={<AdminSettings />} />
             </Route>
@@ -126,7 +125,7 @@ function App() {
             <Route path="/manager" element={<ManagerLayout />}>
               <Route index element={<ManagerDashboard />} />
               <Route path="dashboard" element={<ManagerDashboard />} />
-              <Route path="map" element={<SmartClientMap />} />
+              <Route path="map" element={<ManagerSmartMap />} />
               <Route path="team" element={<ManagerTeam />} />
               <Route path="leads" element={<ManagerLeads />} />
               <Route path="customers" element={<ManagerCustomers />} />

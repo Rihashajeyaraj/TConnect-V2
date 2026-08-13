@@ -387,8 +387,37 @@ class HRMSRepository:
             res = self.supabase.schema("hrms").table("employees").update(clean_updates).eq("employee_id", emp_id).execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
-        except Exception:
-            pass
+            
+            # If update succeeds but returns no rows, perform an upsert.
+            # We fetch existing details to populate employee_code and email to satisfy NOT NULL constraints.
+            existing = self.get_employee_by_id(emp_id)
+            clean_updates["employee_id"] = emp_id
+            clean_updates["user_id"] = emp_id
+            clean_updates["auth_user_id"] = emp_id
+            if existing:
+                clean_updates["employee_code"] = existing.get("employee_code") or "EMP-FALLBACK"
+                clean_updates["email"] = existing.get("email") or ""
+                if "role" not in clean_updates:
+                    clean_updates["role"] = existing.get("role") or "Admin"
+                if "designation" not in clean_updates:
+                    clean_updates["designation"] = existing.get("designation") or "Admin"
+                if "dept" not in clean_updates:
+                    clean_updates["dept"] = existing.get("dept") or "Management"
+                if "department" not in clean_updates:
+                    clean_updates["department"] = existing.get("department") or "Management"
+            else:
+                clean_updates["employee_code"] = "EMP-FALLBACK"
+                clean_updates["email"] = ""
+                clean_updates["role"] = "Admin"
+                clean_updates["designation"] = "Admin"
+                clean_updates["dept"] = "Management"
+                clean_updates["department"] = "Management"
+
+            res = self.supabase.schema("hrms").table("employees").upsert(clean_updates, on_conflict="employee_id").execute()
+            if res.data and len(res.data) > 0:
+                return res.data[0]
+        except Exception as e:
+            logger.warning(f"HRMS employees update/upsert failed: {e}")
 
         # Try public schema
         try:

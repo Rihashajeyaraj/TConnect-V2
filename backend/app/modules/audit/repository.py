@@ -67,10 +67,10 @@ class AuditRepository:
                 query = query.eq("role", filters["role"])
             if filters.get("user_email"):
                 query = query.eq("user_email", filters["user_email"])
-            if filters.get("from_date"):
-                query = query.gte("created_at", filters["from_date"])
-            if filters.get("to_date"):
-                query = query.lt("created_at", filters["to_date"] + "T23:59:59")
+            if filters.get("from_date") and len(str(filters["from_date"]).strip()) >= 10:
+                query = query.gte("created_at", str(filters["from_date"]).strip())
+            if filters.get("to_date") and len(str(filters["to_date"]).strip()) >= 10:
+                query = query.lt("created_at", str(filters["to_date"]).strip() + "T23:59:59")
 
             res = query.execute()
             if res.data is not None:

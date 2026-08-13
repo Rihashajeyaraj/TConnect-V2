@@ -30,7 +30,7 @@ import {
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { formatDate } from "../../utils/dateUtils.js";
-import { reportAPI, attendanceAPI, hrmsAPI } from "../../services/api.js";
+import { reportAPI, attendanceAPI, hrmsAPI, adminAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import Attendance, { calculateWorkHours } from "./Attendance.jsx";
 
@@ -76,7 +76,8 @@ export default function SalesHRMS() {
   const userId = currentUser.id || currentUser.user_id || "";
 
   const [searchParams, setSearchParams] = useSearchParams();
-  const activeSection = searchParams.get("tab") || "dashboard";
+  const isCurrentUserAdmin = currentUser.role?.includes('Admin') || String(currentUser.role).toLowerCase().includes('admin');
+  const activeSection = searchParams.get("tab") || (isCurrentUserAdmin ? "attendance" : "dashboard");
   const setActiveSection = (val) => setSearchParams({ tab: val });
 
   const [hrmsTabs, setHrmsTabs] = useState(() => {
@@ -211,8 +212,31 @@ export default function SalesHRMS() {
   }, [empCode, currentUser]);
 
 
-  const isUserAdmin = currentUser.role?.includes('Admin') || profile.role?.includes('Admin');
+  const isUserAdmin = currentUser.role?.includes('Admin') || profile.role?.includes('Admin') || String(currentUser.role).toLowerCase().includes('admin');
   const managerName = isUserAdmin ? 'Dr. Twite Executive' : (profile.reportingManager && profile.reportingManager !== "Not Assigned" ? profile.reportingManager : (currentUser.reporting_manager_name || "Not Assigned"));
+
+  const [employeesCount, setEmployeesCount] = useState(0);
+  const [adminKPIs, setAdminKPIs] = useState(null);
+
+  useEffect(() => {
+    if (isUserAdmin) {
+      hrmsAPI.getEmployees()
+        .then(res => {
+          if (res && res.data) {
+            setEmployeesCount(res.data.length);
+          }
+        })
+        .catch(() => null);
+
+      adminAPI.getKPIs("today")
+        .then(res => {
+          if (res && res.data) {
+            setAdminKPIs(res.data);
+          }
+        })
+        .catch(() => null);
+    }
+  }, [isUserAdmin]);
 
 
 
@@ -221,7 +245,16 @@ export default function SalesHRMS() {
       .then((res) => {
         const raw = Array.isArray(res) ? res : (res?.data || []);
         if (Array.isArray(raw) && raw.length > 0) {
-          const scoped = filterUserItems(raw, currentUser);
+          const userEmailStr = String(currentUser.email || '').toLowerCase().trim();
+          const userEmpCodeStr = String(empCode || currentUser.employee_code || currentUser.employee_id || '').toLowerCase().trim();
+          const userIdStr = String(currentUser.id || '').toLowerCase().trim();
+
+          const scoped = raw.filter(p => {
+            const pId = String(p.employee_id || p.user_id || '').toLowerCase().trim();
+            const pEmail = String(p.email || p.user_email || '').toLowerCase().trim();
+            return (userEmpCodeStr && pId === userEmpCodeStr) || (userIdStr && pId === userIdStr) || (userEmailStr && pEmail === userEmailStr);
+          });
+
           setRealAttendanceLogs((prev) => {
             const merged = [...scoped];
             prev.forEach((p) => {
@@ -244,7 +277,16 @@ export default function SalesHRMS() {
       .then((res) => {
         const raw = Array.isArray(res) ? res : (res?.data || []);
         if (Array.isArray(raw)) {
-          setMyLeaveRequests(raw);
+          const userEmailStr = String(currentUser.email || '').toLowerCase().trim();
+          const userEmpCodeStr = String(empCode || currentUser.employee_code || currentUser.employee_id || '').toLowerCase().trim();
+          const userIdStr = String(currentUser.id || '').toLowerCase().trim();
+
+          const scoped = raw.filter(p => {
+            const pId = String(p.employee_id || p.user_id || p.employee_code || '').toLowerCase().trim();
+            const pEmail = String(p.email || p.executive_email || p.user_email || '').toLowerCase().trim();
+            return (userEmpCodeStr && pId === userEmpCodeStr) || (userIdStr && pId === userIdStr) || (userEmailStr && pEmail === userEmailStr);
+          });
+          setMyLeaveRequests(scoped);
         }
       })
       .catch(() => null);
@@ -399,6 +441,55 @@ export default function SalesHRMS() {
     ...allCustomers.slice(0, 2).map(c => ({ icon: "🎉", text: `Converted: ${c.name}`, time: c.onboardDate || "Recently" })),
   ].slice(0, 8);
 
+  const todayObj = new Date();
+  const isSameDay = (d1, d2) => {
+    return d1.getFullYear() === d2.getFullYear() &&
+           d1.getMonth() === d2.getMonth() &&
+           d1.getDate() === d2.getDate();
+  };
+  const getStartOfWeek = (d) => {
+    const temp = new Date(d);
+    const day = temp.getDay();
+    const diff = temp.getDate() - day + (day === 0 ? -6 : 1);
+    return new Date(temp.setDate(diff));
+  };
+
+  const filteredLogs = realAttendanceLogs.filter((log) => {
+    const dStr = String(log.date || log.attendance_date || "");
+    const logDate = new Date(dStr);
+    if (isNaN(logDate.getTime())) {
+      return true;
+    }
+    if (reportFilterMode === "TODAY") {
+      return isSameDay(logDate, todayObj);
+    }
+    if (reportFilterMode === "YESTERDAY") {
+      const yesterdayObj = new Date();
+      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+      return isSameDay(logDate, yesterdayObj);
+    }
+    if (reportFilterMode === "THIS WEEK") {
+      const startOfWeek = getStartOfWeek(todayObj);
+      startOfWeek.setHours(0, 0, 0, 0);
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(endOfWeek.getDate() + 7);
+      return logDate >= startOfWeek && logDate < endOfWeek;
+    }
+    if (reportFilterMode === "THIS MONTH") {
+      return logDate.getFullYear() === todayObj.getFullYear() && logDate.getMonth() === todayObj.getMonth();
+    }
+    if (reportFilterMode === "CUSTOM" && customDateFilter) {
+      const customDateObj = new Date(customDateFilter);
+      return !isNaN(customDateObj.getTime()) && isSameDay(logDate, customDateObj);
+    }
+    return true;
+  });
+
+  const dynamicPresentCount = filteredLogs.length;
+  const dynamicAbsentCount = isUserAdmin
+    ? (reportFilterMode === "TODAY" ? Math.max(0, employeesCount - filteredLogs.length) : "—")
+    : (filteredLogs.length === 0 && (reportFilterMode === "TODAY" || reportFilterMode === "YESTERDAY") ? 1 : 0);
+
   return (
     <div className="space-y-6 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-6">
 
@@ -414,7 +505,7 @@ export default function SalesHRMS() {
 
         {/* Horizontal Navigation Tabs Bar */}
         <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5">
-          {hrmsTabs.map(({ key, label, icon: Icon }, index) => (
+          {hrmsTabs.filter(tab => !(isCurrentUserAdmin && tab.key === "dashboard")).map(({ key, label, icon: Icon }, index) => (
             <div
               key={key}
               draggable="true"
@@ -459,7 +550,7 @@ export default function SalesHRMS() {
         )}
 
         {/* ── DASHBOARD ── */}
-        {activeSection === "dashboard" && (
+        {activeSection === "dashboard" && !isUserAdmin && (
           <div className="space-y-4 max-w-5xl">
 
             <div>
@@ -468,10 +559,10 @@ export default function SalesHRMS() {
               </p>
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
                 {(isUserAdmin ? [
-                  { label: "Users Managed", value: "23", icon: Users, bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
-                  { label: "System Audits", value: "148", icon: ShieldCheck, bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
+                  { label: "Users Managed", value: String(adminKPIs?.total_users?.value || employeesCount || 0), icon: Users, bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
+                  { label: "System Audits", value: String(adminKPIs?.security_audits?.value || 0), icon: ShieldCheck, bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
                   { label: "Pending Requests", value: String(myLeaveRequests.filter(r => r.status === "Pending").length), icon: Clock3, bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700" },
-                  { label: "System Status", value: "Active", icon: Activity, bg: "bg-rose-50 border-rose-200", text: "text-rose-700" },
+                  { label: "System Status", value: (adminKPIs?.database_engine?.status === 'Active' ? 'Active' : 'Inactive'), icon: Activity, bg: "bg-rose-50 border-rose-200", text: "text-rose-700" },
                 ] : [
                   { label: "Calls Made", value: String(allFollowups.length), icon: Phone, bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
                   { label: "Visits Done", value: String(allVisits.length), icon: MapPin, bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
@@ -522,14 +613,16 @@ export default function SalesHRMS() {
                 <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3 text-center space-y-0.5">
                   <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">No of Present</span>
                   <div className="text-2xl font-black text-emerald-600">
-                    {realAttendanceLogs.filter(a => a.status === "Present" || a.loginTime || a.check_in_time).length}
+                    {dynamicPresentCount}
                   </div>
                 </div>
 
                 {/* Red Absent Box */}
                 <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 text-center space-y-0.5">
                   <span className="text-[10px] font-black text-rose-800 uppercase tracking-wider block">No of Absent</span>
-                  <div className="text-2xl font-black text-rose-600">0</div>
+                  <div className="text-2xl font-black text-rose-600">
+                    {dynamicAbsentCount}
+                  </div>
                 </div>
               </div>
             </div>
@@ -547,16 +640,17 @@ export default function SalesHRMS() {
                 </button>
               </div>
 
-              {/* Filter Controls Bar (TODAY | YESTERDAY | THIS MONTH | CUSTOM) */}
+              {/* Filter Controls Bar (TODAY | YESTERDAY | THIS WEEK | THIS MONTH | CUSTOM) */}
               <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
                 <div className="flex items-center gap-0.5 bg-slate-100/80 p-0.5 rounded-lg border border-slate-200/80 flex-wrap">
-                  {["TODAY", "YESTERDAY", "THIS MONTH", "CUSTOM"].map((mode) => (
+                  {["TODAY", "YESTERDAY", "THIS WEEK", "THIS MONTH", "CUSTOM"].map((mode) => (
                     <button
                       key={mode}
                       type="button"
                       onClick={() => setReportFilterMode(mode)}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${reportFilterMode === mode ? "bg-teal-600 text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
-                        }`}
+                      className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${
+                        reportFilterMode === mode ? "bg-teal-600 text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
+                      }`}
                     >
                       {mode === "CUSTOM" ? "CUSTOM DATE" : mode}
                     </button>
@@ -580,34 +674,57 @@ export default function SalesHRMS() {
               {/* Attendance Report Data Table */}
               <div className="overflow-x-auto">
                 {(() => {
-                  const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-                  const todayISO = new Date().toISOString().slice(0, 10);
+                  const todayObj = new Date();
+                  
+                  const isSameDay = (d1, d2) => {
+                    return d1.getFullYear() === d2.getFullYear() &&
+                           d1.getMonth() === d2.getMonth() &&
+                           d1.getDate() === d2.getDate();
+                  };
 
-                  const yesterdayObj = new Date();
-                  yesterdayObj.setDate(yesterdayObj.getDate() - 1);
-                  const yesterdayStr = yesterdayObj.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-                  const yesterdayISO = yesterdayObj.toISOString().slice(0, 10);
+                  const getStartOfWeek = (d) => {
+                    const temp = new Date(d);
+                    const day = temp.getDay();
+                    const diff = temp.getDate() - day + (day === 0 ? -6 : 1); // Monday start
+                    return new Date(temp.setDate(diff));
+                  };
 
                   const filteredLogs = realAttendanceLogs.filter((log) => {
                     const dStr = String(log.date || log.attendance_date || "");
+                    const logDate = new Date(dStr);
+                    if (isNaN(logDate.getTime())) {
+                      return true;
+                    }
+
                     if (reportFilterMode === "TODAY") {
-                      return dStr.includes(todayStr) || dStr.includes(todayISO);
+                      return isSameDay(logDate, todayObj);
                     }
                     if (reportFilterMode === "YESTERDAY") {
-                      return dStr.includes(yesterdayStr) || dStr.includes(yesterdayISO);
+                      const yesterdayObj = new Date();
+                      yesterdayObj.setDate(yesterdayObj.getDate() - 1);
+                      return isSameDay(logDate, yesterdayObj);
+                    }
+                    if (reportFilterMode === "THIS WEEK") {
+                      const startOfWeek = getStartOfWeek(todayObj);
+                      startOfWeek.setHours(0, 0, 0, 0);
+                      const endOfWeek = new Date(startOfWeek);
+                      endOfWeek.setDate(endOfWeek.getDate() + 7);
+                      return logDate >= startOfWeek && logDate < endOfWeek;
+                    }
+                    if (reportFilterMode === "THIS MONTH") {
+                      return logDate.getFullYear() === todayObj.getFullYear() && logDate.getMonth() === todayObj.getMonth();
                     }
                     if (reportFilterMode === "CUSTOM" && customDateFilter) {
-                      return dStr.includes(customDateFilter);
+                      const customDateObj = new Date(customDateFilter);
+                      return !isNaN(customDateObj.getTime()) && isSameDay(logDate, customDateObj);
                     }
-                    // THIS MONTH
                     return true;
                   });
 
                   if (filteredLogs.length === 0) {
                     return (
                       <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-500 space-y-2">
-                        <p className="font-extrabold text-slate-700 text-sm">No attendance records logged for this filter ({reportFilterMode}).</p>
-                        <p>Switch filter to <b>THIS MONTH</b> or check in with camera!</p>
+                        <p className="font-extrabold text-slate-700 text-sm">No attendance records found.</p>
                       </div>
                     );
                   }
@@ -616,6 +733,8 @@ export default function SalesHRMS() {
                     <table className="w-full text-left font-semibold text-xs text-slate-800">
                       <thead className="border-b border-slate-200 text-slate-400 font-black text-[10px] uppercase tracking-wider bg-slate-50">
                         <tr>
+                          {isUserAdmin && <th className="py-3 px-4">EMPLOYEE NAME</th>}
+                          {isUserAdmin && <th className="py-3 px-4">EMPLOYEE ID</th>}
                           <th className="py-3 px-4">DATE</th>
                           <th className="py-3 px-4">LOGIN TIME</th>
                           <th className="py-3 px-4">LOGOUT TIME</th>
@@ -628,6 +747,8 @@ export default function SalesHRMS() {
                       <tbody className="divide-y divide-slate-100">
                         {filteredLogs.map((row, idx) => (
                           <tr key={idx} className="hover:bg-slate-50/80 transition">
+                            {isUserAdmin && <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{row.employee_name || row.name || "System User"}</td>}
+                            {isUserAdmin && <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.employee_id || "—"}</td>}
                             <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{row.date || row.attendance_date}</td>
                             <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.loginTime || row.check_in_time || "—"}</td>
                             <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.logoutTime || row.check_out_time || "—"}</td>
@@ -1050,54 +1171,56 @@ export default function SalesHRMS() {
             </div>
 
             {/* 4. Attendance Summary & Reports */}
-            <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
-              <h2 className="text-lg font-black text-slate-900">Attendance Report</h2>
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse min-w-[760px]">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-[11px] font-black text-slate-400 uppercase tracking-wider">
-                      <th className="py-3 px-3">DATE</th>
-                      <th className="py-3 px-3">LOGIN TIME</th>
-                      <th className="py-3 px-3">LOGOUT TIME</th>
-                      <th className="py-3 px-3">LOGIN LOCATION</th>
-                      <th className="py-3 px-3">LOGOUT LOCATION</th>
-                      <th className="py-3 px-3">WORK HOURS</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
-                    {(() => {
-                      const logs = getArr("tc_attendance_logs");
-                      const userLogs = filterUserItems(logs, currentUser);
+            {!isUserAdmin && (
+              <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
+                <h2 className="text-lg font-black text-slate-900">Attendance Report</h2>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse min-w-[760px]">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-[11px] font-black text-slate-400 uppercase tracking-wider">
+                        <th className="py-3 px-3">DATE</th>
+                        <th className="py-3 px-3">LOGIN TIME</th>
+                        <th className="py-3 px-3">LOGOUT TIME</th>
+                        <th className="py-3 px-3">LOGIN LOCATION</th>
+                        <th className="py-3 px-3">LOGOUT LOCATION</th>
+                        <th className="py-3 px-3">WORK HOURS</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
+                      {(() => {
+                        const logs = getArr("tc_attendance_logs");
+                        const userLogs = filterUserItems(logs, currentUser);
 
-                      if (userLogs.length === 0) {
-                        return (
-                          <tr>
-                            <td colSpan="6" className="py-8 text-center text-slate-400 font-bold">
-                              No attendance logs recorded for your account yet.
+                        if (userLogs.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan="6" className="py-8 text-center text-slate-400 font-bold">
+                                No attendance logs recorded for your account yet.
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return userLogs.map((row, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/80 transition">
+                            <td className="py-4 px-3 text-slate-900">{row.date}</td>
+                            <td className="py-4 px-3">{row.loginTime}</td>
+                            <td className="py-4 px-3">{row.logoutTime}</td>
+                            <td className="py-4 px-3 max-w-[220px] text-slate-600 font-medium text-[11px] leading-relaxed">
+                              {row.loginLocation}
                             </td>
+                            <td className="py-4 px-3 max-w-[220px] text-slate-600 font-medium text-[11px] leading-relaxed">
+                              {row.logoutLocation}
+                            </td>
+                            <td className="py-4 px-3 font-extrabold text-slate-900">{row.workHours}</td>
                           </tr>
-                        );
-                      }
-
-                      return userLogs.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/80 transition">
-                          <td className="py-4 px-3 text-slate-900">{row.date}</td>
-                          <td className="py-4 px-3">{row.loginTime}</td>
-                          <td className="py-4 px-3">{row.logoutTime}</td>
-                          <td className="py-4 px-3 max-w-[220px] text-slate-600 font-medium text-[11px] leading-relaxed">
-                            {row.loginLocation}
-                          </td>
-                          <td className="py-4 px-3 max-w-[220px] text-slate-600 font-medium text-[11px] leading-relaxed">
-                            {row.logoutLocation}
-                          </td>
-                          <td className="py-4 px-3 font-extrabold text-slate-900">{row.workHours}</td>
-                        </tr>
-                      ));
-                    })()}
-                  </tbody>
-                </table>
+                        ));
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* 5. APPLY LEAVE / PERMISSION MODAL */}
             {showLeaveModal && (

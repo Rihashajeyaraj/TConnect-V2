@@ -332,49 +332,26 @@ class ReportsRepository:
 
             this_year = datetime.utcnow().strftime("%Y")
             this_quarter = (datetime.utcnow().month - 1) // 3 + 1
-            
-            for o in opportunities:
-                val = float(o.get("value") or o.get("amount") or 0.0)
-                is_won = str(o.get("stage", "")).upper() in ("CLOSED_WON", "CLOSED WON", "WON")
-                
-                # Check date
-                created_str = o.get("created_at") or o.get("updated_at") or today_str
-                opp_year = created_str[:4]
-                opp_month = created_str[5:7]
-                
-                if is_won:
-                    total_rev += val
-                    if opp_year == this_year:
-                        annual_rev += val
-                        if opp_month == datetime.utcnow().strftime("%m"):
-                            monthly_rev += val
-                        
-                        opp_month_int = int(opp_month)
-                        opp_quarter = (opp_month_int - 1) // 3 + 1
-                        if opp_quarter == this_quarter:
-                            quarterly_rev += val
+            this_month = datetime.utcnow().strftime("%m")
 
-            # Also add customer contract values if any
-            for c in customers:
-                val = float(c.get("contract_value") or 0.0)
-                created_str = c.get("created_at") or today_str
-                if created_str[:4] == this_year:
-                    annual_rev += val
-                    total_rev += val
-
-            # Breakdowns
             rev_by_manager = {}
             rev_by_executive = {}
             rev_by_customer = {}
             rev_by_company = {}
             rev_by_product = {}
 
+            # Process opportunities
             for o in opportunities:
-                if str(o.get("stage", "")).upper() not in ("CLOSED_WON", "CLOSED WON", "WON"):
+                is_won = str(o.get("stage", "")).upper() in ("CLOSED_WON", "CLOSED WON", "WON")
+                if not is_won:
                     continue
-                val = float(o.get("value") or 0.0)
                 
-                # Resolve manager and executive for opportunities as well
+                val = float(o.get("value") or o.get("amount") or 0.0)
+                created_str = o.get("created_at") or o.get("updated_at") or today_str
+                opp_year = created_str[:4]
+                opp_month = created_str[5:7]
+
+                # Resolve manager and executive for opportunities
                 exec_email = str(o.get("assigned_to_email") or o.get("owner_email") or "").lower().strip()
                 se_user = user_map_by_email.get(exec_email)
                 exec_name = o.get("assigned_to_name") or o.get("owner_id") or (se_user.get("name") if se_user else None) or o.get("assigned_to") or "Unassigned"
@@ -393,11 +370,62 @@ class ReportsRepository:
                 comp = o.get("company") or "Direct"
                 prod = o.get("product_name") or o.get("service_type") or "Software License"
 
+                # Update breakdowns
                 rev_by_manager[mgr] = rev_by_manager.get(mgr, 0.0) + val
                 rev_by_executive[exec_name] = rev_by_executive.get(exec_name, 0.0) + val
                 rev_by_customer[cust] = rev_by_customer.get(cust, 0.0) + val
                 rev_by_company[comp] = rev_by_company.get(comp, 0.0) + val
                 rev_by_product[prod] = rev_by_product.get(prod, 0.0) + val
+
+                # Update totals
+                total_rev += val
+                if opp_year == this_year:
+                    annual_rev += val
+                    if opp_month == this_month:
+                        monthly_rev += val
+                    
+                    try:
+                        opp_month_int = int(opp_month)
+                        opp_quarter = (opp_month_int - 1) // 3 + 1
+                        if opp_quarter == this_quarter:
+                            quarterly_rev += val
+                    except Exception:
+                        pass
+
+            # Process customers
+            for c in customers:
+                val = float(c.get("contract_value") or 0.0)
+                created_str = c.get("created_at") or today_str
+                opp_year = created_str[:4]
+                opp_month = created_str[5:7]
+
+                mgr = c.get("sales_manager") or "Direct/Unassigned"
+                exec_name = c.get("sales_executive") or "Direct/Unassigned"
+                cust = c.get("name") or c.get("company") or "Customer Account"
+                comp = c.get("company") or "Direct"
+                prod = c.get("product") or "Software License"
+
+                # Update breakdowns
+                rev_by_manager[mgr] = rev_by_manager.get(mgr, 0.0) + val
+                rev_by_executive[exec_name] = rev_by_executive.get(exec_name, 0.0) + val
+                rev_by_customer[cust] = rev_by_customer.get(cust, 0.0) + val
+                rev_by_company[comp] = rev_by_company.get(comp, 0.0) + val
+                rev_by_product[prod] = rev_by_product.get(prod, 0.0) + val
+
+                # Update totals
+                total_rev += val
+                if opp_year == this_year:
+                    annual_rev += val
+                    if opp_month == this_month:
+                        monthly_rev += val
+                    
+                    try:
+                        opp_month_int = int(opp_month)
+                        opp_quarter = (opp_month_int - 1) // 3 + 1
+                        if opp_quarter == this_quarter:
+                            quarterly_rev += val
+                    except Exception:
+                        pass
 
             # Charts trends from actual database opportunities
             months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
@@ -657,7 +685,9 @@ class ReportsRepository:
             return {
                 "metrics": {
                     "totalRevenue": total_rev,
+                    "total_revenue": total_rev,
                     "monthlyRevenue": monthly_rev,
+                    "monthly_revenue": monthly_rev,
                     "annualTarget": 35000000.0,
                     "targetAchieved": total_rev,
                     "totalCustomers": total_cust,

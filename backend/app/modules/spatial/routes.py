@@ -5,6 +5,8 @@ from app.modules.crm.repository import CRMRepository
 from app.modules.customer.repository import CustomerRepository
 from app.modules.visit.repository import VisitRepository
 from app.core.logger import logger
+from app.core.dependencies import get_current_user_payload
+
 
 router = APIRouter(prefix="/spatial", tags=["Smart Spatial Map & Geofencing"])
 
@@ -351,55 +353,207 @@ def check_geofence(payload: Dict[str, Any] = Body(...)):
 
 
 @router.post("/update-location")
-def update_executive_location(payload: Dict[str, Any] = Body(...)):
+async def update_executive_location(
+    payload: Dict[str, Any] = Body(...),
+    user_payload: dict = Depends(get_current_user_payload)
+):
     """
     Live Telemetry Update:
-    Stores real-time continuous executive GPS location in telemetry cache & persists to Supabase.
+    Resolves the authenticated user to their HRMS employee record, updates memory telemetry, 
+    and persists their latest live GPS location in Supabase hrms.employee_locations.
     """
-    email = (payload.get("email") or payload.get("user_email") or "executive@tconnect.com").lower()
+    import datetime
+    from app.database.supabase import get_supabase_admin_client, get_supabase_client
+    
+    auth_uid = user_payload.get("sub")
     lat = float(payload.get("latitude") or payload.get("lat") or 13.0067)
     lng = float(payload.get("longitude") or payload.get("lng") or 80.2570)
-    emp_code = payload.get("employee_code") or "EMP000012"
-    emp_name = payload.get("name") or payload.get("executive_name") or "Sales Executive"
-
+    accuracy = float(payload.get("accuracy") or payload.get("accuracy_meters") or 0.0)
+    
+    sp_client = get_supabase_admin_client() or get_supabase_client()
+    
+    # 1. Map auth_uid to hrms.employees.employee_id
+    employee_id = auth_uid
+    employee_name = payload.get("name") or "Sales Executive"
+    employee_code = payload.get("employee_code") or "EMP000012"
+    
+    try:
+        emp_res = sp_client.schema("hrms").table("employees").select("employee_id, name, employee_code").or_(f"user_id.eq.{auth_uid},auth_user_id.eq.{auth_uid},employee_id.eq.{auth_uid}").limit(1).execute()
+        if emp_res.data:
+            employee_id = emp_res.data[0]["employee_id"]
+            employee_name = emp_res.data[0]["name"] or employee_name
+            employee_code = emp_res.data[0]["employee_code"] or employee_code
+    except Exception as e:
+        logger.warning(f"Error mapping authenticated user to employee record: {e}")
+        
+    # 2. Update memory telemetry cache for backward compatibility
+    email = str(user_payload.get("email") or payload.get("email") or "executive@tconnect.com").lower()
     entry = {
         "email": email,
-        "name": emp_name,
-        "employee_code": emp_code,
+        "name": employee_name,
+        "employee_code": employee_code,
         "latitude": lat,
         "longitude": lng,
-        "speed_kmh": payload.get("speed") or 0.0,
-        "heading": payload.get("heading") or 0.0,
-        "timestamp": payload.get("timestamp") or "",
+        "accuracy": accuracy,
+        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "is_online": True
     }
     _live_executive_telemetry[email] = entry
-
-    # Best-effort persist to Supabase
+    
+    # 3. Persist latest location to Supabase hrms.employee_locations
     try:
-        from app.database.supabase import get_supabase_admin_client, get_supabase_client
-        sp_client = get_supabase_admin_client() or get_supabase_client()
-        # Update today's attendance record with latest coordinates if active
-        import datetime
-        today_str = datetime.date.today().isoformat()
-        try:
-            sp_client.schema("hrms").table("attendance").update({
-                "latitude": lat,
-                "longitude": lng,
-                "check_out_latitude": lat,
-                "check_out_longitude": lng,
-            }).eq("employee_id", emp_code).eq("attendance_date", today_str).execute()
-        except Exception:
-            try:
-                sp_client.table("attendance").update({
-                    "latitude": lat,
-                    "longitude": lng,
-                }).eq("employee_id", emp_code).execute()
-            except Exception:
-                pass
+        location_data = {
+            "employee_id": employee_id,
+            "latitude": lat,
+            "longitude": lng,
+            "accuracy": accuracy,
+            "is_online": True,
+            "last_seen_at": datetime.datetime.utcnow().isoformat(),
+            "updated_at": datetime.datetime.utcnow().isoformat()
+        }
+        sp_client.schema("hrms").table("employee_locations").upsert(location_data).execute()
     except Exception as e:
-        logger.debug(f"Telemetry persistence notice: {e}")
-
+        logger.warning(f"Error persisting live location: {e}")
+        
+    # 4. Update today's attendance record coordinates (attendance tracking remains separate)
+    try:
+        today_str = datetime.date.today().isoformat()
+        sp_client.schema("hrms").table("attendance").update({
+            "latitude": lat,
+            "longitude": lng,
+            "check_out_latitude": lat,
+            "check_out_longitude": lng,
+        }).or_(f"employee_id.eq.{employee_id},employee_id.eq.{employee_code}").eq("attendance_date", today_str).execute()
+    except Exception as att_err:
+        logger.debug(f"Attendance location update notice: {att_err}")
+        
     return {"success": True, "location": entry}
+
+
+@router.get("/manager/team-locations")
+async def get_manager_team_locations(
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """
+    Retrieve authenticated Sales Manager's assigned executives and their latest live location details.
+    Determines the manager from token/JWT and returns ONLY assigned executives.
+    """
+    from app.database.supabase import get_supabase_admin_client, get_supabase_client
+    from app.core.scoping import normalize_user_role
+    from datetime import datetime, timezone
+    
+    auth_uid = user_payload.get("sub")
+    role = user_payload.get("role") or "Sales Executive"
+    norm_role = normalize_user_role(role)
+    
+    if norm_role not in ("sales_manager", "ceo", "admin", "super_admin"):
+        raise HTTPException(status_code=403, detail="Access denied. Managers only.")
+        
+    sp_client = get_supabase_admin_client() or get_supabase_client()
+    
+    # 1. Map auth_uid to hrms.employees manager record
+    mgr_emp_id = auth_uid
+    mgr_email = user_payload.get("email")
+    mgr_name = user_payload.get("user_metadata", {}).get("full_name") or ""
+    
+    try:
+        mgr_res = sp_client.schema("hrms").table("employees").select("employee_id, email, name").or_(f"user_id.eq.{auth_uid},auth_user_id.eq.{auth_uid},employee_id.eq.{auth_uid}").limit(1).execute()
+        if mgr_res.data:
+            mgr_emp_id = mgr_res.data[0]["employee_id"]
+            mgr_email = mgr_res.data[0]["email"] or mgr_email
+            mgr_name = mgr_res.data[0]["name"] or mgr_name
+    except Exception as e:
+        logger.warning(f"Error mapping manager user to employee record: {e}")
+        
+    # 2. Query assigned executives from hrms.employees table
+    or_cond = f"reporting_manager.eq.{mgr_emp_id},reporting_manager_id.eq.{mgr_emp_id}"
+    if mgr_email:
+        or_cond += f",reporting_manager_email.eq.{mgr_email.strip().lower()}"
+    if mgr_name:
+        or_cond += f",reporting_manager_name.eq.{mgr_name.strip()}"
+        
+    try:
+        subordinates_res = sp_client.schema("hrms").table("employees").select("employee_id, name, designation, role, email").or_(or_cond).execute()
+        subordinates = subordinates_res.data or []
+    except Exception as e:
+        logger.error(f"Error querying assigned executives: {e}")
+        subordinates = []
+        
+    if not subordinates:
+        return {
+            "success": True,
+            "manager_id": mgr_emp_id,
+            "team_count": 0,
+            "online_count": 0,
+            "offline_count": 0,
+            "executives": []
+        }
+        
+    exec_ids = [str(u.get("employee_id")) for u in subordinates]
+    
+    # 3. Query their live locations from hrms.employee_locations
+    try:
+        loc_res = sp_client.schema("hrms").table("employee_locations").select("*").in_("employee_id", exec_ids).execute()
+        locations_map = {loc["employee_id"]: loc for loc in loc_res.data} if loc_res.data else {}
+    except Exception as e:
+        logger.warning(f"Error fetching live locations: {e}")
+        locations_map = {}
+        
+    # 4. Normalize and calculate online/offline status
+    normalized_list = []
+    online_count = 0
+    offline_count = 0
+    
+    for exec_user in subordinates:
+        e_id = exec_user.get("employee_id")
+        loc = locations_map.get(e_id)
+        
+        latitude = loc.get("latitude") if loc else None
+        longitude = loc.get("longitude") if loc else None
+        accuracy = loc.get("accuracy") if loc else None
+        last_seen_at = loc.get("last_seen_at") if loc else None
+        
+        # Determine status: dynamic based on last_seen_at (within 5 minutes)
+        is_online = False
+        if loc:
+            db_is_online = loc.get("is_online", True)
+            if db_is_online and last_seen_at:
+                try:
+                    seen_dt = datetime.fromisoformat(last_seen_at.replace("Z", "+00:00"))
+                    now_dt = datetime.now(timezone.utc)
+                    diff = (now_dt - seen_dt).total_seconds()
+                    if diff < 300:  # 5 minutes threshold
+                        is_online = True
+                except Exception:
+                    is_online = db_is_online
+            else:
+                is_online = db_is_online
+                
+        if is_online:
+            online_count += 1
+        else:
+            offline_count += 1
+            
+        normalized_list.append({
+            "employee_id": e_id,
+            "employee_name": exec_user.get("name") or "Sales Executive",
+            "role": exec_user.get("designation") or exec_user.get("role") or "Sales Executive",
+            "latitude": latitude,
+            "longitude": longitude,
+            "accuracy": accuracy,
+            "is_online": is_online,
+            "last_seen_at": last_seen_at
+        })
+        
+    return {
+        "success": True,
+        "manager_id": mgr_emp_id,
+        "team_count": len(subordinates),
+        "online_count": online_count,
+        "offline_count": offline_count,
+        "executives": normalized_list
+    }
+
 
 
 @router.post("/route")

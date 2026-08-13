@@ -122,7 +122,7 @@ export default function Attendance() {
   // Attendance History & Map Modal State
   const [attendanceLogs, setAttendanceLogs] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem("tc_attendance_logs") || "[]");
+      const saved = JSON.parse(localStorage.getItem(`tc_attendance_logs_${userEmail}`) || "[]");
       return Array.isArray(saved) ? saved : [];
     } catch {
       return [];
@@ -138,49 +138,58 @@ export default function Attendance() {
   const leafletInstanceRef = useRef(null);
   const engineRef = useRef(new FaceLivenessEngine());
 
-  // 1. Verify Enrollment Status on Mount
+  // 1. Check Face Enrollment Status on Mount
   useEffect(() => {
-    const isLocallyEnrolled = localStorage.getItem(`tc_attendance_enrolled_${userEmpCode}`) === "true" ||
-                              localStorage.getItem("tc_attendance_enrolled") === "true";
-    if (isLocallyEnrolled) {
+    const enrolledCache = localStorage.getItem(`tc_attendance_enrolled_${userEmpCode}`);
+    if (enrolledCache === "true") {
       setIsEnrolled(true);
-      setShowEnrollModal(false);
-      return;
+    } else if (enrolledCache === "false") {
+      setIsEnrolled(false);
     }
 
     attendanceAPI.getEnrollmentStatus(userEmpCode, userEmail)
       .then((res) => {
         if (res && res.data) {
-          const status = res.data.enrollment_status || (res.data.enrolled ? "ENROLLED" : "PENDING");
-          if (status !== "ENROLLED") {
-            setIsEnrolled(false);
-            setShowEnrollModal(true);
-          } else {
+          if (res.data.enrolled || res.data.enrollment_status === "ENROLLED") {
             setIsEnrolled(true);
+            localStorage.setItem(`tc_attendance_enrolled_${userEmpCode}`, "true");
             setShowEnrollModal(false);
             if (res.data.face_template_vector) {
               setEnrolledTemplateVector(res.data.face_template_vector);
             }
+          } else {
+            setIsEnrolled(false);
+            localStorage.setItem(`tc_attendance_enrolled_${userEmpCode}`, "false");
           }
         }
       })
-      .catch(() => setIsEnrolled(true));
+      .catch(() => {
+        if (enrolledCache === null) {
+          setIsEnrolled(false);
+        }
+      });
   }, [userEmpCode, userEmail]);
 
   // 2. LocalStorage & Supabase Sync
   useEffect(() => {
     try {
-      localStorage.setItem("tc_attendance_logs", JSON.stringify(attendanceLogs));
+      localStorage.setItem(`tc_attendance_logs_${userEmail}`, JSON.stringify(attendanceLogs));
     } catch {}
-  }, [attendanceLogs]);
+  }, [attendanceLogs, userEmail]);
 
   useEffect(() => {
     attendanceAPI.getLogs()
       .then((res) => {
         if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
+          // Filter logs for the logged-in user to show personal check-in/out history
+          const myLogs = res.data.filter(p => {
+            const pId = String(p.employee_id || p.user_id || '').toLowerCase();
+            const pEmail = String(p.email || p.user_email || '').toLowerCase();
+            return pId === String(userEmpCode).toLowerCase() || pId === String(currentUser.id).toLowerCase() || pEmail === userEmail;
+          });
           setAttendanceLogs((prev) => {
             const merged = [...prev];
-            res.data.forEach((p) => {
+            myLogs.forEach((p) => {
               const pDate = p.date || p.attendance_date;
               const pIn = p.check_in_time || p.punch_in_time || p.loginTime;
               if (!merged.some((m) => (m.date === pDate || m.attendance_date === pDate) && (m.loginTime === pIn || m.check_in_time === pIn))) {
@@ -202,7 +211,7 @@ export default function Attendance() {
         }
       })
       .catch(() => null);
-  }, []);
+  }, [userEmail, userEmpCode, currentUser.id]);
 
   // 3. WebCam Initialization & Real-Time Alignment Loop
   useEffect(() => {
@@ -592,7 +601,7 @@ export default function Attendance() {
               activeTab === "punch" ? "bg-white text-blue-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            📹 Check-In / Check-Out Camera
+            📹 Attendance
           </button>
           <button
             type="button"
@@ -601,7 +610,7 @@ export default function Attendance() {
               activeTab === "report" ? "bg-[#433854] text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
             }`}
           >
-            📊 Attendance Dashboard & Reports
+            📊 Dashboard
           </button>
         </div>
       </div>
@@ -706,23 +715,40 @@ export default function Attendance() {
               ) : (
                 <div className="space-y-3 font-semibold">
                   <div className="grid grid-cols-2 gap-4">
-                    <button
-                      type="button"
-                      disabled={isLogging}
-                      onClick={() => executeAttendancePunch("LOGIN")}
-                      className="py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-fadeIn"
-                    >
-                      <CheckCircle2 size={16} /> Check In (Face + GPS)
-                    </button>
+                    {(() => {
+                      const todayDateStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+                      const todayISO = new Date().toISOString().slice(0, 10);
+                      const todayLog = attendanceLogs.find(log => {
+                        const dStr = String(log.date || log.attendance_date || "");
+                        return dStr.includes(todayDateStr) || dStr.includes(todayISO);
+                      });
+                      const hasCheckedInToday = !!todayLog;
+                      const hasCheckedOutToday = todayLog && todayLog.logoutTime && todayLog.logoutTime !== "—";
 
-                    <button
-                      type="button"
-                      disabled={isLogging}
-                      onClick={() => executeAttendancePunch("LOGOUT")}
-                      className="py-3.5 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-fadeIn"
-                    >
-                      <Clock size={16} /> Check Out (Face + GPS)
-                    </button>
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            disabled={isLogging || hasCheckedInToday}
+                            onClick={() => executeAttendancePunch("LOGIN")}
+                            className="py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-fadeIn"
+                            title={hasCheckedInToday ? "You have already checked in for today" : "Check in now"}
+                          >
+                            <CheckCircle2 size={16} /> {hasCheckedInToday ? "Checked In" : "Check In (Face + GPS)"}
+                          </button>
+
+                          <button
+                            type="button"
+                            disabled={isLogging || !hasCheckedInToday || hasCheckedOutToday}
+                            onClick={() => executeAttendancePunch("LOGOUT")}
+                            className="py-3.5 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-fadeIn"
+                            title={hasCheckedOutToday ? "You have already checked out for today" : (!hasCheckedInToday ? "Check in first before checking out" : "Check out now")}
+                          >
+                            <Clock size={16} /> {hasCheckedOutToday ? "Checked Out" : "Check Out (Face + GPS)"}
+                          </button>
+                        </>
+                      );
+                    })()}
                   </div>
 
                   <button

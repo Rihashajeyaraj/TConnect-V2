@@ -16,6 +16,7 @@ from app.modules.db_test.routes import router as db_test_router
 from app.modules.todo.routes import router as todo_router
 from app.modules.spatial.routes import router as spatial_router
 from app.modules.sales.routes import router as sales_router
+from app.modules.admin.routes import router as admin_router
 
 api_router = APIRouter()
 
@@ -39,3 +40,4 @@ api_router.include_router(settings_router)
 api_router.include_router(audit_router)
 api_router.include_router(todo_router)
 api_router.include_router(spatial_router)
+api_router.include_router(admin_router)
