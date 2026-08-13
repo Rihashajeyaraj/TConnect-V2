@@ -113,7 +113,7 @@ function CeoDashboard() {
 
       const backendUsers = Array.isArray(usersRes?.data) ? usersRes.data : (Array.isArray(usersRes) ? usersRes : [])
       const backendEmployees = Array.isArray(empRes?.data) ? empRes.data : (Array.isArray(empRes) ? empRes : [])
-      const rawUserPool = [...backendUsers, ...backendEmployees, ...localUsersRaw]
+      const rawUserPool = [...backendUsers, ...backendEmployees]
 
       const userMapByEmail = {}
       const userMapByName = {}
@@ -139,18 +139,11 @@ function CeoDashboard() {
       })
 
       // 2. Gather all customer accounts across Executive and Manager portals
-      const localCustomersRaw = (() => {
-        try {
-          const s = localStorage.getItem('tc_customer_accounts')
-          return s ? JSON.parse(s) : []
-        } catch { return [] }
-      })()
-
       const backendCustList = Array.isArray(custRes?.data) ? custRes.data : (Array.isArray(custRes) ? custRes : [])
       const ceoCustList = Array.isArray(res?.data?.customerSummary?.customersList) ? res.data.customerSummary.customersList : []
       const ceoRawCustList = Array.isArray(res?.data?.customers) ? res.data.customers : []
 
-      const rawCustomerPool = [...backendCustList, ...ceoCustList, ...ceoRawCustList, ...localCustomersRaw]
+      const rawCustomerPool = [...backendCustList, ...ceoCustList, ...ceoRawCustList]
 
       const seenCustKeys = new Set()
       const unifiedCustomersList = []
@@ -453,7 +446,7 @@ function CeoDashboard() {
     {
       id: 'revenue',
       title: 'Total Revenue',
-      value: `₹${(metrics.totalRevenue / 100000).toFixed(2)}L`,
+      value: `₹${metrics.totalRevenue.toLocaleString('en-IN')}`,
       subtitle: '+18.4% vs last quarter',
       icon: DollarSign,
       color: 'emerald',
@@ -985,9 +978,12 @@ function CeoDashboard() {
                       <thead>
                         <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider">
                           <th className="px-5 py-3">Employee/Manager</th>
+                          <th className="px-5 py-3">ID</th>
                           <th className="px-5 py-3">Role</th>
                           <th className="px-5 py-3">Request Type</th>
                           <th className="px-5 py-3">Date</th>
+                          <th className="px-5 py-3">Duration</th>
+                          <th className="px-5 py-3">Reason</th>
                           <th className="px-5 py-3">Status</th>
                           <th className="px-5 py-3 text-center">Action</th>
                         </tr>
@@ -995,7 +991,7 @@ function CeoDashboard() {
                       <tbody className="divide-y divide-slate-100 font-medium">
                         {(!dashboardData?.pendingApprovals || dashboardData.pendingApprovals.length === 0) ? (
                           <tr>
-                            <td colSpan={6} className="py-12 text-center text-slate-400 font-bold">
+                            <td colSpan={9} className="py-12 text-center text-slate-400 font-bold">
                               No pending approvals found. All clear!
                             </td>
                           </tr>
@@ -1003,16 +999,19 @@ function CeoDashboard() {
                           dashboardData.pendingApprovals.map((req, i) => (
                             <tr key={i} className="hover:bg-slate-50/50">
                               <td className="px-5 py-3.5 text-slate-900 font-bold">{req.employee_name}</td>
+                              <td className="px-5 py-3.5 text-slate-500 font-mono">{req.employee_id || '—'}</td>
                               <td className="px-5 py-3.5 text-slate-500">{req.role}</td>
                               <td className="px-5 py-3.5 text-slate-600 font-bold">{req.request_type}</td>
                               <td className="px-5 py-3.5 text-slate-600">{req.date}</td>
+                              <td className="px-5 py-3.5 text-slate-600 font-bold">{req.duration || '—'}</td>
+                              <td className="px-5 py-3.5 text-slate-500 italic max-w-xs truncate">{req.reason || '—'}</td>
                               <td className="px-5 py-3.5">
                                 <span className="inline-block px-2 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-50 border border-amber-200 text-amber-800">
                                   {req.status}
                                 </span>
                               </td>
                               <td className="px-5 py-3.5 text-center">
-                                <div className="flex items-center justify-center gap-1.5">
+                                <div className="flex items-center justify-center gap-1.5 font-bold">
                                   <button
                                     onClick={() => handleQuickApproval(req.id, 'leave', 'Rejected')}
                                     className="rounded-lg px-2.5 py-1 text-[11px] font-bold text-rose-600 hover:bg-rose-50 transition cursor-pointer"

@@ -20,7 +20,7 @@ import { settingsAPI } from '../../services/api.js'
 const defaultRoles = [
   {
     id: 'role_1',
-    name: 'Super Admin',
+    name: 'Admin',
     description: 'Unrestricted access to all system modules, organization settings, database, and user management.',
     userCount: 2,
     isSystem: true,
@@ -61,21 +61,6 @@ const defaultRoles = [
       finance: ['write'],
       settings: [],
       audit: [],
-    },
-  },
-  {
-    id: 'role_5',
-    name: 'Finance & Accounts Manager',
-    description: 'Handle company expenses, budgeting, payroll reviews, and financial audits.',
-    userCount: 3,
-    isSystem: false,
-    permissions: {
-      crm: ['read'],
-      hrms: ['read'],
-      pipeline: ['read'],
-      finance: ['read', 'write', 'delete', 'admin'],
-      settings: [],
-      audit: ['read'],
     },
   },
 ]

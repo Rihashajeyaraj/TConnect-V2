@@ -23,6 +23,9 @@ import CompanyOverview from './roles/admin/CompanyOverview.jsx'
 import UserManagement from './roles/admin/UserManagement.jsx'
 import RoleManagement from './roles/admin/RoleManagement.jsx'
 import AuditLogs from './roles/admin/AuditLogs.jsx'
+import AdminReports from './roles/admin/AdminReports.jsx'
+import AdminSettings from './roles/admin/AdminSettings.jsx'
+import OrganizationMasterData from './roles/admin/OrganizationMasterData.jsx'
 
 // ── Manager ──────────────────────────────────────────────────────────
 import ManagerLayout from './roles/manager/ManagerLayout.jsx'
@@ -110,14 +113,11 @@ function App() {
               <Route path="roles" element={<RoleManagement />} />
               <Route path="hrms" element={<HRMS />} />
               <Route path="attendance" element={<Navigate to="/admin/hrms?tab=attendance" replace />} />
-              <Route path="reports" element={<CeoReports />} />
+              <Route path="organization" element={<OrganizationMasterData />} />
+              <Route path="reports" element={<AdminReports />} />
               <Route path="audit" element={<AuditLogs />} />
-              <Route path="settings" element={
-                <div className="bg-slate-800 p-6 rounded-2xl border border-slate-700 font-bold text-white max-w-xl">
-                  <h2 className="text-xl font-extrabold mb-2">System Settings & Configuration</h2>
-                  <p className="text-xs text-slate-300">Administrative system preferences, security parameters, and application configuration options.</p>
-                </div>
-              } />
+              <Route path="notifications" element={<Notifications />} />
+              <Route path="settings" element={<AdminSettings />} />
             </Route>
           </Route>
 

@@ -989,7 +989,7 @@ export default function Leads() {
 
     // 1. Convert via Centralized Customer Conversion API
     try {
-      const res = await crmAPI.convertFollowupToCustomer(item.id, {
+      const res = await customerAPI.convertFollowupToCustomer(item.id, {
         company_name: item.company,
         contact_person: item.person,
         phone: item.phone,
@@ -998,7 +998,8 @@ export default function Leads() {
         notes: item.remark || "Converted after follow-up call.",
         lead_id: item.leadId,
         assigned_to: userName,
-        assigned_to_email: userEmail
+        assigned_to_email: userEmail,
+        contract_value: parseFloat(String(item.value || "450000").replace(/[^0-9.]/g, "")) || 450000
       });
       if (res && res.data && res.data.customer) {
         newCustomer.id = res.data.customer.id || res.data.customer.customer_id;
@@ -1112,7 +1113,7 @@ export default function Leads() {
 
       // 1. Convert Visit via Centralized Customer Conversion API
       try {
-        const res = await crmAPI.convertVisitToCustomer(v.id, {
+        const res = await customerAPI.convertVisitToCustomer(v.id, {
           company_name: newCustomer.company,
           contact_person: newCustomer.person,
           phone: newCustomer.phone,
@@ -1121,7 +1122,8 @@ export default function Leads() {
           notes: meetingSummary,
           lead_id: v.leadId,
           assigned_to: userName,
-          assigned_to_email: userEmail
+          assigned_to_email: userEmail,
+          contract_value: parseFloat(String(agreedValue || "450000").replace(/[^0-9.]/g, "")) || 450000
         });
         if (res && res.data && res.data.customer) {
           newCustomer.id = res.data.customer.id || res.data.customer.customer_id;

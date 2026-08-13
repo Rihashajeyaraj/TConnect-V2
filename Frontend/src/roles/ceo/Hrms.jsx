@@ -172,19 +172,40 @@ function CeoHrms({ initialTab = 'employees' }) {
 
         const leaveRes = await attendanceAPI.getLeaveRequests().catch(() => null)
         if (leaveRes && leaveRes.data && leaveRes.data.length > 0) {
-          setLeaveRequests(
-            leaveRes.data.map((l, idx) => ({
-              id: l.id || `LV-${500 + idx}`,
-              employee_name: l.employee_name || l.name || 'Team Member',
-              role: l.role || 'Sales Executive',
-              leave_type: l.leave_type || 'Leave',
-              duration: l.duration || '1 Day',
-              reason: l.reason || 'Personal necessity',
-              status: l.status || 'Pending',
-              submitted_at: l.created_at || 'Recent',
-              reviewed_by: l.reviewed_by,
-            }))
+          const rawList = leaveRes.data.map((l, idx) => ({
+            id: l.id || l.leave_id || `LV-${500 + idx}`,
+            employee_name: l.employee_name || l.name || l.executive_name || 'Team Member',
+            role: l.role || 'Sales Executive',
+            leave_type: l.leave_type || 'Leave',
+            duration: l.duration || '1 Day',
+            reason: l.reason || 'Personal necessity',
+            status: l.status || 'Pending',
+            submitted_at: l.created_at || 'Recent',
+            reviewed_by: l.reviewed_by,
+            type: l.leave_type || 'Permission',
+            timing: l.time_slot || '2 Hours',
+          }))
+
+          const ceoExecutiveRequests = rawList.filter(
+            (r) =>
+              (r.role || '').toLowerCase().includes('admin') ||
+              (r.role || '').toLowerCase().includes('manager')
           )
+
+          const leavesOnly = ceoExecutiveRequests.filter(
+            (r) =>
+              !(r.leave_type || '').toLowerCase().includes('permission') &&
+              !(r.leave_type || '').toLowerCase().includes('early exit')
+          )
+
+          const permissionsOnly = ceoExecutiveRequests.filter(
+            (r) =>
+              (r.leave_type || '').toLowerCase().includes('permission') ||
+              (r.leave_type || '').toLowerCase().includes('early exit')
+          )
+
+          setLeaveRequests(leavesOnly)
+          setPermissionRequests(permissionsOnly)
         }
 
         const attRes = await attendanceAPI.getLogs().catch(() => null)

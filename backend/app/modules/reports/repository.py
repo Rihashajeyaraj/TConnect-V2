@@ -636,16 +636,21 @@ class ReportsRepository:
                 
                 exec_email = str(lr.get("executive_email") or lr.get("email") or "").lower().strip()
                 se_user = user_map_by_email.get(exec_email)
-                role_str = "Sales Executive"
-                if se_user:
-                    role_str = se_user.get("role") or "Sales Executive"
+                role_str = lr.get("role")
+                if not role_str and se_user:
+                    role_str = se_user.get("role") or se_user.get("designation")
+                if not role_str:
+                    role_str = "Sales Executive"
                 
                 pending_approvals_list.append({
                     "id": lr.get("id") or lr.get("leave_id") or lr.get("leave_request_id"),
                     "employee_name": lr.get("employee_name") or lr.get("executive_name") or "Staff",
+                    "employee_id": lr.get("employee_code") or lr.get("employee_id") or "EMP-N/A",
                     "role": role_str,
                     "request_type": lr.get("leave_type") or "Full Day Leave",
                     "date": f"{lr.get('from_date', '')} to {lr.get('to_date', '')}" if lr.get('from_date') != lr.get('to_date') else str(lr.get('from_date', '')),
+                    "duration": lr.get("duration") or "1 Day",
+                    "reason": lr.get("reason") or "N/A",
                     "status": "Pending"
                 })
 

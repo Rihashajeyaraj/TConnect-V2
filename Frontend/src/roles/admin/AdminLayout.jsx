@@ -3,6 +3,7 @@ import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { clearUserCache } from '../../utils/userScope.js'
+import { notificationAPI } from '../../services/api.js'
 import {
   LayoutDashboard,
   Building2,
@@ -23,6 +24,8 @@ import {
   MapPin,
   ShieldAlert,
   GripVertical,
+  Network,
+  Layers,
 } from 'lucide-react'
 
 const navItems = [
@@ -31,8 +34,10 @@ const navItems = [
   { label: 'User Management', icon: Users, path: '/admin/users' },
   { label: 'Role Management', icon: ShieldCheck, path: '/admin/roles' },
   { label: 'HRMS', icon: UserCheck2, path: '/admin/hrms' },
+  { label: 'Organization & Master Data', icon: Layers, path: '/admin/organization' },
   { label: 'Reports & Analytics', icon: FileText, path: '/admin/reports' },
   { label: 'Security & Audit Logs', icon: ShieldCheck, path: '/admin/audit' },
+  { label: 'Notifications', icon: Bell, path: '/admin/notifications' },
   { label: 'Settings', icon: Settings, path: '/admin/settings' },
 ]
 
@@ -85,8 +90,33 @@ function AdminLayout() {
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
-  const [notifications, setNotifications] = useState(initialNotifications)
+  const [notifications, setNotifications] = useState([])
   const [selectedNotif, setSelectedNotif] = useState(null)
+
+  const loadNotifications = async () => {
+    try {
+      const res = await notificationAPI.getNotifications()
+      if (res && res.data) {
+        const mapped = res.data.map((n) => ({
+          id: n.id,
+          title: n.title || 'System Notification',
+          message: n.message || n.description || '',
+          time: n.created_at ? new Date(n.created_at).toLocaleDateString('en-IN') : 'Recently',
+          type: n.type || 'INFO',
+          read: n.is_read || false,
+          icon: Bell,
+          color: 'text-blue-600 bg-blue-50 border-blue-200',
+        }))
+        setNotifications(mapped)
+      }
+    } catch (err) {
+      console.warn('Failed to fetch notifications from database:', err)
+    }
+  }
+
+  useEffect(() => {
+    loadNotifications()
+  }, [])
 
   const location = useLocation()
   const navigate = useNavigate()
@@ -181,17 +211,30 @@ function AdminLayout() {
     window.location.href = '/'
   }
 
-  const handleMarkAllRead = () => {
+  const handleMarkAllRead = async () => {
     setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
     showToast('All notifications marked as read', 'info')
+    const unread = notifications.filter(n => !n.read)
+    for (const n of unread) {
+      try {
+        await notificationAPI.markRead(n.id)
+      } catch (e) {}
+    }
   }
 
-  const handleSelectNotif = (notif) => {
-    setNotifications((prev) =>
-      prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n))
-    )
+  const handleSelectNotif = async (notif) => {
     setSelectedNotif(notif)
     setNotificationsOpen(false)
+    if (!notif.read) {
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notif.id ? { ...n, read: true } : n))
+      )
+      try {
+        await notificationAPI.markRead(notif.id)
+      } catch (err) {
+        console.warn('Failed to mark read in Supabase:', err)
+      }
+    }
   }
 
   return (
@@ -339,7 +382,7 @@ function AdminLayout() {
           <div className="p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-4rem)]">
             {sidebarItems.map((item, index) => {
               const Icon = item.icon
-              const isActive = location.pathname === item.path
+              const isActive = location.pathname.replace(/\/$/, '') === item.path.replace(/\/$/, '') || (item.path === '/admin' && (location.pathname === '/admin' || location.pathname === '/admin/'))
               return (
                 <div
                   key={item.path}

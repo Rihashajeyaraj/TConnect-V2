@@ -18,6 +18,10 @@ class SettingsUpdate(BaseModel):
     branches: Optional[List[Dict[str, Any]]] = None
     departments: Optional[List[Dict[str, Any]]] = None
     role_permissions: Optional[List[Dict[str, Any]]] = None
+    designations: Optional[List[Dict[str, Any]]] = None
+    products: Optional[List[Dict[str, Any]]] = None
+    lead_sources: Optional[List[Dict[str, Any]]] = None
+    customer_categories: Optional[List[Dict[str, Any]]] = None
 
 
 class SettingsResponse(BaseModel):
@@ -36,3 +40,8 @@ class SettingsResponse(BaseModel):
     branches: Optional[List[Dict[str, Any]]] = None
     departments: Optional[List[Dict[str, Any]]] = None
     role_permissions: Optional[List[Dict[str, Any]]] = None
+    designations: Optional[List[Dict[str, Any]]] = None
+    products: Optional[List[Dict[str, Any]]] = None
+    lead_sources: Optional[List[Dict[str, Any]]] = None
+    customer_categories: Optional[List[Dict[str, Any]]] = None
+

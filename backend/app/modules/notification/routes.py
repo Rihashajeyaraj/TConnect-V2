@@ -55,3 +55,19 @@ async def send_notification(
         data=notif,
         message="Notification sent successfully"
     )
+
+
+@router.patch("/{notification_id}/read", response_model=StandardResponse)
+async def mark_notification_as_read(
+    notification_id: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewNotifications),
+    service: NotificationService = Depends(get_service)
+):
+    """Mark a notification as read."""
+    res = service.mark_as_read(notification_id)
+    return StandardResponse.success_response(
+        data=res,
+        message="Notification marked as read successfully"
+    )
+

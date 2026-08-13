@@ -23,3 +23,7 @@ class NotificationService:
             payload["employee_code"] = str(sender_payload.get("employee_code") or sender_payload.get("employee_id") or "")
 
         return self.repo.create_notification(payload)
+
+    def mark_as_read(self, notification_id: str) -> Dict[str, Any]:
+        return self.repo.mark_as_read(notification_id)
+

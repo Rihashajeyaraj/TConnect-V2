@@ -268,6 +268,7 @@ export default function SalesHRMS() {
       executive_email: userEmail,
       employee_code: empCode,
       status: "Pending",
+      role: currentUser.role || profile.role || "Sales Executive",
       duration: leaveType.includes("Half") ? "0.5 Day" : leaveType.includes("Permission") ? "2 Hours" : "1 Day",
       created_at: new Date().toISOString()
     };
@@ -278,9 +279,9 @@ export default function SalesHRMS() {
 
     try {
       await attendanceAPI.submitLeaveRequest(payload);
-      showToast(`🏖️ ${leaveType} Request submitted to Sales Manager!`, "success");
+      showToast(`🏖️ ${leaveType} Request submitted successfully!`, "success");
     } catch (err) {
-      showToast(`Notice: Request submitted to manager.`, "info");
+      showToast(`Notice: Request submitted.`, "info");
     }
   };
 

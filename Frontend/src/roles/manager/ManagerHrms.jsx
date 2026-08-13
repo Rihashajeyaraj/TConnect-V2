@@ -218,6 +218,47 @@ export default function ManagerHrms() {
   const [reportFilterMode, setReportFilterMode] = useState("THIS MONTH");
   const [customDateFilter, setCustomDateFilter] = useState("");
 
+  const loadTeamLeaves = () => {
+    attendanceAPI.getLeaveRequests()
+      .then((res) => {
+        if (res && res.data && Array.isArray(res.data)) {
+          // Filter to show ONLY Sales Executives
+          const executiveRequests = res.data.filter(
+            (r) => (r.role || '').toLowerCase().includes('executive') || (r.role || '').toLowerCase().includes('sales')
+          ).map((l, idx) => ({
+            id: l.id || l.leave_id || `LR-${idx + 1}`,
+            executive: l.employee_name || l.name || l.executive_name || 'Sales Executive',
+            employeeCode: l.employee_code || 'EMP-105',
+            leaveType: l.leave_type || 'Casual Leave',
+            fromDate: l.from_date || 'N/A',
+            toDate: l.to_date || 'N/A',
+            days: l.duration || '1 Day',
+            reason: l.reason || 'Personal necessity',
+            status: l.status || 'Pending',
+            appliedOn: l.created_at ? new Date(l.created_at).toLocaleDateString('en-IN') : 'Recent',
+            managerRemark: l.manager_comment || '',
+          }))
+          setTeamLeaveRequests(executiveRequests)
+
+          // Load manager's own leaves (submitted by this manager)
+          const mine = res.data.filter(
+            (r) => (r.executive_email || '').toLowerCase().trim() === managerEmail
+          ).map((l, idx) => ({
+            id: l.id || l.leave_id || `MGR_LR-${idx + 1}`,
+            leaveType: l.leave_type || 'Casual Leave',
+            fromDate: l.from_date || 'N/A',
+            toDate: l.to_date || 'N/A',
+            days: l.duration || '1 Day',
+            reason: l.reason || 'Personal necessity',
+            status: l.status || 'Pending',
+            appliedOn: l.created_at ? new Date(l.created_at).toLocaleDateString('en-IN') : 'Recent',
+          }))
+          setMyLeaveRequests(mine)
+        }
+      })
+      .catch(() => null);
+  }
+
   useEffect(() => {
     attendanceAPI.getLogs()
       .then((res) => {
@@ -226,19 +267,15 @@ export default function ManagerHrms() {
         }
       })
       .catch(() => null);
+
+    loadTeamLeaves()
   }, []);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const getArr = (key) => { try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] } }
 
   // ── Team Leave Approval State ──────────────────────────────────────────────
-  const [teamLeaveRequests, setTeamLeaveRequests] = useState(() => {
-    const saved = getArr('tc_leave_requests')
-    const map = new Map()
-    DEFAULT_TEAM_LEAVE_REQUESTS.forEach((d) => map.set(d.id, d))
-    saved.forEach((s) => { if (s.id) map.set(s.id, s) })
-    return Array.from(map.values())
-  })
+  const [teamLeaveRequests, setTeamLeaveRequests] = useState([])
   const [leaveRemarkInputs, setLeaveRemarkInputs] = useState({})
 
   // ── Manager's Own Leave State ──────────────────────────────────────────────
@@ -248,9 +285,7 @@ export default function ManagerHrms() {
     toDate: '',
     reason: '',
   })
-  const [myLeaveRequests, setMyLeaveRequests] = useState(() => {
-    return getArr('tc_manager_leave_requests')
-  })
+  const [myLeaveRequests, setMyLeaveRequests] = useState([])
   const [leaveSubmitted, setLeaveSubmitted] = useState(false)
 
   // ── Documents State ────────────────────────────────────────────────────────
@@ -292,18 +327,22 @@ export default function ManagerHrms() {
   ].slice(0, 8)
 
   // ── Team Leave Actions ─────────────────────────────────────────────────────
-  const handleLeaveDecision = (id, decision) => {
+  const handleLeaveDecision = async (id, decision) => {
     const remark = leaveRemarkInputs[id] || (decision === 'Approved' ? 'Leave approved by Manager.' : 'Leave rejected. Please reconsider dates.')
     const updated = teamLeaveRequests.map((r) =>
       r.id === id ? { ...r, status: decision, managerRemark: remark } : r
     )
     setTeamLeaveRequests(updated)
-    try { localStorage.setItem('tc_leave_requests', JSON.stringify(updated)) } catch (e) { }
-    showToast(`Leave request ${decision.toLowerCase()} for ${updated.find((r) => r.id === id)?.executive}!`, decision === 'Approved' ? 'success' : 'error')
+    try {
+      await attendanceAPI.updateLeaveStatus(id, decision, remark)
+      showToast(`Leave request ${decision.toLowerCase()} for ${updated.find((r) => r.id === id)?.executive}!`, decision === 'Approved' ? 'success' : 'error')
+    } catch (err) {
+      showToast(`Failed to update leave status in Supabase: ${err?.message || 'Server Error'}`, 'error')
+    }
   }
 
   // ── Manager's Own Leave Submit ─────────────────────────────────────────────
-  const handleMyLeaveSubmit = (e) => {
+  const handleMyLeaveSubmit = async (e) => {
     e.preventDefault()
     if (!myLeaveForm.fromDate || !myLeaveForm.toDate || !myLeaveForm.reason.trim()) {
       showToast('Please fill all leave request fields!', 'error'); return
@@ -311,21 +350,32 @@ export default function ManagerHrms() {
     const from = new Date(myLeaveForm.fromDate)
     const to = new Date(myLeaveForm.toDate)
     const days = Math.max(1, Math.round((to - from) / (1000 * 60 * 60 * 24)) + 1)
-    const newReq = {
-      id: `MGR_LR_${Date.now()}`,
-      leaveType: myLeaveForm.leaveType,
-      fromDate: myLeaveForm.fromDate,
-      toDate: myLeaveForm.toDate,
-      days,
+    
+    const payload = {
+      id: `leave_${Date.now()}`,
+      leave_type: myLeaveForm.leaveType,
+      from_date: myLeaveForm.fromDate,
+      to_date: myLeaveForm.toDate,
+      time_slot: 'Full Day',
       reason: myLeaveForm.reason,
-      status: 'Pending MD Approval',
-      appliedOn: new Date().toLocaleDateString('en-GB').replace(/\//g, '/'),
+      executive_name: managerName,
+      executive_email: managerEmail,
+      employee_code: empCode,
+      status: 'Pending',
+      duration: `${days} Day(s)`,
+      created_at: new Date().toISOString()
     }
-    const updated = [newReq, ...myLeaveRequests]
-    setMyLeaveRequests(updated)
+
+    setMyLeaveRequests((prev) => [payload, ...prev])
     setLeaveSubmitted(true)
     setMyLeaveForm({ leaveType: 'Casual Leave', fromDate: '', toDate: '', reason: '' })
-    showToast('Leave request submitted to MD for approval!', 'success')
+    
+    try {
+      await attendanceAPI.submitLeaveRequest(payload)
+      showToast('Leave request submitted to MD for approval!', 'success')
+    } catch (err) {
+      showToast('Leave request submitted.', 'info')
+    }
   }
 
   // ── Team Stats derived from localStorage ──────────────────────────────────

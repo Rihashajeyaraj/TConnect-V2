@@ -181,7 +181,7 @@ class CustomerConversionService:
                 lead.get("assigned_to_email") or extra.get("assigned_to_email") or ""
             ),
             "notes": f"Converted from Lead | Lead#: {lead.get('lead_number', '')}",
-            # Carry exact GPS coordinates from the source lead
+            "contract_value": lead.get("expected_value") or lead.get("value") or extra.get("contract_value") or extra.get("value") or extra.get("revenue"),
             "latitude": extra.get("latitude") or lead.get("latitude"),
             "longitude": extra.get("longitude") or lead.get("longitude"),
         }
@@ -244,6 +244,7 @@ class CustomerConversionService:
                 lead_data.get("assigned_to_email") or followup.get("assignedToEmail") or extra.get("assigned_to_email") or ""
             ),
             "notes": f"Converted from Follow-up | ID: {followup_id}",
+            "contract_value": followup.get("value") or lead_data.get("expected_value") or extra.get("contract_value") or extra.get("value") or extra.get("revenue"),
         }
         return contact, followup_id
 
@@ -307,6 +308,7 @@ class CustomerConversionService:
                 lead_data.get("assigned_to_email") or visit.get("assigned_to_email") or extra.get("assigned_to_email") or ""
             ),
             "notes": f"Converted from Visit | ID: {visit_id}",
+            "contract_value": visit.get("value") or lead_data.get("expected_value") or extra.get("contract_value") or extra.get("value") or extra.get("revenue"),
         }
         return contact, visit_id
 
@@ -334,6 +336,7 @@ class CustomerConversionService:
             "assigned_to": extra.get("assigned_to") or "",
             "assigned_to_email": extra.get("assigned_to_email") or "",
             "notes": extra.get("notes") or "Direct customer entry",
+            "contract_value": extra.get("contract_value") or extra.get("value") or extra.get("revenue") or extra.get("contractValue"),
         }
         return contact, None
 

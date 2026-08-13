@@ -43,6 +43,7 @@ function UserManagement() {
   const { showToast } = useToast()
   const [users, setUsers] = useState([])
   const [activeTab, setActiveTab] = useState('table') // 'table' | 'hierarchy'
+
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedRole, setSelectedRole] = useState('ALL')
   const [selectedStatus, setSelectedStatus] = useState('ALL')
@@ -434,7 +435,7 @@ function UserManagement() {
             <Users className="w-7 h-7 text-blue-600" /> Employee & User Account Management
           </h1>
           <p className="text-xs font-semibold text-slate-500 mt-1">
-            Create portal access emails and passwords for Sales Managers and Executives to log into their portals.
+            Create portal access emails and passwords for Sales Managers and Executives and manage hierarchy assignments.
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -520,13 +521,6 @@ function UserManagement() {
             <Network className="w-4 h-4" /> Manager & Executive Team Hierarchy ({salesManagers.length} Managers)
           </button>
         </div>
-
-        {activeTab === 'hierarchy' && (
-          <span className="text-[11px] font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-3 py-1 rounded-full hidden sm:inline-flex items-center gap-1.5">
-            <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-            Live Manager-Executive Mapping
-          </span>
-        )}
       </div>
 
       {/* ======================================================== */}
