@@ -26,6 +26,20 @@ async def list_expenses(
     )
 
 
+@router.get("/manager/pending", response_model=StandardResponse)
+async def list_manager_pending_expenses(
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewExpenses),
+    service: ExpenseService = Depends(get_service)
+):
+    """Retrieve pending team expense requests for logged-in Sales Manager."""
+    data = service.get_manager_pending_expenses(user_payload)
+    return StandardResponse.success_response(
+        data=data,
+        message="Manager team pending expenses retrieved successfully"
+    )
+
+
 @router.get("/manager", response_model=StandardResponse)
 async def list_manager_expenses(
     manager_id: str = None,

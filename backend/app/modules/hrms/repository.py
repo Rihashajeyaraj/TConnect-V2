@@ -87,6 +87,7 @@ class HRMSRepository:
     def get_all_employees(self) -> List[Dict[str, Any]]:
         all_employees: List[Dict[str, Any]] = []
         seen_emails: set = set()
+        seen_ids: set = set()
 
         # Step 1: Read from hrms.employees DB table (primary — most accurate)
         try:
@@ -97,10 +98,11 @@ class HRMSRepository:
                 if not emp_email:
                     continue
                 # Normalize field names for frontend compatibility
+                emp_id = emp.get("employee_id") or emp.get("id") or str(uuid.uuid4())
                 normalized = {
-                    "employee_id": emp.get("employee_id") or emp.get("id") or str(uuid.uuid4()),
-                    "id": emp.get("employee_id") or emp.get("id"),
-                    "auth_user_id": emp.get("auth_user_id") or emp.get("user_id") or emp.get("employee_id"),
+                    "employee_id": emp_id,
+                    "id": emp_id,
+                    "auth_user_id": emp.get("auth_user_id") or emp.get("user_id") or emp_id,
                     "employee_code": emp.get("employee_code") or "N/A",
                     "first_name": emp.get("first_name") or "",
                     "last_name": emp.get("last_name") or "",
@@ -123,6 +125,7 @@ class HRMSRepository:
                 }
                 all_employees.append(normalized)
                 seen_emails.add(emp_email)
+                seen_ids.add(str(emp_id).lower().strip())
             logger.info(f"Loaded {len(all_employees)} employees from hrms.employees DB table")
         except Exception as db_err:
             logger.debug(f"hrms.employees DB read notice: {db_err}")
@@ -137,7 +140,8 @@ class HRMSRepository:
                 users_data = res_users if isinstance(res_users, list) else getattr(res_users, "users", [])
                 for idx, u in enumerate(users_data or []):
                     email = getattr(u, "email", None) or ""
-                    if not email or email.lower() in seen_emails:
+                    u_id_str = str(u.id).lower().strip()
+                    if not email or email.lower() in seen_emails or u_id_str in seen_ids:
                         continue
                     meta = getattr(u, "user_metadata", {}) or {}
                     # employee_code is always stored in metadata at creation time (EMP000001 format)
@@ -171,6 +175,7 @@ class HRMSRepository:
                         "reporting_manager_email": meta.get("reporting_manager_email") or "",
                     })
                     seen_emails.add(email.lower())
+                    seen_ids.add(u_id_str)
             logger.info(f"Total employees after Auth merge: {len(all_employees)}")
         except Exception as auth_err:
             logger.warning(f"Supabase Auth list_users notice in HRMS: {auth_err}")

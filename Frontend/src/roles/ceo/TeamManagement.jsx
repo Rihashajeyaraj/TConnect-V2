@@ -21,15 +21,21 @@ import {
   XCircle,
   X,
   Building,
+  Eye,
+  User,
 } from 'lucide-react'
 import { hrmsAPI, userAPI } from '../../services/api.js'
+import useCurrentUser from '../../hooks/useCurrentUser.js'
+import { isItemOwnedByUser } from '../../utils/userScope.js'
 
 function TeamManagement() {
   const { showToast } = useToast()
+  const currentUser = useCurrentUser()
   const [team, setTeam] = useState([])
   const [activeTab, setActiveTab] = useState('All') // 'All' | 'Admin' | 'Sales Manager' | 'Sales Executive' | 'hierarchy'
   const [searchQuery, setSearchQuery] = useState('')
   const [loading, setLoading] = useState(true)
+  const [viewingEmp, setViewingEmp] = useState(null)
 
   // Add/Edit modal state
   const [showModal, setShowModal] = useState(false)
@@ -47,6 +53,63 @@ function TeamManagement() {
     status: 'Active',
   })
 
+  const mapEmployeeData = (userList) => {
+    const leads = JSON.parse(localStorage.getItem('tc_sm_leads') || '[]');
+    const customers = JSON.parse(localStorage.getItem('tc_customer_accounts') || '[]');
+    const visits = JSON.parse(localStorage.getItem('tc_sales_visits') || '[]');
+    
+    return userList.map((e, idx) => {
+      const eRole = e.role || 'Sales Executive';
+      const eName = e.name || e.full_name || e.email?.split('@')[0] || 'Team Member';
+      const eId = e.id || e.employee_id || `USR-${idx + 1}`;
+      
+      const myExecutives = userList
+        .filter(u => u.reporting_manager_name === eName || u.reporting_manager_id === eId)
+        .map(u => u.name || u.email);
+
+      const myCustomers = customers.filter(cust => isItemOwnedByUser(cust, e));
+      const myLeads = leads.filter(lead => isItemOwnedByUser(lead, e));
+      const myConvertedLeads = myLeads.filter(
+        (l) => l.status === 'Converted to Customer' || l.status === 'Converted' || l.status === 'Closed Won'
+      );
+      
+      const dealsWon = myCustomers.length + myConvertedLeads.length;
+      const visitCount = visits.filter(v => isItemOwnedByUser(v, e)).length;
+
+      const customerRevenue = myCustomers.reduce((sum, cust) => {
+        const valStr = cust.contractValue || cust.value || cust.revenue || cust.budget || '0';
+        const val = parseInt(String(valStr).replace(/[^0-9]/g, '')) || 0;
+        return sum + val;
+      }, 0);
+      const convertedLeadsRevenue = myLeads
+        .filter((l) => l.status === 'Converted to Customer' || l.status === 'Converted' || l.status === 'Closed Won')
+        .reduce((sum, lead) => {
+          const valStr = lead.value || lead.budget || lead.deal_value || '0';
+          const val = parseInt(String(valStr).replace(/[^0-9]/g, '')) || 0;
+          return sum + val;
+        }, 0);
+      const totalRevenue = customerRevenue + convertedLeadsRevenue;
+
+      return {
+        id: eId,
+        name: eName,
+        email: e.email || '',
+        phone: e.phone || '',
+        role: eRole,
+        department: e.dept || e.department || 'Sales & BD',
+        manager: e.reporting_manager_name || (eRole.includes('Manager') || eRole.includes('Admin') ? 'CEO Office' : 'Direct / Unassigned'),
+        reporting_manager_id: e.reporting_manager_id || '',
+        reporting_manager_name: e.reporting_manager_name || '',
+        reporting_manager_email: e.reporting_manager_email || '',
+        deals_won: dealsWon,
+        revenue: totalRevenue,
+        visit_count: visitCount,
+        status: e.status || 'Active',
+        executives: myExecutives,
+      };
+    });
+  };
+
   // Load backend employees
   useEffect(() => {
     async function loadData() {
@@ -54,35 +117,7 @@ function TeamManagement() {
       try {
         const res = await userAPI.getUsers().catch(() => null)
         const userList = res && res.data && Array.isArray(res.data) ? res.data : []
-        
-        // Build team with real reporting manager assignments
-        const mapped = userList.map((e, idx) => {
-          const eRole = e.role || 'Sales Executive'
-          const eName = e.name || e.full_name || e.email?.split('@')[0] || 'Team Member'
-          const eId = e.id || e.employee_id || `USR-${idx + 1}`
-          
-          // Find executives reporting to this user if they are a manager
-          const myExecutives = userList
-            .filter(u => u.reporting_manager_name === eName || u.reporting_manager_id === eId)
-            .map(u => u.name || u.email)
-
-          return {
-            id: eId,
-            name: eName,
-            email: e.email || '',
-            phone: e.phone || '',
-            role: eRole,
-            department: e.dept || e.department || 'Sales & BD',
-            manager: e.reporting_manager_name || (eRole.includes('Manager') || eRole.includes('Admin') ? 'CEO Office' : 'Direct / Unassigned'),
-            reporting_manager_id: e.reporting_manager_id || '',
-            reporting_manager_name: e.reporting_manager_name || '',
-            reporting_manager_email: e.reporting_manager_email || '',
-            deals_won: 0,
-            revenue: 0,
-            status: e.status || 'Active',
-            executives: myExecutives,
-          }
-        })
+        const mapped = mapEmployeeData(userList)
         setTeam(mapped)
       } catch (err) {
         console.warn('Error loading team roster:', err)
@@ -237,30 +272,7 @@ function TeamManagement() {
         // Reload fresh team data
         const freshRes = await userAPI.getUsers().catch(() => null)
         if (freshRes && freshRes.data) {
-          const mapped = freshRes.data.map((e, idx) => {
-            const eRole = e.role || 'Sales Executive'
-            const eName = e.name || e.full_name || e.email?.split('@')[0] || 'Team Member'
-            const eId = e.id || e.employee_id || `USR-${idx + 1}`
-            const myExecutives = freshRes.data
-              .filter(u => u.reporting_manager_name === eName || u.reporting_manager_id === eId)
-              .map(u => u.name || u.email)
-            return {
-              id: eId,
-              name: eName,
-              email: e.email || '',
-              phone: e.phone || '',
-              role: eRole,
-              department: e.dept || e.department || 'Sales & BD',
-              manager: e.reporting_manager_name || (eRole.includes('Manager') || eRole.includes('Admin') ? 'CEO Office' : 'Direct / Unassigned'),
-              reporting_manager_id: e.reporting_manager_id || '',
-              reporting_manager_name: e.reporting_manager_name || '',
-              reporting_manager_email: e.reporting_manager_email || '',
-              deals_won: 0,
-              revenue: 0,
-              status: e.status || 'Active',
-              executives: myExecutives,
-            }
-          })
+          const mapped = mapEmployeeData(freshRes.data)
           setTeam(mapped)
         }
       } catch (err) {
@@ -287,6 +299,31 @@ function TeamManagement() {
     }
   }
 
+  const handleOpenView = (emp) => {
+    setViewingEmp(emp)
+  }
+
+  const handleOpenMyProfile = () => {
+    const myProfile = team.find(m => m.email.toLowerCase().trim() === currentUser.email.toLowerCase().trim())
+    if (myProfile) {
+      handleOpenView(myProfile)
+    } else {
+      handleOpenView({
+        id: currentUser.id || 'CEO-001',
+        name: currentUser.name || 'Dr. Twite Executive',
+        email: currentUser.email || 'ceo@tconnect.com',
+        phone: currentUser.phone || '+91 99999 00000',
+        role: currentUser.role || 'CEO / Founder',
+        department: 'CEO Office',
+        manager: 'Board of Directors',
+        status: 'Active',
+        deals_won: 0,
+        revenue: 0,
+        visit_count: 0
+      })
+    }
+  }
+
   // Managers with their respective executives for hierarchy tree
   const managers = team.filter((m) => m.role === 'Sales Manager')
 
@@ -308,13 +345,23 @@ function TeamManagement() {
           </p>
         </div>
 
-        <button
-          onClick={handleOpenAdd}
-          className="flex items-center gap-2 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white px-4 py-2.5 text-xs font-black transition shadow-xs"
-        >
-          <Plus className="size-4" />
-          Add Employee / Rep
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleOpenMyProfile}
+            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 text-xs font-black transition shadow-xs cursor-pointer"
+          >
+            <User className="size-4 text-[#832D51]" />
+            My Profile
+          </button>
+          
+          <button
+            onClick={handleOpenAdd}
+            className="flex items-center gap-2 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white px-4 py-2.5 text-xs font-black transition shadow-xs cursor-pointer"
+          >
+            <Plus className="size-4" />
+            Add Employee / Rep
+          </button>
+        </div>
       </div>
 
       {/* Role Breakdown KPI Cards */}
@@ -453,8 +500,15 @@ function TeamManagement() {
                             <p className="text-[10px] text-slate-400">{exec.deals_won} Deals</p>
                           </div>
                           <button
+                            onClick={() => handleOpenView(exec)}
+                            className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 cursor-pointer"
+                            title="View Profile"
+                          >
+                            <Eye className="size-3.5" />
+                          </button>
+                          <button
                             onClick={() => handleOpenEdit(exec)}
-                            className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700"
+                            className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 cursor-pointer"
                             title="Edit"
                           >
                             <Edit2 className="size-3.5" />
@@ -528,8 +582,15 @@ function TeamManagement() {
                   <td className="py-3 text-right">
                     <div className="flex items-center justify-end gap-1">
                       <button
+                        onClick={() => handleOpenView(emp)}
+                        className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition cursor-pointer"
+                        title="View Employee Profile"
+                      >
+                        <Eye className="size-3.5" />
+                      </button>
+                      <button
                         onClick={() => handleOpenEdit(emp)}
-                        className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition"
+                        className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition cursor-pointer"
                         title="Edit Employee"
                       >
                         <Edit2 className="size-3.5" />
@@ -682,6 +743,120 @@ function TeamManagement() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* View Employee Profile Modal */}
+      {viewingEmp && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6 relative overflow-hidden">
+            {/* Header branding line */}
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#832D51]" />
+            
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 mt-2">
+              <div className="flex items-center gap-3">
+                <span className="grid size-12 place-items-center rounded-2xl bg-[#832D51] text-white font-black text-sm shadow-sm">
+                  {viewingEmp.name.split(' ').map((n) => n[0]).join('').toUpperCase()}
+                </span>
+                <div>
+                  <h3 className="text-lg font-black text-slate-900">{viewingEmp.name}</h3>
+                  <span className="inline-flex rounded-md bg-[#F8CAE4]/20 px-2 py-0.5 mt-0.5 text-[10px] font-black text-[#832D51]">
+                    {viewingEmp.role}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setViewingEmp(null)}
+                className="rounded-full p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {/* Profile Fields Details */}
+            <div className="space-y-4">
+              <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Employee Information</h4>
+              
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-semibold text-slate-800">
+                <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
+                  <Mail className="size-4 text-[#832D51] shrink-0" />
+                  <div className="truncate">
+                    <p className="text-[9px] uppercase font-bold text-slate-400">Email Address</p>
+                    <p className="truncate">{viewingEmp.email}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
+                  <Phone className="size-4 text-[#832D51] shrink-0" />
+                  <div>
+                    <p className="text-[9px] uppercase font-bold text-slate-400">Phone Number</p>
+                    <p>{viewingEmp.phone || 'N/A'}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
+                  <Building className="size-4 text-[#832D51] shrink-0" />
+                  <div>
+                    <p className="text-[9px] uppercase font-bold text-slate-400">Department</p>
+                    <p>{viewingEmp.department}</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
+                  <Network className="size-4 text-[#832D51] shrink-0" />
+                  <div>
+                    <p className="text-[9px] uppercase font-bold text-slate-400">Reporting To</p>
+                    <p>{viewingEmp.manager || 'CEO Office'}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50 text-xs">
+                <ShieldCheck className="size-4 text-[#832D51] shrink-0" />
+                <div>
+                  <p className="text-[9px] uppercase font-bold text-slate-400">Status</p>
+                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black border mt-0.5 ${
+                    viewingEmp.status?.toLowerCase() === 'active'
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : 'bg-rose-50 text-rose-700 border-rose-200'
+                  }`}>
+                    {viewingEmp.status}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Sales Executive Metrics Section */}
+            {viewingEmp.role === 'Sales Executive' && (
+              <div className="space-y-3.5 border-t border-slate-100 pt-4">
+                <h4 className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">Field Performance Metrics</h4>
+                
+                <div className="grid grid-cols-3 gap-3 text-center">
+                  <div className="p-3 rounded-2xl border border-slate-200 bg-white">
+                    <p className="text-lg font-black text-slate-900">{viewingEmp.visit_count || 0}</p>
+                    <p className="text-[9px] font-bold uppercase text-slate-400 mt-1">Client Visits</p>
+                  </div>
+
+                  <div className="p-3 rounded-2xl border border-slate-200 bg-white">
+                    <p className="text-lg font-black text-slate-900">{viewingEmp.deals_won || 0}</p>
+                    <p className="text-[9px] font-bold uppercase text-slate-400 mt-1">Deals Won</p>
+                  </div>
+
+                  <div className="p-3 rounded-2xl border border-slate-200 bg-white">
+                    <p className="text-lg font-black text-emerald-700 font-extrabold">₹{((viewingEmp.revenue || 0) / 100000).toFixed(1)}L</p>
+                    <p className="text-[9px] font-bold uppercase text-slate-400 mt-1">Revenue Won</p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <button
+              onClick={() => setViewingEmp(null)}
+              className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-black rounded-xl text-xs transition cursor-pointer"
+            >
+              Close Profile View
+            </button>
           </div>
         </div>
       )}

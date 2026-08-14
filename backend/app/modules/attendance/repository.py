@@ -11,6 +11,82 @@ _in_memory_leave_requests: List[Dict[str, Any]] = []
 _in_memory_enrollments: Dict[str, Dict[str, Any]] = {}
 
 
+def parse_serialized_reason(reason_str: str) -> dict:
+    res = {
+        "raw_reason": reason_str or "",
+        "leave_type": "Full Day Leave",
+        "time_slot": "Full Day",
+        "duration": "1 Day",
+        "role": "Sales Executive",
+        "employee_name": "Sales Executive",
+        "employee_code": "EMP000012",
+        "approved_by": None,
+        "approved_at": None,
+        "rejected_by": None,
+        "rejected_at": None,
+        "manager_comment": ""
+    }
+    if not reason_str:
+        return res
+        
+    parts = [p.strip() for p in reason_str.split("|")]
+    if len(parts) > 0:
+        res["raw_reason"] = parts[0]
+        
+    for p in parts[1:]:
+        if ":" in p:
+            try:
+                k, v = p.split(":", 1)
+                k = k.strip().lower()
+                v = v.strip()
+                if k == "type":
+                    res["leave_type"] = v
+                elif k == "slot":
+                    res["time_slot"] = v
+                elif k == "duration":
+                    res["duration"] = v
+                elif k == "role":
+                    res["role"] = v
+                elif k == "emp_name":
+                    res["employee_name"] = v
+                elif k == "emp_code":
+                    res["employee_code"] = v
+                elif k == "approved_by":
+                    res["approved_by"] = v
+                elif k == "approved_at":
+                    res["approved_at"] = v
+                elif k == "rejected_by":
+                    res["rejected_by"] = v
+                elif k == "rejected_at":
+                    res["rejected_at"] = v
+                elif k in ("comment", "manager_comment", "reason"):
+                    res["manager_comment"] = v
+            except Exception:
+                pass
+                
+    return res
+
+def serialize_reason(raw_reason: str, leave_type: str, time_slot: str, duration: str, role: str, employee_name: str, employee_code: str, approved_by=None, approved_at=None, rejected_by=None, rejected_at=None, manager_comment=None) -> str:
+    parts = [raw_reason or "Personal / Medical Leave"]
+    parts.append(f"type:{leave_type or 'Full Day Leave'}")
+    parts.append(f"slot:{time_slot or 'Full Day'}")
+    parts.append(f"duration:{duration or '1 Day'}")
+    parts.append(f"role:{role or 'Sales Executive'}")
+    parts.append(f"emp_name:{employee_name or 'Sales Executive'}")
+    parts.append(f"emp_code:{employee_code or 'EMP000012'}")
+    if approved_by:
+        parts.append(f"approved_by:{approved_by}")
+    if approved_at:
+        parts.append(f"approved_at:{approved_at}")
+    if rejected_by:
+        parts.append(f"rejected_by:{rejected_by}")
+    if rejected_at:
+        parts.append(f"rejected_at:{rejected_at}")
+    if manager_comment:
+        parts.append(f"comment:{manager_comment}")
+    return " | ".join(parts)
+
+
 class AttendanceRepository:
     def __init__(self):
         self.supabase = get_supabase_admin_client() or get_supabase_client()
@@ -406,14 +482,14 @@ class AttendanceRepository:
         # Load employees for mapping
         emp_map = {}
         try:
-            res_emp = self.supabase.schema("hrms").table("employees").select("employee_id, name, email, employee_code").execute()
+            res_emp = self.supabase.schema("hrms").table("employees").select("employee_id, name, email, employee_code, role").execute()
             if res_emp.data:
                 for e in res_emp.data:
                     if e.get("employee_id"):
                         emp_map[e.get("employee_id")] = e
         except Exception:
             try:
-                res_emp = self.supabase.table("employees").select("id, employee_id, name, email, employee_code").execute()
+                res_emp = self.supabase.table("employees").select("id, employee_id, name, email, employee_code, role").execute()
                 if res_emp.data:
                     for e in res_emp.data:
                         key = e.get("employee_id") or e.get("id")
@@ -425,28 +501,41 @@ class AttendanceRepository:
         standardized = []
         for lr in leave_requests:
             row = dict(lr)
-            lr_id = row.get("leave_request_id")
+            lr_id = row.get("leave_request_id") or row.get("id") or row.get("leave_id")
             row["id"] = lr_id
             row["leave_id"] = lr_id
-            row["leave_type"] = lr.get("leave_type") or "Full Day Leave" 
-            row["time_slot"] = lr.get("time_slot") or "Full Day"
-            row["duration"] = lr.get("duration") or "1 Day"
-            row["manager_comment"] = lr.get("manager_comment") or lr.get("comment") or ""
+            row["leave_request_id"] = lr_id
+            
+            # Parse serialized properties from reason column
+            parsed = parse_serialized_reason(row.get("reason"))
+            row["reason"] = parsed["raw_reason"]
+            row["raw_reason"] = parsed["raw_reason"]
+            row["leave_type"] = parsed["leave_type"]
+            row["time_slot"] = parsed["time_slot"]
+            row["duration"] = parsed["duration"]
+            row["role"] = parsed["role"]
+            row["manager_comment"] = parsed["manager_comment"]
+            
+            # Determine request_type (Leave or Permission) for CEO approval page
+            row["request_type"] = "PERMISSION" if "permission" in str(parsed["leave_type"]).lower() else "LEAVE"
             
             emp_id = row.get("employee_id")
             if emp_id and emp_id in emp_map:
                 emp = emp_map[emp_id]
-                row["employee_name"] = emp.get("name")
-                row["executive_name"] = emp.get("name")
-                row["executive"] = emp.get("name")
+                row["employee_name"] = emp.get("name") or parsed["employee_name"]
+                row["executive_name"] = emp.get("name") or parsed["employee_name"]
+                row["executive"] = emp.get("name") or parsed["employee_name"]
                 row["executive_email"] = emp.get("email")
-                row["employee_code"] = emp.get("employee_code")
+                row["email"] = emp.get("email")
+                row["employee_code"] = emp.get("employee_code") or parsed["employee_code"]
+                row["role"] = emp.get("role") or parsed["role"]
             else:
-                row["employee_name"] = row.get("employee_name") or "Sales Executive"
-                row["executive_name"] = row.get("executive_name") or "Sales Executive"
-                row["executive"] = row.get("executive") or "Sales Executive"
+                row["employee_name"] = parsed["employee_name"] or row.get("employee_name") or "Sales Executive"
+                row["executive_name"] = parsed["employee_name"] or row.get("executive_name") or "Sales Executive"
+                row["executive"] = parsed["employee_name"] or row.get("executive") or "Sales Executive"
                 row["executive_email"] = row.get("executive_email") or "executive@tconnect.com"
-                row["employee_code"] = row.get("employee_code") or "EMP000012"
+                row["email"] = row.get("executive_email") or "executive@tconnect.com"
+                row["employee_code"] = parsed["employee_code"] or row.get("employee_code") or "EMP000012"
             standardized.append(row)
         return standardized
 
@@ -525,14 +614,18 @@ class AttendanceRepository:
         if not resolved_emp_id or not is_uuid(resolved_emp_id):
             resolved_emp_id = user_id if is_uuid(user_id) else str(uuid.uuid4())
 
+        time_slot = data.get("time_slot") or data.get("slot") or "Full Day"
+        duration = data.get("duration") or ("0.5 Day" if "Half" in leave_type else "2 Hours" if "Permission" in leave_type else "1 Day")
+        role = str((user_payload or {}).get("role") or "Sales Manager")
+
         req_obj = {
             "id": req_id,
             "leave_id": req_id,
             "leave_type": leave_type,
             "from_date": data.get("from_date") or data.get("date") or today_str,
             "to_date": data.get("to_date") or data.get("date") or today_str,
-            "time_slot": data.get("time_slot") or data.get("slot") or "Full Day",
-            "duration": data.get("duration") or ("0.5 Day" if "Half" in leave_type else "2 Hours" if "Permission" in leave_type else "1 Day"),
+            "time_slot": time_slot,
+            "duration": duration,
             "reason": reason_str,
             "employee_name": exec_name,
             "executive_name": exec_name,
@@ -544,22 +637,23 @@ class AttendanceRepository:
             "created_at": now_iso
         }
 
+        serialized_reason = serialize_reason(
+            raw_reason=reason_str,
+            leave_type=leave_type,
+            time_slot=time_slot,
+            duration=duration,
+            role=role,
+            employee_name=exec_name,
+            employee_code=emp_code
+        )
+
         db_payload = {
             "leave_request_id": leave_req_uuid,
-            "id": leave_req_uuid,
-            "leave_id": leave_req_uuid,
             "employee_id": resolved_emp_id,
-            "employee_code": emp_code,
-            "employee_name": exec_name,
-            "executive_name": exec_name,
-            "executive_email": exec_email,
-            "email": exec_email,
-            "leave_type": leave_type,
+            "leave_type_id": None,
             "from_date": req_obj["from_date"],
             "to_date": req_obj["to_date"],
-            "time_slot": req_obj["time_slot"],
-            "duration": req_obj["duration"],
-            "reason": reason_str,
+            "reason": serialized_reason,
             "status": "Pending",
             "created_at": now_iso
         }
@@ -603,6 +697,7 @@ class AttendanceRepository:
         # Resolve manager's employee_id from user_payload
         manager_emp_id = None
         user_id = str((user_payload or {}).get("sub") or (user_payload or {}).get("user_id") or "")
+        user_email = (user_payload or {}).get("email")
         is_uuid = lambda x: x and len(str(x)) == 36 and "-" in str(x)
         
         if user_id:
@@ -618,9 +713,63 @@ class AttendanceRepository:
                 except Exception:
                     pass
 
+        if not manager_emp_id and user_email:
+            try:
+                res = self.supabase.schema("hrms").table("employees").select("employee_id").eq("email", user_email).execute()
+                if res.data and len(res.data) > 0:
+                    manager_emp_id = res.data[0].get("employee_id")
+            except Exception:
+                try:
+                    res = self.supabase.table("employees").select("id, employee_id").eq("email", user_email).execute()
+                    if res.data and len(res.data) > 0:
+                        manager_emp_id = res.data[0].get("employee_id") or res.data[0].get("id")
+                except Exception:
+                    pass
+
+        # Get existing leave request to preserve other serialized properties
+        existing_reason = ""
+        try:
+            res_exist = self.supabase.schema("hrms").table("leave_requests").select("reason").eq("leave_request_id", request_id).execute()
+            if res_exist.data and len(res_exist.data) > 0:
+                existing_reason = res_exist.data[0].get("reason") or ""
+            else:
+                res_exist = self.supabase.table("leave_requests").select("reason").eq("leave_request_id", request_id).execute()
+                if res_exist.data and len(res_exist.data) > 0:
+                    existing_reason = res_exist.data[0].get("reason") or ""
+        except Exception:
+            pass
+
+        parsed = parse_serialized_reason(existing_reason)
+        now_str = datetime.utcnow().isoformat()
+        
+        if str(new_status).lower() in ("approved", "accepted"):
+            parsed["approved_by"] = manager_emp_id or user_id
+            parsed["approved_at"] = now_str
+            parsed["manager_comment"] = comment or parsed["manager_comment"]
+        else:
+            parsed["rejected_by"] = manager_emp_id or user_id
+            parsed["rejected_at"] = now_str
+            parsed["manager_comment"] = comment or parsed["manager_comment"]
+
+        serialized_reason = serialize_reason(
+            raw_reason=parsed["raw_reason"],
+            leave_type=parsed["leave_type"],
+            time_slot=parsed["time_slot"],
+            duration=parsed["duration"],
+            role=parsed["role"],
+            employee_name=parsed["employee_name"],
+            employee_code=parsed["employee_code"],
+            approved_by=parsed["approved_by"],
+            approved_at=parsed["approved_at"],
+            rejected_by=parsed["rejected_by"],
+            rejected_at=parsed["rejected_at"],
+            manager_comment=parsed["manager_comment"]
+        )
+
         updates = {
             "status": new_status,
-            "approved_by": manager_emp_id if is_uuid(manager_emp_id) else None
+            "approved_by": manager_emp_id if is_uuid(manager_emp_id) else None,
+            "reason": serialized_reason
         }
 
         print("[LEAVE APPROVAL]")

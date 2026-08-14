@@ -22,17 +22,19 @@ import {
   Activity,
   CheckCircle2,
   GripVertical,
+  Receipt,
 } from 'lucide-react'
 
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { clearUserCache } from '../../utils/userScope.js'
 
-// Exactly the 8 requested CEO main navigation items
+// Exactly the 9 requested CEO main navigation items
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/ceo' },
   { label: 'Customers', icon: Users, path: '/ceo/customers' },
   { label: 'Team Management', icon: Users2, path: '/ceo/team-management' },
   { label: 'HRMS', icon: Briefcase, path: '/ceo/hrms' },
+  { label: 'Expense Claims', icon: Receipt, path: '/ceo/expenses' },
   { label: 'Sales & Revenue', icon: TrendingUp, path: '/ceo/sales-revenue' },
   { label: 'Reports', icon: FileText, path: '/ceo/reports' },
   { label: 'Notifications', icon: Bell, path: '/ceo/notifications', badge: '3' },

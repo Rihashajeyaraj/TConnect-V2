@@ -52,6 +52,9 @@ class ExpenseService:
     def get_manager_expenses(self, user_payload: Dict[str, Any] = None, params: Dict[str, Any] = None) -> Dict[str, Any]:
         return self.repo.get_manager_expenses(user_payload, params)
 
+    def get_manager_pending_expenses(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        return self.repo.get_manager_pending_expenses(user_payload)
+
     def change_status(self, exp_id: str, status: str, remarks: str, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         if user_payload:
             role = normalize_user_role(user_payload.get("role"))

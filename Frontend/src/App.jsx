@@ -86,6 +86,7 @@ function App() {
               <Route path="reports" element={<CeoReports />} />
               <Route path="notifications" element={<CeoNotifications />} />
               <Route path="settings" element={<CeoSettings />} />
+              <Route path="expenses" element={<ManagerExpenses />} />
 
               {/* Backward compatibility aliases */}
               <Route path="sales-overview" element={<Navigate to="/ceo/sales-revenue" replace />} />

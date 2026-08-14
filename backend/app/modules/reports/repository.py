@@ -662,13 +662,57 @@ class ReportsRepository:
                 if str(lr.get("status", "")).lower() != "pending":
                     continue
                 
-                exec_email = str(lr.get("executive_email") or lr.get("email") or "").lower().strip()
-                se_user = user_map_by_email.get(exec_email)
+                # Check if it requires CEO approval
+                req_emp_id = lr.get("employee_id")
+                req_email = str(lr.get("executive_email") or lr.get("email") or "").lower().strip()
+                
+                # Resolve requester from hrms employees
+                req_emp = None
+                if req_emp_id:
+                    req_emp = next((u for u in all_users if str(u.get("employee_id") or u.get("id") or u.get("employee_code") or "").lower().strip() == str(req_emp_id).lower().strip()), None)
+                if not req_emp and req_email:
+                    req_emp = next((u for u in all_users if str(u.get("email") or "").lower().strip() == req_email), None)
+                    
                 role_str = lr.get("role")
-                if not role_str and se_user:
-                    role_str = se_user.get("role") or se_user.get("designation")
+                mgr_name = None
+                if req_emp:
+                    role_str = role_str or req_emp.get("role") or req_emp.get("designation")
+                    mgr_name = req_emp.get("reporting_manager") or req_emp.get("reporting_manager_name")
+                
                 if not role_str:
                     role_str = "Sales Executive"
+                
+                role_lower = str(role_str).lower()
+                mgr_lower = str(mgr_name or "").lower()
+                
+                # CEO approves manager and admin requests ONLY
+                is_ceo_approval = False
+                if "manager" in role_lower or "admin" in role_lower:
+                    is_ceo_approval = True
+                        
+                if not is_ceo_approval:
+                    continue
+                    
+                from_dt = lr.get("from_date")
+                to_dt = lr.get("to_date")
+                
+                # Format to dd/mm/yyyy
+                def format_date_str(date_val):
+                    if not date_val:
+                        return ""
+                    if "-" in date_val:
+                        try:
+                            # YYYY-MM-DD
+                            parts = date_val.split("-")
+                            if len(parts) == 3:
+                                return f"{parts[2]}/{parts[1]}/{parts[0]}"
+                        except Exception:
+                            pass
+                    return str(date_val)
+                    
+                formatted_from = format_date_str(from_dt)
+                formatted_to = format_date_str(to_dt)
+                date_str = f"{formatted_from} to {formatted_to}" if formatted_from != formatted_to else formatted_from
                 
                 pending_approvals_list.append({
                     "id": lr.get("id") or lr.get("leave_id") or lr.get("leave_request_id"),
@@ -676,7 +720,7 @@ class ReportsRepository:
                     "employee_id": lr.get("employee_code") or lr.get("employee_id") or "EMP-N/A",
                     "role": role_str,
                     "request_type": lr.get("leave_type") or "Full Day Leave",
-                    "date": f"{lr.get('from_date', '')} to {lr.get('to_date', '')}" if lr.get('from_date') != lr.get('to_date') else str(lr.get('from_date', '')),
+                    "date": date_str,
                     "duration": lr.get("duration") or "1 Day",
                     "reason": lr.get("reason") or "N/A",
                     "status": "Pending"

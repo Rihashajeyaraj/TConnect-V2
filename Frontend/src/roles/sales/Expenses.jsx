@@ -22,51 +22,6 @@ import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { expenseAPI, notificationAPI } from "../../services/api.js";
 
-const DEFAULT_EXPENSES = [
-  {
-    id: "exp_101",
-    visitId: "vis_1",
-    clientName: "Apex Global Solutions",
-    location: "Coimbatore Site",
-    type: "Travel / Fuel",
-    amount: "₹1,850",
-    rawAmount: 1850,
-    date: "2026-08-04",
-    remarks: "Travel & toll charges for client product demo & contract signing meeting.",
-    status: "Pending Manager Approval",
-    submittedAt: "2026-08-04 11:30 AM",
-    billFileName: "coimbatore_travel_receipt.pdf"
-  },
-  {
-    id: "exp_102",
-    visitId: "vis_2",
-    clientName: "ABC Hospital",
-    location: "Chennai Site",
-    type: "Client Food & Meeting Refreshments",
-    amount: "₹1,200",
-    rawAmount: 1200,
-    date: "2026-08-03",
-    remarks: "Discussion lunch with hospital director & IT team.",
-    status: "Approved by Sales Manager",
-    submittedAt: "2026-08-03 02:15 PM",
-    billFileName: "food_bill_receipt.jpg"
-  },
-  {
-    id: "exp_103",
-    visitId: "vis_3",
-    clientName: "XYZ Builders",
-    location: "Tambaram, Chennai",
-    type: "Local Travel & Cab",
-    amount: "₹650",
-    rawAmount: 650,
-    date: "2026-08-02",
-    remarks: "Auto & cab fare to project construction site.",
-    status: "Approved by Sales Manager",
-    submittedAt: "2026-08-02 05:40 PM",
-    billFileName: "cab_ticket.pdf"
-  }
-];
-
 export default function Expenses() {
   const { showToast } = useToast();
   const currentUser = useCurrentUser();
@@ -77,20 +32,7 @@ export default function Expenses() {
   const userId = currentUser.id || currentUser.user_id || "";
   const userPhone = currentUser.phone || currentUser.mobile || currentUser.phone_number || "";
 
-  const matchesUser = (item) => {
-    if (!item) return false;
-    const execEmail = (item.executiveEmail || item.executive_email || item.email || "").toLowerCase().trim();
-    const execName = (item.executive || item.executiveName || "").toLowerCase().trim();
-    const empCode = (item.employee_id || item.employee_code || "").toLowerCase().trim();
-    const uid = (item.user_id || item.userId || "").toLowerCase().trim();
-
-    if (userEmail && (execEmail === userEmail || execName === userEmail)) return true;
-    if (userEmpCode && empCode === userEmpCode.toLowerCase()) return true;
-    if (userId && uid === userId.toLowerCase()) return true;
-    if (userName && (execName.includes(userName.toLowerCase()) || userName.toLowerCase().includes(execName))) return true;
-
-    return false;
-  };
+  const matchesUser = () => true; // API scoping already filters to current user's expenses
 
   // Load Sales Visits from Shared LocalStorage
   const [visitsList, setVisitsList] = useState([]);
@@ -101,55 +43,50 @@ export default function Expenses() {
     } catch (err) {}
   }, [userEmail]);
 
-  // Persistent Expense State
-  const [expenseList, setExpenseList] = useState(() => {
+  // Persistent Expense State - empty by default, loaded from API
+  const [expenseList, setExpenseList] = useState([]);
+  const [loading, setLoading] = useState(false);
+
+  const fetchExpenses = async () => {
+    setLoading(true);
     try {
-      const saved = localStorage.getItem("tc_sales_expenses");
-      const parsed = saved ? JSON.parse(saved) : filterUserItems(DEFAULT_EXPENSES, currentUser);
-      return filterUserItems(parsed, currentUser);
-    } catch {
-      return filterUserItems(DEFAULT_EXPENSES, currentUser);
+      const res = await expenseAPI.getExpenses();
+      if (res?.data && Array.isArray(res.data)) {
+        const normalized = res.data.map((e, idx) => {
+          const eId = e.expense_id || e.id;
+          return {
+            ...e,
+            id: eId,
+            visitId: e.visit_id || "direct",
+            type: e.category || "General",
+            category: e.category || "General",
+            amount: e.amount ? `₹${parseFloat(e.amount).toLocaleString("en-IN")}` : "₹0",
+            rawAmount: parseFloat(e.amount) || 0,
+            clientName: e.customer_name || e.employee_name || "Field Site Visit",
+            location: e.location || "Site Location",
+            remarks: e.title || e.description || "No description provided.",
+            status: e.status || "PENDING",
+            date: e.expense_date || e.date || "",
+            submittedAt: e.created_at ? new Date(e.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "",
+            billFileName: e.bill_file_name || "",
+            reporting_manager: e.reporting_manager || "Not Assigned",
+            reporting_manager_email: e.reporting_manager_email || "",
+          };
+        });
+        setExpenseList(normalized);
+      } else {
+        setExpenseList([]);
+      }
+    } catch (err) {
+      console.error("Failed fetching expenses:", err);
+    } finally {
+      setLoading(false);
     }
-  });
+  };
 
-  // Fetch expenses from Supabase backend on mount
   useEffect(() => {
-    expenseAPI.getExpenses()
-      .then((res) => {
-        if (res?.data && Array.isArray(res.data) && res.data.length > 0) {
-          setExpenseList((prev) => {
-            const merged = [...prev];
-            res.data.forEach((e) => {
-              const eId = e.expense_id || e.id;
-              if (!merged.some((m) => m.id === eId || m.expense_id === eId)) {
-                // Normalize API response field names to match local format
-                merged.unshift({
-                  ...e,
-                  id: eId,
-                  type: e.category || e.type || "General",
-                  category: e.category || e.type || "General",
-                  amount: e.amount ? `₹${parseFloat(e.amount).toLocaleString("en-IN")}` : "₹0",
-                  rawAmount: parseFloat(e.amount) || 0,
-                  clientName: e.customer_name || e.clientName || "",
-                  status: e.status || "Pending Manager Approval",
-                  executiveName: e.employee_name || e.assigned_to || e.executiveName || "",
-                  executiveEmail: e.assigned_to_email || e.employee_email || e.executiveEmail || "",
-                });
-              }
-            });
-            return merged;
-          });
-        }
-      })
-      .catch(() => {}); // Silent fail — show local data
-  }, []);
-
-  // Sync to LocalStorage
-  useEffect(() => {
-    try {
-      localStorage.setItem("tc_sales_expenses", JSON.stringify(expenseList));
-    } catch (e) {}
-  }, [expenseList]);
+    fetchExpenses();
+  }, [userEmail]);
 
 
   // Form State
@@ -226,39 +163,7 @@ export default function Expenses() {
       } catch (err) {}
     }
 
-    const newExpenseObj = {
-      id: `exp_${Date.now()}`,
-      visitId: form.visitId || "direct",
-      clientName: form.clientName.trim() || "Standalone Field Expense",
-      location: form.location.trim() || "Field Site",
-      type: finalType,
-      category: finalType,
-      amount: formattedAmountStr,
-      rawAmount: numericVal,
-      date: form.date,
-      remarks: form.remarks || "Site visit travel & operational expenses.",
-      status: "Pending Manager Approval",
-      submittedAt: new Date().toLocaleString([], { dateStyle: "short", timeStyle: "short" }),
-      executiveName: userName,
-      executiveEmail: userEmail,
-      assigned_to: userName,
-      assigned_to_email: userEmail,
-      employee_code: userEmpCode || "EMP000012",
-      billFileName: form.billFile ? form.billFile.name : "",
-      receipt_url: uploadedDataUrl,
-      receiptUrl: uploadedDataUrl,
-      file_url: uploadedDataUrl,
-    };
-
-    // 1. Update local state + localStorage first for instant UI
-    const updatedExpenses = [newExpenseObj, ...expenseList];
-    setExpenseList(updatedExpenses);
-    try {
-      const smExps = JSON.parse(localStorage.getItem("tc_sm_expenses") || "[]");
-      localStorage.setItem("tc_sm_expenses", JSON.stringify([newExpenseObj, ...smExps]));
-    } catch (err) {}
-
-    // 2. Persist to Supabase via backend API
+    // 1. Persist to Supabase via backend API
     try {
       await expenseAPI.createExpense({
         category: finalType,
@@ -267,67 +172,35 @@ export default function Expenses() {
         currency: "INR",
         receipt_url: uploadedDataUrl || null,
         bill_file_name: form.billFile ? form.billFile.name : null,
-        // Employee identity (will also be stamped from JWT on backend)
-        employee_name: userName,
-        employee_phone: userPhone || null,
-        employee_id: userEmpCode || null,
-        employee_code: userEmpCode || null,
-        // Visit/Customer context
         visit_id: form.visitId || null,
         customer_name: form.clientName.trim() || null,
         location: form.location.trim() || null,
         date: form.date,
-        remarks: form.remarks || null,
       });
+
+      showToast(`📨 Expense Request (${formattedAmountStr}) sent to Sales Manager for approval!`, "success");
+
+      // 2. Reset Form
+      setForm({
+        visitId: "",
+        clientName: "",
+        location: "",
+        type: "Travel / Fuel",
+        customType: "",
+        amount: "",
+        date: new Date().toISOString().slice(0, 10),
+        remarks: "",
+        billFile: null,
+        billDataUrl: "",
+      });
+      setShowSubmitModal(false);
+
+      // 3. Refresh list from backend database
+      await fetchExpenses();
     } catch (apiErr) {
-      // Non-blocking: expense already saved locally, backend will retry on next sync
-      console.warn("[Expense API] Backend save failed, stored locally:", apiErr?.message || apiErr);
+      const errMsg = apiErr.response?.data?.detail || apiErr.message || "Failed to submit expense request";
+      showToast(errMsg, "error");
     }
-
-    // 3. Send Real-Time Notification to Sales Manager (persist to Supabase)
-    const smNotifData = {
-      title: `🧾 New Expense Claim Request: ${formattedAmountStr} by ${userName}`,
-      message: `${userName} submitted a ${finalType} expense request (${formattedAmountStr}) for visit to "${form.clientName || 'Client Site'}". Requires your review & approval.`,
-      type: "Expense",
-      reference_module: "Expenses",
-      recipient_name: "Sales Manager",
-      recipient_id: "manager",
-    };
-
-    // Save to localStorage for instant UI sync
-    try {
-      const savedNotifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
-      localStorage.setItem("tc_app_notifications", JSON.stringify([{
-        id: `notif_sm_exp_${Date.now()}`,
-        ...smNotifData,
-        recipientRole: "manager",
-        time: "Just now",
-        read: false,
-      }, ...savedNotifs]));
-    } catch (err) {}
-
-    // Also save to Supabase via backend API
-    try {
-      await notificationAPI.sendNotification(smNotifData);
-    } catch (notifErr) {
-      console.warn("[Notification API] Backend save failed:", notifErr?.message || notifErr);
-    }
-
-    // Reset Form
-    setForm({
-      visitId: "",
-      clientName: "",
-      location: "",
-      type: "Travel / Fuel",
-      customType: "",
-      amount: "",
-      date: new Date().toISOString().slice(0, 10),
-      remarks: "",
-      billFile: null,
-    });
-    setShowSubmitModal(false);
-
-    showToast(`📨 Expense Request (${formattedAmountStr}) sent to Sales Manager for approval!`, "success");
   };
 
   // Compute Live Metrics strictly for logged in executive

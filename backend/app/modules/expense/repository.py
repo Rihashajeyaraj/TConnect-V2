@@ -18,8 +18,6 @@ class ExpenseRepository:
         user_role = str((user_payload or {}).get("role") or "").strip()
         user_emp_code = str((user_payload or {}).get("employee_code") or (user_payload or {}).get("employee_id") or "").strip()
 
-        is_executive = user_role not in ("Admin", "Super Admin", "System Admin", "Sales Manager", "Manager", "CEO")
-
         claims = []
         # Primary: try finance.expenses
         try:
@@ -40,10 +38,45 @@ class ExpenseRepository:
             except Exception as e:
                 logger.warning(f"public.expenses fetch failed: {e}")
 
-        from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
-        allowed = get_allowed_user_identifiers(user_payload)
-        if allowed is not None:
-            claims = [e for e in claims if is_record_accessible(e, allowed)]
+        from app.core.scoping import get_allowed_user_identifiers, is_record_accessible, normalize_user_role
+        norm_role = normalize_user_role(user_role)
+        
+        if norm_role == "ceo":
+            try:
+                from app.modules.users.repository import UserRepository
+                all_users = UserRepository().get_all_users()
+            except Exception:
+                all_users = []
+
+            def get_user_role_by_id_or_email(uid: str, email_val: str) -> str:
+                uid_clean = str(uid or "").lower().strip()
+                email_clean = str(email_val or "").lower().strip()
+                for u in all_users:
+                    u_id = str(u.get("id") or u.get("auth_user_id") or u.get("user_id") or "").lower().strip()
+                    u_email = str(u.get("email") or "").lower().strip()
+                    if (uid_clean and u_id == uid_clean) or (email_clean and u_email == email_clean):
+                        return str(u.get("role") or u.get("designation") or "").lower().strip()
+                return "sales_executive"
+
+            filtered_claims = []
+            for e in claims:
+                sub_id = e.get("user_id")
+                desc = e.get("description") or ""
+                sub_email = ""
+                if "|" in desc:
+                    for part in desc.split("|"):
+                        if "Email:" in part:
+                            sub_email = part.split("Email:")[-1].strip().lower()
+                
+                sub_role = get_user_role_by_id_or_email(sub_id, sub_email)
+                norm_sub_role = normalize_user_role(sub_role)
+                if norm_sub_role in ("sales_manager", "admin", "super_admin"):
+                    filtered_claims.append(e)
+            claims = filtered_claims
+        else:
+            allowed = get_allowed_user_identifiers(user_payload)
+            if allowed is not None:
+                claims = [e for e in claims if is_record_accessible(e, allowed)]
 
         return claims
 
@@ -56,58 +89,101 @@ class ExpenseRepository:
 
         user_email = str(data.get("assigned_to_email") or (user_payload or {}).get("email") or data.get("email") or "").lower().strip()
         user_emp_code = str(data.get("employee_code") or (user_payload or {}).get("employee_code") or (user_payload or {}).get("employee_id") or "").strip()
+        user_role = str((user_payload or {}).get("role") or "").strip()
+
+        # Fetch authenticated employee's record from database
+        from app.modules.hrms.repository import HRMSRepository
+        all_emps = HRMSRepository().get_all_employees()
+
+        emp = None
+        for e in all_emps:
+            emp_email = str(e.get("email") or "").lower().strip()
+            emp_uid = str(e.get("auth_user_id") or e.get("id") or "").strip()
+            if (user_email and emp_email == user_email) or (user_id_uuid and emp_uid == user_id_uuid):
+                emp = e
+                break
+
+        from app.exceptions.base import BadRequestException
+        from app.core.scoping import normalize_user_role
+        norm_role = normalize_user_role(user_role)
+        is_routed_to_ceo = norm_role in ("sales_manager", "admin", "super_admin")
 
         # Resolve user's reporting manager email and ID
-        mgr_email = str(data.get("reporting_manager_email") or "").lower().strip()
-        mgr_id = str(data.get("reporting_manager_id") or "").strip()
-        if not mgr_email and (user_email or user_emp_code):
+        mgr_email = ""
+        mgr_id = ""
+        mgr_name = ""
+
+        if is_routed_to_ceo:
             try:
                 from app.modules.users.repository import UserRepository
                 all_u = UserRepository().get_all_users()
-                for u in all_u:
-                    e_mail = str(u.get("email") or "").lower().strip()
-                    e_code = str(u.get("employee_code") or u.get("employee_id") or "").strip()
-                    if (user_email and e_mail == user_email) or (user_emp_code and e_code == user_emp_code):
-                        mgr_email = str(u.get("reporting_manager_email") or "").lower().strip()
-                        mgr_id = str(u.get("reporting_manager_id") or "").strip()
-                        break
+                ceo_user = next((u for u in all_u if "ceo" in str(u.get("role") or "").lower() or "founder" in str(u.get("role") or "").lower()), None)
+                if ceo_user:
+                    mgr_email = str(ceo_user.get("email") or "").lower().strip()
+                    mgr_id = str(ceo_user.get("id") or "").strip()
+                    mgr_name = str(ceo_user.get("name") or "Sample CEO").strip()
+                else:
+                    mgr_email = "ceo.test@tconnect.com"
+                    mgr_id = "fe36f143-91d5-4f59-af05-cd6027e0096c"
+                    mgr_name = "Sample CEO"
             except Exception:
-                pass
+                mgr_email = "ceo.test@tconnect.com"
+                mgr_id = "fe36f143-91d5-4f59-af05-cd6027e0096c"
+                mgr_name = "Sample CEO"
+        else:
+            # Sales Executive -> resolve from their employee record
+            if not emp:
+                raise BadRequestException("Employee record not found for this user.")
+            
+            mgr_id = emp.get("reporting_manager_id")
+            mgr_name = emp.get("reporting_manager_name")
+            mgr_email = emp.get("reporting_manager_email")
+            
+            # Check if manager is missing or is "Not Assigned" / empty
+            if not mgr_id or not mgr_email or str(mgr_name).lower() in ("", "not assigned", "none"):
+                raise BadRequestException("Reporting manager is not assigned for this employee.")
 
-        emp_name = str(data.get("employee_name") or data.get("executiveName") or data.get("assigned_to") or (user_payload or {}).get("name") or "Sales Executive")
-        emp_phone = str(data.get("employee_phone") or data.get("phone") or data.get("mobile") or "")
+        emp_name = str(emp.get("name") if emp else (data.get("employee_name") or data.get("executiveName") or data.get("assigned_to") or (user_payload or {}).get("name") or "Sales Executive"))
+        emp_phone = str(emp.get("phone") if emp else (data.get("employee_phone") or data.get("phone") or data.get("mobile") or ""))
+        emp_id_val = str(emp.get("employee_id") if emp else (data.get("employee_id") or ""))
+
         desc_str = str(data.get("description") or data.get("remarks") or "Expense Claim")
-        full_desc = f"{desc_str} | Employee: {emp_name} | Email: {user_email} | EMP: {user_emp_code} | Manager: {mgr_email}"
 
         payload = {
             "id": expense_id,
             "expense_id": expense_id,
             "user_id": user_id_uuid,
+            "employee_id": emp_id_val,
+            "employee_name": emp_name,
+            "email": user_email,
+            "reporting_manager": mgr_name,
+            "reporting_manager_email": mgr_email,
+            "title": desc_str,
             "category": str(data.get("category") or data.get("type") or "General"),
             "amount": float(data.get("amount") or data.get("rawAmount") or 0),
-            "currency": str(data.get("currency") or "INR"),
-            "description": full_desc,
             "receipt_url": data.get("receipt_url") or data.get("receiptUrl") or None,
-            "status": str(data.get("status") or "PENDING"),
+            "status": "PENDING",
+            "expense_date": str(data.get("date") or datetime.utcnow().date().isoformat()),
             "created_at": now_iso,
         }
 
-        # Dispatch real-time backend notification to assigned Sales Manager
+        # Dispatch real-time backend notification to assigned approver
         try:
             from app.modules.notification.repository import NotificationRepository
             amt_val = float(data.get("amount") or data.get("rawAmount") or 0)
             formatted_amt = f"₹{amt_val:,.2f}" if amt_val > 0 else "Expense Claim"
+            recipient_role = "CEO" if is_routed_to_ceo else "Sales Manager"
             
             NotificationRepository().create_notification({
                 "recipient_id": mgr_id,
                 "recipient_email": mgr_email,
-                "recipient_role": "Sales Manager",
-                "title": f"🧾 New Expense Claim Request: {formatted_amt} by {emp_name}",
-                "message": f"Sales Executive {emp_name} ({user_email}) submitted a {payload['category']} expense request for {formatted_amt}. Requires your review and approval.",
+                "recipient_role": recipient_role,
+                "title": f"New Expense Claim Request: {formatted_amt} by {emp_name}",
+                "message": f"{user_role or 'Sales Executive'} {emp_name} ({user_email}) submitted a {payload['category']} expense request for {formatted_amt}. Requires your review and approval.",
                 "type": "EXPENSE"
             })
         except Exception as notif_err:
-            logger.warning(f"Failed dispatching expense notification to manager: {notif_err}")
+            logger.warning(f"Failed dispatching expense notification: {notif_err}")
 
         logger.info(f"[EXPENSE INSERT REQUEST] Inserting into finance.expenses with payload: {payload}")
 
@@ -123,25 +199,8 @@ class ExpenseRepository:
                 out_exp["reporting_manager_email"] = mgr_email
                 return out_exp
         except Exception as e:
-            logger.debug(f"finance.expenses insert notice: {e}")
-
-        # 2. Fallback: public.expenses
-        try:
-            res = self.supabase.table("expenses").insert(payload).execute()
-            if res.data and len(res.data) > 0:
-                logger.info(f"[EXPENSE INSERT SUCCESS] Expense created in public.expenses: {res.data[0]}")
-                out_exp = res.data[0]
-                out_exp["employee_name"] = emp_name
-                out_exp["employee_phone"] = emp_phone
-                out_exp["assigned_to_email"] = user_email
-                out_exp["reporting_manager_email"] = mgr_email
-                return out_exp
-        except Exception as e:
-            logger.error(f"Error creating expense in public.expenses: {e}")
-
-        # 3. In-memory fallback
-        logger.warning(f"Expense {expense_id} saved in-memory only (Supabase unavailable)")
-        return payload
+            logger.error(f"Error creating expense in finance.expenses: {e}")
+            raise BadRequestException(f"Supabase DB insert failed: {e}")
 
     def get_expense_by_id(self, exp_id: str) -> Optional[Dict[str, Any]]:
         try:
@@ -164,36 +223,28 @@ class ExpenseRepository:
 
     def update_expense_status(self, exp_id: str, status: str, manager_remarks: str = "", manager_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         manager_name = str((manager_payload or {}).get("name") or (manager_payload or {}).get("full_name") or "Sales Manager")
-        now_iso = datetime.utcnow().isoformat()
 
         payload = {
             "status": status.upper(),
-            "manager_remarks": manager_remarks,
-            "approved_by": manager_name if "APPROV" in status.upper() else None,
-            "rejected_by": manager_name if "REJECT" in status.upper() else None,
-            "returned_by": manager_name if "RETURN" in status.upper() else None,
-            "updated_at": now_iso,
+            "remarks": manager_remarks,
+            "reviewed_by": manager_name,
         }
 
         try:
             res = self.supabase.schema("finance").table("expenses").update(payload).eq("id", exp_id).execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
-        except Exception:
-            try:
-                res = self.supabase.table("expenses").update(payload).eq("id", exp_id).execute()
-                if res.data and len(res.data) > 0:
-                    return res.data[0]
-            except Exception as e:
-                logger.warning(f"expenses update failed: {e}")
-            if res.data and len(res.data) > 0:
-                return res.data[0]
         except Exception as e:
-            logger.warning(f"expense.claims update failed: {e}")
+            logger.error(f"expenses update failed: {e}")
 
         exp = self.get_expense_by_id(exp_id) or {"id": exp_id}
         exp.update(payload)
         return exp
+
+    def get_manager_pending_expenses(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        all_claims = self.get_all_expenses(user_payload=user_payload)
+        pending_claims = [c for c in all_claims if str(c.get("status", "")).upper() in ("PENDING", "SUBMITTED")]
+        return pending_claims
 
     def get_manager_expenses(self, user_payload: Dict[str, Any] = None, params: Dict[str, Any] = None) -> Dict[str, Any]:
         params = params or {}

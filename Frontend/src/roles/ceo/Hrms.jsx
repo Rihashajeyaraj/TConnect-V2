@@ -184,13 +184,15 @@ function CeoHrms({ initialTab = 'employees' }) {
             reviewed_by: l.reviewed_by,
             type: l.leave_type || 'Permission',
             timing: l.time_slot || '2 Hours',
+            reporting_manager: l.reporting_manager,
+            reporting_manager_name: l.reporting_manager_name,
+            reporting_manager_email: l.reporting_manager_email,
           }))
 
-          const ceoExecutiveRequests = rawList.filter(
-            (r) =>
-              (r.role || '').toLowerCase().includes('admin') ||
-              (r.role || '').toLowerCase().includes('manager')
-          )
+          const ceoExecutiveRequests = rawList.filter((r) => {
+            const roleLower = (r.role || '').toLowerCase();
+            return roleLower.includes('manager') || roleLower.includes('admin');
+          })
 
           const leavesOnly = ceoExecutiveRequests.filter(
             (r) =>

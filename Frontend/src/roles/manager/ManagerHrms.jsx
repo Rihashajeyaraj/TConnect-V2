@@ -110,7 +110,7 @@ const DEFAULT_TEAM_LEAVE_REQUESTS = [
   },
 ]
 
-const LEAVE_TYPES = ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Emergency Leave', 'Half Day', 'Work From Home']
+const LEAVE_TYPES = ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Emergency Leave', 'Work From Home', 'Half-Day Permission', 'Short Permission (2 Hours)']
 
 const LEAVE_BALANCE = [
   { type: 'Casual Leave', total: 12, used: 3, remaining: 9 },
@@ -283,6 +283,9 @@ export default function ManagerHrms() {
     leaveType: 'Casual Leave',
     fromDate: '',
     toDate: '',
+    permissionDate: '',
+    startTime: '09:30',
+    endTime: '11:30',
     reason: '',
   })
   const [myLeaveRequests, setMyLeaveRequests] = useState([])
@@ -344,37 +347,54 @@ export default function ManagerHrms() {
   // ── Manager's Own Leave Submit ─────────────────────────────────────────────
   const handleMyLeaveSubmit = async (e) => {
     e.preventDefault()
-    if (!myLeaveForm.fromDate || !myLeaveForm.toDate || !myLeaveForm.reason.trim()) {
-      showToast('Please fill all leave request fields!', 'error'); return
+    const isPermission = myLeaveForm.leaveType.includes('Permission')
+    
+    if (isPermission) {
+      if (!myLeaveForm.permissionDate || !myLeaveForm.startTime || !myLeaveForm.endTime || !myLeaveForm.reason.trim()) {
+        showToast('Please fill all permission fields!', 'error'); return
+      }
+    } else {
+      if (!myLeaveForm.fromDate || !myLeaveForm.toDate || !myLeaveForm.reason.trim()) {
+        showToast('Please fill all leave request fields!', 'error'); return
+      }
     }
-    const from = new Date(myLeaveForm.fromDate)
-    const to = new Date(myLeaveForm.toDate)
+    
+    const from = new Date(isPermission ? myLeaveForm.permissionDate : myLeaveForm.fromDate)
+    const to = new Date(isPermission ? myLeaveForm.permissionDate : myLeaveForm.toDate)
     const days = Math.max(1, Math.round((to - from) / (1000 * 60 * 60 * 24)) + 1)
     
     const payload = {
       id: `leave_${Date.now()}`,
       leave_type: myLeaveForm.leaveType,
-      from_date: myLeaveForm.fromDate,
-      to_date: myLeaveForm.toDate,
-      time_slot: 'Full Day',
+      from_date: isPermission ? myLeaveForm.permissionDate : myLeaveForm.fromDate,
+      to_date: isPermission ? myLeaveForm.permissionDate : myLeaveForm.toDate,
+      time_slot: isPermission ? `${myLeaveForm.startTime} - ${myLeaveForm.endTime}` : 'Full Day',
       reason: myLeaveForm.reason,
       executive_name: managerName,
       executive_email: managerEmail,
       employee_code: empCode,
       status: 'Pending',
-      duration: `${days} Day(s)`,
+      duration: isPermission ? (myLeaveForm.leaveType.includes('Half') ? '0.5 Day' : '2 Hours') : `${days} Day(s)`,
       created_at: new Date().toISOString()
     }
 
     setMyLeaveRequests((prev) => [payload, ...prev])
     setLeaveSubmitted(true)
-    setMyLeaveForm({ leaveType: 'Casual Leave', fromDate: '', toDate: '', reason: '' })
+    setMyLeaveForm({
+      leaveType: 'Casual Leave',
+      fromDate: '',
+      toDate: '',
+      permissionDate: '',
+      startTime: '09:30',
+      endTime: '11:30',
+      reason: ''
+    })
     
     try {
       await attendanceAPI.submitLeaveRequest(payload)
-      showToast('Leave request submitted to MD for approval!', 'success')
+      showToast('Request submitted to MD for approval!', 'success')
     } catch (err) {
-      showToast('Leave request submitted.', 'info')
+      showToast('Request submitted.', 'info')
     }
   }
 
@@ -451,10 +471,6 @@ export default function ManagerHrms() {
       {/* 1. MY DASHBOARD */}
       {activeSection === 'dashboard' && (
         <div className="space-y-6 max-w-5xl">
-          <div>
-            <h2 className="text-2xl font-black text-slate-900">{managerName}'s HR Dashboard</h2>
-            <p className="text-slate-500 text-sm mt-0.5 font-semibold">Employee Code: <strong>{empCode}</strong> · Sales Manager ✅ Active</p>
-          </div>
 
           {/* ── 1. LEAVE SUMMARY CARDS (ALLOWED, USED, REMAINING) ── */}
           <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
@@ -653,11 +669,11 @@ export default function ManagerHrms() {
             </div>
           ) : (
             <form onSubmit={handleMyLeaveSubmit} className="bg-white rounded-2xl border border-slate-200 shadow-xs p-6 space-y-5">
-              <h3 className="text-sm font-black text-slate-900">Apply for Leave</h3>
+              <h3 className="text-sm font-black text-slate-900">Apply for Leave / Permission</h3>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs font-extrabold text-slate-600 uppercase block mb-1">Leave Type</label>
+                  <label className="text-xs font-extrabold text-slate-600 uppercase block mb-1">Request Type</label>
                   <select
                     value={myLeaveForm.leaveType}
                     onChange={(e) => setMyLeaveForm({ ...myLeaveForm, leaveType: e.target.value })}
@@ -667,32 +683,61 @@ export default function ManagerHrms() {
                   </select>
                 </div>
 
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase block mb-1">From Date</label>
-                    <input
-                      type="date" required value={myLeaveForm.fromDate}
-                      onChange={(e) => setMyLeaveForm({ ...myLeaveForm, fromDate: e.target.value })}
-                      className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-[#b45309]"
-                    />
+                {myLeaveForm.leaveType.includes('Permission') ? (
+                  <div className="grid grid-cols-3 gap-2">
+                    <div>
+                      <label className="text-xs font-extrabold text-slate-600 uppercase block mb-1">Date</label>
+                      <input
+                        type="date" required value={myLeaveForm.permissionDate}
+                        onChange={(e) => setMyLeaveForm({ ...myLeaveForm, permissionDate: e.target.value })}
+                        className="w-full h-10 border border-slate-200 rounded-xl px-2 bg-white text-xs font-semibold focus:outline-none focus:border-[#b45309]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-extrabold text-slate-600 uppercase block mb-1">Start Time</label>
+                      <input
+                        type="time" required value={myLeaveForm.startTime}
+                        onChange={(e) => setMyLeaveForm({ ...myLeaveForm, startTime: e.target.value })}
+                        className="w-full h-10 border border-slate-200 rounded-xl px-2 bg-white text-xs font-semibold focus:outline-none focus:border-[#b45309]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-extrabold text-slate-600 uppercase block mb-1">End Time</label>
+                      <input
+                        type="time" required value={myLeaveForm.endTime}
+                        onChange={(e) => setMyLeaveForm({ ...myLeaveForm, endTime: e.target.value })}
+                        className="w-full h-10 border border-slate-200 rounded-xl px-2 bg-white text-xs font-semibold focus:outline-none focus:border-[#b45309]"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-xs font-extrabold text-slate-600 uppercase block mb-1">To Date</label>
-                    <input
-                      type="date" required value={myLeaveForm.toDate}
-                      onChange={(e) => setMyLeaveForm({ ...myLeaveForm, toDate: e.target.value })}
-                      className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-[#b45309]"
-                    />
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs font-extrabold text-slate-600 uppercase block mb-1">From Date</label>
+                      <input
+                        type="date" required value={myLeaveForm.fromDate}
+                        onChange={(e) => setMyLeaveForm({ ...myLeaveForm, fromDate: e.target.value })}
+                        className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-[#b45309]"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs font-extrabold text-slate-600 uppercase block mb-1">To Date</label>
+                      <input
+                        type="date" required value={myLeaveForm.toDate}
+                        onChange={(e) => setMyLeaveForm({ ...myLeaveForm, toDate: e.target.value })}
+                        className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-[#b45309]"
+                      />
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
 
               <div>
-                <label className="text-xs font-extrabold text-slate-600 uppercase block mb-1">Reason for Leave</label>
+                <label className="text-xs font-extrabold text-slate-600 uppercase block mb-1">Reason / Description</label>
                 <textarea
                   rows={3} required value={myLeaveForm.reason}
                   onChange={(e) => setMyLeaveForm({ ...myLeaveForm, reason: e.target.value })}
-                  placeholder="Describe your reason for leave..."
+                  placeholder="Describe your reason..."
                   className="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm font-semibold text-slate-800 focus:outline-none focus:border-[#b45309] resize-none bg-slate-50"
                 />
               </div>

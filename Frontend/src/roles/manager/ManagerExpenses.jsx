@@ -84,6 +84,15 @@ export default function ManagerExpenses() {
     const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
     const mgrId = (mgrUser.id || mgrUser.employee_id || mgrUser.user_id || '').toLowerCase().trim()
     const mgrName = (mgrUser.name || mgrUser.full_name || '').toLowerCase().trim()
+    const mgrRole = (mgrUser.role || '').toLowerCase()
+    const isCeo = mgrRole.includes('ceo') || mgrRole.includes('founder')
+
+    if (isCeo) {
+      return rawEmployees.filter((e) => {
+        const r = (e.role || e.designation || '').toLowerCase()
+        return r.includes('manager') || r.includes('admin')
+      })
+    }
 
     let assignedSet = new Set()
     try {
@@ -243,24 +252,7 @@ export default function ManagerExpenses() {
     }
   }
 
-  const getLocalStorageExpenses = () => {
-    let combined = []
-    const keys = ['tc_sales_expenses', 'tc_sm_expenses', 'tc_expenses', 'tc_pending_expenses']
-    keys.forEach((k) => {
-      try {
-        const itemStr = localStorage.getItem(k)
-        if (itemStr) {
-          const parsed = JSON.parse(itemStr)
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            combined = [...combined, ...parsed]
-          }
-        }
-      } catch (e) {}
-    })
-    return combined.map((e, idx) => normalizeExpense(e, idx)).filter(Boolean)
-  }
-
-  // Fetch Expense Claims from API and LocalStorage
+  // Fetch Expense Claims from API only
   const fetchExpensesData = async () => {
     setLoading(true)
     try {
@@ -274,33 +266,21 @@ export default function ManagerExpenses() {
       params.page = page
       params.limit = limit
 
-      let apiExpenses = []
-      try {
-        const res = await expenseAPI.getManagerExpenses(params)
-        const data = res?.data || res || {}
-        if (data.expenses && Array.isArray(data.expenses) && data.expenses.length > 0) {
-          apiExpenses = data.expenses.map((e, idx) => normalizeExpense(e, idx))
-        }
-      } catch (err) {}
-
-      const localExpenses = getLocalStorageExpenses()
-
-      // Merge API and LocalStorage expenses using Map
-      const map = new Map()
-      apiExpenses.forEach((e) => map.set(e.id, e))
-      localExpenses.forEach((e) => {
-        if (!map.has(e.id)) {
-          map.set(e.id, e)
-        }
-      })
-
-      const combined = Array.from(map.values())
-      setExpenses(combined)
-      calculateMetrics(combined)
+      const res = await expenseAPI.getManagerExpenses(params)
+      const data = res?.data || res || {}
+      
+      const apiExpenses = (data.expenses || []).map((e, idx) => normalizeExpense(e, idx))
+      setExpenses(apiExpenses)
+      
+      if (data.summary) {
+        setSummary(data.summary)
+      } else {
+        calculateMetrics(apiExpenses)
+      }
     } catch (err) {
-      const localExpenses = getLocalStorageExpenses()
-      setExpenses(localExpenses)
-      calculateMetrics(localExpenses)
+      console.error("Failed fetching manager expenses:", err)
+      showToast("Failed to retrieve expense requests.", "error")
+      setExpenses([])
     } finally {
       setLoading(false)
     }
@@ -352,57 +332,35 @@ export default function ManagerExpenses() {
     const remarksText = managerRemarks.trim() || `Action ${newStatus} by Sales Manager.`
 
     try {
-      if (actionType === 'APPROVE') await expenseAPI.approveExpense(expId, { remarks: remarksText })
-      else if (actionType === 'REJECT') await expenseAPI.rejectExpense(expId, { remarks: remarksText })
-      else if (actionType === 'RETURN') await expenseAPI.returnExpense(expId, { remarks: remarksText })
-    } catch (err) {}
+      if (actionType === 'APPROVE') {
+        await expenseAPI.approveExpense(expId, { remarks: remarksText })
+      } else if (actionType === 'REJECT') {
+        await expenseAPI.rejectExpense(expId, { remarks: remarksText })
+      } else if (actionType === 'RETURN') {
+        await expenseAPI.returnExpense(expId, { remarks: remarksText })
+      }
 
-    // Update state locally
-    const updatedList = expenses.map((e) =>
-      e.id === expId
-        ? {
-            ...e,
-            status: newStatus,
-            manager_remarks: remarksText,
-            approved_by: actionType === 'APPROVE' ? 'Jeeva Kumar (Sales Manager)' : e.approved_by,
-            rejected_by: actionType === 'REJECT' ? 'Jeeva Kumar (Sales Manager)' : e.rejected_by,
-            returned_by: actionType === 'RETURN' ? 'Jeeva Kumar (Sales Manager)' : e.returned_by,
-          }
-        : e
-    )
-
-    setExpenses(updatedList)
-    calculateMetrics(updatedList)
-
-    // Save to localStorage tc_sales_expenses & tc_sm_expenses
-    try {
-      const salesExps = JSON.parse(localStorage.getItem('tc_sales_expenses') || '[]')
-      const updatedSalesExps = salesExps.map((x) => (x.id === expId ? { ...x, status: newStatus, remarks: remarksText } : x))
-      localStorage.setItem('tc_sales_expenses', JSON.stringify(updatedSalesExps))
-
-      const smExps = JSON.parse(localStorage.getItem('tc_sm_expenses') || '[]')
-      const updatedSmExps = smExps.map((x) => (x.id === expId ? { ...x, status: newStatus, remarks: remarksText } : x))
-      localStorage.setItem('tc_sm_expenses', JSON.stringify(updatedSmExps))
+      showToast(`Expense claim has been successfully ${newStatus.toLowerCase()}!`, 'success')
 
       // Trigger SE Notification
-      const existingNotifs = JSON.parse(localStorage.getItem('tc_app_notifications') || '[]')
       const seNotif = {
-        id: `notif_${Date.now()}`,
         recipientEmail: selectedExpenseModal.assigned_to_email,
         title: `Expense Claim ${newStatus}: #${selectedExpenseModal.id}`,
         message: `Your expense claim of ${selectedExpenseModal.amount} for "${selectedExpenseModal.category}" has been ${newStatus.toLowerCase()} by Sales Manager. Remarks: ${remarksText}`,
-        time: 'Just now',
-        read: false,
         type: 'Expense',
       }
-      localStorage.setItem('tc_app_notifications', JSON.stringify([seNotif, ...existingNotifs]))
       notificationAPI.sendNotification(seNotif).catch(() => null)
-    } catch (e) {}
 
-    showToast(`Expense ${expId} has been successfully ${newStatus}!`, 'success')
-    setActionLoading(false)
-    setSelectedExpenseModal(null)
-    setManagerRemarks('')
+      // Reload latest data from API
+      await fetchExpensesData()
+      setSelectedExpenseModal(null)
+      setManagerRemarks('')
+    } catch (apiErr) {
+      const errMsg = apiErr.response?.data?.detail || apiErr.message || "Failed to update expense status."
+      showToast(errMsg, 'error')
+    } finally {
+      setActionLoading(false)
+    }
   }
 
   // Filtering Calculation

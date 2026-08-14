@@ -113,8 +113,8 @@ export default function ManagerSmartMap() {
       zoomControl: false
     }).setView([DEFAULT_CENTER.lat, DEFAULT_CENTER.lng], 13)
 
-    // Standard high-quality dark-mode map tiles
-    window.L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+    // Standard high-quality light/white map tiles
+    window.L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
       maxZoom: 20
     }).addTo(map)

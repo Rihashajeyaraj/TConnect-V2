@@ -142,8 +142,14 @@ function CeoDashboard() {
       const backendCustList = Array.isArray(custRes?.data) ? custRes.data : (Array.isArray(custRes) ? custRes : [])
       const ceoCustList = Array.isArray(res?.data?.customerSummary?.customersList) ? res.data.customerSummary.customersList : []
       const ceoRawCustList = Array.isArray(res?.data?.customers) ? res.data.customers : []
+      const localCustList = (() => {
+        try {
+          const s = localStorage.getItem('tc_customer_accounts')
+          return s ? JSON.parse(s) : []
+        } catch { return [] }
+      })()
 
-      const rawCustomerPool = [...backendCustList, ...ceoCustList, ...ceoRawCustList]
+      const rawCustomerPool = [...backendCustList, ...ceoCustList, ...ceoRawCustList, ...localCustList]
 
       const seenCustKeys = new Set()
       const unifiedCustomersList = []

@@ -372,7 +372,6 @@ export default function SalesLayout() {
     { title: "Leads", icon: Users, path: "/sales/leads" },
     { title: "Customers", icon: UserCheck, path: "/sales/customers" },
     { title: "Client Log", icon: ClipboardList, path: "/sales/client-log" },
-    { title: "Attendance", icon: MapPinned, path: "/sales/attendance" },
     { title: "Expenses", icon: BadgeDollarSign, path: "/sales/expenses" },
     { title: "HRMS", icon: ShieldCheck, path: "/sales/hrms" },
     { title: "Tasks", icon: CheckSquare, path: "/sales/todo" },
