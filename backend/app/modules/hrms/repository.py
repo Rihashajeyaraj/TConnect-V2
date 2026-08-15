@@ -123,6 +123,9 @@ class HRMSRepository:
                     "reporting_manager_name": emp.get("reporting_manager_name") or "Not Assigned",
                     "reporting_manager_email": emp.get("reporting_manager_email") or "",
                 }
+                for k, v in emp.items():
+                    if k not in normalized:
+                        normalized[k] = v
                 all_employees.append(normalized)
                 seen_emails.add(emp_email)
                 seen_ids.add(str(emp_id).lower().strip())
@@ -153,7 +156,7 @@ class HRMSRepository:
                         " ".join((meta.get("full_name") or "").split(" ")[1:])
                         if " " in (meta.get("full_name") or "") else ""
                     )
-                    all_employees.append({
+                    normalized = {
                         "employee_id": str(u.id),
                         "id": str(u.id),
                         "auth_user_id": str(u.id),
@@ -173,7 +176,11 @@ class HRMSRepository:
                         "reporting_manager_id": meta.get("reporting_manager_id"),
                         "reporting_manager_name": meta.get("reporting_manager_name") or "Not Assigned",
                         "reporting_manager_email": meta.get("reporting_manager_email") or "",
-                    })
+                    }
+                    for k, v in meta.items():
+                        if k not in normalized:
+                            normalized[k] = v
+                    all_employees.append(normalized)
                     seen_emails.add(email.lower())
                     seen_ids.add(u_id_str)
             logger.info(f"Total employees after Auth merge: {len(all_employees)}")
@@ -386,19 +393,32 @@ class HRMSRepository:
     # ── Update employee ───────────────────────────────────────────────────────
     def update_employee(self, emp_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         clean_updates = {k: v for k, v in updates.items() if v is not None}
+        is_uuid = lambda x: x and len(str(x)) == 36 and "-" in str(x)
 
         # Try hrms schema first
         try:
-            res = self.supabase.schema("hrms").table("employees").update(clean_updates).eq("employee_id", emp_id).execute()
+            if is_uuid(emp_id):
+                res = self.supabase.schema("hrms").table("employees").update(clean_updates).eq("employee_id", emp_id).execute()
+            else:
+                res = self.supabase.schema("hrms").table("employees").update(clean_updates).eq("employee_code", emp_id).execute()
+                
             if res.data and len(res.data) > 0:
                 return res.data[0]
             
             # If update succeeds but returns no rows, perform an upsert.
             # We fetch existing details to populate employee_code and email to satisfy NOT NULL constraints.
             existing = self.get_employee_by_id(emp_id)
-            clean_updates["employee_id"] = emp_id
-            clean_updates["user_id"] = emp_id
-            clean_updates["auth_user_id"] = emp_id
+            real_uuid = None
+            if existing:
+                real_uuid = existing.get("employee_id") or existing.get("user_id") or existing.get("auth_user_id")
+            if not real_uuid and is_uuid(emp_id):
+                real_uuid = emp_id
+
+            if real_uuid:
+                clean_updates["employee_id"] = real_uuid
+                clean_updates["user_id"] = real_uuid
+                clean_updates["auth_user_id"] = real_uuid
+
             if existing:
                 clean_updates["employee_code"] = existing.get("employee_code") or "EMP-FALLBACK"
                 clean_updates["email"] = existing.get("email") or ""
@@ -411,7 +431,7 @@ class HRMSRepository:
                 if "department" not in clean_updates:
                     clean_updates["department"] = existing.get("department") or "Management"
             else:
-                clean_updates["employee_code"] = "EMP-FALLBACK"
+                clean_updates["employee_code"] = emp_id if not is_uuid(emp_id) else "EMP-FALLBACK"
                 clean_updates["email"] = ""
                 clean_updates["role"] = "Admin"
                 clean_updates["designation"] = "Admin"

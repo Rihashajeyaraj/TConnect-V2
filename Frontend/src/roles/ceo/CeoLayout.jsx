@@ -204,7 +204,10 @@ function CeoLayout() {
   ]
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f4f6f8] text-slate-800 font-sans antialiased">
+    <div className="flex h-screen overflow-hidden bg-[#f4f6f8] text-slate-800 font-sans antialiased relative">
+      {sidebarOpen && (
+        <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-40 lg:hidden transition-opacity" />
+      )}
       {/* CEO Sidebar */}
       <aside
         className={`fixed inset-y-0 left-0 z-50 flex flex-col border-r border-[#EA6993]/20 bg-[#832D51] text-white shadow-2xl transition-all duration-300 w-64 lg:static lg:h-screen lg:shrink-0 ${

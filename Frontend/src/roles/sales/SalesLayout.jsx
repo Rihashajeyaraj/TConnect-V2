@@ -68,6 +68,10 @@ const PROFILE_DEFAULTS = {
   alternateContact: "+91 98765 99999",
   currentAddress: "Plot No. 15, Adyar IT Corridor, Chennai - 600020",
   permanentAddress: "No. 42, Main Road, Madurai, Tamil Nadu - 625001",
+  city: "Chennai",
+  state: "Tamil Nadu",
+  country: "India",
+  postalCode: "600020",
   // Skills
   primarySkills: "Field Sales, Client Acquisition, CRM Operations",
   secondarySkills: "Negotiation, Product Demos, Deal Closing",
@@ -118,6 +122,10 @@ const mapDbToFrontend = (emp) => {
     alternateContact: emp.alternate_contact || emp.alternateContact,
     currentAddress: emp.current_address || emp.currentAddress,
     permanentAddress: emp.permanent_address || emp.permanentAddress,
+    city: emp.city || emp.city,
+    state: emp.state || emp.state,
+    country: emp.country || emp.country,
+    postalCode: emp.postal_code || emp.postalCode,
     primarySkills: emp.primary_skills || emp.primarySkills,
     secondarySkills: emp.secondary_skills || emp.secondarySkills,
     tools: emp.tools || emp.tools,
@@ -153,6 +161,10 @@ const mapFrontendToDb = (prof) => {
     alternate_contact: prof.alternateContact,
     current_address: prof.currentAddress,
     permanent_address: prof.permanentAddress,
+    city: prof.city,
+    state: prof.state,
+    country: prof.country,
+    postal_code: prof.postalCode,
     primary_skills: prof.primarySkills,
     secondary_skills: prof.secondarySkills,
     tools: prof.tools,
@@ -288,6 +300,15 @@ export default function SalesLayout() {
             setProfilePhoto(emp.profile_photo);
             localStorage.setItem("tc_se_photo", emp.profile_photo);
           }
+          if (emp.documents) {
+            try {
+              const parsed = JSON.parse(emp.documents);
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setDocumentsList(parsed);
+                localStorage.setItem("tc_se_documents", JSON.stringify(parsed));
+              }
+            } catch (err) {}
+          }
         }
       })
       .catch((err) => {
@@ -297,19 +318,33 @@ export default function SalesLayout() {
 
   const saveProfile = async () => {
     try {
-      localStorage.setItem("tc_se_profile", JSON.stringify(profile));
-      const code = empCode || user.employee_code || user.id || "EMP000012";
+      const code = empCode || user.employee_code || user.id;
+      if (!code) {
+        throw new Error("No employee identifier found.");
+      }
       const dbPayload = mapFrontendToDb(profile);
       if (profilePhoto) {
         dbPayload.profile_photo = profilePhoto;
       }
-      await hrmsAPI.updateEmployee(code, dbPayload);
+      dbPayload.documents = JSON.stringify(documentsList);
+      
+      const res = await hrmsAPI.updateEmployee(code, dbPayload);
+      if (res && res.data) {
+        const freshProfile = mapDbToFrontend(res.data);
+        setProfile(freshProfile);
+        localStorage.setItem("tc_se_profile", JSON.stringify(freshProfile));
+      } else {
+        localStorage.setItem("tc_se_profile", JSON.stringify(profile));
+      }
       showToast("Profile synced online to Supabase!", "success");
+      setEditMode(false);
     } catch (err) {
       console.error(err);
-      showToast("Profile updated locally, online sync failed.", "warning");
+      const errMsg = err.detail
+        ? (typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail))
+        : (err.message || "Failed to save profile");
+      showToast(`Error: ${errMsg}`, "error");
     }
-    setEditMode(false);
   };
 
   const fp = (field, readOnly = false) =>
@@ -336,8 +371,13 @@ export default function SalesLayout() {
   useEffect(() => {
     try {
       localStorage.setItem("tc_se_documents", JSON.stringify(documentsList));
+      const code = empCode || user.employee_code || user.id;
+      if (code) {
+        hrmsAPI.updateEmployee(code, { documents: JSON.stringify(documentsList) })
+          .catch((err) => console.warn("Auto-sync documents failed:", err));
+      }
     } catch (err) { }
-  }, [documentsList]);
+  }, [documentsList, empCode, user.employee_code, user.id]);
 
   useEffect(() => {
     try {
@@ -461,6 +501,9 @@ export default function SalesLayout() {
 
   return (
     <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
+      {isMobile && open && (
+        <div onClick={() => setOpen(false)} className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-30 transition-opacity" />
+      )}
       {/* ── Sidebar ──────────────────────────────────────────────────────────── */}
       <aside
         className={`fixed md:static inset-y-0 left-0 z-40 bg-white border-r border-slate-200 transition-all duration-300 ease-in-out flex flex-col ${open ? "w-64" : "w-0 md:w-20"
@@ -834,6 +877,10 @@ export default function SalesLayout() {
                   <Field label="PAN ID" value={profile.panId} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, panId: val }))} />
                   <Field label="Personal Email" value={profile.personalEmail} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, personalEmail: val }))} />
                   <Field label="Alternate Contact" value={profile.alternateContact} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, alternateContact: val }))} />
+                  <Field label="City" value={profile.city} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, city: val }))} />
+                  <Field label="State" value={profile.state} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, state: val }))} />
+                  <Field label="Country" value={profile.country} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, country: val }))} />
+                  <Field label="Postal Code" value={profile.postalCode} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, postalCode: val }))} />
                 </div>
                 <div className="grid grid-cols-1 gap-4 mt-2">
                   <Field label="Current Address" value={profile.currentAddress} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, currentAddress: val }))} />

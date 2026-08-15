@@ -20,9 +20,155 @@ import {
   UserCheck,
   History,
   MessageSquare,
+  HeartPulse,
+  Code2,
+  CreditCard,
 } from 'lucide-react'
 import { hrmsAPI, attendanceAPI, userAPI } from '../../services/api.js'
 import { exportToCSV } from '../../utils/exportUtils.js'
+
+const EmployeeProfileModal = ({ employee, onClose }) => {
+  if (!employee) return null;
+  const parsedDocs = (() => {
+    if (!employee.documents) return [];
+    try {
+      return typeof employee.documents === "string" ? JSON.parse(employee.documents) : employee.documents;
+    } catch {
+      return [];
+    }
+  })();
+
+  const Section = ({ icon: Icon, title, color = "blue", children }) => (
+    <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-3">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+        <Icon size={15} className={`text-${color}-600`} />
+        <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">{title}</h4>
+      </div>
+      {children}
+    </div>
+  );
+
+  const InfoRow = ({ label, value }) => (
+    <div>
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+      <p className="text-xs font-semibold text-slate-850">{value || "—"}</p>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 space-y-5 border border-slate-200 shadow-2xl relative text-left">
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 cursor-pointer"
+        >
+          ✕
+        </button>
+
+        <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
+          <div className="w-16 h-16 rounded-full overflow-hidden bg-slate-100 border-2 border-blue-500 shrink-0 flex items-center justify-center font-bold text-slate-700 text-xl">
+            {employee.profile_photo ? (
+              <img src={employee.profile_photo} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              (employee.name || "E").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+            )}
+          </div>
+          <div>
+            <h3 className="font-extrabold text-slate-900 text-lg">{employee.name}</h3>
+            <p className="text-xs text-slate-500 font-semibold">
+              {employee.employee_code || employee.employee_id || "N/A"} · {employee.department || employee.dept || "Sales"} · {employee.designation || employee.role || "Sales Executive"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Section icon={Briefcase} title="Work Details" color="blue">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <InfoRow label="Official Email" value={employee.email} />
+              <InfoRow label="Phone Number" value={employee.phone} />
+              <InfoRow label="Employment Type" value={employee.employment_type} />
+              <InfoRow label="Work Mode" value={employee.work_mode} />
+              <InfoRow label="Work Location" value={employee.work_location} />
+              <InfoRow label="Status" value={employee.status} />
+            </div>
+          </Section>
+
+          <Section icon={HeartPulse} title="Personal Details" color="rose">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <InfoRow label="Date of Birth" value={employee.date_of_birth} />
+              <InfoRow label="Marital Status" value={employee.marital_status} />
+              <InfoRow label="Blood Group" value={employee.blood_group} />
+              <InfoRow label="PAN ID" value={employee.pan_id} />
+              <InfoRow label="Personal Email" value={employee.personal_email} />
+              <InfoRow label="Alternate Contact" value={employee.alternate_contact} />
+              <InfoRow label="City" value={employee.city} />
+              <InfoRow label="State" value={employee.state} />
+              <InfoRow label="Country" value={employee.country} />
+              <InfoRow label="Postal Code" value={employee.postal_code} />
+            </div>
+            <div className="mt-2 text-xs space-y-2 border-t border-slate-100 pt-2">
+              <InfoRow label="Current Address" value={employee.current_address} />
+              <InfoRow label="Permanent Address" value={employee.permanent_address} />
+            </div>
+          </Section>
+
+          <Section icon={Code2} title="Skills & Tech" color="indigo">
+            <div className="space-y-2 text-xs">
+              <InfoRow label="Primary Skills" value={employee.primary_skills} />
+              <InfoRow label="Secondary Skills" value={employee.secondary_skills} />
+              <InfoRow label="Tools & Tech" value={employee.tools} />
+            </div>
+          </Section>
+
+          <Section icon={AlertCircle} title="Emergency Contact" color="rose">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <InfoRow label="Contact Name" value={employee.emergency_name} />
+              <InfoRow label="Relationship" value={employee.emergency_relationship} />
+              <InfoRow label="Contact Number" value={employee.emergency_contact} />
+            </div>
+          </Section>
+
+          <Section icon={CreditCard} title="Bank Details" color="emerald">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <InfoRow label="Account Holder" value={employee.account_holder} />
+              <InfoRow label="Bank Name" value={employee.bank_name} />
+              <InfoRow label="Account Number" value={employee.account_number} />
+              <InfoRow label="IFSC Code" value={employee.ifsc} />
+              <InfoRow label="Branch" value={employee.branch} />
+            </div>
+          </Section>
+
+          <Section icon={FileText} title="Employee Documents" color="teal">
+            <div className="space-y-1.5 text-xs">
+              {parsedDocs.length === 0 ? (
+                <p className="text-slate-400 text-xs italic">No documents uploaded yet.</p>
+              ) : (
+                parsedDocs.map((doc, idx) => (
+                  <div key={doc.id || idx} className="flex items-center justify-between border-b border-slate-100 pb-1 last:border-b-0">
+                    <div>
+                      <p className="font-bold text-slate-800">{doc.name}</p>
+                      <p className="text-[10px] text-emerald-600 font-medium">✅ {doc.fileName || 'Uploaded'}</p>
+                    </div>
+                    {doc.fileUrl && (
+                      <a
+                        href={doc.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-0.5 bg-teal-50 border border-teal-200 text-teal-700 font-bold text-[10px] rounded-md hover:bg-teal-100 transition"
+                      >
+                        View File
+                      </a>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </Section>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 function CeoHrms({ initialTab = 'employees' }) {
   const { showToast } = useToast()
@@ -124,6 +270,7 @@ function CeoHrms({ initialTab = 'employees' }) {
   };
   const [loading, setLoading] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
+  const [selectedEmployee, setSelectedEmployee] = useState(null)
 
   // 1. Employees Directory State
   const [employees, setEmployees] = useState([])
@@ -159,6 +306,7 @@ function CeoHrms({ initialTab = 'employees' }) {
         if (empRes && empRes.data && empRes.data.length > 0) {
           setEmployees(
             empRes.data.map((e, idx) => ({
+              ...e,
               id: e.id || `EMP-${100 + idx}`,
               name: e.name || e.full_name || 'Staff Member',
               email: e.email || 'employee@tconnect.com',
@@ -333,7 +481,7 @@ function CeoHrms({ initialTab = 'employees' }) {
       </div>
 
       {/* Primary HRMS Navigation Tabs */}
-      <div className="flex items-center gap-1.5 overflow-x-auto bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs">
+      <div className="flex items-center flex-nowrap whitespace-nowrap gap-1.5 overflow-x-auto bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs scrollbar-thin">
         {hrmsTabs.map((tabItem, index) => {
           const Icon = tabItem.icon
           const isActive = activeTab === tabItem.id
@@ -347,7 +495,7 @@ function CeoHrms({ initialTab = 'employees' }) {
               onDragOver={(e) => handleTabDragOver(e, index)}
               onDrop={(e) => handleTabDrop(e, index)}
               onDragEnd={handleTabDragEnd}
-              className={`flex items-center transition cursor-pointer ${
+              className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
                 draggedTabKey === index ? 'opacity-40' : ''
               }`}
             >
@@ -417,6 +565,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                   <th className="pb-3">Department</th>
                   <th className="pb-3">Today's Check-in</th>
                   <th className="pb-3">Status</th>
+                  <th className="pb-3 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
@@ -437,6 +586,14 @@ function CeoHrms({ initialTab = 'employees' }) {
                       <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black text-emerald-700 border border-emerald-200">
                         {emp.status}
                       </span>
+                    </td>
+                    <td className="py-3 text-right">
+                      <button
+                        onClick={() => setSelectedEmployee(emp)}
+                        className="px-2.5 py-1.5 bg-[#832D51] hover:bg-[#68243f] text-white font-extrabold rounded-xl text-[10px] shadow-xs transition cursor-pointer"
+                      >
+                        View Profile
+                      </button>
                     </td>
                   </tr>
                 ))}
@@ -772,6 +929,13 @@ function CeoHrms({ initialTab = 'employees' }) {
             </div>
           </div>
         </div>
+      )}
+      {/* Employee Profile View Modal */}
+      {selectedEmployee && (
+        <EmployeeProfileModal
+          employee={selectedEmployee}
+          onClose={() => setSelectedEmployee(null)}
+        />
       )}
     </div>
   )

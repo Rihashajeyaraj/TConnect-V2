@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   MapPin, Radio, Users, Activity, Clock, RefreshCw,
   Search, Shield, Map, Eye, Compass, Navigation,
-  AlertCircle, ChevronRight, Phone, Mail, Award, CheckCircle2
+  AlertCircle, ChevronRight, Phone, Mail, Award, CheckCircle2, X
 } from 'lucide-react'
 import { spatialAPI, authAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
@@ -23,6 +23,7 @@ export default function ManagerSmartMap() {
   // State Variables
   const [mapLoaded, setMapLoaded] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [panelOpen, setPanelOpen] = useState(window.innerWidth >= 1024)
   const [lastUpdated, setLastUpdated] = useState(null)
   const [autoRefresh, setAutoRefresh] = useState(true)
 
@@ -302,9 +303,13 @@ export default function ManagerSmartMap() {
 
   return (
     <div className="relative w-full h-[calc(100vh-4rem)] flex overflow-hidden bg-slate-950 text-white font-sans">
-      
+      {panelOpen && (
+        <div onClick={() => setPanelOpen(false)} className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-20 lg:hidden transition-opacity" />
+      )}
       {/* ─── Sidebar Panel ────────────────────────────────────────────────── */}
-      <div className="w-[24rem] h-full flex flex-col border-r border-white/10 bg-slate-900/98 backdrop-blur-md z-10 shrink-0">
+      <div className={`fixed lg:static inset-y-0 left-0 z-30 w-[20rem] sm:w-[24rem] lg:w-[24rem] h-full flex flex-col border-r border-white/10 bg-slate-900/98 backdrop-blur-md shrink-0 transition-transform duration-200 ${
+        panelOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-0 lg:overflow-hidden lg:border-r-0'
+      }`}>
         
         {/* Header & Search */}
         <div className="p-5 border-b border-white/10 space-y-4">
@@ -319,13 +324,21 @@ export default function ManagerSmartMap() {
               </div>
             </div>
             
-            <button
-              onClick={fetchData}
-              disabled={loading}
-              className="p-2 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 active:scale-95 transition disabled:opacity-50"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={fetchData}
+                disabled={loading}
+                className="p-2 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 active:scale-95 transition disabled:opacity-50"
+              >
+                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
+              <button
+                onClick={() => setPanelOpen(false)}
+                className="p-2 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 lg:hidden"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
           {/* Search bar */}
@@ -488,6 +501,17 @@ export default function ManagerSmartMap() {
               <span className="text-xs font-black text-slate-200">Updating live locations...</span>
             </div>
           </div>
+        )}
+        {/* Toggle Panel Button for mobile */}
+        {!panelOpen && (
+          <button
+            type="button"
+            onClick={() => setPanelOpen(true)}
+            className="absolute bottom-5 left-5 z-20 h-10 px-4 rounded-xl bg-slate-900/95 border border-white/15 text-slate-200 hover:text-white flex items-center gap-2 pointer-events-auto backdrop-blur-md shadow-xl transition active:scale-95 lg:hidden animate-in fade-in duration-200"
+          >
+            <Users size={16} className="text-violet-400" />
+            <span className="text-xs font-black">Show Team</span>
+          </button>
         )}
       </div>
     </div>

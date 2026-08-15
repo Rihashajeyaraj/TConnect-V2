@@ -367,6 +367,8 @@ export default function SalesHRMS() {
   // ── Report state ───────────────────────────────────────────────────────────
   const [report, setReport] = useState({ callsMade: "", visitsCompleted: "", leadsGenerated: "", clientsInterested: "", followupsScheduled: "", dealsClosed: "", highlights: "", blockers: "", nextDayPlan: "" });
   const [reportSubmitted, setReportSubmitted] = useState(false);
+  const [selectedReport, setSelectedReport] = useState(null);
+  const [showPastReportsModal, setShowPastReportsModal] = useState(false);
   const pastReports = getArr("tc_se_daily_reports");
 
   const handleReportSubmit = (e) => {
@@ -504,7 +506,7 @@ export default function SalesHRMS() {
         </div>
 
         {/* Horizontal Navigation Tabs Bar */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5">
+        <div className="flex items-center flex-nowrap whitespace-nowrap gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5 scrollbar-thin">
           {hrmsTabs.filter(tab => !(isCurrentUserAdmin && tab.key === "dashboard")).map(({ key, label, icon: Icon }, index) => (
             <div
               key={key}
@@ -513,13 +515,13 @@ export default function SalesHRMS() {
               onDragOver={(e) => handleTabDragOver(e, index)}
               onDrop={(e) => handleTabDrop(e, index)}
               onDragEnd={handleTabDragEnd}
-              className={`flex items-center transition cursor-pointer ${
+              className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
                 draggedTabKey === index ? "opacity-40" : ""
               }`}
             >
               <button
                 onClick={() => setActiveSection(key)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer ${activeSection === key
+                className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer whitespace-nowrap ${activeSection === key
                     ? "bg-[#1a1f36] text-white shadow-2xs"
                     : "text-slate-600 hover:bg-slate-100"
                   }`}
@@ -806,11 +808,20 @@ export default function SalesHRMS() {
         {/* ── DAILY WORK REPORT ── */}
         {activeSection === "daily_report" && (
           <div className="max-w-3xl space-y-5">
-            <div>
-              <h1 className="text-2xl font-black text-slate-900">Daily Work Report</h1>
-              <p className="text-slate-500 text-sm mt-0.5 font-semibold">
-                Submit your daily {isUserAdmin ? "operations" : "sales activity"} report before 6:30 PM.
-              </p>
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-black text-slate-900">Daily Work Report</h1>
+                <p className="text-slate-500 text-sm mt-0.5 font-semibold">
+                  Submit your daily {isUserAdmin ? "operations" : "sales activity"} report before 6:30 PM.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowPastReportsModal(true)}
+                className="px-4 py-2.5 rounded-2xl bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 text-xs font-black flex items-center gap-1.5 transition cursor-pointer active:scale-95 shadow-2xs"
+              >
+                <FileText size={15} /> View My Reports
+              </button>
             </div>
 
             {reportSubmitted ? (
@@ -886,15 +897,182 @@ export default function SalesHRMS() {
                 <div className="px-5 py-4 border-b border-slate-100"><h3 className="font-black text-slate-900 text-sm">Past Reports</h3></div>
                 <div className="divide-y divide-slate-100">
                   {pastReports.slice(0, 5).map((r, i) => (
-                    <div key={i} className="px-5 py-3 flex items-center justify-between gap-3">
+                    <div key={i} className="px-5 py-3 flex items-center justify-between gap-3 flex-wrap sm:flex-nowrap">
                       <div>
                         <p className="text-sm font-black text-slate-900">{formatDate(new Date(r.date))}</p>
                         <p className="text-xs text-slate-500 font-semibold">📞 {r.callsMade || 0} calls · 📍 {r.visitsCompleted || 0} visits · ✅ {r.dealsClosed || 0} deals</p>
                         <p className="text-[10px] text-slate-400 font-bold mt-0.5">Manager: {r.reportingManager || managerName}</p>
                       </div>
-                      <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Submitted</span>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => setSelectedReport(r)}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black border border-slate-200 transition cursor-pointer active:scale-95 flex items-center gap-1"
+                        >
+                          <Eye size={12} /> View Details
+                        </button>
+                        <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">Submitted</span>
+                      </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+
+            {/* Modal EOD Report Details Viewer */}
+            {selectedReport && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[60] overflow-y-auto">
+                <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in duration-150">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 mt-1 flex items-center gap-2">
+                        <ClipboardList className="w-6 h-6 text-teal-600" /> Daily Work Report Details ({formatDate(new Date(selectedReport.date))})
+                      </h3>
+                    </div>
+                    <button onClick={() => setSelectedReport(null)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer">
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  {/* Numbers Badges */}
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                    {isUserAdmin ? (
+                      <>
+                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-400">Users Onboarded</span>
+                          <p className="font-black text-slate-900 text-base">{selectedReport.usersOnboarded || 0}</p>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                          <span className="text-[10px] font-bold text-emerald-800">Role Changes</span>
+                          <p className="font-black text-emerald-950 text-base">{selectedReport.roleChanges || 0}</p>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200">
+                          <span className="text-[10px] font-bold text-indigo-800">Tasks Resolved</span>
+                          <p className="font-black text-indigo-950 text-base">{selectedReport.ticketsResolved || 0}</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+                          <span className="text-[10px] font-bold text-slate-400">Calls Made</span>
+                          <p className="font-black text-slate-900 text-base">{selectedReport.callsMade || 0}</p>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-emerald-50 border border-emerald-200">
+                          <span className="text-[10px] font-bold text-emerald-800">Visits Completed</span>
+                          <p className="font-black text-emerald-950 text-base">{selectedReport.visitsCompleted || 0}</p>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-200">
+                          <span className="text-[10px] font-bold text-indigo-800">New Leads</span>
+                          <p className="font-black text-indigo-950 text-base">{selectedReport.leadsGenerated || 0}</p>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200">
+                          <span className="text-[10px] font-bold text-rose-800">Clients Interested</span>
+                          <p className="font-black text-rose-950 text-base">{selectedReport.clientsInterested || 0}</p>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
+                          <span className="text-[10px] font-bold text-amber-900">Follow-ups Scheduled</span>
+                          <p className="font-black text-amber-950 text-base">{selectedReport.followupsScheduled || 0}</p>
+                        </div>
+                        <div className="p-2.5 rounded-xl bg-teal-50 border border-teal-200">
+                          <span className="text-[10px] font-bold text-teal-800">Deals Closed (Won)</span>
+                          <p className="font-black text-teal-950 text-base">{selectedReport.dealsClosed || 0}</p>
+                        </div>
+                      </>
+                    )}
+                  </div>
+
+                  {/* Highlights, Blockers, Plan */}
+                  <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1 text-xs">
+                    <span className="text-[10px] font-extrabold uppercase text-slate-500">
+                      {isUserAdmin ? "Key Actions & Operations Highlights" : "Key Highlights / Wins Today"}
+                    </span>
+                    <p className="text-slate-800 font-semibold">{selectedReport.highlights || "No highlights entered."}</p>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 space-y-1 text-xs">
+                    <span className="text-[10px] font-extrabold uppercase text-rose-800">
+                      {isUserAdmin ? "Operational Blockers / System Alerts" : "Blockers / Issues"}
+                    </span>
+                    <p className="text-rose-950 font-semibold">{selectedReport.blockers || "No blockers reported."}</p>
+                  </div>
+
+                  <div className="p-3 rounded-2xl bg-amber-50 border border-amber-200 space-y-1 text-xs">
+                    <span className="text-[10px] font-extrabold uppercase text-amber-900">
+                      {isUserAdmin ? "Tomorrow's Operational Plan" : "Tomorrow's Plan"}
+                    </span>
+                    <p className="text-amber-950 font-semibold">{selectedReport.nextDayPlan || "No tomorrow plans entered."}</p>
+                  </div>
+
+                  <div className="flex justify-end pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedReport(null)}
+                      className="px-5 py-2.5 rounded-xl bg-slate-900 text-white font-extrabold text-xs cursor-pointer hover:bg-slate-800 transition"
+                    >
+                      Close Details
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Modal Past Reports List Viewer */}
+            {showPastReportsModal && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+                <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in duration-150 flex flex-col max-h-[85vh]">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+                    <div>
+                      <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                        <FileText className="w-6 h-6 text-teal-600" /> My Submitted Daily Reports
+                      </h3>
+                      <p className="text-xs text-slate-500 font-semibold mt-0.5">Day-by-day record of your EOD work reports</p>
+                    </div>
+                    <button onClick={() => setShowPastReportsModal(false)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer">
+                      <X size={20} />
+                    </button>
+                  </div>
+
+                  <div className="overflow-y-auto divide-y divide-slate-100 flex-1 pr-1">
+                    {pastReports.length === 0 ? (
+                      <p className="py-12 text-center text-slate-400 font-bold text-sm">No daily work reports submitted yet.</p>
+                    ) : (
+                      pastReports.map((r, i) => (
+                        <div key={i} className="py-3.5 flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-black text-slate-900">{formatDate(new Date(r.date))}</p>
+                            <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                              📞 {r.callsMade || 0} calls · 📍 {r.visitsCompleted || 0} visits · ✅ {r.dealsClosed || 0} deals
+                            </p>
+                            <p className="text-[10px] text-slate-400 font-bold mt-0.5">Manager: {r.reportingManager || managerName}</p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedReport(r);
+                              }}
+                              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-black border border-slate-200 transition cursor-pointer active:scale-95 flex items-center gap-1"
+                            >
+                              <Eye size={12} /> View Details
+                            </button>
+                            <span className="text-[10px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                              Submitted
+                            </span>
+                          </div>
+                        </div>
+                      ))
+                    )}
+                  </div>
+
+                  <div className="flex justify-end pt-3 border-t border-slate-100 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setShowPastReportsModal(false)}
+                      className="px-5 py-2.5 rounded-xl bg-slate-900 text-white font-extrabold text-xs cursor-pointer hover:bg-slate-800 transition"
+                    >
+                      Close List
+                    </button>
+                  </div>
                 </div>
               </div>
             )}

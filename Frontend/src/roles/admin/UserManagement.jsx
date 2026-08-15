@@ -24,9 +24,158 @@ import {
   ChevronRight,
   ArrowRight,
   Sparkles,
+  Briefcase,
+  HeartPulse,
+  Code2,
+  AlertCircle,
+  CreditCard,
+  FileText,
 } from 'lucide-react'
 import { hrmsAPI, userAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
+
+const EmployeeProfileModal = ({ employee, onClose }) => {
+  if (!employee) return null;
+  const parsedDocs = (() => {
+    if (!employee.documents) return [];
+    try {
+      return typeof employee.documents === "string" ? JSON.parse(employee.documents) : employee.documents;
+    } catch {
+      return [];
+    }
+  })();
+
+  const Section = ({ icon: Icon, title, color = "blue", children }) => (
+    <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-3">
+      <div className="flex items-center gap-2 border-b border-slate-200 pb-2">
+        <Icon size={15} className={`text-${color}-600`} />
+        <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">{title}</h4>
+      </div>
+      {children}
+    </div>
+  );
+
+  const InfoRow = ({ label, value }) => (
+    <div>
+      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">{label}</p>
+      <p className="text-xs font-semibold text-slate-850">{value || "—"}</p>
+    </div>
+  );
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-y-auto p-6 space-y-5 border border-slate-200 shadow-2xl relative text-left">
+        <button
+          onClick={onClose}
+          className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 cursor-pointer"
+        >
+          ✕
+        </button>
+
+        <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
+          <div className="w-16 h-16 rounded-full overflow-hidden bg-slate-100 border-2 border-blue-500 shrink-0 flex items-center justify-center font-bold text-slate-700 text-xl">
+            {employee.profile_photo ? (
+              <img src={employee.profile_photo} alt="Profile" className="w-full h-full object-cover" />
+            ) : (
+              (employee.name || "E").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+            )}
+          </div>
+          <div>
+            <h3 className="font-extrabold text-slate-900 text-lg">{employee.name}</h3>
+            <p className="text-xs text-slate-500 font-semibold">
+              {employee.employee_code || employee.employee_id || "N/A"} · {employee.department || employee.dept || "Sales"} · {employee.designation || employee.role || "Sales Executive"}
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <Section icon={Briefcase} title="Work Details" color="blue">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <InfoRow label="Official Email" value={employee.email} />
+              <InfoRow label="Phone Number" value={employee.phone} />
+              <InfoRow label="Employment Type" value={employee.employment_type} />
+              <InfoRow label="Work Mode" value={employee.work_mode} />
+              <InfoRow label="Work Location" value={employee.work_location} />
+              <InfoRow label="Status" value={employee.status} />
+            </div>
+          </Section>
+
+          <Section icon={HeartPulse} title="Personal Details" color="rose">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <InfoRow label="Date of Birth" value={employee.date_of_birth} />
+              <InfoRow label="Marital Status" value={employee.marital_status} />
+              <InfoRow label="Blood Group" value={employee.blood_group} />
+              <InfoRow label="PAN ID" value={employee.pan_id} />
+              <InfoRow label="Personal Email" value={employee.personal_email} />
+              <InfoRow label="Alternate Contact" value={employee.alternate_contact} />
+              <InfoRow label="City" value={employee.city} />
+              <InfoRow label="State" value={employee.state} />
+              <InfoRow label="Country" value={employee.country} />
+              <InfoRow label="Postal Code" value={employee.postal_code} />
+            </div>
+            <div className="mt-2 text-xs space-y-2 border-t border-slate-100 pt-2">
+              <InfoRow label="Current Address" value={employee.current_address} />
+              <InfoRow label="Permanent Address" value={employee.permanent_address} />
+            </div>
+          </Section>
+
+          <Section icon={Code2} title="Skills & Tech" color="indigo">
+            <div className="space-y-2 text-xs">
+              <InfoRow label="Primary Skills" value={employee.primary_skills} />
+              <InfoRow label="Secondary Skills" value={employee.secondary_skills} />
+              <InfoRow label="Tools & Tech" value={employee.tools} />
+            </div>
+          </Section>
+
+          <Section icon={AlertCircle} title="Emergency Contact" color="rose">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <InfoRow label="Contact Name" value={employee.emergency_name} />
+              <InfoRow label="Relationship" value={employee.emergency_relationship} />
+              <InfoRow label="Contact Number" value={employee.emergency_contact} />
+            </div>
+          </Section>
+
+          <Section icon={CreditCard} title="Bank Details" color="emerald">
+            <div className="grid grid-cols-2 gap-3 text-xs">
+              <InfoRow label="Account Holder" value={employee.account_holder} />
+              <InfoRow label="Bank Name" value={employee.bank_name} />
+              <InfoRow label="Account Number" value={employee.account_number} />
+              <InfoRow label="IFSC Code" value={employee.ifsc} />
+              <InfoRow label="Branch" value={employee.branch} />
+            </div>
+          </Section>
+
+          <Section icon={FileText} title="Employee Documents" color="teal">
+            <div className="space-y-1.5 text-xs">
+              {parsedDocs.length === 0 ? (
+                <p className="text-slate-400 text-xs italic">No documents uploaded yet.</p>
+              ) : (
+                parsedDocs.map((doc, idx) => (
+                  <div key={doc.id || idx} className="flex items-center justify-between border-b border-slate-100 pb-1 last:border-b-0">
+                    <div>
+                      <p className="font-bold text-slate-800">{doc.name}</p>
+                      <p className="text-[10px] text-emerald-600 font-medium">✅ {doc.fileName || 'Uploaded'}</p>
+                    </div>
+                    {doc.fileUrl && (
+                      <a
+                        href={doc.fileUrl}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="px-2 py-0.5 bg-teal-50 border border-teal-200 text-teal-700 font-bold text-[10px] rounded-md hover:bg-teal-100 transition"
+                      >
+                        View File
+                      </a>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+          </Section>
+        </div>
+      </div>
+    </div>
+  );
+};
 
 const ROLE_BADGE_CLASSES = {
   'Super Admin': 'bg-rose-50 text-rose-700 border-rose-200',
@@ -75,6 +224,7 @@ function UserManagement() {
   const [showEditModal, setShowEditModal] = useState(false)
   const [editingUser, setEditingUser] = useState(null)
   const [showCredentialsModal, setShowCredentialsModal] = useState(null)
+  const [selectedEmployeeProfile, setSelectedEmployeeProfile] = useState(null)
 
   // Sales Executive Assignment Modal State
   const [showAssignModal, setShowAssignModal] = useState(false)
@@ -877,6 +1027,13 @@ function UserManagement() {
                           ) : (
                             <div className="flex items-center justify-end gap-1.5">
                               <button
+                                onClick={() => setSelectedEmployeeProfile(user)}
+                                className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 border border-transparent hover:border-teal-200 rounded-lg transition cursor-pointer"
+                                title="View Employee Profile"
+                              >
+                                <Eye className="w-3.5 h-3.5" />
+                              </button>
+                              <button
                                 onClick={() => handleOpenEditModal(user)}
                                 className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 rounded-lg transition cursor-pointer"
                                 title="Edit User Account"
@@ -1401,6 +1558,14 @@ function UserManagement() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Employee Profile View Modal */}
+      {selectedEmployeeProfile && (
+        <EmployeeProfileModal
+          employee={selectedEmployeeProfile}
+          onClose={() => setSelectedEmployeeProfile(null)}
+        />
       )}
     </div>
   )

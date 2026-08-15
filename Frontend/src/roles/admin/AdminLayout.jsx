@@ -117,6 +117,10 @@ const PROFILE_DEFAULTS = {
   alternateContact: "",
   currentAddress: "",
   permanentAddress: "",
+  city: "Chennai",
+  state: "Tamil Nadu",
+  country: "India",
+  postalCode: "600020",
   primarySkills: "System Operations, Security Auditing, DB Administration",
   secondarySkills: "FastAPI, React, Supabase",
   tools: "TwiteConnect, Supabase Dashboard, GitHub",
@@ -155,6 +159,10 @@ const mapDbToFrontend = (emp) => {
     alternateContact: emp.alternate_contact || emp.alternateContact,
     currentAddress: emp.current_address || emp.currentAddress,
     permanentAddress: emp.permanent_address || emp.permanentAddress,
+    city: emp.city || "",
+    state: emp.state || "",
+    country: emp.country || "",
+    postalCode: emp.postal_code || "",
     primarySkills: emp.primary_skills || "",
     secondarySkills: emp.secondary_skills || "",
     tools: emp.tools || "",
@@ -190,6 +198,10 @@ const mapFrontendToDb = (prof) => {
     alternate_contact: prof.alternateContact,
     current_address: prof.currentAddress,
     permanent_address: prof.permanentAddress,
+    city: prof.city,
+    state: prof.state,
+    country: prof.country,
+    postal_code: prof.postalCode,
     primary_skills: prof.primarySkills,
     secondary_skills: prof.secondarySkills,
     tools: prof.tools,
@@ -252,8 +264,13 @@ function AdminLayout() {
   useEffect(() => {
     try {
       localStorage.setItem(`tc_admin_documents_${adminEmail}`, JSON.stringify(documentsList))
+      const code = empCode || currentUser.employee_code || currentUser.id
+      if (code) {
+        hrmsAPI.updateEmployeeById(code, { documents: JSON.stringify(documentsList) })
+          .catch((err) => console.warn("Auto-sync documents failed:", err))
+      }
     } catch {}
-  }, [documentsList, adminEmail])
+  }, [documentsList, adminEmail, empCode, currentUser.employee_code, currentUser.id])
 
   useEffect(() => {
     if (!myProfileOpen) return
@@ -262,7 +279,7 @@ function AdminLayout() {
         const savedPhoto = localStorage.getItem(`tc_admin_photo_${adminEmail}`)
         if (savedPhoto) setProfilePhoto(savedPhoto)
         
-        const res = await hrmsAPI.getEmployee(empCode || currentUser.employee_code || currentUser.id)
+        const res = await hrmsAPI.getEmployeeById(empCode || currentUser.employee_code || currentUser.id)
         if (res && res.data) {
           const emp = res.data
           const mapped = {
@@ -276,6 +293,15 @@ function AdminLayout() {
             setProfilePhoto(emp.profile_photo)
             localStorage.setItem(`tc_admin_photo_${adminEmail}`, emp.profile_photo)
           }
+          if (emp.documents) {
+            try {
+              const parsed = JSON.parse(emp.documents)
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setDocumentsList(parsed)
+                localStorage.setItem(`tc_admin_documents_${adminEmail}`, JSON.stringify(parsed))
+              }
+            } catch (err) {}
+          }
         }
       } catch (err) {
         console.warn("Could not retrieve online profile data:", err)
@@ -286,17 +312,32 @@ function AdminLayout() {
 
   const saveProfile = async () => {
     try {
-      localStorage.setItem(`tc_admin_profile_${adminEmail}`, JSON.stringify(profile))
+      const code = empCode || currentUser.employee_code || currentUser.id
+      if (!code) {
+        throw new Error("No employee identifier found.")
+      }
       const dbPayload = mapFrontendToDb(profile)
       if (profilePhoto) {
         dbPayload.profile_photo = profilePhoto
       }
-      await hrmsAPI.updateEmployee(empCode || currentUser.employee_code || currentUser.id, dbPayload)
+      dbPayload.documents = JSON.stringify(documentsList)
+
+      const res = await hrmsAPI.updateEmployee(code, dbPayload)
+      if (res && res.data) {
+        const freshProfile = mapDbToFrontend(res.data)
+        setProfile(freshProfile)
+        localStorage.setItem(`tc_admin_profile_${adminEmail}`, JSON.stringify(freshProfile))
+      } else {
+        localStorage.setItem(`tc_admin_profile_${adminEmail}`, JSON.stringify(profile))
+      }
       showToast("Profile synced online to Supabase!", "success")
       setEditMode(false)
     } catch (err) {
-      showToast("Profile updated locally, online sync failed.", "warning")
-      setEditMode(false)
+      console.error(err)
+      const errMsg = err.detail
+        ? (typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail))
+        : (err.message || "Failed to save profile")
+      showToast(`Error: ${errMsg}`, "error")
     }
   }
 
@@ -621,6 +662,9 @@ function AdminLayout() {
       </header>
 
       <div className="flex flex-1">
+        {sidebarOpen && (
+          <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-20 lg:hidden transition-opacity" />
+        )}
         {/* Sidebar Navigation */}
         <aside
           className={`fixed inset-y-0 left-0 z-20 w-64 bg-white border-r border-slate-200/90 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 ${
@@ -871,6 +915,10 @@ function AdminLayout() {
                   <Field label="PAN ID" value={profile.panId} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, panId: val }))} />
                   <Field label="Personal Email" value={profile.personalEmail} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, personalEmail: val }))} />
                   <Field label="Alternate Contact" value={profile.alternateContact} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, alternateContact: val }))} />
+                  <Field label="City" value={profile.city} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, city: val }))} />
+                  <Field label="State" value={profile.state} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, state: val }))} />
+                  <Field label="Country" value={profile.country} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, country: val }))} />
+                  <Field label="Postal Code" value={profile.postalCode} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, postalCode: val }))} />
                 </div>
                 <div className="grid grid-cols-1 gap-4 mt-2">
                   <Field label="Current Address" value={profile.currentAddress} editMode={editMode} onChange={(val) => setProfile((p) => ({ ...p, currentAddress: val }))} />

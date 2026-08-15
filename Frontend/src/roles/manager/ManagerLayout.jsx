@@ -34,9 +34,92 @@ import {
   Camera,
   GripVertical,
 } from 'lucide-react'
+import { hrmsAPI } from '../../services/api.js'
 import TwiteConnectLogo from '../../common/TwiteConnectLogo.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { clearUserCache } from '../../utils/userScope.js'
+
+const mapDbToFrontend = (emp) => {
+  if (!emp) return {};
+  return {
+    fullName: emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.fullName,
+    employeeId: emp.employee_code || emp.employee_id || emp.employeeId,
+    officialEmail: emp.email || emp.officialEmail,
+    phone: emp.phone || emp.mobile || emp.phone,
+    role: emp.role || emp.role,
+    team: emp.department || emp.team,
+    designation: emp.designation || emp.designation,
+    gender: emp.gender || emp.gender,
+    employmentType: emp.employment_type || emp.employmentType,
+    employmentStatus: emp.status || "Active",
+    joinDate: emp.joining_date || emp.joinDate,
+    workMode: emp.work_mode || emp.workMode,
+    workLocation: emp.work_location || emp.workLocation,
+    reportingManager: emp.reporting_manager_name || emp.reporting_manager_email || emp.reportingManager,
+    dob: emp.date_of_birth || emp.dob,
+    maritalStatus: emp.marital_status || emp.maritalStatus,
+    bloodGroup: emp.blood_group || emp.bloodGroup,
+    panId: emp.pan_id || emp.panId,
+    personalEmail: emp.personal_email || emp.personalEmail,
+    alternateContact: emp.alternate_contact || emp.alternateContact,
+    currentAddress: emp.current_address || emp.currentAddress,
+    permanentAddress: emp.permanent_address || emp.permanentAddress,
+    city: emp.city || "",
+    state: emp.state || "",
+    country: emp.country || "",
+    postalCode: emp.postal_code || "",
+    primarySkills: emp.primary_skills || emp.primarySkills,
+    secondarySkills: emp.secondary_skills || emp.secondarySkills,
+    tools: emp.tools || emp.tools,
+    emergencyName: emp.emergency_name || emp.emergencyName,
+    emergencyRelationship: emp.emergency_relationship || emp.emergencyRelationship,
+    emergencyContact: emp.emergency_contact || emp.emergencyContact,
+    accountHolder: emp.account_holder || emp.accountHolder,
+    bankName: emp.bank_name || emp.bankName,
+    accountNumber: emp.account_number || emp.accountNumber,
+    ifsc: emp.ifsc || emp.ifsc,
+    branch: emp.branch || emp.branch,
+  };
+};
+
+const mapFrontendToDb = (prof) => {
+  const [first_name, ...last_name_parts] = (prof.fullName || "").split(" ");
+  const last_name = last_name_parts.join(" ") || ".";
+  return {
+    first_name: first_name || "Sales",
+    last_name: last_name || "Manager",
+    name: prof.fullName,
+    phone: prof.phone,
+    mobile: prof.phone,
+    gender: prof.gender,
+    employment_type: prof.employmentType,
+    work_mode: prof.workMode,
+    work_location: prof.workLocation,
+    date_of_birth: prof.dob,
+    marital_status: prof.maritalStatus,
+    blood_group: prof.bloodGroup,
+    pan_id: prof.panId,
+    personal_email: prof.personalEmail,
+    alternate_contact: prof.alternateContact,
+    current_address: prof.currentAddress,
+    permanent_address: prof.permanentAddress,
+    city: prof.city,
+    state: prof.state,
+    country: prof.country,
+    postal_code: prof.postalCode,
+    primary_skills: prof.primarySkills,
+    secondary_skills: prof.secondarySkills,
+    tools: prof.tools,
+    emergency_name: prof.emergencyName,
+    emergency_relationship: prof.emergencyRelationship,
+    emergency_contact: prof.emergencyContact,
+    account_holder: prof.accountHolder,
+    bank_name: prof.bankName,
+    account_number: prof.accountNumber,
+    ifsc: prof.ifsc,
+    branch: prof.branch,
+  };
+};
 
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/manager' },
@@ -74,6 +157,10 @@ const PROFILE_DEFAULTS = {
   alternateContact: '',
   currentAddress: '',
   permanentAddress: '',
+  city: "Chennai",
+  state: "Tamil Nadu",
+  country: "India",
+  postalCode: "600020",
   // Skills
   primarySkills: 'Sales Leadership, CRM Systems',
   secondarySkills: 'Business Development, Analytics',
@@ -239,19 +326,68 @@ export default function ManagerLayout() {
 
   useEffect(() => {
     if (!myProfileOpen) return
-    setProfile((p) => ({
-      ...p,
-      fullName: p.fullName || managerName,
-      officialEmail: p.officialEmail || managerEmail,
-      employeeId: p.employeeId || empCode,
-      role: p.role || managerRole,
-    }))
-  }, [myProfileOpen])
 
-  const saveProfile = () => {
-    try { localStorage.setItem('tc_manager_profile', JSON.stringify(profile)) } catch (e) { }
-    setEditMode(false)
-    showToast('Profile saved successfully!', 'success')
+    const code = empCode || currentUser.employee_code || currentUser.id || 'MGR-001'
+    hrmsAPI.getEmployeeById(code)
+      .then((res) => {
+        if (res && res.data) {
+          const emp = res.data
+          const mapped = {
+            ...PROFILE_DEFAULTS,
+            ...mapDbToFrontend(emp),
+            employeeId: emp.employee_code || emp.employee_id || empCode,
+          }
+          setProfile(mapped)
+          localStorage.setItem('tc_manager_profile', JSON.stringify(mapped))
+          if (emp.profile_photo) {
+            setProfilePhoto(emp.profile_photo)
+            localStorage.setItem('tc_manager_photo', emp.profile_photo)
+          }
+          if (emp.documents) {
+            try {
+              const parsed = JSON.parse(emp.documents)
+              if (Array.isArray(parsed) && parsed.length > 0) {
+                setDocumentsList(parsed)
+                localStorage.setItem('tc_manager_documents', JSON.stringify(parsed))
+              }
+            } catch (err) {}
+          }
+        }
+      })
+      .catch((err) => {
+        console.warn("Could not retrieve online manager profile data:", err)
+      })
+  }, [myProfileOpen, empCode, currentUser.employee_code, currentUser.id])
+
+  const saveProfile = async () => {
+    try {
+      const code = empCode || currentUser.employee_code || currentUser.id
+      if (!code) {
+        throw new Error("No employee identifier found.")
+      }
+      const dbPayload = mapFrontendToDb(profile)
+      if (profilePhoto) {
+        dbPayload.profile_photo = profilePhoto
+      }
+      dbPayload.documents = JSON.stringify(documentsList)
+
+      const res = await hrmsAPI.updateEmployee(code, dbPayload)
+      if (res && res.data) {
+        const freshProfile = mapDbToFrontend(res.data)
+        setProfile(freshProfile)
+        localStorage.setItem('tc_manager_profile', JSON.stringify(freshProfile))
+      } else {
+        localStorage.setItem('tc_manager_profile', JSON.stringify(profile))
+      }
+      showToast('Profile synced online to Supabase!', 'success')
+      setEditMode(false)
+    } catch (err) {
+      console.error(err)
+      const errMsg = err.detail
+        ? (typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail))
+        : (err.message || "Failed to save profile")
+      showToast(`Error: ${errMsg}`, 'error')
+    }
   }
 
   const fp = (field) => editMode
@@ -266,8 +402,15 @@ export default function ManagerLayout() {
   })
 
   useEffect(() => {
-    try { localStorage.setItem('tc_manager_documents', JSON.stringify(documentsList)) } catch (e) { }
-  }, [documentsList])
+    try {
+      localStorage.setItem('tc_manager_documents', JSON.stringify(documentsList))
+      const code = empCode || currentUser.employee_code || currentUser.id
+      if (code) {
+        hrmsAPI.updateEmployee(code, { documents: JSON.stringify(documentsList) })
+          .catch((err) => console.warn("Auto-sync documents failed:", err))
+      }
+    } catch (e) { }
+  }, [documentsList, empCode, currentUser.employee_code, currentUser.id])
 
   const handleLogout = () => {
     clearUserCache()
@@ -634,6 +777,10 @@ export default function ManagerLayout() {
                   <Field label="PAN ID" field="panId" />
                   <Field label="Personal Email" field="personalEmail" />
                   <Field label="Alternate Contact" field="alternateContact" />
+                  <Field label="City" field="city" />
+                  <Field label="State" field="state" />
+                  <Field label="Country" field="country" />
+                  <Field label="Postal Code" field="postalCode" />
                 </div>
                 <div className="grid grid-cols-1 gap-4 mt-2">
                   <Field label="Current Address" field="currentAddress" />

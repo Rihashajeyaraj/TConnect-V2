@@ -45,6 +45,10 @@ class EmployeeUpdate(BaseModel):
     alternate_contact: Optional[str] = None
     current_address: Optional[str] = None
     permanent_address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    postal_code: Optional[str] = None
     primary_skills: Optional[str] = None
     secondary_skills: Optional[str] = None
     tools: Optional[str] = None
@@ -61,17 +65,17 @@ class EmployeeUpdate(BaseModel):
 
 class EmployeeResponse(BaseModel):
     id: Optional[str] = None
-    employee_code: str
-    first_name: str
-    last_name: str
-    email: str
+    employee_code: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    email: Optional[str] = None
     phone: Optional[str] = None
     address: Optional[str] = None
     documents: Optional[str] = None
-    department: str
-    designation: str
-    role: str
-    is_active: bool = True
+    department: Optional[str] = None
+    designation: Optional[str] = None
+    role: Optional[str] = None
+    is_active: Optional[bool] = True
 
     # Profile & Banking Details
     employment_type: Optional[str] = None
@@ -84,6 +88,10 @@ class EmployeeResponse(BaseModel):
     alternate_contact: Optional[str] = None
     current_address: Optional[str] = None
     permanent_address: Optional[str] = None
+    city: Optional[str] = None
+    state: Optional[str] = None
+    country: Optional[str] = None
+    postal_code: Optional[str] = None
     primary_skills: Optional[str] = None
     secondary_skills: Optional[str] = None
     tools: Optional[str] = None

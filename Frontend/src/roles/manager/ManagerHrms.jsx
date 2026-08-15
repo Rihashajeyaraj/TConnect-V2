@@ -432,8 +432,7 @@ export default function ManagerHrms() {
           </div>
         </div>
 
-        {/* HORIZONTAL NAV TABS */}
-        <div className="flex items-center gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-3">
+        <div className="flex items-center flex-nowrap whitespace-nowrap gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-3 scrollbar-thin">
           {hrmsTabs.map(({ key, label, icon: Icon }, index) => (
             <div
               key={key}
@@ -442,13 +441,13 @@ export default function ManagerHrms() {
               onDragOver={(e) => handleTabDragOver(e, index)}
               onDrop={(e) => handleTabDrop(e, index)}
               onDragEnd={handleTabDragEnd}
-              className={`flex items-center transition cursor-pointer ${
+              className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
                 draggedTabKey === index ? 'opacity-40' : ''
               }`}
             >
               <button
                 onClick={() => setActiveSection(key)}
-                className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-pointer ${activeSection === key ? 'bg-[#ca8a04] text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-amber-50 hover:text-amber-900'
+                className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-pointer whitespace-nowrap ${activeSection === key ? 'bg-[#ca8a04] text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-amber-50 hover:text-amber-900'
                   }`}
               >
                 <Icon size={14} />

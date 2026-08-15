@@ -94,6 +94,20 @@ async def update_employee(
     if not is_self:
         if user_role not in ("admin", "super_admin", "ceo"):
             raise HTTPException(status_code=403, detail="Not authorized to manage other employees' profiles")
+    elif user_role not in ("admin", "super_admin", "ceo"):
+        # Regular employee is updating self. Protect company-controlled fields.
+        unset_fields = data.model_dump(exclude_unset=True)
+        admin_fields = {
+            "department", "designation", "role", "is_active", "status",
+            "employee_code", "email", "joining_date", "reporting_manager",
+            "reporting_manager_id", "reporting_manager_name", "reporting_manager_email"
+        }
+        modified_admin_fields = admin_fields.intersection(unset_fields.keys())
+        if modified_admin_fields:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Employees are not permitted to modify company-controlled fields: {', '.join(modified_admin_fields)}"
+            )
 
     updated = service.update_employee(emp_id, data)
     update_dict = data.model_dump(exclude_none=True)
