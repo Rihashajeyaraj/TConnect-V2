@@ -62,6 +62,166 @@ class SettingsRepository:
                 logger.debug(f"Failed to fetch {field} from organization.{tbl}: {err}")
                 merged[field] = []
 
+        # 3. Dynamic User Counts calculation
+        user_counts = {}
+        try:
+            emp_res = self.client.schema("hrms").table("employees").select("role").execute()
+            if emp_res.data:
+                for emp in emp_res.data:
+                    r_raw = str(emp.get("role") or "").lower().strip()
+                    r_id = "sales_executive"
+                    if "manager" in r_raw:
+                        r_id = "sales_manager"
+                    elif "admin" in r_raw:
+                        r_id = "admin"
+                    elif "ceo" in r_raw or "founder" in r_raw:
+                        r_id = "ceo"
+                    elif "super" in r_raw:
+                        r_id = "super_admin"
+                    user_counts[r_id] = user_counts.get(r_id, 0) + 1
+        except Exception as e:
+            logger.debug(f"Could not calculate user counts dynamically: {e}")
+
+        # 4. Fetch dynamic roles and permission matrix
+        try:
+            roles_res = self.client.schema("organization").table("roles").select("*").execute()
+            rp_res = self.client.schema("organization").table("role_permissions").select("*, permissions:permission_id(*)").execute()
+            
+            if roles_res.data:
+                db_roles = []
+                for r in roles_res.data:
+                    r_id = r.get("id")
+                    role_perms = [item for item in (rp_res.data or []) if item.get("role_id") == r_id]
+                    
+                    structured_permissions = []
+                    legacy_permissions = {}
+                    
+                    for rp in role_perms:
+                        perm = rp.get("permissions") or {}
+                        if not perm:
+                            continue
+                        
+                        module = perm.get("module")
+                        action = perm.get("action")
+                        perm_key = perm.get("permission_key")
+                        scope = rp.get("access_scope") or "All"
+                        
+                        structured_permissions.append({
+                            "permission_key": perm_key,
+                            "module": module,
+                            "action": action,
+                            "description": perm.get("description"),
+                            "enabled": True,
+                            "access_scope": scope
+                        })
+                        
+                        # Legacy permission matrix mapping
+                        legacy_mod = ""
+                        m_low = module.lower()
+                        if "crm" in m_low or "customer" in m_low:
+                            legacy_mod = "crm"
+                        elif "hrms" in m_low or "attendance" in m_low or "leave" in m_low:
+                            legacy_mod = "hrms"
+                        elif "pipeline" in m_low:
+                            legacy_mod = "pipeline"
+                        elif "finance" in m_low or "expense" in m_low:
+                            legacy_mod = "finance"
+                        elif "setting" in m_low or "company" in m_low or "user" in m_low:
+                            legacy_mod = "settings"
+                        elif "audit" in m_low:
+                            legacy_mod = "audit"
+                            
+                        if legacy_mod:
+                            if legacy_mod not in legacy_permissions:
+                                legacy_permissions[legacy_mod] = []
+                            
+                            legacy_act = ""
+                            act_lower = action.lower()
+                            if "view" in act_lower or "read" in act_lower:
+                                legacy_act = "read"
+                            elif "create" in act_lower or "edit" in act_lower or "write" in act_lower:
+                                legacy_act = "write"
+                            elif "delete" in act_lower:
+                                legacy_act = "delete"
+                            else:
+                                legacy_act = "admin"
+                                
+                            if legacy_act and legacy_act not in legacy_permissions[legacy_mod]:
+                                legacy_permissions[legacy_mod].append(legacy_act)
+                    
+                    for m in ["crm", "hrms", "pipeline", "finance", "settings", "audit"]:
+                        if m not in legacy_permissions:
+                            legacy_permissions[m] = []
+                            
+                    db_roles.append({
+                        "id": r_id,
+                        "name": r.get("name"),
+                        "description": r.get("description"),
+                        "isSystem": r.get("is_system_role", False),
+                        "is_active": r.get("is_active", True),
+                        "userCount": user_counts.get(r_id, 0),
+                        "permissions": legacy_permissions,
+                        "structured_permissions": structured_permissions
+                    })
+                
+                merged["role_permissions"] = db_roles
+            else:
+                raise ValueError("No roles found")
+        except Exception as err:
+            logger.debug(f"Falling back to default fallback RBAC matrix: {err}")
+            # Fallback to local default matrix
+            fallback_roles = [
+                {
+                    "id": "admin",
+                    "name": "Admin",
+                    "description": "Unrestricted access to all company settings and user management profiles.",
+                    "isSystem": True,
+                    "is_active": True,
+                    "userCount": user_counts.get("admin", 2),
+                    "permissions": {
+                        "crm": ["read", "write", "delete", "admin"],
+                        "hrms": ["read", "write", "delete", "admin"],
+                        "pipeline": ["read", "write", "delete", "admin"],
+                        "finance": ["read", "write", "delete", "admin"],
+                        "settings": ["read", "write", "delete", "admin"],
+                        "audit": ["read", "write", "delete", "admin"]
+                    }
+                },
+                {
+                    "id": "sales_manager",
+                    "name": "Sales Manager",
+                    "description": "Manage sales team leads, assign opportunities, approve claims, and track performance targets.",
+                    "isSystem": True,
+                    "is_active": True,
+                    "userCount": user_counts.get("sales_manager", 4),
+                    "permissions": {
+                        "crm": ["read", "write", "delete"],
+                        "hrms": ["read"],
+                        "pipeline": ["read", "write", "admin"],
+                        "finance": ["read", "write"],
+                        "settings": [],
+                        "audit": []
+                    }
+                },
+                {
+                    "id": "sales_executive",
+                    "name": "Sales Executive",
+                    "description": "Submit expense requests, check in daily, and manage assigned leads.",
+                    "isSystem": True,
+                    "is_active": True,
+                    "userCount": user_counts.get("sales_executive", 8),
+                    "permissions": {
+                        "crm": ["read", "write"],
+                        "hrms": ["read"],
+                        "pipeline": ["read", "write"],
+                        "finance": ["write"],
+                        "settings": [],
+                        "audit": []
+                    }
+                }
+            ]
+            merged["role_permissions"] = fallback_roles
+
         return merged
 
     def update_settings(self, updates: Dict[str, Any]) -> Dict[str, Any]:
@@ -157,6 +317,50 @@ class SettingsRepository:
                     self.client.schema("organization").table("customer_categories").upsert(db_item).execute()
                 except Exception as e:
                     logger.warning(f"Failed to upsert customer_category: {e}")
+
+        # Save updates to roles and role_permissions tables in Supabase
+        if "role_permissions" in clean_updates:
+            for role_data in clean_updates["role_permissions"]:
+                role_id = role_data.get("id")
+                if not role_id:
+                    continue
+                
+                db_role = {
+                    "id": role_id,
+                    "name": role_data.get("name"),
+                    "description": role_data.get("description"),
+                    "is_system_role": role_data.get("isSystem", False),
+                    "is_active": role_data.get("is_active", True)
+                }
+                
+                try:
+                    # 1. Upsert role profile
+                    self.client.schema("organization").table("roles").upsert(db_role).execute()
+                    
+                    # 2. Clear old links and insert new active role permissions
+                    if "structured_permissions" in role_data:
+                        # Clear old mappings
+                        self.client.schema("organization").table("role_permissions").delete().eq("role_id", role_id).execute()
+                        
+                        # Populate new mappings
+                        for sp in role_data["structured_permissions"]:
+                            # Skip if disabled (disabled is represented as enabled = False)
+                            if sp.get("enabled") is False:
+                                continue
+                            
+                            perm_key = sp.get("permission_key")
+                            # Resolve permission_id matching perm_key
+                            perm_res = self.client.schema("organization").table("permissions").select("id").eq("permission_key", perm_key).execute()
+                            if perm_res.data:
+                                perm_id = perm_res.data[0]["id"]
+                                db_rp = {
+                                    "role_id": role_id,
+                                    "permission_id": perm_id,
+                                    "access_scope": sp.get("access_scope", "All")
+                                }
+                                self.client.schema("organization").table("role_permissions").insert(db_rp).execute()
+                except Exception as e:
+                    logger.warning(f"Failed to save role_permissions for role '{role_id}': {e}")
 
         return self.get_settings()
 

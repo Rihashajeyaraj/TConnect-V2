@@ -176,14 +176,42 @@ class UserRepository:
         except Exception as auth_err:
             logger.warning(f"Supabase Auth list_users error: {auth_err}")
 
-        # Combine with db users
-        all_combined = auth_users_list
-        existing_emails = {u["email"].lower() for u in all_combined}
-        for u in db_users:
-            if u["email"].lower() not in existing_emails:
-                all_combined.append(u)
-                existing_emails.add(u["email"].lower())
-
+        # Combine with db users, matching by either email or id / auth_user_id to prevent duplicates
+        all_combined = []
+        auth_map_by_id = {str(u["id"]): u for u in auth_users_list}
+        auth_map_by_email = {str(u["email"]).lower(): u for u in auth_users_list}
+        
+        merged_ids = set()
+        merged_emails = set()
+        
+        for db_u in db_users:
+            db_uid = db_u.get("id") or db_u.get("auth_user_id") or db_u.get("user_id")
+            db_email = str(db_u.get("email") or "").lower().strip()
+            
+            matched_auth = None
+            if db_uid and str(db_uid) in auth_map_by_id:
+                matched_auth = auth_map_by_id[str(db_uid)]
+            elif db_email and db_email in auth_map_by_email:
+                matched_auth = auth_map_by_email[db_email]
+                
+            if matched_auth:
+                # Merge DB employee values into Auth user record, keeping DB values as primary
+                merged_user = matched_auth.copy()
+                for k, v in db_u.items():
+                    if v is not None and v != "" and v != "N/A" and v != "None":
+                        merged_user[k] = v
+                all_combined.append(merged_user)
+                merged_ids.add(str(matched_auth["id"]))
+                merged_emails.add(str(matched_auth["email"]).lower())
+            else:
+                # Add standalone DB user
+                all_combined.append(db_u)
+                
+        # Add remaining Auth users that were not merged
+        for auth_u in auth_users_list:
+            if str(auth_u["id"]) not in merged_ids and str(auth_u["email"]).lower() not in merged_emails:
+                all_combined.append(auth_u)
+                
         return all_combined
 
     def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -454,6 +482,29 @@ class UserRepository:
                     db_res = res.data
             except Exception:
                 pass
+
+        # Sync assigned role into organization.user_roles table
+        if updates.get("role"):
+            try:
+                role_raw = str(updates["role"]).lower().strip()
+                role_id = "sales_executive"
+                if "manager" in role_raw:
+                    role_id = "sales_manager"
+                elif "admin" in role_raw:
+                    role_id = "admin"
+                elif "ceo" in role_raw or "founder" in role_raw:
+                    role_id = "ceo"
+                elif "super" in role_raw:
+                    role_id = "super_admin"
+                
+                db_ur = {
+                    "user_id": user_id,
+                    "role_id": role_id
+                }
+                self.client.schema("organization").table("user_roles").upsert(db_ur).execute()
+                logger.info(f"Synced user role mapping to organization.user_roles: user={user_id}, role={role_id}")
+            except Exception as r_err:
+                logger.debug(f"Failed to upsert organization.user_roles user={user_id}: {r_err}")
 
         return target
 

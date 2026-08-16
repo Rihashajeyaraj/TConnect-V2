@@ -58,6 +58,12 @@ export default function AdminDashboard() {
   const [previewDoc, setPreviewDoc] = useState(null)
   const [actioningDocId, setActioningDocId] = useState(null)
   const [showApprovalsPage, setShowApprovalsPage] = useState(false)
+  const [showTotalUsersPage, setShowTotalUsersPage] = useState(false)
+  const [selectedRoleTab, setSelectedRoleTab] = useState('All')
+  const [allEmployees, setAllEmployees] = useState([])
+  const [showSecurityAuditsPage, setShowSecurityAuditsPage] = useState(false)
+  const [selectedAuditModuleTab, setSelectedAuditModuleTab] = useState('All')
+  const [allAuditLogs, setAllAuditLogs] = useState([])
 
   async function loadAdminDashboardData() {
     setLoading(true)
@@ -75,6 +81,9 @@ export default function AdminDashboard() {
       const attList = attRes.status === 'fulfilled' && attRes.value?.data ? attRes.value.data : []
       const auditList = auditRes.status === 'fulfilled' && auditRes.value?.data ? auditRes.value.data : []
       const kpisObj = kpisRes.status === 'fulfilled' && kpisRes.value?.data ? kpisRes.value.data : null
+
+      setAllEmployees(empsList)
+      setAllAuditLogs(auditList)
 
       if (kpisObj) {
         setKpiData(kpisObj)
@@ -308,85 +317,96 @@ export default function AdminDashboard() {
       {activeWidgets.systemStats && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
           {/* Total Registered Users */}
-          <div className="bg-white border border-slate-200/90 p-4.5 rounded-2xl shadow-xs hover:shadow-md transition">
-            <div className="flex items-center justify-between text-slate-500">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Total Users</span>
-              <div className="w-9 h-9 rounded-xl bg-blue-50 text-blue-600 flex items-center justify-center">
+          <div 
+            onClick={() => setShowTotalUsersPage(true)}
+            className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 cursor-pointer select-none group"
+          >
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Total Users</span>
+              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
                 <Users className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : kpiData.total_users.value}</h3>
-            <span className="text-[11px] text-blue-600 font-bold">{kpiData.total_users.label}</span>
+            <h3 className="text-2xl font-black text-[#123A8C] mt-2">{loading ? '...' : kpiData.total_users.value}</h3>
+            <span className="text-[11px] text-[#D9A441] font-bold">{kpiData.total_users.label}</span>
           </div>
 
           {/* Administrators count */}
-          <div className="bg-white border border-slate-200/90 p-4.5 rounded-2xl shadow-xs hover:shadow-md transition">
-            <div className="flex items-center justify-between text-slate-500">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Administrators</span>
-              <div className="w-9 h-9 rounded-xl bg-purple-50 text-purple-600 flex items-center justify-center">
+          <div className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 group">
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Administrators</span>
+              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
                 <ShieldCheck className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : kpiData.administrators.value}</h3>
-            <span className="text-[11px] text-purple-600 font-bold">{kpiData.administrators.label}</span>
+            <h3 className="text-2xl font-black text-[#123A8C] mt-2">{loading ? '...' : kpiData.administrators.value}</h3>
+            <span className="text-[11px] text-[#D9A441] font-bold">{kpiData.administrators.label}</span>
           </div>
 
           {/* Document Approvals Card */}
           <div 
             onClick={() => setShowApprovalsPage(true)}
-            className="bg-white border border-slate-200/90 p-4.5 rounded-2xl shadow-xs hover:shadow-md transition cursor-pointer relative overflow-hidden bg-gradient-to-br from-white via-white to-amber-50/10 group select-none"
+            className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 cursor-pointer select-none group"
           >
-            <div className="absolute top-0 inset-x-0 h-1 bg-amber-500 opacity-0 group-hover:opacity-100 transition" />
-            <div className="flex items-center justify-between text-slate-500">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Document Approvals</span>
-              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Document Approvals</span>
+              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
                 <FileCheck className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : pendingDocs.length}</h3>
-            <span className="text-[11px] text-amber-600 font-bold flex items-center gap-1">
+            <h3 className="text-2xl font-black text-[#123A8C] mt-2">{loading ? '...' : pendingDocs.length}</h3>
+            <span className={`text-[11px] font-bold flex items-center gap-1 ${pendingDocs.length > 0 ? 'text-[#D99A18]' : 'text-[#168A55]'}`}>
               {pendingDocs.length > 0 ? '⚠️ Action Required' : '✓ All Approved'}
             </span>
           </div>
 
           {/* Security Audits total */}
-          <div className="bg-white border border-slate-200/90 p-4.5 rounded-2xl shadow-xs hover:shadow-md transition">
-            <div className="flex items-center justify-between text-slate-500">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Security Audits</span>
-              <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 flex items-center justify-center">
+          <div 
+            onClick={() => setShowSecurityAuditsPage(true)}
+            className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 cursor-pointer select-none group"
+          >
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Security Audits</span>
+              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
                 <Terminal className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : kpiData.security_audits.value}</h3>
-            <span className="text-[11px] text-slate-600 font-bold">{kpiData.security_audits.label}</span>
+            <h3 className="text-2xl font-black text-[#123A8C] mt-2">{loading ? '...' : kpiData.security_audits.value}</h3>
+            <span className="text-[11px] text-[#D9A441] font-bold">{kpiData.security_audits.label}</span>
           </div>
 
           {/* DB Status */}
-          <div className="bg-white border border-slate-200/90 p-4.5 rounded-2xl shadow-xs hover:shadow-md transition">
-            <div className="flex items-center justify-between text-slate-500">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Database Engine</span>
-              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
+          <div className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 group">
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Database Engine</span>
+              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
                 <Database className="w-5 h-5" />
               </div>
             </div>
-            <h3 className={`text-xl font-black mt-2 ${kpiData.database_engine.status === 'Active' ? 'text-emerald-700' : 'text-rose-700'}`}>
+            <h3 className={`text-xl font-black mt-2 ${kpiData.database_engine.status === 'Active' ? 'text-[#168A55]' : 'text-[#DC3E3E]'}`}>
               {loading ? '...' : kpiData.database_engine.status}
             </h3>
-            <span className="text-[11px] text-emerald-600 font-bold">{kpiData.database_engine.label}</span>
+            <span className="text-[11px] text-[#D9A441] font-bold">{kpiData.database_engine.label}</span>
           </div>
 
           {/* System Load status */}
-          <div className="bg-white border border-slate-200/90 p-4.5 rounded-2xl shadow-xs hover:shadow-md transition">
-            <div className="flex items-center justify-between text-slate-500">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Server Health</span>
-              <div className="w-9 h-9 rounded-xl bg-blue-50 text-indigo-700 flex items-center justify-center">
+          <div className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 group">
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
+            <div className="flex items-center justify-between">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Server Health</span>
+              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
                 <Server className="w-5 h-5" />
               </div>
             </div>
-            <h3 className={`text-xl font-black mt-2 ${kpiData.server_health.status.includes('Operational') ? 'text-indigo-900' : 'text-rose-900'}`}>
+            <h3 className={`text-xl font-black mt-2 ${kpiData.server_health.status.includes('Operational') ? 'text-[#123A8C]' : 'text-[#DC3E3E]'}`}>
               {loading ? '...' : `${kpiData.server_health.uptime}% Uptime`}
             </h3>
-            <span className="text-[11px] text-indigo-700 font-bold">{kpiData.server_health.status}</span>
+            <span className="text-[11px] text-[#D9A441] font-bold">{kpiData.server_health.status}</span>
           </div>
         </div>
       ) }
@@ -713,6 +733,244 @@ export default function AdminDashboard() {
                   </table>
                 </div>
               )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Total Registered Users List view overlay */}
+      {showTotalUsersPage && (
+        <div className="fixed inset-0 bg-[#061A4D]/40 backdrop-blur-xs flex items-center justify-center p-4 z-40">
+          <div className="bg-white rounded-3xl max-w-4xl w-full flex flex-col border border-[#DCE3EF] shadow-2xl overflow-hidden max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-[#DCE3EF] flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <Users className="w-5 h-5 text-[#123A8C]" />
+                <h3 className="font-black text-[#071A45] text-base">Registered System Employees</h3>
+              </div>
+              <button 
+                onClick={() => setShowTotalUsersPage(false)}
+                className="text-slate-450 hover:text-slate-700 font-extrabold text-lg p-1.5 hover:bg-slate-200/60 rounded-xl cursor-pointer transition flex items-center justify-center"
+                title="Close Users List"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Toggle tabs bar */}
+            <div className="p-5 border-b border-slate-100 bg-white">
+              <div className="flex flex-wrap gap-2">
+                {['All', 'Admin', 'Sales Manager', 'Sales Executive'].map((tab) => {
+                  const isActive = selectedRoleTab === tab;
+                  return (
+                    <button
+                      key={tab}
+                      onClick={() => setSelectedRoleTab(tab)}
+                      className={`px-4 py-2 text-xs font-black rounded-xl transition duration-200 cursor-pointer ${
+                        isActive
+                          ? 'bg-[#061A4D] text-white shadow-md shadow-[#061A4D]/20'
+                          : 'bg-slate-100 text-slate-650 hover:bg-slate-200'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Body / Table View */}
+            <div className="flex-1 overflow-auto p-5">
+              {allEmployees.filter(emp => {
+                if (selectedRoleTab === 'All') return true;
+                const r = (emp.role || '').toLowerCase();
+                if (selectedRoleTab === 'Admin') return r.includes('admin') || r.includes('administrator');
+                if (selectedRoleTab === 'Sales Manager') return r.includes('manager');
+                if (selectedRoleTab === 'Sales Executive') return r.includes('executive') || r.includes('sales');
+                return true;
+              }).length === 0 ? (
+                <div className="text-center py-12 text-slate-450 font-bold text-sm">
+                  No registered users match this category.
+                </div>
+              ) : (
+                <div className="border border-[#DCE3EF] rounded-2xl overflow-hidden shadow-xs">
+                  <table className="w-full text-left border-collapse text-xs font-semibold text-[#071A45]">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-[#DCE3EF] text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
+                        <th className="px-5 py-3.5">Employee Details</th>
+                        <th className="px-5 py-3.5">Designation</th>
+                        <th className="px-5 py-3.5">Department</th>
+                        <th className="px-5 py-3.5 text-center">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 bg-white">
+                      {allEmployees.filter(emp => {
+                        if (selectedRoleTab === 'All') return true;
+                        const r = (emp.role || '').toLowerCase();
+                        if (selectedRoleTab === 'Admin') return r.includes('admin') || r.includes('administrator');
+                        if (selectedRoleTab === 'Sales Manager') return r.includes('manager');
+                        if (selectedRoleTab === 'Sales Executive') return r.includes('executive') || r.includes('sales');
+                        return true;
+                      }).map((emp) => {
+                        const statusUpper = String(emp.status || 'Active').toUpperCase();
+                        const isActive = statusUpper === 'ACTIVE';
+                        return (
+                          <tr key={emp.employee_id || emp.employee_code} className="hover:bg-slate-50/50 transition">
+                            <td className="px-5 py-4">
+                              <div className="font-extrabold text-[#071A45] text-xs">
+                                {emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'System User'}
+                              </div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{emp.email} · {emp.employee_code || emp.employee_id}</div>
+                            </td>
+                            <td className="px-5 py-4 font-bold text-[#123A8C]">
+                              {emp.designation || emp.role || 'Sales Executive'}
+                            </td>
+                            <td className="px-5 py-4 text-slate-500 font-semibold">
+                              {emp.department || 'Sales & Business Development'}
+                            </td>
+                            <td className="px-5 py-4 text-center">
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                                isActive 
+                                  ? 'bg-emerald-50 text-[#168A55] border-emerald-200' 
+                                  : 'bg-rose-50 text-[#DC3E3E] border-rose-200'
+                              }`}>
+                                {emp.status || 'Active'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Security & Operation Audits List view overlay */}
+      {showSecurityAuditsPage && (
+        <div className="fixed inset-0 bg-[#061A4D]/40 backdrop-blur-xs flex items-center justify-center p-4 z-40">
+          <div className="bg-white rounded-3xl max-w-5xl w-full flex flex-col border border-[#DCE3EF] shadow-2xl overflow-hidden max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-[#DCE3EF] flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <Terminal className="w-5 h-5 text-[#123A8C]" />
+                <h3 className="font-black text-[#071A45] text-base">Security & Operation Audit Logs</h3>
+              </div>
+              <button 
+                onClick={() => setShowSecurityAuditsPage(false)}
+                className="text-slate-450 hover:text-slate-700 font-extrabold text-lg p-1.5 hover:bg-slate-200/60 rounded-xl cursor-pointer transition flex items-center justify-center"
+                title="Close Audit Logs"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Toggle tabs bar */}
+            <div className="p-5 border-b border-slate-100 bg-white">
+              <div className="flex flex-wrap gap-2">
+                {['All', 'Authentication', 'HRMS', 'CRM & Sales', 'Others'].map((tab) => {
+                  const isActive = selectedAuditModuleTab === tab;
+                  return (
+                    <button
+                      key={tab}
+                      onClick={() => setSelectedAuditModuleTab(tab)}
+                      className={`px-4 py-2 text-xs font-black rounded-xl transition duration-200 cursor-pointer ${
+                        isActive
+                          ? 'bg-[#061A4D] text-white shadow-md shadow-[#061A4D]/20'
+                          : 'bg-slate-100 text-slate-650 hover:bg-slate-200'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Modal Body / Table View */}
+            <div className="flex-1 overflow-auto p-5 bg-[#F7F9FC]">
+              {(() => {
+                const filteredAudits = allAuditLogs.map((a, i) => ({
+                  id: a.id || `audit_${i}`,
+                  user: a.user_email || a.email || 'System User',
+                  role: a.user_role || 'Staff',
+                  action: a.action || 'System Action',
+                  module: a.module || 'system',
+                  time: a.created_at || new Date().toISOString(),
+                  details: a.description || (typeof a.details === 'string' ? a.details : a.details?.description) || 'System operation executed'
+                })).filter(a => {
+                  if (selectedAuditModuleTab === 'All') return true;
+                  const m = String(a.module).toUpperCase();
+                  if (selectedAuditModuleTab === 'Authentication') return m === 'AUTHENTICATION' || m === 'AUTH' || m === 'LOGIN';
+                  if (selectedAuditModuleTab === 'HRMS') return m === 'HRMS' || m === 'ATTENDANCE' || m === 'LEAVE';
+                  if (selectedAuditModuleTab === 'CRM & Sales') return m === 'CRM' || m === 'SALES' || m === 'EXPENSE' || m === 'CUSTOMER' || m === 'VISIT' || m === 'SPATIAL';
+                  if (selectedAuditModuleTab === 'Others') {
+                    return !(m === 'AUTHENTICATION' || m === 'AUTH' || m === 'LOGIN' || m === 'HRMS' || m === 'ATTENDANCE' || m === 'LEAVE' || m === 'CRM' || m === 'SALES' || m === 'EXPENSE' || m === 'CUSTOMER' || m === 'VISIT' || m === 'SPATIAL');
+                  }
+                  return true;
+                });
+
+                if (filteredAudits.length === 0) {
+                  return (
+                    <div className="text-center py-12 text-slate-450 font-bold text-sm bg-white rounded-2xl border border-[#DCE3EF]">
+                      No audit logs match this module filter.
+                    </div>
+                  );
+                }
+
+                const formatAuditDate = (isoStr) => {
+                  try {
+                    const d = new Date(isoStr)
+                    const day = String(d.getDate()).padStart(2, '0')
+                    const month = String(d.getMonth() + 1).padStart(2, '0')
+                    const year = d.getFullYear()
+                    const hours = String(d.getHours()).padStart(2, '0')
+                    const minutes = String(d.getMinutes()).padStart(2, '0')
+                    const seconds = String(d.getSeconds()).padStart(2, '0')
+                    return `${day}/${month}/${year} ${hours}:${minutes}:${seconds}`
+                  } catch {
+                    return isoStr
+                  }
+                };
+
+                return (
+                  <div className="border border-[#DCE3EF] rounded-2xl overflow-hidden shadow-xs bg-white">
+                    <table className="w-full text-left border-collapse text-xs font-semibold text-[#071A45]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-[#DCE3EF] text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
+                          <th className="px-5 py-3.5">Timestamp</th>
+                          <th className="px-5 py-3.5">Actor Details</th>
+                          <th className="px-5 py-3.5">Module & Action</th>
+                          <th className="px-5 py-3.5">Operation Description</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-150">
+                        {filteredAudits.map((act) => (
+                          <tr key={act.id} className="hover:bg-slate-50/50 transition">
+                            <td className="px-5 py-4 text-slate-550 font-medium whitespace-nowrap">
+                              {formatAuditDate(act.time)}
+                            </td>
+                            <td className="px-5 py-4">
+                              <div className="font-extrabold text-[#071A45] text-xs">{act.user}</div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{act.role}</div>
+                            </td>
+                            <td className="px-5 py-4 font-bold text-[#123A8C]">
+                              <span className="text-[#123A8C]">{act.action}</span>
+                              <div className="text-[10px] text-[#D9A441] mt-0.5 font-extrabold uppercase">{act.module}</div>
+                            </td>
+                            <td className="px-5 py-4 text-slate-600 font-medium leading-relaxed max-w-sm italic">
+                              &ldquo;{act.details}&rdquo;
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

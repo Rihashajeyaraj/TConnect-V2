@@ -195,6 +195,58 @@ function CompanyOverview() {
     }
   }
 
+  const handlePopulateSampleData = async () => {
+    if (!window.confirm('Do you want to pre-populate the master configuration settings with standard company defaults (branches, departments, designations, products, lead sources, and categories)? This will initialize system dropdown fields.')) return
+    setSaving(true)
+    const sampleSetup = {
+      branches: [
+        { id: 1, name: 'Chennai HQ', type: 'Headquarters', location: 'OMR IT Expressway, Chennai', staffCount: 15, status: 'Active' },
+        { id: 2, name: 'Bangalore Office', type: 'Regional Office', location: 'Whitefield, Bangalore', staffCount: 8, status: 'Active' },
+        { id: 3, name: 'Mumbai Hub', type: 'Sales Hub', location: 'Andheri East, Mumbai', staffCount: 3, status: 'Active' }
+      ],
+      departments: [
+        { id: 101, name: 'Sales & Business Development', lead: 'Arun Kumar', staffCount: 18, budget: '₹15,00,000', status: 'Active' },
+        { id: 102, name: 'Human Resources', lead: 'Siva Murugan', staffCount: 2, budget: '₹3,00,050', status: 'Active' },
+        { id: 103, name: 'Engineering & Tech', lead: 'Jeeva Nathan', staffCount: 4, budget: '₹8,00,000', status: 'Active' },
+        { id: 104, name: 'Finance & Accounts', lead: 'Bavani R', staffCount: 1, budget: '₹2,00,000', status: 'Active' }
+      ],
+      designations: [
+        { id: 'DES-1', name: 'Sales Executive', status: 'Active' },
+        { id: 'DES-2', name: 'Sales Manager', status: 'Active' },
+        { id: 'DES-3', name: 'System Administrator', status: 'Active' },
+        { id: 'DES-4', name: 'CEO & Managing Director', status: 'Active' },
+        { id: 'DES-5', name: 'HR Manager', status: 'Active' }
+      ],
+      products: [
+        { id: 'PRO-1', name: 'TConnect Core ERP Suite', price: '₹4,500/user/month', status: 'Active' },
+        { id: 'PRO-2', name: 'GPS Field Tracker Plugin', price: '₹950/user/month', status: 'Active' },
+        { id: 'PRO-3', name: 'Custom CRM Portal', price: '₹12,000/month flat', status: 'Active' }
+      ],
+      lead_sources: [
+        { id: 'LSD-1', name: 'Direct Sales Outreach', status: 'Active' },
+        { id: 'LSD-2', name: 'Corporate Website Form', status: 'Active' },
+        { id: 'LSD-3', name: 'Existing Customer Referral', status: 'Active' },
+        { id: 'LSD-4', name: 'LinkedIn Professional Campaign', status: 'Active' }
+      ],
+      customer_categories: [
+        { id: 'CAT-1', name: 'Enterprise Tier-1', status: 'Active' },
+        { id: 'CAT-2', name: 'SME Tier-2', status: 'Active' },
+        { id: 'CAT-3', name: 'Retail Client Tier-3', status: 'Active' }
+      ]
+    }
+
+    try {
+      await settingsAPI.updateSettings(sampleSetup)
+      setMasterData(sampleSetup)
+      showToast('Master configuration settings pre-populated with standard defaults!', 'success')
+    } catch (err) {
+      setMasterData(sampleSetup)
+      showToast('Loaded sample configuration settings onto page!', 'success')
+    } finally {
+      setSaving(false)
+    }
+  }
+
   // Filter list based on search query
   const filteredList = useMemo(() => {
     if (activeTab === 'profile') return []
@@ -212,7 +264,8 @@ function CompanyOverview() {
   }, [masterData, activeTab, searchQuery])
 
   // Open Add Modal
-  const handleOpenAdd = () => {
+  const handleOpenAdd = (categoryKey) => {
+    setActiveTab(categoryKey)
     setItemName('')
     setItemType('Regional Office')
     setItemLocation('')
@@ -224,7 +277,8 @@ function CompanyOverview() {
   }
 
   // Open Edit Modal
-  const handleOpenEdit = (item) => {
+  const handleOpenEdit = (categoryKey, item) => {
+    setActiveTab(categoryKey)
     setEditingItem(item)
     setItemName(item.name || '')
     setItemType(item.type || 'Regional Office')
@@ -310,9 +364,9 @@ function CompanyOverview() {
   }
 
   // Toggle Activation status
-  const handleToggleStatus = async (item) => {
+  const handleToggleStatus = async (categoryKey, item) => {
     setSaving(true)
-    const currentList = [...masterData[activeTab]]
+    const currentList = [...masterData[categoryKey]]
     const nextStatus = item.status === 'Active' ? 'Inactive' : 'Active'
     
     const updatedList = currentList.map((x) => 
@@ -320,12 +374,12 @@ function CompanyOverview() {
     )
 
     try {
-      const payload = { [activeTab]: updatedList }
+      const payload = { [categoryKey]: updatedList }
       await settingsAPI.updateSettings(payload)
       
       setMasterData((prev) => ({
         ...prev,
-        [activeTab]: updatedList
+        [categoryKey]: updatedList
       }))
       
       showToast(`Status updated to ${nextStatus}`, 'success')
@@ -337,20 +391,20 @@ function CompanyOverview() {
   }
 
   // Delete Item
-  const handleDeleteItem = async (itemId) => {
+  const handleDeleteItem = async (categoryKey, itemId) => {
     if (!window.confirm('Are you sure you want to delete this master data item?')) return
     
     setSaving(true)
-    const currentList = [...masterData[activeTab]]
+    const currentList = [...masterData[categoryKey]]
     const updatedList = currentList.filter((x) => x.id !== itemId)
 
     try {
-      const payload = { [activeTab]: updatedList }
+      const payload = { [categoryKey]: updatedList }
       await settingsAPI.updateSettings(payload)
       
       setMasterData((prev) => ({
         ...prev,
-        [activeTab]: updatedList
+        [categoryKey]: updatedList
       }))
       
       showToast('Item deleted successfully', 'success')
@@ -526,314 +580,390 @@ function CompanyOverview() {
       />
 
       {/* Top Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-slate-200/90 p-5 rounded-2xl shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-[#DCE3EF] p-5.5 rounded-2xl shadow-xs">
         <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <Building2 className="w-7 h-7 text-blue-600" /> Company Overview
+          <h1 className="text-xl font-extrabold text-[#071A45] tracking-tight flex items-center gap-2">
+            <Building2 className="w-6 h-6 text-[#123A8C]" /> Company Overview
           </h1>
-          <p className="text-sm text-slate-600 font-medium">Manage company profile and configurations on a unified page.</p>
+          <p className="text-xs text-[#64748B] font-medium mt-1">Manage your company's profile, locations, teams and business configuration from one place.</p>
         </div>
         <div className="flex items-center gap-2">
-          {activeTab === 'profile' ? (
-            <>
-              <button
-                onClick={handlePrint}
-                className="px-4 py-2.5 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold rounded-xl text-xs shadow-xs flex items-center gap-2 cursor-pointer shrink-0"
-              >
-                <Printer className="w-4 h-4 text-slate-500" />
-                Print Details
-              </button>
-              <button
-                onClick={handleSaveProfile}
-                disabled={saving}
-                className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md shadow-blue-600/20 flex items-center gap-2 disabled:opacity-50 cursor-pointer shrink-0"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                {saving ? 'Saving...' : 'Save Profile Changes'}
-              </button>
-            </>
-          ) : (
-            <button
-              onClick={handleOpenAdd}
-              disabled={loading || saving}
-              className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 cursor-pointer shadow-md shadow-blue-600/20 disabled:opacity-50"
-            >
-              <Plus className="w-4 h-4" /> Add {TABS.find(t => t.key === activeTab)?.label} Item
-            </button>
-          )}
+          <button
+            onClick={handleSaveProfile}
+            disabled={saving}
+            className="px-5 py-2.5 bg-[#061A4D] hover:bg-[#123A8C] text-white font-extrabold rounded-xl text-xs shadow-md shadow-[#061A4D]/25 flex items-center gap-2 disabled:opacity-50 cursor-pointer shrink-0 transition duration-200"
+          >
+            <CheckCircle2 className="w-4 h-4 text-[#F2C76E]" />
+            {saving ? 'Saving...' : 'Save Changes'}
+          </button>
         </div>
       </div>
 
-      {/* Navigation Tab Bar */}
-      <div className="flex flex-wrap gap-2">
-        {TABS.map((tab) => {
-          const TabIcon = tab.icon
-          const isActive = activeTab === tab.key
-          return (
-            <button
-              key={tab.key}
-              onClick={() => {
-                setActiveTab(tab.key)
-                setSearchQuery('')
-              }}
-              className={`flex items-center gap-2.5 px-4 py-3 rounded-xl border text-xs font-bold transition cursor-pointer ${
-                isActive
-                  ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-600/20'
-                  : 'bg-white text-slate-600 hover:bg-slate-50 border-slate-200'
-              }`}
-            >
-              <span className={`p-1 rounded-lg border ${isActive ? 'bg-white/20 border-white/30 text-white' : tab.color}`}>
-                <TabIcon className="w-3.5 h-3.5" />
-              </span>
-              <span>{tab.label}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      {/* Main Content Area */}
-      {activeTab === 'profile' ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Logo brand card */}
-          <div className="bg-white border border-slate-200/90 p-6 rounded-2xl shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-slate-900 text-base">Company Logo & Brand</h3>
-              <span className="text-xs font-bold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200 flex items-center gap-1">
-                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Saved & Synced
-              </span>
-            </div>
-            <div className="flex flex-col items-center text-center p-5 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3">
-              <div className="w-24 h-24 rounded-2xl bg-gradient-to-tr from-blue-600 to-indigo-600 text-white flex items-center justify-center font-black text-2xl shadow-lg shadow-blue-600/30 overflow-hidden border-2 border-white">
-                {companyProfile.logoUrl ? (
-                  <img src={companyProfile.logoUrl} alt="Company Logo" className="w-full h-full object-cover" />
-                ) : (
-                  <span>TC</span>
-                )}
-              </div>
-              <div>
-                <h4 className="font-extrabold text-slate-900 text-lg">{companyProfile.companyName}</h4>
-                <p className="text-xs text-slate-500 font-semibold">{companyProfile.legalName}</p>
-              </div>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="px-4 py-2 bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-xs font-bold shadow-xs flex items-center gap-2 cursor-pointer"
-              >
-                <Upload className="w-3.5 h-3.5 text-blue-600" /> Change / Upload Logo
-              </button>
-            </div>
-            <div className="space-y-2 text-xs pt-2">
-              <div className="flex justify-between py-1.5 border-b border-slate-100">
-                <span className="text-slate-500 font-semibold">Operating Currency</span>
-                <span className="font-bold text-slate-900">{companyProfile.currency}</span>
-              </div>
-              <div className="flex justify-between py-1.5 border-b border-slate-100">
-                <span className="text-slate-500 font-semibold">Time Zone</span>
-                <span className="font-bold text-slate-900">{companyProfile.timezone}</span>
-              </div>
-            </div>
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Section 1: Company Profile & Branding */}
+        <div className="bg-white border border-[#DCE3EF] p-6 rounded-2xl shadow-xs space-y-4 relative overflow-hidden">
+          <div className="absolute top-0 inset-x-0 h-1 bg-[#D9A441] opacity-90" />
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 className="font-extrabold text-[#071A45] text-sm">Company Profile & Branding</h3>
           </div>
-
-          {/* Profile details card */}
-          <div className="lg:col-span-2 bg-white border border-slate-200/90 p-6 rounded-2xl shadow-xs space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-extrabold text-slate-900 text-base">Business Details & Contact Information</h3>
+          <div className="flex flex-col items-center text-center p-5 bg-[#F7F9FC] rounded-2xl border border-slate-150 space-y-3">
+            <div className="w-24 h-24 rounded-2xl bg-gradient-to-tr from-[#061A4D] to-[#123A8C] text-white flex items-center justify-center font-black text-2xl shadow-md overflow-hidden border-2 border-white">
+              {companyProfile.logoUrl ? (
+                <img src={companyProfile.logoUrl} alt="Company Logo" className="w-full h-full object-cover" />
+              ) : (
+                <span>TC</span>
+              )}
             </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Registered Company Name</label>
-                <input
-                  type="text"
-                  value={companyProfile.companyName}
-                  onChange={(e) => setCompanyProfile({ ...companyProfile, companyName: e.target.value })}
-                  className="w-full h-11 bg-slate-50 border border-slate-300/90 rounded-xl px-3.5 text-xs font-semibold text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Tax Registration / GSTIN</label>
-                <input
-                  type="text"
-                  value={companyProfile.taxIdGstin}
-                  onChange={(e) => setCompanyProfile({ ...companyProfile, taxIdGstin: e.target.value })}
-                  className="w-full h-11 bg-slate-50 border border-slate-300/90 rounded-xl px-3.5 text-xs font-semibold text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Official Support Email</label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="email"
-                    value={companyProfile.email}
-                    onChange={(e) => setCompanyProfile({ ...companyProfile, email: e.target.value })}
-                    className="w-full h-11 bg-slate-50 border border-slate-300/90 rounded-xl pl-9 pr-3.5 text-xs font-semibold text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Contact Phone Number</label>
-                <div className="relative">
-                  <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={companyProfile.phone}
-                    onChange={(e) => setCompanyProfile({ ...companyProfile, phone: e.target.value })}
-                    className="w-full h-11 bg-slate-50 border border-slate-300/90 rounded-xl pl-9 pr-3.5 text-xs font-semibold text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Website URL</label>
-                <div className="relative">
-                  <Globe className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input
-                    type="text"
-                    value={companyProfile.website}
-                    onChange={(e) => setCompanyProfile({ ...companyProfile, website: e.target.value })}
-                    className="w-full h-11 bg-slate-50 border border-slate-300/90 rounded-xl pl-9 pr-3.5 text-xs font-semibold text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div className="md:col-span-2">
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">Head Office Address</label>
-                <textarea
-                  rows={2}
-                  value={companyProfile.address}
-                  onChange={(e) => setCompanyProfile({ ...companyProfile, address: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-300/90 rounded-xl p-3 text-xs font-semibold text-slate-900 focus:bg-white focus:border-blue-600 focus:outline-none"
-                />
-              </div>
+            <div>
+              <h4 className="font-extrabold text-[#071A45] text-base leading-snug">{companyProfile.companyName}</h4>
+              <p className="text-xs text-[#64748B] font-semibold mt-1">{companyProfile.legalName || 'TwiteConnect Software Solution'}</p>
+            </div>
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-xl text-xs font-bold shadow-2xs flex items-center gap-2 cursor-pointer transition duration-200"
+            >
+              <Upload className="w-3.5 h-3.5 text-[#123A8C]" /> Change / Upload Logo
+            </button>
+          </div>
+          <div className="space-y-2 text-xs pt-2">
+            <div className="flex justify-between py-1.5 border-b border-slate-100">
+              <span className="text-[#64748B] font-semibold">Operating Currency</span>
+              <span className="font-bold text-[#071A45]">₹ INR</span>
+            </div>
+            <div className="flex justify-between py-1.5 border-b border-slate-100">
+              <span className="text-[#64748B] font-semibold">Time Zone</span>
+              <span className="font-bold text-[#071A45]">Asia/Kolkata (IST)</span>
             </div>
           </div>
         </div>
-      ) : (
-        /* Unified Master Lists View Card */
-        <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row gap-3 justify-between bg-slate-50/50">
-            <div className="relative max-w-sm w-full">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+
+        {/* Section 2: Business Details Form */}
+        <div className="lg:col-span-2 bg-white border border-[#DCE3EF] p-6 rounded-2xl shadow-xs space-y-5 relative overflow-hidden">
+          <div className="absolute top-0 inset-x-0 h-1 bg-[#D9A441] opacity-90" />
+          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+            <h3 className="font-extrabold text-[#071A45] text-sm">Business Details</h3>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-xs font-bold text-[#071A45] mb-1.5">Registered Company Name</label>
               <input
                 type="text"
-                placeholder={`Search ${TABS.find(t => t.key === activeTab)?.label.toLowerCase()}...`}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9 pr-4 py-2 w-full border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-none focus:border-blue-500"
+                value={companyProfile.companyName}
+                onChange={(e) => setCompanyProfile({ ...companyProfile, companyName: e.target.value })}
+                className="w-full h-10.5 bg-[#F7F9FC] border border-[#DCE3EF] rounded-xl px-3.5 text-xs font-semibold text-[#071A45] focus:bg-white focus:border-[#123A8C] focus:outline-none"
               />
             </div>
-            <button
-              onClick={loadCompanySettings}
-              title="Refresh database records"
-              className="p-2 border border-slate-200 rounded-xl bg-white text-slate-500 hover:text-blue-600 hover:bg-slate-50 transition cursor-pointer self-end sm:self-auto"
-            >
-              <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
-            </button>
-          </div>
 
-          {loading ? (
-            <div className="py-20 text-center text-xs text-slate-500 font-bold">
-              <RefreshCw className="w-8 h-8 animate-spin text-blue-600 mx-auto mb-3" />
-              Loading real master data from Supabase...
+            <div>
+              <label className="block text-xs font-bold text-[#071A45] mb-1.5">GSTIN / Tax Registration</label>
+              <input
+                type="text"
+                value={companyProfile.taxIdGstin}
+                onChange={(e) => setCompanyProfile({ ...companyProfile, taxIdGstin: e.target.value })}
+                className="w-full h-10.5 bg-[#F7F9FC] border border-[#DCE3EF] rounded-xl px-3.5 text-xs font-semibold text-[#071A45] focus:bg-white focus:border-[#123A8C] focus:outline-none"
+              />
             </div>
-          ) : filteredList.length === 0 ? (
-            <div className="py-20 text-center max-w-md mx-auto space-y-4">
-              <div className="size-16 rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center mx-auto text-slate-400">
-                <FolderOpen className="w-8 h-8" />
+
+            <div>
+              <label className="block text-xs font-bold text-[#071A45] mb-1.5">Official Support Email</label>
+              <div className="relative">
+                <Mail className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="email"
+                  value={companyProfile.email}
+                  onChange={(e) => setCompanyProfile({ ...companyProfile, email: e.target.value })}
+                  className="w-full h-10.5 bg-[#F7F9FC] border border-[#DCE3EF] rounded-xl pl-9 pr-3.5 text-xs font-semibold text-[#071A45] focus:bg-white focus:border-[#123A8C] focus:outline-none"
+                />
               </div>
-              <div>
-                <p className="font-extrabold text-slate-900 text-sm">No items found</p>
-                <p className="text-xs text-slate-500 mt-1">There are currently no records listed in this category. Click "Add Item" to initialize your first database entry.</p>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-[#071A45] mb-1.5">Contact Phone Number</label>
+              <div className="relative">
+                <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={companyProfile.phone}
+                  onChange={(e) => setCompanyProfile({ ...companyProfile, phone: e.target.value })}
+                  className="w-full h-10.5 bg-[#F7F9FC] border border-[#DCE3EF] rounded-xl pl-9 pr-3.5 text-xs font-semibold text-[#071A45] focus:bg-white focus:border-[#123A8C] focus:outline-none"
+                />
               </div>
             </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-100">
-                    <th className="px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">ID</th>
-                    <th className="px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">Name</th>
-                    {activeTab === 'branches' && (
-                      <>
-                        <th className="px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">Type</th>
-                        <th className="px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">Location</th>
-                      </>
-                    )}
-                    {activeTab === 'departments' && (
-                      <th className="px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">Dept Lead</th>
-                    )}
-                    {activeTab === 'products' && (
-                      <th className="px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">Standard Price</th>
-                    )}
-                    <th className="px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-center">Status</th>
-                    <th className="px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
-                  {filteredList.map((item, index) => (
-                    <tr key={item.id || index} className="hover:bg-slate-50/50 transition">
-                      <td className="px-6 py-4 text-slate-400 font-mono">{item.id || index + 1}</td>
-                      <td className="px-6 py-4 text-slate-900">{item.name}</td>
-                      {activeTab === 'branches' && (
-                        <>
-                          <td className="px-6 py-4 text-slate-500 font-semibold">{item.type || 'Regional Office'}</td>
-                          <td className="px-6 py-4 text-slate-600 font-medium">{item.location || '—'}</td>
-                        </>
-                      )}
-                      {activeTab === 'departments' && (
-                        <td className="px-6 py-4 text-teal-700">{item.lead || 'Unassigned'}</td>
-                      )}
-                      {activeTab === 'products' && (
-                        <td className="px-6 py-4 text-slate-900 font-extrabold">{item.price || '—'}</td>
-                      )}
-                      <td className="px-6 py-4 text-center">
-                        <button
-                          onClick={() => handleToggleStatus(item)}
-                          disabled={saving}
-                          className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-black tracking-wide border transition cursor-pointer ${
-                            item.status === 'Active'
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                              : 'bg-rose-50 text-rose-700 border-rose-200'
-                          }`}
-                        >
-                          {item.status === 'Active' ? (
-                            <>
-                              <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Active
-                            </>
-                          ) : (
-                            <>
-                              <XCircle className="w-3 h-3 text-rose-600" /> Inactive
-                            </>
-                          )}
-                        </button>
-                      </td>
-                      <td className="px-6 py-4 text-right space-x-1 whitespace-nowrap">
-                        <button
-                          onClick={() => handleOpenEdit(item)}
-                          disabled={saving}
-                          className="p-1.5 rounded-lg border border-slate-200 hover:bg-slate-50 hover:text-blue-600 text-slate-500 transition cursor-pointer inline-flex items-center"
-                        >
-                          <Edit2 className="w-3.5 h-3.5" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteItem(item.id)}
-                          disabled={saving}
-                          className="p-1.5 rounded-lg border border-rose-100 hover:bg-rose-50 text-rose-500 transition cursor-pointer inline-flex items-center"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+
+            <div className="md:col-span-2">
+              <label className="block text-xs font-bold text-[#071A45] mb-1.5">Website URL</label>
+              <div className="relative">
+                <Globe className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={companyProfile.website}
+                  onChange={(e) => setCompanyProfile({ ...companyProfile, website: e.target.value })}
+                  className="w-full h-10.5 bg-[#F7F9FC] border border-[#DCE3EF] rounded-xl pl-9 pr-3.5 text-xs font-semibold text-[#071A45] focus:bg-white focus:border-[#123A8C] focus:outline-none"
+                />
+              </div>
             </div>
-          )}
+
+            <div className="md:col-span-2">
+              <label className="block text-xs font-bold text-[#071A45] mb-1.5">Head Office Address</label>
+              <textarea
+                rows={2}
+                value={companyProfile.address}
+                onChange={(e) => setCompanyProfile({ ...companyProfile, address: e.target.value })}
+                className="w-full bg-[#F7F9FC] border border-[#DCE3EF] rounded-xl p-3 text-xs font-semibold text-[#071A45] focus:bg-white focus:border-[#123A8C] focus:outline-none"
+              />
+            </div>
+          </div>
         </div>
-      )}
+      </div>
+
+      {/* Section 3: Branches & Locations */}
+      <div className="bg-white border border-[#DCE3EF] p-6 rounded-2xl shadow-xs space-y-4 relative overflow-hidden">
+        <div className="absolute top-0 inset-x-0 h-1 bg-[#D9A441] opacity-90" />
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="font-extrabold text-[#071A45] text-sm">Branches & Locations</h3>
+            <p className="text-[11px] text-[#64748B] mt-0.5">Define your regional offices, branches and site coordinates for staff tracking.</p>
+          </div>
+          <button
+            onClick={() => handleOpenAdd('branches')}
+            className="px-3.5 py-2 bg-[#061A4D] hover:bg-[#123A8C] text-white rounded-xl text-xs font-bold flex items-center gap-1.5 cursor-pointer transition duration-200 shadow-sm"
+          >
+            <Plus className="w-3.5 h-3.5 text-[#F2C76E]" /> Add Branch
+          </button>
+        </div>
+
+        {masterData.branches.length === 0 ? (
+          <div className="py-12 text-center text-xs text-[#64748B] font-semibold bg-[#F7F9FC]/60 rounded-xl border border-dashed border-[#DCE3EF]">
+            No branch offices added yet. Click "Add Branch" to start.
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {masterData.branches.map((b) => (
+              <div key={b.id} className="p-4 bg-[#F7F9FC]/40 rounded-xl border border-[#DCE3EF] hover:border-slate-350 transition relative flex flex-col justify-between">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="font-extrabold text-xs text-[#071A45]">{b.name}</span>
+                    <button
+                      onClick={() => handleToggleStatus('branches', b)}
+                      disabled={saving}
+                      className={`px-2 py-0.5 rounded-full text-[9px] font-black border transition cursor-pointer ${
+                        b.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                      }`}
+                    >
+                      {b.status || 'Active'}
+                    </button>
+                  </div>
+                  <div className="text-[10px] text-[#64748B] font-bold flex items-center gap-1">
+                    <MapPin className="w-3.5 h-3.5 text-[#123A8C]" /> {b.type || 'Regional Office'}
+                  </div>
+                  <div className="text-[11px] text-[#071A45] font-semibold leading-relaxed">
+                    {b.location || 'Address unspecified'}
+                  </div>
+                </div>
+                <div className="flex justify-end gap-1.5 mt-4 pt-3 border-t border-[#DCE3EF]">
+                  <button
+                    onClick={() => handleOpenEdit('branches', b)}
+                    disabled={saving}
+                    className="p-1.5 rounded-lg border border-slate-250 bg-white hover:bg-slate-50 hover:text-[#123A8C] text-slate-500 transition cursor-pointer inline-flex items-center"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => handleDeleteItem('branches', b.id)}
+                    disabled={saving}
+                    className="p-1.5 rounded-lg border border-rose-100 bg-white hover:bg-rose-50 text-rose-500 transition cursor-pointer inline-flex items-center"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* Grid for Departments, Designations & Products */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Section 4: Departments */}
+        <div className="bg-white border border-[#DCE3EF] p-6 rounded-2xl shadow-xs space-y-4 relative overflow-hidden flex flex-col justify-between">
+          <div className="absolute top-0 inset-x-0 h-1 bg-[#D9A441] opacity-90" />
+          <div>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-extrabold text-[#071A45] text-sm">Departments</h3>
+              <button
+                onClick={() => handleOpenAdd('departments')}
+                disabled={saving}
+                className="p-1.5 bg-[#061A4D] hover:bg-[#123A8C] text-white rounded-lg text-xs font-bold transition duration-200 cursor-pointer shadow-sm flex items-center justify-center"
+              >
+                <Plus className="w-3.5 h-3.5 text-[#F2C76E]" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3.5 max-h-[360px] overflow-y-auto pr-1">
+              {masterData.departments.length === 0 ? (
+                <div className="py-8 text-center text-xs text-[#64748B] font-semibold bg-[#F7F9FC]/60 rounded-xl border border-dashed border-[#DCE3EF]">
+                  No departments added yet.
+                </div>
+              ) : (
+                masterData.departments.map((d) => (
+                  <div key={d.id} className="p-3 bg-[#F7F9FC]/40 rounded-xl border border-[#DCE3EF] flex items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="font-extrabold text-[#071A45] text-xs">{d.name}</div>
+                      <div className="text-[10px] text-[#64748B] font-bold">
+                        Head: <span className="text-[#123A8C]">{d.lead || 'Unassigned'}</span> · Staff: {d.staffCount || 0}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => handleToggleStatus('departments', d)}
+                        disabled={saving}
+                        className={`px-1.5 py-0.5 rounded-full text-[9px] font-black border transition cursor-pointer ${
+                          d.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}
+                      >
+                        {d.status || 'Active'}
+                      </button>
+                      <button
+                        onClick={() => handleOpenEdit('departments', d)}
+                        disabled={saving}
+                        className="p-1 rounded-md border border-slate-250 bg-white hover:bg-slate-50 text-slate-500 transition cursor-pointer"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteItem('departments', d.id)}
+                        disabled={saving}
+                        className="p-1 rounded-md border border-rose-100 bg-white hover:bg-rose-50 text-rose-500 transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Section 5: Designations */}
+        <div className="bg-white border border-[#DCE3EF] p-6 rounded-2xl shadow-xs space-y-4 relative overflow-hidden flex flex-col justify-between">
+          <div className="absolute top-0 inset-x-0 h-1 bg-[#D9A441] opacity-90" />
+          <div>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-extrabold text-[#071A45] text-sm">Designations</h3>
+              <button
+                onClick={() => handleOpenAdd('designations')}
+                disabled={saving}
+                className="p-1.5 bg-[#061A4D] hover:bg-[#123A8C] text-white rounded-lg text-xs font-bold transition duration-200 cursor-pointer shadow-sm flex items-center justify-center"
+              >
+                <Plus className="w-3.5 h-3.5 text-[#F2C76E]" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3.5 max-h-[360px] overflow-y-auto pr-1">
+              {masterData.designations.length === 0 ? (
+                <div className="py-8 text-center text-xs text-[#64748B] font-semibold bg-[#F7F9FC]/60 rounded-xl border border-dashed border-[#DCE3EF]">
+                  No designations added yet.
+                </div>
+              ) : (
+                masterData.designations.map((des) => (
+                  <div key={des.id} className="p-3 bg-[#F7F9FC]/40 rounded-xl border border-[#DCE3EF] flex items-center justify-between gap-3">
+                    <div>
+                      <div className="font-extrabold text-[#071A45] text-xs">{des.name}</div>
+                      <div className="text-[9px] text-[#64748B] mt-0.5">ID: {des.id}</div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => handleToggleStatus('designations', des)}
+                        disabled={saving}
+                        className={`px-1.5 py-0.5 rounded-full text-[9px] font-black border transition cursor-pointer ${
+                          des.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}
+                      >
+                        {des.status || 'Active'}
+                      </button>
+                      <button
+                        onClick={() => handleOpenEdit('designations', des)}
+                        disabled={saving}
+                        className="p-1 rounded-md border border-slate-250 bg-white hover:bg-slate-50 text-slate-500 transition cursor-pointer"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteItem('designations', des.id)}
+                        disabled={saving}
+                        className="p-1 rounded-md border border-rose-100 bg-white hover:bg-rose-50 text-rose-500 transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Section 6: Products & Services */}
+        <div className="bg-white border border-[#DCE3EF] p-6 rounded-2xl shadow-xs space-y-4 relative overflow-hidden flex flex-col justify-between">
+          <div className="absolute top-0 inset-x-0 h-1 bg-[#D9A441] opacity-90" />
+          <div>
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h3 className="font-extrabold text-[#071A45] text-sm">Products & Services</h3>
+              <button
+                onClick={() => handleOpenAdd('products')}
+                disabled={saving}
+                className="p-1.5 bg-[#061A4D] hover:bg-[#123A8C] text-white rounded-lg text-xs font-bold transition duration-200 cursor-pointer shadow-sm flex items-center justify-center"
+              >
+                <Plus className="w-3.5 h-3.5 text-[#F2C76E]" />
+              </button>
+            </div>
+
+            <div className="mt-4 space-y-3.5 max-h-[360px] overflow-y-auto pr-1">
+              {masterData.products.length === 0 ? (
+                <div className="py-8 text-center text-xs text-[#64748B] font-semibold bg-[#F7F9FC]/60 rounded-xl border border-dashed border-[#DCE3EF]">
+                  No products defined yet.
+                </div>
+              ) : (
+                masterData.products.map((p) => (
+                  <div key={p.id} className="p-3 bg-[#F7F9FC]/40 rounded-xl border border-[#DCE3EF] flex items-center justify-between gap-3">
+                    <div className="space-y-0.5">
+                      <div className="font-extrabold text-[#071A45] text-xs">{p.name}</div>
+                      <div className="text-[10px] text-[#123A8C] font-extrabold">{p.price || '₹0'}</div>
+                    </div>
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      <button
+                        onClick={() => handleToggleStatus('products', p)}
+                        disabled={saving}
+                        className={`px-1.5 py-0.5 rounded-full text-[9px] font-black border transition cursor-pointer ${
+                          p.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                        }`}
+                      >
+                        {p.status || 'Active'}
+                      </button>
+                      <button
+                        onClick={() => handleOpenEdit('products', p)}
+                        disabled={saving}
+                        className="p-1 rounded-md border border-slate-250 bg-white hover:bg-slate-50 text-slate-500 transition cursor-pointer"
+                      >
+                        <Edit2 className="w-3 h-3" />
+                      </button>
+                      <button
+                        onClick={() => handleDeleteItem('products', p.id)}
+                        disabled={saving}
+                        className="p-1 rounded-md border border-rose-100 bg-white hover:bg-rose-50 text-rose-500 transition cursor-pointer"
+                      >
+                        <Trash2 className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
 
       {/* Add / Edit Master Data Item Modal */}
       {showAddModal && (
