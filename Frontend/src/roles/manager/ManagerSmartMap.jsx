@@ -7,6 +7,7 @@ import {
 import { spatialAPI, authAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser, { getStoredUser } from '../../hooks/useCurrentUser.js'
+import { formatDate } from '../../utils/dateUtils.js'
 
 const DEFAULT_CENTER = { lat: 13.0067, lng: 80.2570 } // Adyar, Chennai
 
@@ -145,7 +146,7 @@ export default function ManagerSmartMap() {
       if (diffMins < 60) return `${diffMins}m ago`
       const diffHours = Math.floor(diffMins / 60)
       if (diffHours < 24) return `${diffHours}h ago`
-      return new Date(isoStr).toLocaleDateString()
+      return formatDate(isoStr)
     } catch {
       return 'Unknown'
     }
@@ -166,6 +167,7 @@ export default function ManagerSmartMap() {
       executives.forEach(ex => {
         if (!ex.latitude || !ex.longitude) return
 
+        const isClientVisit = ex.check_in_mode === "Client Visit"
         const initials = ex.employee_name
           .split(' ')
           .map(n => n[0])
@@ -173,42 +175,70 @@ export default function ManagerSmartMap() {
           .join('')
           .toUpperCase()
 
-        const statusColor = ex.is_online ? '#10b981' : '#64748b'
-        const borderGlow = ex.is_online ? 'rgba(16, 185, 129, 0.4)' : 'rgba(100, 116, 139, 0.2)'
+        const statusColor = isClientVisit ? '#8b5cf6' : (ex.is_online ? '#10b981' : '#64748b')
+        const borderGlow = isClientVisit ? 'rgba(139, 92, 246, 0.5)' : (ex.is_online ? 'rgba(16, 185, 129, 0.4)' : 'rgba(100, 116, 139, 0.2)')
 
         // Custom DivIcon for premium styling
         const icon = window.L.divIcon({
           className: 'custom-div-icon',
-          html: `
-            <div style="
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              width: 42px;
-              height: 42px;
-              border-radius: 50%;
-              background: #0f172a;
-              border: 3px solid ${statusColor};
-              box-shadow: 0 0 12px ${borderGlow};
-              color: #f8fafc;
-              font-family: ui-sans-serif, system-ui;
-              font-weight: 800;
-              font-size: 13px;
-              position: relative;
-            ">
-              ${initials}
-              <span style="
-                position: absolute;
-                bottom: -2px;
-                right: -2px;
-                width: 12px;
-                height: 12px;
-                background: ${statusColor};
-                border: 2px solid #0f172a;
+          html: isClientVisit 
+            ? `
+              <div style="
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 42px;
+                height: 42px;
                 border-radius: 50%;
-              "></span>
-            </div>
-          `,
+                background: #0f172a;
+                border: 3px solid #8b5cf6;
+                box-shadow: 0 0 14px ${borderGlow};
+                color: #f8fafc;
+                position: relative;
+              ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-user"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+                <span style="
+                  position: absolute;
+                  bottom: -2px;
+                  right: -2px;
+                  width: 12px;
+                  height: 12px;
+                  background: #8b5cf6;
+                  border: 2px solid #0f172a;
+                  border-radius: 50%;
+                "></span>
+              </div>
+            `
+            : `
+              <div style="
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                width: 42px;
+                height: 42px;
+                border-radius: 50%;
+                background: #0f172a;
+                border: 3px solid ${statusColor};
+                box-shadow: 0 0 12px ${borderGlow};
+                color: #f8fafc;
+                font-family: ui-sans-serif, system-ui;
+                font-weight: 800;
+                font-size: 13px;
+                position: relative;
+              ">
+                ${initials}
+                <span style="
+                  position: absolute;
+                  bottom: -2px;
+                  right: -2px;
+                  width: 12px;
+                  height: 12px;
+                  background: ${statusColor};
+                  border: 2px solid #0f172a;
+                  border-radius: 50%;
+                "></span>
+              </div>
+            `,
           iconSize: [42, 42],
           iconAnchor: [21, 21]
         })
@@ -217,15 +247,32 @@ export default function ManagerSmartMap() {
           .bindPopup(`
             <div class="p-2" style="font-family: sans-serif; font-size: 12px; color: #1e293b;">
               <div style="font-weight: 800; font-size: 14px; margin-bottom: 4px;">${ex.employee_name}</div>
-              <div style="font-weight: bold; color: ${ex.is_online ? '#10b981' : '#64748b'}; margin-bottom: 6px;">
-                ${ex.is_online ? '● Online' : '○ Offline'}
+              <div style="font-weight: bold; color: ${isClientVisit ? '#8b5cf6' : (ex.is_online ? '#10b981' : '#64748b')}; margin-bottom: 6px;">
+                ${isClientVisit ? '💼 Client Visit Mode' : (ex.is_online ? '● Online' : '○ Offline')}
               </div>
               <div style="margin-bottom: 2px; color: #64748b;"><strong>Role:</strong> ${ex.role}</div>
               <div style="margin-bottom: 2px; color: #64748b;"><strong>Last Seen:</strong> ${formatLastSeen(ex.last_seen_at)}</div>
+              ${ex.check_in_address ? `<div style="margin-bottom: 2px; color: #64748b; font-size: 11px;"><strong>Check-in Location:</strong> ${ex.check_in_address}</div>` : ''}
               <div style="color: #64748b;"><strong>GPS Accuracy:</strong> ${ex.accuracy ? `${ex.accuracy.toFixed(1)}m` : 'N/A'}</div>
             </div>
           `)
           .addTo(teamGroupRef.current)
+
+        if (isClientVisit) {
+          marker.bindTooltip(`
+            <div style="padding: 5px 9px; font-family: sans-serif; font-weight: bold; font-size: 11px; border-radius: 8px; box-shadow: 0 3px 8px rgba(0,0,0,0.18); background: #ffffff; border: 1px solid #e2e8f0; text-align: left;">
+              <span style="color: #8b5cf6; display: block; font-size: 12px;">💼 ${ex.employee_name}</span>
+              <span style="color: #475569; font-weight: normal; font-size: 9px; display: block; margin-top: 3px; max-w: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
+                📍 ${ex.check_in_address || 'Site Visit'}
+              </span>
+            </div>
+          `, {
+            permanent: true,
+            direction: 'top',
+            offset: [0, -18],
+            className: 'client-visit-tooltip'
+          })
+        }
 
         bounds.push([ex.latitude, ex.longitude])
       })

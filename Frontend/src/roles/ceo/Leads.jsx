@@ -7,6 +7,7 @@ import {
   ChevronUp,
 } from 'lucide-react'
 import { crmAPI, reportAPI } from '../../services/api.js'
+import { formatDate } from '../../utils/dateUtils.js'
 
 function Leads() {
   const [leads, setLeads] = useState([])
@@ -57,9 +58,7 @@ function Leads() {
 
   // Format date helper
   const formatDateString = (dt) => {
-    if (!dt) return 'N/A'
-    if (dt.includes('T')) return dt.split('T')[0]
-    return dt
+    return formatDate(dt)
   }
 
   return (

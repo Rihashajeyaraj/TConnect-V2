@@ -121,21 +121,24 @@ def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[s
         str(item.get("reporting_manager_email") or "").lower().strip(),
     } - {""}
 
-    # Extract IDs / Codes on record
+    # Extract IDs / Codes on record.
+    # IMPORTANT: created_by and assigned_to are Supabase auth UUIDs — they must be
+    # compared against allowed_ids (not just allowed_codes). We include them in
+    # codes_to_check because that set is tested against BOTH allowed_codes AND allowed_ids.
     codes_to_check = {
         str(item.get("employee_id") or "").strip(),
         str(item.get("employee_code") or "").strip(),
         str(item.get("emp_code") or "").strip(),
         str(item.get("visitor_id") or "").strip(),
         str(item.get("user_id") or "").strip(),
-        str(item.get("created_by") or "").strip(),
+        str(item.get("created_by") or "").strip(),   # auth UUID — checked vs allowed_ids below
+        str(item.get("assigned_to") or "").strip(),  # auth UUID — checked vs allowed_ids below
         str(item.get("reporting_manager_id") or "").strip(),
-        str(item.get("id") or "").strip(),
     } - {""}
 
     # Extract Names on record
     names_to_check = {
-        str(item.get("assigned_to") or "").lower().strip(),
+        str(item.get("assigned_to_name") or "").lower().strip(),
         str(item.get("assignedTo") or "").lower().strip(),
         str(item.get("executive") or "").lower().strip(),
         str(item.get("executiveName") or "").lower().strip(),
@@ -165,7 +168,7 @@ def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[s
         if email in allowed_emails:
             return True
 
-    # Check Code / ID match
+    # Check Code / ID match (codes_to_check includes auth UUIDs, so check against allowed_ids too)
     for code in codes_to_check:
         if code in allowed_codes or code in allowed_ids:
             return True

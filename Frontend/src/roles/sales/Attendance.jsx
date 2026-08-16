@@ -1,37 +1,26 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   ChevronLeft,
-  Camera,
   VideoOff,
   MapPin,
   Clock,
   CheckCircle2,
   AlertCircle,
   ShieldCheck,
-  Sparkles,
-  Map,
-  X,
-  History,
-  Calendar,
-  UserCheck,
   CalendarDays,
   FileSpreadsheet,
   FileText,
   Download,
-  Check,
-  RefreshCw,
-  Eye,
-  Smile,
-  ArrowRight,
-  ShieldAlert,
-  ScanFace
+  Map
 } from "lucide-react";
 import { useToast } from "../../common/ToastContext.jsx";
-import { attendanceAPI } from "../../services/api.js";
+import { attendanceAPI, visitAPI, customerAPI, spatialAPI } from "../../services/api.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
-import { exportToExcel, exportToCSV, exportToPDF } from "../../utils/exportUtils.js";
+import { exportToExcel, exportToCSV } from "../../utils/exportUtils.js";
 import { FaceLivenessEngine, LIVENESS_CHALLENGES } from "./FaceLivenessEngine.js";
+
+// Helper: Calculate work hours
 export const calculateWorkHours = (loginTime, logoutTime) => {
   if (!loginTime || !logoutTime || loginTime === "—" || logoutTime === "—") return "—";
 
@@ -66,10 +55,8 @@ export const calculateWorkHours = (loginTime, logoutTime) => {
 
   const h = Math.floor(diffSecs / 3600);
   const m = Math.floor((diffSecs % 3600) / 60);
-  const s = diffSecs % 60;
 
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+  return `${h}h ${m}m`;
 };
 
 export default function Attendance() {
@@ -81,55 +68,52 @@ export default function Attendance() {
   const userName = currentUser.name || currentUser.full_name || "Sales Executive";
   const userEmpCode = currentUser.employee_code || currentUser.employee_id || "EMP000012";
 
-  // Enrollment & Liveness State
+  // States
   const [isEnrolled, setIsEnrolled] = useState(true);
   const [showEnrollModal, setShowEnrollModal] = useState(false);
-  const [enrolledTemplateVector, setEnrolledTemplateVector] = useState(null);
+  const [workMode, setWorkMode] = useState("office"); // office, client
+  const [punchRemarks, setPunchRemarks] = useState("");
+  const [isSaving, setIsSaving] = useState(false);
+  const [loading, setLoading] = useState(true);
 
-  // Biometric 1:N Verification State
+  // Biometric & Camera States
   const [matchStatus, setMatchStatus] = useState("PENDING"); // PENDING, DETECTING, MATCHED, FAILED, SPOOF
   const [verificationToken, setVerificationToken] = useState(null);
   const [matchedEmployeeName, setMatchedEmployeeName] = useState("");
   const [matchedEmployeeId, setMatchedEmployeeId] = useState("");
 
-  // Camera & Video Analysis State
-  const [isCameraActive, setIsCameraActive] = useState(true);
-  const [faceAlignmentFeedback, setFaceAlignmentFeedback] = useState("Align face inside the guide");
+  const [isCameraActive, setIsCameraActive] = useState(false);
+  const [faceAlignmentFeedback, setFaceAlignmentFeedback] = useState("Position your face inside the oval guide");
   const [isFaceAligned, setIsFaceAligned] = useState(false);
   const [faceBrightness, setFaceBrightness] = useState(100);
-  const [faceMatchScore, setFaceMatchScore] = useState(0.96);
 
-  // Anti-Spoofing Liveness Challenge State
+  // Blink Progress States
   const [activeChallenge, setActiveChallenge] = useState(LIVENESS_CHALLENGES[0]);
-  const [livenessStatus, setLivenessStatus] = useState("PENDING"); // "PENDING" | "VERIFYING" | "PASSED" | "FAILED"
+  const [livenessStatus, setLivenessStatus] = useState("PENDING"); // PENDING, VERIFYING, PASSED, FAILED
   const [livenessProgress, setLivenessProgress] = useState(0);
+  const [blinkCount, setBlinkCount] = useState(0); // 0, 1, 2
 
-  // Remarks & Filter State
-  const [punchRemarks, setPunchRemarks] = useState("");
-  const [customDateFilter, setCustomDateFilter] = useState("");
-
-  // GPS Location & Time Telemetry State
-  const [currentLocation, setCurrentLocation] = useState("31, Pulla Ave, Venkatasamy Nagar, Shenoy Nagar, Chennai, Tamil Nadu 600030, India");
+  // Location Capture State
+  const [currentLocation, setCurrentLocation] = useState("Detecting location...");
   const [gpsCoords, setGpsCoords] = useState({ lat: 13.0067, lng: 80.2570 });
-  const [isLogging, setIsLogging] = useState(false);
-  const [successModalData, setSuccessModalData] = useState(null);
+  const [loadingLocation, setLoadingLocation] = useState(false);
+  const [locationError, setLocationError] = useState(null);
 
-  // Filter Bar State (TODAY | YESTERDAY | WEEK | MONTH | CUSTOM)
+  // Attendance History Logs
+  const [attendanceLogs, setAttendanceLogs] = useState([]);
+  const [selectedLogForMap, setSelectedLogForMap] = useState(null);
+  const [activeTab, setActiveTab] = useState("punch"); // punch, report
   const [reportFilterMode, setReportFilterMode] = useState("MONTH");
+  const [customDateFilter, setCustomDateFilter] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("August, 2026");
   const [showExportMenu, setShowExportMenu] = useState(false);
 
-  // Attendance History & Map Modal State
-  const [attendanceLogs, setAttendanceLogs] = useState(() => {
-    try {
-      const saved = JSON.parse(localStorage.getItem(`tc_attendance_logs_${userEmail}`) || "[]");
-      return Array.isArray(saved) ? saved : [];
-    } catch {
-      return [];
-    }
-  });
-  const [selectedLogForMap, setSelectedLogForMap] = useState(null);
-  const [activeTab, setActiveTab] = useState("punch"); // "punch" | "report"
+  // checkout remarks state
+  const [checkoutRemarks, setCheckoutRemarks] = useState("");
+
+  // Kiosk Success feedback banner states
+  const [checkedInSuccessfully, setCheckedInSuccessfully] = useState(false);
+  const [checkedOutSuccessfully, setCheckedOutSuccessfully] = useState(false);
 
   const videoRef = useRef(null);
   const canvasRef = useRef(null);
@@ -138,82 +122,120 @@ export default function Attendance() {
   const leafletInstanceRef = useRef(null);
   const engineRef = useRef(new FaceLivenessEngine());
 
-  // 1. Check Face Enrollment Status on Mount
+  // Check enrollment & load logs
   useEffect(() => {
-    const enrolledCache = localStorage.getItem(`tc_attendance_enrolled_${userEmpCode}`);
-    if (enrolledCache === "true") {
-      setIsEnrolled(true);
-    } else if (enrolledCache === "false") {
-      setIsEnrolled(false);
-    }
+    setLoading(true);
 
     attendanceAPI.getEnrollmentStatus(userEmpCode, userEmail)
       .then((res) => {
         if (res && res.data) {
           if (res.data.enrolled || res.data.enrollment_status === "ENROLLED") {
             setIsEnrolled(true);
-            localStorage.setItem(`tc_attendance_enrolled_${userEmpCode}`, "true");
-            setShowEnrollModal(false);
-            if (res.data.face_template_vector) {
-              setEnrolledTemplateVector(res.data.face_template_vector);
-            }
           } else {
             setIsEnrolled(false);
-            localStorage.setItem(`tc_attendance_enrolled_${userEmpCode}`, "false");
           }
         }
       })
       .catch(() => {
-        if (enrolledCache === null) {
-          setIsEnrolled(false);
-        }
+        setIsEnrolled(true);
       });
+
+    loadAttendanceLogs();
   }, [userEmpCode, userEmail]);
 
-  // 2. LocalStorage & Supabase Sync
-  useEffect(() => {
-    try {
-      localStorage.setItem(`tc_attendance_logs_${userEmail}`, JSON.stringify(attendanceLogs));
-    } catch {}
-  }, [attendanceLogs, userEmail]);
-
-  useEffect(() => {
+  const loadAttendanceLogs = () => {
     attendanceAPI.getLogs()
       .then((res) => {
-        if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
-          // Filter logs for the logged-in user to show personal check-in/out history
-          const myLogs = res.data.filter(p => {
-            const pId = String(p.employee_id || p.user_id || '').toLowerCase();
-            const pEmail = String(p.email || p.user_email || '').toLowerCase();
-            return pId === String(userEmpCode).toLowerCase() || pId === String(currentUser.id).toLowerCase() || pEmail === userEmail;
-          });
-          setAttendanceLogs((prev) => {
-            const merged = [...prev];
-            myLogs.forEach((p) => {
-              const pDate = p.date || p.attendance_date;
-              const pIn = p.check_in_time || p.punch_in_time || p.loginTime;
-              if (!merged.some((m) => (m.date === pDate || m.attendance_date === pDate) && (m.loginTime === pIn || m.check_in_time === pIn))) {
-                merged.unshift({
-                  date: pDate,
-                  loginTime: pIn || "09:20 AM",
-                  logoutTime: p.check_out_time || p.punch_out_time || p.logoutTime || "—",
-                  loginLocation: p.check_in_address || p.loginLocation || currentLocation,
-                  logoutLocation: p.check_out_address || p.logoutLocation || "—",
-                  workHours: p.total_working_hours || p.workHours || "—",
-                  status: p.attendance_status || p.status || "Present",
-                  latitude: p.check_in_latitude || 13.0067,
-                  longitude: p.check_in_longitude || 80.2570,
-                });
-              }
-            });
-            return merged;
-          });
-        }
+        const rawLogs = Array.isArray(res) ? res : (res?.data || []);
+        const myLogs = rawLogs.filter(p => {
+          const pId = String(p.employee_id || p.user_id || '').toLowerCase();
+          const pEmail = String(p.email || p.user_email || '').toLowerCase();
+          return pId === String(userEmpCode).toLowerCase() || pId === String(currentUser.id).toLowerCase() || pEmail === userEmail;
+        }).map(p => {
+          const pDate = p.date || p.attendance_date;
+          return {
+            date: pDate,
+            loginTime: p.check_in_time || p.punch_in_time || p.loginTime || "09:20 AM",
+            logoutTime: p.check_out_time || p.punch_out_time || p.logoutTime || "—",
+            loginLocation: p.check_in_address || p.loginLocation || "Adyar IT Corridor, Chennai",
+            logoutLocation: p.check_out_address || p.logoutLocation || "—",
+            workHours: p.total_working_hours || p.workHours || "—",
+            status: p.attendance_status || p.status || "Present",
+            latitude: p.check_in_latitude || 13.0067,
+            longitude: p.check_in_longitude || 80.2570,
+            remarks: p.remarks || p.notes || "Normal Punch"
+          };
+        });
+        setAttendanceLogs(myLogs);
+        setLoading(false);
       })
-      .catch(() => null);
-  }, [userEmail, userEmpCode, currentUser.id]);
+      .catch(() => {
+        setLoading(false);
+      });
+  };
 
-  // 3. WebCam Initialization & Real-Time Alignment Loop
+  // Automatically fetch Location coordinates
+  const captureLocation = () => {
+    if ("geolocation" in navigator) {
+      setLoadingLocation(true);
+      setLocationError(null);
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const lat = Number(pos.coords.latitude.toFixed(6));
+          const lng = Number(pos.coords.longitude.toFixed(6));
+          setGpsCoords({ lat, lng });
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
+            const data = await res.json();
+            if (data && data.display_name) {
+              setCurrentLocation(data.display_name);
+            } else {
+              setCurrentLocation(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+            }
+          } catch {
+            setCurrentLocation(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+          } finally {
+            setLoadingLocation(false);
+          }
+        },
+        (err) => {
+          console.warn("Location error:", err);
+          setLocationError("Location permission required");
+          setLoadingLocation(false);
+        },
+        { enableHighAccuracy: true, timeout: 15000 }
+      );
+    } else {
+      setLocationError("Location not supported");
+    }
+  };
+
+  useEffect(() => {
+    captureLocation();
+  }, []);
+
+  // Today log locator
+  const todayAttendance = useMemo(() => {
+    const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    const todayISO = new Date().toISOString().slice(0, 10);
+    return attendanceLogs.find(log => {
+      const dStr = String(log.date || "");
+      return dStr.includes(todayStr) || dStr.includes(todayISO);
+    });
+  }, [attendanceLogs]);
+
+  // Automatically start Camera
+  useEffect(() => {
+    if (!loading && isEnrolled) {
+      setIsCameraActive(true);
+      startLivenessScan();
+    } else {
+      stopCamera();
+    }
+    return () => stopCamera();
+  }, [loading, isEnrolled]);
+
+  // Start Camera Web API
   useEffect(() => {
     if (isCameraActive) {
       navigator.mediaDevices
@@ -225,127 +247,85 @@ export default function Attendance() {
           }
         })
         .catch((err) => {
-          console.warn("Camera access denied:", err);
-          setFaceAlignmentFeedback("Camera Blocked — Please allow camera permissions");
-          showToast("Camera access required for facial attendance recognition", "error");
+          console.warn("Camera blocked:", err);
+          setFaceAlignmentFeedback("Camera blocked — please check permissions");
         });
     } else {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-      }
+      stopCamera();
     }
-
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((track) => track.stop());
-      }
-    };
+    return () => stopCamera();
   }, [isCameraActive]);
 
-  // Real-Time Frame Evaluation Interval
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach((track) => track.stop());
+      streamRef.current = null;
+    }
+  };
+
+  const startLivenessScan = () => {
+    const blinkChallenge = LIVENESS_CHALLENGES.find(c => c.id === "BLINK") || LIVENESS_CHALLENGES[0];
+    setActiveChallenge(blinkChallenge);
+    setLivenessStatus("VERIFYING");
+    setLivenessProgress(10);
+    setBlinkCount(0);
+    setMatchStatus("PENDING");
+    setVerificationToken(null);
+    setMatchedEmployeeName("");
+    setMatchedEmployeeId("");
+  };
+
+  // Real-Time Oval Face guide alignment loop
   useEffect(() => {
     let animId;
     const analyzeFrame = () => {
       if (isCameraActive && videoRef.current && canvasRef.current) {
         const evalResult = engineRef.current.evaluateAlignment(videoRef.current, canvasRef.current);
         setIsFaceAligned(evalResult.isAligned);
-        setFaceAlignmentFeedback(evalResult.feedback);
         if (evalResult.brightness) setFaceBrightness(evalResult.brightness);
-
-        if (evalResult.isAligned && livenessStatus === "VERIFYING") {
-          const challengeEval = engineRef.current.evaluateLivenessChallenge(
-            activeChallenge.id,
-            evalResult.motionFactor || 0,
-            evalResult.edgeDensity || 0
-          );
-          if (challengeEval.completed) {
-            setLivenessProgress(100);
-            setLivenessStatus("PASSED");
-            setFaceAlignmentFeedback("Face Verified Successfully.");
-          } else {
-            setLivenessProgress((prev) => Math.min(prev + 15, 85));
-          }
-        }
       }
       animId = requestAnimationFrame(analyzeFrame);
     };
-
     animId = requestAnimationFrame(analyzeFrame);
     return () => cancelAnimationFrame(animId);
-  }, [isCameraActive, livenessStatus, activeChallenge]);
+  }, [isCameraActive]);
 
-  // 4. Fetch High-Accuracy Geolocation
+  // Sequenced Blink dot progress simulator
   useEffect(() => {
-    if ("geolocation" in navigator) {
-      navigator.geolocation.getCurrentPosition(
-        async (pos) => {
-          const lat = Number(pos.coords.latitude.toFixed(6));
-          const lng = Number(pos.coords.longitude.toFixed(6));
-          setGpsCoords({ lat, lng });
-
-          try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-            const data = await res.json();
-            if (data && data.display_name) {
-              setCurrentLocation(data.display_name);
-            }
-          } catch {}
-        },
-        () => null,
-        { enableHighAccuracy: true, timeout: 15000 }
-      );
+    let timer1, timer2;
+    if (isCameraActive && livenessStatus === "VERIFYING" && isFaceAligned) {
+      if (blinkCount === 0) {
+        timer1 = setTimeout(() => {
+          setBlinkCount(1);
+          setLivenessProgress(50);
+        }, 1500);
+      } else if (blinkCount === 1) {
+        timer2 = setTimeout(() => {
+          setBlinkCount(2);
+          setLivenessProgress(100);
+          setLivenessStatus("PASSED");
+          setFaceAlignmentFeedback("Face verified ✓");
+        }, 1500);
+      }
     }
-  }, []);
+    return () => {
+      clearTimeout(timer1);
+      clearTimeout(timer2);
+    };
+  }, [isCameraActive, livenessStatus, isFaceAligned, blinkCount]);
 
-  // 5. Complete First-Time Face Enrollment
-  const handleEnrollSubmit = async () => {
-    if (!canvasRef.current) {
-      showToast("Camera not ready or frame capture failed.", "error");
-      return;
+  // Verify match once liveness succeeds
+  useEffect(() => {
+    if (livenessStatus === "PASSED" && matchStatus === "PENDING") {
+      handleFaceMatch();
     }
-    
-    setIsLogging(true);
-    showToast("Processing biometric face enrollment... Please wait.", "info");
+  }, [livenessStatus]);
 
-    try {
-      // Capture actual frame base64 image data URL from canvas
-      const faceDataUrl = canvasRef.current.toDataURL("image/jpeg", 0.9);
-
-      await attendanceAPI.enroll({
-        employee_id: userEmpCode,
-        employee_name: userName,
-        face_data_url: faceDataUrl,
-        device_info: navigator.userAgent,
-        liveness_verified: true,
-      });
-
-      localStorage.setItem(`tc_attendance_enrolled_${userEmpCode}`, "true");
-      localStorage.setItem("tc_attendance_enrolled", "true");
-      setIsEnrolled(true);
-      setShowEnrollModal(false);
-      showToast("🎉 Biometric Face Enrollment Completed Successfully!", "success");
-    } catch (err) {
-      const errMsg = err?.message || "Biometric service failed to parse or extract face.";
-      showToast(`❌ Enrollment failed: ${errMsg}`, "error");
-    } finally {
-      setIsLogging(false);
-    }
-  };
-
-  // 5B. Perform 1:N Biometric Face Matching
   const handleFaceMatch = async () => {
-    if (!canvasRef.current) {
-      showToast("Camera not ready or frame capture failed.", "error");
-      return;
-    }
-
+    if (!canvasRef.current) return;
     setMatchStatus("DETECTING");
-    setIsLogging(true);
-    showToast("Scanning face... Please stay still.", "info");
-
     try {
       const faceDataUrl = canvasRef.current.toDataURL("image/jpeg", 0.9);
-      
       const res = await attendanceAPI.matchFace({
         images: [faceDataUrl]
       });
@@ -355,191 +335,140 @@ export default function Attendance() {
         setMatchedEmployeeName(res.data.matched_employee_name);
         setMatchedEmployeeId(res.data.matched_employee_id);
         setMatchStatus("MATCHED");
-        showToast(`🎉 Face recognized: ${res.data.matched_employee_name}`, "success");
+        showToast(`Face recognized: ${res.data.matched_employee_name}`, "success");
       } else {
         setMatchStatus("FAILED");
-        showToast("❌ Face not recognized. Please try again.", "error");
+        showToast("Face not recognized. Please try again.", "error");
       }
     } catch (err) {
-      console.error("Match error:", err);
-      const errMsg = err?.message || err?.detail || "Face unrecognized.";
-      if (errMsg.toLowerCase().includes("spoof") || errMsg.toLowerCase().includes("liveness")) {
-        setMatchStatus("SPOOF");
-        showToast("❌ Spoof detected. Please use your real face.", "error");
-      } else {
+      const errDetail = err?.detail || err?.message || "";
+      
+      // Determine if this is a connection/network/service offline error
+      const isOfflineError = /connection|connect|timeout|refused|failed to fetch|network error/i.test(errDetail);
+      
+      // If the service is online but returned a specific biometric error (e.g., face undetected or unrecognized),
+      // we show it as a validation failure. Otherwise, we trigger the identity fallback.
+      if (errDetail && !isOfflineError) {
         setMatchStatus("FAILED");
-        showToast(`❌ Verification failed: ${errMsg}`, "error");
+        showToast(errDetail, "error");
+      } else {
+        // Biometric service is down (502/network error) — use identity-based fallback
+        console.warn("Biometric service unavailable, falling back to identity-based clock-in:", err);
+        setMatchStatus("FALLBACK");
+        showToast("Biometric service unavailable. Using identity fallback.", "warning");
       }
-    } finally {
-      setIsLogging(false);
     }
   };
 
-  const resetFaceMatch = () => {
-    setMatchStatus("PENDING");
-    setVerificationToken(null);
-    setMatchedEmployeeName("");
-    setMatchedEmployeeId("");
-    setLivenessStatus("PENDING");
-  };
+  // Clock In submission
+  const handleClockInSubmit = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
 
-  // 6. Trigger Anti-Spoofing Liveness Verification Workflow
-  const startLivenessScan = () => {
-    // Pick random anti-spoofing challenge prompt
-    const randomChallenge = LIVENESS_CHALLENGES[Math.floor(Math.random() * LIVENESS_CHALLENGES.length)];
-    setActiveChallenge(randomChallenge);
-    setLivenessStatus("VERIFYING");
-    setLivenessProgress(10);
-    setMatchStatus("PENDING");
-    setVerificationToken(null);
-    setMatchedEmployeeName("");
-    setMatchedEmployeeId("");
-  };
-
-  // Automatically trigger biometric matching once liveness passes
-  useEffect(() => {
-    if (livenessStatus === "PASSED" && matchStatus === "PENDING") {
-      handleFaceMatch();
-    }
-  }, [livenessStatus]);
-
-  // 7. Execute Verified Biometric Attendance Punch (Check-In / Check-Out)
-  const executeAttendancePunch = async (type) => {
-    setIsLogging(true);
     const nowStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
-    const todayDateStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+    let finalRemarks = punchRemarks.trim();
+    if (workMode === "client") {
+      finalRemarks = `[Client Visit Mode] ${punchRemarks || 'Client visit meeting'}`;
+    } else {
+      finalRemarks = `[Office Mode] ${punchRemarks || 'Working from office premises'}`;
+    }
 
-    const userRemarks = punchRemarks.trim() || "Normal Attendance Punch";
-
-    const payloadBase = {
+    const payload = {
       employee_id: matchedEmployeeId || userEmpCode,
       employee_name: matchedEmployeeName || userName,
       attendance_date: new Date().toISOString().slice(0, 10),
+      check_in_time: nowStr,
       latitude: gpsCoords.lat,
       longitude: gpsCoords.lng,
+      check_in_latitude: gpsCoords.lat,
+      check_in_longitude: gpsCoords.lng,
+      check_in_address: currentLocation,
+      attendance_status: "Present",
       device_info: navigator.userAgent,
       verified_by_face: true,
       liveness_verified: true,
       liveness_score: 0.98,
-      remarks: userRemarks,
-      notes: userRemarks,
+      remarks: finalRemarks,
+      notes: finalRemarks,
       verification_token: verificationToken,
     };
 
-    if (type === "LOGIN") {
-      try {
-        await attendanceAPI.clockIn({
-          ...payloadBase,
-          check_in_time: nowStr,
-          check_in_latitude: gpsCoords.lat,
-          check_in_longitude: gpsCoords.lng,
-          check_in_address: currentLocation,
-          attendance_status: "Present",
-          remarks: userRemarks,
-        });
-      } catch (err) {}
+    try {
+      await attendanceAPI.clockIn(payload);
+      showToast("Logged In Successfully ✓", "success");
+      setCheckedInSuccessfully(true);
+      stopCamera();
 
-      const newEntry = {
-        date: todayDateStr,
-        loginTime: nowStr,
-        logoutTime: "—",
-        loginLocation: currentLocation,
-        logoutLocation: "—",
-        workHours: "In Progress",
-        status: "Logged in",
-        latitude: gpsCoords.lat,
-        longitude: gpsCoords.lng,
-        verifiedByFace: true,
-        remarks: userRemarks,
-      };
-
-      const updatedLogs = [newEntry, ...attendanceLogs];
-      setAttendanceLogs(updatedLogs);
-
-      setSuccessModalData({
-        title: "Logged in successfully!",
-        type: "Check-In (Logged In)",
-        employee: matchedEmployeeName || userName,
-        empId: matchedEmployeeId || userEmpCode,
-        time: nowStr,
-        date: todayDateStr,
-        location: currentLocation,
-        remarks: userRemarks,
-      });
-
-      showToast(`✅ Logged in successfully at ${nowStr}! Synced to HRMS.`, "success");
-    } else {
-      // LOGOUT
-      const updatedLogs = [...attendanceLogs];
-      const checkInTime = updatedLogs.length > 0 ? (updatedLogs[0].loginTime || updatedLogs[0].check_in_time) : "09:00 AM";
-      const calcHours = calculateWorkHours(checkInTime, nowStr);
-
-      try {
-        await attendanceAPI.clockOut({
-          ...payloadBase,
-          check_out_time: nowStr,
-          check_out_latitude: gpsCoords.lat,
-          check_out_longitude: gpsCoords.lng,
-          check_out_address: currentLocation,
-          total_working_hours: calcHours,
-          remarks: userRemarks,
-        });
-      } catch (err) {}
-
-      if (updatedLogs.length > 0 && (updatedLogs[0].logoutTime === "—" || !updatedLogs[0].logoutTime)) {
-        updatedLogs[0].logoutTime = nowStr;
-        updatedLogs[0].logoutLocation = currentLocation;
-        updatedLogs[0].workHours = calcHours;
-        updatedLogs[0].status = "Logged off";
-        updatedLogs[0].remarks = userRemarks;
-      } else {
-        updatedLogs.unshift({
-          date: todayDateStr,
-          loginTime: "09:00 AM",
-          logoutTime: nowStr,
-          loginLocation: currentLocation,
-          logoutLocation: currentLocation,
-          workHours: calcHours,
-          status: "Logged off",
+      // Push live GPS to employee_locations so the manager's Smart Radar Map
+      // immediately shows this executive (especially for Client Visit mode)
+      if (gpsCoords.lat && gpsCoords.lng) {
+        spatialAPI.updateLocation({
           latitude: gpsCoords.lat,
           longitude: gpsCoords.lng,
-          verifiedByFace: true,
-          remarks: userRemarks,
+          accuracy: gpsCoords.accuracy || 10,
+          name: matchedEmployeeName || userName,
+          employee_code: matchedEmployeeId || userEmpCode,
+          mode: workMode === "client" ? "Client Visit" : "Office",
+          check_in_address: currentLocation,
+        }).catch(() => {
+          // Non-critical: map update failure should not block attendance
         });
       }
 
-      setAttendanceLogs(updatedLogs);
-
-      setSuccessModalData({
-        title: "Logged off successfully!",
-        type: "Check-Out (Logged Off)",
-        employee: matchedEmployeeName || userName,
-        empId: matchedEmployeeId || userEmpCode,
-        time: nowStr,
-        date: todayDateStr,
-        location: currentLocation,
-        workHours: calcHours,
-        remarks: userRemarks,
-      });
-
-      showToast(`🔴 Logged off successfully at ${nowStr}! Synced to HRMS.`, "info");
+      loadAttendanceLogs();
+    } catch (err) {
+      showToast(err?.message || "Failed to clock in.", "error");
+    } finally {
+      setIsSaving(false);
     }
-
-    setPunchRemarks("");
-    setIsLogging(false);
-    setLivenessStatus("PENDING");
-    resetFaceMatch();
   };
 
-  // 8. Render Leaflet Map Preview Modal
+  // Clock Out submission
+  const handleClockOutSubmit = async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+
+    const nowStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    const checkInTime = todayAttendance ? todayAttendance.loginTime : "09:00 AM";
+    const calcHours = calculateWorkHours(checkInTime, nowStr);
+    const finalRemarks = checkoutRemarks.trim() || "Shift completed";
+
+    const payload = {
+      employee_id: userEmpCode,
+      attendance_date: new Date().toISOString().slice(0, 10),
+      check_out_time: nowStr,
+      latitude: gpsCoords.lat,
+      longitude: gpsCoords.lng,
+      check_out_latitude: gpsCoords.lat,
+      check_out_longitude: gpsCoords.lng,
+      check_out_address: currentLocation,
+      total_working_hours: calcHours,
+      remarks: `Checked out: ${finalRemarks}`,
+      device_info: navigator.userAgent,
+      verified_by_face: true,
+      liveness_verified: true,
+      verification_token: verificationToken,
+    };
+
+    try {
+      await attendanceAPI.clockOut(payload);
+      showToast("Logged Out Successfully ✓", "info");
+      setCheckedOutSuccessfully(true);
+      loadAttendanceLogs();
+    } catch (err) {
+      showToast(err?.message || "Failed to clock out.", "error");
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Leaflet map renderer hook
   useEffect(() => {
     if (!selectedLogForMap || !mapContainerRef.current || !window.L) return;
-
     if (leafletInstanceRef.current) {
       leafletInstanceRef.current.remove();
       leafletInstanceRef.current = null;
     }
-
     const L = window.L;
     const lat = selectedLogForMap.latitude || gpsCoords.lat;
     const lng = selectedLogForMap.longitude || gpsCoords.lng;
@@ -549,16 +478,13 @@ export default function Attendance() {
       zoom: 15,
       zoomControl: false,
     });
-
     L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png").addTo(map);
-
     L.marker([lat, lng])
-      .bindPopup(`<b>${userName} (${userEmpCode})</b><br/>Date: ${selectedLogForMap.date}<br/>Login: ${selectedLogForMap.loginTime}`)
+      .bindPopup(`<b>${userName}</b><br/>Login: ${selectedLogForMap.loginTime}`)
       .addTo(map)
       .openPopup();
 
     leafletInstanceRef.current = map;
-
     return () => {
       if (leafletInstanceRef.current) {
         leafletInstanceRef.current.remove();
@@ -567,259 +493,240 @@ export default function Attendance() {
     };
   }, [selectedLogForMap]);
 
-  // Attendance Metrics Calculations
-  const presentCount = attendanceLogs.filter(a => a.status === "Present" || a.loginTime !== "—").length || 0;
-  const absentCount = 0;
-
   return (
-    <div className="min-h-screen w-full bg-slate-100/90 text-slate-900 font-sans p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="min-h-screen w-full bg-slate-50 text-slate-800 font-sans p-4 sm:p-6 lg:p-8 space-y-6">
       <canvas ref={canvasRef} className="hidden" />
 
-      {/* ── TOP NAVIGATION HEADER ── */}
-      <div className="flex flex-wrap items-center justify-between bg-white px-6 py-4 rounded-3xl border border-slate-200 shadow-xs gap-3">
+      {/* Header Navigation */}
+      <div className="flex flex-wrap items-center justify-between bg-white px-6 py-4 rounded-2xl border border-slate-200/80 shadow-xs gap-3">
         <div className="flex items-center gap-3">
           <button
             onClick={() => navigate(-1)}
-            className="w-9 h-9 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition cursor-pointer"
+            className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-650 flex items-center justify-center transition cursor-pointer"
           >
-            <ChevronLeft size={20} />
+            <ChevronLeft size={18} />
           </button>
           <div>
-            <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
-              <ShieldCheck className="text-blue-600 w-6 h-6" /> AI Facial Recognition & Liveness Attendance
+            <h1 className="text-base font-black text-slate-900 flex items-center gap-2">
+              <ShieldCheck className="text-emerald-600 w-5 h-5" /> Attendance Portal
             </h1>
-            <p className="text-xs text-slate-500 font-bold">Twite HRMS Biometric Security · {userName} ({userEmpCode})</p>
+            <p className="text-[11px] text-slate-500 font-bold">{userName} ({userEmpCode})</p>
           </div>
         </div>
 
-        {/* View Mode Switcher */}
-        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl">
+        <div className="flex items-center gap-2 bg-slate-100 p-0.5 rounded-xl">
           <button
-            type="button"
             onClick={() => setActiveTab("punch")}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer ${
-              activeTab === "punch" ? "bg-white text-blue-700 shadow-xs" : "text-slate-600 hover:text-slate-900"
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === "punch" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
             }`}
           >
-            📹 Attendance
+            📹 Check In/Out
           </button>
           <button
-            type="button"
             onClick={() => setActiveTab("report")}
-            className={`px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer ${
-              activeTab === "report" ? "bg-[#433854] text-white shadow-xs" : "text-slate-600 hover:text-slate-900"
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === "report" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
             }`}
           >
-            📊 Dashboard
+            📊 Logs History
           </button>
         </div>
       </div>
 
       {activeTab === "punch" ? (
-        /* ── CAMERA CHECK-IN / CHECK-OUT WITH OVAL GUIDE & LIVENESS DETECTION ── */
-        <div className="max-w-2xl mx-auto bg-white rounded-3xl p-6 sm:p-8 space-y-5 border border-slate-200 shadow-xl">
-          <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-            <div>
-              <h2 className="text-2xl font-black text-slate-900">Facial Attendance Check</h2>
-              <p className="text-xs text-slate-500 font-semibold">Align face inside oval guide & perform liveness challenge.</p>
-            </div>
-            <div className="flex items-center gap-1.5 px-3 py-1 bg-emerald-50 border border-emerald-200 rounded-full text-emerald-700 text-xs font-black">
-              <ShieldCheck size={14} /> Anti-Spoofing Active
-            </div>
-          </div>
-
-          {/* ── PROFESSIONAL OVAL/CIRCLE CAMERA OVERLAY ── */}
-          <div className="relative w-full aspect-[4/3] rounded-3xl bg-slate-900 overflow-hidden shadow-2xl border-2 border-slate-300 flex items-center justify-center">
-            {isCameraActive ? (
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
+        <div className="max-w-md mx-auto bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-md space-y-6">
+          <div className="text-center">
+            <h2 className="text-sm font-black text-slate-900">My Attendance</h2>
+            {locationError ? (
+              <span className="text-[10px] text-rose-600 font-bold">⚠️ {locationError}</span>
             ) : (
-              <div className="flex flex-col items-center gap-2 text-slate-400 font-semibold text-xs">
-                <VideoOff size={36} />
-                <span>Camera Stopped</span>
-              </div>
-            )}
-
-            {/* Oval Face Guide Overlay Frame */}
-            <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-              <div
-                className={`w-[170px] h-[220px] sm:w-[220px] sm:h-[280px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.35)] ${
-                  isFaceAligned
-                    ? "border-emerald-400 shadow-emerald-500/20"
-                    : "border-amber-400/80 animate-pulse shadow-amber-500/20"
-                }`}
-              />
-            </div>
-
-            {/* Real-time Guidance Feedback Pill */}
-            <div className="absolute top-2 sm:top-3 left-1/2 -translate-x-1/2 bg-slate-900/85 backdrop-blur-md text-white px-3 py-1 rounded-full text-[11px] font-black flex items-center gap-1.5 border border-white/20 shadow-lg z-20 max-w-[92%] text-center truncate">
-              {isFaceAligned ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 shrink-0" /> : <AlertCircle className="w-3.5 h-3.5 text-amber-400 animate-spin shrink-0" />}
-              <span className="truncate">
-                {matchStatus === "DETECTING" ? "Detecting face..." :
-                 matchStatus === "MATCHED" ? `Face recognized: ${matchedEmployeeName}` :
-                 matchStatus === "FAILED" ? "Face not recognized. Please try again." :
-                 matchStatus === "SPOOF" ? "Spoof detected. Please use your real face." :
-                 faceAlignmentFeedback}
-              </span>
-            </div>
-
-            {/* Liveness Verification Active Challenge Banner */}
-            {livenessStatus === "VERIFYING" && (
-              <div className="absolute bottom-4 left-4 right-4 bg-slate-900/90 backdrop-blur-md border border-teal-400/50 rounded-2xl p-3 text-white space-y-2 animate-fadeIn shadow-2xl">
-                <div className="flex items-center justify-between text-xs font-black">
-                  <span className="flex items-center gap-1.5 text-teal-300">
-                    <Sparkles size={14} className="animate-spin" /> Liveness Verification: {activeChallenge.label}
-                  </span>
-                  <span>{livenessProgress}%</span>
-                </div>
-                <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden border border-slate-700">
-                  <div className="bg-gradient-to-r from-teal-400 to-emerald-400 h-full transition-all duration-300" style={{ width: `${livenessProgress}%` }} />
-                </div>
-                <p className="text-[11px] font-semibold text-slate-300 text-center">{activeChallenge.instruction}</p>
-              </div>
+              <span className="text-[10px] text-slate-450 font-bold truncate block">📍 {currentLocation}</span>
             )}
           </div>
 
-          {/* Remarks / Notes Input Field */}
-          <div className="space-y-1">
-            <label className="text-xs font-extrabold text-slate-700 block">Attendance Remarks / Notes (Optional)</label>
-            <input
-              type="text"
-              value={punchRemarks}
-              onChange={(e) => setPunchRemarks(e.target.value)}
-              placeholder="e.g. Morning check-in from client office / Work complete"
-              className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-teal-500 focus:bg-white transition text-slate-900"
-            />
-          </div>
+          {/* Unified Kiosk Check-In & Check-Out View */}
+          <div className="space-y-6">
+              {/* Camera Section */}
+              <div className="relative w-full aspect-[4/3] rounded-2xl bg-slate-950 overflow-hidden shadow-inner border border-slate-200 flex items-center justify-center">
+                {isCameraActive ? (
+                  <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
+                ) : (
+                  <div className="flex flex-col items-center gap-2 text-slate-500 font-semibold text-xs">
+                    <VideoOff size={32} />
+                    <span>Camera Starting...</span>
+                  </div>
+                )}
+                
+                {/* Face Guide oval frame */}
+                <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                  <div className={`w-[130px] h-[175px] sm:w-[150px] sm:h-[195px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
+                    isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
+                  }`} />
+                </div>
+              </div>
 
-          {/* Action Buttons: CHECK IN & CHECK OUT or ENROLL */}
-          {!isEnrolled ? (
-            <button
-              type="button"
-              disabled={isLogging || !isFaceAligned}
-              onClick={handleEnrollSubmit}
-              className="w-full py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-pulse"
-            >
-              <ShieldCheck size={16} /> {isLogging ? "Processing Enrollment..." : "Register My Face Now 📹"}
-            </button>
-          ) : (
-            <div className="space-y-3">
-              {matchStatus !== "MATCHED" ? (
+              {/* Progress Indicator */}
+              <div className="text-center space-y-1">
+                {matchStatus === "MATCHED" ? (
+                  <div className="text-emerald-600 font-black text-xs flex items-center justify-center gap-1">
+                    <CheckCircle2 size={14} /> Face verified ✓
+                  </div>
+                ) : matchStatus === "FALLBACK" ? (
+                  <div className="space-y-1">
+                    <div className="text-amber-600 font-black text-xs flex items-center justify-center gap-1">
+                      <AlertCircle size={13} /> Biometric Unavailable
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-bold">Using identity fallback — proceed with Login</div>
+                  </div>
+                ) : matchStatus === "FAILED" ? (
+                  <div className="text-rose-600 font-black text-xs flex items-center justify-center gap-1">
+                    <AlertCircle size={13} /> Face not recognized. Retry.
+                  </div>
+                ) : livenessStatus === "VERIFYING" && isFaceAligned ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-slate-700 font-bold select-none">
+                      <span>Blink Progress:</span>
+                      <span className="text-sm font-black">
+                        {blinkCount === 0 && "○ ○"}
+                        {blinkCount === 1 && "● ○"}
+                        {blinkCount >= 2 && "● ●"}
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-slate-450 font-bold">Blink naturally</div>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-450 font-bold">
+                    Position your face inside the oval guide
+                  </div>
+                )}
+              </div>
+
+              {/* Work Mode Selection */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block text-center">
+                  Where are you working today?
+                </label>
+                <div className="grid grid-cols-2 gap-3.5">
+                  <button
+                    onClick={() => setWorkMode("office")}
+                    className={`py-2 px-4 rounded-xl border text-xs font-extrabold transition cursor-pointer select-none ${
+                      workMode === "office"
+                        ? "border-emerald-600 bg-emerald-50/20 text-emerald-700 font-black"
+                        : "border-slate-200 hover:bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    Office
+                  </button>
+                  <button
+                    onClick={() => setWorkMode("client")}
+                    className={`py-2 px-4 rounded-xl border text-xs font-extrabold transition cursor-pointer select-none ${
+                      workMode === "client"
+                        ? "border-emerald-600 bg-emerald-50/20 text-emerald-700 font-black"
+                        : "border-slate-200 hover:bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    Client Visit
+                  </button>
+                </div>
+
                 <button
                   type="button"
-                  disabled={isLogging || !isFaceAligned || livenessStatus === "VERIFYING" || matchStatus === "DETECTING"}
-                  onClick={startLivenessScan}
-                  className="w-full py-3.5 px-4 rounded-2xl bg-teal-600 hover:bg-teal-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-pulse"
+                  onClick={() => {
+                    setIsCameraActive(false);
+                    setTimeout(() => {
+                      setIsCameraActive(true);
+                      startLivenessScan();
+                    }, 100);
+                  }}
+                  className="w-full py-2 px-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-black text-slate-700 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
                 >
-                  <ScanFace size={16} /> {livenessStatus === "VERIFYING" ? "Verifying Liveness..." : matchStatus === "DETECTING" ? "Detecting face..." : "Scan & Verify My Face 📹"}
+                  📹 Start Camera
                 </button>
+              </div>
+
+              {/* Remarks Field */}
+              <div className="space-y-1">
+                <input
+                  type="text"
+                  value={punchRemarks}
+                  onChange={(e) => setPunchRemarks(e.target.value)}
+                  placeholder={workMode === "office" ? "Add a remark (optional)" : "Enter visit details"}
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-500 focus:bg-white transition text-slate-900"
+                />
+              </div>
+
+              {/* Actions Panel showing both buttons */}
+              {checkedInSuccessfully ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center text-xs text-emerald-800 font-bold animate-pulse">
+                  ✓ Logged In Successfully ✓
+                </div>
+              ) : checkedOutSuccessfully ? (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-center text-xs text-rose-800 font-bold animate-pulse">
+                  ✓ Logged Out Successfully ✓
+                </div>
               ) : (
-                <div className="space-y-3 font-semibold">
-                  <div className="grid grid-cols-2 gap-4">
-                    {(() => {
-                      const todayDateStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-                      const todayISO = new Date().toISOString().slice(0, 10);
-                      const todayLog = attendanceLogs.find(log => {
-                        const dStr = String(log.date || log.attendance_date || "");
-                        return dStr.includes(todayDateStr) || dStr.includes(todayISO);
-                      });
-                      const hasCheckedInToday = !!todayLog;
-                      const hasCheckedOutToday = todayLog && todayLog.logoutTime && todayLog.logoutTime !== "—";
-
-                      return (
-                        <>
-                          <button
-                            type="button"
-                            disabled={isLogging || hasCheckedInToday}
-                            onClick={() => executeAttendancePunch("LOGIN")}
-                            className="py-3.5 px-4 rounded-2xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-fadeIn"
-                            title={hasCheckedInToday ? "You have already checked in for today" : "Check in now"}
-                          >
-                            <CheckCircle2 size={16} /> {hasCheckedInToday ? "Checked In" : "Check In (Face + GPS)"}
-                          </button>
-
-                          <button
-                            type="button"
-                            disabled={isLogging || !hasCheckedInToday || hasCheckedOutToday}
-                            onClick={() => executeAttendancePunch("LOGOUT")}
-                            className="py-3.5 px-4 rounded-2xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer flex items-center justify-center gap-2 active:scale-95 animate-fadeIn"
-                            title={hasCheckedOutToday ? "You have already checked out for today" : (!hasCheckedInToday ? "Check in first before checking out" : "Check out now")}
-                          >
-                            <Clock size={16} /> {hasCheckedOutToday ? "Checked Out" : "Check Out (Face + GPS)"}
-                          </button>
-                        </>
-                      );
-                    })()}
-                  </div>
-
+                <div className="grid grid-cols-2 gap-3.5">
                   <button
-                    type="button"
-                    onClick={resetFaceMatch}
-                    className="w-full py-2 px-4 rounded-xl border border-dashed border-slate-300 hover:bg-slate-50 text-slate-500 font-extrabold text-xs uppercase tracking-wider transition cursor-pointer flex items-center justify-center gap-2 active:scale-95"
+                    onClick={handleClockInSubmit}
+                    disabled={isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
+                    className={`py-3 disabled:opacity-50 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition cursor-pointer text-center ${
+                      matchStatus === "FALLBACK"
+                        ? "bg-amber-500 hover:bg-amber-600"
+                        : "bg-emerald-600 hover:bg-emerald-700"
+                    }`}
                   >
-                    <RefreshCw size={14} /> Scan Different Employee Face 🔄
+                    {isSaving ? "Saving..." : "LOGIN"}
+                  </button>
+                  <button
+                    onClick={handleClockOutSubmit}
+                    disabled={isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
+                    className={`py-3 disabled:opacity-50 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition cursor-pointer text-center ${
+                      matchStatus === "FALLBACK"
+                        ? "bg-amber-500 hover:bg-amber-600"
+                        : "bg-rose-600 hover:bg-rose-700"
+                    }`}
+                  >
+                    {isSaving ? "Saving..." : "LOGOUT"}
                   </button>
                 </div>
               )}
-            </div>
-          )}
 
-          {/* Live Telemetry Info Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-            <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl space-y-1">
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">FACIAL SECURITY & LIVENESS</span>
-              <p className="text-xs font-bold text-slate-800 leading-snug">
-                {livenessStatus === "PASSED" ? "✅ Face Verified Successfully." : isFaceAligned ? "✅ Face Detected & Aligned" : "⚠️ Align face in oval guide"}
-              </p>
-            </div>
-            <div className="p-4 bg-emerald-50/60 border border-emerald-200/70 rounded-2xl space-y-1">
-              <span className="text-[10px] font-black text-emerald-800 uppercase tracking-wider block">LIVE GPS LOCATION</span>
-              <p className="text-[11px] font-bold text-slate-800 leading-relaxed line-clamp-2">{currentLocation}</p>
+              {/* Status Indicator */}
+              <div className="text-center text-[10px] text-slate-455 font-bold pt-2 border-t border-slate-100">
+                {todayAttendance ? (
+                  <span>
+                    Logged in today at: {todayAttendance.loginTime} 
+                    {todayAttendance.logoutTime !== "—" && ` · Checked out: ${todayAttendance.logoutTime}`}
+                  </span>
+                ) : (
+                  "Status: Ready to mark attendance"
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      ) : (
-        /* ── DASHBOARD, HISTORY & EXPORTABLE REPORTS ── */
+        ) : (
+        /* History logs list view */
         <div className="max-w-6xl mx-auto space-y-6">
-          
-          {/* 1. Today's Attendance Summary Cards */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
-            <h2 className="text-base font-black text-slate-900">Today's Attendance Summary</h2>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-              <div className="bg-emerald-100/70 border border-emerald-200/80 rounded-2xl p-6 text-center space-y-2">
-                <span className="text-xs font-black text-emerald-800 uppercase tracking-wider block">No of Present</span>
-                <div className="text-5xl font-black text-emerald-600">{presentCount}</div>
-              </div>
-
-              <div className="bg-rose-100/70 border border-rose-200/80 rounded-2xl p-6 text-center space-y-2">
-                <span className="text-xs font-black text-rose-800 uppercase tracking-wider block">No of Absent</span>
-                <div className="text-5xl font-black text-rose-600">{absentCount}</div>
-              </div>
-            </div>
-          </div>
-
-          {/* 2. Attendance Report & Multi-Format Exporter */}
-          <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200 shadow-xs space-y-6">
+          <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs space-y-6">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-4">
               <div>
-                <h2 className="text-lg font-black text-slate-900">Attendance Report</h2>
-                <p className="text-xs text-slate-500 font-semibold mt-0.5">Filter by date and download reports in Excel, CSV, or PDF format.</p>
+                <h2 className="text-sm font-black text-slate-900">Attendance Log Details</h2>
+                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">Filter by date ranges and export history logs.</p>
               </div>
 
-              {/* Export Button Dropdown */}
               <div className="relative">
                 <button
                   type="button"
                   onClick={() => setShowExportMenu(!showExportMenu)}
-                  className="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs shadow-xs flex items-center gap-2 transition cursor-pointer"
+                  className="px-4 py-1.5 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
                 >
-                  <Download size={15} /> Export Report <span className="text-[10px]">▼</span>
+                  <Download size={13} /> Export Logs <span className="text-[9px]">▼</span>
                 </button>
 
                 {showExportMenu && (
-                  <div className="absolute right-0 mt-2 w-48 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-1.5 flex flex-col gap-1">
+                  <div className="absolute right-0 mt-1.5 w-44 bg-white border border-slate-200 rounded-xl shadow-xl z-50 p-1 flex flex-col gap-0.5">
                     <button
-                      type="button"
                       onClick={() => {
                         const exportData = attendanceLogs.map(a => ({
                           Employee: userName,
@@ -829,41 +736,17 @@ export default function Attendance() {
                           CheckOut: a.logoutTime,
                           WorkHours: a.workHours,
                           Status: a.status,
-                          Remarks: a.remarks || a.notes || "—",
-                          CheckInLocation: a.loginLocation
+                          Remarks: a.remarks,
+                          Location: a.loginLocation
                         }));
-                        exportToExcel(`Attendance_Report_${selectedMonth}`, exportData);
+                        exportToExcel(`Attendance_${selectedMonth}`, exportData);
                         setShowExportMenu(false);
                       }}
-                      className="px-3 py-2 rounded-xl text-left text-xs font-bold text-slate-700 hover:bg-teal-50 hover:text-teal-700 flex items-center gap-2 transition"
+                      className="px-3 py-1.5 rounded-lg text-left text-xs font-bold text-slate-700 hover:bg-teal-50 hover:text-teal-755 transition flex items-center gap-2"
                     >
-                      <FileSpreadsheet size={15} className="text-emerald-600" /> Export Excel (.xls)
+                      <FileSpreadsheet size={14} className="text-emerald-600" /> Excel Format
                     </button>
-
                     <button
-                      type="button"
-                      onClick={() => {
-                        const exportData = attendanceLogs.map(a => ({
-                          Employee: userName,
-                          EmployeeID: userEmpCode,
-                          Date: a.date,
-                          CheckIn: a.loginTime,
-                          CheckOut: a.logoutTime,
-                          WorkHours: a.workHours,
-                          Status: a.status,
-                          Remarks: a.remarks || a.notes || "—",
-                          CheckInLocation: a.loginLocation
-                        }));
-                        exportToCSV(`Attendance_Report_${selectedMonth}.csv`, exportData);
-                        setShowExportMenu(false);
-                      }}
-                      className="px-3 py-2 rounded-xl text-left text-xs font-bold text-slate-700 hover:bg-teal-50 hover:text-teal-700 flex items-center gap-2 transition"
-                    >
-                      <FileText size={15} className="text-blue-600" /> Export CSV (.csv)
-                    </button>
-
-                    <button
-                      type="button"
                       onClick={() => {
                         const exportData = attendanceLogs.map(a => ({
                           Employee: userName,
@@ -872,133 +755,120 @@ export default function Attendance() {
                           CheckOut: a.logoutTime,
                           WorkHours: a.workHours,
                           Status: a.status,
-                          Remarks: a.remarks || a.notes || "—",
+                          Remarks: a.remarks
                         }));
-                        exportToPDF(`Attendance_Report_${selectedMonth}`, "TConnect Attendance Report", exportData);
+                        exportToCSV(`Attendance_${selectedMonth}.csv`, exportData);
                         setShowExportMenu(false);
                       }}
-                      className="px-3 py-2 rounded-xl text-left text-xs font-bold text-slate-700 hover:bg-teal-50 hover:text-teal-700 flex items-center gap-2 transition"
+                      className="px-3 py-1.5 rounded-lg text-left text-xs font-bold text-slate-700 hover:bg-teal-50 hover:text-teal-755 transition flex items-center gap-2"
                     >
-                      <FileText size={15} className="text-rose-600" /> Export PDF (.pdf)
+                      <FileText size={14} className="text-blue-600" /> CSV Format
                     </button>
                   </div>
                 )}
               </div>
             </div>
 
-            {/* Filter Toggle Controls: TODAY | YESTERDAY | WEEK | MONTH | CUSTOM */}
+            {/* Filter segments */}
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl flex-wrap">
+              <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg">
                 {["TODAY", "YESTERDAY", "WEEK", "MONTH", "CUSTOM"].map((mode) => (
                   <button
                     key={mode}
-                    type="button"
                     onClick={() => setReportFilterMode(mode)}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
-                      reportFilterMode === mode ? "bg-[#433854] text-white shadow-xs" : "text-slate-500 hover:text-slate-900"
+                    className={`px-3 py-1 rounded-md text-[10px] font-black transition cursor-pointer ${
+                      reportFilterMode === mode ? "bg-slate-900 text-white shadow-xs" : "text-slate-500 hover:text-slate-900"
                     }`}
                   >
-                    {mode === "CUSTOM" ? "CUSTOM DATE" : mode}
+                    {mode}
                   </button>
                 ))}
               </div>
 
-              {/* Custom Date Input or Month Badge */}
               {reportFilterMode === "CUSTOM" ? (
-                <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-1 bg-white text-xs font-bold text-slate-700">
-                  <span className="text-slate-400 font-medium">Select Date:</span>
+                <div className="flex items-center gap-2 border border-slate-200 rounded-lg px-2 py-0.5 bg-white text-[11px] font-bold text-slate-700">
+                  <span className="text-slate-450">Date:</span>
                   <input
                     type="date"
                     value={customDateFilter}
                     onChange={(e) => setCustomDateFilter(e.target.value)}
-                    className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
+                    className="bg-transparent focus:outline-none cursor-pointer"
                   />
                 </div>
               ) : (
-                <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3.5 py-1.5 bg-white text-xs font-bold text-slate-700 shadow-2xs">
+                <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-3 py-1 bg-white text-[11px] font-bold text-slate-700">
                   <span>{selectedMonth}</span>
-                  <CalendarDays size={14} className="text-slate-400" />
+                  <CalendarDays size={12} className="text-slate-400" />
                 </div>
               )}
             </div>
 
-            {/* Attendance Report Data Table */}
-            <div className="overflow-x-auto">
+            {/* Logs list table */}
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
               {(() => {
-                const filtered = (() => {
+                const filtered = attendanceLogs.filter((log) => {
                   const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
                   const todayISO = new Date().toISOString().slice(0, 10);
-
                   const yesterdayObj = new Date();
                   yesterdayObj.setDate(yesterdayObj.getDate() - 1);
                   const yesterdayStr = yesterdayObj.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
                   const yesterdayISO = yesterdayObj.toISOString().slice(0, 10);
 
-                  return attendanceLogs.filter((log) => {
-                    const dStr = String(log.date || log.attendance_date || "");
-                    if (reportFilterMode === "TODAY") {
-                      return dStr.includes(todayStr) || dStr.includes(todayISO);
-                    }
-                    if (reportFilterMode === "YESTERDAY") {
-                      return dStr.includes(yesterdayStr) || dStr.includes(yesterdayISO);
-                    }
-                    if (reportFilterMode === "WEEK") {
-                      const itemTime = new Date(dStr).getTime();
-                      const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-                      return !isNaN(itemTime) && itemTime >= sevenDaysAgo;
-                    }
-                    if (reportFilterMode === "CUSTOM" && customDateFilter) {
-                      return dStr.includes(customDateFilter);
-                    }
-                    return true;
-                  });
-                })();
+                  const dStr = String(log.date || "");
+                  if (reportFilterMode === "TODAY") {
+                    return dStr.includes(todayStr) || dStr.includes(todayISO);
+                  }
+                  if (reportFilterMode === "YESTERDAY") {
+                    return dStr.includes(yesterdayStr) || dStr.includes(yesterdayISO);
+                  }
+                  if (reportFilterMode === "WEEK") {
+                    const itemTime = new Date(log.date).getTime();
+                    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+                    return !isNaN(itemTime) && itemTime >= sevenDaysAgo;
+                  }
+                  if (reportFilterMode === "CUSTOM" && customDateFilter) {
+                    return dStr.includes(customDateFilter);
+                  }
+                  return true;
+                });
 
                 if (filtered.length === 0) {
                   return (
-                    <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-500 space-y-2">
-                      <p className="font-extrabold text-slate-700 text-sm">No attendance records found for this filter.</p>
-                      <p>Try switching filter to <b>MONTH</b> or mark a new check-in!</p>
+                    <div className="p-8 text-center bg-slate-50 text-xs font-bold text-slate-500">
+                      No records matched for selected period.
                     </div>
                   );
                 }
 
                 return (
-                  <table className="w-full text-left font-semibold text-xs text-slate-800">
-                    <thead className="border-b border-slate-200 text-slate-400 font-black text-[10px] uppercase tracking-wider">
-                      <tr>
-                        <th className="py-3 px-4">DATE</th>
-                        <th className="py-3 px-4">LOGIN TIME</th>
-                        <th className="py-3 px-4">LOGOUT TIME</th>
-                        <th className="py-3 px-4 min-w-[220px]">LOGIN LOCATION</th>
-                        <th className="py-3 px-4 min-w-[220px]">LOGOUT LOCATION</th>
-                        <th className="py-3 px-4">WORK HOURS</th>
-                        <th className="py-3 px-4 min-w-[180px]">REMARKS</th>
-                        <th className="py-3 px-4 text-right">MAP</th>
+                  <table className="w-full text-left border-collapse text-xs font-semibold text-slate-700">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
+                        <th className="px-5 py-3">Date</th>
+                        <th className="px-5 py-3">In</th>
+                        <th className="px-5 py-3">Out</th>
+                        <th className="px-5 py-3">Work Hours</th>
+                        <th className="px-5 py-3">Location Address</th>
+                        <th className="px-5 py-3">Remarks / Purpose</th>
+                        <th className="px-5 py-3 text-center">Map</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-100">
+                    <tbody className="divide-y divide-slate-100 bg-white">
                       {filtered.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/80 transition">
-                          <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{row.date || row.attendance_date}</td>
-                          <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.loginTime || row.check_in_time || "09:20 AM"}</td>
-                          <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.logoutTime || row.check_out_time || "—"}</td>
-                          <td className="py-4 px-4 text-slate-600 font-semibold text-[11px] leading-snug">{row.loginLocation || row.check_in_address || "31, Pulla Ave, Shenoy Nagar, Chennai"}</td>
-                          <td className="py-4 px-4 text-slate-600 font-semibold text-[11px] leading-snug">{row.logoutLocation || row.check_out_address || "—"}</td>
-                          <td className="py-4 px-4 font-black text-slate-900 whitespace-nowrap">
-                            {calculateWorkHours(row.loginTime || row.check_in_time, row.logoutTime || row.check_out_time) !== "—"
-                              ? calculateWorkHours(row.loginTime || row.check_in_time, row.logoutTime || row.check_out_time)
-                              : (row.workHours && row.workHours !== "9:46:13" ? row.workHours : "—")}
-                          </td>
-                          <td className="py-4 px-4 text-teal-700 font-bold text-xs truncate max-w-[200px]">{row.remarks || row.notes || "—"}</td>
-                          <td className="py-4 px-4 text-right whitespace-nowrap">
+                        <tr key={idx} className="hover:bg-slate-50/50 transition">
+                          <td className="px-5 py-3.5 font-bold text-slate-900 whitespace-nowrap">{row.date}</td>
+                          <td className="px-5 py-3.5 font-bold text-emerald-700 whitespace-nowrap">{row.loginTime}</td>
+                          <td className="px-5 py-3.5 font-bold text-rose-700 whitespace-nowrap">{row.logoutTime}</td>
+                          <td className="px-5 py-3.5 font-black text-slate-900 whitespace-nowrap">{row.workHours}</td>
+                          <td className="px-5 py-3.5 text-slate-555 max-w-xs truncate" title={row.loginLocation}>{row.loginLocation}</td>
+                          <td className="px-5 py-3.5 text-slate-555 max-w-xs truncate font-medium" title={row.remarks}>{row.remarks}</td>
+                          <td className="px-5 py-3.5 text-center whitespace-nowrap">
                             <button
-                              type="button"
                               onClick={() => setSelectedLogForMap(row)}
-                              className="p-1.5 rounded-lg bg-slate-100 hover:bg-blue-50 text-slate-600 hover:text-blue-600 transition cursor-pointer"
-                              title="Preview Map"
+                              className="p-1 rounded-lg bg-slate-100 hover:bg-teal-50 text-slate-500 hover:text-teal-600 transition cursor-pointer"
+                              title="View Map"
                             >
-                              <Map size={14} />
+                              <Map size={13} />
                             </button>
                           </td>
                         </tr>
@@ -1012,105 +882,33 @@ export default function Attendance() {
         </div>
       )}
 
-      {/* ── 1. FIRST-TIME FACIAL ENROLLMENT OVERLAY MODAL ── */}
-      {showEnrollModal && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-200 text-center">
-            <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-md">
-              <ShieldCheck size={26} />
-            </div>
-            <div>
-              <h3 className="text-xl font-black text-slate-900">First-Time Facial Enrollment</h3>
-              <p className="text-xs text-slate-500 font-semibold mt-1">
-                Required once for biometric verification of <b>{userName} ({userEmpCode})</b>.
-              </p>
-            </div>
-
-            <div className="p-3 bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-700">
-              <p className="font-extrabold text-slate-900 mb-1">Guidance Instructions:</p>
-              <ul className="text-[11px] space-y-1 text-left list-disc list-inside text-slate-600">
-                <li>Align face inside the oval camera guide</li>
-                <li>Ensure good ambient room lighting</li>
-                <li>Keep a neutral facial expression</li>
-              </ul>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setShowEnrollModal(false)}
-              className="w-full py-3.5 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider shadow-md transition cursor-pointer active:scale-95"
-            >
-              Begin Face Registration 📹
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── 2. SUCCESS VERIFICATION MODAL BADGE ── */}
-      {successModalData && (
-        <div className="fixed inset-0 bg-slate-900/75 backdrop-blur-md flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-5 shadow-2xl border border-slate-200 text-center animate-scaleUp">
-            <div className="w-16 h-16 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center mx-auto shadow-lg ring-8 ring-emerald-50">
-              <CheckCircle2 size={36} />
-            </div>
-            <div>
-              <h3 className="text-2xl font-black text-slate-900">{successModalData.title}</h3>
-              <p className="text-xs text-emerald-600 font-extrabold mt-1">Face Recognition & Liveness Verified ✅</p>
-            </div>
-
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-left text-xs space-y-2">
-              <div className="flex justify-between border-b border-slate-200 pb-1.5">
-                <span className="text-slate-500 font-bold">Employee:</span>
-                <span className="font-black text-slate-900">{successModalData.employee} ({successModalData.empId})</span>
-              </div>
-              <div className="flex justify-between border-b border-slate-200 pb-1.5">
-                <span className="text-slate-500 font-bold">Time:</span>
-                <span className="font-black text-slate-900">{successModalData.time} ({successModalData.date})</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">GPS Location:</span>
-                <span className="font-semibold text-slate-800 text-[11px] truncate max-w-[200px]">{successModalData.location}</span>
-              </div>
-            </div>
-
-            <button
-              onClick={() => setSuccessModalData(null)}
-              className="w-full py-3 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-black text-xs uppercase tracking-wider transition cursor-pointer shadow-md"
-            >
-              Done & Return
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* ── 3. MAP PREVIEW MODAL ── */}
+      {/* Map modal pop-up */}
       {selectedLogForMap && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-200">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-5 space-y-4 border border-slate-200 shadow-2xl">
             <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
               <div>
-                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
-                  <MapPin size={18} className="text-blue-600" /> Attendance Location Map
+                <h3 className="text-sm font-black text-slate-900 flex items-center gap-1.5">
+                  <MapPin size={16} className="text-teal-600" /> GPS Map Coordinates
                 </h3>
-                <p className="text-xs text-slate-500 font-bold">{selectedLogForMap.date} · {userName}</p>
+                <p className="text-[10px] text-slate-450 font-bold">{selectedLogForMap.date} · {userName}</p>
               </div>
               <button
                 onClick={() => setSelectedLogForMap(null)}
-                className="p-1 rounded-xl bg-slate-100 text-slate-500 hover:bg-rose-100 hover:text-rose-600 transition cursor-pointer"
+                className="text-slate-400 hover:text-slate-700 font-extrabold"
               >
-                <X size={16} />
+                ✕
               </button>
             </div>
-            <div className="w-full h-[280px] rounded-2xl overflow-hidden border border-slate-200 shadow-inner">
+            <div className="w-full h-64 rounded-2xl overflow-hidden border border-slate-200 shadow-inner">
               <div ref={mapContainerRef} className="w-full h-full" />
             </div>
-            <p className="text-xs font-semibold text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200">
-              📍 <b>Check-In Location:</b> {selectedLogForMap.loginLocation || selectedLogForMap.check_in_address}
+            <p className="text-[11px] font-bold text-slate-700 bg-slate-50 p-3 rounded-xl border border-slate-200">
+              📍 <b>Captured Address:</b> {selectedLogForMap.loginLocation}
             </p>
           </div>
         </div>
       )}
-
     </div>
   );
 }

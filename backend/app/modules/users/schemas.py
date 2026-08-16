@@ -1,5 +1,6 @@
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, validator
+import re
 
 
 class UserCreate(BaseModel):
@@ -21,6 +22,15 @@ class UserCreate(BaseModel):
     reporting_manager_name: Optional[str] = None
     reporting_manager_email: Optional[str] = None
 
+    @validator("phone", "emergency_contact", pre=True, allow_reuse=True)
+    def validate_phone_number(cls, v):
+        if not v:
+            return v
+        cleaned = re.sub(r"\D", "", str(v))
+        if len(cleaned) != 10:
+            raise ValueError("Enter a valid 10-digit phone number.")
+        return cleaned
+
 
 class UserUpdate(BaseModel):
     name: Optional[str] = None
@@ -35,6 +45,15 @@ class UserUpdate(BaseModel):
     reporting_manager_id: Optional[str] = None
     reporting_manager_name: Optional[str] = None
     reporting_manager_email: Optional[str] = None
+
+    @validator("phone", pre=True, allow_reuse=True)
+    def validate_phone_number(cls, v):
+        if not v:
+            return v
+        cleaned = re.sub(r"\D", "", str(v))
+        if len(cleaned) != 10:
+            raise ValueError("Enter a valid 10-digit phone number.")
+        return cleaned
 
 
 class UserResponse(BaseModel):

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { userAPI, auditAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
+import { formatDateTime } from '../../utils/dateUtils.js'
 
 function AdminReports() {
   const { showToast } = useToast()
@@ -447,7 +448,7 @@ function AdminReports() {
                       auditLogs.map((log, idx) => (
                         <tr key={log.id || idx} className="hover:bg-slate-50/50">
                           <td className="px-6 py-4 text-slate-500 font-mono whitespace-nowrap">
-                            {log.created_at ? new Date(log.created_at).toLocaleString('en-IN') : 'Recently'}
+                            {formatDateTime(log.created_at) || 'Recently'}
                           </td>
                           <td className="px-6 py-4 text-slate-800 font-bold">{log.user_email || 'System'}</td>
                           <td className="px-6 py-4">
@@ -512,7 +513,7 @@ function AdminReports() {
               </div>
               <div className="bg-slate-50 rounded-xl p-3 border border-slate-100">
                 <p className="text-slate-400 font-black text-[9px] uppercase tracking-wider mb-1">TIMESTAMP</p>
-                <p className="text-slate-900 font-mono">{selectedLog.created_at ? new Date(selectedLog.created_at).toLocaleString('en-IN') : '—'}</p>
+                <p className="text-slate-900 font-mono">{formatDateTime(selectedLog.created_at) || '—'}</p>
               </div>
               {selectedLog.description && (
                 <div className="bg-slate-50 rounded-xl p-3 border border-slate-100 col-span-2">

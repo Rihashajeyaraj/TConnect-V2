@@ -204,15 +204,40 @@ class HRMSRepository:
                 id_to_name[str(emp_id_key)] = emp.get("name")
                 id_to_email[str(emp_id_key)] = emp.get("email")
                 
+        # Find CEO employee
+        ceo_emp = None
         for emp in all_employees:
+            role_lower = str(emp.get("role") or emp.get("designation") or "").lower()
+            email_lower = str(emp.get("email") or "").lower()
+            if "ceo" in role_lower or "founder" in role_lower or email_lower == "ceo@tconnect.com":
+                ceo_emp = emp
+                break
+
+        for emp in all_employees:
+            emp_role = str(emp.get("role") or emp.get("designation") or "").lower()
+            is_manager = "manager" in emp_role and "executive" not in emp_role and "ceo" not in emp_role and "admin" not in emp_role
             mgr_id = emp.get("reporting_manager_id") or emp.get("reporting_manager")
-            if mgr_id and (not emp.get("reporting_manager_name") or emp.get("reporting_manager_name") == "Not Assigned"):
-                name_found = id_to_name.get(str(mgr_id))
-                email_found = id_to_email.get(str(mgr_id))
-                if name_found:
-                    emp["reporting_manager_name"] = name_found
-                if email_found:
-                    emp["reporting_manager_email"] = email_found
+            
+            if is_manager and (not mgr_id or emp.get("reporting_manager_name") in (None, "Not Assigned", "", "—")):
+                if ceo_emp:
+                    emp_uuid = ceo_emp.get("employee_id") or ceo_emp.get("id") or ceo_emp.get("user_id") or "EMP000001"
+                    emp["reporting_manager"] = emp_uuid
+                    emp["reporting_manager_id"] = emp_uuid
+                    emp["reporting_manager_name"] = ceo_emp.get("name") or "Dr. Twite Executive"
+                    emp["reporting_manager_email"] = ceo_emp.get("email") or "ceo@tconnect.com"
+                else:
+                    emp["reporting_manager"] = "EMP000001"
+                    emp["reporting_manager_id"] = "EMP000001"
+                    emp["reporting_manager_name"] = "Dr. Twite Executive"
+                    emp["reporting_manager_email"] = "ceo@tconnect.com"
+            else:
+                if mgr_id and (not emp.get("reporting_manager_name") or emp.get("reporting_manager_name") in (None, "Not Assigned", "", "—")):
+                    name_found = id_to_name.get(str(mgr_id))
+                    email_found = id_to_email.get(str(mgr_id))
+                    if name_found:
+                        emp["reporting_manager_name"] = name_found
+                    if email_found:
+                        emp["reporting_manager_email"] = email_found
 
         if all_employees:
             return all_employees
@@ -398,9 +423,9 @@ class HRMSRepository:
         # Try hrms schema first
         try:
             if is_uuid(emp_id):
-                res = self.supabase.schema("hrms").table("employees").update(clean_updates).eq("employee_id", emp_id).execute()
+                res = self.supabase.schema("hrms").table("employees").update(clean_updates).eq("employee_id", emp_id).select().execute()
             else:
-                res = self.supabase.schema("hrms").table("employees").update(clean_updates).eq("employee_code", emp_id).execute()
+                res = self.supabase.schema("hrms").table("employees").update(clean_updates).eq("employee_code", emp_id).select().execute()
                 
             if res.data and len(res.data) > 0:
                 return res.data[0]
@@ -438,7 +463,7 @@ class HRMSRepository:
                 clean_updates["dept"] = "Management"
                 clean_updates["department"] = "Management"
 
-            res = self.supabase.schema("hrms").table("employees").upsert(clean_updates, on_conflict="employee_id").execute()
+            res = self.supabase.schema("hrms").table("employees").upsert(clean_updates, on_conflict="employee_id").select().execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
         except Exception as e:
@@ -446,7 +471,7 @@ class HRMSRepository:
 
         # Try public schema
         try:
-            res = self.supabase.table("employees").update(clean_updates).eq("employee_id", emp_id).execute()
+            res = self.supabase.table("employees").update(clean_updates).eq("employee_id", emp_id).select().execute()
             if res.data and len(res.data) > 0:
                 return res.data[0]
         except Exception as e:
@@ -558,6 +583,31 @@ class HRMSRepository:
                                         )
                             except Exception as auth_err:
                                 logger.debug(f"Auth manager resolve notice: {auth_err}")
+
+                emp_role = str(emp.get("role") or emp.get("designation") or "").lower()
+                is_manager = "manager" in emp_role and "executive" not in emp_role and "ceo" not in emp_role and "admin" not in emp_role
+                mgr_id = emp.get("reporting_manager_id") or emp.get("reporting_manager")
+                if is_manager and (not mgr_id or emp.get("reporting_manager_name") in (None, "Not Assigned", "", "—")):
+                    # Fetch CEO directly from DB table
+                    try:
+                        ceo_res = self.supabase.schema("hrms").table("employees").select("*").eq("email", "ceo@tconnect.com").execute()
+                        if ceo_res.data and len(ceo_res.data) > 0:
+                            ceo = ceo_res.data[0]
+                            emp_uuid = ceo.get("employee_id") or ceo.get("id") or ceo.get("user_id") or "EMP000001"
+                            emp["reporting_manager"] = emp_uuid
+                            emp["reporting_manager_id"] = emp_uuid
+                            emp["reporting_manager_name"] = ceo.get("name") or "Dr. Twite Executive"
+                            emp["reporting_manager_email"] = ceo.get("email") or "ceo@tconnect.com"
+                        else:
+                            emp["reporting_manager"] = "EMP000001"
+                            emp["reporting_manager_id"] = "EMP000001"
+                            emp["reporting_manager_name"] = "Dr. Twite Executive"
+                            emp["reporting_manager_email"] = "ceo@tconnect.com"
+                    except Exception:
+                        emp["reporting_manager"] = "EMP000001"
+                        emp["reporting_manager_id"] = "EMP000001"
+                        emp["reporting_manager_name"] = "Dr. Twite Executive"
+                        emp["reporting_manager_email"] = "ceo@tconnect.com"
 
                 if not emp.get("reporting_manager_name"):
                     emp["reporting_manager_name"] = "Not Assigned"

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
 import { attendanceAPI, notificationAPI } from '../../services/api.js'
+import { formatDate } from '../../utils/dateUtils.js'
 
 function Notifications() {
   const { showToast } = useToast()
@@ -48,7 +49,7 @@ function Notifications() {
           category: 'LEAVE_APPROVAL',
           title: 'Pending Leave Approval Request',
           description: `${l.employee_name || 'Staff Member'} requested ${l.leave_type || 'Leave'} (${l.duration || '1 Day'}). Reason: ${l.reason || 'Personal'}`,
-          time: l.created_at ? String(l.created_at).slice(0, 10) : 'Pending',
+          time: formatDate(l.created_at) || 'Pending',
           unread: true,
           actionable: true,
           link: '/ceo/hrms',

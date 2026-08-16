@@ -40,6 +40,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import { attendanceAPI } from '../../services/api.js'
 import { calculateWorkHours } from '../sales/Attendance.jsx'
+import { formatDate } from '../../utils/dateUtils.js'
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'My Dashboard', icon: LayoutDashboard },
@@ -63,8 +64,8 @@ const HANDBOOK = [
   { title: 'Team Management', icon: '👥', content: 'Conduct weekly 1-on-1 sessions with each SE. Review daily EOD reports by 7 PM. Flag blockers immediately.' },
   { title: 'Lead Oversight', icon: '🎯', content: 'Review all new leads within 24 hours. Reassign stale leads (no contact > 3 days). Approve lead category changes from SE.' },
   { title: 'Visit Audit Process', icon: '🗺️', content: 'Review GPS check-in/out for each SE. Flag visits without selfie or GPS location. Audit visit quality monthly.' },
-  { title: 'Expense Approvals', icon: '💰', content: 'Review all expense claims within 48 hours. Reject without receipt. Approve only field visit related expenses. Max ₹5,000/claim without MD approval.' },
-  { title: 'Leave Policy', icon: '📅', content: 'Manager must approve or reject leave in 24 hours. Max 2 team members on leave simultaneously. Manager leave requires MD approval.' },
+  { title: 'Expense Approvals', icon: '💰', content: 'Review all expense claims within 48 hours. Reject without receipt. Approve only field visit related expenses. Max ₹5,000/claim without CEO approval.' },
+  { title: 'Leave Policy', icon: '📅', content: 'Manager must approve or reject leave in 24 hours. Max 2 team members on leave simultaneously. Manager leave requires CEO approval.' },
   { title: 'Performance Targets', icon: '📊', content: 'Team Monthly Revenue Target: ₹25L. Each SE minimum 3 field visits/week. Weekly conversion rate target: 35%+.' },
   { title: 'Escalation Protocol', icon: '⚠️', content: 'Escalate large deals >₹10L to Regional Manager. Client complaints must be resolved within 48 hours. Escalate absentees >2 consecutive days.' },
   { title: 'Ethics & Compliance', icon: '🛡️', content: 'No unauthorized discounts beyond approved slabs. All deals must be logged in TwiteConnect. Confidential client data not to be shared externally.' },
@@ -235,7 +236,7 @@ export default function ManagerHrms() {
             days: l.duration || '1 Day',
             reason: l.reason || 'Personal necessity',
             status: l.status || 'Pending',
-            appliedOn: l.created_at ? new Date(l.created_at).toLocaleDateString('en-IN') : 'Recent',
+            appliedOn: formatDate(l.created_at) || 'Recent',
             managerRemark: l.manager_comment || '',
           }))
           setTeamLeaveRequests(executiveRequests)
@@ -251,7 +252,7 @@ export default function ManagerHrms() {
             days: l.duration || '1 Day',
             reason: l.reason || 'Personal necessity',
             status: l.status || 'Pending',
-            appliedOn: l.created_at ? new Date(l.created_at).toLocaleDateString('en-IN') : 'Recent',
+            appliedOn: formatDate(l.created_at) || 'Recent',
           }))
           setMyLeaveRequests(mine)
         }
@@ -392,7 +393,7 @@ export default function ManagerHrms() {
     
     try {
       await attendanceAPI.submitLeaveRequest(payload)
-      showToast('Request submitted to MD for approval!', 'success')
+      showToast('Request submitted to CEO for approval!', 'success')
     } catch (err) {
       showToast('Request submitted.', 'info')
     }
@@ -637,7 +638,7 @@ export default function ManagerHrms() {
         <div className="max-w-3xl space-y-5">
           <div>
             <h2 className="text-2xl font-black text-slate-900">My Leave Management</h2>
-            <p className="text-slate-500 text-sm mt-0.5 font-semibold">Apply for leave — your request will be sent to MD for approval.</p>
+            <p className="text-slate-500 text-sm mt-0.5 font-semibold">Apply for leave — your request will be sent to CEO for approval.</p>
           </div>
 
           {/* Leave Balance */}
@@ -661,7 +662,7 @@ export default function ManagerHrms() {
             <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-8 text-center space-y-3">
               <CheckCircle2 size={40} className="text-emerald-600 mx-auto" />
               <h2 className="text-xl font-black text-emerald-900">Leave Request Submitted!</h2>
-              <p className="text-emerald-700 font-semibold text-sm">Your leave has been forwarded to MD for approval.</p>
+              <p className="text-emerald-700 font-semibold text-sm">Your leave has been forwarded to CEO for approval.</p>
               <button onClick={() => setLeaveSubmitted(false)} className="mt-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer">
                 Apply Another Leave
               </button>
@@ -742,7 +743,7 @@ export default function ManagerHrms() {
               </div>
 
               <button type="submit" className="w-full py-3 rounded-xl bg-[#b45309] hover:bg-amber-700 text-white font-black text-sm flex items-center justify-center gap-2 transition cursor-pointer">
-                <Send size={16} /> Submit Leave Request to MD
+                <Send size={16} /> Submit Leave Request to CEO
               </button>
             </form>
           )}

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Calendar, Search, MapPin, Clock, CheckCircle, RefreshCw } from 'lucide-react'
 import { attendanceAPI } from '../../services/api.js'
+import { formatDate } from '../../utils/dateUtils.js'
 
 function Attendance() {
   const [attendance, setAttendance] = useState([])
@@ -15,7 +16,7 @@ function Attendance() {
         setAttendance(res.data.map((a, i) => ({
           id: a.id || `ATT-${i + 1}`,
           name: a.employee_name || a.name || 'Team Member',
-          date: a.check_in_time ? String(a.check_in_time).slice(0, 10) : 'Today',
+          date: formatDate(a.check_in_time) || 'Today',
           checkin: a.check_in_time ? String(a.check_in_time).slice(11, 16) : '--',
           checkout: a.check_out_time ? String(a.check_out_time).slice(11, 16) : '--',
           status: a.status || (a.check_out_time ? 'Logged off' : 'Present'),

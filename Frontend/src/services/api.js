@@ -55,7 +55,8 @@ async function request(endpoint, options = {}) {
     }
 
     // On 401 — session expired or invalid. Clear storage and redirect to login.
-    if (response.status === 401 && !endpoint.includes('/auth/')) {
+    // Exclude match-face endpoint, which uses 401 to denote unrecognized face.
+    if (response.status === 401 && !endpoint.includes('/auth/') && !endpoint.includes('/attendance/match-face')) {
       clearSession()
       redirectToLogin()
       return Promise.reject({ message: 'Session expired. Please log in again.', status: 401 })
@@ -155,6 +156,33 @@ export const customerAPI = {
     request(`/customer/customers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteCustomer: (id) =>
     request(`/customer/customers/${id}`, { method: 'DELETE' }),
+
+  // ── Centralized Conversion Endpoints ────────────────────────────────────────
+  // These call the canonical /customer/convert/* backend routes.
+  // All three are available on customerAPI (where Leads.jsx expects them) AND on
+  // crmAPI below for backward compatibility with any code using crmAPI.convertVisitToCustomer.
+
+  /** Lead → Customer. Marks lead as Converted. Prevents duplicates. */
+  convertLeadToCustomer: (leadId, extraData = {}) =>
+    request(`/customer/convert/lead/${leadId}`, {
+      method: 'POST',
+      body: JSON.stringify(extraData),
+    }),
+
+  /** Follow-up → Customer. Marks follow-up as Converted. Prevents duplicates. */
+  convertFollowupToCustomer: (followupId, extraData = {}) =>
+    request(`/customer/convert/followup/${followupId}`, {
+      method: 'POST',
+      body: JSON.stringify(extraData),
+    }),
+
+  /** Visit → Customer. Links visit to customer. Prevents duplicates. */
+  convertVisitToCustomer: (visitId, extraData = {}) =>
+    request(`/customer/convert/visit/${visitId}`, {
+      method: 'POST',
+      body: JSON.stringify(extraData),
+    }),
+  // ────────────────────────────────────────────────────────────────────────────
 
   // CEO full hierarchy: Manager → Executive → Customer
   getCeoCustomerDirectory: () => request('/reports/ceo/customers'),

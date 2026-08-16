@@ -751,7 +751,7 @@ export default function SalesHRMS() {
                           <tr key={idx} className="hover:bg-slate-50/80 transition">
                             {isUserAdmin && <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{row.employee_name || row.name || "System User"}</td>}
                             {isUserAdmin && <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.employee_id || "—"}</td>}
-                            <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{row.date || row.attendance_date}</td>
+                            <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{formatDate(row.date || row.attendance_date)}</td>
                             <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.loginTime || row.check_in_time || "—"}</td>
                             <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.logoutTime || row.check_out_time || "—"}</td>
                             <td className="py-4 px-4 text-slate-600 font-semibold text-[11px] leading-snug">{row.loginLocation || row.check_in_address || "—"}</td>
@@ -1089,9 +1089,33 @@ export default function SalesHRMS() {
                 <div key={doc.id} className="flex items-center justify-between py-3">
                   <div>
                     <p className="text-sm font-black text-slate-900">{doc.name}</p>
-                    <p className={`text-[11px] font-semibold ${doc.status === "uploaded" ? "text-emerald-600" : "text-slate-400"}`}>
-                      {doc.status === "uploaded" ? `✅ Uploaded: ${doc.fileName || "File Attached"}` : "📄 Required document"}
-                    </p>
+                    {(() => {
+                      if (doc.status === 'approved') {
+                        return (
+                          <p className="text-[11px] font-semibold mt-0.5 text-emerald-600">
+                            ✅ Approved — {doc.fileName}
+                          </p>
+                        )
+                      } else if (doc.status === 'rejected') {
+                        return (
+                          <p className="text-[11px] font-semibold mt-0.5 text-rose-600">
+                            ❌ Rejected (Please re-upload)
+                          </p>
+                        )
+                      } else if (doc.status === 'uploaded') {
+                        return (
+                          <p className="text-[11px] font-semibold mt-0.5 text-amber-600 font-bold">
+                            ⏳ Pending Approval — {doc.fileName}
+                          </p>
+                        )
+                      } else {
+                        return (
+                          <p className="text-[11px] font-semibold mt-0.5 text-slate-400">
+                            📄 Required document
+                          </p>
+                        )
+                      }
+                    })()}
                   </div>
 
                   <div className="flex items-center gap-2">
@@ -1125,31 +1149,22 @@ export default function SalesHRMS() {
                       }}
                     />
 
-                    {doc.status === "uploaded" ? (
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          type="button"
-                          onClick={() => setPreviewDoc(doc)}
-                          className="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer transition flex items-center gap-1"
-                        >
-                          <Eye size={13} /> View
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => document.getElementById(`file_input_${doc.id}`)?.click()}
-                          className="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 cursor-pointer transition flex items-center gap-1"
-                        >
-                          <Upload size={13} /> Re-upload
-                        </button>
-                      </div>
-                    ) : (
+                    {(doc.status === "uploaded" || doc.status === "approved") && (
+                      <button
+                        type="button"
+                        onClick={() => setPreviewDoc(doc)}
+                        className="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 cursor-pointer transition flex items-center gap-1"
+                      >
+                        <Eye size={13} /> View
+                      </button>
+                    )}
+                    {doc.status !== "approved" && (
                       <button
                         type="button"
                         onClick={() => document.getElementById(`file_input_${doc.id}`)?.click()}
-                        className="text-xs font-extrabold px-4 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white border border-slate-900 cursor-pointer transition flex items-center gap-1 shadow-2xs"
+                        className="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer transition flex items-center gap-1"
                       >
-                        <Upload size={13} /> Upload
+                        <Upload size={13} /> {doc.status === "uploaded" ? "Re-upload" : "Upload"}
                       </button>
                     )}
                   </div>
@@ -1381,7 +1396,7 @@ export default function SalesHRMS() {
 
                         return userLogs.map((row, idx) => (
                           <tr key={idx} className="hover:bg-slate-50/80 transition">
-                            <td className="py-4 px-3 text-slate-900">{row.date}</td>
+                            <td className="py-4 px-3 text-slate-900">{formatDate(row.date)}</td>
                             <td className="py-4 px-3">{row.loginTime}</td>
                             <td className="py-4 px-3">{row.logoutTime}</td>
                             <td className="py-4 px-3 max-w-[220px] text-slate-600 font-medium text-[11px] leading-relaxed">

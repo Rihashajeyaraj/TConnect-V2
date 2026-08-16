@@ -46,6 +46,7 @@ import { useToast } from "../../common/ToastContext.jsx";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { formatDate } from "../../utils/dateUtils.js";
+import { normalizePhoneNumber } from "../../utils/formatUtils.js";
 import LocationPickerModal from "../../common/LocationPickerModal.jsx";
 
 const INITIAL_LEADS = []; // Active list of leads
@@ -167,6 +168,11 @@ export default function Leads() {
       return [];
     }
   });
+
+  // ── Submission guards — prevent duplicate API requests ──────────────────────
+  const [isSubmitting, setIsSubmitting] = useState(false);        // Add Lead form
+  const [isVisitSubmitting, setIsVisitSubmitting] = useState(false);   // Schedule Visit
+  const [isConvertSubmitting, setIsConvertSubmitting] = useState(false); // Visit/Followup → Customer
 
   // Fetch real visits and followups from Supabase via backend APIs
   useEffect(() => {
@@ -520,10 +526,14 @@ export default function Leads() {
   // ── SE Add Lead / Opportunity Handler ──────────────────────────────────────
   const handleAddLeadSubmit = async (e) => {
     e.preventDefault();
+    // Prevent duplicate submissions from double-click or React StrictMode double-fire
+    if (isSubmitting) return;
     if (!addForm.company.trim() || !addForm.person.trim() || !addForm.phone.trim()) {
       showToast("Please fill in Lead Name, Point of Contact, and Phone Number!", "error");
       return;
     }
+
+    setIsSubmitting(true);
 
     const selectedProd = addForm.product?.trim() || "TwiteConnect CRM";
 
@@ -567,8 +577,9 @@ export default function Leads() {
       serverLeadNum = leadData.lead_number || serverLeadNum;
     } catch (apiErr) {
       console.error("Backend API error when creating lead:", apiErr);
-      const errorDetail = apiErr?.response?.data?.detail || apiErr?.detail || apiErr?.message || "Connection error or internal server failure.";
+      const errorDetail = apiErr?.detail || apiErr?.message || "Connection error or internal server failure.";
       showToast(`❌ Lead creation failed: ${errorDetail}`, "error");
+      setIsSubmitting(false);
       return; // ABORT submission so local state is not updated with invalid data
     }
 
@@ -666,9 +677,10 @@ export default function Leads() {
       showToast(`✨ New Lead "${addForm.company}" saved to Supabase & Lead Pipeline!`, "success");
     }
 
-    // Reset Form & Close Modal
+    // Reset Form & Close Modal — include ALL fields to prevent uncontrolled input transitions
     setAddForm({
       company: "",
+      product: "",
       person: "",
       phone: "",
       email: "",
@@ -681,9 +693,11 @@ export default function Leads() {
       notes: "",
       latitude: null,
       longitude: null,
+      landmark: "",
       full_address: "",
     });
     setIsAddModalOpen(false);
+    setIsSubmitting(false);
   };
 
   // ── Add Opportunity Action ───────────────────────────────────────────────
@@ -817,10 +831,13 @@ export default function Leads() {
   };
 
   const handleConfirmScheduleVisit = async (lead) => {
+    if (isVisitSubmitting) return; // Prevent duplicate submissions
     if (!visitDate) {
       showToast("Please select a Visit Date first!", "error");
       return;
     }
+
+    setIsVisitSubmitting(true);
 
     const formattedTime = `${visitTimeCustom.trim() || "10:00"} ${visitTimePeriod || "AM"}`;
     const newVisitId = `vst_${Date.now()}`;
@@ -943,6 +960,8 @@ export default function Leads() {
       setShowVisitForm(false);
       showToast(`📅 Site Visit for "${lead.company}" scheduled!`, "success");
       setActiveTab("visits");
+    } finally {
+      setIsVisitSubmitting(false);
     }
   };
 
@@ -963,6 +982,8 @@ export default function Leads() {
 
   // ── FOLLOW-UP TAB OUTCOME ACTION 2: Move to Customer Page ───────────────────
   const handleMoveFollowupToCustomer = async (item) => {
+    if (isConvertSubmitting) return; // Prevent duplicate submissions
+    setIsConvertSubmitting(true);
     const custId = `cust_${Date.now()}`;
     const genLeadNum = item.leadNumber || item.leadId?.toString().slice(0, 12).toUpperCase();
     const newCustomer = {
@@ -1030,6 +1051,7 @@ export default function Leads() {
     setFollowupsList((prev) => prev.filter((f) => f.id !== item.id));
     setAllLeads((prev) => prev.filter((l) => l.id !== item.leadId && l.company !== item.company));
 
+    setIsConvertSubmitting(false);
     showToast(`🎉 "${item.company}" converted to Customer & saved in Supabase! Moving to Customer page...`, "success");
     setTimeout(() => navigate("/sales/customers"), 500);
   };
@@ -1060,7 +1082,10 @@ export default function Leads() {
   // ── POST-VISIT MEETING OUTCOME SUBMIT HANDLER ─────────────────────────────
   const handleVisitOutcomeSubmit = async (e) => {
     e.preventDefault();
+    if (isConvertSubmitting) return; // Prevent duplicate submissions
     if (!selectedVisitForOutcome) return;
+
+    setIsConvertSubmitting(true);
 
     const v = selectedVisitForOutcome;
     const { personMet, discussionNotes, leadFeedback, outcomeStatus, agreedValue } = visitOutcomeForm;
@@ -1254,6 +1279,7 @@ export default function Leads() {
     }
 
     setSelectedVisitForOutcome(null);
+    setIsConvertSubmitting(false);
   };
 
   // ── Lead Filtering ────────────────────────────────────────────────────────
@@ -2373,11 +2399,12 @@ export default function Leads() {
                 <div>
                   <label className="text-slate-800 font-extrabold block mb-1.5">Phone Number (*Required)</label>
                   <input
-                    type="text"
+                    type="tel"
                     required
-                    placeholder="+91 9876543210"
+                    placeholder="10-digit number e.g. 9876543210"
                     value={addForm.phone}
-                    onChange={(e) => setAddForm({ ...addForm, phone: e.target.value })}
+                    maxLength={10}
+                    onChange={(e) => setAddForm({ ...addForm, phone: normalizePhoneNumber(e.target.value) })}
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
                   />
                 </div>
@@ -2499,9 +2526,14 @@ export default function Leads() {
               <div className="flex items-center justify-end pt-4 border-t border-slate-100">
                 <button
                   type="submit"
-                  className="w-full sm:w-auto px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl font-extrabold text-xs sm:text-sm shadow-md shadow-teal-600/30 transition cursor-pointer"
+                  disabled={isSubmitting}
+                  className={`w-full sm:w-auto px-6 py-3 rounded-2xl font-extrabold text-xs sm:text-sm shadow-md transition ${
+                    isSubmitting
+                      ? 'bg-teal-400 text-white cursor-not-allowed shadow-none'
+                      : 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-600/30 cursor-pointer'
+                  }`}
                 >
-                  Create & Save Lead 🎉
+                  {isSubmitting ? '⏳ Saving Lead...' : 'Create & Save Lead 🎉'}
                 </button>
               </div>
             </form>

@@ -18,6 +18,7 @@ import {
 import { useToast } from '../../common/ToastContext.jsx'
 import { exportToPDF, exportToExcel, exportToCSV } from '../../utils/exportUtils.js'
 import { reportAPI, customerAPI, pipelineAPI, visitAPI } from '../../services/api.js'
+import { formatDate } from '../../utils/dateUtils.js'
 
 function Reports() {
   const { showToast } = useToast()
@@ -58,7 +59,7 @@ function Reports() {
         Stage: o.stage || 'Lead',
         'Assigned Executive': o.rep || o.sales_executive || o.assigned_to || 'Sales Executive',
         'Sales Manager': o.sales_manager || o.manager_name || 'Sales Manager',
-        'Close Date': o.created_at ? String(o.created_at).slice(0, 10) : 'N/A',
+        'Close Date': formatDate(o.created_at) || 'N/A',
       }))
 
       // 2. Revenue Report (from directory customers)

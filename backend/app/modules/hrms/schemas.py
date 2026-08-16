@@ -1,5 +1,6 @@
 from typing import Optional, List
-from pydantic import BaseModel
+from pydantic import BaseModel, validator
+import re
 
 
 class EmployeeCreate(BaseModel):
@@ -22,22 +23,36 @@ class EmployeeCreate(BaseModel):
     password: Optional[str] = None
     send_welcome_email: Optional[bool] = True
 
+    @validator("phone", "mobile", pre=True, allow_reuse=True)
+    def validate_phone_number(cls, v):
+        if not v:
+            return v
+        cleaned = re.sub(r"\D", "", str(v))
+        if len(cleaned) != 10:
+            raise ValueError("Enter a valid 10-digit phone number.")
+        return cleaned
+
 
 class EmployeeUpdate(BaseModel):
+    name: Optional[str] = None
     first_name: Optional[str] = None
     last_name: Optional[str] = None
     phone: Optional[str] = None
+    mobile: Optional[str] = None
     address: Optional[str] = None
     documents: Optional[str] = None
     department: Optional[str] = None
     designation: Optional[str] = None
     role: Optional[str] = None
+    status: Optional[str] = None
     is_active: Optional[bool] = None
-    
+
     # Profile & Banking Details
     employment_type: Optional[str] = None
     work_mode: Optional[str] = None
     work_location: Optional[str] = None
+    gender: Optional[str] = None
+    date_of_birth: Optional[str] = None
     marital_status: Optional[str] = None
     blood_group: Optional[str] = None
     pan_id: Optional[str] = None
@@ -61,6 +76,15 @@ class EmployeeUpdate(BaseModel):
     ifsc: Optional[str] = None
     branch: Optional[str] = None
     profile_photo: Optional[str] = None
+
+    @validator("phone", "mobile", "alternate_contact", "emergency_contact", pre=True, allow_reuse=True)
+    def validate_phone_number(cls, v):
+        if not v:
+            return v
+        cleaned = re.sub(r"\D", "", str(v))
+        if len(cleaned) != 10:
+            raise ValueError("Enter a valid 10-digit phone number.")
+        return cleaned
 
 
 class EmployeeResponse(BaseModel):

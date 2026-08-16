@@ -84,18 +84,31 @@ async def update_employee(
     user_payload: dict = Depends(get_current_user_payload),
     service: HRMSService = Depends(get_service)
 ):
-    """Update employee profile."""
-    current_emp_code = str(user_payload.get("employee_code") or user_payload.get("employee_id") or "").strip()
-    current_user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "").strip()
+    """Update employee profile with change-diff audit logging."""
+    current_emp_code = str(
+        user_payload.get("employee_code") 
+        or user_payload.get("employee_id") 
+        or user_payload.get("user_metadata", {}).get("employee_code")
+        or user_payload.get("user_metadata", {}).get("employee_id")
+        or ""
+    ).strip()
+    current_user_id = str(
+        user_payload.get("sub") 
+        or user_payload.get("user_id") 
+        or user_payload.get("user_metadata", {}).get("user_id")
+        or user_payload.get("user_metadata", {}).get("sub")
+        or ""
+    ).strip()
     user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
 
     is_self = (emp_id == current_emp_code or emp_id == current_user_id)
 
+    # ── Permission guard ────────────────────────────────────────────────────
     if not is_self:
         if user_role not in ("admin", "super_admin", "ceo"):
             raise HTTPException(status_code=403, detail="Not authorized to manage other employees' profiles")
     elif user_role not in ("admin", "super_admin", "ceo"):
-        # Regular employee is updating self. Protect company-controlled fields.
+        # Regular / manager employee editing self — strip company-controlled fields
         unset_fields = data.model_dump(exclude_unset=True)
         admin_fields = {
             "department", "designation", "role", "is_active", "status",
@@ -109,21 +122,82 @@ async def update_employee(
                 detail=f"Employees are not permitted to modify company-controlled fields: {', '.join(modified_admin_fields)}"
             )
 
+    # ── Read existing employee BEFORE update (needed for diff + audit) ──────
+    existing = service.get_employee(emp_id)
+
+    # ── Build submitted payload (only fields the caller actually sent) ───────
+    submitted = data.model_dump(exclude_unset=True)
+
+    # ── Compute changed fields ───────────────────────────────────────────────
+    # Map EmployeeUpdate field names to the keys returned by get_employee.
+    # Some frontend fields alias DB column names differently.
+    _FIELD_ALIAS: dict = {
+        "mobile": "phone",           # mobile mirrors phone in the DB
+    }
+    changed_fields: dict = {}
+    if existing:
+        for field, new_val in submitted.items():
+            db_key = _FIELD_ALIAS.get(field, field)
+            old_val = existing.get(db_key) or existing.get(field)
+            # Normalise to str for comparison (avoids None vs "" false positives)
+            old_str = str(old_val).strip() if old_val is not None else ""
+            new_str = str(new_val).strip() if new_val is not None else ""
+            if old_str != new_str:
+                changed_fields[field] = {"old": old_val, "new": new_val}
+
+    # Skip DB write and audit when nothing actually changed
+    if not changed_fields:
+        return StandardResponse.success_response(
+            data=existing or {},
+            message="No changes detected — employee profile unchanged"
+        )
+
+    # ── Perform the update ───────────────────────────────────────────────────
     updated = service.update_employee(emp_id, data)
+
+    # ── Build human-readable description ────────────────────────────────────
+    emp_name = (
+        (existing or {}).get("name")
+        or f"{(existing or {}).get('first_name', '')} {(existing or {}).get('last_name', '')}".strip()
+        or emp_id
+    )
+    emp_code = (existing or {}).get("employee_code") or emp_id
+    changed_summary = ", ".join(changed_fields.keys())
+
+    # ── Determine action label ───────────────────────────────────────────────
     update_dict = data.model_dump(exclude_none=True)
-    status_val = str(update_dict.get("status") or "").lower()
-    if "role" in update_dict:
+    if "role" in changed_fields:
         action = "EMPLOYEE_ROLE_CHANGED"
-    elif status_val in ("inactive", "deactivated", "terminated", "disabled"):
+    elif str(update_dict.get("status") or "").lower() in ("inactive", "deactivated", "terminated", "disabled"):
         action = "EMPLOYEE_DEACTIVATED"
     else:
-        action = "EMPLOYEE_UPDATED"
+        action = "EMPLOYEE_PROFILE_UPDATED"
+
+    # ── Create audit log (after successful update) ───────────────────────────
     create_audit_log(
-        action, "hrms.employees", user_payload,
-        entity_id=emp_id, module="HRMS",
-        description=f"Employee {action.lower().replace('_', ' ')}: {emp_id}",
-        new_value={k: v for k, v in update_dict.items() if k in ("role", "status", "department", "reporting_manager")},
+        action,
+        "hrms.employees",
+        user_payload,
+        entity_id=emp_code,
+        module="HRMS",
+        description=f"Employee profile updated: {emp_name} ({emp_code}) — changed: {changed_summary}",
+        previous_value={f: v["old"] for f, v in changed_fields.items()},
+        new_value={f: v["new"] for f, v in changed_fields.items()},
+        details={
+            "module": "HRMS",
+            "resource": "employee_profile",
+            "target_id": emp_code,
+            "target_name": emp_name,
+            "target_employee": emp_id,
+            "employee_code": emp_code,
+            "changed_fields": changed_fields,
+            "changed_by_id": current_user_id,
+            "changed_by_role": user_role,
+            "is_self_update": is_self,
+            "description": f"Profile fields updated: {changed_summary}",
+        },
     )
+
     return StandardResponse.success_response(
         data=updated,
         message="Employee profile updated successfully"

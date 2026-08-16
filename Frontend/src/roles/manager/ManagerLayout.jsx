@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation, Outlet, useNavigate } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import {
@@ -42,43 +42,43 @@ import { clearUserCache } from '../../utils/userScope.js'
 const mapDbToFrontend = (emp) => {
   if (!emp) return {};
   return {
-    fullName: emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.fullName,
-    employeeId: emp.employee_code || emp.employee_id || emp.employeeId,
-    officialEmail: emp.email || emp.officialEmail,
-    phone: emp.phone || emp.mobile || emp.phone,
-    role: emp.role || emp.role,
-    team: emp.department || emp.team,
-    designation: emp.designation || emp.designation,
-    gender: emp.gender || emp.gender,
-    employmentType: emp.employment_type || emp.employmentType,
-    employmentStatus: emp.status || "Active",
-    joinDate: emp.joining_date || emp.joinDate,
-    workMode: emp.work_mode || emp.workMode,
-    workLocation: emp.work_location || emp.workLocation,
-    reportingManager: emp.reporting_manager_name || emp.reporting_manager_email || emp.reportingManager,
-    dob: emp.date_of_birth || emp.dob,
-    maritalStatus: emp.marital_status || emp.maritalStatus,
-    bloodGroup: emp.blood_group || emp.bloodGroup,
-    panId: emp.pan_id || emp.panId,
-    personalEmail: emp.personal_email || emp.personalEmail,
-    alternateContact: emp.alternate_contact || emp.alternateContact,
-    currentAddress: emp.current_address || emp.currentAddress,
-    permanentAddress: emp.permanent_address || emp.permanentAddress,
-    city: emp.city || "",
-    state: emp.state || "",
-    country: emp.country || "",
-    postalCode: emp.postal_code || "",
-    primarySkills: emp.primary_skills || emp.primarySkills,
-    secondarySkills: emp.secondary_skills || emp.secondarySkills,
-    tools: emp.tools || emp.tools,
-    emergencyName: emp.emergency_name || emp.emergencyName,
-    emergencyRelationship: emp.emergency_relationship || emp.emergencyRelationship,
-    emergencyContact: emp.emergency_contact || emp.emergencyContact,
-    accountHolder: emp.account_holder || emp.accountHolder,
-    bankName: emp.bank_name || emp.bankName,
-    accountNumber: emp.account_number || emp.accountNumber,
-    ifsc: emp.ifsc || emp.ifsc,
-    branch: emp.branch || emp.branch,
+    fullName: emp.name ?? `${emp.first_name || ""} ${emp.last_name || ""}`.trim() ?? "",
+    employeeId: emp.employee_code ?? emp.employee_id ?? "MGR-001",
+    officialEmail: emp.email ?? "",
+    phone: emp.phone ?? emp.mobile ?? "+91 98765 00099",
+    role: emp.role ?? "Sales Manager",
+    team: emp.department ?? emp.dept ?? "Sales & Business Development",
+    designation: emp.designation ?? "Senior Sales Manager",
+    gender: emp.gender ?? "Male",
+    employmentType: emp.employment_type ?? "Full-time",
+    employmentStatus: emp.status ?? "Active",
+    joinDate: emp.joining_date ?? "2024-01-01",
+    workMode: emp.work_mode ?? "In Office",
+    workLocation: emp.work_location ?? "Chennai, Tamil Nadu",
+    reportingManager: emp.reporting_manager_name ?? emp.reporting_manager_email ?? "CEO / Founder (CEO)",
+    dob: emp.date_of_birth ?? "",
+    maritalStatus: emp.marital_status ?? "Married",
+    bloodGroup: emp.blood_group ?? "O+",
+    panId: emp.pan_id ?? "",
+    personalEmail: emp.personal_email ?? "",
+    alternateContact: emp.alternate_contact ?? "",
+    currentAddress: emp.current_address ?? "",
+    permanentAddress: emp.permanent_address ?? "",
+    city: emp.city ?? "Chennai",
+    state: emp.state ?? "Tamil Nadu",
+    country: emp.country ?? "India",
+    postalCode: emp.postal_code ?? "600020",
+    primarySkills: emp.primary_skills ?? "Sales Leadership, CRM Systems",
+    secondarySkills: emp.secondary_skills ?? "Business Development, Analytics",
+    tools: emp.tools ?? "TwiteConnect, Excel, Google Workspace",
+    emergencyName: emp.emergency_name ?? "",
+    emergencyRelationship: emp.emergency_relationship ?? "Spouse",
+    emergencyContact: emp.emergency_contact ?? "",
+    accountHolder: emp.account_holder ?? "",
+    bankName: emp.bank_name ?? "",
+    accountNumber: emp.account_number ?? "",
+    ifsc: emp.ifsc ?? "",
+    branch: emp.branch ?? "",
   };
 };
 
@@ -147,7 +147,7 @@ const PROFILE_DEFAULTS = {
   joinDate: '2024-01-01',
   workMode: 'In Office',
   workLocation: 'Chennai, Tamil Nadu',
-  reportingManager: 'Regional Sales Director (MD)',
+  reportingManager: 'CEO / Founder (CEO)',
   // Personal
   dob: '',
   maritalStatus: 'Married',
@@ -192,7 +192,11 @@ export default function ManagerLayout() {
   const [profileOpen, setProfileOpen] = useState(false)
   const [myProfileOpen, setMyProfileOpen] = useState(false)
   const [editMode, setEditMode] = useState(false)
+  const [showProfileConfirm, setShowProfileConfirm] = useState(false)
+  // Tracks profile values at panel-open time — used to diff on save
+  const originalProfileRef = useRef(null)
   const [previewDoc, setPreviewDoc] = useState(null)
+  const [saving, setSaving] = useState(false)
 
   // ── Profile Photo State ───────────────────────────────────────────────────
   const [profilePhoto, setProfilePhoto] = useState(() => {
@@ -324,6 +328,9 @@ export default function ManagerLayout() {
     } catch { return { ...PROFILE_DEFAULTS, fullName: managerName, officialEmail: managerEmail, employeeId: empCode, role: managerRole } }
   })
 
+  const displayName = profile?.fullName || managerName
+  const displayInitials = (displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()) || 'SM'
+
   useEffect(() => {
     if (!myProfileOpen) return
 
@@ -338,6 +345,7 @@ export default function ManagerLayout() {
             employeeId: emp.employee_code || emp.employee_id || empCode,
           }
           setProfile(mapped)
+          originalProfileRef.current = { ...mapped }
           localStorage.setItem('tc_manager_profile', JSON.stringify(mapped))
           if (emp.profile_photo) {
             setProfilePhoto(emp.profile_photo)
@@ -357,60 +365,172 @@ export default function ManagerLayout() {
       .catch((err) => {
         console.warn("Could not retrieve online manager profile data:", err)
       })
+
+    return () => {
+      originalProfileRef.current = null
+    }
   }, [myProfileOpen, empCode, currentUser.employee_code, currentUser.id])
 
-  const saveProfile = async () => {
+  // Capture original profile once data is loaded (only when entering view mode)
+  useEffect(() => {
+    if (myProfileOpen && !editMode && originalProfileRef.current === null) {
+      originalProfileRef.current = { ...profile }
+    }
+  }, [myProfileOpen, editMode, profile])
+
+  const closeProfilePanel = () => {
+    if (editMode && originalProfileRef.current) {
+      setProfile({ ...originalProfileRef.current })
+    }
+    setMyProfileOpen(false)
+    setEditMode(false)
+  }
+
+  const saveProfile = async (keepEditing = false) => {
+    if (saving) return;
+    setSaving(true)
     try {
       const code = empCode || currentUser.employee_code || currentUser.id
-      if (!code) {
-        throw new Error("No employee identifier found.")
-      }
-      const dbPayload = mapFrontendToDb(profile)
-      if (profilePhoto) {
-        dbPayload.profile_photo = profilePhoto
-      }
-      dbPayload.documents = JSON.stringify(documentsList)
+      if (!code) throw new Error("No employee identifier found.")
 
-      const res = await hrmsAPI.updateEmployee(code, dbPayload)
-      if (res && res.data) {
-        const freshProfile = mapDbToFrontend(res.data)
-        setProfile(freshProfile)
-        localStorage.setItem('tc_manager_profile', JSON.stringify(freshProfile))
-      } else {
-        localStorage.setItem('tc_manager_profile', JSON.stringify(profile))
+      // ── Build change diff ─────────────────────────────────────────────────
+      // Map frontend field names → DB field names (mirrors mapFrontendToDb)
+      const EDITABLE_FIELD_MAP = {
+        fullName:             "name",
+        phone:                "phone",
+        gender:               "gender",
+        employmentType:       "employment_type",
+        workMode:             "work_mode",
+        workLocation:         "work_location",
+        dob:                  "date_of_birth",
+        maritalStatus:        "marital_status",
+        bloodGroup:           "blood_group",
+        panId:                "pan_id",
+        personalEmail:        "personal_email",
+        alternateContact:     "alternate_contact",
+        currentAddress:       "current_address",
+        permanentAddress:     "permanent_address",
+        city:                 "city",
+        state:                "state",
+        country:              "country",
+        postalCode:           "postal_code",
+        primarySkills:        "primary_skills",
+        secondarySkills:      "secondary_skills",
+        tools:                "tools",
+        emergencyName:        "emergency_name",
+        emergencyRelationship:"emergency_relationship",
+        emergencyContact:     "emergency_contact",
+        accountHolder:        "account_holder",
+        bankName:             "bank_name",
+        accountNumber:        "account_number",
+        ifsc:                 "ifsc",
+        branch:               "branch",
       }
-      showToast('Profile synced online to Supabase!', 'success')
-      setEditMode(false)
+
+      const original = originalProfileRef.current || {}
+      const dbPayload = {}
+      const changedLabels = []
+
+      for (const [frontendKey, dbKey] of Object.entries(EDITABLE_FIELD_MAP)) {
+        const oldVal = String(original[frontendKey] ?? "").trim()
+        const newVal = String(profile[frontendKey] ?? "").trim()
+        if (oldVal !== newVal) {
+          const rawVal = profile[frontendKey]
+          dbPayload[dbKey] = (rawVal === "" || rawVal === undefined) ? null : rawVal
+          changedLabels.push(frontendKey)
+        }
+      }
+
+      // Handle name split into first_name / last_name
+      if (dbPayload.name) {
+        const [firstName, ...rest] = (dbPayload.name || "").split(" ")
+        dbPayload.first_name = firstName || "Manager"
+        dbPayload.last_name  = rest.join(" ") || "."
+      }
+
+      // Always include documents and profile_photo in payload
+      dbPayload.documents = JSON.stringify(documentsList)
+      if (profilePhoto) dbPayload.profile_photo = profilePhoto
+
+      if (changedLabels.length === 0) {
+        showToast('No changes to save.', 'info')
+        setShowProfileConfirm(false)
+        if (!keepEditing) setEditMode(false)
+        return
+      }
+
+      // ── Send update ───────────────────────────────────────────────────────
+      const res = await hrmsAPI.updateEmployee(code, dbPayload)
+
+      // ── Fetch fresh employee record from DB ───────────────────────────────
+      const freshRes = await hrmsAPI.getEmployeeById(code)
+      const freshEmployee = (freshRes && freshRes.data) ? freshRes.data : ((res && res.data) ? res.data : {})
+
+      const freshProfile = {
+        ...PROFILE_DEFAULTS,
+        ...mapDbToFrontend(freshEmployee),
+      }
+      setProfile(freshProfile)
+      // Update the original reference so next save diffs from the saved state
+      originalProfileRef.current = { ...freshProfile }
+      localStorage.setItem('tc_manager_profile', JSON.stringify(freshProfile))
+
+      if (freshEmployee.profile_photo) {
+        setProfilePhoto(freshEmployee.profile_photo)
+        localStorage.setItem('tc_manager_photo', freshEmployee.profile_photo)
+      }
+      if (freshEmployee.documents) {
+        try {
+          const parsed = JSON.parse(freshEmployee.documents)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setDocumentsList(parsed)
+            localStorage.setItem('tc_manager_documents', JSON.stringify(parsed))
+          }
+        } catch (_) {}
+      }
+
+      const fieldList = changedLabels.slice(0, 4).join(', ') + (changedLabels.length > 4 ? ` +${changedLabels.length - 4} more` : '')
+      showToast(`Profile saved: ${fieldList}`, 'success')
+      if (!keepEditing) setEditMode(false)
     } catch (err) {
       console.error(err)
       const errMsg = err.detail
         ? (typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail))
         : (err.message || "Failed to save profile")
       showToast(`Error: ${errMsg}`, 'error')
+    } finally {
+      setSaving(false)
     }
   }
 
-  const fp = (field) => editMode
-    ? <input value={profile[field] || ''} onChange={(e) => setProfile(p => ({ ...p, [field]: e.target.value }))}
-      className="text-sm font-semibold text-slate-900 border-b border-amber-400 focus:outline-none bg-transparent w-full" />
-    : <span className="text-sm font-semibold text-slate-900">{profile[field] || '—'}</span>
+  const handleProfileKeyDown = (e) => {
+    if (!editMode) return;
+    if (e.key === 'Enter') {
+      // Keep textarea Enter behavior normal (new line)
+      if (e.target && e.target.tagName === 'TEXTAREA') {
+        return;
+      }
+      // Only apply on desktop/laptop physical keyboards
+      const isMobileDevice = /Mobi|Android|iPhone|iPad|Windows Phone/i.test(navigator.userAgent);
+      if (isMobileDevice) {
+        return;
+      }
+      e.preventDefault();
+      // Open confirmation modal
+      setShowProfileConfirm(true);
+    }
+  };
+
 
   // ── Documents State ────────────────────────────────────────────────────────
   const [documentsList, setDocumentsList] = useState(() => {
     const saved = JSON.parse(localStorage.getItem('tc_manager_documents') || '[]')
     return saved.length > 0 ? saved : DOCUMENT_DEFAULTS
   })
-
-  useEffect(() => {
-    try {
-      localStorage.setItem('tc_manager_documents', JSON.stringify(documentsList))
-      const code = empCode || currentUser.employee_code || currentUser.id
-      if (code) {
-        hrmsAPI.updateEmployee(code, { documents: JSON.stringify(documentsList) })
-          .catch((err) => console.warn("Auto-sync documents failed:", err))
-      }
-    } catch (e) { }
-  }, [documentsList, empCode, currentUser.employee_code, currentUser.id])
+  // NOTE: Documents are intentionally NOT auto-synced to the backend on every
+  // change. They are saved explicitly when the user confirms via the modal
+  // (Continue Editing / Save & Exit). This prevents noisy background API calls
+  // and avoids creating spurious audit log entries on every document upload.
 
   const handleLogout = () => {
     clearUserCache()
@@ -418,22 +538,6 @@ export default function ManagerLayout() {
     window.location.href = '/'
   }
 
-  const Section = ({ icon: Icon, title, color = 'amber', children }) => (
-    <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
-      <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-        <Icon size={16} className={`text-${color}-600`} />
-        <h3 className="font-black text-slate-900 text-sm">{title}</h3>
-      </div>
-      {children}
-    </div>
-  )
-
-  const Field = ({ label, field }) => (
-    <div>
-      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
-      {fp(field)}
-    </div>
-  )
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
@@ -473,12 +577,12 @@ export default function ManagerLayout() {
               <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-amber-600 to-amber-700 flex items-center justify-center text-white font-black text-sm shadow-xs ring-2 ring-amber-500/20 shrink-0">
                 {profilePhoto
                   ? <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
-                  : managerInitials
+                  : displayInitials
                 }
               </div>
               <div className="hidden md:flex flex-col text-left">
                 <span className="font-extrabold text-xs text-slate-800 leading-tight flex items-center gap-1">
-                  {managerName} <ChevronDown size={13} className="text-slate-400" />
+                  {displayName} <ChevronDown size={13} className="text-slate-400" />
                 </span>
                 <span className="text-[10px] text-amber-800 font-extrabold leading-tight truncate max-w-[140px]">{managerRole}</span>
               </div>
@@ -501,11 +605,11 @@ export default function ManagerLayout() {
                     <div className="w-11 h-11 rounded-full overflow-hidden bg-white text-amber-800 flex items-center justify-center text-base font-black shadow-md border-2 border-white/40 shrink-0">
                       {profilePhoto
                         ? <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
-                        : managerInitials
+                        : displayInitials
                       }
                     </div>
                     <div className="min-w-0">
-                      <h4 className="font-extrabold text-sm truncate leading-tight">{managerName}</h4>
+                      <h4 className="font-extrabold text-sm truncate leading-tight">{displayName}</h4>
                       <p className="text-[11px] opacity-90 truncate leading-tight mt-0.5">{managerEmail}</p>
                       <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-white/20 text-[9px] font-bold tracking-wider uppercase">{managerRole}</span>
                     </div>
@@ -650,10 +754,13 @@ export default function ManagerLayout() {
       {myProfileOpen && (
         <div className="fixed inset-0 z-50 flex">
           {/* Backdrop */}
-          <div className="flex-1 bg-slate-900/60 backdrop-blur-xs" onClick={() => { setMyProfileOpen(false); setEditMode(false) }} />
+          <div className="flex-1 bg-slate-900/60 backdrop-blur-xs" onClick={closeProfilePanel} />
 
           {/* Panel */}
-          <div className="w-full max-w-2xl bg-slate-50 h-full overflow-y-auto flex flex-col shadow-2xl border-l border-slate-200">
+          <div 
+            onKeyDown={handleProfileKeyDown}
+            className="w-full max-w-2xl bg-slate-50 h-full overflow-y-auto flex flex-col shadow-2xl border-l border-slate-200"
+          >
 
             {/* PANEL HEADER */}
             <div className="bg-white border-b border-slate-200 px-5 py-4 flex items-center justify-between sticky top-0 z-10">
@@ -664,19 +771,43 @@ export default function ManagerLayout() {
               <div className="flex items-center gap-2">
                 {editMode ? (
                   <>
-                    <button onClick={() => setEditMode(false)} className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-600 cursor-pointer hover:bg-slate-200 transition flex items-center gap-1">
-                      <X size={13} /> Cancel
+                    <button 
+                      type="button"
+                      disabled={saving}
+                      onClick={() => {
+                        if (originalProfileRef.current) {
+                          setProfile({ ...originalProfileRef.current })
+                        }
+                        setEditMode(false)
+                      }} 
+                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+                    >
+                      Cancel
                     </button>
-                    <button onClick={saveProfile} className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 text-white cursor-pointer hover:bg-emerald-700 transition flex items-center gap-1">
-                      <Save size={13} /> Save Profile
+                    <button 
+                      type="button"
+                      disabled={saving}
+                      onClick={() => setShowProfileConfirm(true)} 
+                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-600 text-white cursor-pointer hover:bg-amber-700 transition flex items-center gap-1"
+                      title="Click or press Enter to choose save action"
+                    >
+                      <Save size={13} /> {saving ? 'Saving...' : 'Done'}
                     </button>
                   </>
                 ) : (
-                  <button onClick={() => setEditMode(true)} className="px-3 py-1.5 rounded-xl text-xs font-black bg-[#ca8a04] hover:bg-[#a16207] text-white cursor-pointer transition flex items-center gap-1 shadow-md shadow-yellow-600/20">
+                  <button 
+                    type="button"
+                    onClick={() => setEditMode(true)} 
+                    className="px-3 py-1.5 rounded-xl text-xs font-black bg-[#ca8a04] hover:bg-[#a16207] text-white cursor-pointer transition flex items-center gap-1 shadow-md shadow-yellow-600/20"
+                  >
                     <Pencil size={13} /> Edit Profile
                   </button>
                 )}
-                <button onClick={() => { setMyProfileOpen(false); setEditMode(false) }} className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer">
+                <button 
+                  type="button"
+                  onClick={closeProfilePanel} 
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                >
                   <X size={20} />
                 </button>
               </div>
@@ -690,7 +821,7 @@ export default function ManagerLayout() {
                 <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white font-black text-3xl shadow-xl ring-4 ring-amber-400/20">
                   {profilePhoto
                     ? <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
-                    : managerInitials
+                    : displayInitials
                   }
                 </div>
 
@@ -751,69 +882,69 @@ export default function ManagerLayout() {
               {/* Work Details */}
               <Section icon={Briefcase} title="Work Details">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                  <Field label="Full Name" field="fullName" />
-                  <Field label="Employee ID" field="employeeId" />
-                  <Field label="Official Email" field="officialEmail" />
-                  <Field label="Phone Number" field="phone" />
-                  <Field label="Role" field="role" />
-                  <Field label="Team" field="team" />
-                  <Field label="Designation" field="designation" />
-                  <Field label="Gender" field="gender" />
-                  <Field label="Employment Type" field="employmentType" />
-                  <Field label="Employment Status" field="employmentStatus" />
-                  <Field label="Join Date" field="joinDate" />
-                  <Field label="Work Mode" field="workMode" />
-                  <Field label="Work Location" field="workLocation" />
-                  <Field label="Reporting Manager" field="reportingManager" />
+                  <Field label="Full Name" value={profile.fullName} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, fullName: val }))} />
+                  <Field label="Employee ID" value={profile.employeeId} editMode={editMode} readOnly={true} onChange={() => {}} />
+                  <Field label="Official Email" value={profile.officialEmail} editMode={editMode} readOnly={true} onChange={() => {}} />
+                  <Field label="Phone Number" value={profile.phone} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, phone: val }))} />
+                  <Field label="Role" value={profile.role} editMode={editMode} readOnly={true} onChange={() => {}} />
+                  <Field label="Team" value={profile.team} editMode={editMode} readOnly={true} onChange={() => {}} />
+                  <Field label="Designation" value={profile.designation} editMode={editMode} readOnly={true} onChange={() => {}} />
+                  <Field label="Gender" value={profile.gender} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, gender: val }))} />
+                  <Field label="Employment Type" value={profile.employmentType} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, employmentType: val }))} />
+                  <Field label="Employment Status" value={profile.employmentStatus} editMode={editMode} readOnly={true} onChange={() => {}} />
+                  <Field label="Join Date" value={profile.joinDate} editMode={editMode} readOnly={true} onChange={() => {}} />
+                  <Field label="Work Mode" value={profile.workMode} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, workMode: val }))} />
+                  <Field label="Work Location" value={profile.workLocation} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, workLocation: val }))} />
+                  <Field label="Reporting Manager" value={profile.reportingManager} editMode={editMode} readOnly={true} onChange={() => {}} />
                 </div>
               </Section>
 
               {/* Personal Details */}
               <Section icon={HeartPulse} title="Personal Details">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                  <Field label="Date of Birth" field="dob" />
-                  <Field label="Marital Status" field="maritalStatus" />
-                  <Field label="Blood Group" field="bloodGroup" />
-                  <Field label="PAN ID" field="panId" />
-                  <Field label="Personal Email" field="personalEmail" />
-                  <Field label="Alternate Contact" field="alternateContact" />
-                  <Field label="City" field="city" />
-                  <Field label="State" field="state" />
-                  <Field label="Country" field="country" />
-                  <Field label="Postal Code" field="postalCode" />
+                  <Field label="Date of Birth" value={profile.dob} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, dob: val }))} />
+                  <Field label="Marital Status" value={profile.maritalStatus} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, maritalStatus: val }))} />
+                  <Field label="Blood Group" value={profile.bloodGroup} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, bloodGroup: val }))} />
+                  <Field label="PAN ID" value={profile.panId} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, panId: val }))} />
+                  <Field label="Personal Email" value={profile.personalEmail} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, personalEmail: val }))} />
+                  <Field label="Alternate Contact" value={profile.alternateContact} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, alternateContact: val }))} />
+                  <Field label="City" value={profile.city} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, city: val }))} />
+                  <Field label="State" value={profile.state} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, state: val }))} />
+                  <Field label="Country" value={profile.country} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, country: val }))} />
+                  <Field label="Postal Code" value={profile.postalCode} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, postalCode: val }))} />
                 </div>
                 <div className="grid grid-cols-1 gap-4 mt-2">
-                  <Field label="Current Address" field="currentAddress" />
-                  <Field label="Permanent Address" field="permanentAddress" />
+                  <Field label="Current Address" value={profile.currentAddress} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, currentAddress: val }))} />
+                  <Field label="Permanent Address" value={profile.permanentAddress} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, permanentAddress: val }))} />
                 </div>
               </Section>
 
               {/* Skills & Technologies */}
               <Section icon={Code2} title="Skills & Technologies">
                 <div className="grid grid-cols-1 gap-4">
-                  <Field label="Primary Skills" field="primarySkills" />
-                  <Field label="Secondary Skills" field="secondarySkills" />
-                  <Field label="Tools & Technologies" field="tools" />
+                  <Field label="Primary Skills" value={profile.primarySkills} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, primarySkills: val }))} />
+                  <Field label="Secondary Skills" value={profile.secondarySkills} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, secondarySkills: val }))} />
+                  <Field label="Tools & Technologies" value={profile.tools} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, tools: val }))} />
                 </div>
               </Section>
 
               {/* Emergency Contact */}
               <Section icon={AlertCircle} title="Emergency Contact" color="rose">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                  <Field label="Name" field="emergencyName" />
-                  <Field label="Relationship" field="emergencyRelationship" />
-                  <Field label="Contact Number" field="emergencyContact" />
+                  <Field label="Name" value={profile.emergencyName} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, emergencyName: val }))} />
+                  <Field label="Relationship" value={profile.emergencyRelationship} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, emergencyRelationship: val }))} />
+                  <Field label="Contact Number" value={profile.emergencyContact} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, emergencyContact: val }))} />
                 </div>
               </Section>
 
               {/* Bank Details */}
               <Section icon={CreditCard} title="Bank Details" color="emerald">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
-                  <Field label="Account Holder" field="accountHolder" />
-                  <Field label="Bank Name" field="bankName" />
-                  <Field label="Account Number" field="accountNumber" />
-                  <Field label="IFSC Code" field="ifsc" />
-                  <Field label="Branch" field="branch" />
+                  <Field label="Account Holder" value={profile.accountHolder} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, accountHolder: val }))} />
+                  <Field label="Bank Name" value={profile.bankName} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, bankName: val }))} />
+                  <Field label="Account Number" value={profile.accountNumber} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, accountNumber: val }))} />
+                  <Field label="IFSC Code" value={profile.ifsc} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, ifsc: val }))} />
+                  <Field label="Branch" value={profile.branch} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, branch: val }))} />
                 </div>
               </Section>
 
@@ -829,9 +960,33 @@ export default function ManagerLayout() {
                     <div key={doc.id} className="flex items-center justify-between py-3">
                       <div>
                         <p className="text-sm font-extrabold text-slate-900">{doc.name}</p>
-                        <p className={`text-[11px] font-semibold mt-0.5 ${doc.status === 'uploaded' ? 'text-emerald-600' : 'text-slate-400'}`}>
-                          {doc.status === 'uploaded' ? `✅ ${doc.fileName}` : '📄 Required — not uploaded yet'}
-                        </p>
+                        {(() => {
+                          if (doc.status === 'approved') {
+                            return (
+                              <p className="text-[11px] font-semibold mt-0.5 text-emerald-600">
+                                ✅ Approved — {doc.fileName}
+                              </p>
+                            )
+                          } else if (doc.status === 'rejected') {
+                            return (
+                              <p className="text-[11px] font-semibold mt-0.5 text-rose-600">
+                                ❌ Rejected (Please re-upload)
+                              </p>
+                            )
+                          } else if (doc.status === 'uploaded') {
+                            return (
+                              <p className="text-[11px] font-semibold mt-0.5 text-amber-600 font-bold">
+                                ⏳ Pending Approval — {doc.fileName}
+                              </p>
+                            )
+                          } else {
+                            return (
+                              <p className="text-[11px] font-semibold mt-0.5 text-slate-400">
+                                📄 Required — not uploaded yet
+                              </p>
+                            )
+                          }
+                        })()}
                       </div>
                       <div className="flex items-center gap-1.5">
                         <input
@@ -851,17 +1006,19 @@ export default function ManagerLayout() {
                             reader.readAsDataURL(file)
                           }}
                         />
-                        {doc.status === 'uploaded' && (
+                        {(doc.status === 'uploaded' || doc.status === 'approved') && (
                           <button onClick={() => setPreviewDoc(doc)} className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 cursor-pointer flex items-center gap-1 hover:bg-amber-100 transition">
                             <Eye size={12} /> View
                           </button>
                         )}
-                        <button
-                          onClick={() => document.getElementById(`profile_doc_${doc.id}`)?.click()}
-                          className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1 hover:bg-slate-700 transition"
-                        >
-                          <Upload size={12} /> {doc.status === 'uploaded' ? 'Re-upload' : 'Upload'}
-                        </button>
+                        {doc.status !== 'approved' && (
+                          <button
+                            onClick={() => document.getElementById(`profile_doc_${doc.id}`)?.click()}
+                            className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1 hover:bg-slate-700 transition"
+                          >
+                            <Upload size={12} /> {doc.status === 'uploaded' ? 'Re-upload' : 'Upload'}
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -919,6 +1076,93 @@ export default function ManagerLayout() {
         </div>
       )}
 
+      {/* Profile Changes Confirmation Modal */}
+      {showProfileConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4">
+            <h3 className="text-lg font-black text-slate-900">Profile Changes</h3>
+            <p className="text-sm text-slate-600 font-semibold">What would you like to do?</p>
+            <div className="flex flex-col gap-2.5 pt-2">
+              <button
+                type="button"
+                disabled={saving}
+                onClick={async () => {
+                  await saveProfile(true);
+                  setShowProfileConfirm(false);
+                }}
+                className={`w-full py-2.5 px-4 rounded-xl text-sm font-extrabold text-white transition shadow-sm ${
+                  saving ? 'bg-teal-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 cursor-pointer'
+                }`}
+              >
+                {saving ? 'Saving...' : 'Continue Editing'}
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={async () => {
+                  await saveProfile(false);
+                  setShowProfileConfirm(false);
+                }}
+                className={`w-full py-2.5 px-4 rounded-xl text-sm font-extrabold text-white transition shadow-sm ${
+                  saving ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
+                }`}
+              >
+                {saving ? 'Saving...' : 'Save & Exit'}
+              </button>
+              <button
+                type="button"
+                disabled={saving}
+                onClick={() => setShowProfileConfirm(false)}
+                className="w-full py-2.5 px-4 rounded-xl text-sm font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <p className="text-center text-[10px] text-slate-400 font-medium pt-1">
+                Cancel keeps edit mode active — no changes are saved.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   )
+}
+
+// ── Root Level Sub-Components (fixes React focus loss bug) ──────────────────
+// IMPORTANT: These MUST be at module level (outside ManagerLayout).
+// If defined inside the component function, React creates a new component
+// type on every render, causing inputs to unmount/remount and lose focus.
+
+const Section = ({ icon: Icon, title, color = 'amber', children }) => (
+  <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
+    <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+      <Icon size={16} className={`text-${color}-600`} />
+      <h3 className="font-black text-slate-900 text-sm">{title}</h3>
+    </div>
+    {children}
+  </div>
+)
+
+const Field = ({ label, value, editMode, onChange, readOnly = false }) => {
+  const isDate = label.toLowerCase().includes('date') || label.toLowerCase().includes('dob') || label.toLowerCase().includes('birth');
+  return (
+    <div>
+      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
+      {editMode ? (
+        <input
+          type={isDate ? "date" : "text"}
+          value={value || ''}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={readOnly}
+          readOnly={readOnly}
+          className={`text-sm font-semibold text-slate-900 border-b border-amber-400 focus:outline-none bg-transparent w-full ${
+            readOnly ? 'opacity-60 cursor-not-allowed border-dashed border-slate-300' : ''
+          }`}
+        />
+      ) : (
+        <span className="text-sm font-semibold text-slate-900">{value || '—'}</span>
+      )}
+    </div>
+  );
 }

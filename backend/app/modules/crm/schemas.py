@@ -1,5 +1,6 @@
 from typing import Optional
-from pydantic import BaseModel, Extra
+from pydantic import BaseModel, Extra, validator
+import re
 
 
 class LeadCreate(BaseModel):
@@ -33,6 +34,15 @@ class LeadCreate(BaseModel):
     latitude: Optional[float] = None
     longitude: Optional[float] = None
 
+    @validator("phone", "mobile", "contact_phone", pre=True, allow_reuse=True)
+    def validate_phone_number(cls, v):
+        if not v:
+            return v
+        cleaned = re.sub(r"\D", "", str(v))
+        if len(cleaned) != 10:
+            raise ValueError("Enter a valid 10-digit phone number.")
+        return cleaned
+
     class Config:
         extra = Extra.allow
 
@@ -61,6 +71,15 @@ class LeadUpdate(BaseModel):
     notes: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+
+    @validator("phone", "mobile", "contact_phone", pre=True, allow_reuse=True)
+    def validate_phone_number(cls, v):
+        if not v:
+            return v
+        cleaned = re.sub(r"\D", "", str(v))
+        if len(cleaned) != 10:
+            raise ValueError("Enter a valid 10-digit phone number.")
+        return cleaned
 
     class Config:
         extra = Extra.allow

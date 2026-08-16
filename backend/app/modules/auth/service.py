@@ -67,8 +67,10 @@ class AuthService:
         dashboard, permissions = _resolve_role_and_dashboard(role_val)
 
         role_lower = role_val.lower()
+        is_ceo = any(k in role_lower for k in ["ceo", "founder", "chief executive"])
+        emp_code = "TC-EMP-CEO" if is_ceo else "EMP0001"
         full_name = (payload.email or "").split("@")[0].replace(".", " ").title()
-        if any(k in role_lower for k in ["ceo", "founder", "chief executive"]) or "ceo" in (payload.email or "").lower():
+        if is_ceo or "ceo" in (payload.email or "").lower():
             full_name = "Chief Executive Officer"
         elif "admin" in (payload.email or "").lower():
             full_name = "System Administrator"
@@ -82,6 +84,7 @@ class AuthService:
             "user_metadata": {
                 "role": role_val,
                 "full_name": full_name,
+                "employee_code": emp_code,
             },
             "app_metadata": {"provider": "email", "roles": [role_val]},
         }
@@ -93,14 +96,13 @@ class AuthService:
         )
         token = jose.jwt.encode(token_payload, secret, algorithm=settings.ALGORITHM)
 
-        is_ceo = any(k in role_lower for k in ["ceo", "founder", "chief executive"])
         return {
             "access_token": token,
             "token_type": "bearer",
             "user": {
                 "auth_user_id":   token_payload["sub"],
                 "employee_id":    token_payload["sub"],
-                "employee_code":  "TC-EMP-CEO" if is_ceo else "EMP0001",
+                "employee_code":  emp_code,
                 "employee_name":  full_name,
                 "full_name":      full_name,
                 "email":          payload.email,

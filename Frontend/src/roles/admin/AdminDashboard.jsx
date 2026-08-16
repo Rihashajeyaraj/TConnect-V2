@@ -14,8 +14,9 @@ import {
   Database,
   Server,
   Terminal,
+  FileCheck,
 } from 'lucide-react'
-import { hrmsAPI, attendanceAPI, auditAPI, adminAPI } from '../../services/api.js'
+import { hrmsAPI, attendanceAPI, auditAPI, adminAPI, notificationAPI } from '../../services/api.js'
 
 export default function AdminDashboard() {
   const { showToast } = useToast()
@@ -53,80 +54,186 @@ export default function AdminDashboard() {
     server_health: { uptime: 0.0, status: 'Service Down' }
   })
 
-  useEffect(() => {
-    async function loadAdminDashboardData() {
-      setLoading(true)
-      try {
-        const periodParam = dateRange === 'Today' ? 'today' : (dateRange === 'This Week' ? 'week' : (dateRange === 'This Month' ? 'month' : 'all'));
-        
-        const [empRes, attRes, auditRes, kpisRes] = await Promise.allSettled([
-          hrmsAPI.getEmployees(),
-          attendanceAPI.getLogs(),
-          auditAPI.getLogs(),
-          adminAPI.getKPIs(periodParam)
-        ])
+  const [pendingDocs, setPendingDocs] = useState([])
+  const [previewDoc, setPreviewDoc] = useState(null)
+  const [actioningDocId, setActioningDocId] = useState(null)
+  const [showApprovalsPage, setShowApprovalsPage] = useState(false)
 
-        const empsList = empRes.status === 'fulfilled' && empRes.value?.data ? empRes.value.data : []
-        const attList = attRes.status === 'fulfilled' && attRes.value?.data ? attRes.value.data : []
-        const auditList = auditRes.status === 'fulfilled' && auditRes.value?.data ? auditRes.value.data : []
-        const kpisObj = kpisRes.status === 'fulfilled' && kpisRes.value?.data ? kpisRes.value.data : null
+  async function loadAdminDashboardData() {
+    setLoading(true)
+    try {
+      const periodParam = dateRange === 'Today' ? 'today' : (dateRange === 'This Week' ? 'week' : (dateRange === 'This Month' ? 'month' : 'all'));
+      
+      const [empRes, attRes, auditRes, kpisRes] = await Promise.allSettled([
+        hrmsAPI.getEmployees(),
+        attendanceAPI.getLogs(),
+        auditAPI.getLogs(),
+        adminAPI.getKPIs(periodParam)
+      ])
 
-        if (kpisObj) {
-          setKpiData(kpisObj)
-        }
+      const empsList = empRes.status === 'fulfilled' && empRes.value?.data ? empRes.value.data : []
+      const attList = attRes.status === 'fulfilled' && attRes.value?.data ? attRes.value.data : []
+      const auditList = auditRes.status === 'fulfilled' && auditRes.value?.data ? auditRes.value.data : []
+      const kpisObj = kpisRes.status === 'fulfilled' && kpisRes.value?.data ? kpisRes.value.data : null
 
-        // Filter and count designations
-        const totalAdmins = empsList.filter(e => {
-          const r = (e.role || '').toLowerCase();
-          return r.includes('admin') || r.includes('administrator');
-        }).length
-
-        const totalManagers = empsList.filter(e => {
-          const r = (e.role || '').toLowerCase();
-          return r.includes('manager');
-        }).length
-
-        const totalExecutives = empsList.filter(e => {
-          const r = (e.role || '').toLowerCase();
-          return r.includes('executive') || r.includes('sales');
-        }).length
-
-        // Attendance stats
-        const presentCount = attList.filter(a => String(a.status || '').toUpperCase() === 'PRESENT').length
-        const lateCount = attList.filter(a => a.clock_in && String(a.clock_in).slice(11, 16) > '09:15').length
-        const absentCount = Math.max(0, empsList.length - presentCount)
-
-        setStats({
-          totalUsers: empsList.length,
-          adminsCount: totalAdmins,
-          salesManagers: totalManagers,
-          salesExecutives: totalExecutives,
-          auditLogsCount: auditList.length,
-          attendanceSummary: { present: presentCount, absent: absentCount, late: lateCount },
-        })
-
-        // Map real audit logs into systemActivities
-        if (auditList.length > 0) {
-          setSystemActivities(auditList.slice(0, 10).map((a, i) => ({
-            id: a.id || `audit_${i}`,
-            user: a.user_email || a.email || 'System User',
-            role: a.user_role || 'Staff',
-            action: a.action || 'System Action',
-            module: a.module || 'system',
-            time: a.created_at || new Date().toISOString(),
-            details: a.description || (typeof a.details === 'string' ? a.details : a.details?.description) || 'System operation executed'
-          })))
-        } else {
-          setSystemActivities([])
-        }
-      } catch (e) {
-        console.error('Error loading admin dashboard data:', e)
-      } finally {
-        setLoading(false)
+      if (kpisObj) {
+        setKpiData(kpisObj)
       }
+
+      // Filter and count designations
+      const totalAdmins = empsList.filter(e => {
+        const r = (e.role || '').toLowerCase();
+        return r.includes('admin') || r.includes('administrator');
+      }).length
+
+      const totalManagers = empsList.filter(e => {
+        const r = (e.role || '').toLowerCase();
+        return r.includes('manager');
+      }).length
+
+      const totalExecutives = empsList.filter(e => {
+        const r = (e.role || '').toLowerCase();
+        return r.includes('executive') || r.includes('sales');
+      }).length
+
+      // Attendance stats
+      const presentCount = attList.filter(a => String(a.status || '').toUpperCase() === 'PRESENT').length
+      const lateCount = attList.filter(a => a.clock_in && String(a.clock_in).slice(11, 16) > '09:15').length
+      const absentCount = Math.max(0, empsList.length - presentCount)
+
+      setStats({
+        totalUsers: empsList.length,
+        adminsCount: totalAdmins,
+        salesManagers: totalManagers,
+        salesExecutives: totalExecutives,
+        auditLogsCount: auditList.length,
+        attendanceSummary: { present: presentCount, absent: absentCount, late: lateCount },
+      })
+
+      // Map real audit logs into systemActivities
+      if (auditList.length > 0) {
+        setSystemActivities(auditList.slice(0, 10).map((a, i) => ({
+          id: a.id || `audit_${i}`,
+          user: a.user_email || a.email || 'System User',
+          role: a.user_role || 'Staff',
+          action: a.action || 'System Action',
+          module: a.module || 'system',
+          time: a.created_at || new Date().toISOString(),
+          details: a.description || (typeof a.details === 'string' ? a.details : a.details?.description) || 'System operation executed'
+        })))
+      } else {
+        setSystemActivities([])
+      }
+
+      // Parse and collect pending document approvals
+      const pending = []
+      empsList.forEach(emp => {
+        let docs = []
+        try {
+          docs = typeof emp.documents === 'string' ? JSON.parse(emp.documents) : (emp.documents || [])
+        } catch (_) {
+          docs = []
+        }
+        if (Array.isArray(docs)) {
+          docs.forEach(doc => {
+            if (doc.status === 'uploaded') {
+              pending.push({
+                employeeCode: emp.employee_code || emp.employee_id,
+                employeeName: emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || emp.email || 'Employee',
+                employeeEmail: emp.email,
+                employeeRole: emp.role || emp.designation || 'Staff',
+                docId: doc.id,
+                docName: doc.name,
+                fileName: doc.fileName,
+                fileUrl: doc.fileUrl,
+                allDocs: docs
+              })
+            }
+          })
+        }
+      })
+      setPendingDocs(pending)
+
+    } catch (e) {
+      console.error('Error loading admin dashboard data:', e)
+    } finally {
+      setLoading(false)
     }
+  }
+
+  useEffect(() => {
     loadAdminDashboardData()
   }, [dateRange])
+
+  const handleApproveDocument = async (doc) => {
+    const actionKey = `${doc.employeeCode}_${doc.docId}`
+    if (actioningDocId) return
+    setActioningDocId(actionKey)
+    try {
+      const updatedDocs = doc.allDocs.map(d =>
+        d.id === doc.docId ? { ...d, status: 'approved' } : d
+      )
+      await hrmsAPI.updateEmployee(doc.employeeCode, {
+        documents: JSON.stringify(updatedDocs)
+      })
+      
+      try {
+        await notificationAPI.sendNotification({
+          employee_code: doc.employeeCode,
+          recipient_email: doc.employeeEmail,
+          title: "Document Approved",
+          message: `Your document "${doc.docName}" has been approved by the Admin.`,
+          type: "SYSTEM",
+          reference_module: "HRMS"
+        })
+      } catch (notifErr) {
+        console.warn("Could not send approval notification:", notifErr)
+      }
+
+      showToast(`Document "${doc.docName}" approved successfully!`, 'success')
+      await loadAdminDashboardData()
+    } catch (err) {
+      console.error(err)
+      showToast(err.message || "Failed to approve document", 'error')
+    } finally {
+      setActioningDocId(null)
+    }
+  }
+
+  const handleRejectDocument = async (doc) => {
+    const actionKey = `${doc.employeeCode}_${doc.docId}`
+    if (actioningDocId) return
+    setActioningDocId(actionKey)
+    try {
+      const updatedDocs = doc.allDocs.map(d =>
+        d.id === doc.docId ? { ...d, status: 'rejected', fileUrl: null, fileName: "" } : d
+      )
+      await hrmsAPI.updateEmployee(doc.employeeCode, {
+        documents: JSON.stringify(updatedDocs)
+      })
+
+      try {
+        await notificationAPI.sendNotification({
+          employee_code: doc.employeeCode,
+          recipient_email: doc.employeeEmail,
+          title: "Document Rejected",
+          message: `Your document "${doc.docName}" has been rejected. Please re-upload a valid document.`,
+          type: "SYSTEM",
+          reference_module: "HRMS"
+        })
+      } catch (notifErr) {
+        console.warn("Could not send rejection notification:", notifErr)
+      }
+
+      showToast(`Document "${doc.docName}" rejected.`, 'info')
+      await loadAdminDashboardData()
+    } catch (err) {
+      console.error(err)
+      showToast(err.message || "Failed to reject document", 'error')
+    } finally {
+      setActioningDocId(null)
+    }
+  }
 
   // CSV Export Handler
   const handleExportDashboardCSV = () => {
@@ -199,7 +306,7 @@ export default function AdminDashboard() {
 
       {/* SECTION 1: System Admin Controls KPIs */}
       {activeWidgets.systemStats && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
           {/* Total Registered Users */}
           <div className="bg-white border border-slate-200/90 p-4.5 rounded-2xl shadow-xs hover:shadow-md transition">
             <div className="flex items-center justify-between text-slate-500">
@@ -222,6 +329,24 @@ export default function AdminDashboard() {
             </div>
             <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : kpiData.administrators.value}</h3>
             <span className="text-[11px] text-purple-600 font-bold">{kpiData.administrators.label}</span>
+          </div>
+
+          {/* Document Approvals Card */}
+          <div 
+            onClick={() => setShowApprovalsPage(true)}
+            className="bg-white border border-slate-200/90 p-4.5 rounded-2xl shadow-xs hover:shadow-md transition cursor-pointer relative overflow-hidden bg-gradient-to-br from-white via-white to-amber-50/10 group select-none"
+          >
+            <div className="absolute top-0 inset-x-0 h-1 bg-amber-500 opacity-0 group-hover:opacity-100 transition" />
+            <div className="flex items-center justify-between text-slate-500">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400">Document Approvals</span>
+              <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center">
+                <FileCheck className="w-5 h-5" />
+              </div>
+            </div>
+            <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : pendingDocs.length}</h3>
+            <span className="text-[11px] text-amber-600 font-bold flex items-center gap-1">
+              {pendingDocs.length > 0 ? '⚠️ Action Required' : '✓ All Approved'}
+            </span>
           </div>
 
           {/* Security Audits total */}
@@ -265,6 +390,8 @@ export default function AdminDashboard() {
           </div>
         </div>
       ) }
+
+
 
       {/* SECTION 2: Live Security activity feed and Database summaries */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -417,6 +544,175 @@ export default function AdminDashboard() {
               >
                 Apply Preferences
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Document Preview Modal */}
+      {previewDoc && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-4xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh]">
+            {/* Modal Header */}
+            <div className="bg-slate-950 text-white p-4 flex items-center justify-between border-b border-slate-800">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-100">{previewDoc.docName}</h3>
+                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                  Uploaded by: {previewDoc.employeeName} ({previewDoc.employeeCode}) · {previewDoc.employeeRole}
+                </p>
+              </div>
+              <button
+                onClick={() => setPreviewDoc(null)}
+                className="text-slate-400 hover:text-white font-extrabold text-sm p-1 rounded-lg hover:bg-slate-800 cursor-pointer transition"
+              >
+                ✕ Close
+              </button>
+            </div>
+
+            {/* Modal Content / Preview Area */}
+            <div className="flex-1 bg-slate-100 p-6 overflow-y-auto flex items-center justify-center min-h-[300px]">
+              {previewDoc.fileUrl ? (
+                previewDoc.fileUrl.startsWith('data:image/') || 
+                /\.(jpg|jpeg|png|webp|gif)$/i.test(previewDoc.fileName) ? (
+                  <img
+                    src={previewDoc.fileUrl}
+                    className="max-h-[60vh] max-w-full rounded-xl object-contain shadow-md"
+                    alt="Document Preview"
+                  />
+                ) : (
+                  <iframe
+                    src={previewDoc.fileUrl}
+                    className="w-full h-[60vh] rounded-xl border border-slate-200 bg-white"
+                    title="Document Preview Frame"
+                  />
+                )
+              ) : (
+                <div className="text-center p-8 text-slate-500 font-bold text-sm">
+                  ⚠️ Preview unavailable: no file data found.
+                </div>
+              )}
+            </div>
+
+            {/* Modal Actions / Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3">
+              <p className="text-[10px] text-slate-400 font-mono font-semibold max-w-sm truncate" title={previewDoc.fileName}>
+                Filename: {previewDoc.fileName}
+              </p>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setPreviewDoc(null)}
+                  className="px-4 py-2 text-xs font-extrabold bg-white border border-slate-350 text-slate-700 hover:text-slate-900 rounded-xl cursor-pointer hover:bg-slate-100 transition shadow-2xs"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    const doc = previewDoc;
+                    setPreviewDoc(null);
+                    await handleRejectDocument(doc);
+                  }}
+                  disabled={!!actioningDocId}
+                  className="px-5 py-2 text-xs font-extrabold text-white bg-rose-600 hover:bg-rose-700 rounded-xl cursor-pointer transition shadow-sm"
+                >
+                  Reject Document
+                </button>
+                <button
+                  onClick={async () => {
+                    const doc = previewDoc;
+                    setPreviewDoc(null);
+                    await handleApproveDocument(doc);
+                  }}
+                  disabled={!!actioningDocId}
+                  className="px-5 py-2 text-xs font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl cursor-pointer transition shadow-sm"
+                >
+                  Approve Document
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Fullscreen Document Approval requests table view overlay */}
+      {showApprovalsPage && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-40">
+          <div className="bg-white rounded-3xl max-w-4xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[85vh] animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
+                <h3 className="font-black text-slate-900 text-base">Document Approval Requests</h3>
+              </div>
+              <button 
+                onClick={() => setShowApprovalsPage(false)}
+                className="text-slate-400 hover:text-slate-700 font-extrabold text-lg p-1.5 hover:bg-slate-200/60 rounded-xl cursor-pointer transition flex items-center justify-center"
+                title="Close Approvals"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body / Table View */}
+            <div className="flex-1 overflow-auto p-5">
+              {pendingDocs.length === 0 ? (
+                <div className="text-center py-12 text-slate-450 font-bold text-sm">
+                  No pending document approval requests.
+                </div>
+              ) : (
+                <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                  <table className="w-full text-left border-collapse text-xs font-semibold text-slate-700">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
+                        <th className="px-5 py-3.5">Employee Name & Role</th>
+                        <th className="px-5 py-3.5">Document Name</th>
+                        <th className="px-5 py-3.5 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 bg-white">
+                      {pendingDocs.map((doc) => {
+                        const actionKey = `${doc.employeeCode}_${doc.docId}`
+                        const isActioning = actioningDocId === actionKey
+                        return (
+                          <tr key={actionKey} className="hover:bg-slate-50/50 transition">
+                            <td className="px-5 py-4">
+                              <div className="font-extrabold text-slate-900 text-xs">{doc.employeeName}</div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{doc.employeeRole} · {doc.employeeCode}</div>
+                            </td>
+                            <td className="px-5 py-4 font-mono text-slate-500 font-medium">
+                              <div className="font-bold text-slate-900">{doc.docName}</div>
+                              <div className="text-[10px] text-slate-400 mt-0.5">{doc.fileName || 'file_attachment'}</div>
+                            </td>
+                            <td className="px-5 py-4 text-center">
+                              <div className="inline-flex items-center gap-1.5">
+                                <button
+                                  onClick={() => setPreviewDoc(doc)}
+                                  className="py-1 px-3 text-[10px] font-extrabold text-slate-700 hover:text-slate-900 hover:bg-slate-200 bg-white border border-slate-350 rounded-lg cursor-pointer transition shadow-2xs"
+                                >
+                                  View
+                                </button>
+                                <button
+                                  onClick={() => handleApproveDocument(doc)}
+                                  disabled={!!actioningDocId}
+                                  className="py-1 px-3 text-[10px] font-extrabold text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 rounded-lg cursor-pointer transition shadow-xs"
+                                >
+                                  {isActioning ? '...' : 'Approve'}
+                                </button>
+                                <button
+                                  onClick={() => handleRejectDocument(doc)}
+                                  disabled={!!actioningDocId}
+                                  className="py-1 px-3 text-[10px] font-extrabold text-white bg-rose-600 hover:bg-rose-700 disabled:opacity-60 rounded-lg cursor-pointer transition shadow-xs"
+                                >
+                                  {isActioning ? '...' : 'Reject'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
         </div>

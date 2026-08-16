@@ -4,6 +4,7 @@ import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { clearUserCache } from '../../utils/userScope.js'
 import { notificationAPI, hrmsAPI } from '../../services/api.js'
+import { formatDate } from '../../utils/dateUtils.js'
 import {
   LayoutDashboard,
   Building2,
@@ -38,6 +39,7 @@ import {
   Eye,
   Upload,
   FileUp,
+  CheckCircle2,
 } from 'lucide-react'
 
 const navItems = [
@@ -137,28 +139,28 @@ const PROFILE_DEFAULTS = {
 const mapDbToFrontend = (emp) => {
   if (!emp) return {};
   return {
-    fullName: emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.fullName,
-    employeeId: emp.employee_code || emp.employee_id || emp.employeeId,
-    officialEmail: emp.email || emp.officialEmail,
-    phone: emp.phone || emp.mobile || emp.phone,
+    fullName: emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || "",
+    employeeId: emp.employee_code || emp.employee_id || "",
+    officialEmail: emp.email || "",
+    phone: emp.phone || emp.mobile || "",
     role: emp.role || "Admin",
     team: emp.department || "Management",
     designation: emp.designation || "System Administrator",
-    gender: emp.gender || "Male",
-    employmentType: emp.employment_type || emp.employmentType,
-    employmentStatus: emp.is_active ? "Active" : "Active",
-    joinDate: emp.joining_date || emp.joinDate,
-    workMode: emp.work_mode || "On-site",
-    workLocation: emp.work_location || "Headquarters",
-    reportingManager: emp.reporting_manager_name || emp.reporting_manager_email || "CEO",
-    dob: emp.date_of_birth || emp.dob,
-    maritalStatus: emp.marital_status || emp.maritalStatus,
-    bloodGroup: emp.blood_group || emp.bloodGroup,
-    panId: emp.pan_id || emp.panId,
-    personalEmail: emp.personal_email || emp.personalEmail,
-    alternateContact: emp.alternate_contact || emp.alternateContact,
-    currentAddress: emp.current_address || emp.currentAddress,
-    permanentAddress: emp.permanent_address || emp.permanentAddress,
+    gender: emp.gender || "",
+    employmentType: emp.employment_type || "",
+    employmentStatus: emp.is_active ? "Active" : "Inactive",
+    joinDate: emp.joining_date || "",
+    workMode: emp.work_mode || "",
+    workLocation: emp.work_location || "",
+    reportingManager: emp.reporting_manager_name || emp.reporting_manager_email || "Not Assigned",
+    dob: emp.date_of_birth || "",
+    maritalStatus: emp.marital_status || "",
+    bloodGroup: emp.blood_group || "",
+    panId: emp.pan_id || "",
+    personalEmail: emp.personal_email || "",
+    alternateContact: emp.alternate_contact || "",
+    currentAddress: emp.current_address || "",
+    permanentAddress: emp.permanent_address || "",
     city: emp.city || "",
     state: emp.state || "",
     country: emp.country || "",
@@ -228,6 +230,7 @@ function AdminLayout() {
   // My Profile States
   const [myProfileOpen, setMyProfileOpen] = useState(false)
   const [editMode, setEditMode] = useState(false)
+  const [showProfileConfirm, setShowProfileConfirm] = useState(false)
   const [profilePhoto, setProfilePhoto] = useState(null)
   const [previewDoc, setPreviewDoc] = useState(null)
 
@@ -310,28 +313,61 @@ function AdminLayout() {
     loadOnlineProfile()
   }, [myProfileOpen, empCode, currentUser.employee_code, currentUser.id, adminEmail])
 
-  const saveProfile = async () => {
+  const saveProfile = async (keepEditing = false) => {
     try {
       const code = empCode || currentUser.employee_code || currentUser.id
       if (!code) {
         throw new Error("No employee identifier found.")
       }
+
+      console.log("PROFILE BEFORE SAVE", profile)
+
       const dbPayload = mapFrontendToDb(profile)
+      for (const key of Object.keys(dbPayload)) {
+        if (dbPayload[key] === "" || dbPayload[key] === undefined) {
+          dbPayload[key] = null
+        }
+      }
       if (profilePhoto) {
         dbPayload.profile_photo = profilePhoto
       }
       dbPayload.documents = JSON.stringify(documentsList)
 
       const res = await hrmsAPI.updateEmployee(code, dbPayload)
-      if (res && res.data) {
-        const freshProfile = mapDbToFrontend(res.data)
-        setProfile(freshProfile)
-        localStorage.setItem(`tc_admin_profile_${adminEmail}`, JSON.stringify(freshProfile))
-      } else {
-        localStorage.setItem(`tc_admin_profile_${adminEmail}`, JSON.stringify(profile))
+      console.log("SAVE RESPONSE", res)
+
+      // Explicitly fetch the fresh record from the database to guarantee representation parity
+      const freshRes = await hrmsAPI.getEmployeeById(code)
+      const freshEmployee = freshRes && freshRes.data ? freshRes.data : {}
+      console.log("FRESH PROFILE FROM DB", freshEmployee)
+
+      const normalizedProfile = {
+        ...PROFILE_DEFAULTS,
+        ...mapDbToFrontend(freshEmployee),
       }
+      console.log("NORMALIZED PROFILE", normalizedProfile)
+
+      setProfile(normalizedProfile)
+      localStorage.setItem(`tc_admin_profile_${adminEmail}`, JSON.stringify(normalizedProfile))
+
+      if (freshEmployee.profile_photo) {
+        setProfilePhoto(freshEmployee.profile_photo)
+        localStorage.setItem(`tc_admin_photo_${adminEmail}`, freshEmployee.profile_photo)
+      }
+      if (freshEmployee.documents) {
+        try {
+          const parsed = JSON.parse(freshEmployee.documents)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setDocumentsList(parsed)
+            localStorage.setItem(`tc_admin_documents_${adminEmail}`, JSON.stringify(parsed))
+          }
+        } catch (err) {}
+      }
+
       showToast("Profile synced online to Supabase!", "success")
-      setEditMode(false)
+      if (!keepEditing) {
+        setEditMode(false)
+      }
     } catch (err) {
       console.error(err)
       const errMsg = err.detail
@@ -340,6 +376,25 @@ function AdminLayout() {
       showToast(`Error: ${errMsg}`, "error")
     }
   }
+
+  const handleProfileKeyDown = (e) => {
+    if (!editMode) return;
+    if (e.key === "Enter") {
+      // Keep textarea Enter behavior normal (new line)
+      if (e.target && e.target.tagName === "TEXTAREA") {
+        return;
+      }
+      // Only apply on desktop/laptop physical keyboards
+      const isMobile = /Mobi|Android|iPhone|iPad|Windows Phone/i.test(navigator.userAgent);
+      if (isMobile) {
+        return;
+      }
+      e.preventDefault();
+      // Open confirmation modal
+      setShowProfileConfirm(true);
+    }
+  };
+
 
   const handlePhotoUpload = (e) => {
     const file = e.target.files?.[0]
@@ -368,7 +423,7 @@ function AdminLayout() {
           id: n.id,
           title: n.title || 'System Notification',
           message: n.message || n.description || '',
-          time: n.created_at ? new Date(n.created_at).toLocaleDateString('en-IN') : 'Recently',
+          time: formatDate(n.created_at) || 'Recently',
           type: n.type || 'INFO',
           read: n.is_read || false,
           icon: Bell,
@@ -790,7 +845,10 @@ function AdminLayout() {
             }}
           />
 
-          <div className="w-full max-w-2xl bg-slate-50 h-full overflow-y-auto flex flex-col shadow-2xl border-l border-slate-200 animate-slideLeft">
+          <div 
+            onKeyDown={handleProfileKeyDown}
+            className="w-full max-w-2xl bg-slate-50 h-full overflow-y-auto flex flex-col shadow-2xl border-l border-slate-200 animate-slideLeft"
+          >
             {/* Header */}
             <div className="bg-white border-b border-slate-200 px-5 py-4 flex items-center justify-between sticky top-0 z-10">
               <div className="flex items-center gap-2">
@@ -800,21 +858,22 @@ function AdminLayout() {
               <div className="flex items-center gap-2">
                 {editMode ? (
                   <>
+                    <span className="hidden sm:flex items-center gap-1 text-[10px] font-bold text-slate-400 bg-slate-100 px-2.5 py-1 rounded-lg select-none">
+                      <kbd className="font-mono bg-white border border-slate-200 text-slate-500 rounded px-1 py-0.5 text-[9px] shadow-xs">↵ Enter</kbd>
+                      to save
+                    </span>
                     <button
-                      onClick={() => setEditMode(false)}
-                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-600 cursor-pointer hover:bg-slate-200 transition flex items-center gap-1"
+                      type="button"
+                      onClick={() => setShowProfileConfirm(true)}
+                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-blue-600 text-white cursor-pointer hover:bg-blue-700 transition flex items-center gap-1"
+                      title="Click or press Enter to choose save action"
                     >
-                      <X size={13} /> Cancel
-                    </button>
-                    <button
-                      onClick={saveProfile}
-                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 text-white cursor-pointer hover:bg-emerald-700 transition flex items-center gap-1"
-                    >
-                      <Save size={13} /> Save Profile
+                      <Save size={13} /> Done
                     </button>
                   </>
                 ) : (
                   <button
+                    type="button"
                     onClick={() => setEditMode(true)}
                     className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-blue-600 text-white cursor-pointer hover:bg-blue-700 transition flex items-center gap-1"
                   >
@@ -822,6 +881,7 @@ function AdminLayout() {
                   </button>
                 )}
                 <button
+                  type="button"
                   onClick={() => {
                     setMyProfileOpen(false)
                     setEditMode(false)
@@ -966,9 +1026,33 @@ function AdminLayout() {
                     <div key={doc.id} className="flex items-center justify-between py-3">
                       <div>
                         <p className="text-sm font-extrabold text-slate-900">{doc.name}</p>
-                        <p className={`text-[11px] font-semibold mt-0.5 ${doc.status === "uploaded" ? "text-emerald-600" : "text-slate-400"}`}>
-                          {doc.status === "uploaded" ? `✅ ${doc.fileName}` : "📄 Required — not uploaded yet"}
-                        </p>
+                        {(() => {
+                          if (doc.status === 'approved') {
+                            return (
+                              <p className="text-[11px] font-semibold mt-0.5 text-emerald-600">
+                                ✅ Approved — {doc.fileName}
+                              </p>
+                            )
+                          } else if (doc.status === 'rejected') {
+                            return (
+                              <p className="text-[11px] font-semibold mt-0.5 text-rose-600">
+                                ❌ Rejected (Please re-upload)
+                              </p>
+                            )
+                          } else if (doc.status === 'uploaded') {
+                            return (
+                              <p className="text-[11px] font-semibold mt-0.5 text-amber-600 font-bold">
+                                ⏳ Pending Approval — {doc.fileName}
+                              </p>
+                            )
+                          } else {
+                            return (
+                              <p className="text-[11px] font-semibold mt-0.5 text-slate-400">
+                                📄 Required — not uploaded yet
+                              </p>
+                            )
+                          }
+                        })()}
                       </div>
                       <div className="flex items-center gap-1.5">
                         <input
@@ -993,7 +1077,7 @@ function AdminLayout() {
                             reader.readAsDataURL(file)
                           }}
                         />
-                        {doc.status === "uploaded" && (
+                        {(doc.status === "uploaded" || doc.status === "approved") && (
                           <button
                             onClick={() => setPreviewDoc(doc)}
                             className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-300 cursor-pointer flex items-center gap-1 hover:bg-blue-100 transition"
@@ -1001,12 +1085,14 @@ function AdminLayout() {
                             <Eye size={12} /> View
                           </button>
                         )}
-                        <button
-                          onClick={() => document.getElementById(`ad_doc_${doc.id}`)?.click()}
-                          className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1 hover:bg-slate-700 transition"
-                        >
-                          <Upload size={12} /> {doc.status === "uploaded" ? "Re-upload" : "Upload"}
-                        </button>
+                        {doc.status !== "approved" && (
+                          <button
+                            onClick={() => document.getElementById(`ad_doc_${doc.id}`)?.click()}
+                            className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1 hover:bg-slate-700 transition"
+                          >
+                            <Upload size={12} /> {doc.status === "uploaded" ? "Re-upload" : "Upload"}
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -1040,6 +1126,48 @@ function AdminLayout() {
           </div>
         </div>
       )}
+
+      {/* Profile Changes Confirmation Modal */}
+      {showProfileConfirm && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4">
+            <h3 className="text-lg font-black text-slate-900">Profile Changes</h3>
+            <p className="text-sm text-slate-600 font-semibold">What would you like to do?</p>
+            <div className="flex flex-col gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={async () => {
+                  await saveProfile(true);
+                  setShowProfileConfirm(false);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-sm font-extrabold bg-teal-600 text-white hover:bg-teal-700 transition cursor-pointer shadow-sm"
+              >
+                Continue Editing
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  await saveProfile(false);
+                  setShowProfileConfirm(false);
+                }}
+                className="w-full py-2.5 px-4 rounded-xl text-sm font-extrabold bg-emerald-600 text-white hover:bg-emerald-700 transition cursor-pointer shadow-sm"
+              >
+                Save &amp; Exit
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowProfileConfirm(false)}
+                className="w-full py-2.5 px-4 rounded-xl text-sm font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <p className="text-center text-[10px] text-slate-400 font-medium pt-1">
+                Cancel keeps edit mode active — no changes are saved.
+              </p>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -1055,23 +1183,27 @@ const Section = ({ icon: Icon, title, color = "blue", children }) => (
   </div>
 )
 
-const Field = ({ label, value, editMode, onChange, readOnly = false }) => (
-  <div>
-    <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
-    {editMode ? (
-      <input
-        value={value || ""}
-        onChange={(e) => onChange(e.target.value)}
-        disabled={readOnly}
-        readOnly={readOnly}
-        className={`text-sm font-semibold text-slate-900 border-b border-blue-500 focus:outline-none bg-transparent w-full ${
-          readOnly ? "opacity-60 cursor-not-allowed border-dashed border-slate-300" : ""
-        }`}
-      />
-    ) : (
-      <span className="text-sm font-semibold text-slate-900">{value || "—"}</span>
-    )}
-  </div>
-)
+const Field = ({ label, value, editMode, onChange, readOnly = false }) => {
+  const isDate = label.toLowerCase().includes('date') || label.toLowerCase().includes('dob') || label.toLowerCase().includes('birth');
+  return (
+    <div>
+      <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
+      {editMode ? (
+        <input
+          type={isDate ? "date" : "text"}
+          value={value || ""}
+          onChange={(e) => onChange(e.target.value)}
+          disabled={readOnly}
+          readOnly={readOnly}
+          className={`text-sm font-semibold text-slate-900 border-b border-blue-500 focus:outline-none bg-transparent w-full ${
+            readOnly ? "opacity-60 cursor-not-allowed border-dashed border-slate-300" : ""
+          }`}
+        />
+      ) : (
+        <span className="text-sm font-semibold text-slate-900">{value || "—"}</span>
+      )}
+    </div>
+  );
+}
 
 export default AdminLayout

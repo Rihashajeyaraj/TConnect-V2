@@ -30,6 +30,7 @@ import {
 import { crmAPI, hrmsAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
+import { formatDate } from '../../utils/dateUtils.js'
 
 export default function ManagerLeads() {
   const { showToast } = useToast()
@@ -663,7 +664,7 @@ export default function ManagerLeads() {
                   <tr key={lead.id || lead.lead_id || idx} className="hover:bg-amber-50/50 transition-colors">
                     {/* 0. Date */}
                     <td className="px-5 py-4.5 font-bold text-slate-900 text-sm">
-                      {lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-GB') : lead.date || '—'}
+                      {formatDate(lead.created_at || lead.date) || '—'}
                     </td>
 
                     {/* 1. SE Name */}
@@ -794,7 +795,7 @@ export default function ManagerLeads() {
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Created Date</span>
-                <p className="font-mono font-bold text-slate-800 mt-0.5">{selectedLeadModal.created_at || '2026-08-01'}</p>
+                <p className="font-mono font-bold text-slate-800 mt-0.5">{formatDate(selectedLeadModal.created_at) || '—'}</p>
               </div>
               <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Last Follow-up</span>

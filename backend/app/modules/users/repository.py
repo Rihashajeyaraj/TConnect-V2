@@ -83,6 +83,25 @@ class UserRepository:
                 elif not m_name:
                     m_name = raw_str
 
+            # Default manager's reporting manager to the CEO
+            emp_role = str(emp.get("role") or emp.get("designation") or "").lower()
+            is_manager = "manager" in emp_role and "executive" not in emp_role and "ceo" not in emp_role and "admin" not in emp_role
+            if is_manager and (not m_id or m_name in (None, "Not Assigned", "", "—")):
+                # Scan emp_map_by_email for CEO to get real UUID/code
+                ceo_uuid = None
+                ceo_name = "Dr. Twite Executive"
+                ceo_email = "ceo@tconnect.com"
+                for k in ["ceo@tconnect.com", "ceo@twiteconnect.com", "founder@tconnect.com"]:
+                    if k in emp_map_by_email:
+                        matched_ceo = emp_map_by_email[k]
+                        ceo_uuid = str(matched_ceo.get("employee_id") or matched_ceo.get("id") or matched_ceo.get("user_id") or "")
+                        ceo_name = matched_ceo.get("name") or f"{matched_ceo.get('first_name', '')} {matched_ceo.get('last_name', '')}".strip() or ceo_name
+                        ceo_email = matched_ceo.get("email") or ceo_email
+                        break
+                m_id = ceo_uuid or "EMP000001"
+                m_name = ceo_name
+                m_email = ceo_email
+
             if m_id and str(m_id) in emp_map_by_id:
                 matched = emp_map_by_id[str(m_id)]
                 m_name = m_name or matched.get("name") or f"{matched.get('first_name', '')} {matched.get('last_name', '')}".strip()

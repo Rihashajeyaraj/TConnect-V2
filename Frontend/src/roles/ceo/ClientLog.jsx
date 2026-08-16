@@ -12,6 +12,7 @@ import {
   ChevronUp
 } from 'lucide-react'
 import { reportAPI, visitAPI } from '../../services/api.js'
+import { formatDate } from '../../utils/dateUtils.js'
 
 export default function ClientLog({ initialSection = 'leads' }) {
   const [activeSection, setActiveSection] = useState(initialSection) // 'leads' or 'customers'
@@ -89,9 +90,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
   })
 
   const formatDateString = (dt) => {
-    if (!dt) return 'N/A'
-    if (dt.includes('T')) return dt.split('T')[0]
-    return dt
+    return formatDate(dt)
   }
 
   // Parse product name helper

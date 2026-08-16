@@ -136,10 +136,26 @@ class CRMRepository:
 
         company_val = str(data.get("company_name") or data.get("company") or data.get("title") or "Prospect Client")
         person_val = str(data.get("contact_person") or data.get("contact_name") or data.get("person") or data.get("name") or "Point of Contact")
-        mobile_val = str(data.get("mobile") or data.get("phone") or data.get("contact_phone") or "")
-        email_val = str(data.get("email") or data.get("contact_email") or "")
+
+        # Normalize mobile/email: empty string must become None to satisfy Supabase constraints
+        # (some columns reject empty strings via CHECK constraints or NOT NULL).
+        _mobile_raw = str(data.get("mobile") or data.get("phone") or data.get("contact_phone") or "").strip()
+        mobile_val = _mobile_raw if _mobile_raw else None
+
+        _email_raw = str(data.get("email") or data.get("contact_email") or "").strip().lower()
+        email_val = _email_raw if _email_raw else None
+
         city_val = str(data.get("city") or "Chennai")
-        val_str = str(data.get("expected_value") or data.get("value") or "450000").replace("₹", "").replace(",", "").strip()
+
+        # Safely extract numeric value from strings like "₹4,50,000" or "450000".
+        # Use regex to strip all non-digit, non-decimal characters first.
+        import re as _re
+        _val_raw = str(data.get("expected_value") or data.get("value") or "450000")
+        _val_digits = _re.sub(r"[^0-9.]", "", _val_raw)
+        try:
+            expected_value_float = float(_val_digits) if _val_digits else 450000.0
+        except ValueError:
+            expected_value_float = 450000.0
 
         product_val = str(data.get("product_name") or data.get("product") or data.get("productRequirement") or "TwiteConnect CRM").strip()
 
@@ -147,7 +163,7 @@ class CRMRepository:
         category_val = str(data.get("category") or data.get("lead_type") or "Warm").strip().title()
         full_notes = f"{notes_raw} | Product: {product_val} | AssignedTo: {assigned_to_raw} | Email: {assigned_to_email} | EMP: {employee_code} | Manager: {mgr_email} | Category: {category_val}"
 
-        # assigned_to in Supabase is UUID column!
+        # assigned_to in Supabase is a UUID column — pass None if we don't have a valid UUID.
         assigned_to_uuid = assigned_user_id if (assigned_user_id and len(assigned_user_id) == 36 and "-" in assigned_user_id) else None
 
         payload = {
@@ -158,14 +174,15 @@ class CRMRepository:
             "contact_name": person_val,
             "mobile": mobile_val,
             "contact_phone": mobile_val,
-            "email": email_val if email_val else None,
-            "contact_email": email_val if email_val else None,
+            "email": email_val,          # None when blank — never empty string
+            "contact_email": email_val,  # None when blank — never empty string
             "city": city_val,
             "address": data.get("address") or city_val,
             "notes": full_notes,
             "remarks": full_notes,
             "assigned_to": assigned_to_uuid,
             "created_by": assigned_to_uuid,
+            "expected_value": expected_value_float,  # always set — Supabase expects numeric
             "is_active": True,
         }
         # Persist exact GPS coordinates if provided
@@ -181,8 +198,6 @@ class CRMRepository:
                 payload["longitude"] = float(lng)
             except (TypeError, ValueError):
                 pass
-        if val_str.isdigit():
-            payload["expected_value"] = float(val_str)
 
         logger.info(f"[CRM INSERT REQUEST] Attempting insert into crm.leads with payload: {payload}")
 
@@ -498,9 +513,15 @@ class CRMRepository:
             }
 
     def get_lead_by_id(self, lead_id: str) -> Optional[Dict[str, Any]]:
+        """
+        Fetch a single lead by its ID.
+        Searches by both 'id' (the enriched/frontend key) AND 'lead_id' (the Supabase PK)
+        so leads stored in crm.leads are always resolvable regardless of which key is used.
+        """
         leads = self.get_all_leads()
+        lead_id_str = str(lead_id)
         for lead in leads:
-            if str(lead.get("id")) == str(lead_id):
+            if str(lead.get("id")) == lead_id_str or str(lead.get("lead_id") or "") == lead_id_str:
                 return lead
         return None
 

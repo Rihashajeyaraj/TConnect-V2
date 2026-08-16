@@ -33,6 +33,7 @@ import {
 } from 'lucide-react'
 import { hrmsAPI, userAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
+import { normalizePhoneNumber } from '../../utils/formatUtils.js'
 
 const EmployeeProfileModal = ({ employee, onClose }) => {
   if (!employee) return null;
@@ -218,6 +219,9 @@ function UserManagement() {
     role: 'Sales Executive',
     dept: 'Sales & Business Development',
     status: 'Active',
+    reporting_manager_id: '',
+    reporting_manager_name: '',
+    reporting_manager_email: '',
   })
 
   // Edit Modal State
@@ -245,6 +249,14 @@ function UserManagement() {
       const r = (u.role || '').toLowerCase()
       const isManagerOrAdmin = r.includes('manager') || r.includes('admin') || r.includes('ceo')
       return !isManagerOrAdmin
+    })
+  }, [users])
+
+  // Potential Reporting Managers (CEO, Admin, and Managers)
+  const potentialReportingManagers = useMemo(() => {
+    return users.filter((u) => {
+      const r = (u.role || '').toLowerCase()
+      return r.includes('manager') || r.includes('admin') || r.includes('ceo') || r.includes('founder')
     })
   }, [users])
 
@@ -408,6 +420,64 @@ function UserManagement() {
     setShowEditModal(true)
   }
 
+  // Set default reporting manager when role is changed to Sales Manager in Add form
+  const handleAddRoleChange = (selectedRole) => {
+    let extra = {}
+    if (selectedRole === 'Sales Manager') {
+      const ceo = users.find(u => {
+        const emailLower = (u.email || '').toLowerCase()
+        const roleLower = (u.role || '').toLowerCase()
+        return emailLower === 'ceo@tconnect.com' || roleLower.includes('ceo') || roleLower.includes('founder')
+      })
+      if (ceo) {
+        extra = {
+          reporting_manager_id: ceo.id,
+          reporting_manager_name: ceo.name,
+          reporting_manager_email: ceo.email,
+        }
+      } else {
+        extra = {
+          reporting_manager_id: 'EMP000001',
+          reporting_manager_name: 'Dr. Twite Executive',
+          reporting_manager_email: 'ceo@tconnect.com',
+        }
+      }
+    } else {
+      extra = {
+        reporting_manager_id: '',
+        reporting_manager_name: '',
+        reporting_manager_email: '',
+      }
+    }
+    setNewUser({ ...newUser, role: selectedRole, ...extra })
+  }
+
+  // Set default reporting manager when role is changed to Sales Manager in Edit form
+  const handleEditRoleChange = (selectedRole) => {
+    let extra = {}
+    if (selectedRole === 'Sales Manager') {
+      const ceo = users.find(u => {
+        const emailLower = (u.email || '').toLowerCase()
+        const roleLower = (u.role || '').toLowerCase()
+        return emailLower === 'ceo@tconnect.com' || roleLower.includes('ceo') || roleLower.includes('founder')
+      })
+      if (ceo) {
+        extra = {
+          reporting_manager_id: ceo.id,
+          reporting_manager_name: ceo.name,
+          reporting_manager_email: ceo.email,
+        }
+      } else {
+        extra = {
+          reporting_manager_id: 'EMP000001',
+          reporting_manager_name: 'Dr. Twite Executive',
+          reporting_manager_email: 'ceo@tconnect.com',
+        }
+      }
+    }
+    setEditingUser({ ...editingUser, role: selectedRole, ...extra })
+  }
+
   // Save Edited User Details & Password
   const handleSaveEditedUser = async (e) => {
     e.preventDefault()
@@ -427,6 +497,9 @@ function UserManagement() {
         dept: editingUser.dept,
         status: editingUser.status,
         accessPassword: editingUser.accessPassword,
+        reporting_manager_id: editingUser.reporting_manager_id || null,
+        reporting_manager_name: editingUser.reporting_manager_name || null,
+        reporting_manager_email: editingUser.reporting_manager_email || null,
       })
       showToast(`User profile and access credentials updated!`, 'success')
     } catch (err) {
@@ -481,6 +554,9 @@ function UserManagement() {
       role: 'Sales Executive',
       dept: 'Sales & Business Development',
       status: 'Active',
+      reporting_manager_id: '',
+      reporting_manager_name: '',
+      reporting_manager_email: '',
     })
 
     const autoEmpId = `EMP${String(users.length + 1).padStart(6, '0')}`
@@ -499,6 +575,9 @@ function UserManagement() {
         password: created.accessPassword,
         role: created.role,
         dept: created.dept,
+        reporting_manager_id: newUser.reporting_manager_id || null,
+        reporting_manager_name: newUser.reporting_manager_name || null,
+        reporting_manager_email: newUser.reporting_manager_email || null,
       })
       showToast('User Created Successfully: ✓ Auth Account Created | ✓ Employee Profile Created | ✓ Added to HRMS', 'success')
 
@@ -1184,20 +1263,22 @@ function UserManagement() {
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">Phone Number</label>
                   <input
-                    type="text"
-                    placeholder="e.g. +91 98765 88990"
+                    type="tel"
+                    placeholder="10-digit number e.g. 9876543210"
                     value={newUser.phone}
-                    onChange={(e) => setNewUser({ ...newUser, phone: e.target.value })}
+                    maxLength={10}
+                    onChange={(e) => setNewUser({ ...newUser, phone: normalizePhoneNumber(e.target.value) })}
                     className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
                   />
                 </div>
                 <div>
                   <label className="block text-slate-700 font-bold mb-1">Emergency Contact</label>
                   <input
-                    type="text"
-                    placeholder="e.g. +91 98765 00000"
+                    type="tel"
+                    placeholder="10-digit emergency contact"
                     value={newUser.emergency_contact}
-                    onChange={(e) => setNewUser({ ...newUser, emergency_contact: e.target.value })}
+                    maxLength={10}
+                    onChange={(e) => setNewUser({ ...newUser, emergency_contact: normalizePhoneNumber(e.target.value) })}
                     className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
                   />
                 </div>
@@ -1208,7 +1289,7 @@ function UserManagement() {
                   <label className="block text-slate-700 font-bold mb-1">Assigned Role</label>
                   <select
                     value={newUser.role}
-                    onChange={(e) => setNewUser({ ...newUser, role: e.target.value })}
+                    onChange={(e) => handleAddRoleChange(e.target.value)}
                     className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 font-bold"
                   >
                     <option value="Sales Manager">Sales Manager</option>
@@ -1227,10 +1308,46 @@ function UserManagement() {
                     <option value="Sales & Business Development">Sales & Business</option>
                     <option value="Inside Sales">Inside Sales</option>
                     <option value="Field Sales">Field Sales</option>
-                    <option value="IT & System Admin">IT & Admin</option>
+                    <option value="IT & System Admin">IT &amp; Admin</option>
                   </select>
                 </div>
               </div>
+
+              {(newUser.role === 'Sales Manager' || newUser.role === 'Sales Executive') && (
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Reporting Manager</label>
+                  <select
+                    value={newUser.reporting_manager_id || ''}
+                    onChange={(e) => {
+                      const selectedId = e.target.value
+                      if (!selectedId) {
+                        setNewUser({
+                          ...newUser,
+                          reporting_manager_id: '',
+                          reporting_manager_name: '',
+                          reporting_manager_email: '',
+                        })
+                      } else {
+                        const mgr = users.find(u => String(u.id) === String(selectedId))
+                        setNewUser({
+                          ...newUser,
+                          reporting_manager_id: selectedId,
+                          reporting_manager_name: mgr?.name || '',
+                          reporting_manager_email: mgr?.email || '',
+                        })
+                      }
+                    }}
+                    className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
+                  >
+                    <option value="">-- No Reporting Manager Assigned --</option>
+                    {potentialReportingManagers.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.role})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               <button
                 type="submit"
@@ -1341,9 +1458,11 @@ function UserManagement() {
               <div>
                 <label className="block text-slate-700 font-bold mb-1">Phone Number</label>
                 <input
-                  type="text"
+                  type="tel"
+                  placeholder="10-digit number e.g. 9876543210"
                   value={editingUser.phone}
-                  onChange={(e) => setEditingUser({ ...editingUser, phone: e.target.value })}
+                  maxLength={10}
+                  onChange={(e) => setEditingUser({ ...editingUser, phone: normalizePhoneNumber(e.target.value) })}
                   className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
                 />
               </div>
@@ -1353,7 +1472,7 @@ function UserManagement() {
                   <label className="block text-slate-700 font-bold mb-1">Role</label>
                   <select
                     value={editingUser.role}
-                    onChange={(e) => setEditingUser({ ...editingUser, role: e.target.value })}
+                    onChange={(e) => handleEditRoleChange(e.target.value)}
                     className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-blue-600"
                   >
                     <option value="Sales Manager">Sales Manager</option>
@@ -1372,6 +1491,44 @@ function UserManagement() {
                   />
                 </div>
               </div>
+
+              {(editingUser.role === 'Sales Manager' || editingUser.role === 'Sales Executive') && (
+                <div>
+                  <label className="block text-slate-700 font-bold mb-1">Reporting Manager</label>
+                  <select
+                    value={editingUser.reporting_manager_id || ''}
+                    onChange={(e) => {
+                      const selectedId = e.target.value
+                      if (!selectedId) {
+                        setEditingUser({
+                          ...editingUser,
+                          reporting_manager_id: null,
+                          reporting_manager_name: null,
+                          reporting_manager_email: null,
+                        })
+                      } else {
+                        const mgr = users.find(u => String(u.id) === String(selectedId))
+                        setEditingUser({
+                          ...editingUser,
+                          reporting_manager_id: selectedId,
+                          reporting_manager_name: mgr?.name || '',
+                          reporting_manager_email: mgr?.email || '',
+                        })
+                      }
+                    }}
+                    className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
+                  >
+                    <option value="">-- No Reporting Manager Assigned --</option>
+                    {potentialReportingManagers
+                      .filter(m => String(m.id) !== String(editingUser.id))
+                      .map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.name} ({m.role})
+                        </option>
+                      ))}
+                  </select>
+                </div>
+              )}
 
               <button
                 type="submit"

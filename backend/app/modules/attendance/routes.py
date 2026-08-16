@@ -5,6 +5,8 @@ from app.modules.attendance.schemas import ClockInRequest, ClockOutRequest, Enro
 from app.modules.attendance.service import AttendanceService
 from app.modules.attendance.permissions import CanViewAttendance, CanRecordAttendance
 from app.modules.audit.service import create_audit_log
+from app.core.logger import logger
+
 
 router = APIRouter(prefix="/attendance", tags=["Attendance Management"])
 
@@ -259,7 +261,25 @@ async def clock_in(
 
     db_user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
     log = service.clock_in(db_user_id, data)
-    
+
+    if data.latitude and data.longitude:
+        try:
+            from datetime import datetime, timezone
+            from app.database.supabase import get_supabase_admin_client, get_supabase_client
+            sp_client = get_supabase_admin_client() or get_supabase_client()
+            location_data = {
+                "employee_id": data.employee_id,
+                "latitude": float(data.latitude),
+                "longitude": float(data.longitude),
+                "accuracy": 10.0,
+                "is_online": True,
+                "last_seen_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat()
+            }
+            sp_client.schema("hrms").table("employee_locations").upsert(location_data).execute()
+        except Exception as le:
+            logger.warning(f"Failed to auto-update employee_locations on clock-in: {le}")
+
     create_audit_log(
         "ATTENDANCE_UPDATED", "hrms.attendance_logs", user_payload,
         entity_id=str(log.get("id") or log.get("attendance_id") or ""),

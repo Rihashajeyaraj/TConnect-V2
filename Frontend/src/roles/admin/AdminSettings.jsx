@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { settingsAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
+import { normalizePhoneNumber } from '../../utils/formatUtils.js'
 
 function AdminSettings() {
   const { showToast } = useToast()
@@ -78,9 +79,12 @@ function AdminSettings() {
   // Input change handler
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target
+    const finalValue = name === 'phone'
+      ? normalizePhoneNumber(value)
+      : type === 'checkbox' ? checked : value
     setSettingsData((prev) => ({
       ...prev,
-      [name]: type === 'checkbox' ? checked : value
+      [name]: finalValue
     }))
   }
 
@@ -267,8 +271,10 @@ function AdminSettings() {
               <div>
                 <label className="block text-[10px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Contact Phone</label>
                 <input
-                  type="text"
+                  type="tel"
                   name="phone"
+                  maxLength={10}
+                  placeholder="10-digit number"
                   value={settingsData.phone}
                   onChange={handleChange}
                   className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-hidden focus:border-blue-500"
@@ -318,10 +324,7 @@ function AdminSettings() {
                   onChange={handleChange}
                   className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-xs bg-white text-slate-900 focus:outline-hidden"
                 >
-                  <option value="INR (₹)">INR (₹)</option>
-                  <option value="USD ($)">USD ($)</option>
-                  <option value="GBP (£)">GBP (£)</option>
-                  <option value="EUR (€)">EUR (€)</option>
+                  <option value="INR (₹)">INR (₹) — Indian Rupee</option>
                 </select>
               </div>
             </div>

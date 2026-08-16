@@ -465,19 +465,56 @@ async def get_manager_team_locations(
     except Exception as e:
         logger.warning(f"Error mapping manager user to employee record: {e}")
         
-    # 2. Query assigned executives from hrms.employees table
-    or_cond = f"reporting_manager.eq.{mgr_emp_id},reporting_manager_id.eq.{mgr_emp_id}"
-    if mgr_email:
-        or_cond += f",reporting_manager_email.eq.{mgr_email.strip().lower()}"
-    if mgr_name:
-        or_cond += f",reporting_manager_name.eq.{mgr_name.strip()}"
-        
+    # 2. Query assigned executives from hrms.employees table with fallback support
+    subordinates = []
     try:
-        subordinates_res = sp_client.schema("hrms").table("employees").select("employee_id, name, designation, role, email").or_(or_cond).execute()
-        subordinates = subordinates_res.data or []
+        # Try full column query
+        subordinates_res = sp_client.schema("hrms").table("employees").select(
+            "employee_id, employee_code, name, designation, role, email, reporting_manager, reporting_manager_id, reporting_manager_email, reporting_manager_name"
+        ).execute()
+        all_emps = subordinates_res.data or []
+        
+        # Filter in Python to avoid database schema mismatch errors on missing columns
+        for emp in all_emps:
+            emp_mgr = str(emp.get("reporting_manager") or "").strip()
+            emp_mgr_id = str(emp.get("reporting_manager_id") or "").strip()
+            emp_mgr_email = str(emp.get("reporting_manager_email") or "").strip().lower()
+            emp_mgr_name = str(emp.get("reporting_manager_name") or "").strip().lower()
+            
+            match = False
+            if mgr_emp_id and (emp_mgr == mgr_emp_id or emp_mgr_id == mgr_emp_id):
+                match = True
+            elif mgr_email and emp_mgr_email == mgr_email.strip().lower():
+                match = True
+            elif mgr_name and emp_mgr_name == mgr_name.strip().lower():
+                match = True
+                
+            if match:
+                subordinates.append(emp)
     except Exception as e:
-        logger.error(f"Error querying assigned executives: {e}")
-        subordinates = []
+        logger.warning(f"Reporting columns missing, falling back to base reporting_manager query: {e}")
+        try:
+            # Validate if mgr_emp_id is a valid UUID to prevent pg 22P02 error
+            import uuid
+            is_uuid = False
+            try:
+                uuid.UUID(str(mgr_emp_id))
+                is_uuid = True
+            except ValueError:
+                pass
+
+            if is_uuid:
+                # Fallback to simple query on reporting_manager column (which exists)
+                subordinates_res = sp_client.schema("hrms").table("employees").select(
+                    "employee_id, employee_code, name, designation, role, email, reporting_manager"
+                ).eq("reporting_manager", mgr_emp_id).execute()
+                subordinates = subordinates_res.data or []
+            else:
+                logger.info(f"mgr_emp_id '{mgr_emp_id}' is not a valid UUID; skipping reporting_manager query filter.")
+                subordinates = []
+        except Exception as e2:
+            logger.error(f"Error querying assigned executives: {e2}")
+            subordinates = []
         
     if not subordinates:
         return {
@@ -490,6 +527,8 @@ async def get_manager_team_locations(
         }
         
     exec_ids = [str(u.get("employee_id")) for u in subordinates]
+    exec_codes = [str(u.get("employee_code")) for u in subordinates if u.get("employee_code")]
+    exec_identifiers = list(set(exec_ids + exec_codes))
     
     # 3. Query their live locations from hrms.employee_locations
     try:
@@ -498,6 +537,37 @@ async def get_manager_team_locations(
     except Exception as e:
         logger.warning(f"Error fetching live locations: {e}")
         locations_map = {}
+
+    # Query today's attendance logs to check mode, location, and check-in coordinates as fallback
+    # The active table containing real employee attendance rows is 'attendance'
+    today_str = datetime.now().strftime("%Y-%m-%d")
+    attendance_map = {}
+    try:
+        att_res = sp_client.schema("hrms").table("attendance").select(
+            "employee_id, check_in_time, check_in_address, check_out_time, "
+            "check_in_latitude, check_in_longitude, latitude, longitude, notes"
+        ).eq("attendance_date", today_str).in_("employee_id", exec_identifiers).execute()
+        if att_res.data:
+            for att in att_res.data:
+                # Key by the raw employee_id field from the attendance table (which can be code or UUID)
+                att_emp_key = str(att.get("employee_id") or "").strip()
+                if att_emp_key:
+                    attendance_map[att_emp_key] = att
+    except Exception as ae:
+        logger.warning(f"Error fetching today's attendance from hrms.attendance: {ae}")
+        # Try the plain 'attendance_logs' table as a fallback
+        try:
+            att_res2 = sp_client.schema("hrms").table("attendance_logs").select(
+                "employee_id, check_in_time, check_in_address, check_out_time, "
+                "latitude, longitude, remarks"
+            ).eq("attendance_date", today_str).in_("employee_id", exec_identifiers).execute()
+            if att_res2.data:
+                for att in att_res2.data:
+                    att_emp_key = str(att.get("employee_id") or "").strip()
+                    if att_emp_key:
+                        attendance_map[att_emp_key] = att
+        except Exception:
+            pass
         
     # 4. Normalize and calculate online/offline status
     normalized_list = []
@@ -505,15 +575,35 @@ async def get_manager_team_locations(
     offline_count = 0
     
     for exec_user in subordinates:
-        e_id = exec_user.get("employee_id")
+        e_id = str(exec_user.get("employee_id") or "")
+        e_code = str(exec_user.get("employee_code") or "")
+        
         loc = locations_map.get(e_id)
+        # Fallback query matching either UUID or Employee Code
+        att = attendance_map.get(e_id) or attendance_map.get(e_code)
         
-        latitude = loc.get("latitude") if loc else None
-        longitude = loc.get("longitude") if loc else None
-        accuracy = loc.get("accuracy") if loc else None
-        last_seen_at = loc.get("last_seen_at") if loc else None
+        # GPS: prefer employee_locations, fall back to attendance_logs coordinates
+        latitude = None
+        longitude = None
+        accuracy = None
+        last_seen_at = None
+
+        if loc:
+            latitude = loc.get("latitude")
+            longitude = loc.get("longitude")
+            accuracy = loc.get("accuracy")
+            last_seen_at = loc.get("last_seen_at")
+
+        # Fallback: use check-in coordinates from today's attendance if location table is empty
+        if (not latitude or not longitude) and att:
+            latitude = att.get("check_in_latitude") or att.get("latitude")
+            longitude = att.get("check_in_longitude") or att.get("longitude")
+            accuracy = None
+            last_seen_at = att.get("check_in_time")  # use check-in time as last_seen proxy
         
-        # Determine status: dynamic based on last_seen_at (within 5 minutes)
+        # Determine online status
+        # 1. If employee_locations has a recent ping (within 12 hours), they are online
+        # 2. If no employee_locations but they have a today's attendance with no check-out, mark online
         is_online = False
         if loc:
             db_is_online = loc.get("is_online", True)
@@ -522,18 +612,35 @@ async def get_manager_team_locations(
                     seen_dt = datetime.fromisoformat(last_seen_at.replace("Z", "+00:00"))
                     now_dt = datetime.now(timezone.utc)
                     diff = (now_dt - seen_dt).total_seconds()
-                    if diff < 300:  # 5 minutes threshold
+                    if diff < 43200:  # 12 hours (attendance-day window)
                         is_online = True
                 except Exception:
                     is_online = db_is_online
             else:
                 is_online = db_is_online
+        
+        # Attendance-based online fallback: clocked in today with no check-out
+        if not is_online and att:
+            has_checkin = bool(att.get("check_in_time"))
+            has_checkout = bool(att.get("check_out_time"))
+            if has_checkin and not has_checkout:
+                is_online = True
                 
         if is_online:
             online_count += 1
         else:
             offline_count += 1
             
+        check_in_mode = "Office"
+        check_in_address = None
+        check_in_time = None
+        if att:
+            check_in_time = att.get("check_in_time")
+            check_in_address = att.get("check_in_address")
+            remarks = att.get("notes") or att.get("remarks") or ""
+            if "[Client Visit Mode]" in remarks or "Client" in remarks:
+                check_in_mode = "Client Visit"
+
         normalized_list.append({
             "employee_id": e_id,
             "employee_name": exec_user.get("name") or "Sales Executive",
@@ -542,7 +649,10 @@ async def get_manager_team_locations(
             "longitude": longitude,
             "accuracy": accuracy,
             "is_online": is_online,
-            "last_seen_at": last_seen_at
+            "last_seen_at": last_seen_at,
+            "check_in_mode": check_in_mode,
+            "check_in_address": check_in_address,
+            "check_in_time": check_in_time
         })
         
     return {

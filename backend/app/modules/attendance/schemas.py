@@ -48,6 +48,7 @@ class ClockInRequest(BaseModel):
     face_match_confidence: Optional[float] = 0.95
     notes: Optional[str] = None
     remarks: Optional[str] = None
+    mode: Optional[str] = "Biometric"
     verification_token: Optional[str] = None
 
 
