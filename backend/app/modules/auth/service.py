@@ -68,7 +68,22 @@ class AuthService:
 
         role_lower = role_val.lower()
         is_ceo = any(k in role_lower for k in ["ceo", "founder", "chief executive"])
-        emp_code = "TC-EMP-CEO" if is_ceo else "EMP0001"
+        
+        emp_code = None
+        if payload.email:
+            try:
+                from app.modules.users.repository import UserRepository
+                user_repo = UserRepository()
+                all_users = user_repo.get_all_users()
+                for u in all_users:
+                    if str(u.get("email", "")).strip().lower() == payload.email.strip().lower():
+                        emp_code = u.get("employee_code")
+                        break
+            except Exception as e:
+                logger.warning(f"Could not resolve employee code for dev token: {e}")
+
+        if not emp_code:
+            emp_code = "TC-EMP-CEO" if is_ceo else "EMP000012"
         full_name = (payload.email or "").split("@")[0].replace(".", " ").title()
         if is_ceo or "ceo" in (payload.email or "").lower():
             full_name = "Chief Executive Officer"

@@ -22,6 +22,10 @@ class EmployeeCreate(BaseModel):
     joining_date: Optional[str] = None
     password: Optional[str] = None
     send_welcome_email: Optional[bool] = True
+    annual_leaves: Optional[int] = 12
+    half_day_permissions: Optional[int] = 6
+    short_permissions: Optional[int] = 2
+    incentive_percentage: Optional[float] = 5.0
 
     @validator("phone", "mobile", pre=True, allow_reuse=True)
     def validate_phone_number(cls, v):
@@ -46,6 +50,10 @@ class EmployeeUpdate(BaseModel):
     role: Optional[str] = None
     status: Optional[str] = None
     is_active: Optional[bool] = None
+    annual_leaves: Optional[int] = None
+    half_day_permissions: Optional[int] = None
+    short_permissions: Optional[int] = None
+    incentive_percentage: Optional[float] = None
 
     # Profile & Banking Details
     employment_type: Optional[str] = None
@@ -100,6 +108,10 @@ class EmployeeResponse(BaseModel):
     designation: Optional[str] = None
     role: Optional[str] = None
     is_active: Optional[bool] = True
+    annual_leaves: Optional[int] = 12
+    half_day_permissions: Optional[int] = 6
+    short_permissions: Optional[int] = 2
+    incentive_percentage: Optional[float] = 5.0
 
     # Profile & Banking Details
     employment_type: Optional[str] = None

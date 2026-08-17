@@ -111,6 +111,7 @@ const PROFILE_DEFAULTS = {
   workMode: "On-site",
   workLocation: "Headquarters",
   reportingManager: "CEO",
+  incentivePercentage: 5.0,
   dob: "1995-01-01",
   maritalStatus: "Single",
   bloodGroup: "O+",
@@ -176,6 +177,7 @@ const mapDbToFrontend = (emp) => {
     accountNumber: emp.account_number || "",
     ifsc: emp.ifsc || "",
     branch: emp.branch || "",
+    incentivePercentage: emp.incentive_percentage !== undefined && emp.incentive_percentage !== null ? Number(emp.incentive_percentage) : 5.0,
   };
 };
 
@@ -215,6 +217,7 @@ const mapFrontendToDb = (prof) => {
     account_number: prof.accountNumber,
     ifsc: prof.ifsc,
     branch: prof.branch,
+    incentive_percentage: prof.incentivePercentage !== undefined && prof.incentivePercentage !== null ? Number(prof.incentivePercentage) : 5.0,
   };
 };
 
@@ -266,14 +269,24 @@ function AdminLayout() {
 
   useEffect(() => {
     try {
-      localStorage.setItem(`tc_admin_documents_${adminEmail}`, JSON.stringify(documentsList))
-      const code = empCode || currentUser.employee_code || currentUser.id
+      const currentStr = JSON.stringify(documentsList);
+      localStorage.setItem(`tc_admin_documents_${adminEmail}`, currentStr);
+
+      const savedStr = localStorage.getItem(`tc_admin_documents_synced_${adminEmail}`);
+      if (savedStr === currentStr) {
+        return;
+      }
+
+      const code = currentUser.employee_id || currentUser.auth_user_id || currentUser.id || empCode;
       if (code) {
-        hrmsAPI.updateEmployeeById(code, { documents: JSON.stringify(documentsList) })
+        hrmsAPI.updateEmployee(code, { documents: currentStr })
+          .then(() => {
+            localStorage.setItem(`tc_admin_documents_synced_${adminEmail}`, currentStr);
+          })
           .catch((err) => console.warn("Auto-sync documents failed:", err))
       }
     } catch {}
-  }, [documentsList, adminEmail, empCode, currentUser.employee_code, currentUser.id])
+  }, [documentsList, adminEmail, empCode, currentUser.employee_id, currentUser.auth_user_id, currentUser.id])
 
   useEffect(() => {
     if (!myProfileOpen) return
@@ -282,7 +295,7 @@ function AdminLayout() {
         const savedPhoto = localStorage.getItem(`tc_admin_photo_${adminEmail}`)
         if (savedPhoto) setProfilePhoto(savedPhoto)
         
-        const res = await hrmsAPI.getEmployeeById(empCode || currentUser.employee_code || currentUser.id)
+        const res = await hrmsAPI.getEmployeeById(empCode || currentUser.employee_id || currentUser.auth_user_id || currentUser.id)
         if (res && res.data) {
           const emp = res.data
           const mapped = {
@@ -300,8 +313,13 @@ function AdminLayout() {
             try {
               const parsed = JSON.parse(emp.documents)
               if (Array.isArray(parsed) && parsed.length > 0) {
-                setDocumentsList(parsed)
-                localStorage.setItem(`tc_admin_documents_${adminEmail}`, JSON.stringify(parsed))
+                const currentStr = JSON.stringify(documentsList);
+                const parsedStr = JSON.stringify(parsed);
+                if (currentStr !== parsedStr) {
+                  setDocumentsList(parsed)
+                  localStorage.setItem(`tc_admin_documents_${adminEmail}`, parsedStr)
+                  localStorage.setItem(`tc_admin_documents_synced_${adminEmail}`, parsedStr)
+                }
               }
             } catch (err) {}
           }
@@ -311,11 +329,11 @@ function AdminLayout() {
       }
     }
     loadOnlineProfile()
-  }, [myProfileOpen, empCode, currentUser.employee_code, currentUser.id, adminEmail])
+  }, [myProfileOpen, empCode, currentUser.employee_id, currentUser.auth_user_id, currentUser.id, adminEmail])
 
   const saveProfile = async (keepEditing = false) => {
     try {
-      const code = empCode || currentUser.employee_code || currentUser.id
+      const code = currentUser.employee_id || currentUser.auth_user_id || currentUser.id || empCode
       if (!code) {
         throw new Error("No employee identifier found.")
       }

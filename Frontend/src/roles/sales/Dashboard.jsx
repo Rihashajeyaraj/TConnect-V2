@@ -36,7 +36,7 @@ import {
   ExternalLink,
   Briefcase
 } from "lucide-react";
-import { salesDashboardAPI, todoAPI, notificationAPI, crmAPI } from "../../services/api.js";
+import { salesDashboardAPI, todoAPI, notificationAPI, crmAPI, hrmsAPI } from "../../services/api.js";
 import { exportToPDF, exportToExcel, exportToCSV, getFormattedTodayDate } from "../../utils/exportUtils.js";
 import { calculateWorkHours } from "./Attendance.jsx";
 import { useToast } from "../../common/ToastContext.jsx";
@@ -172,6 +172,7 @@ export default function Dashboard() {
   // Modals state: Reminder of the Day (Today Followups) & Revenue Incentive Modal
   const [showTodayFollowupsModal, setShowTodayFollowupsModal] = useState(false);
   const [showRevenueIncentiveModal, setShowRevenueIncentiveModal] = useState(false);
+  const [incentiveRate, setIncentiveRate] = useState(5.0);
 
   // Quick Action Modal State (Direct Add Lead Modal on Dashboard!)
   const [isAddLeadModalOpen, setIsAddLeadModalOpen] = useState(false);
@@ -373,6 +374,31 @@ export default function Dashboard() {
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
+  useEffect(() => {
+    // Check local cache first
+    try {
+      const saved = localStorage.getItem("tc_se_profile");
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed.incentivePercentage !== undefined) {
+          setIncentiveRate(Number(parsed.incentivePercentage));
+        }
+      }
+    } catch (e) {}
+
+    // Fetch live profile details to ensure dynamic update
+    const empCodeVal = currentUser.employee_id || currentUser.auth_user_id || currentUser.id;
+    if (empCodeVal) {
+      hrmsAPI.getEmployeeById(empCodeVal)
+        .then((res) => {
+          if (res && res.data && res.data.incentive_percentage !== undefined && res.data.incentive_percentage !== null) {
+            setIncentiveRate(Number(res.data.incentive_percentage));
+          }
+        })
+        .catch((err) => console.warn("Could not retrieve live incentive rate:", err));
+    }
+  }, [currentUser.employee_id, currentUser.auth_user_id, currentUser.id]);
+
   // ── Dashboard Direct Add Lead Submit Handler ─────────────────────────────────
   const handleAddLeadSubmit = (e) => {
     e.preventDefault();
@@ -455,8 +481,8 @@ export default function Dashboard() {
   const revAchievedVal = k.my_generated_revenue || k.revenue_this_month || 0;
   const revAchievementPct = Math.min(Math.round((revAchievedVal / revTargetVal) * 100), 100);
 
-  // Executive Incentive Calculation: 5% of total revenue generated
-  const totalIncentiveEarned = Math.round(revAchievedVal * 0.05);
+  // Executive Incentive Calculation: dynamic commission of total revenue generated
+  const totalIncentiveEarned = Math.round(revAchievedVal * (incentiveRate / 100));
 
   return (
     <div className="space-y-5 font-sans text-slate-900 min-w-0 w-full">
@@ -985,9 +1011,9 @@ export default function Dashboard() {
               </div>
 
               <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-100 via-emerald-50 to-teal-50 border-2 border-emerald-200">
-                <p className="text-xs font-black text-emerald-900 uppercase tracking-wider">Total Executive Incentive Earned (5% Commission)</p>
+                <p className="text-xs font-black text-emerald-900 uppercase tracking-wider">Total Executive Incentive Earned ({incentiveRate}% Commission)</p>
                 <h3 className="text-2xl sm:text-3xl font-black text-emerald-950 mt-1">{formatINR(totalIncentiveEarned)}</h3>
-                <p className="text-[11px] font-bold text-emerald-800 mt-0.5">🎉 Standard 5% incentive calculated per closed deal</p>
+                <p className="text-[11px] font-bold text-emerald-800 mt-0.5">🎉 Dynamic {incentiveRate}% incentive calculated per closed deal</p>
               </div>
             </div>
 
@@ -1005,7 +1031,7 @@ export default function Dashboard() {
                       <th className="py-3 px-4">Contact Person</th>
                       <th className="py-3 px-4">City</th>
                       <th className="py-3 px-4">Deal Amount Generated</th>
-                      <th className="py-3 px-4 text-emerald-800">Executive Incentive (5%)</th>
+                      <th className="py-3 px-4 text-emerald-800">Executive Incentive ({incentiveRate}%)</th>
                       <th className="py-3 px-4">Status</th>
                     </tr>
                   </thead>
@@ -1013,7 +1039,7 @@ export default function Dashboard() {
                     {myCustomersList.map((c, i) => {
                       const valStr = c.contractValue || c.value || c.revenue || c.budget || "450000";
                       const valNum = parseInt(String(valStr).replace(/[^0-9]/g, "")) || 450000;
-                      const incNum = Math.round(valNum * 0.05);
+                      const incNum = Math.round(valNum * (incentiveRate / 100));
 
                       return (
                         <tr key={i} className="hover:bg-purple-50/40 transition">

@@ -258,6 +258,10 @@ class UserRepository:
             "reporting_manager_id": reporting_manager_id,
             "reporting_manager_name": reporting_manager_name,
             "reporting_manager_email": reporting_manager_email,
+            "annual_leaves": user_data.get("annual_leaves", 12),
+            "half_day_permissions": user_data.get("half_day_permissions", 6),
+            "short_permissions": user_data.get("short_permissions", 2),
+            "incentive_percentage": float(user_data.get("incentive_percentage", 5.0)),
         }
 
         # ── Step 1: Create user in Supabase Auth (auth.users) ──────────────────
@@ -286,6 +290,10 @@ class UserRepository:
                         "reporting_manager_id": reporting_manager_id,
                         "reporting_manager_name": reporting_manager_name,
                         "reporting_manager_email": reporting_manager_email,
+                        "annual_leaves": new_user["annual_leaves"],
+                        "half_day_permissions": new_user["half_day_permissions"],
+                        "short_permissions": new_user["short_permissions"],
+                        "incentive_percentage": new_user["incentive_percentage"],
                     }
                 })
                 if auth_res and hasattr(auth_res, "user") and auth_res.user:
@@ -320,6 +328,10 @@ class UserRepository:
                 "password": password,
                 "company_id": user_data.get("company_id", "TC-001"),
                 "reporting_manager": reporting_manager_id,
+                "annual_leaves": new_user["annual_leaves"],
+                "half_day_permissions": new_user["half_day_permissions"],
+                "short_permissions": new_user["short_permissions"],
+                "incentive_percentage": new_user["incentive_percentage"],
             }
             hrms_record = hrms_repo.sync_employee_from_user(hrms_payload)
             logger.info(f"✅ HRMS employee record synced for {email} (emp_code: {emp_code})")
@@ -361,7 +373,7 @@ class UserRepository:
             auth_admin = getattr(admin_client, "auth", None)
             if auth_admin and hasattr(auth_admin, "admin") and updates:
                 meta_update = {}
-                for k in ["role", "dept", "department", "status", "reporting_manager_id", "reporting_manager_name", "reporting_manager_email"]:
+                for k in ["role", "dept", "department", "status", "reporting_manager_id", "reporting_manager_name", "reporting_manager_email", "annual_leaves", "half_day_permissions", "short_permissions", "incentive_percentage"]:
                     if updates.get(k) is not None:
                         meta_update[k] = updates[k]
                 if updates.get("name"):
@@ -407,6 +419,14 @@ class UserRepository:
             db_updates["reporting_manager_name"] = updates["reporting_manager_name"]
         if "reporting_manager_email" in updates:
             db_updates["reporting_manager_email"] = updates["reporting_manager_email"]
+        if "annual_leaves" in updates:
+            db_updates["annual_leaves"] = updates["annual_leaves"]
+        if "half_day_permissions" in updates:
+            db_updates["half_day_permissions"] = updates["half_day_permissions"]
+        if "short_permissions" in updates:
+            db_updates["short_permissions"] = updates["short_permissions"]
+        if "incentive_percentage" in updates:
+            db_updates["incentive_percentage"] = updates["incentive_percentage"]
 
         print("[REPORTING MANAGER]")
         print(f"employee_id: {user_id}")

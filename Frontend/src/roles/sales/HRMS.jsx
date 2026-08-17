@@ -187,7 +187,7 @@ export default function SalesHRMS() {
   });
 
   useEffect(() => {
-    const code = empCode || currentUser.employee_code || currentUser.id;
+    const code = currentUser.employee_id || currentUser.auth_user_id || currentUser.id || empCode;
     if (code) {
       hrmsAPI.getEmployeeById(code)
         .then((res) => {
@@ -1251,8 +1251,35 @@ export default function SalesHRMS() {
         )}
 
         {/* ── LEAVE MANAGEMENT (Twite HRMS UI Match) ── */}
-        {activeSection === "leave" && (
-          <div className="space-y-6 max-w-5xl">
+        {activeSection === "leave" && (() => {
+          const savedLeaves = localStorage.getItem(`tc_leaves_${userEmail.toLowerCase().trim()}`);
+          const localAllocation = savedLeaves ? JSON.parse(savedLeaves) : { annualLeaves: 12, halfDayPermissions: 6, shortPermissions: 2 };
+
+          const leaveAllocation = {
+            annualLeaves: profile.annual_leaves ?? profile.annualLeaves ?? localAllocation.annualLeaves,
+            halfDayPermissions: profile.half_day_permissions ?? profile.halfDayPermissions ?? localAllocation.halfDayPermissions,
+            shortPermissions: profile.short_permissions ?? profile.shortPermissions ?? localAllocation.shortPermissions,
+          };
+
+          const consumedFullLeaves = myLeaveRequests
+            .filter(r => (r.leave_type === "Full Day Leave" || r.leave_type?.includes("Full")) && r.status !== "Rejected")
+            .length;
+
+          const consumedHalfDay = myLeaveRequests
+            .filter(r => (r.leave_type === "Half-Day Permission" || r.leave_type?.includes("Half")) && r.status !== "Rejected")
+            .length;
+
+          const consumedShort = myLeaveRequests
+            .filter(r => (r.leave_type === "Short Permission" || r.leave_type?.includes("Short")) && r.status !== "Rejected")
+            .length;
+
+          const remainingFullLeaves = Math.max(0, leaveAllocation.annualLeaves - consumedFullLeaves);
+          const remainingHalfDay = Math.max(0, leaveAllocation.halfDayPermissions - consumedHalfDay);
+          const remainingShort = Math.max(0, leaveAllocation.shortPermissions - consumedShort);
+
+          return (
+            <>
+              <div className="space-y-6 max-w-5xl">
             {/* 1. Leave & Permission Header & Apply Action */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 flex flex-wrap items-center justify-between gap-4">
               <div>
@@ -1276,20 +1303,20 @@ export default function SalesHRMS() {
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div className="bg-emerald-100/70 border border-emerald-200 rounded-2xl p-4 space-y-1.5">
                 <span className="text-xs font-black text-emerald-900 block uppercase tracking-wider">Full Day Leave</span>
-                <div className="text-3xl font-black text-emerald-950">12 Days</div>
-                <span className="text-[11px] font-extrabold text-emerald-800">12 / 12 Days Remaining</span>
+                <div className="text-3xl font-black text-emerald-950">{leaveAllocation.annualLeaves} Days</div>
+                <span className="text-[11px] font-extrabold text-emerald-800">{remainingFullLeaves} / {leaveAllocation.annualLeaves} Days Remaining</span>
               </div>
 
               <div className="bg-amber-100/70 border border-amber-200 rounded-2xl p-4 space-y-1.5">
                 <span className="text-xs font-black text-amber-900 block uppercase tracking-wider">Half-Day Permission</span>
-                <div className="text-3xl font-black text-amber-950">6 Slots</div>
-                <span className="text-[11px] font-extrabold text-amber-800">Morning or Afternoon</span>
+                <div className="text-3xl font-black text-amber-950">{leaveAllocation.halfDayPermissions} Slots</div>
+                <span className="text-[11px] font-extrabold text-amber-800">{remainingHalfDay} / {leaveAllocation.halfDayPermissions} Slots Remaining</span>
               </div>
 
               <div className="bg-sky-100/70 border border-sky-200 rounded-2xl p-4 space-y-1.5">
                 <span className="text-xs font-black text-sky-900 block uppercase tracking-wider">Short Permission</span>
-                <div className="text-3xl font-black text-sky-950">2 Hours</div>
-                <span className="text-[11px] font-extrabold text-sky-800">Max 2 Slots / Month</span>
+                <div className="text-3xl font-black text-sky-950">{leaveAllocation.shortPermissions} Hours</div>
+                <span className="text-[11px] font-extrabold text-sky-800">Max {leaveAllocation.shortPermissions} Hours / Month</span>
               </div>
             </div>
 
@@ -1590,8 +1617,10 @@ export default function SalesHRMS() {
                 </div>
               </div>
             )}
-          </div>
-        )}
+            </div>
+            </>
+          );
+        })()}
 
         {/* ── HOLIDAY CALENDAR ── */}
         {activeSection === "calendar" && (
@@ -1620,15 +1649,25 @@ export default function SalesHRMS() {
         {activeSection === "career" && (
           <div className="max-w-2xl space-y-5">
             <h1 className="text-2xl font-black text-slate-900">Career Ladder</h1>
-            <p className="text-slate-500 text-sm font-semibold">Your growth path at TwiteConnect based on deals closed.</p>
+            <p className="text-slate-500 text-sm font-semibold">
+              {isUserAdmin 
+                ? "Your growth path at TwiteConnect based on employee accounts managed." 
+                : "Your growth path at TwiteConnect based on deals closed."}
+            </p>
             <div className="space-y-3">
-              {[
+              {(isUserAdmin ? [
+                { level: "1", title: "HR & Admin Assistant", target: "0–5 profiles", done: employeesCount > 5, current: employeesCount <= 5 },
+                { level: "2", title: "HR & Admin Executive", target: "6–15 profiles", done: employeesCount > 15, current: employeesCount > 5 && employeesCount <= 15 },
+                { level: "3", title: "Senior HR & Admin Lead", target: "16–30 profiles", done: employeesCount > 30, current: employeesCount > 15 && employeesCount <= 30 },
+                { level: "4", title: "HR & Operations Manager", target: "31–50 profiles", done: employeesCount > 50, current: employeesCount > 30 && employeesCount <= 50 },
+                { level: "5", title: "VP of Operations & People", target: "51+ profiles", done: false, current: employeesCount > 50 },
+              ] : [
                 { level: "1", title: "Sales Executive Trainee", target: "0–5 deals", done: convertedClients > 5, current: convertedClients <= 5 },
                 { level: "2", title: "Sales Executive", target: "6–15 deals", done: convertedClients > 15, current: convertedClients > 5 && convertedClients <= 15 },
                 { level: "3", title: "Senior Sales Executive", target: "16–30 deals", done: convertedClients > 30, current: convertedClients > 15 && convertedClients <= 30 },
                 { level: "4", title: "Sales Team Lead", target: "31+ deals", done: false, current: convertedClients > 30 },
                 { level: "5", title: "Sales Manager", target: "Promotion", done: false, current: false },
-              ].map(step => (
+              ]).map(step => (
                 <div key={step.level} className={`flex items-center gap-4 p-4 rounded-2xl border transition ${step.current ? "bg-teal-50 border-teal-300" : step.done ? "bg-emerald-50 border-emerald-200" : "bg-white border-slate-200"}`}>
                   <div className={`w-10 h-10 rounded-full flex items-center justify-center font-black text-sm shrink-0 ${step.done ? "bg-emerald-600 text-white" : step.current ? "bg-teal-600 text-white" : "bg-slate-100 text-slate-400"}`}>
                     {step.done ? <CheckCircle2 size={18} /> : step.level}
@@ -1643,9 +1682,18 @@ export default function SalesHRMS() {
               ))}
             </div>
             <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5">
-              <div className="flex items-center gap-3 mb-3"><Medal size={20} className="text-amber-500" /><h3 className="font-black text-slate-900 text-sm">Your Total Conversions</h3></div>
-              <p className="text-4xl font-black text-amber-600">{convertedClients}</p>
-              <p className="text-xs text-slate-400 font-semibold mt-1">deals closed across all time</p>
+              <div className="flex items-center gap-3 mb-3">
+                <Medal size={20} className="text-amber-500" />
+                <h3 className="font-black text-slate-900 text-sm">
+                  {isUserAdmin ? "Your Total Employees Managed" : "Your Total Conversions"}
+                </h3>
+              </div>
+              <p className="text-4xl font-black text-amber-600">
+                {isUserAdmin ? employeesCount : convertedClients}
+              </p>
+              <p className="text-xs text-slate-450 font-semibold mt-1">
+                {isUserAdmin ? "active staff accounts in the portal" : "deals closed across all time"}
+              </p>
             </div>
           </div>
         )}

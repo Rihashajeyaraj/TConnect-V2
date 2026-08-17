@@ -79,6 +79,7 @@ const mapDbToFrontend = (emp) => {
     accountNumber: emp.account_number ?? "",
     ifsc: emp.ifsc ?? "",
     branch: emp.branch ?? "",
+    incentivePercentage: emp.incentive_percentage !== undefined && emp.incentive_percentage !== null ? Number(emp.incentive_percentage) : 5.0,
   };
 };
 
@@ -118,6 +119,7 @@ const mapFrontendToDb = (prof) => {
     account_number: prof.accountNumber,
     ifsc: prof.ifsc,
     branch: prof.branch,
+    incentive_percentage: prof.incentive_percentage !== undefined && prof.incentive_percentage !== null ? Number(prof.incentive_percentage) : 5.0,
   };
 };
 
@@ -148,6 +150,7 @@ const PROFILE_DEFAULTS = {
   workMode: 'In Office',
   workLocation: 'Chennai, Tamil Nadu',
   reportingManager: 'CEO / Founder (CEO)',
+  incentivePercentage: 5.0,
   // Personal
   dob: '',
   maritalStatus: 'Married',
@@ -334,7 +337,7 @@ export default function ManagerLayout() {
   useEffect(() => {
     if (!myProfileOpen) return
 
-    const code = empCode || currentUser.employee_code || currentUser.id || 'MGR-001'
+    const code = currentUser.employee_id || currentUser.auth_user_id || currentUser.id || empCode || 'MGR-001'
     hrmsAPI.getEmployeeById(code)
       .then((res) => {
         if (res && res.data) {
@@ -390,7 +393,7 @@ export default function ManagerLayout() {
     if (saving) return;
     setSaving(true)
     try {
-      const code = empCode || currentUser.employee_code || currentUser.id
+      const code = currentUser.employee_id || currentUser.auth_user_id || currentUser.id || empCode
       if (!code) throw new Error("No employee identifier found.")
 
       // ── Build change diff ─────────────────────────────────────────────────
@@ -425,6 +428,7 @@ export default function ManagerLayout() {
         accountNumber:        "account_number",
         ifsc:                 "ifsc",
         branch:               "branch",
+        incentivePercentage:  "incentive_percentage",
       }
 
       const original = originalProfileRef.current || {}

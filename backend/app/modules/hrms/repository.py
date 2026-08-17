@@ -122,6 +122,10 @@ class HRMSRepository:
                     "reporting_manager_id": emp.get("reporting_manager_id") or emp.get("reporting_manager"),
                     "reporting_manager_name": emp.get("reporting_manager_name") or "Not Assigned",
                     "reporting_manager_email": emp.get("reporting_manager_email") or "",
+                    "annual_leaves": emp.get("annual_leaves") if emp.get("annual_leaves") is not None else 12,
+                    "half_day_permissions": emp.get("half_day_permissions") if emp.get("half_day_permissions") is not None else 6,
+                    "short_permissions": emp.get("short_permissions") if emp.get("short_permissions") is not None else 2,
+                    "incentive_percentage": float(emp.get("incentive_percentage")) if emp.get("incentive_percentage") is not None else 5.0,
                 }
                 for k, v in emp.items():
                     if k not in normalized:
@@ -176,6 +180,10 @@ class HRMSRepository:
                         "reporting_manager_id": meta.get("reporting_manager_id"),
                         "reporting_manager_name": meta.get("reporting_manager_name") or "Not Assigned",
                         "reporting_manager_email": meta.get("reporting_manager_email") or "",
+                        "annual_leaves": meta.get("annual_leaves") if meta.get("annual_leaves") is not None else 12,
+                        "half_day_permissions": meta.get("half_day_permissions") if meta.get("half_day_permissions") is not None else 6,
+                        "short_permissions": meta.get("short_permissions") if meta.get("short_permissions") is not None else 2,
+                        "incentive_percentage": float(meta.get("incentive_percentage")) if meta.get("incentive_percentage") is not None else 5.0,
                     }
                     for k, v in meta.items():
                         if k not in normalized:
@@ -319,6 +327,10 @@ class HRMSRepository:
             "joining_date": data.get("joining_date") or datetime.date.today().isoformat(),
             "company_id": company_id,
             "status": "Active",
+            "annual_leaves": data.get("annual_leaves", 12),
+            "half_day_permissions": data.get("half_day_permissions", 6),
+            "short_permissions": data.get("short_permissions", 2),
+            "incentive_percentage": float(data.get("incentive_percentage", 5.0)),
         }
 
         db_result = self._insert_employee_record(emp_record)
@@ -390,6 +402,10 @@ class HRMSRepository:
             "joining_date": data.get("joining_date") or datetime.date.today().isoformat(),
             "company_id": company_id,
             "status": data.get("status", "Active"),
+            "annual_leaves": data.get("annual_leaves", 12),
+            "half_day_permissions": data.get("half_day_permissions", 6),
+            "short_permissions": data.get("short_permissions", 2),
+            "incentive_percentage": float(data.get("incentive_percentage", 5.0)),
         }
 
         if data.get("reporting_manager"):

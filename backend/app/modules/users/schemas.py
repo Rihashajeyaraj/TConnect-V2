@@ -21,6 +21,10 @@ class UserCreate(BaseModel):
     reporting_manager_id: Optional[str] = None
     reporting_manager_name: Optional[str] = None
     reporting_manager_email: Optional[str] = None
+    annual_leaves: Optional[int] = 12
+    half_day_permissions: Optional[int] = 6
+    short_permissions: Optional[int] = 2
+    incentive_percentage: Optional[float] = 5.0
 
     @validator("phone", "emergency_contact", pre=True, allow_reuse=True)
     def validate_phone_number(cls, v):
@@ -45,6 +49,10 @@ class UserUpdate(BaseModel):
     reporting_manager_id: Optional[str] = None
     reporting_manager_name: Optional[str] = None
     reporting_manager_email: Optional[str] = None
+    annual_leaves: Optional[int] = None
+    half_day_permissions: Optional[int] = None
+    short_permissions: Optional[int] = None
+    incentive_percentage: Optional[float] = None
 
     @validator("phone", pre=True, allow_reuse=True)
     def validate_phone_number(cls, v):
@@ -69,6 +77,10 @@ class UserResponse(BaseModel):
     reporting_manager_id: Optional[str] = None
     reporting_manager_name: Optional[str] = None
     reporting_manager_email: Optional[str] = None
+    annual_leaves: Optional[int] = 12
+    half_day_permissions: Optional[int] = 6
+    short_permissions: Optional[int] = 2
+    incentive_percentage: Optional[float] = 5.0
 
 
 class AssignManagerRequest(BaseModel):

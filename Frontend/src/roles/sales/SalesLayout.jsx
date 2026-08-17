@@ -60,6 +60,7 @@ const PROFILE_DEFAULTS = {
   workMode: "On Field / In Office",
   workLocation: "Chennai, Tamil Nadu",
   reportingManager: "Jeeva Kumar (Sales Manager)",
+  incentivePercentage: 5.0,
   // Personal
   dob: "2000-05-15",
   maritalStatus: "Single",
@@ -138,6 +139,7 @@ const mapDbToFrontend = (emp) => {
     accountNumber: emp.account_number || "",
     ifsc: emp.ifsc || "",
     branch: emp.branch || "",
+    incentivePercentage: emp.incentive_percentage !== undefined && emp.incentive_percentage !== null ? Number(emp.incentive_percentage) : 5.0,
   };
 };
 
@@ -177,6 +179,7 @@ const mapFrontendToDb = (prof) => {
     account_number: prof.accountNumber,
     ifsc: prof.ifsc,
     branch: prof.branch,
+    incentive_percentage: prof.incentivePercentage !== undefined && prof.incentivePercentage !== null ? Number(prof.incentivePercentage) : 5.0,
   };
 };
 
@@ -287,7 +290,7 @@ export default function SalesLayout() {
     } catch (e) { }
 
     // Fetch live data from Supabase
-    const code = empCode || user.employee_code || user.id || "EMP000012";
+    const code = user.employee_id || user.auth_user_id || user.id || empCode || "EMP000012";
     hrmsAPI.getEmployeeById(code)
       .then((res) => {
         if (res && res.data) {
@@ -306,8 +309,13 @@ export default function SalesLayout() {
             try {
               const parsed = JSON.parse(emp.documents);
               if (Array.isArray(parsed) && parsed.length > 0) {
-                setDocumentsList(parsed);
-                localStorage.setItem("tc_se_documents", JSON.stringify(parsed));
+                const currentStr = JSON.stringify(documentsList);
+                const parsedStr = JSON.stringify(parsed);
+                if (currentStr !== parsedStr) {
+                  setDocumentsList(parsed);
+                  localStorage.setItem("tc_se_documents", parsedStr);
+                  localStorage.setItem("tc_se_documents_synced", parsedStr);
+                }
               }
             } catch (err) {}
           }
@@ -316,11 +324,11 @@ export default function SalesLayout() {
       .catch((err) => {
         console.warn("Could not retrieve online profile data:", err);
       });
-  }, [myProfileOpen, empCode, user.employee_code, user.id]);
+  }, [myProfileOpen, empCode, user.employee_id, user.auth_user_id, user.id]);
 
   const saveProfile = async (keepEditing = false) => {
     try {
-      const code = empCode || user.employee_code || user.id;
+      const code = user.employee_id || user.auth_user_id || user.id || empCode;
       if (!code) {
         throw new Error("No employee identifier found.");
       }
@@ -424,14 +432,24 @@ export default function SalesLayout() {
 
   useEffect(() => {
     try {
-      localStorage.setItem("tc_se_documents", JSON.stringify(documentsList));
-      const code = empCode || user.employee_code || user.id;
+      const currentStr = JSON.stringify(documentsList);
+      localStorage.setItem("tc_se_documents", currentStr);
+      
+      const savedStr = localStorage.getItem("tc_se_documents_synced");
+      if (savedStr === currentStr) {
+        return;
+      }
+
+      const code = user.employee_id || user.auth_user_id || user.id || empCode;
       if (code) {
-        hrmsAPI.updateEmployee(code, { documents: JSON.stringify(documentsList) })
+        hrmsAPI.updateEmployee(code, { documents: currentStr })
+          .then(() => {
+            localStorage.setItem("tc_se_documents_synced", currentStr);
+          })
           .catch((err) => console.warn("Auto-sync documents failed:", err));
       }
     } catch (err) { }
-  }, [documentsList, empCode, user.employee_code, user.id]);
+  }, [documentsList, empCode, user.employee_id, user.auth_user_id, user.id]);
 
   useEffect(() => {
     try {

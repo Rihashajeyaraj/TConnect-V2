@@ -3,6 +3,7 @@ import {
   ShieldCheck,
   Plus,
   Lock,
+  Unlock,
   Check,
   X,
   Users,
@@ -18,6 +19,18 @@ import {
   AlertTriangle,
   Info,
   InfoIcon,
+  Briefcase,
+  MapPin,
+  Fingerprint,
+  CalendarX,
+  Coins,
+  BarChart3,
+  Map,
+  Bell,
+  UserPlus,
+  ScrollText,
+  AlertCircle,
+  HelpCircle,
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
 import { settingsAPI } from '../../services/api.js'
@@ -144,6 +157,24 @@ function RoleManagement() {
     name: '',
     description: '',
   })
+
+  const [activeModule, setActiveModule] = useState('CRM & Leads')
+
+  const moduleIcons = {
+    'CRM & Leads': Briefcase,
+    'Customers': Users,
+    'Visits': MapPin,
+    'HRMS': Sliders,
+    'Attendance': Fingerprint,
+    'Leave Management': CalendarX,
+    'Expenses & Finance': Coins,
+    'Reports': BarChart3,
+    'Smart Client Map': Map,
+    'Notifications': Bell,
+    'Company Administration': Sliders,
+    'User Management': UserPlus,
+    'Audit Logs': ScrollText,
+  }
 
   // Prevent accidental navigation
   useEffect(() => {
@@ -471,24 +502,20 @@ function RoleManagement() {
     return roles.filter((r) => r.name.toLowerCase().includes(searchQuery.toLowerCase()))
   }, [roles, searchQuery])
 
-  // Filters permissions within groups
-  const groupedPermissions = useMemo(() => {
-    const map = {}
-    renderPerms.forEach((p) => {
+  // Filters permissions matching selected activeModule or search query
+  const matchingPerms = useMemo(() => {
+    return renderPerms.filter((p) => {
       if (permissionSearch) {
-        const matches =
+        return (
           p.action.toLowerCase().includes(permissionSearch.toLowerCase()) ||
           p.permission_key.toLowerCase().includes(permissionSearch.toLowerCase()) ||
-          p.description.toLowerCase().includes(permissionSearch.toLowerCase())
-        if (!matches) return
+          p.description.toLowerCase().includes(permissionSearch.toLowerCase()) ||
+          p.module.toLowerCase().includes(permissionSearch.toLowerCase())
+        )
       }
-      if (!map[p.module]) {
-        map[p.module] = []
-      }
-      map[p.module].push(p)
+      return p.module === activeModule
     })
-    return map
-  }, [renderPerms, permissionSearch])
+  }, [renderPerms, permissionSearch, activeModule])
 
   // Backward compatibility rendering helper
   const getRolePermissionsForRendering = (role) => {
@@ -620,9 +647,9 @@ function RoleManagement() {
 
         {/* Right Column: Permission Config Matrix Table */}
         {selectedRole && (
-          <div className="lg:col-span-8 bg-white p-5 rounded-2xl border border-[#DCE3EF] shadow-xs space-y-4">
+          <div className="lg:col-span-8 bg-white p-5 rounded-2xl border border-[#DCE3EF] shadow-xs space-y-5">
             {/* Header Selected Role Description info */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
               <div>
                 <div className="flex items-center gap-2">
                   <h2 className="font-extrabold text-[#071A45] text-base">{selectedRole.name} Matrix</h2>
@@ -669,137 +696,272 @@ function RoleManagement() {
                 placeholder="Search capability permissions..."
                 value={permissionSearch}
                 onChange={(e) => setPermissionSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-[#DCE3EF] rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#123A8C] font-semibold"
+                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-[#DCE3EF] rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#123A8C] font-semibold"
               />
             </div>
 
-            {/* Scrollable grid table container */}
-            <div className="border border-[#DCE3EF] rounded-xl overflow-hidden bg-white max-h-[550px] overflow-y-auto">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead className="bg-slate-50 text-[#071A45] font-extrabold border-b border-[#DCE3EF] sticky top-0 z-10">
-                  <tr>
-                    <th className="p-3 w-1/3">Module / Action</th>
-                    <th className="p-3 w-1/4">Key Code</th>
-                    <th className="p-3 w-1/4">Access Scope</th>
-                    <th className="p-3 w-16 text-center">Status</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {Object.keys(groupedPermissions).length === 0 ? (
-                    <tr>
-                      <td colSpan="4" className="text-center py-12 text-xs text-[#64748B] font-semibold">
-                        No permissions found matching '{permissionSearch}'.
-                      </td>
-                    </tr>
-                  ) : (
-                    Object.keys(groupedPermissions).map((moduleName) => {
-                      const perms = groupedPermissions[moduleName]
-                      const enabledCount = perms.filter((p) => p.enabled).length
+            {/* Matrix Panel Layout */}
+            {permissionSearch ? (
+              // Search view: flat list of matching permissions across all modules
+              <div className="space-y-4">
+                <div className="flex items-center justify-between text-xs text-slate-500 font-bold border-b pb-2">
+                  <span>Search Results for "{permissionSearch}"</span>
+                  <span>{matchingPerms.length} matches found</span>
+                </div>
+                {matchingPerms.length === 0 ? (
+                  <div className="text-center py-12 border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                    <AlertCircle className="w-8 h-8 text-slate-300 mx-auto mb-2" />
+                    <p className="text-xs font-bold text-slate-500">No permissions found matching '{permissionSearch}'.</p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
+                    {matchingPerms.map((p) => {
+                      const isParentOff = isParentViewDisabled(p.permission_key)
+                      const isEnabled = p.enabled && !isParentOff
+                      return (
+                        <div
+                          key={p.permission_key}
+                          className={`border rounded-2xl p-4 bg-white transition-all duration-200 flex flex-col justify-between min-h-[140px] ${
+                            isParentOff
+                              ? 'border-slate-100 bg-slate-50/40 opacity-60'
+                              : isEnabled
+                              ? 'border-blue-100 shadow-xs ring-1 ring-blue-50/10'
+                              : 'border-slate-200 hover:border-slate-350 shadow-2xs'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <span className="font-extrabold text-slate-900 text-xs tracking-tight uppercase flex items-center gap-1.5 flex-wrap">
+                                  {p.action}
+                                  <span className="text-[8px] bg-blue-50 text-[#123A8C] px-1.5 py-0.5 rounded font-black uppercase border border-blue-100">
+                                    {p.module}
+                                  </span>
+                                </span>
+                                <span className="block font-mono text-[9px] text-slate-400 mt-0.5 select-all">
+                                  {p.permission_key}
+                                </span>
+                              </div>
+                              <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
+                                <input
+                                  type="checkbox"
+                                  checked={isEnabled}
+                                  disabled={isParentOff}
+                                  onChange={(e) =>
+                                    handleTogglePermission(p.permission_key, e.target.checked)
+                                  }
+                                  className="sr-only peer"
+                                />
+                                <div className="w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#061A4D] disabled:opacity-50"></div>
+                              </label>
+                            </div>
+                            <p className="text-[11px] text-slate-500 font-semibold leading-relaxed mt-2.5">
+                              {p.description}
+                            </p>
+                          </div>
+                          <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2">
+                            {isParentOff ? (
+                              <div className="flex items-center gap-1.5 text-amber-600 text-[10px] font-extrabold bg-amber-50 border border-amber-100 p-2 rounded-lg">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                <span>Requires View permission to be enabled</span>
+                              </div>
+                            ) : p.hasScope ? (
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                  <Lock className="w-3 h-3 text-slate-400" /> Access Scope
+                                </span>
+                                <select
+                                  value={p.access_scope}
+                                  disabled={!isEnabled}
+                                  onChange={(e) =>
+                                    handleScopeChange(p.permission_key, e.target.value)
+                                  }
+                                  className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800 focus:outline-none focus:border-[#123A8C] disabled:opacity-50 text-[10px] h-7 shrink-0 shadow-2xs"
+                                >
+                                  <option value="Own">Own Record</option>
+                                  <option value="Assigned">Assigned Only</option>
+                                  <option value="Team">Team (Subordinates)</option>
+                                  <option value="Company">Company</option>
+                                  <option value="All">All Operations</option>
+                                </select>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1 text-slate-400 text-[10px] font-semibold">
+                                <Unlock className="w-3 h-3 text-slate-300" /> Full Module Access
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              // Tabbed Layout with Module Sidebar on Left and Cards Grid on Right
+              <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
+                {/* Module Sidebar */}
+                <div className="md:col-span-4 space-y-1.5 max-h-[500px] overflow-y-auto pr-1">
+                  {Object.keys(moduleIcons).map((mName) => {
+                    const IconComponent = moduleIcons[mName] || ShieldCheck
+                    
+                    // Stats
+                    const permsInMod = renderPerms.filter((p) => p.module === mName)
+                    const totalCount = permsInMod.length
+                    const enabledCount = permsInMod.filter(
+                      (p) => p.enabled && !isParentViewDisabled(p.permission_key)
+                    ).length
+
+                    return (
+                      <button
+                        key={mName}
+                        type="button"
+                        onClick={() => setActiveModule(mName)}
+                        className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
+                          activeModule === mName
+                            ? 'border-[#123A8C] bg-blue-50/20 text-[#071A45] font-extrabold shadow-2xs ring-2 ring-[#123A8C]/15'
+                            : 'border-slate-100 bg-slate-50/10 text-[#64748B] hover:bg-slate-50 hover:text-slate-900 font-semibold'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <IconComponent
+                            className={`w-4 h-4 shrink-0 ${
+                              activeModule === mName ? 'text-[#123A8C]' : 'text-slate-450'
+                            }`}
+                          />
+                          <span className="text-[11px] truncate">{mName}</span>
+                        </div>
+                        <span
+                          className={`text-[9px] px-1.5 py-0.5 rounded font-black shrink-0 border ${
+                            enabledCount === totalCount
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                              : enabledCount > 0
+                              ? 'bg-amber-50 text-amber-700 border-amber-100'
+                              : 'bg-slate-100 text-slate-500 border-slate-200'
+                          }`}
+                        >
+                          {enabledCount}/{totalCount}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+
+                {/* Module Details Right Panel */}
+                <div className="md:col-span-8 space-y-4">
+                  {/* Module header stats & controls */}
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2">
+                    <div>
+                      <h3 className="font-extrabold text-[#071A45] text-sm uppercase tracking-tight flex items-center gap-1.5">
+                        {activeModule}
+                      </h3>
+                      <p className="text-[10px] text-slate-450 font-bold mt-0.5">
+                        {renderPerms.filter((p) => p.module === activeModule && p.enabled && !isParentViewDisabled(p.permission_key)).length} of {renderPerms.filter((p) => p.module === activeModule).length} capabilities enabled
+                      </p>
+                    </div>
+                    
+                    <div className="flex items-center gap-1 shrink-0 uppercase text-[8px] font-black">
+                      <button
+                        type="button"
+                        onClick={() => enableAllInModule(activeModule, true)}
+                        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-250 text-emerald-700 rounded-md transition shadow-2xs cursor-pointer"
+                      >
+                        All On
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => enableAllInModule(activeModule, false)}
+                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-250 text-rose-700 rounded-md transition shadow-2xs cursor-pointer"
+                      >
+                        All Off
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Cards Grid */}
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 max-h-[420px] overflow-y-auto pr-1">
+                    {matchingPerms.map((p) => {
+                      const isParentOff = isParentViewDisabled(p.permission_key)
+                      const isEnabled = p.enabled && !isParentOff
 
                       return (
-                        <Fragment key={moduleName}>
-                          {/* Module Group Section Header Row */}
-                          <tr className="bg-slate-50/70 border-y border-[#DCE3EF]">
-                            <td colSpan="4" className="p-2 px-3 font-black text-[#071A45] uppercase tracking-wider text-[9px] bg-slate-100/50">
-                              <div className="flex items-center justify-between">
-                                <span>{moduleName}</span>
-                                <div className="flex items-center gap-3">
-                                  <span className="text-[8px] font-bold text-slate-500 bg-white border border-[#DCE3EF] px-1 py-0.2 rounded">
-                                    {enabledCount} / {perms.length} enabled
-                                  </span>
-                                  <div className="flex items-center gap-1.5 shrink-0 uppercase text-[8px] font-bold">
-                                    <button
-                                      type="button"
-                                      onClick={() => enableAllInModule(moduleName, true)}
-                                      className="text-[#123A8C] hover:underline"
-                                    >
-                                      On
-                                    </button>
-                                    <span className="text-slate-300">|</span>
-                                    <button
-                                      type="button"
-                                      onClick={() => enableAllInModule(moduleName, false)}
-                                      className="text-[#DC3E3E] hover:underline"
-                                    >
-                                      Off
-                                    </button>
-                                  </div>
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-
-                          {perms.map((p) => {
-                            const isParentOff = isParentViewDisabled(p.permission_key)
-                            const isEnabled = p.enabled && !isParentOff
-
-                            return (
-                              <tr
-                                key={p.permission_key}
-                                className={`hover:bg-slate-50/30 transition-colors ${
-                                  isParentOff ? 'opacity-50 bg-slate-55/10' : ''
-                                }`}
-                              >
-                                {/* Action description */}
-                                <td className="p-2.5 pl-3 min-w-0">
-                                  <div className="font-extrabold text-[#071A45]">{p.action}</div>
-                                  <div className="text-[10px] text-[#64748B] font-medium mt-0.5 leading-normal">
-                                    {p.description}
-                                  </div>
-                                </td>
-
-                                {/* Key code */}
-                                <td className="p-2.5 font-mono text-[9px] text-[#64748B]">
+                        <div
+                          key={p.permission_key}
+                          className={`border rounded-2xl p-4 bg-white transition-all duration-200 flex flex-col justify-between min-h-[140px] ${
+                            isParentOff
+                              ? 'border-slate-100 bg-slate-50/40 opacity-60'
+                              : isEnabled
+                              ? 'border-blue-100 shadow-xs ring-1 ring-blue-50/10'
+                              : 'border-slate-200 hover:border-slate-350 shadow-2xs'
+                          }`}
+                        >
+                          <div>
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <span className="font-extrabold text-slate-900 text-xs tracking-tight uppercase flex items-center gap-1.5">
+                                  {p.action}
+                                </span>
+                                <span className="block font-mono text-[9px] text-slate-400 mt-0.5 select-all">
                                   {p.permission_key}
-                                </td>
-
-                                {/* Access Scope Dropdown */}
-                                <td className="p-2.5">
-                                  {p.hasScope ? (
-                                    <select
-                                      value={p.access_scope}
-                                      disabled={!isEnabled}
-                                      onChange={(e) =>
-                                        handleScopeChange(p.permission_key, e.target.value)
-                                      }
-                                      className="w-full bg-white border border-slate-200 rounded-lg px-2 py-0.5 font-bold text-[#071A45] focus:outline-none focus:border-[#123A8C] disabled:opacity-50 text-[10px] h-7"
-                                    >
-                                      <option value="Own">Own Record</option>
-                                      <option value="Assigned">Assigned Only</option>
-                                      <option value="Team">Team (Subordinates)</option>
-                                      <option value="Company">Company</option>
-                                      <option value="All">All Operations</option>
-                                    </select>
-                                  ) : (
-                                    <span className="text-slate-400 font-semibold px-2 text-[10px]">—</span>
-                                  )}
-                                </td>
-
-                                {/* Status Switch Toggle */}
-                                <td className="p-2.5 text-center">
-                                  <label className="relative inline-flex items-center cursor-pointer select-none">
-                                    <input
-                                      type="checkbox"
-                                      checked={isEnabled}
-                                      disabled={isParentOff}
-                                      onChange={(e) =>
-                                        handleTogglePermission(p.permission_key, e.target.checked)
-                                      }
-                                      className="sr-only peer"
-                                    />
-                                    <div className="w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#061A4D]"></div>
-                                  </label>
-                                </td>
-                              </tr>
-                            )
-                          })}
-                        </Fragment>
+                                </span>
+                              </div>
+                              <label className="relative inline-flex items-center cursor-pointer select-none shrink-0">
+                                <input
+                                  type="checkbox"
+                                  checked={isEnabled}
+                                  disabled={isParentOff}
+                                  onChange={(e) =>
+                                    handleTogglePermission(p.permission_key, e.target.checked)
+                                  }
+                                  className="sr-only peer"
+                                />
+                                <div className="w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#061A4D] disabled:opacity-50"></div>
+                              </label>
+                            </div>
+                            <p className="text-[11px] text-slate-500 font-semibold leading-relaxed mt-2.5">
+                              {p.description}
+                            </p>
+                          </div>
+                          <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2">
+                            {isParentOff ? (
+                              <div className="flex items-center gap-1.5 text-amber-600 text-[10px] font-extrabold bg-amber-50 border border-amber-100 p-2 rounded-lg">
+                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                                <span>Requires View permission to be enabled</span>
+                              </div>
+                            ) : p.hasScope ? (
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
+                                  <Lock className="w-3 h-3 text-slate-400" /> Access Scope
+                                  <HelpCircle className="w-2.5 h-2.5 text-slate-350 hover:text-slate-500 cursor-help" title="Scope of data visibility for this action" />
+                                </span>
+                                <select
+                                  value={p.access_scope}
+                                  disabled={!isEnabled}
+                                  onChange={(e) =>
+                                    handleScopeChange(p.permission_key, e.target.value)
+                                  }
+                                  className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800 focus:outline-none focus:border-[#123A8C] disabled:opacity-50 text-[10px] h-7 shrink-0 shadow-2xs"
+                                >
+                                  <option value="Own">Own Record</option>
+                                  <option value="Assigned">Assigned Only</option>
+                                  <option value="Team">Team (Subordinates)</option>
+                                  <option value="Company">Company</option>
+                                  <option value="All">All Operations</option>
+                                </select>
+                              </div>
+                            ) : (
+                              <div className="flex items-center gap-1 text-slate-400 text-[10px] font-semibold">
+                                <Unlock className="w-3 h-3 text-slate-300" /> Full Module Access
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       )
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>

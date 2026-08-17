@@ -17,6 +17,10 @@ class EmployeeModel(BaseModel):
     designation: str
     role: str = "Sales Executive"
     is_active: bool = True
+    annual_leaves: Optional[int] = 12
+    half_day_permissions: Optional[int] = 6
+    short_permissions: Optional[int] = 2
+    incentive_percentage: Optional[float] = 5.0
     created_at: Optional[datetime] = None
 
 

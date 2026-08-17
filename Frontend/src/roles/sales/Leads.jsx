@@ -41,7 +41,7 @@ import {
   ClipboardList,
   AlertCircle,
 } from "lucide-react";
-import { crmAPI, visitAPI, customerAPI, pipelineAPI } from "../../services/api.js";
+import { crmAPI, visitAPI, customerAPI, pipelineAPI, settingsAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
@@ -57,6 +57,27 @@ export default function Leads() {
   const location = useLocation();
   const { showToast } = useToast();
   const currentUser = useCurrentUser();
+  const [productsList, setProductsList] = useState([]);
+
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const res = await settingsAPI.getSettings();
+        if (res?.data?.products) {
+          const activeProds = res.data.products
+            .filter((p) => p.status === 'Active' || p.status === undefined)
+            .map((p) => p.name);
+          setProductsList(activeProds);
+        }
+      } catch (err) {
+        console.warn("Failed to load company products:", err);
+      }
+    }
+    fetchProducts();
+  }, []);
+
+  const defaultProducts = ["TwiteConnect CRM", "Field GPS Tracking App", "Sales CRM Enterprise", "IT Support Service"];
+  const productOptions = productsList.length > 0 ? productsList : defaultProducts;
 
   // Active view tab: "leads" | "followups" | "visits" | "opportunities"
   const [activeTab, setActiveTab] = useState("leads");
@@ -2372,13 +2393,16 @@ export default function Leads() {
 
                 <div>
                   <label className="text-slate-800 font-extrabold block mb-1.5">Product / Service Needed (*Why reached out)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Field GPS Tracking App, Sales CRM"
-                    value={addForm.product}
+                  <select
+                    value={addForm.product || (productOptions[0] || "")}
                     onChange={(e) => setAddForm({ ...addForm, product: e.target.value })}
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
-                  />
+                  >
+                    <option value="">-- Select Product / Service --</option>
+                    {productOptions.map((prod) => (
+                      <option key={prod} value={prod}>{prod}</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -3142,13 +3166,16 @@ export default function Leads() {
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-700 font-extrabold mb-1">Product / Requirement (*Why reach out)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. GPS Tracking Software, CRM Enterprise"
-                    value={oppForm.productRequirement}
+                  <select
+                    value={oppForm.productRequirement || (productOptions[0] || "")}
                     onChange={(e) => setOppForm({ ...oppForm, productRequirement: e.target.value })}
-                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
-                  />
+                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm cursor-pointer"
+                  >
+                    <option value="">-- Select Product Requirement --</option>
+                    {productOptions.map((prod) => (
+                      <option key={prod} value={prod}>{prod}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div>

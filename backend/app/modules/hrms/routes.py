@@ -64,6 +64,24 @@ async def get_employee(
     service: HRMSService = Depends(get_service)
 ):
     """Get employee details by ID with role-scoped access control."""
+    current_emp_code = str(
+        user_payload.get("employee_code") 
+        or user_payload.get("employee_id") 
+        or user_payload.get("user_metadata", {}).get("employee_code")
+        or user_payload.get("user_metadata", {}).get("employee_id")
+        or ""
+    ).strip()
+    current_user_id = str(
+        user_payload.get("sub") 
+        or user_payload.get("user_id") 
+        or user_payload.get("user_metadata", {}).get("user_id")
+        or user_payload.get("user_metadata", {}).get("sub")
+        or ""
+    ).strip()
+
+    if emp_id == current_emp_code or emp_id.lower() == "self" or emp_id == current_user_id:
+        emp_id = current_user_id
+
     allowed = get_allowed_user_identifiers(user_payload)
     emp = service.get_employee(emp_id)
     if allowed is not None and emp:
@@ -102,6 +120,8 @@ async def update_employee(
     user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
 
     is_self = (emp_id == current_emp_code or emp_id == current_user_id)
+    if is_self:
+        emp_id = current_user_id
 
     # ── Permission guard ────────────────────────────────────────────────────
     if not is_self:

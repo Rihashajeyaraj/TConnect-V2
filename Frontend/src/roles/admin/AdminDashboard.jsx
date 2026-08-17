@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import { formatDate } from '../../utils/dateUtils.js'
 import { exportToCSV } from '../../utils/exportUtils.js'
@@ -15,22 +16,30 @@ import {
   Server,
   Terminal,
   FileCheck,
+  UserPlus,
+  Percent,
+  X,
 } from 'lucide-react'
 import { hrmsAPI, attendanceAPI, auditAPI, adminAPI, notificationAPI } from '../../services/api.js'
 
 export default function AdminDashboard() {
   const { showToast } = useToast()
+  const navigate = useNavigate()
   const [loading, setLoading] = useState(true)
   const [dateRange, setDateRange] = useState('Today')
   const [roleFilter, setRoleFilter] = useState('All')
+  
+  // Incentive modal state
+  const [showIncentiveModal, setShowIncentiveModal] = useState(false)
+  const [selectedIncentiveEmp, setSelectedIncentiveEmp] = useState(null)
+  const [incentivePctInput, setIncentivePctInput] = useState(5)
+  const [incentiveSaving, setIncentiveSaving] = useState(false)
 
   // Modular Widget Customizer State
   const [customizerOpen, setCustomizerOpen] = useState(false)
   const [activeWidgets, setActiveWidgets] = useState({
     systemStats: true,
     activityLogs: true,
-    userDistribution: true,
-    attendanceWidget: true,
   })
 
   const [stats, setStats] = useState({
@@ -411,13 +420,76 @@ export default function AdminDashboard() {
         </div>
       ) }
 
+      {/* SECTION 1.5: Quick Actions Panel */}
+      <div className="bg-white border border-[#DCE3EF] p-4 rounded-2xl shadow-xs space-y-3">
+        <h3 className="font-extrabold text-[#071A45] text-xs flex items-center gap-1.5 uppercase tracking-wider">
+          Quick Actions
+        </h3>
+        
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          {[
+            {
+              title: "Attendance",
+              icon: Clock,
+              path: "/admin/hrms",
+              color: "text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50 border-emerald-100 hover:border-emerald-250",
+            },
+            {
+              title: "Create Employee",
+              icon: UserPlus,
+              path: "/admin/users",
+              state: { openAddModal: true },
+              color: "text-indigo-700 bg-indigo-50/50 hover:bg-indigo-50 border-indigo-100 hover:border-indigo-250",
+            },
+            {
+              title: "Edit Employee",
+              icon: Users,
+              path: "/admin/users",
+              state: { focusSearch: true },
+              color: "text-[#123A8C] bg-blue-50/50 hover:bg-blue-50 border-blue-100 hover:border-blue-250",
+            },
+            {
+              title: "Add Incentive",
+              icon: Percent,
+              onClick: () => setShowIncentiveModal(true),
+              color: "text-rose-700 bg-rose-50/50 hover:bg-rose-50 border-rose-100 hover:border-rose-250",
+            },
+            {
+              title: "Security Roles",
+              icon: ShieldCheck,
+              path: "/admin/roles",
+              color: "text-amber-700 bg-amber-50/50 hover:bg-amber-50 border-amber-100 hover:border-amber-250",
+            },
+          ].map((action) => {
+            const IconComp = action.icon
+            return (
+              <button
+                key={action.title}
+                type="button"
+                onClick={() => {
+                  if (action.onClick) {
+                    action.onClick()
+                  } else {
+                    navigate(action.path, { state: action.state })
+                  }
+                }}
+                className={`flex items-center gap-2.5 p-3 rounded-xl border ${action.color} text-xs font-bold transition duration-200 cursor-pointer shadow-3xs hover:shadow-2xs select-none`}
+              >
+                <IconComp className="w-4 h-4 shrink-0" />
+                <span>{action.title}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
 
 
-      {/* SECTION 2: Live Security activity feed and Database summaries */}
+
+      {/* SECTION 2: Live Security activity feed */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Live System Activity Logs */}
         {activeWidgets.activityLogs && (
-          <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+          <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
             <div className="p-4 border-b border-slate-100 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Activity className="w-5 h-5 text-indigo-600 animate-pulse" />
@@ -459,66 +531,6 @@ export default function AdminDashboard() {
             </div>
           </div>
         )}
-
-        {/* User Distribution and Attendance summaries */}
-        <div className="space-y-6">
-          {/* User Distribution by Role */}
-          {activeWidgets.userDistribution && (
-            <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                  <Users className="w-4 h-4 text-indigo-600" /> User Distribution by Role
-                </h3>
-                <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                  System Roles
-                </span>
-              </div>
-              <div className="space-y-3 font-semibold text-xs text-slate-700">
-                {[
-                  { label: "Administrators", count: stats.adminsCount, bg: "bg-purple-500", text: "text-purple-700" },
-                  { label: "Sales Managers", count: stats.salesManagers, bg: "bg-amber-500", text: "text-amber-700" },
-                  { label: "Sales Executives", count: stats.salesExecutives, bg: "bg-blue-500", text: "text-blue-700" },
-                ].map((item) => (
-                  <div key={item.label} className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-150">
-                    <div className="flex items-center gap-2">
-                      <span className={`w-2.5 h-2.5 rounded-full ${item.bg}`} />
-                      <span>{item.label}</span>
-                    </div>
-                    <span className={`font-black ${item.text}`}>{item.count} users</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Attendance Compliance (Kept for System Admin operation monitoring) */}
-          {activeWidgets.attendanceWidget && (
-            <div className="bg-white border border-slate-200 p-5 rounded-2xl shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                  <Clock className="w-4 h-4 text-emerald-600" /> Attendance Compliance
-                </h3>
-                <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  {formatDate(new Date())}
-                </span>
-              </div>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  <p className="text-[10px] text-slate-500 font-extrabold uppercase">Present</p>
-                  <p className="text-xl font-black text-emerald-600 mt-1">{stats.attendanceSummary.present}</p>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  <p className="text-[10px] text-slate-500 font-extrabold uppercase">Absent</p>
-                  <p className="text-xl font-black text-rose-600 mt-1">{stats.attendanceSummary.absent}</p>
-                </div>
-                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
-                  <p className="text-[10px] text-slate-500 font-extrabold uppercase">Late</p>
-                  <p className="text-xl font-black text-amber-600 mt-1">{stats.attendanceSummary.late}</p>
-                </div>
-              </div>
-            </div>
-          )}
-        </div>
       </div>
 
       {/* Customizer Modal */}
@@ -542,8 +554,6 @@ export default function AdminDashboard() {
               {Object.entries({
                 systemStats: 'System Control KPI Cards',
                 activityLogs: 'Live System Activity Stream',
-                userDistribution: 'User Distribution by Role',
-                attendanceWidget: 'Daily Attendance Compliance',
               }).map(([key, label]) => (
                 <label key={key} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100/80 transition">
                   <span>{label}</span>
@@ -971,6 +981,120 @@ export default function AdminDashboard() {
                   </div>
                 );
               })()}
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── ADD INCENTIVE MODAL ── */}
+      {showIncentiveModal && (
+        <div className="fixed inset-0 bg-[#071A45]/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="text-[#071A45] font-black text-sm uppercase tracking-wider flex items-center gap-2">
+                💰 Configure Sales Incentive
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowIncentiveModal(false)
+                  setSelectedIncentiveEmp(null)
+                  setIncentivePctInput(5)
+                }}
+                className="text-slate-400 hover:text-slate-600 transition cursor-pointer p-1"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">
+                  Select Sales Executive
+                </label>
+                <select
+                  value={selectedIncentiveEmp ? selectedIncentiveEmp.id : ""}
+                  onChange={(e) => {
+                    const emp = allEmployees.find(u => u.id === e.target.value)
+                    setSelectedIncentiveEmp(emp)
+                    if (emp) {
+                      setIncentivePctInput(emp.incentive_percentage !== undefined ? emp.incentive_percentage : 5.0)
+                    }
+                  }}
+                  className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 font-bold text-xs focus:outline-none focus:ring-2 focus:ring-rose-550 focus:border-rose-550 cursor-pointer"
+                >
+                  <option value="">-- Choose Employee --</option>
+                  {allEmployees.map(emp => (
+                    <option key={emp.id} value={emp.id}>
+                      {emp.employee_code || "N/A"} - {emp.name} ({emp.role})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedIncentiveEmp && (
+                <div className="p-3 bg-rose-50/30 border border-rose-100 rounded-xl text-[11px] text-rose-950 font-bold">
+                  Current Incentive Rate: <span className="text-rose-800 font-extrabold">{selectedIncentiveEmp.incentive_percentage !== undefined ? selectedIncentiveEmp.incentive_percentage : 5.0}%</span>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">
+                  New Incentive Percentage (%)
+                </label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    max="100"
+                    step="0.1"
+                    value={incentivePctInput}
+                    onChange={(e) => setIncentivePctInput(e.target.value)}
+                    className="w-full h-10 pl-3 pr-10 border border-slate-250 rounded-xl bg-slate-50/50 font-black text-sm focus:outline-none"
+                    placeholder="5.0"
+                  />
+                  <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400 font-bold text-sm">
+                    %
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 pt-2 justify-end">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowIncentiveModal(false)
+                  setSelectedIncentiveEmp(null)
+                  setIncentivePctInput(5)
+                }}
+                className="px-4 h-9 border border-slate-200 rounded-xl text-slate-600 font-extrabold text-xs hover:bg-slate-50 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={!selectedIncentiveEmp || incentiveSaving}
+                onClick={async () => {
+                  if (!selectedIncentiveEmp) return
+                  setIncentiveSaving(true)
+                  try {
+                    const empCode = selectedIncentiveEmp.id || selectedIncentiveEmp.employee_id
+                    await hrmsAPI.updateEmployee(empCode, { incentive_percentage: Number(incentivePctInput) })
+                    showToast(`Successfully updated incentive for ${selectedIncentiveEmp.name} to ${incentivePctInput}%`, "success")
+                    setShowIncentiveModal(false)
+                    setSelectedIncentiveEmp(null)
+                    setIncentivePctInput(5)
+                    loadAdminDashboardData() // reload list to show updated rate
+                  } catch (err) {
+                    showToast("Failed to update incentive: " + (err.message || err), "error")
+                  } finally {
+                    setIncentiveSaving(false)
+                  }
+                }}
+                className="px-4 h-9 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+              >
+                {incentiveSaving ? "Saving..." : "Save Changes"}
+              </button>
             </div>
           </div>
         </div>
