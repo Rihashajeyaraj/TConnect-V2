@@ -227,6 +227,19 @@ class SalesTargetRepository:
         except Exception:
             pass
 
+        all_targets = []
+        try:
+            res_t = self.supabase.schema("sales").table("sales_target").select("*").execute()
+            if res_t.data:
+                all_targets = res_t.data
+        except Exception:
+            try:
+                res_t = self.supabase.table("sales_target").select("*").execute()
+                if res_t.data:
+                    all_targets = res_t.data
+            except Exception:
+                pass
+
         def in_range(date_val):
             if not date_val:
                 return True
@@ -268,11 +281,17 @@ class SalesTargetRepository:
                 if match_exec(cust):
                     c_date = cust.get("created_at") or cust.get("updated_at") or cust.get("date")
                     if in_range(c_date):
-                        raw = str(cust.get("contract_value") or cust.get("contractValue") or cust.get("revenue") or "0")
-                        try:
-                            val = float(raw.replace("₹", "").replace(",", "").strip())
-                        except (ValueError, TypeError):
-                            val = 0.0
+                        val_raw = cust.get("contract_value") or cust.get("contractValue") or cust.get("revenue") or cust.get("value") or cust.get("budget") or 0
+                        if isinstance(val_raw, (int, float)):
+                            val = float(val_raw)
+                        else:
+                            val_str = str(val_raw)
+                            import re
+                            clean_str = re.sub(r'[^\d.]', '', val_str)
+                            try:
+                                val = float(clean_str) if clean_str else 0.0
+                            except (ValueError, TypeError):
+                                val = 0.0
                         exec_revenue += val
                         deals_count += 1
 

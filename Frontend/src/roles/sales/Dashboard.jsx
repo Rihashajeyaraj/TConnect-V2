@@ -299,7 +299,7 @@ export default function Dashboard() {
       // Real Revenue generated specifically by this Sales Executive
       const customerRevenue = dateFilteredCustomers.reduce((sum, cust) => {
         const valStr = cust.contractValue || cust.value || cust.revenue || cust.budget || "0";
-        const val = parseInt(String(valStr).replace(/[^0-9]/g, "")) || 0;
+        const val = typeof valStr === 'number' ? valStr : (parseFloat(String(valStr).replace(/[^\d.]/g, "")) || 0);
         return sum + val;
       }, 0);
 
@@ -307,7 +307,7 @@ export default function Dashboard() {
         .filter((l) => l.status === "Converted to Customer" || l.status === "Converted" || l.status === "Closed Won")
         .reduce((sum, lead) => {
           const valStr = lead.value || lead.budget || lead.deal_value || "0";
-          const val = parseInt(String(valStr).replace(/[^0-9]/g, "")) || 0;
+          const val = typeof valStr === 'number' ? valStr : (parseFloat(String(valStr).replace(/[^\d.]/g, "")) || 0);
           return sum + val;
         }, 0);
 
