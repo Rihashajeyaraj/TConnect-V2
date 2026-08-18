@@ -24,7 +24,7 @@ import {
   Eye,
   User,
 } from 'lucide-react'
-import { hrmsAPI, userAPI } from '../../services/api.js'
+import { hrmsAPI, userAPI, crmAPI, customerAPI } from '../../services/api.js'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { isItemOwnedByUser } from '../../utils/userScope.js'
 
@@ -53,9 +53,9 @@ function TeamManagement() {
     status: 'Active',
   })
 
-  const mapEmployeeData = (userList) => {
-    const leads = JSON.parse(localStorage.getItem('tc_sm_leads') || '[]');
-    const customers = JSON.parse(localStorage.getItem('tc_customer_accounts') || '[]');
+  const mapEmployeeData = (userList, fetchedLeads = [], fetchedCustomers = []) => {
+    const leads = fetchedLeads.length > 0 ? fetchedLeads : JSON.parse(localStorage.getItem('tc_sm_leads') || '[]');
+    const customers = fetchedCustomers.length > 0 ? fetchedCustomers : JSON.parse(localStorage.getItem('tc_customer_accounts') || '[]');
     const visits = JSON.parse(localStorage.getItem('tc_sales_visits') || '[]');
     
     return userList.map((e, idx) => {
@@ -64,31 +64,67 @@ function TeamManagement() {
       const eId = e.id || e.employee_id || `USR-${idx + 1}`;
       
       const myExecutives = userList
-        .filter(u => u.reporting_manager_name === eName || u.reporting_manager_id === eId)
+        .filter(u => u.reporting_manager_name === eName || u.reporting_manager_id === eId || (u.reporting_manager_email && e.email && u.reporting_manager_email.toLowerCase().trim() === e.email.toLowerCase().trim()))
         .map(u => u.name || u.email);
 
-      const myCustomers = customers.filter(cust => isItemOwnedByUser(cust, e));
-      const myLeads = leads.filter(lead => isItemOwnedByUser(lead, e));
+      const isManager = eRole.toLowerCase().includes('manager') || eRole.toLowerCase().includes('admin') || eRole.toLowerCase().includes('ceo');
+
+      const myCustomers = customers.filter(cust => {
+        if (isManager) {
+          const isOwnedByMgr = isItemOwnedByUser(cust, e);
+          const isOwnedByTeammate = myExecutives.some(execNameOrEmail => {
+            const clean = String(execNameOrEmail).toLowerCase().trim();
+            const custExec = String(cust.sales_executive || cust.assigned_to || cust.assignedTo || cust.executive || '').toLowerCase().trim();
+            const custExecEmail = String(cust.assigned_to_email || cust.sales_executive_email || cust.assignedToEmail || '').toLowerCase().trim();
+            return (clean && (custExec.includes(clean) || clean.includes(custExec) || custExecEmail === clean));
+          });
+          return isOwnedByMgr || isOwnedByTeammate;
+        }
+        return isItemOwnedByUser(cust, e);
+      });
+
+      const myLeads = leads.filter(lead => {
+        if (isManager) {
+          const isOwnedByMgr = isItemOwnedByUser(lead, e);
+          const isOwnedByTeammate = myExecutives.some(execNameOrEmail => {
+            const clean = String(execNameOrEmail).toLowerCase().trim();
+            const leadExec = String(lead.sales_executive || lead.assigned_to || lead.assignedTo || lead.executive || '').toLowerCase().trim();
+            const leadExecEmail = String(lead.assigned_to_email || lead.sales_executive_email || lead.assignedToEmail || '').toLowerCase().trim();
+            return (clean && (leadExec.includes(clean) || clean.includes(leadExec) || leadExecEmail === clean));
+          });
+          return isOwnedByMgr || isOwnedByTeammate;
+        }
+        return isItemOwnedByUser(lead, e);
+      });
+
       const myConvertedLeads = myLeads.filter(
-        (l) => l.status === 'Converted to Customer' || l.status === 'Converted' || l.status === 'Closed Won'
+        (l) => {
+          const s = String(l.status || '').toLowerCase();
+          return s.includes('convert') || s.includes('won');
+        }
       );
       
       const dealsWon = myCustomers.length + myConvertedLeads.length;
       const visitCount = visits.filter(v => isItemOwnedByUser(v, e)).length;
 
       const customerRevenue = myCustomers.reduce((sum, cust) => {
-        const valStr = cust.contractValue || cust.value || cust.revenue || cust.budget || '0';
-        const val = parseInt(String(valStr).replace(/[^0-9]/g, '')) || 0;
-        return sum + val;
+        const valStr = cust.contract_value || cust.amount || cust.contractValue || cust.value || cust.revenue || cust.budget || '0';
+        const val = parseFloat(String(valStr).replace(/[^\d.]/g, '')) || 0;
+        return sum + Math.round(val);
       }, 0);
+
       const convertedLeadsRevenue = myLeads
-        .filter((l) => l.status === 'Converted to Customer' || l.status === 'Converted' || l.status === 'Closed Won')
+        .filter((l) => {
+          const s = String(l.status || '').toLowerCase();
+          return s.includes('convert') || s.includes('won');
+        })
         .reduce((sum, lead) => {
-          const valStr = lead.value || lead.budget || lead.deal_value || '0';
-          const val = parseInt(String(valStr).replace(/[^0-9]/g, '')) || 0;
-          return sum + val;
+          const valStr = lead.value || lead.budget || lead.deal_value || lead.dealValue || '0';
+          const val = parseFloat(String(valStr).replace(/[^\d.]/g, '')) || 0;
+          return sum + Math.round(val);
         }, 0);
-      const totalRevenue = customerRevenue + convertedLeadsRevenue;
+
+      const totalRevenue = customerRevenue;
 
       return {
         id: eId,
@@ -104,6 +140,8 @@ function TeamManagement() {
         deals_won: dealsWon,
         revenue: totalRevenue,
         visit_count: visitCount,
+        lead_count: myLeads.length,
+        incentives: Math.round(totalRevenue * 0.05),
         status: e.status || 'Active',
         executives: myExecutives,
       };
@@ -115,9 +153,17 @@ function TeamManagement() {
     async function loadData() {
       setLoading(true)
       try {
-        const res = await userAPI.getUsers().catch(() => null)
-        const userList = res && res.data && Array.isArray(res.data) ? res.data : []
-        const mapped = mapEmployeeData(userList)
+        const [usersRes, leadsRes, custRes] = await Promise.all([
+          userAPI.getUsers().catch(() => null),
+          crmAPI.getLeads().catch(() => null),
+          customerAPI.getCustomers().catch(() => null),
+        ])
+
+        const userList = usersRes && usersRes.data && Array.isArray(usersRes.data) ? usersRes.data : []
+        const rawLeads = Array.isArray(leadsRes) ? leadsRes : (leadsRes?.data || [])
+        const rawCustomers = Array.isArray(custRes) ? custRes : (custRes?.data || [])
+
+        const mapped = mapEmployeeData(userList, rawLeads, rawCustomers)
         setTeam(mapped)
       } catch (err) {
         console.warn('Error loading team roster:', err)
@@ -468,7 +514,12 @@ function TeamManagement() {
 
                   <div className="text-right">
                     <span className="text-[10px] uppercase font-bold text-slate-400">Team Revenue</span>
-                    <p className="text-sm font-black text-emerald-700">₹{(managerTotalRevenue / 100000).toFixed(1)}L</p>
+                    <p className="text-sm font-black text-emerald-700">
+                      {managerTotalRevenue >= 100000 
+                        ? `₹${(managerTotalRevenue / 100000).toFixed(1)}L` 
+                        : `₹${managerTotalRevenue.toLocaleString()}`
+                      }
+                    </p>
                   </div>
                 </div>
 
@@ -494,10 +545,24 @@ function TeamManagement() {
                           </div>
                         </div>
 
-                        <div className="flex items-center gap-4 text-right">
-                          <div>
-                            <span className="font-black text-slate-900">₹{exec.revenue.toLocaleString()}</span>
-                            <p className="text-[10px] text-slate-400">{exec.deals_won} Deals</p>
+                        <div className="flex items-center gap-6 text-right">
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-right">
+                            <div>
+                              <p className="text-[9px] uppercase font-bold text-slate-400">Leads Count</p>
+                              <span className="font-black text-slate-800">{exec.lead_count || 0}</span>
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase font-bold text-slate-400">Leads Closed</p>
+                              <span className="font-black text-indigo-700">{exec.deals_won || 0} Won</span>
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase font-bold text-slate-400">Revenue</p>
+                              <span className="font-black text-emerald-700">₹{(exec.revenue || 0).toLocaleString()}</span>
+                            </div>
+                            <div>
+                              <p className="text-[9px] uppercase font-bold text-slate-400">Incentive (5%)</p>
+                              <span className="font-black text-purple-700">₹{(exec.incentives || 0).toLocaleString()}</span>
+                            </div>
                           </div>
                           <button
                             onClick={() => handleOpenView(exec)}
@@ -568,7 +633,7 @@ function TeamManagement() {
                   <td className="py-3 text-slate-600 font-bold">{emp.manager || 'None'}</td>
                   <td className="py-3 font-extrabold text-slate-900">{emp.deals_won}</td>
                   <td className="py-3 font-black text-[#832D51]">
-                    ₹{emp.revenue.toLocaleString()}
+                    ₹{(emp.revenue || 0).toLocaleString()}
                   </td>
                   <td className="py-3">
                     <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black border ${

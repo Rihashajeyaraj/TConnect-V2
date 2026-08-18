@@ -176,6 +176,10 @@ function CeoHrms({ initialTab = 'employees' }) {
   const activeTab = searchParams.get('tab') || initialTab // 'employees' | 'leaves' | 'permissions' | 'attendance' | 'approval_history'
   const setActiveTab = (val) => setSearchParams({ tab: val })
 
+  const [attendanceFilter, setAttendanceFilter] = useState('Today')
+  const [customStart, setCustomStart] = useState('')
+  const [customEnd, setCustomEnd] = useState('')
+
   const user = (() => {
     try {
       return JSON.parse(localStorage.getItem('user') || '{}');
@@ -370,6 +374,7 @@ function CeoHrms({ initialTab = 'employees' }) {
             dailyLogs: logs.map((l, idx) => ({
               id: l.id || `ATT-${idx + 1}`,
               name: l.name || l.employee_name || 'Staff Member',
+              date: l.date || '—',
               clockIn: l.clockIn || l.check_in_time || '09:00 AM',
               clockOut: l.clockOut || l.check_out_time || '—',
               workHours: l.workHours || l.total_working_hours || (l.clockOut && l.clockOut !== '—' ? '8.5 hrs' : 'In Progress'),
@@ -429,6 +434,53 @@ function CeoHrms({ initialTab = 'employees' }) {
       showToast(`Failed to update leave status: ${err?.message || 'Server Error'}`, 'error')
     }
   }
+
+  const getWeekRange = () => {
+    const now = new Date()
+    const day = now.getDay()
+    const diff = now.getDate() - day + (day === 0 ? -6 : 1)
+    const monday = new Date(now.setDate(diff))
+    monday.setHours(0, 0, 0, 0)
+    const sunday = new Date(monday)
+    sunday.setDate(monday.getDate() + 6)
+    sunday.setHours(23, 59, 59, 999)
+    return { start: monday, end: sunday }
+  }
+
+  const filteredDailyLogs = React.useMemo(() => {
+    const todayStr = new Date().toISOString().slice(0, 10)
+    
+    return attendanceSummary.dailyLogs.filter(log => {
+      if (!log.date || log.date === '—') return true
+      
+      const logDateStr = log.date.split('T')[0].split(' ')[0]
+      
+      if (attendanceFilter === 'Today') {
+        return logDateStr === todayStr
+      }
+      
+      if (attendanceFilter === 'This Week') {
+        const { start, end } = getWeekRange()
+        const lDate = new Date(logDateStr)
+        return lDate >= start && lDate <= end
+      }
+      
+      if (attendanceFilter === 'Custom') {
+        const lDate = new Date(logDateStr)
+        if (customStart) {
+          const sDate = new Date(customStart)
+          sDate.setHours(0, 0, 0, 0)
+          if (lDate < sDate) return false
+        }
+        if (customEnd) {
+          const eDate = new Date(customEnd)
+          eDate.setHours(23, 59, 59, 999)
+          if (lDate > eDate) return false
+        }
+      }
+      return true
+    })
+  }, [attendanceSummary.dailyLogs, attendanceFilter, customStart, customEnd])
 
   // Filtered queries
   const filteredEmployees = employees.filter(
@@ -790,17 +842,59 @@ function CeoHrms({ initialTab = 'employees' }) {
 
           {/* Daily Logs Table */}
           <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
-                Today's Real-time Check-in & Check-out Log
-              </h2>
-              <span className="text-xs font-bold text-slate-400">Live Telemetry from HRMS</span>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
+                  {attendanceFilter === 'Today' ? "Today's" : attendanceFilter === 'This Week' ? "This Week's" : "Custom Period"} Attendance Logs
+                </h2>
+                <p className="text-xs text-slate-500 font-medium font-semibold">Real-time check-in & check-out telemetry</p>
+              </div>
+              
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Linear Date Filter Toggles */}
+                <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200">
+                  {['Today', 'This Week', 'Custom'].map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => setAttendanceFilter(mode)}
+                      className={`px-3.5 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                        attendanceFilter === mode
+                          ? 'bg-[#832D51] text-white shadow-xs'
+                          : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      {mode}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Custom Date Pickers */}
+                {attendanceFilter === 'Custom' && (
+                  <div className="flex items-center gap-1.5 text-xs font-bold">
+                    <input
+                      type="date"
+                      value={customStart}
+                      onChange={(e) => setCustomStart(e.target.value)}
+                      className="rounded-xl border border-slate-200 p-1.5 text-slate-700 outline-none focus:border-[#832D51]"
+                    />
+                    <span className="text-slate-400">to</span>
+                    <input
+                      type="date"
+                      value={customEnd}
+                      onChange={(e) => setCustomEnd(e.target.value)}
+                      className="rounded-xl border border-slate-200 p-1.5 text-slate-700 outline-none focus:border-[#832D51]"
+                    />
+                  </div>
+                )}
+              </div>
             </div>
+
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
                   <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
                     <th className="pb-3">Employee</th>
+                    <th className="pb-3">Date</th>
                     <th className="pb-3">Clock In (Logged In)</th>
                     <th className="pb-3">Clock Out (Logged Off)</th>
                     <th className="pb-3">Total Working Hours</th>
@@ -809,11 +903,12 @@ function CeoHrms({ initialTab = 'employees' }) {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {attendanceSummary.dailyLogs.map((log) => {
+                  {filteredDailyLogs.map((log) => {
                     const isLoggedOut = log.status === 'Logged off' || (log.clockOut && log.clockOut !== '—')
                     return (
                       <tr key={log.id} className="hover:bg-slate-50/70 transition">
                         <td className="py-3 font-extrabold text-slate-900">{log.name}</td>
+                        <td className="py-3 text-slate-600 font-semibold">{log.date}</td>
                         <td className="py-3 font-bold text-[#832D51]">{log.clockIn}</td>
                         <td className="py-3 font-bold text-slate-600">{log.clockOut || '—'}</td>
                         <td className="py-3 font-semibold text-slate-700">{log.workHours || 'In Progress'}</td>

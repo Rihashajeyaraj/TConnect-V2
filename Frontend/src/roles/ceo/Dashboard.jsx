@@ -157,7 +157,9 @@ function CeoDashboard() {
       rawCustomerPool.forEach((c) => {
         if (!c) return
         const custName = c.name || c.company || c.company_name || c.clientName || 'Customer Account'
-        const custKey = String(c.id || c.customer_id || custName).toLowerCase().trim()
+        const cleanName = String(custName).toLowerCase().replace(/[^a-z0-9]/g, '').trim()
+        const cleanEmail = String(c.email || c.contact_email || '').toLowerCase().trim()
+        const custKey = cleanEmail ? `${cleanName}|${cleanEmail}` : cleanName
 
         if (seenCustKeys.has(custKey)) return
         seenCustKeys.add(custKey)
@@ -242,29 +244,53 @@ function CeoDashboard() {
         return !r.includes('ceo') && !r.includes('super admin')
       })
 
-      const rawRevenueTransactions = [
-        ...(Array.isArray(res?.data?.revenueSummary?.revenueRecords) ? res.data.revenueSummary.revenueRecords : []),
-      ]
+      const backendRevenueRecords = Array.isArray(res?.data?.revenueSummary?.revenueRecords) ? res.data.revenueSummary.revenueRecords : []
+      const rawRevenueTransactions = [...backendRevenueRecords]
+
+      const seenTrans = new Set()
+      backendRevenueRecords.forEach((rec) => {
+        if (!rec) return
+        const execName = String(rec.sales_executive || 'Sales Executive').toLowerCase().replace(/[^a-z0-9]/g, '').trim()
+        const amt = typeof rec.amount === 'number' ? rec.amount : (parseFloat(String(rec.amount).replace(/[^0-9.]/g, '')) || 0)
+        const dateStr = String(rec.date || '').split('T')[0].split(' ')[0]
+        seenTrans.add(`${execName}|${amt}|${dateStr}`)
+      })
 
       unifiedCustomersList.forEach((c) => {
         if (c.amount > 0) {
-          rawRevenueTransactions.push({
-            date: c.date,
-            sales_manager: c.sales_manager,
-            sales_executive: c.sales_executive,
-            amount: c.amount,
-          })
+          const execName = String(c.sales_executive || 'Sales Executive').toLowerCase().replace(/[^a-z0-9]/g, '').trim()
+          const amt = typeof c.amount === 'number' ? c.amount : (parseFloat(String(c.amount).replace(/[^0-9.]/g, '')) || 0)
+          const dateStr = String(c.date || '').split('T')[0].split(' ')[0]
+          
+          const key = `${execName}|${amt}|${dateStr}`
+          if (!seenTrans.has(key)) {
+            seenTrans.add(key)
+            rawRevenueTransactions.push({
+              date: c.date,
+              sales_manager: c.sales_manager,
+              sales_executive: c.sales_executive,
+              amount: c.amount,
+            })
+          }
         }
       })
 
       wonOpps.forEach((w) => {
         if (w.amount > 0) {
-          rawRevenueTransactions.push({
-            date: w.date,
-            sales_manager: w.sales_manager,
-            sales_executive: w.sales_executive,
-            amount: w.amount,
-          })
+          const execName = String(w.sales_executive || 'Sales Executive').toLowerCase().replace(/[^a-z0-9]/g, '').trim()
+          const amt = typeof w.amount === 'number' ? w.amount : (parseFloat(String(w.amount).replace(/[^0-9.]/g, '')) || 0)
+          const dateStr = String(w.date || '').split('T')[0].split(' ')[0]
+
+          const key = `${execName}|${amt}|${dateStr}`
+          if (!seenTrans.has(key)) {
+            seenTrans.add(key)
+            rawRevenueTransactions.push({
+              date: w.date,
+              sales_manager: w.sales_manager,
+              sales_executive: w.sales_executive,
+              amount: w.amount,
+            })
+          }
         }
       })
 

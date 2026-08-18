@@ -678,20 +678,74 @@ class AttendanceRepository:
         return req_obj
 
     def get_leave_requests(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        raw_data = []
         try:
             res = self.supabase.schema("hrms").table("leave_requests").select("*").execute()
             if res.data is not None and len(res.data) > 0:
-                return self._standardize_leave_requests(res.data)
+                raw_data = res.data
         except Exception as e:
             logger.warning(f"Failed fetching leave requests from hrms.leave_requests: {e}")
             try:
                 res = self.supabase.table("leave_requests").select("*").execute()
                 if res.data is not None and len(res.data) > 0:
-                    return self._standardize_leave_requests(res.data)
+                    raw_data = res.data
             except Exception as e2:
                 logger.warning(f"Failed fetching leave requests from public.leave_requests: {e2}")
 
-        return self._standardize_leave_requests(_in_memory_leave_requests)
+        if not raw_data:
+            raw_data = _in_memory_leave_requests
+
+        standardized_requests = self._standardize_leave_requests(raw_data)
+
+        # Scoping logic for Sales Managers
+        user_payload = user_payload or {}
+        user_role = str(user_payload.get("role") or "").lower().strip()
+
+        if "manager" in user_role:
+            from app.modules.users.repository import UserRepository
+            user_repo = UserRepository()
+            mgr_email = str(user_payload.get("email") or "").lower().strip()
+            mgr_id = str(user_payload.get("id") or user_payload.get("user_id") or "").strip()
+            mgr_code = str(user_payload.get("employee_code") or "").strip()
+            effective_mgr_identifier = mgr_email or mgr_id or mgr_code
+
+            assigned_execs = user_repo.get_assigned_executives_for_manager(effective_mgr_identifier) or []
+
+            assigned_emails = {str(u.get("email") or "").lower().strip() for u in assigned_execs if u.get("email")}
+            assigned_ids = {str(u.get("id") or u.get("user_id") or u.get("employee_id") or "").strip() for u in assigned_execs}
+            assigned_codes = {str(u.get("employee_code") or u.get("employee_id") or "").strip() for u in assigned_execs}
+            assigned_names = {str(u.get("name") or u.get("full_name") or "").lower().strip() for u in assigned_execs}
+            assigned_names = {n for n in assigned_names if len(n) > 3}
+
+            filtered_requests = []
+            for req in standardized_requests:
+                req_role = str(req.get("role") or "").lower().strip()
+                # Exclude manager, admin, ceo requests
+                if any(r in req_role for r in ("manager", "admin", "ceo")):
+                    continue
+
+                req_email = str(req.get("executive_email") or req.get("email") or "").lower().strip()
+                req_id = str(req.get("employee_id") or "").strip()
+                req_code = str(req.get("employee_code") or "").strip()
+                req_name = str(req.get("executive_name") or req.get("employee_name") or "").lower().strip()
+
+                is_match = False
+                if req_email and req_email in assigned_emails:
+                    is_match = True
+                elif req_id and req_id in assigned_ids:
+                    is_match = True
+                elif req_code and req_code in assigned_codes:
+                    is_match = True
+                else:
+                    for name in assigned_names:
+                        if name in req_name:
+                            is_match = True
+                            break
+                if is_match:
+                    filtered_requests.append(req)
+            return filtered_requests
+
+        return standardized_requests
 
     def update_leave_status(self, request_id: str, new_status: str, comment: str = "", user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         # Resolve manager's employee_id from user_payload

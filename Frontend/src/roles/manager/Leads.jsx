@@ -60,10 +60,14 @@ export default function ManagerLeads() {
   const [customSEInput, setCustomSEInput] = useState('')
   const [selectedStatus, setSelectedStatus] = useState('All')
   const [selectedPriority, setSelectedPriority] = useState('All')
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
+  const nowObj = new Date()
+  const initFirstDay = new Date(nowObj.getFullYear(), nowObj.getMonth(), 1).toISOString().split('T')[0]
+  const initToday = nowObj.toISOString().split('T')[0]
+
+  const [fromDate, setFromDate] = useState(initFirstDay)
+  const [toDate, setToDate] = useState(initToday)
   const [sortBy, setSortBy] = useState('created_at_desc')
-  const [dateFilterTab, setDateFilterTab] = useState('All') // 'All' | 'Today' | 'Yesterday' | 'This Month' | 'Custom'
+  const [dateFilterTab, setDateFilterTab] = useState('This Month')
   const [selectedLeadTab, setSelectedLeadTab] = useState('Total Lead')
 
   const handleLinearDateFilter = (tab) => {
@@ -193,6 +197,43 @@ export default function ManagerLeads() {
     setExecutives([])
   }
 
+  const enrichLeads = (leadArr) => {
+    return leadArr.map((l) => {
+      const rawStatus = (l.status || "NEW").toUpperCase();
+      const statusMap = {
+        "NEW": "New",
+        "FOLLOW_UP": "Moved to Follow-ups",
+        "VISIT_SCHEDULED": "Visit Scheduled",
+        "CONVERTED": "Converted to Customer",
+        "LOST": "Not Converted / Lost",
+      };
+      return {
+        ...l,
+        id: l.lead_id || l.id,
+        leadNumber: l.lead_number || `LD-${String(l.lead_id || l.id || "").slice(-8).toUpperCase()}`,
+        company: l.company_name || l.company || "Prospect Lead",
+        company_name: l.company_name || l.company || "Prospect Lead",
+        person: l.contact_person || l.contact_name || "Point of Contact",
+        contact_name: l.contact_person || l.contact_name || "Point of Contact",
+        contact_person: l.contact_person || l.contact_name || "Point of Contact",
+        phone: l.mobile || l.phone || l.contact_phone || "",
+        mobile: l.mobile || l.phone || l.contact_phone || "",
+        email: l.email || l.contact_email || "",
+        city: l.city || "Chennai",
+        product: l.product_name || l.product || "TwiteConnect CRM",
+        product_name: l.product_name || l.product || "TwiteConnect CRM",
+        category: l.category || "Warm",
+        priority: l.priority || "Medium",
+        status: statusMap[rawStatus] || l.status || "New",
+        value: l.expected_value ? `₹${Number(l.expected_value).toLocaleString("en-IN")}` : "₹0",
+        assignedTo: l.assigned_to || '',
+        assignedToEmail: l.assigned_to_email || '',
+        notes: l.notes || l.remarks || "",
+        customerId: l.customer_id || null,
+      };
+    });
+  }
+
   // Primary API Data Fetch function
   const fetchTeamLeadReports = async () => {
     setLoading(true)
@@ -214,18 +255,20 @@ export default function ManagerLeads() {
       const data = res?.data || res || {}
 
       if (data.leads && Array.isArray(data.leads)) {
-        setLeads(data.leads)
+        const enriched = enrichLeads(data.leads)
+        setLeads(enriched)
         if (data.summary) {
           setSummary(data.summary)
         } else {
-          calculateLocalSummary(data.leads)
+          calculateLocalSummary(enriched)
         }
       } else {
         // Fallback fetch all leads from crmAPI.getLeads
         const fallbackRes = await crmAPI.getLeads()
         const rawLeads = Array.isArray(fallbackRes) ? fallbackRes : fallbackRes?.data || []
-        setLeads(rawLeads)
-        calculateLocalSummary(rawLeads)
+        const enriched = enrichLeads(rawLeads)
+        setLeads(enriched)
+        calculateLocalSummary(enriched)
       }
     } catch (err) {
       // Fall back smoothly to dynamic local store
@@ -343,7 +386,7 @@ export default function ManagerLeads() {
       let matchesDate = true
       const lDateStr = String(l.created_at || l.date || '')
       if (lDateStr) {
-        const lDate = lDateStr.split('T')[0]
+        const lDate = lDateStr.split('T')[0].split(' ')[0].trim()
         if (fromDate && lDate < fromDate) matchesDate = false
         if (toDate && lDate > toDate) matchesDate = false
       }
@@ -541,7 +584,7 @@ export default function ManagerLeads() {
             {/* Date Filters */}
             <div className="flex items-center gap-1.5 bg-amber-50/60 p-1 rounded-xl border border-amber-300">
               <span className="text-xs font-black text-amber-950 px-2">Date Filter:</span>
-              {['All', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
+              {['Today', 'This Month', 'Custom'].map((tab) => (
                 <button
                   key={tab}
                   type="button"
@@ -552,7 +595,7 @@ export default function ManagerLeads() {
                       : 'text-amber-950 hover:bg-amber-100'
                   }`}
                 >
-                  {tab === 'All' ? 'All Time' : tab}
+                  {tab}
                 </button>
               ))}
             </div>

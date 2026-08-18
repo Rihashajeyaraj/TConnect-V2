@@ -1,83 +1,254 @@
-import { useState } from 'react'
-import { Calendar, Search, AlertCircle, CheckCircle, Clock, Receipt, MoreVertical } from 'lucide-react'
+import { useState, useEffect, useMemo } from 'react'
+import { Search, Receipt, RefreshCw, Calendar, ExternalLink, CheckCircle2, Clock, XCircle, Download } from 'lucide-react'
+import { expenseAPI } from '../../services/api.js'
 
-const initialExpenses = [
-  { id: '1', name: 'John Doe', type: 'Travel (Fuel)', amount: 1500, date: '28 Apr 2026', bill: 'Fuel_Bill_45.pdf', status: 'Pending' },
-  { id: '2', name: 'Mary Jane', type: 'Client Lunch', amount: 3200, date: '27 Apr 2026', bill: 'Food_Bill_92.pdf', status: 'Approved' },
-  { id: '3', name: 'Robert Smith', type: 'Travel (Flight)', amount: 12500, date: '25 Apr 2026', bill: 'Flight_Ticket.pdf', status: 'Approved' },
-  { id: '4', name: 'David Brown', type: 'Office Supplies', amount: 800, date: '24 Apr 2026', bill: 'Stationery_Bill.pdf', status: 'Approved' },
-]
-
-const STATUS_COLORS = {
-  Pending: 'text-amber-600 bg-amber-50 border-amber-100',
-  Approved: 'text-emerald-600 bg-emerald-50 border-emerald-100',
-  Rejected: 'text-rose-600 bg-rose-50 border-rose-100',
+const STATUS_META = {
+  APPROVED: { label: 'Approved', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  approved:  { label: 'Approved', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  Approved:  { label: 'Approved', cls: 'bg-emerald-50 text-emerald-700 border-emerald-200' },
+  PENDING:   { label: 'Pending',  cls: 'bg-amber-50 text-amber-700 border-amber-200'   },
+  REJECTED:  { label: 'Rejected', cls: 'bg-rose-50 text-rose-700 border-rose-200'       },
 }
 
-function Expenses() {
-  const [search, setSearch] = useState('')
-  const filtered = initialExpenses.filter(e => e.name.toLowerCase().includes(search.toLowerCase()))
+function fmtINR(val) {
+  const n = parseFloat(String(val).replace(/[^\d.]/g, '')) || 0
+  return '₹' + n.toLocaleString('en-IN')
+}
+
+function fmtDate(str) {
+  if (!str) return '—'
+  const d = new Date(str)
+  if (isNaN(d)) return String(str).slice(0, 10)
+  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+}
+
+function normalize(e, idx) {
+  const statusRaw = e.status || e.approval_status || 'PENDING'
+  const meta = STATUS_META[statusRaw] || { label: statusRaw, cls: 'bg-slate-50 text-slate-600 border-slate-200' }
+  return {
+    id: e.id || e.expense_id || `EXP-${idx}`,
+    executive_name: e.employee_name || e.assigned_to || e.executive_name || e.name || 'Sales Executive',
+    executive_email: e.employee_email || e.assigned_to_email || e.executive_email || e.email || '',
+    category: e.category || e.type || e.expense_type || 'General',
+    description: e.description || e.notes || e.purpose || '—',
+    amount: parseFloat(String(e.amount || 0).replace(/[^\d.]/g, '')) || 0,
+    claim_date: e.created_at || e.claim_date || e.submitted_at || '',
+    approved_by: e.reviewed_by || e.approved_by || e.manager_name || '—',
+    approved_at: e.approved_at || e.reviewed_at || e.updated_at || '',
+    receipt_url: e.receipt_url || e.receipt || e.bill_url || '',
+    receipt_name: e.receipt_name || e.bill || e.file_name || 'Receipt',
+    status: statusRaw,
+    status_label: meta.label,
+    status_cls: meta.cls,
+    remarks: e.remarks || e.manager_remarks || '',
+  }
+}
+
+export default function CeoExpenses() {
+  const [expenses, setExpenses]   = useState([])
+  const [loading, setLoading]     = useState(true)
+  const [search, setSearch]       = useState('')
+  const [statusFilter, setStatus] = useState('Approved')  // default: show approved
+
+  async function fetchData() {
+    setLoading(true)
+    try {
+      const res = await expenseAPI.getManagerExpenses({ status: '' }) // fetch all
+      const raw = Array.isArray(res) ? res : (res?.data?.expenses || res?.data || [])
+      setExpenses(raw.map(normalize))
+    } catch (err) {
+      console.warn('CEO expenses fetch notice:', err)
+      // fallback: try generic expenses endpoint
+      try {
+        const res2 = await expenseAPI.getExpenses()
+        const raw2 = Array.isArray(res2) ? res2 : (res2?.data || [])
+        setExpenses(raw2.map(normalize))
+      } catch {
+        setExpenses([])
+      }
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchData() }, [])
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase().trim()
+    return expenses.filter(e => {
+      const matchStatus = statusFilter === 'All' || e.status_label === statusFilter ||
+        e.status.toUpperCase() === statusFilter.toUpperCase()
+      const matchSearch = !q ||
+        e.executive_name.toLowerCase().includes(q) ||
+        e.executive_email.toLowerCase().includes(q) ||
+        e.category.toLowerCase().includes(q) ||
+        e.approved_by.toLowerCase().includes(q) ||
+        e.description.toLowerCase().includes(q)
+      return matchStatus && matchSearch
+    })
+  }, [expenses, search, statusFilter])
+
+  const totalAmount = filtered.reduce((s, e) => s + e.amount, 0)
+  const approvedCount = expenses.filter(e => e.status_label === 'Approved').length
+  const pendingCount  = expenses.filter(e => e.status_label === 'Pending').length
 
   return (
-    <div className="mx-auto max-w-[1400px] space-y-6">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/80 rounded-2xl p-6 shadow-sm">
-        <div>
-          <h2 className="text-2xl font-extrabold text-slate-900 tracking-tight">Expenses Claims</h2>
-          <p className="mt-1 text-xs font-semibold text-slate-400">Home &gt; Expenses</p>
+    <div className="mx-auto max-w-[1500px] space-y-6 pb-12">
+
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
+        <div className="flex items-center gap-3">
+          <span className="grid size-9 place-items-center rounded-xl bg-[#F8CAE4]/20 text-[#832D51]">
+            <Receipt className="size-5" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-black text-slate-900 tracking-tight">Expense Claims Audit</h1>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Full audit log of all executive expense claims approved by Sales Managers
+            </p>
+          </div>
         </div>
+        <button
+          onClick={fetchData}
+          disabled={loading}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white font-black text-xs shadow-xs transition cursor-pointer disabled:opacity-60"
+        >
+          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+          Refresh
+        </button>
       </div>
 
-      <div className="flex items-center gap-4 bg-white border border-slate-200/80 rounded-2xl p-4 shadow-sm">
-        <div className="relative flex-1">
+      {/* KPI Cards */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        {[
+          { label: 'Total Claims', value: expenses.length, sub: 'All time', color: 'text-slate-900' },
+          { label: 'Approved', value: approvedCount, sub: 'By Sales Managers', color: 'text-emerald-700' },
+          { label: 'Pending', value: pendingCount, sub: 'Awaiting approval', color: 'text-amber-700' },
+          { label: 'Approved Amount', value: fmtINR(expenses.filter(e=>e.status_label==='Approved').reduce((s,e)=>s+e.amount,0)), sub: 'Total disbursed', color: 'text-[#832D51]' },
+        ].map(c => (
+          <div key={c.label} className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
+            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">{c.label}</span>
+            <p className={`text-2xl font-black mt-2 ${c.color}`}>{c.value}</p>
+            <p className="text-[10px] text-slate-400 font-medium mt-0.5">{c.sub}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Filters */}
+      <div className="flex flex-col sm:flex-row items-center gap-3 bg-white border border-slate-200/80 rounded-2xl p-4 shadow-xs">
+        <div className="relative flex-1 w-full">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search expenses by representative..."
+            placeholder="Search executive, category, manager, description..."
             value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="h-10 w-full rounded-xl border border-slate-200 bg-slate-50 pl-10 pr-4 text-sm text-slate-900 outline-none transition focus:border-blue-500 focus:bg-white"
+            onChange={e => setSearch(e.target.value)}
+            className="h-9 w-full rounded-xl border border-slate-200 bg-slate-50 pl-9 pr-4 text-xs font-semibold text-slate-900 outline-none focus:border-[#832D51] focus:bg-white"
           />
+        </div>
+        <div className="flex items-center gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200">
+          {['All', 'Approved', 'Pending', 'Rejected'].map(s => (
+            <button
+              key={s}
+              onClick={() => setStatus(s)}
+              className={`px-3.5 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                statusFilter === s ? 'bg-[#832D51] text-white shadow-xs' : 'text-slate-600 hover:bg-slate-100'
+              }`}
+            >
+              {s}
+            </button>
+          ))}
         </div>
       </div>
 
-      <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-        <table className="w-full border-collapse text-left text-sm text-slate-600">
-          <thead className="bg-slate-50 text-xs font-bold text-slate-400 uppercase tracking-wider border-b border-slate-100">
-            <tr>
-              <th className="px-6 py-4">Employee Name</th>
-              <th className="px-6 py-4">Expense Type</th>
-              <th className="px-6 py-4 text-right">Amount (₹)</th>
-              <th className="px-6 py-4">Claim Date</th>
-              <th className="px-6 py-4">Receipt</th>
-              <th className="px-6 py-4">Status</th>
-              <th className="px-6 py-4 text-center">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100 font-semibold">
-            {filtered.map((e) => (
-              <tr key={e.id} className="hover:bg-slate-50/50 transition">
-                <td className="px-6 py-4 text-slate-900 font-bold">{e.name}</td>
-                <td className="px-6 py-4 text-slate-700">{e.type}</td>
-                <td className="px-6 py-4 text-right text-slate-950 font-bold">₹{e.amount.toLocaleString()}</td>
-                <td className="px-6 py-4 flex items-center gap-1.5"><Calendar className="size-3.5 text-slate-400" />{e.date}</td>
-                <td className="px-6 py-4 text-blue-600 flex items-center gap-1"><Receipt className="size-3.5" />{e.bill}</td>
-                <td className="px-6 py-4">
-                  <span className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-0.5 text-xs font-bold ${STATUS_COLORS[e.status]}`}>
-                    {e.status}
-                  </span>
-                </td>
-                <td className="px-6 py-4 text-center">
-                  <button className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600">
-                    <MoreVertical className="size-4" />
-                  </button>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      {/* Table */}
+      <div className="rounded-2xl border border-slate-200/90 bg-white shadow-xs overflow-hidden">
+        {loading ? (
+          <div className="py-16 text-center">
+            <RefreshCw className="animate-spin size-6 text-[#832D51] mx-auto mb-3" />
+            <p className="text-xs font-semibold text-slate-500">Loading expense records...</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <div className="py-16 text-center text-xs text-slate-400 font-semibold">
+            No expense records found for the selected filter.
+          </div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider bg-slate-50/60">
+                  <th className="px-5 py-3.5">Executive</th>
+                  <th className="px-5 py-3.5">Category</th>
+                  <th className="px-5 py-3.5">Description</th>
+                  <th className="px-5 py-3.5 text-right">Amount</th>
+                  <th className="px-5 py-3.5">Claim Date</th>
+                  <th className="px-5 py-3.5">Approved By</th>
+                  <th className="px-5 py-3.5">Approved On</th>
+                  <th className="px-5 py-3.5">Receipt</th>
+                  <th className="px-5 py-3.5">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {filtered.map(e => (
+                  <tr key={e.id} className="hover:bg-slate-50/60 transition">
+                    <td className="px-5 py-3.5">
+                      <p className="font-extrabold text-slate-900">{e.executive_name}</p>
+                      {e.executive_email && <p className="text-[10px] text-slate-400">{e.executive_email}</p>}
+                    </td>
+                    <td className="px-5 py-3.5 text-slate-700 font-bold">{e.category}</td>
+                    <td className="px-5 py-3.5 text-slate-600 max-w-[180px] truncate" title={e.description}>{e.description}</td>
+                    <td className="px-5 py-3.5 text-right font-black text-slate-900">{fmtINR(e.amount)}</td>
+                    <td className="px-5 py-3.5 text-slate-600">
+                      <span className="flex items-center gap-1">
+                        <Calendar className="size-3 text-slate-400" />
+                        {fmtDate(e.claim_date)}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 font-bold text-slate-800">{e.approved_by}</td>
+                    <td className="px-5 py-3.5 text-slate-600">{fmtDate(e.approved_at)}</td>
+                    <td className="px-5 py-3.5">
+                      {e.receipt_url ? (
+                        <a
+                          href={e.receipt_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[#832D51] font-bold hover:underline"
+                        >
+                          <ExternalLink className="size-3" />
+                          View
+                        </a>
+                      ) : (
+                        <span className="text-slate-400 flex items-center gap-1">
+                          <Receipt className="size-3" />
+                          {e.receipt_name !== 'Receipt' ? e.receipt_name : '—'}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[10px] font-black border ${e.status_cls}`}>
+                        {e.status_label === 'Approved' && <CheckCircle2 className="size-3" />}
+                        {e.status_label === 'Pending'  && <Clock className="size-3" />}
+                        {e.status_label === 'Rejected' && <XCircle className="size-3" />}
+                        {e.status_label}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              {/* Footer total */}
+              <tfoot>
+                <tr className="border-t-2 border-slate-200 bg-slate-50/80 font-black text-slate-900 text-xs">
+                  <td className="px-5 py-3.5" colSpan={3}>
+                    Showing {filtered.length} of {expenses.length} records
+                  </td>
+                  <td className="px-5 py-3.5 text-right text-[#832D51]">{fmtINR(totalAmount)}</td>
+                  <td colSpan={5} />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   )
 }
-
-export default Expenses

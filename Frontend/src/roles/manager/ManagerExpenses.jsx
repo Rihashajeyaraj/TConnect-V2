@@ -438,29 +438,31 @@ export default function ManagerExpenses() {
   return (
     <div className="space-y-6 text-slate-900 font-sans pb-12">
       {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      <div className="bg-gradient-to-r from-teal-500/10 via-white to-amber-500/5 border-2 border-teal-500 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="bg-teal-600 text-white font-black text-[10px] uppercase px-2.5 py-0.5 rounded-full shadow-xs">
-              APPROVAL DASHBOARD
-            </span>
-            <span className="text-slate-500 text-xs font-black">Sales Manager Portal</span>
+      {!window.location.pathname.includes('/ceo') && (
+        <div className="bg-gradient-to-r from-teal-500/10 via-white to-amber-500/5 border-2 border-teal-500 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="bg-teal-600 text-white font-black text-[10px] uppercase px-2.5 py-0.5 rounded-full shadow-xs">
+                APPROVAL DASHBOARD
+              </span>
+              <span className="text-slate-500 text-xs font-black">Sales Manager Portal</span>
+            </div>
+            <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2 mt-1">
+              <Receipt className="w-7 h-7 text-teal-600" /> Expense Claims & Approval
+            </h1>
+            <p className="text-xs text-slate-600 font-bold mt-1">
+              Review, verify receipts, and process expense claim approvals for Sales Executives under your direct team management.
+            </p>
           </div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2 mt-1">
-            <Receipt className="w-7 h-7 text-teal-600" /> Expense Claims & Approval
-          </h1>
-          <p className="text-xs text-slate-600 font-bold mt-1">
-            Review, verify receipts, and process expense claim approvals for Sales Executives under your direct team management.
-          </p>
-        </div>
 
-        <button
-          onClick={fetchExpensesData}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs shadow-md transition cursor-pointer"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh Expense Claims
-        </button>
-      </div>
+          <button
+            onClick={fetchExpensesData}
+            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs shadow-md transition cursor-pointer"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh Expense Claims
+          </button>
+        </div>
+      )}
 
       {/* ── TOP 4 KPI CARDS (PREVIOUS CARD COLORS WITH 1PX THIN BORDERS) ─────────────────────────────────────────────────── */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">

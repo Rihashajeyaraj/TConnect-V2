@@ -63,6 +63,34 @@ export default function ManagerTeam() {
   // Team Leave & Permission Requests State
   const [teamLeaveRequests, setTeamLeaveRequests] = useState([])
 
+  // Filter leave requests to only include assigned executives and exclude manager/admin/ceo requests
+  const filteredLeaveRequests = React.useMemo(() => {
+    return teamLeaveRequests.filter((req) => {
+      if (!req) return false
+      const reqRole = String(req.role || "").toLowerCase();
+      // Exclude manager, admin, ceo requests
+      if (reqRole.includes("manager") || reqRole.includes("admin") || reqRole.includes("ceo")) {
+        return false;
+      }
+
+      const reqEmail = String(req.executive_email || req.email || "").toLowerCase().trim();
+      const reqCode = String(req.employee_code || "").toLowerCase().trim();
+      const reqName = String(req.executive_name || req.employee_name || "").toLowerCase().trim();
+
+      // Check if matches assigned team
+      return executives.some((ex) => {
+        const exEmail = String(ex.email || "").toLowerCase().trim();
+        const exCode = String(ex.employee_code || "").toLowerCase().trim();
+        const exName = String(ex.name || "").toLowerCase().trim();
+        return (
+          (exEmail && reqEmail === exEmail) ||
+          (exCode && reqCode === exCode) ||
+          (exName && (reqName.includes(exName) || exName.includes(reqName)))
+        );
+      });
+    });
+  }, [teamLeaveRequests, executives])
+
   useEffect(() => {
     attendanceAPI.getLeaveRequests()
       .then((res) => {
@@ -967,14 +995,14 @@ export default function ManagerTeam() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {teamLeaveRequests.length === 0 ? (
+              {filteredLeaveRequests.length === 0 ? (
                 <tr>
                   <td colSpan="6" className="text-center py-10 text-slate-500 font-bold text-sm bg-slate-50/50">
                     No leave or permission requests currently pending for your team.
                   </td>
                 </tr>
               ) : (
-                teamLeaveRequests.map((req, idx) => (
+                filteredLeaveRequests.map((req, idx) => (
                   <tr key={req.id || idx} className="hover:bg-amber-50/40 transition-colors">
                     <td className="px-4 py-3.5 font-black text-slate-900 text-sm">
                       {req.executive_name || req.executive || "Sales Executive"}

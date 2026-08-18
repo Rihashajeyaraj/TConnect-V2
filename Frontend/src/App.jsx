@@ -15,6 +15,7 @@ import CeoHrms from './roles/ceo/Hrms.jsx'
 import CeoReports from './roles/ceo/Reports.jsx'
 import CeoNotifications from './roles/ceo/Notifications.jsx'
 import CeoSettings from './roles/ceo/Settings.jsx'
+import CeoExpenses from './roles/ceo/Expenses.jsx'
 
 // ── Admin ────────────────────────────────────────────────────────────
 import AdminLayout from './roles/admin/AdminLayout.jsx'
@@ -86,7 +87,7 @@ function App() {
               <Route path="reports" element={<CeoReports />} />
               <Route path="notifications" element={<CeoNotifications />} />
               <Route path="settings" element={<CeoSettings />} />
-              <Route path="expenses" element={<ManagerExpenses />} />
+              <Route path="expenses" element={<CeoExpenses />} />
 
               {/* Backward compatibility aliases */}
               <Route path="sales-overview" element={<Navigate to="/ceo/sales-revenue" replace />} />

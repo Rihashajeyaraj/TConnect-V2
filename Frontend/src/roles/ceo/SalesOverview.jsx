@@ -70,6 +70,9 @@ function SalesOverview({ initialSection }) {
   const [managerFilter, setManagerFilter] = useState('All')
   const [executiveFilter, setExecutiveFilter] = useState('All')
 
+  // Product detail panel
+  const [selectedProduct, setSelectedProduct] = useState(null)
+
   // Date range resolver helper
   const getFilterDates = (range) => {
     const today = new Date()
@@ -128,7 +131,7 @@ function SalesOverview({ initialSection }) {
       const [salesRes, dashRes, expRes] = await Promise.allSettled([
         reportAPI.getCeoSalesOverview(params),
         reportAPI.getCeoDashboard(),
-        expenseAPI.getExpenses(),
+        expenseAPI.getManagerExpenses({ status: '' }),  // fetch all, filter by status in UI
       ])
 
       if (salesRes.status === 'fulfilled' && salesRes.value?.data) {
@@ -141,8 +144,12 @@ function SalesOverview({ initialSection }) {
         setDashboardData(dashRes.value.data)
       }
 
-      if (expRes.status === 'fulfilled' && expRes.value?.data) {
-        const list = Array.isArray(expRes.value.data) ? expRes.value.data : []
+      if (expRes.status === 'fulfilled') {
+        const raw = expRes.value
+        const list = Array.isArray(raw) ? raw
+          : Array.isArray(raw?.data?.expenses) ? raw.data.expenses
+          : Array.isArray(raw?.data) ? raw.data
+          : []
         setRawExpenses(list)
       }
     } catch (err) {
@@ -167,7 +174,8 @@ function SalesOverview({ initialSection }) {
     setCustomRangeApplied({ start: fromDate, end: toDate })
   }
 
-  // Filtered operational expenses based on active date boundaries
+  // Only count APPROVED expense claims from executives (manager-approved)
+  const APPROVED_STATUSES = ['approved', 'APPROVED', 'Approved']
   const totalOperationalExpenses = useMemo(() => {
     let startLimit = null
     let endLimit = null
@@ -185,29 +193,44 @@ function SalesOverview({ initialSection }) {
       }
     }
 
-    if (!rawExpenses || rawExpenses.length === 0) {
-      return Number(dashboardData?.metrics?.totalExpenses || 0)
-    }
+    // Base: only approved claims
+    let filtered = rawExpenses.filter((e) =>
+      APPROVED_STATUSES.includes(e.status || e.approval_status || '')
+    )
 
-    let filtered = rawExpenses
+    // Date filter
     if (startLimit && endLimit) {
-      filtered = rawExpenses.filter((e) => {
-        const expDate = e.claim_date || e.date || e.created_at
+      filtered = filtered.filter((e) => {
+        const expDate = e.claim_date || e.created_at || e.submitted_at || e.date
         if (!expDate) return true
         const dStr = String(expDate).substring(0, 10)
         return dStr >= startLimit && dStr <= endLimit
       })
     }
 
-    const sum = filtered.reduce((acc, curr) => acc + Number(curr.amount || 0), 0)
-    return sum > 0 ? sum : Number(dashboardData?.metrics?.totalExpenses || 0)
+    if (filtered.length === 0 && rawExpenses.length === 0) {
+      return Number(dashboardData?.metrics?.totalExpenses || 0)
+    }
+
+    return filtered.reduce((acc, curr) => acc + Number(curr.amount || 0), 0)
   }, [rawExpenses, dateFilter, customRangeApplied, dashboardData])
 
+  // Approved expense claim count (for card label)
+  const approvedExpenseCount = useMemo(() => {
+    return rawExpenses.filter((e) =>
+      APPROVED_STATUSES.includes(e.status || e.approval_status || '')
+    ).length
+  }, [rawExpenses])
+
   // Key Financial & Sales Metrics (Realized, Pipeline, Target, Net Margin)
-  const totalRevenue = Number(data?.metrics?.total_revenue || 0)
-  const totalPipeline = Number(data?.metrics?.total_pipeline_value || 0)
-  const totalCustomersCount = Number(data?.metrics?.total_customers || 0)
-  const totalWonDealsCount = Number(data?.metrics?.total_won_deals || 0)
+  // Safe numeric helpers
+  const safeNum = (v) => Number(v) || 0
+  const safeFmt = (v) => safeNum(v).toLocaleString()
+
+  const totalRevenue = safeNum(data?.metrics?.total_revenue)
+  const totalPipeline = safeNum(data?.metrics?.total_pipeline_value)
+  const totalCustomersCount = safeNum(data?.metrics?.total_customers)
+  const totalWonDealsCount = safeNum(data?.metrics?.total_won_deals)
 
   const targetAchievementRate =
     ANNUAL_TARGET > 0 ? ((totalRevenue / ANNUAL_TARGET) * 100).toFixed(1) : '0.0'
@@ -268,14 +291,14 @@ function SalesOverview({ initialSection }) {
   const managerRevenueShares = useMemo(() => {
     if (!data?.manager_performance || data.manager_performance.length === 0) return []
     return data.manager_performance.map((mgr) => {
-      const wonRev = Number(mgr.won_revenue || 0)
+      const wonRev = safeNum(mgr.won_revenue)
       const sharePct =
         totalRevenue > 0 ? ((wonRev / totalRevenue) * 100).toFixed(1) : '0.0'
       return {
         manager: mgr.sales_manager,
         won_revenue: wonRev,
-        won_deals: mgr.won_deals || 0,
-        pipeline: mgr.pipeline || 0,
+        won_deals: safeNum(mgr.won_deals),
+        pipeline: safeNum(mgr.pipeline),
         share: `${sharePct}%`,
         shareNum: Number(sharePct),
       }
@@ -286,21 +309,97 @@ function SalesOverview({ initialSection }) {
   const executiveLeaderboard = useMemo(() => {
     if (!data?.executive_performance || data.executive_performance.length === 0) return []
     return data.executive_performance.map((exec) => {
-      const wonRev = Number(exec.won_revenue || 0)
+      const wonRev = safeNum(exec.won_revenue)
       const sharePct =
         totalRevenue > 0 ? ((wonRev / totalRevenue) * 100).toFixed(1) : '0.0'
       return {
         executive: exec.sales_executive,
         manager: exec.sales_manager,
         won_revenue: wonRev,
-        won_deals: exec.won_deals || 0,
-        pipeline: exec.pipeline || 0,
+        won_deals: safeNum(exec.won_deals),
+        pipeline: safeNum(exec.pipeline),
         share: `${sharePct}%`,
       }
     })
   }, [data?.executive_performance, totalRevenue])
 
-  // Financial Statement Export Handler
+  // Product Analytics — aggregated from customers_details + revenue_details
+  const productAnalytics = useMemo(() => {
+    const map = {}
+
+    // Pull from customers_details (has product field)
+    const custList = data?.customers_details || []
+    for (const c of custList) {
+      const prod = (c.product || 'Unlisted Product').trim()
+      if (!map[prod]) map[prod] = { product: prod, revenue: 0, deals: 0, customers: [], executives: new Set(), managers: new Set(), amounts: [] }
+      const amt = safeNum(c.amount)
+      map[prod].revenue += amt
+      map[prod].deals += 1
+      map[prod].amounts.push(amt)
+      if (c.customer_name) map[prod].customers.push({ name: c.customer_name, company: c.company || '', amount: amt, executive: c.sales_executive || '—', manager: c.sales_manager || '—' })
+      if (c.sales_executive) map[prod].executives.add(c.sales_executive)
+      if (c.sales_manager) map[prod].managers.add(c.sales_manager)
+    }
+
+    // Also pull from revenue_details if product is available
+    const revList = data?.revenue_details || []
+    for (const r of revList) {
+      const prod = (r.product || r.customer || 'Won Deal').trim()
+      // Only add if not already counted via customers_details (prevent dup)
+      // We skip this to avoid double counting — customers_details is primary
+    }
+
+    const maxRev = Math.max(...Object.values(map).map(p => p.revenue), 1)
+    return Object.values(map)
+      .map(p => ({
+        ...p,
+        executives: Array.from(p.executives),
+        managers: Array.from(p.managers),
+        avg_deal: p.deals > 0 ? Math.round(p.revenue / p.deals) : 0,
+        share: totalRevenue > 0 ? ((p.revenue / totalRevenue) * 100).toFixed(1) : '0.0',
+        bar_pct: Math.round((p.revenue / maxRev) * 100),
+      }))
+      .sort((a, b) => b.revenue - a.revenue)
+  }, [data?.customers_details, totalRevenue])
+
+  // Monthly Target vs Achieved — derived from revenue_details grouped by month
+  const MONTHLY_TARGET = Math.round(ANNUAL_TARGET / 12)
+  const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+  const monthlyTargetData = useMemo(() => {
+    const achieved = {}
+    const revList = data?.revenue_details || []
+    for (const r of revList) {
+      // date format: "dd/mm/yyyy" or "yyyy-mm-dd"
+      const dateStr = r.date || ''
+      let monthIdx = -1
+      if (dateStr.includes('/')) {
+        // dd/mm/yyyy
+        const parts = dateStr.split('/')
+        monthIdx = parseInt(parts[1], 10) - 1
+      } else if (dateStr.includes('-')) {
+        // yyyy-mm-dd
+        monthIdx = parseInt(dateStr.split('-')[1], 10) - 1
+      }
+      if (monthIdx >= 0 && monthIdx <= 11) {
+        achieved[monthIdx] = (achieved[monthIdx] || 0) + safeNum(r.amount)
+      }
+    }
+    const currentMonth = new Date().getMonth()
+    return MONTH_NAMES.map((m, i) => {
+      const act = achieved[i] || 0
+      const pct = MONTHLY_TARGET > 0 ? Math.min(100, Math.round((act / MONTHLY_TARGET) * 100)) : 0
+      return {
+        month: m,
+        target: MONTHLY_TARGET,
+        achieved: act,
+        pct,
+        isCurrent: i === currentMonth,
+        isPast: i < currentMonth,
+        isFuture: i > currentMonth,
+      }
+    })
+  }, [data?.revenue_details])
+
   const handleExportStatement = (format) => {
     const statementRows = [
       { Metric: 'Total Realized Revenue (Won Deals)', Amount: `₹${totalRevenue.toLocaleString()}` },
@@ -526,72 +625,85 @@ function SalesOverview({ initialSection }) {
           </div>
         </div>
 
-        {/* Card 4: Open Pipeline */}
+        {/* Card 4: Net Margin (replaced Open Pipeline) */}
         <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
           <div className="flex justify-between items-start">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-              Open Pipeline
-            </span>
-            <span className="grid size-7 place-items-center rounded-lg bg-amber-50 text-amber-600">
-              <Clock className="size-4" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Net Margin</span>
+            <span className="grid size-7 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
+              <TrendingUp className="size-4" />
             </span>
           </div>
-          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
-            ₹{totalPipeline.toLocaleString()}
-          </p>
+          <div className="flex items-baseline gap-1.5 mt-2.5">
+            <p className="text-2xl font-black tracking-tight text-slate-900">{netProfitMargin}%</p>
+            <span className="text-xs font-bold text-slate-400">margin</span>
+          </div>
           <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-            <span className="text-[10px] font-bold text-slate-500">In negotiation / proposal</span>
-            <span className="text-[9px] font-bold text-amber-600">Unclosed</span>
+            <span className="text-[10px] font-bold text-slate-500">₹{netProfit.toLocaleString()} net</span>
+            <span className="text-[9px] font-bold text-emerald-600">After Expenses</span>
           </div>
         </div>
 
-        {/* Card 5: Annual Target */}
-        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-              Annual Target
-            </span>
-            <span className="grid size-7 place-items-center rounded-lg bg-indigo-50 text-indigo-600">
-              <Target className="size-4" />
-            </span>
-          </div>
-          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
-            ₹{(ANNUAL_TARGET / 10000000).toFixed(2)} Cr
-          </p>
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-            <span className="text-[10px] font-bold text-slate-500">Org sales benchmark</span>
-            <span className="text-[9px] font-bold text-indigo-600">₹3.50 Cr Goal</span>
-          </div>
-        </div>
-
-        {/* Card 6: Target Achievement % */}
-        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-              Target Achievement
-            </span>
-            <span className="grid size-7 place-items-center rounded-lg bg-purple-50 text-purple-600">
-              <Award className="size-4" />
-            </span>
-          </div>
-          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
-            {targetAchievementRate}%
-          </p>
-          <div className="mt-2 pt-2 border-t border-slate-100">
-            <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-              <div
-                className="h-1.5 rounded-full bg-[#832D51] transition-all duration-500"
-                style={{ width: `${Math.min(100, Number(targetAchievementRate))}%` }}
-              />
+        {/* Card 5–6: Monthly Target vs Achieved (spans 2 cols) */}
+        <div className="sm:col-span-2 bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <span className="grid size-7 place-items-center rounded-lg bg-indigo-50 text-indigo-600">
+                <Target className="size-4" />
+              </span>
+              <div>
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Monthly Target vs Achieved</span>
+                <p className="text-[9px] font-bold text-slate-400 mt-0.5">
+                  Monthly target: ₹{MONTHLY_TARGET.toLocaleString()} &nbsp;·&nbsp; Annual: ₹{(ANNUAL_TARGET / 10000000).toFixed(2)} Cr
+                </p>
+              </div>
             </div>
+            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
+              totalRevenue >= MONTHLY_TARGET
+                ? 'bg-emerald-50 text-emerald-700'
+                : 'bg-rose-50 text-rose-700'
+            }`}>
+              {targetAchievementRate}% YTD
+            </span>
+          </div>
+
+          {/* Month rows — scrollable */}
+          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 max-h-36 overflow-y-auto pr-1">
+            {monthlyTargetData.map((m) => (
+              <div key={m.month} className={`space-y-0.5 ${m.isFuture ? 'opacity-40' : ''}`}>
+                <div className="flex items-center justify-between text-[9px] font-bold">
+                  <span className={`flex items-center gap-1 ${
+                    m.isCurrent ? 'text-indigo-700 font-black' : 'text-slate-500'
+                  }`}>
+                    {m.isCurrent && <span className="size-1.5 rounded-full bg-indigo-500 inline-block" />}
+                    {m.month}
+                  </span>
+                  <span className={
+                    m.isFuture ? 'text-slate-300' :
+                    m.pct >= 100 ? 'text-emerald-600 font-black' :
+                    m.pct >= 60 ? 'text-amber-600' : 'text-rose-500'
+                  }>
+                    {m.isFuture ? '—' : `₹${(m.achieved / 1000).toFixed(0)}k / ${m.pct}%`}
+                  </span>
+                </div>
+                <div className="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
+                  <div
+                    className={`h-1 rounded-full transition-all duration-500 ${
+                      m.isFuture ? 'bg-slate-200' :
+                      m.pct >= 100 ? 'bg-emerald-500' :
+                      m.pct >= 60 ? 'bg-amber-400' : 'bg-rose-400'
+                    }`}
+                    style={{ width: `${m.isFuture ? 0 : m.pct}%` }}
+                  />
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
-        {/* Card 7: Operational Expenses */}
         <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
           <div className="flex justify-between items-start">
             <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-              Operational Expenses
+              Approved Expense Claims
             </span>
             <span className="grid size-7 place-items-center rounded-lg bg-rose-50 text-rose-600">
               <Wallet className="size-4" />
@@ -601,35 +713,201 @@ function SalesOverview({ initialSection }) {
             ₹{totalOperationalExpenses.toLocaleString()}
           </p>
           <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-            <span className="text-[10px] font-bold text-slate-500">Field claims & operations</span>
-            <span className="text-[9px] font-bold text-rose-600">Cost Outlay</span>
+            <span className="text-[10px] font-bold text-slate-500">
+              {approvedExpenseCount > 0
+                ? `${approvedExpenseCount} manager-approved claim${approvedExpenseCount !== 1 ? 's' : ''}`
+                : 'Executive field claims'}
+            </span>
+            <span className="text-[9px] font-bold text-rose-600">Approved</span>
           </div>
         </div>
 
-        {/* Card 8: Net Margin */}
-        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-              Net Margin
-            </span>
-            <span className="grid size-7 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
-              <TrendingUp className="size-4" />
-            </span>
+        {/* Old Net Margin card removed from row 2 — now shown in row 1 */}
+      </div>
+
+      {/* ── Product Performance Cards Row ────────────────────────────────────── */}
+      {productAnalytics.length > 0 && (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {productAnalytics.map((p, idx) => {
+            const isTop = idx === 0
+            const isLow = idx === productAnalytics.length - 1 && productAnalytics.length > 1
+            return (
+              <button
+                key={p.product}
+                onClick={() => setSelectedProduct(selectedProduct?.product === p.product ? null : p)}
+                className={`text-left rounded-2xl p-4 border transition-all duration-200 cursor-pointer ${
+                  selectedProduct?.product === p.product
+                    ? 'bg-[#832D51] text-white border-[#832D51] shadow-md ring-2 ring-[#832D51]/25'
+                    : 'bg-white border-slate-200/90 hover:border-[#832D51] hover:shadow-sm'
+                }`}
+              >
+                {/* Rank + share row */}
+                <div className="flex items-center justify-between mb-2">
+                  <div className="flex items-center gap-1.5">
+                    {isTop && <span className="text-[10px]">🏆</span>}
+                    {isLow && <span className="text-[10px]">📉</span>}
+                    <span className={`text-[9px] font-black rounded-full px-2 py-0.5 ${
+                      selectedProduct?.product === p.product
+                        ? 'bg-white/20 text-white'
+                        : isTop ? 'bg-emerald-50 text-emerald-700'
+                        : isLow ? 'bg-rose-50 text-rose-700'
+                        : 'bg-slate-100 text-slate-500'
+                    }`}>#{idx + 1}</span>
+                    <span className={`text-[9px] font-bold uppercase tracking-wider ${
+                      selectedProduct?.product === p.product ? 'text-pink-200' : 'text-slate-400'
+                    }`}>Product</span>
+                  </div>
+                  <span className={`text-[9px] font-black ${
+                    selectedProduct?.product === p.product ? 'text-pink-200' : 'text-slate-400'
+                  }`}>{p.share}% share</span>
+                </div>
+
+                {/* Product name */}
+                <p className={`text-xs font-black leading-tight mb-2.5 ${
+                  selectedProduct?.product === p.product ? 'text-white' : 'text-slate-900'
+                }`}>{p.product}</p>
+
+                {/* Revenue bar */}
+                <div className={`w-full rounded-full h-1.5 mb-2 overflow-hidden ${
+                  selectedProduct?.product === p.product ? 'bg-white/25' : 'bg-slate-100'
+                }`}>
+                  <div
+                    className={`h-1.5 rounded-full transition-all duration-500 ${
+                      selectedProduct?.product === p.product ? 'bg-white'
+                      : isTop ? 'bg-emerald-500'
+                      : isLow ? 'bg-rose-400'
+                      : 'bg-[#832D51]'
+                    }`}
+                    style={{ width: `${p.bar_pct}%` }}
+                  />
+                </div>
+
+                <p className={`text-xl font-black ${
+                  selectedProduct?.product === p.product ? 'text-white' : 'text-slate-950'
+                }`}>₹{p.revenue.toLocaleString()}</p>
+
+                <div className={`flex items-center justify-between mt-1.5 pt-2 border-t text-[9px] font-bold ${
+                  selectedProduct?.product === p.product
+                    ? 'text-pink-100 border-white/20'
+                    : 'text-slate-400 border-slate-100'
+                }`}>
+                  <span>{p.deals} client{p.deals !== 1 ? 's' : ''}</span>
+                  <span>Avg ₹{p.avg_deal.toLocaleString()}</span>
+                </div>
+              </button>
+            )
+          })}
+        </div>
+      )}
+
+      {/* ── Product Detail Panel ─────────────────────────────────────────────── */}
+      {selectedProduct && (
+        <div className="rounded-2xl border border-[#832D51]/20 overflow-hidden bg-white shadow-sm">
+          {/* Header */}
+          <div className="flex items-center justify-between px-5 py-3.5 bg-[#832D51] text-white">
+            <div className="flex items-center gap-2.5">
+              <Layers className="size-4" />
+              <div>
+                <p className="text-sm font-black">{selectedProduct.product}</p>
+                <p className="text-[10px] text-pink-200 font-semibold">
+                  ₹{selectedProduct.revenue.toLocaleString()} · {selectedProduct.deals} clients · {selectedProduct.share}% revenue share
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSelectedProduct(null)}
+              className="grid size-7 place-items-center rounded-lg bg-white/15 hover:bg-white/25 transition cursor-pointer"
+            >
+              <X className="size-3.5" />
+            </button>
           </div>
-          <div className="flex items-baseline gap-2 mt-2.5">
-            <p className="text-2xl font-black tracking-tight text-slate-900">
-              {netProfitMargin}%
-            </p>
-            <span className="text-xs font-bold text-slate-500">
-              (₹{netProfit.toLocaleString()})
-            </span>
+
+          {/* KPI tiles */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-5 border-b border-slate-100">
+            {[
+              { label: 'Total Revenue', value: `₹${selectedProduct.revenue.toLocaleString()}`, color: 'text-[#832D51]' },
+              { label: 'Total Clients', value: selectedProduct.deals, color: 'text-slate-900' },
+              { label: 'Avg Deal Size', value: `₹${selectedProduct.avg_deal.toLocaleString()}`, color: 'text-indigo-700' },
+              { label: 'Revenue Share', value: `${selectedProduct.share}%`, color: 'text-emerald-700' },
+            ].map(m => (
+              <div key={m.label} className="bg-slate-50 rounded-xl border border-slate-200/80 p-3.5">
+                <span className="text-[9px] font-black uppercase tracking-wider text-slate-400">{m.label}</span>
+                <p className={`text-lg font-black mt-1 ${m.color}`}>{m.value}</p>
+              </div>
+            ))}
           </div>
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-            <span className="text-[10px] font-bold text-slate-500">Realized Rev - Expenses</span>
-            <span className="text-[9px] font-bold text-emerald-600">Net Margin</span>
+
+          {/* Clients + Team */}
+          <div className="grid gap-5 lg:grid-cols-3 p-5">
+            {/* Client table */}
+            <div className="lg:col-span-2 space-y-2">
+              <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-500">Clients using this product</h4>
+              <div className="rounded-xl border border-slate-200/80 overflow-hidden">
+                <table className="w-full text-xs text-left">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200/60 text-slate-400 font-bold uppercase tracking-wider text-[9px]">
+                      <th className="px-4 py-2.5">Client</th>
+                      <th className="px-4 py-2.5">Company</th>
+                      <th className="px-4 py-2.5">Executive</th>
+                      <th className="px-4 py-2.5 text-right">Value</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {selectedProduct.customers.length === 0 ? (
+                      <tr><td colSpan={4} className="py-6 text-center text-slate-400 font-bold text-[10px]">No client data</td></tr>
+                    ) : selectedProduct.customers.map((c, i) => (
+                      <tr key={i} className="hover:bg-slate-50/60 transition">
+                        <td className="px-4 py-2.5 font-bold text-slate-900 text-[11px]">{c.name}</td>
+                        <td className="px-4 py-2.5 text-slate-500 text-[10px]">{c.company || '—'}</td>
+                        <td className="px-4 py-2.5 text-slate-600 text-[10px]">{c.executive}</td>
+                        <td className="px-4 py-2.5 text-right font-black text-[#832D51] text-[11px]">₹{c.amount.toLocaleString()}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Executives & Managers */}
+            <div className="space-y-4">
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2">Executives Selling</h4>
+                {selectedProduct.executives.length === 0 ? (
+                  <p className="text-[10px] text-slate-400 font-semibold">—</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {selectedProduct.executives.map(e => (
+                      <div key={e} className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2">
+                        <span className="size-5 rounded-full bg-[#F8CAE4]/40 text-[#832D51] text-[9px] font-black grid place-items-center">
+                          {(e || '?')[0].toUpperCase()}
+                        </span>
+                        <span className="text-[11px] font-bold text-slate-800 truncate">{e}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div>
+                <h4 className="text-[10px] font-black uppercase tracking-wider text-slate-500 mb-2">Under Managers</h4>
+                {selectedProduct.managers.length === 0 ? (
+                  <p className="text-[10px] text-slate-400 font-semibold">—</p>
+                ) : (
+                  <div className="space-y-1.5">
+                    {selectedProduct.managers.map(m => (
+                      <div key={m} className="flex items-center gap-2 bg-slate-50 border border-slate-200/80 rounded-xl px-3 py-2">
+                        <span className="size-5 rounded-full bg-indigo-50 text-indigo-700 text-[9px] font-black grid place-items-center">
+                          {(m || '?')[0].toUpperCase()}
+                        </span>
+                        <span className="text-[11px] font-bold text-slate-800 truncate">{m}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* ── 2. Sales Performance Section ───────────────────────────────────── */}
       <div className="bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-6 shadow-xs space-y-5">
@@ -839,39 +1117,44 @@ function SalesOverview({ initialSection }) {
                     <th className="px-4 py-2.5 text-center">Clients</th>
                     <th className="px-4 py-2.5 text-center">Won</th>
                     <th className="px-4 py-2.5">Won Revenue</th>
+                    <th className="px-4 py-2.5 text-center">Share %</th>
                     <th className="px-4 py-2.5 text-right">Pipeline</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {!data?.manager_performance || data.manager_performance.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-6 text-center text-slate-400 font-bold">
-                        No manager records found.
+                      <td colSpan={7} className="py-6 text-center text-slate-400 font-bold">
+                        No manager records found for the selected period.
                       </td>
                     </tr>
                   ) : (
-                    data.manager_performance.map((mgr, i) => (
-                      <tr
-                        key={i}
-                        onClick={() => setManagerFilter(mgr.sales_manager)}
-                        className={`hover:bg-slate-50/60 cursor-pointer transition ${
-                          managerFilter === mgr.sales_manager ? 'bg-[#F8CAE4]/15' : ''
-                        }`}
-                      >
-                        <td className="px-4 py-3 font-bold text-[#832D51]">{mgr.sales_manager}</td>
-                        <td className="px-4 py-3 text-slate-600 text-center">{mgr.executives}</td>
-                        <td className="px-4 py-3 text-slate-600 text-center">{mgr.customers}</td>
-                        <td className="px-4 py-3 text-emerald-700 font-bold text-center">
-                          {mgr.won_deals}
-                        </td>
-                        <td className="px-4 py-3 font-black text-slate-900">
-                          ₹{mgr.won_revenue.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-500">
-                          ₹{mgr.pipeline.toLocaleString()}
-                        </td>
-                      </tr>
-                    ))
+                    data.manager_performance.map((mgr, i) => {
+                      const wonRev = safeNum(mgr.won_revenue)
+                      const pip = safeNum(mgr.pipeline)
+                      const sharePct = totalRevenue > 0 ? ((wonRev / totalRevenue) * 100).toFixed(1) : '0.0'
+                      return (
+                        <tr
+                          key={i}
+                          onClick={() => setManagerFilter(mgr.sales_manager)}
+                          className={`hover:bg-slate-50/60 cursor-pointer transition ${
+                            managerFilter === mgr.sales_manager ? 'bg-[#F8CAE4]/15' : ''
+                          }`}
+                        >
+                          <td className="px-4 py-3 font-bold text-[#832D51]">{mgr.sales_manager || '—'}</td>
+                          <td className="px-4 py-3 text-slate-600 text-center">{safeNum(mgr.executives)}</td>
+                          <td className="px-4 py-3 text-slate-600 text-center">{safeNum(mgr.customers)}</td>
+                          <td className="px-4 py-3 text-emerald-700 font-bold text-center">{safeNum(mgr.won_deals)}</td>
+                          <td className="px-4 py-3 font-black text-slate-900">₹{wonRev.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="inline-flex items-center rounded-md bg-indigo-50 px-2 py-0.5 text-[10px] font-black text-indigo-700">
+                              {sharePct}%
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right text-slate-500">₹{pip.toLocaleString()}</td>
+                        </tr>
+                      )
+                    })
                   )}
                 </tbody>
               </table>
@@ -897,284 +1180,51 @@ function SalesOverview({ initialSection }) {
                     <th className="px-4 py-2.5 text-center">Clients</th>
                     <th className="px-4 py-2.5 text-center">Won</th>
                     <th className="px-4 py-2.5">Won Revenue</th>
+                    <th className="px-4 py-2.5 text-center">Share %</th>
                     <th className="px-4 py-2.5 text-right">Pipeline</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {!data?.executive_performance || data.executive_performance.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-6 text-center text-slate-400 font-bold">
-                        No executive records found.
+                      <td colSpan={7} className="py-6 text-center text-slate-400 font-bold">
+                        No executive records found for the selected period.
                       </td>
                     </tr>
                   ) : (
-                    data.executive_performance.map((exec, i) => (
-                      <tr
-                        key={i}
-                        onClick={() => {
-                          setExecutiveFilter(exec.sales_executive)
-                          setManagerFilter(exec.sales_manager)
-                        }}
-                        className={`hover:bg-slate-50/60 cursor-pointer transition ${
-                          executiveFilter === exec.sales_executive ? 'bg-[#F8CAE4]/15' : ''
-                        }`}
-                      >
-                        <td className="px-4 py-3 font-bold text-slate-900">{exec.sales_executive}</td>
-                        <td className="px-4 py-3 text-slate-500">{exec.sales_manager}</td>
-                        <td className="px-4 py-3 text-slate-600 text-center">{exec.customers}</td>
-                        <td className="px-4 py-3 text-emerald-700 font-bold text-center">
-                          {exec.won_deals}
-                        </td>
-                        <td className="px-4 py-3 font-black text-[#832D51]">
-                          ₹{exec.won_revenue.toLocaleString()}
-                        </td>
-                        <td className="px-4 py-3 text-right text-slate-500">
-                          ₹{exec.pipeline.toLocaleString()}
-                        </td>
-                      </tr>
-                    ))
+                    data.executive_performance.map((exec, i) => {
+                      const wonRev = safeNum(exec.won_revenue)
+                      const pip = safeNum(exec.pipeline)
+                      const sharePct = totalRevenue > 0 ? ((wonRev / totalRevenue) * 100).toFixed(1) : '0.0'
+                      return (
+                        <tr
+                          key={i}
+                          onClick={() => {
+                            setExecutiveFilter(exec.sales_executive)
+                            setManagerFilter(exec.sales_manager)
+                          }}
+                          className={`hover:bg-slate-50/60 cursor-pointer transition ${
+                            executiveFilter === exec.sales_executive ? 'bg-[#F8CAE4]/15' : ''
+                          }`}
+                        >
+                          <td className="px-4 py-3 font-bold text-slate-900">{exec.sales_executive || '—'}</td>
+                          <td className="px-4 py-3 text-slate-500">{exec.sales_manager || '—'}</td>
+                          <td className="px-4 py-3 text-slate-600 text-center">{safeNum(exec.customers)}</td>
+                          <td className="px-4 py-3 text-emerald-700 font-bold text-center">{safeNum(exec.won_deals)}</td>
+                          <td className="px-4 py-3 font-black text-[#832D51]">₹{wonRev.toLocaleString()}</td>
+                          <td className="px-4 py-3 text-center">
+                            <span className="inline-flex items-center rounded-md bg-emerald-50 px-2 py-0.5 text-[10px] font-black text-emerald-700">
+                              {sharePct}%
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-right text-slate-500">₹{pip.toLocaleString()}</td>
+                        </tr>
+                      )
+                    })
                   )}
                 </tbody>
               </table>
             </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Visual Section & Summaries (Revenue Trend & Win/Loss) */}
-      <div className="grid gap-6 lg:grid-cols-3">
-        {/* Revenue Trend Area Chart */}
-        <div className="bg-white border border-slate-200/90 rounded-3xl p-5 shadow-xs space-y-3 lg:col-span-2">
-          <div className="flex items-center justify-between">
-            <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-              Revenue Trend
-            </h3>
-            <span className="text-[10px] font-bold text-slate-400">Actual Won Sales</span>
-          </div>
-          <div className="h-60 w-full">
-            {!data?.revenue_trend || data.revenue_trend.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-slate-400 font-bold text-xs">
-                No trend data available for the period
-              </div>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart
-                  data={data.revenue_trend}
-                  margin={{ top: 10, right: 10, left: 0, bottom: 0 }}
-                >
-                  <defs>
-                    <linearGradient id="trendGradColor" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#832D51" stopOpacity={0.3} />
-                      <stop offset="95%" stopColor="#832D51" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                  <XAxis dataKey="label" stroke="#94a3b8" fontSize={11} tickLine={false} />
-                  <YAxis
-                    stroke="#94a3b8"
-                    fontSize={11}
-                    tickLine={false}
-                    axisLine={false}
-                    tickFormatter={(v) => `₹${(v / 1000).toFixed(0)}k`}
-                  />
-                  <Tooltip formatter={(v) => [`₹${Number(v).toLocaleString()}`, 'Won Revenue']} />
-                  <Area
-                    type="monotone"
-                    dataKey="revenue"
-                    stroke="#832D51"
-                    strokeWidth={2.5}
-                    fill="url(#trendGradColor)"
-                  />
-                </AreaChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </div>
-
-        {/* Win/Loss Summary */}
-        <div className="bg-white border border-slate-200/90 rounded-3xl p-5 shadow-xs space-y-3 flex flex-col justify-between">
-          <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-            Won / Lost Summary
-          </h3>
-          <div className="space-y-3 flex-1 flex flex-col justify-center">
-            {/* Won summary */}
-            <div className="flex items-center justify-between bg-emerald-50/60 border border-emerald-100 p-3 rounded-2xl">
-              <div>
-                <span className="text-[10px] font-black text-emerald-800 uppercase">
-                  Won Portfolio
-                </span>
-                <p className="text-xs font-bold text-slate-500 mt-0.5">
-                  {data?.win_loss_summary?.won?.count || 0} deals
-                </p>
-              </div>
-              <p className="text-sm font-black text-emerald-700">
-                ₹{(data?.win_loss_summary?.won?.revenue || 0).toLocaleString()}
-              </p>
-            </div>
-
-            {/* Lost summary */}
-            <div className="flex items-center justify-between bg-rose-50/60 border border-rose-100 p-3 rounded-2xl">
-              <div>
-                <span className="text-[10px] font-black text-rose-800 uppercase">
-                  Lost Portfolio
-                </span>
-                <p className="text-xs font-bold text-slate-500 mt-0.5">
-                  {data?.win_loss_summary?.lost?.count || 0} deals
-                </p>
-              </div>
-              <p className="text-sm font-black text-rose-700">
-                ₹{(data?.win_loss_summary?.lost?.value || 0).toLocaleString()}
-              </p>
-            </div>
-
-            {/* Open summary */}
-            <div className="flex items-center justify-between bg-amber-50/60 border border-amber-100 p-3 rounded-2xl">
-              <div>
-                <span className="text-[10px] font-black text-amber-800 uppercase">
-                  Open Pipeline
-                </span>
-                <p className="text-xs font-bold text-slate-500 mt-0.5">
-                  {data?.win_loss_summary?.open?.count || 0} deals
-                </p>
-              </div>
-              <p className="text-sm font-black text-amber-700">
-                ₹{(data?.win_loss_summary?.open?.pipeline || 0).toLocaleString()}
-              </p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* ── 3. Financial Performance Section ───────────────────────────────── */}
-      <div className="bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-6 shadow-xs space-y-6">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-4 border-b border-slate-100">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="grid size-7 place-items-center rounded-lg bg-[#F8CAE4]/25 text-[#832D51]">
-                <DollarSign className="size-4" />
-              </span>
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                Financial Performance & Revenue Share
-              </h2>
-            </div>
-            <p className="text-xs text-slate-500 font-medium mt-0.5">
-              Live executive financial statements, manager revenue share, and realized closer matrices
-            </p>
-          </div>
-
-          {/* Export Financial Statement Actions */}
-          <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-[11px] font-bold text-slate-400 mr-1">Export Statement:</span>
-            <button
-              onClick={() => handleExportStatement('pdf')}
-              className="flex items-center gap-1 rounded-xl bg-[#832D51] px-3.5 py-1.5 text-xs font-bold text-white shadow-xs hover:bg-[#6a2240] transition cursor-pointer"
-            >
-              <Download className="size-3.5" />
-              PDF
-            </button>
-            <button
-              onClick={() => handleExportStatement('excel')}
-              className="flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 transition cursor-pointer"
-            >
-              <FileSpreadsheet className="size-3.5" />
-              Excel
-            </button>
-            <button
-              onClick={() => handleExportStatement('csv')}
-              className="flex items-center gap-1 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 transition cursor-pointer"
-            >
-              <Receipt className="size-3.5" />
-              CSV
-            </button>
-          </div>
-        </div>
-
-        {/* Manager Contribution & Executive Realized Revenue */}
-        <div className="grid gap-6 lg:grid-cols-2">
-          {/* Sales Manager Revenue Share */}
-          <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
-              <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-                Sales Manager Revenue Share
-              </h3>
-              <span className="text-[10px] font-bold text-slate-400">Won Revenue Portfolio</span>
-            </div>
-
-            {managerRevenueShares.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-400 font-bold">
-                No closed revenue records for sales managers in this period.
-              </div>
-            ) : (
-              <div className="space-y-3">
-                {managerRevenueShares.map((m) => (
-                  <div
-                    key={m.manager}
-                    className="p-3.5 bg-white border border-slate-200/80 rounded-xl space-y-2 shadow-2xs"
-                  >
-                    <div className="flex justify-between items-center text-xs font-black text-slate-900">
-                      <span className="text-[#832D51]">{m.manager}</span>
-                      <span>
-                        ₹{m.won_revenue.toLocaleString()}{' '}
-                        <span className="text-slate-400 font-bold text-[11px]">({m.share})</span>
-                      </span>
-                    </div>
-                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                      <div
-                        className="h-2 rounded-full bg-[#832D51] transition-all duration-500"
-                        style={{ width: `${Math.min(100, m.shareNum)}%` }}
-                      />
-                    </div>
-                    <div className="flex justify-between items-center text-[10px] font-bold text-slate-400">
-                      <span>{m.won_deals} won deals closed</span>
-                      <span>Pipeline: ₹{m.pipeline.toLocaleString()}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-
-          {/* Executive Realized Revenue Leaderboard */}
-          <div className="bg-slate-50/50 border border-slate-100 rounded-2xl p-5 space-y-4">
-            <div className="flex items-center justify-between pb-2 border-b border-slate-200/60">
-              <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider">
-                Executive Realized Revenue
-              </h3>
-              <span className="text-[10px] font-bold text-slate-400">Top Closers</span>
-            </div>
-
-            {executiveLeaderboard.length === 0 ? (
-              <div className="py-8 text-center text-xs text-slate-400 font-bold">
-                No closed revenue records for sales executives in this period.
-              </div>
-            ) : (
-              <div className="space-y-2 max-h-[340px] overflow-y-auto pr-1">
-                {executiveLeaderboard.map((e, idx) => (
-                  <div
-                    key={e.executive}
-                    className="flex items-center justify-between p-3 bg-white border border-slate-200/80 rounded-xl hover:bg-slate-50 transition shadow-2xs"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="grid size-6 place-items-center rounded-lg bg-slate-100 text-slate-700 text-[10px] font-black">
-                        #{idx + 1}
-                      </span>
-                      <div>
-                        <p className="text-xs font-black text-slate-900">{e.executive}</p>
-                        <p className="text-[10px] text-slate-400 font-semibold">
-                          {e.manager} · {e.won_deals} Won Deals
-                        </p>
-                      </div>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-xs font-black text-slate-950 block">
-                        ₹{e.won_revenue.toLocaleString()}
-                      </span>
-                      <span className="text-[10px] font-bold text-[#832D51]">{e.share} share</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         </div>
       </div>

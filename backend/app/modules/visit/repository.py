@@ -178,6 +178,7 @@ class VisitRepository:
         full_notes = f"{remarks_str} | Visit Date: {v_date_clean} | Visit Time: {v_time} | Product: {product_str} | Executive: {se_name} | Email: {se_email} | EMP: {emp_id}"
 
         payload = {
+            "id": visit_id,
             "visit_id": visit_id,
             "lead_id": lead_id,
             "employee_id": emp_id if emp_id else None,
@@ -215,9 +216,40 @@ class VisitRepository:
             else:
                 raise RuntimeError("No data returned from database insert operation.")
         except Exception as e:
-            print("[VISIT REPOSITORY] Supabase exception, trying fallback payload:", repr(e))
+            print("[VISIT REPOSITORY] Supabase exception, trying fallback to public.visits:", repr(e))
+            try:
+                # Fallback to public schema visits table
+                public_payload = {
+                    "id": visit_id,
+                    "visit_id": visit_id,
+                    "employee_id": emp_id if emp_id else None,
+                    "employee_name": se_name,
+                    "employee_phone": emp_phone,
+                    "customer_id": customer_id,
+                    "customer_name": customer_name,
+                    "location": loc_str,
+                    "notes": full_notes,
+                    "status": data.get("status") or "SCHEDULED",
+                    "visit_date": v_date_clean,
+                    "visit_time": v_time,
+                    "created_at": now_iso,
+                }
+                if latitude is not None:
+                    public_payload["latitude"] = float(latitude)
+                if longitude is not None:
+                    public_payload["longitude"] = float(longitude)
+
+                res_pub = self.supabase.table("visits").insert(public_payload).execute()
+                if res_pub.data and len(res_pub.data) > 0:
+                    logger.info(f"[VISIT INSERT SUCCESS] Saved fallback visit in public.visits: {res_pub.data[0]}")
+                    return self._standardize_visit(res_pub.data[0])
+            except Exception as ex_pub:
+                logger.error(f"Fallback insert to public.visits failed: {ex_pub}")
+
+            # Try minimal payload in field_management schema as last resort
             try:
                 minimal_payload = {
+                    "id": visit_id,
                     "visit_id": visit_id,
                     "lead_id": lead_id,
                     "employee_name": se_name,
@@ -233,7 +265,7 @@ class VisitRepository:
                     logger.info(f"[VISIT INSERT SUCCESS] Saved minimal fallback visit: {res_min.data[0]}")
                     return self._standardize_visit(res_min.data[0])
             except Exception as ex_min:
-                logger.error(f"Fallback insert failed: {ex_min}")
+                logger.error(f"Fallback insert to field_management minimal failed: {ex_min}")
             raise e
 
     def complete_visit(self, visit_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
