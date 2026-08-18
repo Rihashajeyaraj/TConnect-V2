@@ -289,28 +289,15 @@ export default function ManagerDashboard() {
     if (!assignedExecutives || assignedExecutives.length === 0) return 0
     let sum = 0
 
-    // Won Leads
-    filteredTeamLeads.forEach((lead) => {
-      const isWon = String(lead.status || '').toLowerCase().match(/won|converted|customer/i)
-      if (isWon) {
-        const valStr = String(lead.value || lead.deal_value || lead.amount || '0').replace(/[₹,]/g, '').trim()
-        const val = parseFloat(valStr) || 0
-        sum += val
-      }
-    })
-
-    // Converted Customers with contract value
+    // Converted Customers with contract value (same logic as Executive's dashboard 'totalSeRevenue')
     filteredTeamCustomers.forEach((cust) => {
-      const valStr = String(cust.contractValue || cust.contract_value || cust.revenue || '0').replace(/[₹,]/g, '').trim()
-      const val = parseFloat(valStr) || 0
-      // Avoid double counting if already in won leads
-      if (!cust.lead_id && !cust.leadId) {
-        sum += val
-      }
+      const valStr = cust.contractValue || cust.value || cust.revenue || cust.budget || "0"
+      const val = typeof valStr === 'number' ? valStr : (parseFloat(String(valStr).replace(/[^\d.]/g, "")) || 0)
+      sum += val
     })
 
     return sum
-  }, [filteredTeamLeads, filteredTeamCustomers, assignedExecutives])
+  }, [filteredTeamCustomers, assignedExecutives])
 
   // ── 4. SALES TARGET VS ACHIEVED CALCULATIONS ────────────────────────────────
   const teamTargetsSummary = useMemo(() => {
@@ -639,7 +626,7 @@ export default function ManagerDashboard() {
           title="Click to view My Team Revenue breakdown"
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider group-hover:text-amber-700 transition">Total Revenue</span>
+            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider group-hover:text-amber-700 transition">Team Revenue (total revenue generated)</span>
             <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold group-hover:bg-amber-100 group-hover:text-amber-700 transition">
               <IndianRupee size={13} />
             </div>
