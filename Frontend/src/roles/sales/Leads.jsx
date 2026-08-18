@@ -244,7 +244,7 @@ export default function Leads() {
               address: o.address || o.location || "Chennai",
               remarks: o.remarks || o.notes || "",
               stage: o.stage || "Qualification",
-              value: o.value ? (typeof o.value === "number" ? `₹${o.value.toLocaleString("en-IN")}` : o.value) : "₹4,50,000",
+              value: o.value ? (typeof o.value === "number" ? `₹${o.value.toLocaleString("en-IN")}` : o.value) : "₹0",
             }));
           setOpportunities((prev) => {
             const cleanPrev = prev.filter(p => p && !["NexGen Automations", "Apex Retail Chains"].includes(p.customer || p.company));
@@ -289,7 +289,7 @@ export default function Leads() {
             category: l.category || "Warm",
             priority: l.priority || "Medium",
             status: statusMap[rawStatus] || l.status || "New",
-            value: l.expected_value ? `₹${Number(l.expected_value).toLocaleString("en-IN")}` : "₹4,50,000",
+            value: l.expected_value ? `₹${Number(l.expected_value).toLocaleString("en-IN")}` : "₹0",
             assignedTo: l.assigned_to || userName,
             assignedToEmail: l.assigned_to_email || userEmail,
             notes: l.notes || l.remarks || "",
@@ -364,7 +364,7 @@ export default function Leads() {
     discussionNotes: "",
     leadFeedback: "",
     outcomeStatus: "Won",
-    agreedValue: "₹4,50,000",
+    agreedValue: "₹0",
   });
 
   // Location Picker Modal state (for Add Lead)
@@ -382,7 +382,7 @@ export default function Leads() {
     city: "",
     category: "Hot",
     priority: "High",
-    value: "₹4,50,000",
+    value: "₹0",
     source: "Field Research (SE)",
     targetList: "Leads", // "Leads" | "Opportunities"
     notes: "",
@@ -391,6 +391,42 @@ export default function Leads() {
     landmark: "",
     full_address: "",
   });
+
+  // Autocomplete Contact Search States
+  const [contactSuggestions, setContactSuggestions] = useState([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  useEffect(() => {
+    if (!addForm.company || !addForm.company.trim() || addForm.company.trim().length < 2) {
+      setContactSuggestions([]);
+      return;
+    }
+    const delayDebounce = setTimeout(() => {
+      crmAPI.searchContacts(addForm.company.trim())
+        .then(res => {
+          const list = Array.isArray(res) ? res : (res?.data || []);
+          setContactSuggestions(list);
+        })
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(delayDebounce);
+  }, [addForm.company]);
+
+  const selectContactSuggestion = (c) => {
+    setAddForm(prev => ({
+      ...prev,
+      company: c.company_name || c.company || prev.company,
+      person: c.contact_person || c.person || prev.person,
+      phone: c.phone || prev.phone,
+      email: c.email || prev.email,
+      city: c.city || prev.city,
+      landmark: c.address || prev.landmark,
+      full_address: c.address || prev.full_address,
+    }));
+    setContactSuggestions([]);
+    setShowSuggestions(false);
+    showToast(`📝 Loaded existing client info: ${c.company_name}!`, "success");
+  };
 
   const handleUseCurrentGps = () => {
     if (!navigator.geolocation) {
@@ -575,7 +611,7 @@ export default function Leads() {
       product: selectedProd,
       category: addForm.category,
       priority: addForm.priority,
-      value: addForm.value || "₹4,50,000",
+      value: addForm.value || "₹0",
       source: addForm.source || "Field Research (SE)",
       notes: addForm.notes.trim() || "New researched lead added by executive.",
       assigned_to: userName,
@@ -619,7 +655,7 @@ export default function Leads() {
       assignedToEmail: userEmail,
       category: addForm.category,
       priority: addForm.priority,
-      value: addForm.value || "₹4,50,000",
+      value: addForm.value || "₹0",
       status: "New",
       source: addForm.source || "Field Research (SE)",
       notes: payload.notes,
@@ -650,7 +686,7 @@ export default function Leads() {
         phone: addForm.phone.trim(),
         address: addForm.city.trim() || "Chennai Site",
         source: addForm.source || "Field Research (SE)",
-        value: addForm.value || "₹4,50,000",
+        value: addForm.value || "₹0",
         probability: addForm.category === "Hot" ? "85%" : addForm.category === "Warm" ? "60%" : "30%",
         stage: "SE Research / Prospecting",
         closing: formatDate(new Date(Date.now() + 15 * 86400000)),
@@ -708,7 +744,7 @@ export default function Leads() {
       city: "",
       category: "Hot",
       priority: "High",
-      value: "₹4,50,000",
+      value: "₹0",
       source: "Field Research (SE)",
       targetList: "Leads",
       notes: "",
@@ -741,7 +777,7 @@ export default function Leads() {
       address: oppForm.location.trim(),
       location: oppForm.location.trim(),
       remarks: oppForm.remarks.trim(),
-      value: oppForm.value ? (oppForm.value.startsWith('₹') ? oppForm.value : `₹${Number(oppForm.value).toLocaleString('en-IN')}`) : "₹4,50,000",
+      value: oppForm.value ? (oppForm.value.startsWith('₹') ? oppForm.value : `₹${Number(oppForm.value).toLocaleString('en-IN')}`) : "₹0",
       stage: "Qualification",
       assignedTo: userName,
       assignedToEmail: userEmail,
@@ -1026,7 +1062,7 @@ export default function Leads() {
       assigned_to: userName,
       assigned_to_email: userEmail,
       onboardingRemarks: `Converted directly from Follow-up call by ${userName}.`,
-      contractValue: "₹4,50,000",
+      contractValue: item.value || "₹0",
     };
 
     // 1. Convert via Centralized Customer Conversion API
@@ -1134,8 +1170,8 @@ export default function Leads() {
         assigned_to: userName,
         assigned_to_email: userEmail,
         onboardingRemarks: `Converted after site visit meeting by ${userName}.`,
-        revenue: agreedValue || "₹4,50,000",
-        contractValue: agreedValue || "₹4,50,000",
+        revenue: agreedValue || "₹0",
+        contractValue: agreedValue || "₹0",
         lastVisit: formatDate(new Date()),
         onboardDate: formatDate(new Date()),
       };
@@ -1565,7 +1601,6 @@ export default function Leads() {
                     <th className="py-3.5 px-4">Phone & Location</th>
                     <th className="py-3.5 px-4">Category & Priority</th>
                     <th className="py-3.5 px-4">Current Status</th>
-                    <th className="py-3.5 px-4">Deal Value</th>
                     <th className="py-3.5 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1622,22 +1657,8 @@ export default function Leads() {
                       <td className="py-3.5 px-4">
                         <span className="text-xs font-extrabold text-slate-700">● {lead.status}</span>
                       </td>
-                      <td className="py-3.5 px-4 font-black text-emerald-600 text-sm">
-                        {lead.value || "₹4,50,000"}
-                      </td>
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-2 text-xs font-extrabold">
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSelectedLead(lead);
-                              setSeRemarkInput("");
-                              setShowFollowupForm(false);
-                            }}
-                            className="py-1.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center gap-1 transition cursor-pointer"
-                          >
-                            <Eye size={14} /> Talk & Notes
-                          </button>
                           <button
                             type="button"
                             onClick={() => {
@@ -1704,7 +1725,7 @@ export default function Leads() {
                       </div>
 
                       <span className="text-xs sm:text-sm font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-xl border border-emerald-200 shrink-0">
-                        {lead.value || "₹4,50,000"}
+                        {lead.value || "₹0"}
                       </span>
                     </div>
 
@@ -2046,7 +2067,7 @@ export default function Leads() {
                           discussionNotes: v.discussionNotes || "",
                           leadFeedback: v.leadFeedback || "",
                           outcomeStatus: "Won",
-                          agreedValue: v.value || "₹4,50,000",
+                          agreedValue: v.value || "₹0",
                         });
                       }}
                       className={`flex-1 py-2.5 px-3 rounded-xl font-black text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs ${v.status === "Completed"
@@ -2112,7 +2133,7 @@ export default function Leads() {
                         💼 Stage: {opp.stage || "Qualification"}
                       </span>
                       <span className="text-xs sm:text-sm font-black text-emerald-700 bg-emerald-50 px-3 py-1 rounded-xl border border-emerald-200">
-                        {opp.value || "₹4,50,000"}
+                        {opp.value || "₹0"}
                       </span>
                     </div>
 
@@ -2175,7 +2196,7 @@ export default function Leads() {
                           city: opp.address || opp.location || "Chennai",
                           category: "Hot",
                           priority: "High",
-                          value: opp.value || "₹4,50,000",
+                          value: opp.value || "₹0",
                           source: opp.source || "Field Research (SE)",
                           notes: opp.remarks || opp.notes || "",
                         });
@@ -2286,7 +2307,7 @@ export default function Leads() {
                     </label>
                     <input
                       type="text"
-                      placeholder="e.g. ₹4,50,000"
+                      placeholder="e.g. ₹0"
                       value={visitOutcomeForm.agreedValue}
                       onChange={(e) => setVisitOutcomeForm({ ...visitOutcomeForm, agreedValue: e.target.value })}
                       className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-blue-500 font-extrabold text-xs sm:text-sm"
@@ -2379,16 +2400,36 @@ export default function Leads() {
 
               {/* Company Name & Product Requirement Bar */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
+                <div className="relative">
                   <label className="text-slate-800 font-extrabold block mb-1.5">Company / Lead Name (*Required)</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Feathers Software Solution"
                     value={addForm.company}
-                    onChange={(e) => setAddForm({ ...addForm, company: e.target.value })}
+                    onChange={(e) => {
+                      setAddForm({ ...addForm, company: e.target.value });
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
                   />
+                  {showSuggestions && contactSuggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 max-h-60 overflow-y-auto">
+                      {contactSuggestions.map((c) => (
+                        <button
+                          key={c.id || c.company_name}
+                          type="button"
+                          onClick={() => selectContactSuggestion(c)}
+                          className="w-full text-left px-4 py-3 hover:bg-slate-50 transition border-b border-slate-100 last:border-0 flex flex-col cursor-pointer"
+                        >
+                          <span className="text-slate-900 font-extrabold text-sm">🏢 {c.company_name}</span>
+                          <span className="text-slate-500 text-xs font-semibold mt-0.5">👤 {c.contact_person} | 📞 {c.phone}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
@@ -2539,7 +2580,7 @@ export default function Leads() {
                   <label className="text-slate-800 font-extrabold block mb-1.5">Deal Value (INR)</label>
                   <input
                     type="text"
-                    placeholder="₹4,50,000"
+                    placeholder="₹0"
                     value={addForm.value}
                     onChange={(e) => setAddForm({ ...addForm, value: e.target.value })}
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-extrabold text-sm transition"
@@ -2645,7 +2686,7 @@ export default function Leads() {
                 <p><strong className="text-slate-900">Phone:</strong> {selectedLead.phone}</p>
                 <p><strong className="text-slate-900">Email:</strong> {selectedLead.email}</p>
                 <p><strong className="text-slate-900">City / Location:</strong> {selectedLead.city}</p>
-                <p><strong className="text-slate-900">Estimated Deal Value:</strong> <span className="text-emerald-600 font-extrabold">{selectedLead.value || "₹4,50,000"}</span></p>
+                <p><strong className="text-slate-900">Estimated Deal Value:</strong> <span className="text-emerald-600 font-extrabold">{selectedLead.value || "₹0"}</span></p>
               </div>
 
               {/* Location Section */}
@@ -2868,7 +2909,7 @@ export default function Leads() {
                           assigned_to: userName,
                           assigned_to_email: userEmail,
                           onboardingRemarks: `Converted directly from Leads list by ${userName}.`,
-                          contractValue: selectedLead.value || "₹4,50,000",
+                          contractValue: selectedLead.value || "₹0",
                         };
 
                         // Save to localStorage for offline view
@@ -2881,7 +2922,7 @@ export default function Leads() {
                           id: `notif_${Date.now()}`,
                           recipientRole: "manager",
                           title: `🎉 Deal Won & Converted by ${userName}`,
-                          message: `${userName} converted "${newCustomer.name}" into active Customer Account (${selectedLead.value || '₹4,50,000'})!`,
+                          message: `${userName} converted "${newCustomer.name}" into active Customer Account (${selectedLead.value || '₹0'})!`,
                           time: "Just now", read: false, type: "Customer",
                         }, ...existingNotifs]));
 
@@ -3006,7 +3047,7 @@ export default function Leads() {
               </div>
               <div className="text-right">
                 <span className="text-[10px] uppercase font-black tracking-wider opacity-80 block">Estimated Value</span>
-                <span className="text-base font-black">{showTimelineModal.value || "₹4,50,000"}</span>
+                <span className="text-base font-black">{showTimelineModal.value || "₹0"}</span>
               </div>
             </div>
 
@@ -3086,7 +3127,7 @@ export default function Leads() {
                     </div>
                     <p className="text-xs font-semibold">
                       {showTimelineModal.status === "Converted to Customer"
-                        ? `Successfully converted into active Customer Account! Customer ID assigned: ${showTimelineModal.customerId || 'CUST-ACTIVE'}. Contract value: ${showTimelineModal.value || '₹4,50,000'}.`
+                        ? `Successfully converted into active Customer Account! Customer ID assigned: ${showTimelineModal.customerId || 'CUST-ACTIVE'}. Contract value: ${showTimelineModal.value || '₹0'}.`
                         : `Lead remains active in pipeline stage: ${showTimelineModal.status}.`}
                     </p>
                   </div>

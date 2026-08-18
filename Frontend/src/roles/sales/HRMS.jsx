@@ -369,9 +369,30 @@ export default function SalesHRMS() {
   const [reportSubmitted, setReportSubmitted] = useState(false);
   const [selectedReport, setSelectedReport] = useState(null);
   const [showPastReportsModal, setShowPastReportsModal] = useState(false);
-  const pastReports = getArr("tc_se_daily_reports");
+  const [pastReports, setPastReports] = useState([]);
 
-  const handleReportSubmit = (e) => {
+  const fetchPastReports = async () => {
+    try {
+      const res = await reportAPI.getEODReports();
+      const reportsData = Array.isArray(res) ? res : (res?.data || []);
+      if (Array.isArray(reportsData) && reportsData.length > 0) {
+        setPastReports(reportsData);
+      } else {
+        setPastReports(getArr("tc_se_daily_reports"));
+      }
+    } catch (err) {
+      console.warn("Failed to fetch past EOD reports:", err);
+      setPastReports(getArr("tc_se_daily_reports"));
+    }
+  };
+
+  useEffect(() => {
+    if (userEmail) {
+      fetchPastReports();
+    }
+  }, [userEmail]);
+
+  const handleReportSubmit = async (e) => {
     e.preventDefault();
     const todayISO = new Date().toISOString().split("T")[0];
     const newEodObj = {
@@ -407,13 +428,15 @@ export default function SalesHRMS() {
 
     // Send EOD Report to backend via API
     try {
-      reportAPI.submitEODReport(newEodObj);
+      await reportAPI.submitEODReport(newEodObj);
+      showToast("📑 Daily Work Report submitted to Sales Manager successfully!", "success");
+      await fetchPastReports();
     } catch (apiErr) {
       console.warn("Backend EOD submit notice:", apiErr);
+      showToast("Daily Work Report saved locally (Offline mode)", "info");
     }
 
     setReportSubmitted(true);
-    showToast("📑 Daily Work Report submitted to Sales Manager successfully!", "success");
   };
 
 

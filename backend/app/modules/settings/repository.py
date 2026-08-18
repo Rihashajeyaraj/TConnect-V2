@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 import uuid
 from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
@@ -31,6 +31,36 @@ class SettingsRepository:
     def __init__(self):
         self.client = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
+
+    def _run_schema_migration(self):
+        import os
+        try:
+            sql_file = os.path.join(os.path.dirname(__file__), "migration_master_data.sql")
+            if os.path.exists(sql_file):
+                with open(sql_file, "r") as f:
+                    sql = f.read()
+                self.client.rpc("exec_sql", {"sql_query": sql}).execute()
+                logger.info("Successfully ran auto schema migration for master data!")
+        except Exception as e:
+            logger.warning(f"Auto master data schema migration failed: {e}")
+
+    def get_products(self) -> List[Dict[str, Any]]:
+        try:
+            res = self.client.schema("organization").table("products").select("*").execute()
+            if res.data is not None:
+                return res.data
+        except Exception as e:
+            logger.warning(f"Failed to fetch products: {e}")
+            if "relation" in str(e).lower() or "does not exist" in str(e).lower() or "could not find" in str(e).lower():
+                logger.info("Table organization.products does not exist. Running migration...")
+                self._run_schema_migration()
+                try:
+                    res = self.client.schema("organization").table("products").select("*").execute()
+                    if res.data:
+                        return res.data
+                except Exception as retry_e:
+                    logger.warning(f"Retry fetching products failed: {retry_e}")
+        return []
 
     def get_settings(self) -> Dict[str, Any]:
         merged = _in_memory_settings.copy()
@@ -282,6 +312,25 @@ class SettingsRepository:
                     logger.warning(f"Failed to upsert designation: {e}")
 
         if "products" in clean_updates:
+            try:
+                self.client.schema("organization").table("products").select("*").limit(1).execute()
+            except Exception as e:
+                if "relation" in str(e).lower() or "does not exist" in str(e).lower() or "could not find" in str(e).lower():
+                    logger.info("Table organization.products does not exist on save. Running migration...")
+                    self._run_schema_migration()
+
+            received_ids = [item.get("id") for item in clean_updates["products"] if item.get("id")]
+            if received_ids:
+                try:
+                    self.client.schema("organization").table("products").delete().not_in("id", received_ids).execute()
+                except Exception as e:
+                    logger.warning(f"Failed to delete stale products: {e}")
+            else:
+                try:
+                    self.client.schema("organization").table("products").delete().neq("id", "").execute()
+                except Exception as e:
+                    logger.warning(f"Failed to clear products table: {e}")
+
             for item in clean_updates["products"]:
                 db_item = {
                     "id": item.get("id") or f"PROD-{uuid.uuid4().hex[:8].upper()}",

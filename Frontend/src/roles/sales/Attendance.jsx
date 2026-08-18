@@ -416,6 +416,8 @@ export default function Attendance() {
       }
 
       loadAttendanceLogs();
+      // Notify the Dashboard attendance card to refresh immediately
+      window.dispatchEvent(new CustomEvent("tc:attendance-marked"));
     } catch (err) {
       showToast(err?.message || "Failed to clock in.", "error");
     } finally {

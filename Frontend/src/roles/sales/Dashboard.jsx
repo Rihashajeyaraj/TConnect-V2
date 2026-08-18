@@ -36,7 +36,7 @@ import {
   ExternalLink,
   Briefcase
 } from "lucide-react";
-import { salesDashboardAPI, todoAPI, notificationAPI, crmAPI, hrmsAPI } from "../../services/api.js";
+import { salesDashboardAPI, todoAPI, notificationAPI, crmAPI, hrmsAPI, salesAPI, attendanceAPI } from "../../services/api.js";
 import { exportToPDF, exportToExcel, exportToCSV, getFormattedTodayDate } from "../../utils/exportUtils.js";
 import { calculateWorkHours } from "./Attendance.jsx";
 import { useToast } from "../../common/ToastContext.jsx";
@@ -160,8 +160,21 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [todoLoading, setTodoLoading] = useState(false);
   const [newTodo, setNewTodo] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState("Today");
+  const [selectedMonth, setSelectedMonth] = useState(() => localStorage.getItem("tc_dashboard_date_filter") || "Today");
+  const [customDateVal, setCustomDateVal] = useState(() => localStorage.getItem("tc_dashboard_custom_date") || new Date().toISOString().slice(0, 10));
+  const [managerTarget, setManagerTarget] = useState({ revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' });
   const [refreshing, setRefreshing] = useState(false);
+  const [todayAttRecord, setTodayAttRecord] = useState(null); // null = not yet fetched
+
+  const handleDateFilterChange = (val) => {
+    setSelectedMonth(val);
+    localStorage.setItem("tc_dashboard_date_filter", val);
+  };
+
+  const handleCustomDateChange = (val) => {
+    setCustomDateVal(val);
+    localStorage.setItem("tc_dashboard_custom_date", val);
+  };
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showLeadsModal, setShowLeadsModal] = useState(false);
   const [leadsModalTab, setLeadsModalTab] = useState("Hot");
@@ -183,7 +196,7 @@ export default function Dashboard() {
     email: "",
     city: "",
     category: "Hot",
-    value: "₹4,50,000",
+    value: "",
     notes: "",
   });
 
@@ -205,6 +218,23 @@ export default function Dashboard() {
     { label: "My Leads 👥", icon: Users, color: "text-indigo-600", bg: "bg-indigo-50", path: "/sales/leads" },
   ];
 
+  // ── Fetch Today Attendance from Supabase (Source of Truth) ───────────────────
+  const fetchTodayAttendance = useCallback(async () => {
+    try {
+      const res = await attendanceAPI.getLogs();
+      const logs = Array.isArray(res) ? res : (res?.data || []);
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const todayRecord = logs.find(a => {
+        const d = String(a.attendance_date || a.date || a.created_at || "");
+        return d.startsWith(todayISO);
+      }) || null;
+      setTodayAttRecord(todayRecord);
+    } catch (err) {
+      console.warn("Could not fetch today attendance:", err);
+      setTodayAttRecord(null);
+    }
+  }, []);
+
   // ── Fetch & Compute Live Data (Strictly Isolated Per Executive) ───────────────
   const fetchAll = useCallback(async () => {
     try {
@@ -214,28 +244,30 @@ export default function Dashboard() {
       const followups = JSON.parse(localStorage.getItem("tc_sales_followups") || "[]");
       const expenses = JSON.parse(localStorage.getItem("tc_sales_expenses") || "[]");
       const localTodos = JSON.parse(localStorage.getItem("tc_3d_todos") || "[]");
-      const attLogs = JSON.parse(localStorage.getItem("tc_attendance_logs") || "[]");
+      // attendance is now fetched separately via fetchTodayAttendance
 
       // Calculate Date Scope based on selectedMonth / date filter
       const now = new Date();
       const todayISO = now.toISOString().slice(0, 10);
       const todayFormattedStr = formatDate(now);
-      const yesterdayISO = new Date(now.setDate(now.getDate() - 1)).toISOString().slice(0, 10);
 
       const matchesDate = (itemDate) => {
         if (!itemDate) return true;
         const str = String(itemDate);
-        if (selectedMonth === "Yesterday") {
-          return str.includes(yesterdayISO);
-        }
-        if (selectedMonth === "This Week") {
-          const itemTime = new Date(str).getTime();
-          const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-          return !isNaN(itemTime) && itemTime >= sevenDaysAgo;
-        }
         if (selectedMonth === "This Month") {
           const currentMonthPrefix = new Date().toISOString().slice(0, 7);
-          return str.includes(currentMonthPrefix);
+          const currentMonthSuffix = `/${String(new Date().getMonth() + 1).padStart(2, '0')}/${new Date().getFullYear()}`;
+          return str.includes(currentMonthPrefix) || str.includes(currentMonthSuffix);
+        }
+        if (selectedMonth === "This Year") {
+          const currentYearPrefix = new Date().getFullYear().toString();
+          const currentYearSuffix = `/${currentYearPrefix}`;
+          return str.includes(currentYearPrefix) || str.includes(currentYearSuffix);
+        }
+        if (selectedMonth === "Custom Date") {
+          if (!customDateVal) return true;
+          const customDateFormatted = formatDate(customDateVal);
+          return str.includes(customDateVal) || str.includes(customDateFormatted);
         }
         // Default: Today
         return str.includes(todayISO) || str.includes(todayFormattedStr);
@@ -244,30 +276,34 @@ export default function Dashboard() {
       // Helper check for ownership
       const matchesUser = (item) => isItemOwnedByUser(item, currentUser);
 
-      // Filter My Leads strictly
-      const myLeads = leads.filter(matchesUser);
-      const totalMyLeads = myLeads.length;
-      setAllLeadsList(myLeads);
+      // Filter My Leads strictly (excluding converted leads)
+      const myLeads = leads.filter((l) => {
+        if (!matchesUser(l)) return false;
+        const status = String(l.status || "").toLowerCase();
+        return !status.includes("converted") && !status.includes("customer") && !status.includes("won");
+      });
+      const dateFilteredLeads = myLeads.filter(l => matchesDate(l.createdAt || l.date || l.created_at));
+      const totalMyLeads = dateFilteredLeads.length;
+      setAllLeadsList(dateFilteredLeads);
 
       // Filter My Customers strictly
       const myCustomers = customers.filter(matchesUser);
-      setMyCustomersList(myCustomers);
+      const dateFilteredCustomers = myCustomers.filter(c => matchesDate(c.createdAt || c.date || c.created_at || c.createdTime));
+      setMyCustomersList(dateFilteredCustomers);
 
-      // Converted count
-      const convertedCount = myLeads.filter(
-        (l) => l.status === "Converted to Customer" || l.status === "Converted"
-      ).length + myCustomers.length;
+      // Converted count (solely from customer list to avoid double counting)
+      const convertedCount = dateFilteredCustomers.length;
 
       const conversionPct = totalMyLeads > 0 ? Math.round((convertedCount / totalMyLeads) * 100) : 0;
 
       // Real Revenue generated specifically by this Sales Executive
-      const customerRevenue = myCustomers.reduce((sum, cust) => {
+      const customerRevenue = dateFilteredCustomers.reduce((sum, cust) => {
         const valStr = cust.contractValue || cust.value || cust.revenue || cust.budget || "0";
         const val = parseInt(String(valStr).replace(/[^0-9]/g, "")) || 0;
         return sum + val;
       }, 0);
 
-      const convertedLeadsRevenue = myLeads
+      const convertedLeadsRevenue = dateFilteredLeads
         .filter((l) => l.status === "Converted to Customer" || l.status === "Converted" || l.status === "Closed Won")
         .reduce((sum, lead) => {
           const valStr = lead.value || lead.budget || lead.deal_value || "0";
@@ -275,7 +311,7 @@ export default function Dashboard() {
           return sum + val;
         }, 0);
 
-      const totalSeRevenue = customerRevenue + convertedLeadsRevenue || (myCustomers.length > 0 ? customerRevenue : 0);
+      const totalSeRevenue = customerRevenue;
 
       // My Followups filtered date-wise & excluding converted follow-ups
       const myFollowups = followups.filter((f) => {
@@ -318,21 +354,12 @@ export default function Dashboard() {
         type: v.purpose || "Site Visit"
       }));
 
-      // My Attendance checking — only count a record if it's actually from today
-      const myAtt = attLogs.filter(matchesUser)
-      const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" })
-      const todayISOStr = new Date().toISOString().slice(0, 10)
-      // Strictly match today only — do NOT fall back to any random record
-      const todayAtt = myAtt.find(a => {
-        const d = String(a.date || a.attendance_date || "")
-        return d.includes(todayStr) || d.includes(todayISOStr)
-      }) || null   // null = not marked today
-
-      const isMarkedToday = !!todayAtt
-      const attStatus = isMarkedToday ? (todayAtt.status || "Present") : "Not Marked"
-      const attCheckInTime = isMarkedToday ? (todayAtt.loginTime || todayAtt.check_in_time || null) : null
-      const attCheckOutTime = isMarkedToday ? (todayAtt.logoutTime || todayAtt.check_out_time || null) : null
-      const attWorkHours = isMarkedToday ? (todayAtt.workHours || todayAtt.total_working_hours || null) : null
+      // My Attendance — pulled from API state (todayAttRecord), not localStorage
+      const isMarkedToday = !!todayAttRecord;
+      const attStatus = isMarkedToday ? "Present" : "Not Marked";
+      const attCheckInTime = isMarkedToday ? (todayAttRecord.check_in_time || todayAttRecord.clockIn || null) : null;
+      const attCheckOutTime = isMarkedToday ? (todayAttRecord.check_out_time || todayAttRecord.clockOut || null) : null;
+      const attWorkHours = isMarkedToday ? (todayAttRecord.total_working_hours || todayAttRecord.workHours || null) : null;
 
       const dynamicKpis = {
         my_leads: totalMyLeads,
@@ -366,13 +393,36 @@ export default function Dashboard() {
       console.error("Dashboard fetchAll error:", e);
       setTodos([]);
       setNotifications([]);
+    }
+
+    try {
+      const targetRes = await salesAPI.getTargets();
+      const targets = Array.isArray(targetRes) ? targetRes : (targetRes?.data || []);
+      const myTarget = targets.find(t => String(t.executive_id) === String(userId) || String(t.executive_email) === String(userEmail)) || targets[0];
+      if (myTarget) {
+        setManagerTarget({
+          revenueTarget: myTarget.target_amount || 500000,
+          dealsTarget: 10,
+          setBy: myTarget.manager_name || 'Sales Manager'
+        });
+      }
+    } catch (err) {
+      console.warn("Could not fetch sales targets:", err);
     } finally {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userEmail, userName, userEmpCode, userId, selectedMonth]);
+  }, [userEmail, userName, userEmpCode, userId, selectedMonth, customDateVal, todayAttRecord]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Fetch attendance from Supabase on mount and listen for clock-in events
+  useEffect(() => {
+    fetchTodayAttendance();
+    const handler = () => fetchTodayAttendance();
+    window.addEventListener("tc:attendance-marked", handler);
+    return () => window.removeEventListener("tc:attendance-marked", handler);
+  }, [fetchTodayAttendance]);
 
   useEffect(() => {
     // Check local cache first
@@ -418,7 +468,7 @@ export default function Dashboard() {
       assignedToEmail: userEmail,
       category: addLeadForm.category,
       priority: "High",
-      value: addLeadForm.value || "₹4,50,000",
+      value: addLeadForm.value || "",
       status: "New",
       source: "Quick Action Sourced",
       notes: addLeadForm.notes.trim() || "Quick Action lead created from Dashboard.",
@@ -433,7 +483,7 @@ export default function Dashboard() {
     } catch (e) { }
 
     setIsAddLeadModalOpen(false);
-    setAddLeadForm({ company: "", person: "", phone: "", email: "", city: "", category: "Hot", value: "₹4,50,000", notes: "" });
+    setAddLeadForm({ company: "", person: "", phone: "", email: "", city: "", category: "Hot", value: "", notes: "" });
     showToast(`🎉 New Lead "${newLead.company}" created successfully!`, "success");
     setTimeout(() => fetchAll(), 100);
   };
@@ -468,15 +518,7 @@ export default function Dashboard() {
 
   const k = kpis || MOCK_KPIS;
 
-  // Manager Fixed Sales Target Sync
-  const managerTarget = React.useMemo(() => {
-    try {
-      const saved = localStorage.getItem('tc_monthly_sales_target');
-      if (saved) return JSON.parse(saved);
-    } catch {}
-    return { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' };
-  }, []);
-
+  // Manager Fixed Sales Target Sync uses managerTarget state fetched dynamically.
   const revTargetVal = Number(managerTarget.revenueTarget) || 500000;
   const revAchievedVal = k.my_generated_revenue || k.revenue_this_month || 0;
   const revAchievementPct = Math.min(Math.round((revAchievedVal / revTargetVal) * 100), 100);
@@ -495,16 +537,35 @@ export default function Dashboard() {
         </div>
 
         <div className="flex items-center gap-2 flex-wrap">
-          <select
-            value={selectedMonth}
-            onChange={(e) => setSelectedMonth(e.target.value)}
-            className="h-9 text-xs border border-teal-500/50 rounded-xl px-3 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs"
-          >
-            <option value="Today">📍 Today</option>
-            <option value="This Month">This Month</option>
-            <option value="Last Month">Last Month</option>
-            <option value="This Quarter">This Quarter</option>
-          </select>
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+            <div className="flex border border-slate-200 bg-slate-50/50 p-1 rounded-2xl gap-1.5 shadow-2xs w-full sm:w-auto">
+              {["Today", "This Month", "This Year", "Custom Date"].map((opt) => {
+                const isActive = selectedMonth === opt;
+                return (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => handleDateFilterChange(opt)}
+                    className={`flex-1 sm:flex-none text-center px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer ${
+                      isActive
+                        ? "bg-teal-600 text-white shadow-xs"
+                        : "text-slate-600 hover:text-teal-700 hover:bg-teal-50"
+                    }`}
+                  >
+                    {opt === "Today" ? "📍 Today" : opt}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedMonth === "Custom Date" && (
+              <input
+                type="date"
+                value={customDateVal}
+                onChange={(e) => handleCustomDateChange(e.target.value)}
+                className="h-9 text-xs border border-teal-500/50 rounded-xl px-3 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs w-full sm:w-auto"
+              />
+            )}
+          </div>
 
           <div className="relative">
             <button
@@ -1037,8 +1098,8 @@ export default function Dashboard() {
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-semibold text-slate-800">
                     {myCustomersList.map((c, i) => {
-                      const valStr = c.contractValue || c.value || c.revenue || c.budget || "450000";
-                      const valNum = parseInt(String(valStr).replace(/[^0-9]/g, "")) || 450000;
+                      const valStr = c.contractValue || c.value || c.revenue || c.budget || "0";
+                      const valNum = parseInt(String(valStr).replace(/[^0-9]/g, "")) || 0;
                       const incNum = Math.round(valNum * (incentiveRate / 100));
 
                       return (
@@ -1184,7 +1245,7 @@ export default function Dashboard() {
                   <label className="text-slate-800 font-extrabold block mb-1.5">Deal Value (INR)</label>
                   <input
                     type="text"
-                    placeholder="₹4,50,000"
+                    placeholder="Enter Deal Value"
                     value={addLeadForm.value}
                     onChange={(e) => setAddLeadForm({ ...addLeadForm, value: e.target.value })}
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-extrabold text-sm transition"
@@ -1310,7 +1371,7 @@ export default function Dashboard() {
                           <td className="py-3 px-4">{l.city || "—"}</td>
                           <td className="py-3 px-4">{l.product_name || l.product || "—"}</td>
                           <td className="py-3 px-4 text-slate-900 font-black">
-                            {formatINR(l.expected_value || l.value || 450000)}
+                            {formatINR(l.expected_value || l.value || 0)}
                           </td>
                           <td className="py-3 px-4">
                             <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-600 text-[10px] font-black border border-slate-200">

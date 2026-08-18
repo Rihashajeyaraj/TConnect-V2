@@ -1008,16 +1008,61 @@ class ReportsRepository:
         rep_id = row.get("id")
         emp_code = row.get("employee_id") or "EMP000012"
         exec_name = row.get("employee_name") or "Sales Executive"
-        exec_email = str(row.get("employee_email") or row.get("executiveEmail") or row.get("executive_email") or "").lower().strip()
-        # Correctly resolve manager fields — db stores them as manager_email / reporting_manager_email
+        
+        # Parse emails from challenges_faced if encoded
+        challenges = row.get("challenges_faced") or ""
+        extracted_email = ""
+        extracted_mgr_email = ""
+        if " | Email: " in challenges:
+            try:
+                extracted_email = challenges.split(" | Email: ")[1].split(" | ")[0].strip()
+            except Exception:
+                pass
+        if " | Manager: " in challenges:
+            try:
+                extracted_mgr_email = challenges.split(" | Manager: ")[1].split(" | ")[0].strip()
+            except Exception:
+                pass
+
+        # Resolve emails by employee_code/id lookup from UserRepository
+        lookup_email = ""
+        lookup_mgr_email = ""
+        lookup_mgr_name = ""
+        if emp_code:
+            try:
+                from app.modules.users.repository import UserRepository
+                all_u = UserRepository().get_all_users()
+                for u in all_u:
+                    e_code = str(u.get("employee_code") or u.get("employee_id") or "").strip()
+                    if e_code == str(emp_code).strip():
+                        lookup_email = str(u.get("email") or "").lower().strip()
+                        lookup_mgr_email = str(u.get("reporting_manager_email") or "").lower().strip()
+                        lookup_mgr_name = str(u.get("reporting_manager_name") or "").strip()
+                        break
+            except Exception:
+                pass
+
+        exec_email = str(
+            row.get("employee_email")
+            or row.get("executiveEmail")
+            or row.get("executive_email")
+            or extracted_email
+            or lookup_email
+            or ""
+        ).lower().strip()
+
         mgr_email = str(
             row.get("manager_email")
             or row.get("reporting_manager_email")
+            or extracted_mgr_email
+            or lookup_mgr_email
             or ""
         ).lower().strip()
+
         mgr_name = str(
             row.get("manager_name")
             or row.get("reporting_manager_name")
+            or lookup_mgr_name
             or ""
         ).strip()
         report_date = row.get("report_date")
@@ -1193,10 +1238,7 @@ class ReportsRepository:
             "id": report_id,
             "employee_id": emp_code,
             "employee_name": exec_name,
-            "employee_email": exec_email,
             "manager_name": mgr_name or mgr_email,
-            "manager_email": mgr_email,
-            "reporting_manager_email": mgr_email,
             "report_date": report_obj["date"],
             "visits_count": visits,
             "leads_contacted": calls,

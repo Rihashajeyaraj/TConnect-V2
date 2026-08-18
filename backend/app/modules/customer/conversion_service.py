@@ -181,7 +181,7 @@ class CustomerConversionService:
                 lead.get("assigned_to_email") or extra.get("assigned_to_email") or ""
             ),
             "notes": f"Converted from Lead | Lead#: {lead.get('lead_number', '')}",
-            "contract_value": lead.get("expected_value") or lead.get("value") or extra.get("contract_value") or extra.get("value") or extra.get("revenue"),
+            "contract_value": None,
             "latitude": extra.get("latitude") or lead.get("latitude"),
             "longitude": extra.get("longitude") or lead.get("longitude"),
         }
@@ -244,7 +244,7 @@ class CustomerConversionService:
                 lead_data.get("assigned_to_email") or followup.get("assignedToEmail") or extra.get("assigned_to_email") or ""
             ),
             "notes": f"Converted from Follow-up | ID: {followup_id}",
-            "contract_value": followup.get("value") or lead_data.get("expected_value") or extra.get("contract_value") or extra.get("value") or extra.get("revenue"),
+            "contract_value": None,
         }
         return contact, followup_id
 
@@ -308,7 +308,7 @@ class CustomerConversionService:
                 lead_data.get("assigned_to_email") or visit.get("assigned_to_email") or extra.get("assigned_to_email") or ""
             ),
             "notes": f"Converted from Visit | ID: {visit_id}",
-            "contract_value": visit.get("value") or lead_data.get("expected_value") or extra.get("contract_value") or extra.get("value") or extra.get("revenue"),
+            "contract_value": None,
         }
         return contact, visit_id
 
@@ -368,17 +368,17 @@ class CustomerConversionService:
         )
 
         # Parse contract value
-        raw_val = contact.get("contract_value") or contact.get("revenue") or contact.get("contractValue") or contact.get("value") or 0.0
-        contract_value = 0.0
-        if raw_val:
+        raw_val = contact.get("contract_value") or contact.get("revenue") or contact.get("contractValue") or contact.get("value") or None
+        contract_value = None
+        if raw_val is not None:
             if isinstance(raw_val, (int, float)):
                 contract_value = float(raw_val)
             else:
                 try:
                     clean_val = "".join(c for c in str(raw_val) if c.isdigit() or c == '.')
-                    contract_value = float(clean_val) if clean_val else 0.0
+                    contract_value = float(clean_val) if clean_val else None
                 except ValueError:
-                    contract_value = 0.0
+                    contract_value = None
 
         # Resolve sales manager
         sales_mgr = contact.get("sales_manager") or contact.get("sales_manager_name") or ""

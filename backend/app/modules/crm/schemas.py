@@ -18,10 +18,12 @@ class LeadCreate(BaseModel):
     mobile: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None
+    product: Optional[str] = None
+    product_name: Optional[str] = None
     category: Optional[str] = "Hot"
     priority: Optional[str] = "High"
-    value: Optional[str] = "450000"
-    expected_value: Optional[str] = "450000"
+    value: Optional[str] = "0"
+    expected_value: Optional[str] = "0"
     source: Optional[str] = "Field Research (SE)"
     status: Optional[str] = "New"
     assigned_to: Optional[str] = None
@@ -59,6 +61,8 @@ class LeadUpdate(BaseModel):
     contact_phone: Optional[str] = None
     phone: Optional[str] = None
     mobile: Optional[str] = None
+    product: Optional[str] = None
+    product_name: Optional[str] = None
     status: Optional[str] = None
     category: Optional[str] = None
     priority: Optional[str] = None
@@ -97,6 +101,8 @@ class LeadResponse(BaseModel):
     mobile: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None
+    product: Optional[str] = None
+    product_name: Optional[str] = None
     category: Optional[str] = "Hot"
     priority: Optional[str] = "High"
     value: Optional[str] = None

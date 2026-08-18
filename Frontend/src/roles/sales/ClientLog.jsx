@@ -85,25 +85,7 @@ export default function ClientLog() {
   // ───────────────────────────────────────────────────────────────────────────
   // 1. VISITS STATE & HANDLERS (Permanent Monthly Work Report Audit - Never Deleted)
   // ───────────────────────────────────────────────────────────────────────────
-  const [visitList, setVisitList] = useState(() => {
-    try {
-      const saved = localStorage.getItem("tc_sales_visits");
-      const parsed = saved ? JSON.parse(saved) : [];
-      const seen = new Set();
-      const clean = [];
-      parsed.forEach((p) => {
-        if (!p) return;
-        const key = p.id || p.visit_id || `${(p.customer || p.client || "").toLowerCase().trim()}_${p.date}`;
-        if (!seen.has(key)) {
-          seen.add(key);
-          clean.push(p);
-        }
-      });
-      return filterUserItems(clean, currentUser);
-    } catch {
-      return [];
-    }
-  });
+  const [visitList, setVisitList] = useState([]);
 
   const [visitStatusFilter, setVisitStatusFilter] = useState("All");
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
@@ -121,11 +103,7 @@ export default function ClientLog() {
     remarks: "",
   });
 
-  useEffect(() => {
-    try {
-      localStorage.setItem("tc_sales_visits", JSON.stringify(visitList));
-    } catch (e) { }
-  }, [visitList]);
+
 
   useEffect(() => {
     visitAPI
@@ -361,7 +339,7 @@ export default function ClientLog() {
             discussion_summary: extraData.discussion_summary || v.notes || v.purpose || "Field visit completed successfully.",
             customer_requirements: extraData.customer_requirements || v.customer_requirements || "Field requirement logged.",
             products_discussed: extraData.products_discussed || v.products_discussed || "TwiteConnect Field CRM Suite",
-            estimated_order_value: extraData.estimated_order_value || extraData.value || v.value || "₹4,50,000",
+            estimated_order_value: extraData.estimated_order_value || extraData.value || v.value || "₹0",
             lead_status: extraData.lead_status || v.lead_status || "Follow Up Required",
             lead_priority: extraData.lead_priority || extraData.priority || v.priority || "Hot",
             remarks: extraData.remarks || v.remarks || "Visit completion form submitted.",
@@ -415,16 +393,7 @@ export default function ClientLog() {
   // ───────────────────────────────────────────────────────────────────────────
   // 3. FOLLOW-UPS STATE & HANDLERS (Permanent Monthly Audit Log - Never Deleted)
   // ───────────────────────────────────────────────────────────────────────────
-  const [followupsList, setFollowupsList] = useState(() => {
-    try {
-      const saved = localStorage.getItem("tc_sales_followups");
-      const parsed = saved ? JSON.parse(saved) : [];
-      const clean = parsed.filter(f => f && !["TechCorp Solutions", "GreenValley Logistics"].includes(f.company || f.customer));
-      return filterUserItems(clean, currentUser);
-    } catch {
-      return [];
-    }
-  });
+  const [followupsList, setFollowupsList] = useState([]);
 
   useEffect(() => {
     crmAPI.getFollowupsAll()
@@ -464,11 +433,7 @@ export default function ClientLog() {
       .catch(() => null);
   }, [userName, userEmail]);
 
-  useEffect(() => {
-    try {
-      localStorage.setItem("tc_sales_followups", JSON.stringify(followupsList));
-    } catch (e) { }
-  }, [followupsList]);
+
 
   const handleCompleteFollowup = (id) => {
     setFollowupsList((prev) =>

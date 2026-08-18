@@ -431,10 +431,9 @@ class HRMSRepository:
 
         return emp_record
 
-    # ── Update employee ───────────────────────────────────────────────────────
     def update_employee(self, emp_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         clean_updates = {k: v for k, v in updates.items() if v is not None}
-        is_uuid = lambda x: x and len(str(x)) == 36 and "-" in str(x)
+        is_uuid = lambda x: x and "-" in str(x)
 
         # Try hrms schema first
         try:
@@ -536,7 +535,7 @@ class HRMSRepository:
     def get_employee_by_id(self, emp_id: str) -> Optional[Dict[str, Any]]:
         # Try DB first for accuracy
         try:
-            is_uuid = lambda x: x and len(str(x)) == 36 and "-" in str(x)
+            is_uuid = lambda x: x and "-" in str(x)
             if is_uuid(emp_id):
                 res = self.supabase.schema("hrms").table("employees").select("*").eq("employee_id", emp_id).execute()
             else:

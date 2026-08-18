@@ -21,13 +21,21 @@ def create_target(
     user_payload: Dict[str, Any] = Depends(get_current_user_payload)
 ):
     """Create a new sales target assigned to an executive."""
-    return service.create_target(target_data, user_payload)
+    try:
+        return service.create_target(target_data, user_payload)
+    except Exception as e:
+        logger.error(f"Error creating sales target: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.put("/targets/{target_id}", response_model=Dict[str, Any])
 def update_target(target_id: str, updates: SalesTargetUpdate):
     """Update an existing sales target."""
-    return service.update_target(target_id, updates)
+    try:
+        return service.update_target(target_id, updates)
+    except Exception as e:
+        logger.error(f"Error updating sales target: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/targets/{target_id}")
@@ -62,3 +70,24 @@ def get_team_revenue_breakdown(
         logger.warning(f"Revenue breakdown error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.post("/activities", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
+def log_activity(
+    activity_data: Dict[str, Any],
+    user_payload: Dict[str, Any] = Depends(get_current_user_payload)
+):
+    """Log a new sales activity."""
+    try:
+        activity = service.log_activity(activity_data, user_payload)
+        return {"success": True, "message": "Activity logged successfully", "data": activity}
+    except Exception as e:
+        logger.error(f"Error logging sales activity: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/activities", response_model=List[Dict[str, Any]])
+def get_activities(user_payload: Dict[str, Any] = Depends(get_current_user_payload)):
+    """Fetch sales activities scoped to current executive or team."""
+    try:
+        return service.get_activities(user_payload)
+    except Exception as e:
+        logger.error(f"Error fetching sales activities: {e}")
+        raise HTTPException(status_code=500, detail=str(e))

@@ -95,6 +95,7 @@ export const crmAPI = {
   getLeadById: (id) => request(`/crm/leads/${id}`),
   updateLead: (id, data) => request(`/crm/leads/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteLead: (id) => request(`/crm/leads/${id}`, { method: 'DELETE' }),
+  searchContacts: (query) => request(`/crm/contacts/search?query=${encodeURIComponent(query)}`),
 
   // ── Centralized conversion endpoints ────────────────────────────────────
   // All three route through the same backend CustomerConversionService.
@@ -290,6 +291,7 @@ export const settingsAPI = {
   getSettings: () => request('/settings/business'),
   updateSettings: (data) => request('/settings/business', { method: 'PUT', body: JSON.stringify(data) }),
   getConfig: () => request('/settings/config'),
+  getProducts: () => request('/settings/products'),
 }
 
 export const spatialAPI = {
@@ -316,6 +318,8 @@ export const salesAPI = {
     const query = new URLSearchParams(params).toString()
     return request(`/sales/revenue-breakdown${query ? `?${query}` : ''}`)
   },
+  logActivity: (data) => request('/sales/activities', { method: 'POST', body: JSON.stringify(data) }),
+  getActivities: () => request('/sales/activities'),
 }
 
 export const usersAPI = userAPI
@@ -339,6 +343,17 @@ export const auditAPI = {
 
 export const adminAPI = {
   getKPIs: (period) => request(`/admin/dashboard/kpis?period=${period}`),
+}
+
+export const draftsAPI = {
+  saveDraft: (formKey, recordId, draftData) => request('/auto-save/drafts', {
+    method: 'POST',
+    body: JSON.stringify({ form_key: formKey, record_id: recordId, draft_data: draftData })
+  }),
+  getDraft: (formKey, recordId = 'new') => request(`/auto-save/drafts/${formKey}?record_id=${recordId}`),
+  deleteDraft: (formKey, recordId = 'new') => request(`/auto-save/drafts/${formKey}?record_id=${recordId}`, {
+    method: 'DELETE'
+  })
 }
 
 export default { request }

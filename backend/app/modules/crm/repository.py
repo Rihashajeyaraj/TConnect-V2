@@ -150,12 +150,12 @@ class CRMRepository:
         # Safely extract numeric value from strings like "₹4,50,000" or "450000".
         # Use regex to strip all non-digit, non-decimal characters first.
         import re as _re
-        _val_raw = str(data.get("expected_value") or data.get("value") or "450000")
+        _val_raw = str(data.get("expected_value") or data.get("value") or "0")
         _val_digits = _re.sub(r"[^0-9.]", "", _val_raw)
         try:
-            expected_value_float = float(_val_digits) if _val_digits else 450000.0
+            expected_value_float = float(_val_digits) if _val_digits else 0.0
         except ValueError:
-            expected_value_float = 450000.0
+            expected_value_float = 0.0
 
         product_val = str(data.get("product_name") or data.get("product") or data.get("productRequirement") or "TwiteConnect CRM").strip()
 
@@ -198,6 +198,21 @@ class CRMRepository:
                 payload["longitude"] = float(lng)
             except (TypeError, ValueError):
                 pass
+
+        # Upsert client contact profile
+        try:
+            self.upsert_contact_record({
+                "company_name": company_val,
+                "contact_person": person_val,
+                "phone": mobile_val,
+                "email": email_val,
+                "city": city_val,
+                "address": data.get("address") or city_val,
+                "assigned_to": assigned_to_uuid,
+                "assigned_to_email": assigned_to_email
+            })
+        except Exception as e_c:
+            logger.debug(f"upsert_contact_record notice in create_lead: {e_c}")
 
         logger.info(f"[CRM INSERT REQUEST] Attempting insert into crm.leads with payload: {payload}")
 
@@ -291,17 +306,19 @@ class CRMRepository:
                     from datetime import datetime
                     p["converted_at"] = datetime.utcnow().isoformat()
 
-            # Capture category/priority
+            # Capture category/priority and product
             category = p.pop("category", None)
             priority = p.pop("priority", None)
+            product = p.pop("product", None) or p.pop("product_name", None)
 
-            # Update notes/remarks if status, category, or priority changes
+            # Update notes/remarks if status, category, priority, or product changes
             notes_str = str(p.get("notes") or p.get("remarks") or "")
             parts = [part.strip() for part in notes_str.split("|")] if notes_str else []
 
             new_parts = []
             has_cat = False
             has_status = False
+            has_prod = False
             for part in parts:
                 if "Category:" in part:
                     if category:
@@ -315,6 +332,12 @@ class CRMRepository:
                         has_status = True
                     else:
                         new_parts.append(part)
+                elif "Product:" in part:
+                    if product:
+                        new_parts.append(f"Product: {product}")
+                        has_prod = True
+                    else:
+                        new_parts.append(part)
                 else:
                     new_parts.append(part)
 
@@ -322,6 +345,8 @@ class CRMRepository:
                 new_parts.append(f"Category: {category}")
             if status and not has_status:
                 new_parts.append(f"Status: {status}")
+            if product and not has_prod:
+                new_parts.append(f"Product: {product}")
 
             if new_parts:
                 p["notes"] = " | ".join(new_parts)
@@ -339,6 +364,30 @@ class CRMRepository:
             return {k: v for k, v in p.items() if k in allowed_keys}
 
         sanitized = sanitize_lead_payload(updates)
+
+        # Upsert client contact profile
+        try:
+            existing_leads = self.get_all_leads()
+            target_lead = None
+            for l in existing_leads:
+                if str(l.get("lead_id")) == str(lead_id) or str(l.get("id")) == str(lead_id):
+                    target_lead = l
+                    break
+            if target_lead:
+                merged = {**target_lead, **sanitized}
+                self.upsert_contact_record({
+                    "company_name": merged.get("company_name") or merged.get("company"),
+                    "contact_person": merged.get("contact_person") or merged.get("person"),
+                    "phone": merged.get("mobile") or merged.get("phone"),
+                    "email": merged.get("email"),
+                    "city": merged.get("city") or "Chennai",
+                    "address": merged.get("address"),
+                    "assigned_to": merged.get("assigned_to"),
+                    "assigned_to_email": merged.get("assigned_to_email")
+                })
+        except Exception as e_c:
+            logger.debug(f"upsert_contact_record notice in update_lead: {e_c}")
+
         for payload in [sanitized, {k: v for k, v in sanitized.items() if v is not None}]:
             # 1. Try schema 'crm' with lead_id key
             try:
@@ -719,3 +768,72 @@ class CRMRepository:
         except Exception:
             pass
         return True
+
+    def search_contacts(self, query: str, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        """Search contacts in crm.contacts matching company name or phone."""
+        from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
+        allowed = get_allowed_user_identifiers(user_payload)
+        
+        results = []
+        try:
+            query_str = f"%{query}%"
+            res = self.supabase.schema("crm").table("contacts").select("*").or_(f"company_name.ilike.{query_str},phone.ilike.{query_str}").limit(10).execute()
+            if res.data:
+                results = res.data
+        except Exception as e:
+            logger.debug(f"crm.contacts search error: {e}")
+            try:
+                query_str = f"%{query}%"
+                res = self.supabase.table("contacts").select("*").or_(f"company_name.ilike.{query_str},phone.ilike.{query_str}").limit(10).execute()
+                if res.data:
+                    results = res.data
+            except Exception:
+                pass
+        
+        if allowed is not None:
+            results = [c for c in results if is_record_accessible(c, allowed)]
+        return results
+
+    def upsert_contact_record(self, data: Dict[str, Any]) -> None:
+        """Upsert contact details into crm.contacts whenever a lead/customer is processed."""
+        company = data.get("company") or data.get("company_name")
+        person = data.get("person") or data.get("contact_person") or data.get("name")
+        phone = data.get("phone") or data.get("mobile")
+        email = data.get("email")
+        city = data.get("city") or data.get("location") or "Chennai"
+        address = data.get("address") or data.get("full_address")
+        assigned_to = data.get("assigned_to") or data.get("executive_id") or data.get("sales_executive_id")
+        assigned_to_email = data.get("assigned_to_email") or data.get("executive_email")
+
+        if not company or not phone or not person:
+            return
+
+        contact_payload = {
+            "company_name": str(company).strip(),
+            "contact_person": str(person).strip(),
+            "phone": str(phone).strip(),
+            "email": str(email).strip() if email else None,
+            "city": str(city).strip(),
+            "address": str(address).strip() if address else None,
+            "assigned_to": str(assigned_to).strip() if assigned_to else None,
+            "assigned_to_email": str(assigned_to_email).strip() if assigned_to_email else None
+        }
+
+        try:
+            res_exist = self.supabase.schema("crm").table("contacts").select("id").or_(f"company_name.eq.{company},phone.eq.{phone}").execute()
+            if res_exist.data and len(res_exist.data) > 0:
+                contact_id = res_exist.data[0]["id"]
+                self.supabase.schema("crm").table("contacts").update(contact_payload).eq("id", contact_id).execute()
+            else:
+                self.supabase.schema("crm").table("contacts").insert(contact_payload).execute()
+        except Exception as e:
+            logger.debug(f"Failed to upsert contact into crm.contacts: {e}")
+            try:
+                res_exist = self.supabase.table("contacts").select("id").or_(f"company_name.eq.{company},phone.eq.{phone}").execute()
+                if res_exist.data and len(res_exist.data) > 0:
+                    contact_id = res_exist.data[0]["id"]
+                    self.supabase.table("contacts").update(contact_payload).eq("id", contact_id).execute()
+                else:
+                    self.supabase.table("contacts").insert(contact_payload).execute()
+            except Exception as e_pub:
+                logger.debug(f"Failed to upsert contact into public.contacts: {e_pub}")

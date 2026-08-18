@@ -4,8 +4,6 @@ from datetime import datetime
 from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.core.logger import logger
 
-_in_memory_targets: List[Dict[str, Any]] = []
-
 
 def is_valid_uuid(val: Any) -> bool:
     if not val:
@@ -44,7 +42,7 @@ class SalesTargetRepository:
                 logger.debug(f"sales_target fetch in {schema_attempt} notice: {e}")
 
         if not fetched:
-            fetched = list(_in_memory_targets)
+            fetched = []
 
         # Apply scoping if needed
         if is_manager and user_email:
@@ -110,8 +108,7 @@ class SalesTargetRepository:
                 logger.debug(f"public.sales_target insert notice: {e2}")
 
         if not inserted_row:
-            inserted_row = payload
-            _in_memory_targets.insert(0, payload)
+            raise Exception("Failed to insert sales target into database.")
 
         return dict(inserted_row)
 
@@ -132,12 +129,7 @@ class SalesTargetRepository:
             except Exception as e:
                 logger.warning(f"sales_target update notice: {e}")
 
-        for t in _in_memory_targets:
-            if str(t.get("id")) == str(target_id):
-                t.update(payload)
-                return t
-
-        return updates
+        raise Exception("Failed to update sales target in database.")
 
     def delete_target(self, target_id: str) -> bool:
         try:
@@ -148,8 +140,6 @@ class SalesTargetRepository:
             except Exception:
                 pass
 
-        global _in_memory_targets
-        _in_memory_targets = [t for t in _in_memory_targets if str(t.get("id")) != str(target_id)]
         return True
 
     def get_team_revenue_breakdown(
@@ -274,31 +264,17 @@ class SalesTargetRepository:
             exec_revenue = 0.0
             deals_count = 0
 
-            for lead in raw_leads:
-                if match_exec(lead):
-                    if any(w in str(lead.get("status") or "").lower() for w in ["won", "converted", "customer"]):
-                        l_date = lead.get("updated_at") or lead.get("created_at") or lead.get("date")
-                        if in_range(l_date):
-                            raw = str(lead.get("value") or lead.get("deal_value") or lead.get("amount") or "0")
-                            try:
-                                val = float(raw.replace("₹", "").replace(",", "").strip())
-                            except (ValueError, TypeError):
-                                val = 0.0
-                            exec_revenue += val
-                            deals_count += 1
-
             for cust in raw_customers:
                 if match_exec(cust):
-                    if not (cust.get("lead_id") or cust.get("leadId")):
-                        c_date = cust.get("created_at") or cust.get("updated_at") or cust.get("date")
-                        if in_range(c_date):
-                            raw = str(cust.get("contract_value") or cust.get("contractValue") or cust.get("revenue") or "0")
-                            try:
-                                val = float(raw.replace("₹", "").replace(",", "").strip())
-                            except (ValueError, TypeError):
-                                val = 0.0
-                            exec_revenue += val
-                            deals_count += 1
+                    c_date = cust.get("created_at") or cust.get("updated_at") or cust.get("date")
+                    if in_range(c_date):
+                        raw = str(cust.get("contract_value") or cust.get("contractValue") or cust.get("revenue") or "0")
+                        try:
+                            val = float(raw.replace("₹", "").replace(",", "").strip())
+                        except (ValueError, TypeError):
+                            val = 0.0
+                        exec_revenue += val
+                        deals_count += 1
 
             exec_incentive = round(exec_revenue * 0.05, 2)
             total_team_revenue += exec_revenue
@@ -329,3 +305,61 @@ class SalesTargetRepository:
             "incentive_rate_pct": 5.0,
         }
 
+    def log_activity(self, data: Dict[str, Any], user_payload: Dict[str, Any]) -> Dict[str, Any]:
+        executive_id = str((user_payload or {}).get("sub") or (user_payload or {}).get("user_id") or "")
+        executive_email = str((user_payload or {}).get("email") or "").lower().strip()
+
+        payload = {
+            "executive_id": executive_id,
+            "executive_email": executive_email,
+            "activity_type": str(data.get("activity_type") or "Unknown"),
+            "description": str(data.get("description") or ""),
+            "reference_id": str(data.get("reference_id") or ""),
+            "created_at": datetime.utcnow().isoformat(),
+        }
+
+        try:
+            res = self.supabase.schema("sales").table("sales_activities").insert(payload).execute()
+            if res.data and len(res.data) > 0:
+                return res.data[0]
+        except Exception as e:
+            logger.warning(f"Failed to log sales activity in sales schema: {e}")
+            try:
+                res_pub = self.supabase.table("sales_activities").insert(payload).execute()
+                if res_pub.data and len(res_pub.data) > 0:
+                    return res_pub.data[0]
+            except Exception as e2:
+                logger.error(f"Failed to log sales activity in public schema: {e2}")
+                raise Exception("Could not persist sales activity")
+
+        return payload
+
+    def get_activities(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        user_id = str((user_payload or {}).get("sub") or (user_payload or {}).get("user_id") or "")
+        user_email = str((user_payload or {}).get("email") or "").lower().strip()
+        user_role = str((user_payload or {}).get("role") or "").strip()
+
+        is_manager = user_role in ("Sales Manager", "Manager")
+        is_admin_or_ceo = user_role in ("Admin", "Super Admin", "System Admin", "CEO", "ceo")
+
+        # Query all or scoped based on role
+        try:
+            query = self.supabase.schema("sales").table("sales_activities").select("*")
+            if not is_manager and not is_admin_or_ceo:
+                query = query.eq("executive_email", user_email)
+            res = query.order("created_at", desc=True).execute()
+            
+            # If manager, we might need to scope by team, but for simplicity we return all accessible or rely on frontend filtering if team API isn't fully robust
+            # Let's just return results for now.
+            return res.data if res.data else []
+        except Exception as e:
+            logger.warning(f"Failed to fetch sales activities from sales schema: {e}")
+            try:
+                query_pub = self.supabase.table("sales_activities").select("*")
+                if not is_manager and not is_admin_or_ceo:
+                    query_pub = query_pub.eq("executive_email", user_email)
+                res_pub = query_pub.order("created_at", desc=True).execute()
+                return res_pub.data if res_pub.data else []
+            except Exception as e2:
+                logger.error(f"Failed to fetch sales activities from public schema: {e2}")
+                return []

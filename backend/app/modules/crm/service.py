@@ -94,3 +94,6 @@ class CRMService:
             enforce_record_access(existing, user_payload, "lead")
 
         return self.repo.delete_lead(lead_id)
+
+    def search_contacts(self, query: str, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        return self.repo.search_contacts(query, user_payload)

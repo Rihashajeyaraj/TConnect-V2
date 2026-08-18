@@ -30,7 +30,7 @@ import {
   Eye,
   X,
 } from 'lucide-react'
-import { hrmsAPI } from '../../services/api.js'
+import { hrmsAPI, reportAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 
 const DEFAULT_EOD_REPORTS = []
@@ -112,9 +112,19 @@ export default function ManagerReports() {
     }
   }
 
-  const fetchReports = () => {
+  const fetchReports = async () => {
     setLoading(true)
     let combined = []
+
+    try {
+      const apiRes = await reportAPI.getEODReports()
+      const apiData = Array.isArray(apiRes) ? apiRes : (apiRes?.data || [])
+      if (Array.isArray(apiData)) {
+        combined = [...combined, ...apiData]
+      }
+    } catch (e) {
+      console.error("Error fetching EOD reports from API", e)
+    }
 
     const keys = ['tc_eod_reports', 'tc_se_daily_reports', 'tc_daily_work_reports']
     keys.forEach((k) => {

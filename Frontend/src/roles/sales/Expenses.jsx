@@ -21,6 +21,7 @@ import { useToast } from "../../common/ToastContext.jsx";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { expenseAPI, notificationAPI } from "../../services/api.js";
+import { useAutoSave } from "../../services/useAutoSave.js";
 
 export default function Expenses() {
   const { showToast } = useToast();
@@ -90,7 +91,7 @@ export default function Expenses() {
 
 
   // Form State
-  const [form, setForm] = useState({
+  const initialFormValues = {
     visitId: "",
     clientName: "",
     location: "",
@@ -101,7 +102,14 @@ export default function Expenses() {
     remarks: "",
     billFile: null,
     billDataUrl: "",
-  });
+  };
+
+  const {
+    formData: form,
+    setFormData: setForm,
+    clearDraft: clearFormDraft,
+    saveStatus: formSaveStatus
+  } = useAutoSave('draft_expense_form', initialFormValues);
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0] || null;
@@ -181,18 +189,7 @@ export default function Expenses() {
       showToast(`📨 Expense Request (${formattedAmountStr}) sent to Sales Manager for approval!`, "success");
 
       // 2. Reset Form
-      setForm({
-        visitId: "",
-        clientName: "",
-        location: "",
-        type: "Travel / Fuel",
-        customType: "",
-        amount: "",
-        date: new Date().toISOString().slice(0, 10),
-        remarks: "",
-        billFile: null,
-        billDataUrl: "",
-      });
+      clearFormDraft();
       setShowSubmitModal(false);
 
       // 3. Refresh list from backend database
@@ -381,7 +378,15 @@ export default function Expenses() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-lg sm:text-xl font-black text-slate-900">Request Visit Expense Approval</h3>
-                <p className="text-xs font-semibold text-teal-600">Send record directly to Sales Manager for verification</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <p className="text-xs font-semibold text-teal-600">Send record directly to Sales Manager for verification</p>
+                  <span className="text-[10px] font-black text-slate-400">·</span>
+                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full transition-all ${
+                    formSaveStatus === "saving" ? "bg-amber-100 text-amber-700 animate-pulse" : "bg-emerald-100 text-emerald-700"
+                  }`}>
+                    {formSaveStatus === "saving" ? "⏳ Auto-saving..." : "✓ Saved to Supabase"}
+                  </span>
+                </div>
               </div>
               <button
                 type="button"

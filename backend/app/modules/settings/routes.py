@@ -28,6 +28,19 @@ def get_service() -> SettingsService:
     return SettingsService()
 
 
+@router.get("/products", response_model=StandardResponse)
+async def get_products(
+    user_payload: dict = Depends(get_current_user_payload),
+    service: SettingsService = Depends(get_service)
+):
+    """Get organization products (accessible to all logged-in users)."""
+    products = service.get_products()
+    return StandardResponse.success_response(
+        data={"products": products},
+        message="Products retrieved successfully"
+    )
+
+
 @router.get("/business", response_model=StandardResponse)
 async def get_settings(
     user_payload: dict = Depends(get_current_user_payload),

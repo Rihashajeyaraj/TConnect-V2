@@ -31,9 +31,18 @@ class EmployeeCreate(BaseModel):
     def validate_phone_number(cls, v):
         if not v:
             return v
-        cleaned = re.sub(r"\D", "", str(v))
-        if len(cleaned) != 10:
-            raise ValueError("Enter a valid 10-digit phone number.")
+        val_str = str(v).strip()
+        if val_str == "—" or val_str == "":
+            return None
+        cleaned = re.sub(r"\D", "", val_str)
+        if cleaned in ("", "91", "0") or len(cleaned) < 5:
+            return None
+        if len(cleaned) == 12 and cleaned.startswith("91"):
+            cleaned = cleaned[2:]
+        elif len(cleaned) == 11 and cleaned.startswith("0"):
+            cleaned = cleaned[1:]
+        if len(cleaned) < 10 or len(cleaned) > 15:
+            raise ValueError("Enter a valid contact number (10 to 15 digits).")
         return cleaned
 
 
@@ -89,9 +98,18 @@ class EmployeeUpdate(BaseModel):
     def validate_phone_number(cls, v):
         if not v:
             return v
-        cleaned = re.sub(r"\D", "", str(v))
-        if len(cleaned) != 10:
-            raise ValueError("Enter a valid 10-digit phone number.")
+        val_str = str(v).strip()
+        if val_str == "—" or val_str == "":
+            return None
+        cleaned = re.sub(r"\D", "", val_str)
+        if cleaned in ("", "91", "0") or len(cleaned) < 5:
+            return None
+        if len(cleaned) == 12 and cleaned.startswith("91"):
+            cleaned = cleaned[2:]
+        elif len(cleaned) == 11 and cleaned.startswith("0"):
+            cleaned = cleaned[1:]
+        if len(cleaned) < 10 or len(cleaned) > 15:
+            raise ValueError("Enter a valid contact number (10 to 15 digits).")
         return cleaned
 
 

@@ -57,6 +57,8 @@ class CustomerUpdate(BaseModel):
     notes: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+    contract_value: Optional[float] = None
+    status: Optional[str] = None
 
     @validator("phone", pre=True, allow_reuse=True)
     def validate_phone_number(cls, v):

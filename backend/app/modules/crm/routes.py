@@ -262,3 +262,18 @@ async def delete_followup(
         data={"deleted": True},
         message="Follow-up removed successfully"
     )
+
+
+@router.get("/contacts/search", response_model=StandardResponse)
+async def search_contacts(
+    query: str = "",
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewLeads),
+    service: CRMService = Depends(get_service)
+):
+    """Search contact database matching company name or phone."""
+    contacts = service.search_contacts(query, user_payload)
+    return StandardResponse.success_response(
+        data=contacts,
+        message="Contact search completed successfully"
+    )

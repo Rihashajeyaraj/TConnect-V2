@@ -43,3 +43,8 @@ class SalesTargetService:
             target_manager_id=target_manager_id,
         )
 
+    def log_activity(self, data: Dict[str, Any], user_payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repository.log_activity(data, user_payload)
+
+    def get_activities(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        return self.repository.get_activities(user_payload)

@@ -64,12 +64,7 @@ class CustomerRepository:
         if not fetched_customers:
             fetched_customers = list(_in_memory_customers)
 
-        from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
-        allowed = get_allowed_user_identifiers(user_payload)
         res_list = fetched_customers
-        if allowed is not None:
-            scoped = [c for c in fetched_customers if is_record_accessible(c, allowed)]
-            res_list = scoped if scoped else fetched_customers
 
         # Dynamic mapping/enrichment of manager and executive hierarchies
         try:
@@ -198,6 +193,12 @@ class CustomerRepository:
                 row["manager_name"] = sm_name
                 row["executive_id"] = se_id
                 row["executive_name"] = se_name
+                row["assigned_to"] = se_name
+                row["assigned_to_email"] = se_email
+                row["sales_executive"] = se_name
+                row["sales_manager"] = sm_name
+                row["reporting_manager_name"] = sm_name
+                row["reporting_manager_email"] = sm_email
                 
                 val = float(row.get("contract_value") or row.get("revenue") or row.get("value") or 0.0)
                 row["amount"] = val
@@ -208,6 +209,11 @@ class CustomerRepository:
         except Exception as e_enrich:
             logger.warning(f"Error enriching customer details directory: {e_enrich}")
 
+        from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
+        allowed = get_allowed_user_identifiers(user_payload)
+        if allowed is not None:
+            scoped = [c for c in res_list if is_record_accessible(c, allowed)]
+            return scoped
         return res_list
 
     def create_customer(self, data: Dict[str, Any]) -> Dict[str, Any]:
@@ -329,6 +335,22 @@ class CustomerRepository:
                 pass
 
         logger.info(f"[CUSTOMER INSERT] Saving into crm.customers: {payload}")
+
+        # Upsert client contact profile
+        try:
+            from app.modules.crm.repository import CRMRepository
+            CRMRepository().upsert_contact_record({
+                "company_name": comp_name,
+                "contact_person": person_name,
+                "phone": phone_num,
+                "email": email_addr,
+                "city": city_name,
+                "address": address_val,
+                "assigned_to": assigned_to,
+                "assigned_to_email": data.get("assigned_to_email")
+            })
+        except Exception as e_c:
+            logger.debug(f"upsert_contact_record notice in create_customer: {e_c}")
 
         inserted_row = None
         # Insert ONLY into crm.customers (do NOT insert into public.customers for CRM conversion)
@@ -467,6 +489,30 @@ class CustomerRepository:
             db_updates["latitude"] = updates["latitude"]
         if "longitude" in updates:
             db_updates["longitude"] = updates["longitude"]
+
+        # Upsert client contact profile
+        try:
+            existing_customers = self.get_all_customers()
+            target_cust = None
+            for c in existing_customers:
+                if str(c.get("id")) == str(cust_id) or str(c.get("customer_id")) == str(cust_id):
+                    target_cust = c
+                    break
+            if target_cust:
+                merged = {**target_cust, **updates}
+                from app.modules.crm.repository import CRMRepository
+                CRMRepository().upsert_contact_record({
+                    "company_name": merged.get("company_name") or merged.get("company"),
+                    "contact_person": merged.get("contact_person") or merged.get("person"),
+                    "phone": merged.get("phone") or merged.get("mobile"),
+                    "email": merged.get("email"),
+                    "city": merged.get("city") or "Chennai",
+                    "address": merged.get("address"),
+                    "assigned_to": merged.get("assigned_to"),
+                    "assigned_to_email": merged.get("assigned_to_email")
+                })
+        except Exception as e_c:
+            logger.debug(f"upsert_contact_record notice in update_customer: {e_c}")
 
         for payload in [db_updates, {k: v for k, v in db_updates.items() if v is not None}]:
             try:

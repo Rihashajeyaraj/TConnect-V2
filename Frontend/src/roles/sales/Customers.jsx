@@ -129,7 +129,7 @@ export default function Customers() {
           packageTier: c.packageTier || "Enterprise Plan",
           reachOutReason: c.notes || c.reachOutReason || "Converted customer account.",
           accountManager: c.accountManager || c.account_manager || userName,
-          contractValue: c.contractValue || c.revenue || "₹4,50,000",
+          contractValue: c.contractValue || c.revenue || "₹0",
           remarksHistory: c.remarksHistory || [],
           latitude: c.latitude ?? null,
           longitude: c.longitude ?? null,
@@ -316,8 +316,9 @@ export default function Customers() {
   };
 
   // Handler for Updating Deal Outcome (Won / In Progress) & Contract Deal Amount
-  const handleUpdateDealStatus = (customer, dealStatus, dealAmountInput) => {
+  const handleUpdateDealStatus = async (customer, dealStatus, dealAmountInput) => {
     const formattedAmount = dealAmountInput.startsWith("₹") ? dealAmountInput : `₹${dealAmountInput}`;
+    const cleanAmount = parseFloat(dealAmountInput.replace(/[^0-9.]/g, "")) || 0;
     const remarkNote = dealStatus === "Won"
       ? `🎉 Deal Won! Closed Contract Deal Amount: ${formattedAmount}.`
       : `Contract deal amount updated to ${formattedAmount}. Status: ${dealStatus}.`;
@@ -349,7 +350,17 @@ export default function Customers() {
       remarksHistory: [{ date: "Just now", note: remarkNote }, ...(prev.remarksHistory || [])]
     } : null);
 
-    showToast(`🎉 Customer "${customer.name}" Deal Status updated to "${dealStatus}" with Deal Amount ${formattedAmount}!`, "success");
+    try {
+      await customerAPI.updateCustomer(customer.id, {
+        contract_value: cleanAmount,
+        status: dealStatus === "Won" ? "Active Customer (Deal Won 🎉)" : undefined,
+        notes: remarkNote
+      });
+      showToast(`🎉 Customer "${customer.name}" Deal Status updated in Supabase!`, "success");
+    } catch (err) {
+      console.error("Persist deal status error:", err);
+      showToast("Updated locally, but database sync failed.", "warning");
+    }
   };
 
   // Helper for date matching
@@ -725,7 +736,7 @@ export default function Customers() {
                     </label>
                     <button
                       type="button"
-                      onClick={() => handleUpdateDealStatus(selectedCustomer, "Won", selectedCustomer.revenue || selectedCustomer.contractValue || "₹4,50,000")}
+                      onClick={() => handleUpdateDealStatus(selectedCustomer, "Won", selectedCustomer.revenue || selectedCustomer.contractValue || "₹0")}
                       className="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold flex items-center justify-center gap-2 transition cursor-pointer shadow-xs"
                     >
                       <UserCheck size={16} /> Mark as "Won the Deal" 🎉
@@ -740,8 +751,8 @@ export default function Customers() {
                     <div className="flex items-center gap-2">
                       <input
                         type="text"
-                        placeholder="e.g. ₹4,50,000"
-                        defaultValue={selectedCustomer.revenue || selectedCustomer.contractValue || "₹4,50,000"}
+                        placeholder="Enter Closed Deal Amount"
+                        defaultValue={selectedCustomer.revenue || selectedCustomer.contractValue || "₹0"}
                         onBlur={(e) => handleUpdateDealStatus(selectedCustomer, selectedCustomer.dealStatus || "Won", e.target.value)}
                         className="w-full h-10 border border-emerald-300 rounded-xl px-3 bg-white text-slate-900 font-extrabold focus:outline-none focus:border-teal-500"
                       />
