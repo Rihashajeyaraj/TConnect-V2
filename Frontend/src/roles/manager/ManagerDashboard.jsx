@@ -108,7 +108,41 @@ export default function ManagerDashboard() {
       ])
 
       const emps = empRes.status === 'fulfilled' ? (Array.isArray(empRes.value) ? empRes.value : empRes.value?.data || []) : []
-      const leads = leadsRes.status === 'fulfilled' ? (Array.isArray(leadsRes.value) ? leadsRes.value : leadsRes.value?.data || []).map(l => ({ ...l, id: l.lead_id || l.id })) : []
+      const leads = leadsRes.status === 'fulfilled'
+        ? (Array.isArray(leadsRes.value) ? leadsRes.value : leadsRes.value?.data || []).map((l) => {
+            const rawStatus = (l.status || "NEW").toUpperCase();
+            const statusMap = {
+              "NEW": "New",
+              "FOLLOW_UP": "Moved to Follow-ups",
+              "VISIT_SCHEDULED": "Visit Scheduled",
+              "CONVERTED": "Converted to Customer",
+              "LOST": "Not Converted / Lost",
+            };
+            return {
+              ...l,
+              id: l.lead_id || l.id,
+              leadNumber: l.lead_number || `LD-${String(l.lead_id || l.id || "").slice(-8).toUpperCase()}`,
+              company: l.company_name || l.company || "Prospect Lead",
+              company_name: l.company_name || l.company || "Prospect Lead",
+              person: l.contact_person || l.contact_name || "Point of Contact",
+              contact_name: l.contact_person || l.contact_name || "Point of Contact",
+              phone: l.mobile || l.contact_phone || "",
+              email: l.email || l.contact_email || "",
+              city: l.city || "Chennai",
+              product: l.product_name || l.product || "TwiteConnect CRM",
+              product_name: l.product_name || l.product || "TwiteConnect CRM",
+              title: l.product_name || l.product || "TwiteConnect CRM",
+              category: l.category || "Warm",
+              priority: l.priority || "Medium",
+              status: statusMap[rawStatus] || l.status || "New",
+              value: l.expected_value ? `₹${Number(l.expected_value).toLocaleString("en-IN")}` : "₹0",
+              assignedTo: l.assigned_to || '',
+              assignedToEmail: l.assigned_to_email || '',
+              notes: l.notes || l.remarks || "",
+              customerId: l.customer_id || null,
+            };
+          })
+        : []
       const custs = custRes.status === 'fulfilled' ? (Array.isArray(custRes.value) ? custRes.value : custRes.value?.data || []) : []
       const visits = visitsRes.status === 'fulfilled' ? (Array.isArray(visitsRes.value) ? visitsRes.value : visitsRes.value?.data || []) : []
       const targets = targetsRes.status === 'fulfilled' ? (Array.isArray(targetsRes.value) ? targetsRes.value : targetsRes.value?.data || []) : []
@@ -235,12 +269,13 @@ export default function ManagerDashboard() {
   }, [allCustomers, activeDateRange, assignedIdentifiers])
 
   const filteredTeamVisits = useMemo(() => {
-    return allVisits.filter((v) => {
-      const match = matchesAssignedTeam(v)
-      const inDate = isDateWithinFilterRange(v.date || v.visit_date || v.created_at, activeDateRange)
-      return match && inDate
+    return allLeads.filter((l) => {
+      const match = matchesAssignedTeam(l)
+      const inDate = isDateWithinFilterRange(l.createdAt || l.date || l.created_at, activeDateRange)
+      const isVisitScheduled = String(l.status || '').toLowerCase().match(/visit_scheduled|visit scheduled/i)
+      return match && inDate && isVisitScheduled
     })
-  }, [allVisits, activeDateRange, assignedIdentifiers])
+  }, [allLeads, activeDateRange, assignedIdentifiers])
 
   const displayedVisits = useMemo(() => {
     return filteredTeamVisits.filter((v) => {
@@ -354,9 +389,17 @@ export default function ManagerDashboard() {
       }
 
       // Executive's filtered items
-      const execLeads = filteredTeamLeads.filter(matchThisExec)
+      // Executive's filtered items (excluding converted/won/customer leads to match active leads page)
+      const execLeads = filteredTeamLeads.filter(matchThisExec).filter((l) => {
+        const status = String(l.status || "").toLowerCase();
+        return !status.includes("converted") && !status.includes("customer") && !status.includes("won");
+      })
       const execCustomers = filteredTeamCustomers.filter(matchThisExec)
-      const execVisits = filteredTeamVisits.filter(matchThisExec)
+      // Count of visit schedules (from leads page with status 'Visit Scheduled')
+      const execVisits = filteredTeamLeads.filter(matchThisExec).filter((l) => {
+        const status = String(l.status || "").toLowerCase();
+        return status === "visit scheduled" || status === "visit_scheduled";
+      })
 
       // Target for this executive
       const targetObj = allTargets.find(
@@ -377,7 +420,7 @@ export default function ManagerDashboard() {
       const attRecord = allAttendance.find(
         (a) => String(a.employee_id || a.employee_code || '').trim() === execId || String(a.email || '').toLowerCase().trim() === execEmail
       )
-      const attStatus = attRecord ? (attRecord.status || 'Present') : 'Present'
+      const attStatus = attRecord ? (attRecord.status || 'Present') : 'Absent'
 
       return {
         id: exec.id || exec.employee_code,
@@ -618,7 +661,7 @@ export default function ManagerDashboard() {
       </div>
 
       {/* ── 2. COMPACT, SIMPLE KPI CARDS ──────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
         {/* Card 1: Total Revenue — Clickable Drill-down */}
         <div
           onClick={() => { setShowRevenueBreakdownModal(true); fetchRevenueBreakdown() }}
@@ -708,28 +751,6 @@ export default function ManagerDashboard() {
         </div>
 
         {/* Card 5: Target Achievement */}
-        <div
-          onClick={() => setActiveSection(activeSection === 'targets' ? null : 'targets')}
-          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${activeSection === 'targets'
-              ? 'bg-amber-50/70 border-amber-500 ring-2 ring-amber-500/20'
-              : 'bg-white border-slate-200 hover:border-amber-400'
-            }`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Achievement</span>
-            <div className="w-6 h-6 rounded-lg bg-amber-50 text-amber-700 flex items-center justify-center font-bold animate-pulse">
-              <Target size={13} />
-            </div>
-          </div>
-          <div>
-            <div className="text-base sm:text-lg font-black text-amber-900 tracking-tight">
-              {teamTargetsSummary.achievementPct}%
-            </div>
-            <span className="text-[10px] font-bold text-amber-700 mt-0.5 block">
-              ₹{(teamTargetsSummary.achieved / 100000).toFixed(1)}L / {(teamTargetsSummary.target / 100000).toFixed(1)}L
-            </span>
-          </div>
-        </div>
       </div>
 
       {/* ── 3. QUICK ACTIONS BAR ─────────────────────────────────────────── */}
@@ -1140,10 +1161,17 @@ export default function ManagerDashboard() {
 
                       {/* Attendance */}
                       <td className="py-3 px-3">
-                        <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                          {exec.attendanceStatus}
-                        </span>
+                        {exec.attendanceStatus.toLowerCase().includes('absent') ? (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                            {exec.attendanceStatus}
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            {exec.attendanceStatus}
+                          </span>
+                        )}
                       </td>
 
                       {/* Leads */}
