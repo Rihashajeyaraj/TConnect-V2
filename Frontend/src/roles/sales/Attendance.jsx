@@ -15,10 +15,12 @@ import {
   Map
 } from "lucide-react";
 import { useToast } from "../../common/ToastContext.jsx";
-import { attendanceAPI, visitAPI, customerAPI, spatialAPI } from "../../services/api.js";
+import { attendanceAPI, spatialAPI, crmAPI, customerAPI } from "../../services/api.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { exportToExcel, exportToCSV } from "../../utils/exportUtils.js";
 import { FaceLivenessEngine, LIVENESS_CHALLENGES } from "./FaceLivenessEngine.js";
+import { filterUserItems } from "../../utils/userScope.js";
+import { extractCoordsFromUrlOrString } from "./SmartClientMap.jsx";
 
 // Helper: Calculate work hours
 export const calculateWorkHours = (loginTime, logoutTime) => {
@@ -76,6 +78,11 @@ export default function Attendance() {
   const [isSaving, setIsSaving] = useState(false);
   const [loading, setLoading] = useState(true);
 
+  // Client Visit destination selection state
+  const [assignedClients, setAssignedClients] = useState([]);
+  const [selectedClient, setSelectedClient] = useState(null);
+  const [loadingClients, setLoadingClients] = useState(false);
+
   // Biometric & Camera States
   const [matchStatus, setMatchStatus] = useState("PENDING"); // PENDING, DETECTING, MATCHED, FAILED, SPOOF
   const [verificationToken, setVerificationToken] = useState(null);
@@ -122,7 +129,14 @@ export default function Attendance() {
   const leafletInstanceRef = useRef(null);
   const engineRef = useRef(new FaceLivenessEngine());
 
-  // Check enrollment & load logs
+  // ── GPS Tracking refs (never start on mount — only on clock-in) ────────────
+  const gpsWatchRef = useRef(null);         // watchPosition ID
+  const activeSessionRef = useRef(null);    // session_id string
+  const lastPushedPosRef = useRef(null);    // { lat, lng } last accepted point
+  const gpsRetryQueue = useRef([]);         // queued points during network failure
+  const [trackingStatus, setTrackingStatus] = useState('idle'); // idle | active | error
+
+  // Check enrollment, load logs, and fetch scoped Leads/Customers
   useEffect(() => {
     setLoading(true);
 
@@ -141,7 +155,88 @@ export default function Attendance() {
       });
 
     loadAttendanceLogs();
+    _loadAssignedClients();
   }, [userEmpCode, userEmail]);
+
+  const geocodeAddress = async (address) => {
+    if (!address || address === '—' || address.trim() === '') return null;
+    try {
+      const res = await fetch(`https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(address)}&format=json&limit=1`, {
+        headers: { 'User-Agent': 'TConnect-SmartMap/1.0' }
+      });
+      const data = await res.json();
+      if (data && data.length > 0) {
+        return {
+          latitude: Number(data[0].lat),
+          longitude: Number(data[0].lon)
+        };
+      }
+    } catch (e) {
+      console.warn("Geocoding failed for address:", address, e);
+    }
+    return null;
+  };
+
+  const _loadAssignedClients = async () => {
+    setLoadingClients(true);
+    try {
+      const [leadsRes, custsRes] = await Promise.allSettled([
+        crmAPI.getLeads(),
+        customerAPI.getCustomers()
+      ]);
+
+      const myLeads = leadsRes.status === 'fulfilled' 
+        ? filterUserItems(Array.isArray(leadsRes.value) ? leadsRes.value : (leadsRes.value?.data || []), currentUser)
+        : [];
+      const myCusts = custsRes.status === 'fulfilled' 
+        ? filterUserItems(Array.isArray(custsRes.value) ? custsRes.value : (custsRes.value?.data || []), currentUser)
+        : [];
+
+      const normalized = [];
+
+      myLeads.forEach(lead => {
+        let lat = lead.latitude != null ? Number(lead.latitude) : null;
+        let lng = lead.longitude != null ? Number(lead.longitude) : null;
+        if ((lat == null || lng == null) && lead.location) {
+          const c = extractCoordsFromUrlOrString(lead.location);
+          if (c) { lat = c.lat; lng = c.lng; }
+        }
+        normalized.push({
+          id: lead.id,
+          title: lead.company || lead.company_name || lead.name || 'Unnamed Lead',
+          company_name: lead.company_name || lead.company || 'Lead Company',
+          address: lead.address || lead.location || '—',
+          latitude: lat,
+          longitude: lng,
+          category: 'Lead'
+        });
+      });
+
+      myCusts.forEach(cust => {
+        let lat = cust.latitude != null ? Number(cust.latitude) : null;
+        let lng = cust.longitude != null ? Number(cust.longitude) : null;
+        if ((lat == null || lng == null) && cust.address) {
+          const c = extractCoordsFromUrlOrString(cust.address);
+          if (c) { lat = c.lat; lng = c.lng; }
+        }
+        normalized.push({
+          id: cust.id,
+          title: cust.company_name || cust.name || 'Unnamed Customer',
+          company_name: cust.company_name || cust.name || 'Customer Account',
+          address: cust.address || '—',
+          latitude: lat,
+          longitude: lng,
+          category: 'Customer'
+        });
+      });
+
+      setAssignedClients(normalized);
+    } catch (err) {
+      console.warn("Error loading assigned clients:", err);
+    } finally {
+      setLoadingClients(false);
+    }
+  };
 
   const loadAttendanceLogs = () => {
     attendanceAPI.getLogs()
@@ -153,11 +248,20 @@ export default function Attendance() {
           return pId === String(userEmpCode).toLowerCase() || pId === String(currentUser.id).toLowerCase() || pEmail === userEmail;
         }).map(p => {
           const pDate = p.date || p.attendance_date;
+          let rawLoc = p.check_in_address || p.loginLocation || "Adyar IT Corridor, Chennai";
+          if (rawLoc.startsWith("CLIENT_VISIT_DESTINATION:::")) {
+            try {
+              const parsed = JSON.parse(rawLoc.replace("CLIENT_VISIT_DESTINATION:::", ""));
+              rawLoc = `Client Visit: ${parsed.title} (${parsed.company_name}) at ${parsed.address}`;
+            } catch {
+              rawLoc = "Client Visit Site";
+            }
+          }
           return {
             date: pDate,
             loginTime: p.check_in_time || p.punch_in_time || p.loginTime || "09:20 AM",
             logoutTime: p.check_out_time || p.punch_out_time || p.logoutTime || "—",
-            loginLocation: p.check_in_address || p.loginLocation || "Adyar IT Corridor, Chennai",
+            loginLocation: rawLoc,
             logoutLocation: p.check_out_address || p.logoutLocation || "—",
             workHours: p.total_working_hours || p.workHours || "—",
             status: p.attendance_status || p.status || "Present",
@@ -363,12 +467,30 @@ export default function Attendance() {
   // Clock In submission
   const handleClockInSubmit = async () => {
     if (isSaving) return;
+    
+    // Check Client Visit requirements
+    if (workMode === "client" && !selectedClient) {
+      showToast("Please select a destination Lead or Customer before clocking in.", "warning");
+      return;
+    }
+
     setIsSaving(true);
 
     const nowStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     let finalRemarks = punchRemarks.trim();
+    let encodedAddress = currentLocation;
+
     if (workMode === "client") {
       finalRemarks = `[Client Visit Mode] ${punchRemarks || 'Client visit meeting'}`;
+      encodedAddress = `CLIENT_VISIT_DESTINATION:::${JSON.stringify({
+        id: selectedClient.id,
+        title: selectedClient.title,
+        company_name: selectedClient.company_name,
+        address: selectedClient.address,
+        latitude: selectedClient.latitude,
+        longitude: selectedClient.longitude,
+        category: selectedClient.category
+      })}`;
     } else {
       finalRemarks = `[Office Mode] ${punchRemarks || 'Working from office premises'}`;
     }
@@ -382,7 +504,7 @@ export default function Attendance() {
       longitude: gpsCoords.lng,
       check_in_latitude: gpsCoords.lat,
       check_in_longitude: gpsCoords.lng,
-      check_in_address: currentLocation,
+      check_in_address: encodedAddress,
       attendance_status: "Present",
       device_info: navigator.userAgent,
       verified_by_face: true,
@@ -399,30 +521,122 @@ export default function Attendance() {
       setCheckedInSuccessfully(true);
       stopCamera();
 
-      // Push live GPS to employee_locations so the manager's Smart Radar Map
-      // immediately shows this executive (especially for Client Visit mode)
-      if (gpsCoords.lat && gpsCoords.lng) {
-        spatialAPI.updateLocation({
-          latitude: gpsCoords.lat,
-          longitude: gpsCoords.lng,
-          accuracy: gpsCoords.accuracy || 10,
-          name: matchedEmployeeName || userName,
-          employee_code: matchedEmployeeId || userEmpCode,
-          mode: workMode === "client" ? "Client Visit" : "Office",
-          check_in_address: currentLocation,
-        }).catch(() => {
-          // Non-critical: map update failure should not block attendance
-        });
-      }
-
       loadAttendanceLogs();
-      // Notify the Dashboard attendance card to refresh immediately
       window.dispatchEvent(new CustomEvent("tc:attendance-marked"));
+
+      // ── Start GPS tracking session (non-blocking) ──
+      const clientData = workMode === "client" ? {
+        client_id: selectedClient.id,
+        client_name: selectedClient.title,
+        company_name: selectedClient.company_name,
+        client_address: selectedClient.address,
+        client_latitude: selectedClient.latitude,
+        client_longitude: selectedClient.longitude
+      } : {};
+
+      _startGpsTracking(gpsCoords.lat, gpsCoords.lng, clientData);
     } catch (err) {
       showToast(err?.message || "Failed to clock in.", "error");
     } finally {
       setIsSaving(false);
     }
+  };
+
+  // ─── GPS Tracking helpers ──────────────────────────────────────────────────
+
+  const _startGpsTracking = async (initLat, initLng, clientData = {}) => {
+    if (!navigator.geolocation) {
+      showToast("GPS not available on this device.", "warning");
+      return;
+    }
+    try {
+      const sessionRes = await spatialAPI.startSession(initLat, initLng, clientData);
+      const sessionId = sessionRes?.session_id || sessionRes?.data?.session_id || null;
+      activeSessionRef.current = sessionId;
+      localStorage.setItem('tc_tracking_session', sessionId || '');
+      setTrackingStatus('active');
+
+      // Push check-in location as first breadcrumb
+      if (initLat && initLng) {
+        _pushGpsPoint({ lat: initLat, lng: initLng, accuracy: 10, sessionId });
+      }
+    } catch {
+      showToast("⚠️ Location tracking could not start. Attendance is saved.", "warning");
+      setTrackingStatus('error');
+      return;
+    }
+    // Start continuous watchPosition
+    gpsWatchRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy, speed, heading } = pos.coords;
+        if (accuracy > 100) return; // reject inaccurate fix
+        const sessionId = activeSessionRef.current;
+        _pushGpsPoint({ lat: latitude, lng: longitude, accuracy, speed, heading, sessionId });
+      },
+      (err) => {
+        if (err.code === 1) {
+          showToast("GPS permission denied — tracking paused.", "warning");
+          setTrackingStatus('error');
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+    );
+
+    // Flush queued points when connectivity restores
+    window.addEventListener('online', _flushRetryQueue);
+    // Mark stale when tab hidden (iOS suspends GPS when screen locks)
+    document.addEventListener('visibilitychange', _handleVisibilityChange);
+  };
+
+  const _pushGpsPoint = async ({ lat, lng, accuracy = 10, speed = null, heading = null, sessionId }) => {
+    // Client-side dedup: skip if < 10 m from last accepted point
+    if (lastPushedPosRef.current) {
+      const dlat = lat - lastPushedPosRef.current.lat;
+      const dlng = lng - lastPushedPosRef.current.lng;
+      const approxM = Math.sqrt(dlat * dlat + dlng * dlng) * 111000;
+      if (approxM < 10) return;
+    }
+    const point = { latitude: lat, longitude: lng, accuracy, speed, heading, session_id: sessionId };
+    try {
+      await spatialAPI.pushLocation(point);
+      lastPushedPosRef.current = { lat, lng };
+      // Also update employee_locations for backward-compat team radar
+      spatialAPI.updateLocation({ latitude: lat, longitude: lng, accuracy }).catch(() => null);
+    } catch {
+      // Queue for retry (cap at 20 points)
+      if (gpsRetryQueue.current.length < 20) gpsRetryQueue.current.push(point);
+    }
+  };
+
+  const _flushRetryQueue = async () => {
+    const queue = gpsRetryQueue.current.splice(0);
+    for (const pt of queue) {
+      try { await spatialAPI.pushLocation(pt); } catch { break; }
+    }
+  };
+
+  const _handleVisibilityChange = () => {
+    // Nothing to stop — backend stale detection handles this automatically
+    // (tracking_status becomes 'stale' after 5 min without a push)
+  };
+
+  const _stopGpsTracking = async (finalLat, finalLng) => {
+    if (gpsWatchRef.current !== null) {
+      navigator.geolocation.clearWatch(gpsWatchRef.current);
+      gpsWatchRef.current = null;
+    }
+    window.removeEventListener('online', _flushRetryQueue);
+    document.removeEventListener('visibilitychange', _handleVisibilityChange);
+
+    const sessionId = activeSessionRef.current || localStorage.getItem('tc_tracking_session');
+    if (sessionId) {
+      try {
+        await spatialAPI.endSession({ session_id: sessionId, latitude: finalLat, longitude: finalLng });
+      } catch { /* non-critical */ }
+    }
+    activeSessionRef.current = null;
+    localStorage.removeItem('tc_tracking_session');
+    setTrackingStatus('idle');
   };
 
   // Clock Out submission
@@ -457,6 +671,8 @@ export default function Attendance() {
       showToast("Logged Out Successfully ✓", "info");
       setCheckedOutSuccessfully(true);
       loadAttendanceLogs();
+      // Stop GPS tracking after successful clock-out
+      await _stopGpsTracking(gpsCoords.lat, gpsCoords.lng);
     } catch (err) {
       showToast(err?.message || "Failed to clock out.", "error");
     } finally {
@@ -543,29 +759,43 @@ export default function Attendance() {
             {locationError ? (
               <span className="text-[10px] text-rose-600 font-bold">⚠️ {locationError}</span>
             ) : (
-              <span className="text-[10px] text-slate-450 font-bold truncate block">📍 {currentLocation}</span>
+              <span className="text-[10px] text-slate-455 font-bold truncate block">📍 {currentLocation}</span>
             )}
           </div>
+
+          {!isEnrolled && (
+            <div className="bg-amber-50 border border-amber-250 p-4 rounded-2xl text-xs font-bold text-amber-900 space-y-1.5 select-none text-left">
+              <div className="flex items-center gap-2 text-amber-700">
+                <AlertCircle size={16} />
+                <span>Biometric Face Profile Missing</span>
+              </div>
+              <p className="font-semibold text-amber-800 leading-relaxed">
+                Your face biometrics are not registered yet. Please contact your System Administrator to enroll your face in the Admin Portal. Face recognition is required for Login and Logout.
+              </p>
+            </div>
+          )}
 
           {/* Unified Kiosk Check-In & Check-Out View */}
           <div className="space-y-6">
               {/* Camera Section */}
               <div className="relative w-full aspect-[4/3] rounded-2xl bg-slate-950 overflow-hidden shadow-inner border border-slate-200 flex items-center justify-center">
                 {isCameraActive ? (
-                  <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
+                  <>
+                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
+                    
+                    {/* Face Guide oval frame */}
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                      <div className={`w-[130px] h-[175px] sm:w-[150px] sm:h-[195px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
+                        isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
+                      }`} />
+                    </div>
+                  </>
                 ) : (
                   <div className="flex flex-col items-center gap-2 text-slate-500 font-semibold text-xs">
                     <VideoOff size={32} />
-                    <span>Camera Starting...</span>
+                    <span>{isEnrolled ? "Camera is Off" : "🔒 Biometrics Required"}</span>
                   </div>
                 )}
-                
-                {/* Face Guide oval frame */}
-                <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                  <div className={`w-[130px] h-[175px] sm:w-[150px] sm:h-[195px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
-                    isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
-                  }`} />
-                </div>
               </div>
 
               {/* Progress Indicator */}
@@ -595,10 +825,10 @@ export default function Attendance() {
                         {blinkCount >= 2 && "● ●"}
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-450 font-bold">Blink naturally</div>
+                    <div className="text-[11px] text-slate-455 font-bold">Blink naturally</div>
                   </div>
                 ) : (
-                  <div className="text-[11px] text-slate-450 font-bold">
+                  <div className="text-[11px] text-slate-455 font-bold">
                     Position your face inside the oval guide
                   </div>
                 )}
@@ -641,11 +871,86 @@ export default function Attendance() {
                       startLivenessScan();
                     }, 100);
                   }}
-                  className="w-full py-2 px-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-black text-slate-700 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs"
+                  disabled={!isEnrolled}
+                  className="w-full py-2 px-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-black text-slate-700 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  📹 Start Camera
+                  {isEnrolled ? "📹 Start Camera" : "🔒 Biometrics Required"}
                 </button>
               </div>
+
+              {/* Destination Dropdown for Client Visit */}
+              {workMode === "client" && (
+                <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                    Target Client Destination (Required)
+                  </label>
+                  {loadingClients ? (
+                    <div className="text-xs text-slate-500 font-bold p-2 bg-slate-100 rounded-xl text-center">
+                      Loading assigned clients...
+                    </div>
+                  ) : assignedClients.length === 0 ? (
+                    <div className="text-xs text-rose-600 font-bold p-3 bg-rose-50 border border-rose-100 rounded-xl text-center">
+                      No Leads or Customers are assigned to you.
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        value={selectedClient ? selectedClient.id : ""}
+                        onChange={async (e) => {
+                          const client = assignedClients.find(c => c.id === e.target.value);
+                          if (client) {
+                            if (client.latitude == null || client.longitude == null) {
+                              showToast("🔄 Fetching client coordinates from address...", "info");
+                              const coords = await geocodeAddress(client.address);
+                              if (coords) {
+                                client.latitude = coords.latitude;
+                                client.longitude = coords.longitude;
+                                try {
+                                  if (client.category === 'Lead') {
+                                    await crmAPI.updateLead(client.id, { latitude: coords.latitude, longitude: coords.longitude });
+                                  } else if (client.category === 'Customer') {
+                                    await customerAPI.updateCustomer(client.id, { latitude: coords.latitude, longitude: coords.longitude });
+                                  }
+                                  showToast("📍 Client coordinates updated and saved successfully!", "success");
+                                } catch (dbErr) {
+                                  console.warn("Failed to persist coordinates to database:", dbErr);
+                                  showToast("📍 Client coordinates updated locally (failed to save to database).", "warning");
+                                }
+                              } else {
+                                showToast("⚠️ Could not resolve client address to coordinates.", "warning");
+                              }
+                            }
+                            setSelectedClient({ ...client });
+                          } else {
+                            setSelectedClient(null);
+                          }
+                        }}
+                        className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-500 focus:bg-white transition text-slate-900 cursor-pointer"
+                      >
+                        <option value="">-- Select Client (Lead or Customer) --</option>
+                        {assignedClients.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            [{c.category}] {c.title} {c.company_name !== c.title ? `(${c.company_name})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedClient && (
+                        <div className="text-[10px] font-bold px-1 select-none">
+                          {selectedClient.latitude && selectedClient.longitude ? (
+                            <span className="text-emerald-600">
+                              📍 Destination Set: {selectedClient.latitude.toFixed(4)}, {selectedClient.longitude.toFixed(4)}
+                            </span>
+                          ) : (
+                            <span className="text-amber-600 flex items-center gap-1">
+                              ⚠️ Stored GPS coordinates missing. Reverse-geocoding/address fallback will be used on map.
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
 
               {/* Remarks Field */}
               <div className="space-y-1">
@@ -653,7 +958,7 @@ export default function Attendance() {
                   type="text"
                   value={punchRemarks}
                   onChange={(e) => setPunchRemarks(e.target.value)}
-                  placeholder={workMode === "office" ? "Add a remark (optional)" : "Enter visit details"}
+                  placeholder={workMode === "office" ? "Add a remark (optional)" : "Enter visit remarks / notes"}
                   className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-500 focus:bg-white transition text-slate-900"
                 />
               </div>
@@ -671,7 +976,7 @@ export default function Attendance() {
                 <div className="grid grid-cols-2 gap-3.5">
                   <button
                     onClick={handleClockInSubmit}
-                    disabled={isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
+                    disabled={!isEnrolled || isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
                     className={`py-3 disabled:opacity-50 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition cursor-pointer text-center ${
                       matchStatus === "FALLBACK"
                         ? "bg-amber-500 hover:bg-amber-600"
@@ -682,7 +987,7 @@ export default function Attendance() {
                   </button>
                   <button
                     onClick={handleClockOutSubmit}
-                    disabled={isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
+                    disabled={!isEnrolled || isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
                     className={`py-3 disabled:opacity-50 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition cursor-pointer text-center ${
                       matchStatus === "FALLBACK"
                         ? "bg-amber-500 hover:bg-amber-600"

@@ -122,7 +122,7 @@ def get_nearby_entities(
 
     try:
         # 1. Fetch Leads & Opportunities
-        leads_raw = crm_repo.get_leads()
+        leads_raw = crm_repo.get_all_leads()
         for idx, lead in enumerate(leads_raw):
             item_lat, item_lng, has_exact = extract_lat_lng(lead, lat, lng, idx)
             dist_m = haversine_distance_meters(lat, lng, item_lat, item_lng)
@@ -166,7 +166,7 @@ def get_nearby_entities(
             })
 
         # 2. Fetch Customers
-        cust_raw = customer_repo.get_customers()
+        cust_raw = customer_repo.get_all_customers()
         for idx, cust in enumerate(cust_raw):
             item_lat, item_lng, has_exact = extract_lat_lng(cust, lat, lng, idx + 10)
             dist_m = haversine_distance_meters(lat, lng, item_lat, item_lng)
@@ -199,7 +199,7 @@ def get_nearby_entities(
             })
 
         # 3. Fetch Visits History
-        visits_raw = visit_repo.get_visits()
+        visits_raw = visit_repo.get_all_visits()
         for idx, vis in enumerate(visits_raw):
             item_lat, item_lng, has_exact = extract_lat_lng(vis, lat, lng, idx + 20)
             dist_m = haversine_distance_meters(lat, lng, item_lat, item_lng)
@@ -574,6 +574,18 @@ async def get_manager_team_locations(
     online_count = 0
     offline_count = 0
     
+    # Query latest tracking session for each executive to determine online status
+    sessions_map = {}
+    try:
+        sessions_res = sp_client.schema("hrms").table("tracking_sessions").select("*").in_("employee_id", exec_ids).order("start_time", desc=True).execute()
+        if sessions_res.data:
+            for sess in sessions_res.data:
+                emp_id = sess.get("employee_id")
+                if emp_id and emp_id not in sessions_map:
+                    sessions_map[emp_id] = sess
+    except Exception as se:
+        logger.warning(f"Error querying tracking sessions for team: {se}")
+    
     for exec_user in subordinates:
         e_id = str(exec_user.get("employee_id") or "")
         e_code = str(exec_user.get("employee_code") or "")
@@ -581,6 +593,7 @@ async def get_manager_team_locations(
         loc = locations_map.get(e_id)
         # Fallback query matching either UUID or Employee Code
         att = attendance_map.get(e_id) or attendance_map.get(e_code)
+        sess = sessions_map.get(e_id)
         
         # GPS: prefer employee_locations, fall back to attendance_logs coordinates
         latitude = None
@@ -601,31 +614,43 @@ async def get_manager_team_locations(
             accuracy = None
             last_seen_at = att.get("check_in_time")  # use check-in time as last_seen proxy
         
-        # Determine online status
-        # 1. If employee_locations has a recent ping (within 12 hours), they are online
-        # 2. If no employee_locations but they have a today's attendance with no check-out, mark online
+        # Determine status:
+        # - Clocked In (today's check_in_time is present and check_out_time is empty) + active tracking session -> Online
+        # - Clocked Out or tracking session ended -> Offline / Stopped
+        # - No recent GPS update (older than 5 minutes) -> Stale/Offline
+        has_checkin = bool(att.get("check_in_time")) if att else False
+        has_checkout = bool(att.get("check_out_time")) if att else False
+        has_active_session = sess and sess.get("status") == "active"
+        
         is_online = False
-        if loc:
-            db_is_online = loc.get("is_online", True)
-            if db_is_online and last_seen_at:
+        if has_checkin and not has_checkout and has_active_session:
+            is_online = True
+            if last_seen_at:
                 try:
-                    seen_dt = datetime.fromisoformat(last_seen_at.replace("Z", "+00:00"))
+                    clean_ts = last_seen_at.replace("Z", "+00:00")
+                    seen_dt = datetime.fromisoformat(clean_ts)
                     now_dt = datetime.now(timezone.utc)
                     diff = (now_dt - seen_dt).total_seconds()
-                    if diff < 43200:  # 12 hours (attendance-day window)
-                        is_online = True
-                except Exception:
-                    is_online = db_is_online
-            else:
-                is_online = db_is_online
-        
-        # Attendance-based online fallback: clocked in today with no check-out
-        if not is_online and att:
-            has_checkin = bool(att.get("check_in_time"))
-            has_checkout = bool(att.get("check_out_time"))
-            if has_checkin and not has_checkout:
-                is_online = True
+                    if diff > 300:  # 5 minutes without GPS update -> Stale (mark offline)
+                        is_online = False
+                except Exception as ex_dt:
+                    logger.debug(f"Error parsing last_seen_at for {e_id}: {ex_dt}")
                 
+        client_id = None
+        client_name = None
+        company_name = None
+        client_address = None
+        client_latitude = None
+        client_longitude = None
+        
+        if has_active_session:
+            client_id = sess.get("client_id")
+            client_name = sess.get("client_name")
+            company_name = sess.get("company_name")
+            client_address = sess.get("client_address")
+            client_latitude = sess.get("client_latitude")
+            client_longitude = sess.get("client_longitude")
+
         if is_online:
             online_count += 1
         else:
@@ -652,7 +677,15 @@ async def get_manager_team_locations(
             "last_seen_at": last_seen_at,
             "check_in_mode": check_in_mode,
             "check_in_address": check_in_address,
-            "check_in_time": check_in_time
+            "check_in_time": check_in_time,
+            
+            # Active Client Visit Destination details
+            "client_id": client_id,
+            "client_name": client_name,
+            "company_name": company_name,
+            "client_address": client_address,
+            "client_latitude": client_latitude,
+            "client_longitude": client_longitude
         })
         
     return {
@@ -671,10 +704,11 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
     """
     Computes a route from origin to destination.
     Tries Google Maps Routes API (traffic-aware) first if key is configured,
-    and falls back to non-traffic response.
+    and falls back to non-traffic OSRM response.
     """
     from app.core.config import settings as app_settings
     import requests
+    import math
 
     origin = payload.get("origin") or {}
     dest = payload.get("destination") or {}
@@ -687,11 +721,39 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
     if orig_lat is None or orig_lng is None or dest_lat is None or dest_lng is None:
         raise HTTPException(status_code=400, detail="Missing origin or destination coordinates")
 
+    def get_osrm_route(o_lat, o_lng, d_lat, d_lng):
+        try:
+            osrm_url = f"http://router.project-osrm.org/route/v1/driving/{o_lng},{o_lat};{d_lng},{d_lat}?overview=full"
+            r = requests.get(osrm_url, timeout=5)
+            if r.status_code == 200:
+                res_data = r.json()
+                routes = res_data.get("routes")
+                if routes:
+                    route = routes[0]
+                    dist_meters = route.get("distance") or 0
+                    duration_sec = route.get("duration") or 0
+                    polyline = route.get("geometry") or ""
+                    return {
+                        "success": True,
+                        "distance_km": round(dist_meters / 1000.0, 2),
+                        "eta_minutes": max(1, math.ceil(duration_sec / 60.0)),
+                        "static_eta_minutes": max(1, math.ceil(duration_sec / 60.0)),
+                        "traffic_aware": False,
+                        "polyline": polyline,
+                        "provider": "osrm"
+                    }
+        except Exception as e:
+            logger.warning(f"OSRM fallback routing failed: {e}")
+        return None
+
     api_key = app_settings.GOOGLE_MAPS_API_KEY
     if not api_key:
+        osrm_res = get_osrm_route(orig_lat, orig_lng, dest_lat, dest_lng)
+        if osrm_res:
+            return osrm_res
         return {
             "success": False,
-            "message": "Google Maps API Key not configured. Traffic routing unavailable.",
+            "message": "Google Maps API Key not configured and OSRM fallback failed.",
             "traffic_aware": False,
             "provider": "google"
         }
@@ -729,6 +791,9 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
         r = requests.post(url, headers=headers, json=body, timeout=8)
         if r.status_code != 200:
             logger.warning(f"Google Routes API status {r.status_code}: {r.text}")
+            osrm_res = get_osrm_route(orig_lat, orig_lng, dest_lat, dest_lng)
+            if osrm_res:
+                return osrm_res
             return {
                 "success": False,
                 "message": f"Google Routes API returned status {r.status_code}",
@@ -739,6 +804,9 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
         res_data = r.json()
         routes = res_data.get("routes")
         if not routes:
+            osrm_res = get_osrm_route(orig_lat, orig_lng, dest_lat, dest_lng)
+            if osrm_res:
+                return osrm_res
             return {
                 "success": False,
                 "message": "No routes returned from Google Maps.",
@@ -769,6 +837,9 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
 
     except Exception as e:
         logger.error(f"Google Routes API exception: {e}")
+        osrm_res = get_osrm_route(orig_lat, orig_lng, dest_lat, dest_lng)
+        if osrm_res:
+            return osrm_res
         return {
             "success": False,
             "message": f"Google Routes API exception: {str(e)}",
@@ -777,3 +848,387 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
         }
 
 
+# ══════════════════════════════════════════════════════════════════════════════
+# LIVE GPS TRACKING  — Session + Breadcrumb Endpoints
+# ══════════════════════════════════════════════════════════════════════════════
+
+def _resolve_emp(sp_client, auth_uid: str) -> str:
+    """Resolve auth UID → hrms.employees.employee_id."""
+    try:
+        res = sp_client.schema("hrms").table("employees").select("employee_id").or_(
+            f"user_id.eq.{auth_uid},auth_user_id.eq.{auth_uid},employee_id.eq.{auth_uid}"
+        ).limit(1).execute()
+        if res.data:
+            return res.data[0]["employee_id"]
+    except Exception as e:
+        logger.debug(f"employee resolve notice: {e}")
+    return auth_uid
+
+
+def _is_subordinate_of(sp_client, mgr_emp_id: str, target_emp_id: str) -> bool:
+    try:
+        # Resolve manager's employee details to match get_manager_team_locations logic
+        mgr_email = ""
+        mgr_name = ""
+        mgr_ids = {mgr_emp_id}
+
+        mgr_res = sp_client.schema("hrms").table("employees").select(
+            "employee_id, user_id, auth_user_id, email, name"
+        ).or_(
+            f"employee_id.eq.{mgr_emp_id},user_id.eq.{mgr_emp_id},auth_user_id.eq.{mgr_emp_id}"
+        ).limit(1).execute()
+
+        if mgr_res.data:
+            m = mgr_res.data[0]
+            mgr_email = str(m.get("email") or "").strip().lower()
+            mgr_name = str(m.get("name") or "").strip().lower()
+            for key in ("employee_id", "user_id", "auth_user_id"):
+                if m.get(key):
+                    mgr_ids.add(str(m[key]).strip())
+
+        # Retrieve the subordinate employee details (safely fallback to select only reporting_manager if others missing)
+        try:
+            sub_res = sp_client.schema("hrms").table("employees").select(
+                "reporting_manager,reporting_manager_id,reporting_manager_email,reporting_manager_name"
+            ).eq("employee_id", target_emp_id).limit(1).execute()
+        except Exception:
+            sub_res = sp_client.schema("hrms").table("employees").select(
+                "reporting_manager"
+            ).eq("employee_id", target_emp_id).limit(1).execute()
+
+        if sub_res.data:
+            emp = sub_res.data[0]
+            emp_mgr = str(emp.get("reporting_manager") or "").strip()
+            emp_mgr_id = str(emp.get("reporting_manager_id") or "").strip()
+            emp_mgr_email = str(emp.get("reporting_manager_email") or "").strip().lower()
+            emp_mgr_name = str(emp.get("reporting_manager_name") or "").strip().lower()
+
+            # 1. Match by reporting manager ID / UUID
+            if (emp_mgr in mgr_ids) or (emp_mgr_id in mgr_ids):
+                return True
+
+            # 2. Match by email
+            if mgr_email and emp_mgr_email == mgr_email:
+                return True
+
+            # 3. Match by name
+            if mgr_name and emp_mgr_name == mgr_name:
+                return True
+
+    except Exception as e:
+        logger.warning(f"Error checking subordinate relationship: {e}")
+    return False
+
+
+@router.post("/location/session/start")
+async def start_tracking_session(
+    payload: Dict[str, Any] = Body(...),
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """Executive calls this when they start work. Creates a tracking_session."""
+    import datetime
+    from app.database.supabase import get_supabase_admin_client, get_supabase_client
+
+    sp = get_supabase_admin_client() or get_supabase_client()
+    auth_uid = user_payload.get("sub") or ""
+    emp_id = _resolve_emp(sp, auth_uid)
+
+    lat = payload.get("latitude") or payload.get("lat")
+    lng = payload.get("longitude") or payload.get("lng")
+    now_iso = datetime.datetime.utcnow().isoformat()
+
+    # Close any existing stale active sessions
+    try:
+        sp.schema("hrms").table("tracking_sessions").update({
+            "status": "stale", "end_time": now_iso, "updated_at": now_iso,
+        }).eq("employee_id", emp_id).eq("status", "active").execute()
+    except Exception as e:
+        logger.debug(f"stale session close: {e}")
+
+    session_data: Dict[str, Any] = {
+        "employee_id": emp_id, "status": "active",
+        "start_time": now_iso, "updated_at": now_iso, "total_distance": 0,
+    }
+    if lat is not None and lng is not None:
+        session_data["start_latitude"] = float(lat)
+        session_data["start_longitude"] = float(lng)
+
+    # Optional Client Destination details for Client Visits
+    client_id = payload.get("client_id")
+    client_name = payload.get("client_name")
+    company_name = payload.get("company_name")
+    client_address = payload.get("client_address")
+    client_lat = payload.get("client_latitude") or payload.get("client_lat")
+    client_lng = payload.get("client_longitude") or payload.get("client_lng")
+
+    full_session_data = dict(session_data)
+    if client_id:
+        full_session_data["client_id"] = str(client_id)
+    if client_name:
+        full_session_data["client_name"] = str(client_name)
+    if company_name:
+        full_session_data["company_name"] = str(company_name)
+    if client_address:
+        full_session_data["client_address"] = str(client_address)
+    if client_lat is not None:
+        full_session_data["client_latitude"] = float(client_lat)
+    if client_lng is not None:
+        full_session_data["client_longitude"] = float(client_lng)
+
+    try:
+        try:
+            # Try inserting all client tracking fields
+            res = sp.schema("hrms").table("tracking_sessions").insert(full_session_data).execute()
+        except Exception as db_err:
+            db_err_msg = str(db_err).lower()
+            # If columns don't exist on remote table, insert only base tracking columns
+            if "column" in db_err_msg or "not found" in db_err_msg or "attribute" in db_err_msg:
+                logger.warning(f"Client tracking columns missing on remote database. Inserting base columns only. Details: {db_err}")
+                res = sp.schema("hrms").table("tracking_sessions").insert(session_data).execute()
+            else:
+                raise db_err
+        session = res.data[0] if res.data else session_data
+        return {"success": True, "session_id": session.get("id"), "employee_id": emp_id}
+    except Exception as e:
+        logger.error(f"tracking session start error: {e}")
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/location/push")
+async def push_live_location(
+    payload: Dict[str, Any] = Body(...),
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """
+    Push GPS breadcrumb from executive phone.
+    - Rejects accuracy > 100m
+    - Deduplicates < 10m from last point
+    - Upserts employee_locations + inserts tracking_locations
+    - Updates session distance
+    """
+    import datetime
+    from app.database.supabase import get_supabase_admin_client, get_supabase_client
+
+    sp = get_supabase_admin_client() or get_supabase_client()
+    auth_uid = user_payload.get("sub") or ""
+    emp_id = _resolve_emp(sp, auth_uid)
+
+    lat = float(payload.get("latitude") or payload.get("lat") or 0)
+    lng = float(payload.get("longitude") or payload.get("lng") or 0)
+    accuracy = float(payload.get("accuracy") or 999)
+    speed = payload.get("speed")
+    heading = payload.get("heading")
+    session_id = payload.get("session_id")
+
+    if lat == 0 and lng == 0:
+        return {"success": False, "skipped": True, "reason": "zero_coords"}
+    if accuracy > 100:
+        return {"success": False, "skipped": True, "reason": "poor_accuracy", "accuracy": accuracy}
+
+    now_iso = datetime.datetime.utcnow().isoformat()
+
+    # Deduplication: skip if < 10m from last
+    try:
+        loc_res = sp.schema("hrms").table("employee_locations").select(
+            "latitude,longitude"
+        ).eq("employee_id", emp_id).limit(1).execute()
+        if loc_res.data:
+            last = loc_res.data[0]
+            dist = haversine_distance_meters(
+                float(last.get("latitude") or 0), float(last.get("longitude") or 0), lat, lng
+            )
+            if dist < 10:
+                return {"success": True, "skipped": True, "reason": "duplicate_location", "distance_m": round(dist, 1)}
+    except Exception as e:
+        logger.debug(f"dedup check: {e}")
+
+    # Upsert current position
+    try:
+        sp.schema("hrms").table("employee_locations").upsert({
+            "employee_id": emp_id, "latitude": lat, "longitude": lng,
+            "accuracy": accuracy, "is_online": True,
+            "last_seen_at": now_iso, "updated_at": now_iso,
+        }, on_conflict="employee_id").execute()
+    except Exception as e:
+        logger.warning(f"employee_locations upsert: {e}")
+
+    # Insert breadcrumb
+    crumb: Dict[str, Any] = {
+        "employee_id": emp_id, "latitude": lat, "longitude": lng,
+        "accuracy": accuracy, "recorded_at": now_iso,
+    }
+    if session_id:
+        crumb["tracking_session_id"] = session_id
+    if speed is not None:
+        crumb["speed"] = float(speed)
+    if heading is not None:
+        crumb["heading"] = float(heading)
+    try:
+        sp.schema("hrms").table("tracking_locations").insert(crumb).execute()
+    except Exception as e:
+        logger.warning(f"tracking_locations insert: {e}")
+
+    # Update session distance + end coords
+    if session_id:
+        try:
+            sess_res = sp.schema("hrms").table("tracking_sessions").select(
+                "total_distance,end_latitude,end_longitude,start_latitude,start_longitude"
+            ).eq("id", session_id).limit(1).execute()
+            if sess_res.data:
+                sess = sess_res.data[0]
+                prev_lat = float(sess.get("end_latitude") or sess.get("start_latitude") or lat)
+                prev_lng = float(sess.get("end_longitude") or sess.get("start_longitude") or lng)
+                leg = haversine_distance_meters(prev_lat, prev_lng, lat, lng)
+                new_dist = float(sess.get("total_distance") or 0) + leg
+                sp.schema("hrms").table("tracking_sessions").update({
+                    "total_distance": round(new_dist, 1),
+                    "end_latitude": lat, "end_longitude": lng, "updated_at": now_iso,
+                }).eq("id", session_id).execute()
+        except Exception as e:
+            logger.debug(f"session distance update: {e}")
+
+    return {"success": True, "employee_id": emp_id, "lat": lat, "lng": lng}
+
+
+@router.post("/location/session/end")
+async def end_tracking_session(
+    payload: Dict[str, Any] = Body(...),
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """Executive ends their tracking session (logout / stop work)."""
+    import datetime
+    from app.database.supabase import get_supabase_admin_client, get_supabase_client
+
+    sp = get_supabase_admin_client() or get_supabase_client()
+    auth_uid = user_payload.get("sub") or ""
+    emp_id = _resolve_emp(sp, auth_uid)
+    session_id = payload.get("session_id")
+    lat = payload.get("latitude") or payload.get("lat")
+    lng = payload.get("longitude") or payload.get("lng")
+    now_iso = datetime.datetime.utcnow().isoformat()
+
+    upd: Dict[str, Any] = {"status": "ended", "end_time": now_iso, "updated_at": now_iso}
+    if lat is not None and lng is not None:
+        upd["end_latitude"] = float(lat)
+        upd["end_longitude"] = float(lng)
+    try:
+        q = sp.schema("hrms").table("tracking_sessions").update(upd).eq("employee_id", emp_id)
+        if session_id:
+            q = q.eq("id", session_id)
+        else:
+            q = q.eq("status", "active")
+        q.execute()
+    except Exception as e:
+        logger.warning(f"session end error: {e}")
+
+    try:
+        sp.schema("hrms").table("employee_locations").update({
+            "is_online": False, "updated_at": now_iso,
+        }).eq("employee_id", emp_id).execute()
+    except Exception as e:
+        logger.debug(f"mark offline: {e}")
+
+    return {"success": True, "employee_id": emp_id, "session_id": session_id}
+
+
+@router.get("/location/history/{employee_id}")
+async def get_location_history(
+    employee_id: str,
+    session_id: Optional[str] = None,
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """
+    Manager fetches breadcrumb history for a specific executive.
+    Access-controlled: manager reads only assigned subordinates.
+    """
+    import datetime
+    from app.database.supabase import get_supabase_admin_client, get_supabase_client
+    from app.core.scoping import normalize_user_role
+
+    sp = get_supabase_admin_client() or get_supabase_client()
+    auth_uid = user_payload.get("sub") or ""
+    role = normalize_user_role(user_payload.get("role") or "")
+    caller_emp_id = _resolve_emp(sp, auth_uid)
+
+    if role not in ("sales_manager", "ceo", "admin", "super_admin"):
+        if caller_emp_id != employee_id:
+            raise HTTPException(status_code=403, detail="Access denied.")
+    elif role == "sales_manager":
+        if caller_emp_id != employee_id and not _is_subordinate_of(sp, caller_emp_id, employee_id):
+            raise HTTPException(status_code=403, detail="Not your assigned executive.")
+
+    # Get active or latest session
+    session = None
+    try:
+        q = sp.schema("hrms").table("tracking_sessions").select("*").eq("employee_id", employee_id)
+        if session_id:
+            q = q.eq("id", session_id)
+        else:
+            q = q.order("start_time", desc=True).limit(1)
+        sess_res = q.execute()
+        session = sess_res.data[0] if sess_res.data else None
+        
+        # Enrich session with client details (phone and product) if client_id exists
+        if session and session.get("client_id"):
+            client_id = session.get("client_id")
+            client_phone = None
+            product_name = None
+            
+            # Try crm.leads first
+            try:
+                lead_res = sp.schema("crm").table("leads").select("phone, mobile, product_name").or_(f"id.eq.{client_id},lead_id.eq.{client_id}").execute()
+                if lead_res.data:
+                    lead_data = lead_res.data[0]
+                    client_phone = lead_data.get("phone") or lead_data.get("mobile")
+                    product_name = lead_data.get("product_name") or "TwiteConnect CRM"
+            except Exception as e:
+                logger.debug(f"Error querying lead for client_id {client_id}: {e}")
+                
+            # Try crm.customers if not found in leads
+            if not client_phone:
+                try:
+                    cust_res = sp.schema("crm").table("customers").select("phone").or_(f"id.eq.{client_id},customer_id.eq.{client_id}").execute()
+                    if cust_res.data:
+                        cust_data = cust_res.data[0]
+                        client_phone = cust_data.get("phone")
+                        product_name = "TConnect Premium Suite"
+                except Exception as e:
+                    logger.debug(f"Error querying customer for client_id {client_id}: {e}")
+                    
+            session["client_phone"] = client_phone or "—"
+            session["product_name"] = product_name or "—"
+    except Exception as e:
+        logger.warning(f"session fetch: {e}")
+
+    if not session:
+        return {"success": True, "session": None, "breadcrumbs": [], "employee_id": employee_id}
+
+    # Get breadcrumbs
+    breadcrumbs = []
+    try:
+        loc_q = sp.schema("hrms").table("tracking_locations").select(
+            "id,latitude,longitude,accuracy,speed,heading,recorded_at"
+        ).eq("employee_id", employee_id).eq("tracking_session_id", session["id"]).order("recorded_at").execute()
+        breadcrumbs = loc_q.data or []
+    except Exception as e:
+        logger.warning(f"breadcrumbs fetch: {e}")
+
+    # Stale detection: no ping for > 5 min → stale
+    tracking_status = session.get("status", "active")
+    if tracking_status == "active" and breadcrumbs:
+        try:
+            last_rec = breadcrumbs[-1]["recorded_at"]
+            last_dt = datetime.datetime.fromisoformat(last_rec.replace("Z", "+00:00"))
+            diff_sec = (datetime.datetime.now(datetime.timezone.utc) - last_dt).total_seconds()
+            if diff_sec > 300:
+                tracking_status = "stale"
+        except Exception:
+            pass
+
+    return {
+        "success": True,
+        "employee_id": employee_id,
+        "session": session,
+        "tracking_status": tracking_status,
+        "breadcrumbs": breadcrumbs,
+    }

@@ -39,7 +39,7 @@ import {
   GripVertical,
   CheckCircle2,
 } from "lucide-react";
-import { notificationAPI, hrmsAPI } from "../../services/api.js";
+import { notificationAPI, hrmsAPI, spatialAPI } from "../../services/api.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { clearUserCache } from "../../utils/userScope.js";
 import TwiteConnectLogo from "../../common/TwiteConnectLogo.jsx";
@@ -471,7 +471,13 @@ export default function SalesLayout() {
     }
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const sessionId = localStorage.getItem('tc_tracking_session');
+    if (sessionId) {
+      try {
+        await spatialAPI.endSession({ session_id: sessionId }).catch(() => {});
+      } catch (e) {}
+    }
     clearUserCache();
     showToast("Logged out successfully", "info");
     window.location.href = "/";

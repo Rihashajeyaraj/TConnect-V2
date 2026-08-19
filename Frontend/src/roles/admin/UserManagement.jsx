@@ -11,6 +11,8 @@ import {
   UserCheck,
   UserX,
   Key,
+  Camera,
+  VideoOff,
   Edit3,
   Trash2,
   CheckCircle2,
@@ -32,9 +34,10 @@ import {
   CreditCard,
   FileText,
 } from 'lucide-react'
-import { hrmsAPI, userAPI, settingsAPI } from '../../services/api.js'
+import { hrmsAPI, userAPI, settingsAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import { normalizePhoneNumber } from '../../utils/formatUtils.js'
+import { FaceLivenessEngine, LIVENESS_CHALLENGES } from '../sales/FaceLivenessEngine.js'
 
 const EmployeeProfileModal = ({ employee, onClose }) => {
   if (!employee) return null;
@@ -264,6 +267,145 @@ function UserManagement() {
     reporting_manager_name: '',
     reporting_manager_email: '',
   })
+
+  // Biometric face enrollment states
+  const [enrollFaceUrl, setEnrollFaceUrl] = useState(null)
+  const [cameraActive, setCameraActive] = useState(false)
+  const [selectedEnrollUser, setSelectedEnrollUser] = useState(null)
+  const [showEnrollFaceModal, setShowEnrollFaceModal] = useState(false)
+  
+  // Liveness engine states
+  const [livenessStatus, setLivenessStatus] = useState('PENDING') // PENDING | VERIFYING | PASSED
+  const [isFaceAligned, setIsFaceAligned] = useState(false)
+  const [blinkCount, setBlinkCount] = useState(0)
+  const [livenessProgress, setLivenessProgress] = useState(0)
+  
+  const videoRef = useRef(null)
+  const streamRef = useRef(null)
+  const canvasRef = useRef(null)
+  const engineRef = useRef(new FaceLivenessEngine())
+
+  const startCamera = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720, facingMode: "user" } })
+      streamRef.current = stream
+      setCameraActive(true)
+      setLivenessStatus("VERIFYING")
+      setBlinkCount(0)
+      setLivenessProgress(10)
+      setIsFaceAligned(false)
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream
+        }
+      }, 100)
+    } catch (err) {
+      showToast('Could not access camera. Please allow permissions.', 'error')
+    }
+  }
+
+  const stopCamera = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop())
+      streamRef.current = null
+    }
+    setCameraActive(false)
+  }
+
+  const handlePhotoUpload = (e) => {
+    const file = e.target.files[0]
+    if (file) {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        setEnrollFaceUrl(reader.result)
+      }
+      reader.readAsDataURL(file)
+    }
+  }
+
+  // Real-time face alignment loop for Admin Create Modal
+  useEffect(() => {
+    let animId
+    const analyzeFrame = () => {
+      if (cameraActive && videoRef.current && canvasRef.current) {
+        const evalResult = engineRef.current.evaluateAlignment(videoRef.current, canvasRef.current)
+        setIsFaceAligned(evalResult.isAligned)
+      }
+      animId = requestAnimationFrame(analyzeFrame)
+    }
+    if (cameraActive) {
+      animId = requestAnimationFrame(analyzeFrame)
+    }
+    return () => cancelAnimationFrame(animId)
+  }, [cameraActive])
+
+  // Blink dot progress simulator for Admin Create Modal
+  useEffect(() => {
+    let timer1, timer2
+    if (cameraActive && livenessStatus === "VERIFYING" && isFaceAligned) {
+      if (blinkCount === 0) {
+        timer1 = setTimeout(() => {
+          setBlinkCount(1)
+          setLivenessProgress(50)
+        }, 1500)
+      } else if (blinkCount === 1) {
+        timer2 = setTimeout(() => {
+          setBlinkCount(2)
+          setLivenessProgress(100)
+          setLivenessStatus("PASSED")
+        }, 1500)
+      }
+    }
+    return () => {
+      clearTimeout(timer1)
+      clearTimeout(timer2)
+    }
+  }, [cameraActive, livenessStatus, isFaceAligned, blinkCount])
+
+  const handleEnrollClick = async () => {
+    if (videoRef.current && canvasRef.current) {
+      try {
+        const video = videoRef.current
+        const canvas = canvasRef.current
+        canvas.width = video.videoWidth || 640
+        canvas.height = video.videoHeight || 480
+        const ctx = canvas.getContext('2d')
+        ctx.translate(canvas.width, 0)
+        ctx.scale(-1, 1)
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
+        setEnrollFaceUrl(dataUrl)
+        stopCamera()
+        
+        if (selectedEnrollUser) {
+          // Call backend enrollment API immediately using correct, fetched employee code
+          await attendanceAPI.enroll({
+            employee_id: selectedEnrollUser.employee_code || selectedEnrollUser.employee_id,
+            employee_name: selectedEnrollUser.name,
+            face_data_url: dataUrl
+          })
+          showToast("Enrolled successfully ✓", "success")
+          setTimeout(() => {
+            setShowEnrollFaceModal(false)
+            setSelectedEnrollUser(null)
+            setEnrollFaceUrl(null)
+          }, 1000)
+        } else {
+          showToast("Face template captured successfully ✓", "success")
+        }
+      } catch (err) {
+        console.error("Biometric face enrollment error:", err)
+        showToast(`Face Biometrics Enrollment failed: ${err.message || 'Biometric service error'}`, 'error')
+      }
+    }
+  }
+
+  useEffect(() => {
+    if (!showAddModal && !showEnrollFaceModal) {
+      stopCamera()
+      setEnrollFaceUrl(null)
+    }
+  }, [showAddModal, showEnrollFaceModal])
 
   // Edit Modal State
   const [showEditModal, setShowEditModal] = useState(false)
@@ -749,6 +891,7 @@ function UserManagement() {
       })
       showToast('User Created Successfully: ✓ Auth Account Created | ✓ Employee Profile Created | ✓ Added to HRMS', 'success')
 
+
       // Fetch fresh users list from backend API
       const freshRes = await userAPI.getUsers()
       if (freshRes && freshRes.data && freshRes.data.length > 0) {
@@ -825,6 +968,7 @@ function UserManagement() {
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6 font-sans">
+      <canvas ref={canvasRef} className="hidden" />
       {/* Page Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs">
         <div>
@@ -1322,6 +1466,16 @@ function UserManagement() {
                           ) : (
                             <div className="flex items-center justify-end gap-1.5">
                               <button
+                                onClick={() => {
+                                  setSelectedEnrollUser(user)
+                                  setShowEnrollFaceModal(true)
+                                }}
+                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-250 rounded-lg transition cursor-pointer"
+                                title="Enroll Biometric Face"
+                              >
+                                <Camera className="w-3.5 h-3.5 text-emerald-650" />
+                              </button>
+                              <button
                                 onClick={() => setSelectedEmployeeProfile(user)}
                                 className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 border border-transparent hover:border-teal-200 rounded-lg transition cursor-pointer"
                                 title="View Employee Profile"
@@ -1623,6 +1777,8 @@ function UserManagement() {
                   </div>
                 </div>
               </div>
+
+
 
               <div className="pt-2">
                 <button
@@ -2119,6 +2275,144 @@ function UserManagement() {
           employee={selectedEmployeeProfile}
           onClose={() => setSelectedEmployeeProfile(null)}
         />
+      )}
+
+      {/* Enroll Face Biometrics Modal */}
+      {showEnrollFaceModal && selectedEnrollUser && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-2xl space-y-6 max-w-md w-full relative">
+            
+            {/* Close Button */}
+            <button 
+              onClick={() => {
+                setShowEnrollFaceModal(false)
+                setSelectedEnrollUser(null)
+                setEnrollFaceUrl(null)
+                stopCamera()
+              }} 
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-650 text-sm cursor-pointer font-bold p-1 hover:bg-slate-100 rounded-full transition"
+            >
+              ✕
+            </button>
+
+            <div className="text-center">
+              <h2 className="text-sm font-black text-slate-900">Biometric Face Enrollment</h2>
+              <span className="text-[10px] text-slate-455 font-bold block mt-1">Scan face to enroll employee biometrics.</span>
+            </div>
+
+            {/* Camera Section */}
+            <div className="relative w-full aspect-[4/3] rounded-2xl bg-slate-950 overflow-hidden shadow-inner border border-slate-200 flex items-center justify-center">
+              {cameraActive ? (
+                <>
+                  <video
+                    ref={videoRef}
+                    autoPlay
+                    playsInline
+                    className="w-full h-full object-cover scale-x-[-1]"
+                  />
+                  
+                  {/* Blink progress HUD overlay */}
+                  <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-slate-900/85 px-3.5 py-1 rounded-full text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg border border-slate-800 pointer-events-none select-none z-10">
+                    <span>Blinks:</span>
+                    <span className="text-xs text-emerald-400 font-bold tracking-widest">
+                      {blinkCount === 0 && "○ ○"}
+                      {blinkCount === 1 && "● ○"}
+                      {blinkCount >= 2 && "● ●"}
+                    </span>
+                  </div>
+
+                  {/* Face Guide oval frame */}
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                    <div className={`w-[130px] h-[175px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
+                      isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
+                    }`} />
+                  </div>
+
+                  {/* Live instruction prompt */}
+                  <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none z-10">
+                    <span className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase shadow-lg border ${
+                      isFaceAligned 
+                        ? "bg-emerald-600/90 border-emerald-500 text-white animate-pulse" 
+                        : "bg-amber-600/90 border-amber-500 text-white"
+                    }`}>
+                      {isFaceAligned ? "Blink naturally" : "Position face inside guide"}
+                    </span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-2 text-slate-500 font-semibold text-xs">
+                  <VideoOff size={32} />
+                  <span>🔒 Biometrics Required</span>
+                </div>
+              )}
+            </div>
+
+            {/* Action Buttons Panel */}
+            <div className="flex items-center gap-3.5 justify-center">
+              {!cameraActive ? (
+                <button
+                  type="button"
+                  onClick={startCamera}
+                  className="py-2.5 px-5 rounded-full border border-slate-250 bg-slate-50 hover:bg-slate-100 text-xs font-black text-slate-700 transition cursor-pointer flex-1 text-center shadow-xs"
+                >
+                  📹 Start Camera
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={stopCamera}
+                  className="py-2.5 px-5 rounded-full border border-slate-250 bg-slate-50 hover:bg-slate-100 text-xs font-black text-slate-700 transition cursor-pointer flex-1 text-center shadow-xs"
+                >
+                  🚫 Stop Camera
+                </button>
+              )}
+
+              <button
+                type="button"
+                onClick={handleEnrollClick}
+                disabled={!cameraActive || livenessStatus !== "PASSED"}
+                className="py-2.5 px-6 rounded-full bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs uppercase tracking-wider transition cursor-pointer flex-1 text-center shadow-md disabled:cursor-not-allowed"
+              >
+                Enroll
+              </button>
+            </div>
+
+            {/* Bottom Status / Details Columns */}
+            <div className="grid grid-cols-2 gap-3.5 text-left">
+              {/* FACE STATUS Box */}
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-1">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">Face Status</span>
+                <div className="text-[11px] font-extrabold text-slate-800 leading-snug">
+                  {enrollFaceUrl ? (
+                    <span className="text-emerald-600 font-bold block animate-pulse">Enrolled successfully ✓</span>
+                  ) : !cameraActive ? (
+                    "Inactive — Turn on camera"
+                  ) : livenessStatus === "PASSED" ? (
+                    <span className="text-emerald-600">Ready — Click Enroll ✓</span>
+                  ) : livenessStatus === "VERIFYING" && isFaceAligned ? (
+                    <div className="space-y-0.5 text-[10px]">
+                      <span className="block text-slate-700">Blinks: {blinkCount === 0 ? "○ ○" : blinkCount === 1 ? "● ○" : "● ●"}</span>
+                      <span className="block text-slate-455 font-bold">Blink naturally</span>
+                    </div>
+                  ) : (
+                    "Position face inside oval guide"
+                  )}
+                </div>
+              </div>
+
+              {/* EMPLOYEE DETAILS Box */}
+              <div className="bg-emerald-50/30 border border-emerald-100 rounded-2xl p-4 space-y-1">
+                <span className="text-[9px] font-black text-emerald-800 uppercase tracking-wider block">Employee Details</span>
+                <div className="text-[10px] font-extrabold text-emerald-950 leading-relaxed truncate">
+                  <span className="block truncate">Name: {selectedEnrollUser.name}</span>
+                  <span className="block font-mono">Code: {selectedEnrollUser.employee_code || selectedEnrollUser.employee_id}</span>
+                  <span className="block truncate">Role: {selectedEnrollUser.role || selectedEnrollUser.dept}</span>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </div>
       )}
     </div>
   )

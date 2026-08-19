@@ -38,8 +38,14 @@ async def enroll_employee(
     service: AttendanceService = Depends(get_service)
 ):
     """Save one-time facial/biometric enrollment data."""
-    data.employee_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "EMP000012")
-    data.employee_name = str(user_payload.get("name") or "Sales Executive")
+    from app.core.scoping import normalize_user_role
+    norm_role = normalize_user_role(user_payload.get("role") or "")
+    is_privileged = norm_role in ("admin", "super_admin", "ceo", "system_admin")
+    
+    if not is_privileged or not data.employee_id:
+        data.employee_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "EMP000012")
+    if not is_privileged or not data.employee_name:
+        data.employee_name = str(user_payload.get("name") or "Sales Executive")
 
     # 1. Parse base64 image data URL
     if not data.face_data_url or "base64," not in data.face_data_url:

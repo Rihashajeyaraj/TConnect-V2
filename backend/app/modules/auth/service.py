@@ -70,6 +70,9 @@ class AuthService:
         is_ceo = any(k in role_lower for k in ["ceo", "founder", "chief executive"])
         
         emp_code = None
+        sub_id = None
+        db_user = None
+
         if payload.email:
             try:
                 from app.modules.users.repository import UserRepository
@@ -77,21 +80,42 @@ class AuthService:
                 all_users = user_repo.get_all_users()
                 for u in all_users:
                     if str(u.get("email", "")).strip().lower() == payload.email.strip().lower():
+                        db_user = u
                         emp_code = u.get("employee_code")
+                        sub_id = u.get("id") or u.get("employee_id") or u.get("user_id") or u.get("auth_user_id")
                         break
             except Exception as e:
-                logger.warning(f"Could not resolve employee code for dev token: {e}")
+                logger.warning(f"Could not resolve employee code for dev token from UserRepository: {e}")
+
+            if not db_user:
+                try:
+                    from app.modules.hrms.repository import HRMSRepository
+                    hrms_repo = HRMSRepository()
+                    all_emps = hrms_repo.get_all_employees()
+                    for emp in all_emps:
+                        if str(emp.get("email", "")).strip().lower() == payload.email.strip().lower():
+                            db_user = emp
+                            emp_code = emp.get("employee_code") or emp.get("employee_id")
+                            sub_id = emp.get("employee_id") or emp.get("user_id") or emp.get("auth_user_id")
+                            break
+                except Exception as e:
+                    logger.warning(f"Could not resolve employee details for dev token from HRMSRepository: {e}")
 
         if not emp_code:
             emp_code = "TC-EMP-CEO" if is_ceo else "EMP000012"
+        if not sub_id:
+            sub_id = "00000000-0000-0000-0000-000000000001"
+
         full_name = (payload.email or "").split("@")[0].replace(".", " ").title()
-        if is_ceo or "ceo" in (payload.email or "").lower():
+        if db_user and (db_user.get("name") or db_user.get("full_name")):
+            full_name = db_user.get("name") or db_user.get("full_name")
+        elif is_ceo or "ceo" in (payload.email or "").lower():
             full_name = "Chief Executive Officer"
         elif "admin" in (payload.email or "").lower():
             full_name = "System Administrator"
 
         token_payload = {
-            "sub": "00000000-0000-0000-0000-000000000001",
+            "sub": str(sub_id),
             "email": payload.email,
             "role": role_val,
             "aud": "authenticated",

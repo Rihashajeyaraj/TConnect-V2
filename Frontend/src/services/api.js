@@ -307,6 +307,21 @@ export const spatialAPI = {
     request('/spatial/route', { method: 'POST', body: JSON.stringify({ origin, destination }) }),
   getTeamLocations: () =>
     request('/spatial/manager/team-locations'),
+
+  // ── Live GPS Tracking ──────────────────────────────────────────────────────
+  startSession: (lat, lng, clientData = {}) =>
+    request('/spatial/location/session/start', { method: 'POST', body: JSON.stringify({ latitude: lat, longitude: lng, ...clientData }) }),
+  /** Push a GPS breadcrumb. Rejects poor accuracy & duplicates server-side. */
+  pushLocation: (data) =>
+    request('/spatial/location/push', { method: 'POST', body: JSON.stringify(data) }),
+  /** End the tracking session when executive clocks out. */
+  endSession: (data) =>
+    request('/spatial/location/session/end', { method: 'POST', body: JSON.stringify(data) }),
+  /** Manager fetches breadcrumb history for a specific executive (authorized). */
+  getLocationHistory: (employeeId, sessionId = null) => {
+    const qs = sessionId ? `?session_id=${sessionId}` : ''
+    return request(`/spatial/location/history/${employeeId}${qs}`)
+  },
 }
 
 export const salesAPI = {
