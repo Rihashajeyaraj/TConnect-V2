@@ -216,6 +216,19 @@ async def update_employee(
     # ── Perform the update ───────────────────────────────────────────────────
     updated = service.update_employee(emp_id, data)
 
+    # ── Deactivation hook to unassign Leads and Customers ──────────────────
+    is_inactive_status = str(updated.get("status") or "").lower() in ("inactive", "deactivated", "terminated", "disabled")
+    is_not_active = updated.get("is_active") is False
+    if is_inactive_status or is_not_active:
+        try:
+            import logging
+            log = logging.getLogger("TwiteConnect Backend")
+            from app.modules.crm.service import CRMService
+            CRMService().unassign_employee_records(updated)
+        except Exception as e:
+            import logging
+            logging.getLogger("TwiteConnect Backend").warning(f"Deactivation unassign hook failed: {e}")
+
     # ── Build human-readable description ────────────────────────────────────
     emp_name = (
         (existing or {}).get("name")

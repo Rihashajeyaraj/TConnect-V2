@@ -277,3 +277,35 @@ async def search_contacts(
         data=contacts,
         message="Contact search completed successfully"
     )
+
+from pydantic import BaseModel
+from typing import List, Optional
+
+class BulkReassignLeadsPayload(BaseModel):
+    lead_ids: List[str]
+    new_employee_id: str
+    reassignment_reason: Optional[str] = "CEO Bulk Reassignment"
+
+@router.post("/leads/reassign", response_model=StandardResponse)
+async def reassign_leads(
+    payload: BulkReassignLeadsPayload,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageLeads),
+    service: CRMService = Depends(get_service)
+):
+    """Bulk reassign multiple leads to a new active Sales Executive."""
+    role = (user_payload.get("role") or "").lower()
+    if role not in ("ceo", "admin", "super_admin"):
+        from fastapi import HTTPException
+        raise HTTPException(status_code=403, detail="Only CEO or Admin can perform bulk reassignment.")
+
+    success_count = service.bulk_reassign_leads(
+        lead_ids=payload.lead_ids,
+        new_employee_id=payload.new_employee_id,
+        reassigned_by=user_payload.get("name") or user_payload.get("email") or "CEO",
+        reason=payload.reassignment_reason
+    )
+    return StandardResponse.success_response(
+        data={"reassigned_count": success_count},
+        message=f"Successfully reassigned {success_count} leads."
+    )

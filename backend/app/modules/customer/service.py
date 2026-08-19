@@ -85,3 +85,43 @@ class CustomerService:
             extra_data=extra_data,
             user_payload=user_payload,
         )
+
+    def bulk_reassign_customers(self, customer_ids: list, new_employee_id: str, reassigned_by: str, reason: str) -> int:
+        import logging
+        logger = logging.getLogger("TwiteConnect Backend")
+        from datetime import datetime, timezone
+        from app.modules.hrms.repository import HRMSRepository
+        from app.database.supabase import get_supabase_admin_client
+
+        sp = get_supabase_admin_client()
+        new_emp = HRMSRepository().get_employee_by_id(new_employee_id)
+        if not new_emp:
+            raise NotFoundException(resource="Employee", identifier=new_employee_id)
+
+        # Check if active
+        is_inactive = str(new_emp.get("status") or "").lower() in ("inactive", "deactivated", "terminated", "disabled")
+        is_not_active = new_emp.get("is_active") is False
+        if is_inactive or is_not_active:
+            raise Exception("Cannot assign customers to a deactivated employee.")
+
+        success_count = 0
+        for cust_id in customer_ids:
+            try:
+                res = sp.schema("crm").table("customers").select("*").or_(f"id.eq.{cust_id},customer_id.eq.{cust_id}").execute()
+                if res.data:
+                    cust = res.data[0]
+                    orig_owner = cust.get("original_owner") or cust.get("sales_executive") or "—"
+                    
+                    sp.schema("crm").table("customers").update({
+                        "sales_executive": new_emp.get("name"),
+                        "original_owner": orig_owner,
+                        "previous_owner": cust.get("sales_executive"),
+                        "current_owner": new_emp.get("name"),
+                        "reassigned_by": reassigned_by,
+                        "reassigned_at": datetime.now(timezone.utc).isoformat(),
+                        "reassignment_reason": reason
+                    }).eq("id", cust.get("id")).execute()
+                    success_count += 1
+            except Exception as e:
+                logger.error(f"Failed to reassign customer {cust_id}: {e}")
+        return success_count

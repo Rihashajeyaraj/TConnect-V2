@@ -53,6 +53,35 @@ app.add_exception_handler(Exception, global_exception_handler)
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
+@app.on_event("startup")
+def on_startup():
+    try:
+        from app.database.supabase import get_supabase_admin_client
+        client = get_supabase_admin_client()
+        if client:
+            sql = """
+            -- Add ownership tracking columns to crm.leads
+            ALTER TABLE crm.leads ADD COLUMN IF NOT EXISTS original_owner TEXT;
+            ALTER TABLE crm.leads ADD COLUMN IF NOT EXISTS current_owner TEXT;
+            ALTER TABLE crm.leads ADD COLUMN IF NOT EXISTS previous_owner TEXT;
+            ALTER TABLE crm.leads ADD COLUMN IF NOT EXISTS reassigned_by TEXT;
+            ALTER TABLE crm.leads ADD COLUMN IF NOT EXISTS reassigned_at TIMESTAMPTZ;
+            ALTER TABLE crm.leads ADD COLUMN IF NOT EXISTS reassignment_reason TEXT;
+
+            -- Add ownership tracking columns to crm.customers
+            ALTER TABLE crm.customers ADD COLUMN IF NOT EXISTS original_owner TEXT;
+            ALTER TABLE crm.customers ADD COLUMN IF NOT EXISTS current_owner TEXT;
+            ALTER TABLE crm.customers ADD COLUMN IF NOT EXISTS previous_owner TEXT;
+            ALTER TABLE crm.customers ADD COLUMN IF NOT EXISTS reassigned_by TEXT;
+            ALTER TABLE crm.customers ADD COLUMN IF NOT EXISTS reassigned_at TIMESTAMPTZ;
+            ALTER TABLE crm.customers ADD COLUMN IF NOT EXISTS reassignment_reason TEXT;
+            """
+            client.rpc("exec_sql", {"sql_query": sql}).execute()
+            print("✅ Database ownership reassignment columns checked/added.")
+    except Exception as e:
+        print(f"❌ Database startup migration failed: {e}")
+
+
 @app.get("/", include_in_schema=False)
 def root():
     return RedirectResponse(url=f"{settings.API_V1_STR}/docs")

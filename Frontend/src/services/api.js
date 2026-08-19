@@ -138,6 +138,7 @@ export const crmAPI = {
   createFollowup: (data) => request('/crm/followups', { method: 'POST', body: JSON.stringify(data) }),
   updateFollowup: (id, data) => request(`/crm/followups/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteFollowup: (id) => request(`/crm/followups/${id}`, { method: 'DELETE' }),
+  reassignLeads: (data) => request('/crm/leads/reassign', { method: 'POST', body: JSON.stringify(data) }),
 }
 
 export const customerAPI = {
@@ -187,6 +188,7 @@ export const customerAPI = {
 
   // CEO full hierarchy: Manager → Executive → Customer
   getCeoCustomerDirectory: () => request('/reports/ceo/customers'),
+  reassignCustomers: (data) => request('/customer/customers/reassign', { method: 'POST', body: JSON.stringify(data) }),
 }
 
 export const hrmsAPI = {

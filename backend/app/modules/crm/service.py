@@ -97,3 +97,130 @@ class CRMService:
 
     def search_contacts(self, query: str, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         return self.repo.search_contacts(query, user_payload)
+
+    def unassign_employee_records(self, employee: dict):
+        import logging
+        logger = logging.getLogger("TwiteConnect Backend")
+        from datetime import datetime, timezone
+
+        emp_email = str(employee.get("email") or "").lower().strip()
+        emp_name = str(employee.get("name") or "").strip()
+        emp_code = str(employee.get("employee_code") or "").strip()
+        emp_role = str(employee.get("role") or "").lower().strip()
+
+        from app.database.supabase import get_supabase_admin_client
+        sp = get_supabase_admin_client()
+        if not sp:
+            logger.warning("Unassign employee records failed: Supabase admin client not initialized")
+            return
+
+        if "manager" in emp_role:
+            # Sales Manager deactivated: nullify manager fields
+            if emp_name:
+                try:
+                    # Update Leads
+                    sp.schema("crm").table("leads").update({"sales_manager": None}).eq("sales_manager", emp_name).execute()
+                    # Update Customers
+                    sp.schema("crm").table("customers").update({"sales_manager": None}).eq("sales_manager", emp_name).execute()
+                    logger.info(f"✅ Nullified manager records for deactivated manager: {emp_name}")
+                except Exception as e:
+                    logger.warning(f"Unassigning manager records failed: {e}")
+        else:
+            # Sales Executive deactivated: nullify executive fields and track history
+            # Update Leads
+            try:
+                q = sp.schema("crm").table("leads").select("id, assigned_to, original_owner")
+                if emp_email:
+                    q = q.eq("assigned_to_email", emp_email)
+                elif emp_code:
+                    q = q.eq("employee_code", emp_code)
+                elif emp_name:
+                    q = q.eq("assigned_to", emp_name)
+                else:
+                    return
+
+                res = q.execute()
+                if res.data:
+                    for lead in res.data:
+                        lead_id = lead["id"]
+                        orig_owner = lead.get("original_owner") or lead.get("assigned_to") or emp_name
+                        sp.schema("crm").table("leads").update({
+                            "previous_owner": lead.get("assigned_to") or emp_name,
+                            "original_owner": orig_owner,
+                            "current_owner": None,
+                            "assigned_to": None,
+                            "assigned_to_email": None,
+                            "employee_code": None,
+                            "reassigned_at": datetime.now(timezone.utc).isoformat(),
+                            "reassignment_reason": "Employee Deactivation"
+                        }).eq("id", lead_id).execute()
+                    logger.info(f"✅ Unassigned {len(res.data)} leads owned by deactivated executive: {emp_name}")
+            except Exception as e:
+                logger.warning(f"Unassigning executive leads failed: {e}")
+
+            # Update Customers
+            try:
+                q = sp.schema("crm").table("customers").select("id", "sales_executive", "original_owner")
+                if emp_name:
+                    q = q.eq("sales_executive", emp_name)
+                else:
+                    return
+
+                res = q.execute()
+                if res.data:
+                    for cust in res.data:
+                        cust_id = cust["id"]
+                        orig_owner = cust.get("original_owner") or cust.get("sales_executive") or emp_name
+                        sp.schema("crm").table("customers").update({
+                            "previous_owner": cust.get("sales_executive") or emp_name,
+                            "original_owner": orig_owner,
+                            "current_owner": None,
+                            "sales_executive": None,
+                            "reassigned_at": datetime.now(timezone.utc).isoformat(),
+                            "reassignment_reason": "Employee Deactivation"
+                        }).eq("id", cust_id).execute()
+                    logger.info(f"✅ Unassigned {len(res.data)} customers owned by deactivated executive: {emp_name}")
+            except Exception as e:
+                logger.warning(f"Unassigning executive customers failed: {e}")
+
+    def bulk_reassign_leads(self, lead_ids: list, new_employee_id: str, reassigned_by: str, reason: str) -> int:
+        import logging
+        logger = logging.getLogger("TwiteConnect Backend")
+        from datetime import datetime, timezone
+        from app.modules.hrms.repository import HRMSRepository
+        from app.database.supabase import get_supabase_admin_client
+
+        sp = get_supabase_admin_client()
+        new_emp = HRMSRepository().get_employee_by_id(new_employee_id)
+        if not new_emp:
+            raise NotFoundException(resource="Employee", identifier=new_employee_id)
+
+        # Check if active
+        is_inactive = str(new_emp.get("status") or "").lower() in ("inactive", "deactivated", "terminated", "disabled")
+        is_not_active = new_emp.get("is_active") is False
+        if is_inactive or is_not_active:
+            raise Exception("Cannot assign leads to a deactivated employee.")
+
+        success_count = 0
+        for lead_id in lead_ids:
+            try:
+                res = sp.schema("crm").table("leads").select("*").or_(f"id.eq.{lead_id},lead_id.eq.{lead_id}").execute()
+                if res.data:
+                    lead = res.data[0]
+                    orig_owner = lead.get("original_owner") or lead.get("assigned_to") or "—"
+                    
+                    sp.schema("crm").table("leads").update({
+                        "assigned_to": new_emp.get("name"),
+                        "assigned_to_email": new_emp.get("email"),
+                        "employee_code": new_emp.get("employee_code"),
+                        "original_owner": orig_owner,
+                        "previous_owner": lead.get("assigned_to"),
+                        "current_owner": new_emp.get("name"),
+                        "reassigned_by": reassigned_by,
+                        "reassigned_at": datetime.now(timezone.utc).isoformat(),
+                        "reassignment_reason": reason
+                    }).eq("id", lead.get("id")).execute()
+                    success_count += 1
+            except Exception as e:
+                logger.error(f"Failed to reassign lead {lead_id}: {e}")
+        return success_count
