@@ -289,9 +289,8 @@ export default function SalesLayout() {
       }
     } catch (e) { }
 
-    // Fetch live data from Supabase
-    const code = user.employee_id || user.auth_user_id || user.id || empCode || "EMP000012";
-    hrmsAPI.getEmployeeById(code)
+    // Fetch live data from Supabase using "self" — backend resolves to current user's real UUID
+    hrmsAPI.getEmployeeById("self")
       .then((res) => {
         if (res && res.data) {
           const emp = res.data;
@@ -324,7 +323,7 @@ export default function SalesLayout() {
       .catch((err) => {
         console.warn("Could not retrieve online profile data:", err);
       });
-  }, [myProfileOpen, empCode, user.employee_id, user.auth_user_id, user.id]);
+  }, [myProfileOpen]);
 
   const saveProfile = async (keepEditing = false) => {
     try {
@@ -346,11 +345,11 @@ export default function SalesLayout() {
       }
       dbPayload.documents = JSON.stringify(documentsList);
       
-      const res = await hrmsAPI.updateEmployee(code, dbPayload);
+      const res = await hrmsAPI.updateEmployee("self", dbPayload);
       console.log("SAVE RESPONSE", res);
       
       // Explicitly fetch the fresh record from the database to guarantee representation parity
-      const freshRes = await hrmsAPI.getEmployeeById(code);
+      const freshRes = await hrmsAPI.getEmployeeById("self");
       const freshEmployee = freshRes && freshRes.data ? freshRes.data : {};
       console.log("FRESH PROFILE FROM DB", freshEmployee);
       
@@ -434,7 +433,7 @@ export default function SalesLayout() {
     try {
       const currentStr = JSON.stringify(documentsList);
       localStorage.setItem("tc_se_documents", currentStr);
-      
+
       const savedStr = localStorage.getItem("tc_se_documents_synced");
       if (savedStr === currentStr) {
         return;
@@ -442,7 +441,7 @@ export default function SalesLayout() {
 
       const code = user.employee_id || user.auth_user_id || user.id || empCode;
       if (code) {
-        hrmsAPI.updateEmployee(code, { documents: currentStr })
+        hrmsAPI.updateEmployee("self", { documents: currentStr })
           .then(() => {
             localStorage.setItem("tc_se_documents_synced", currentStr);
           })

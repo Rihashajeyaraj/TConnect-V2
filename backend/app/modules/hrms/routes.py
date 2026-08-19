@@ -14,6 +14,43 @@ def get_service() -> HRMSService:
     return HRMSService()
 
 
+# ── Helper: resolve the best lookup identifier for the current user ────────────
+# When the JWT sub / user_id is a nil UUID (00000000-...) the DB lookup fails.
+# We prefer employee_code (always stored in user_metadata), then the user_id,
+# and finally the email — which is always present and reliably unique.
+def _best_self_identifier(user_payload: dict) -> str:
+    meta = user_payload.get("user_metadata") or {}
+
+    emp_code = (
+        meta.get("employee_code")
+        or meta.get("employee_id")
+        or user_payload.get("employee_code")
+        or user_payload.get("employee_id")
+    )
+    if emp_code and not str(emp_code).startswith("EMP-"):
+        # EMP-XXXX codes are synthetic (generated client-side) — skip them
+        return str(emp_code).strip()
+
+    user_id = (
+        user_payload.get("sub")
+        or user_payload.get("user_id")
+        or meta.get("user_id")
+        or meta.get("sub")
+        or ""
+    )
+    # Nil UUID means the auth sub was not properly resolved — skip it
+    if user_id and user_id != "00000000-0000-0000-0000-000000000001":
+        return str(user_id).strip()
+
+    # Fall back to email — always present in a valid JWT
+    email = (
+        user_payload.get("email")
+        or meta.get("email")
+        or ""
+    ).lower().strip()
+    return email
+
+
 @router.get("/employees", response_model=StandardResponse)
 async def list_employees(
     user_payload: dict = Depends(get_current_user_payload),
@@ -65,22 +102,22 @@ async def get_employee(
 ):
     """Get employee details by ID with role-scoped access control."""
     current_emp_code = str(
-        user_payload.get("employee_code") 
-        or user_payload.get("employee_id") 
+        user_payload.get("employee_code")
+        or user_payload.get("employee_id")
         or user_payload.get("user_metadata", {}).get("employee_code")
         or user_payload.get("user_metadata", {}).get("employee_id")
         or ""
     ).strip()
     current_user_id = str(
-        user_payload.get("sub") 
-        or user_payload.get("user_id") 
+        user_payload.get("sub")
+        or user_payload.get("user_id")
         or user_payload.get("user_metadata", {}).get("user_id")
         or user_payload.get("user_metadata", {}).get("sub")
         or ""
     ).strip()
 
     if emp_id == current_emp_code or emp_id.lower() == "self" or emp_id == current_user_id:
-        emp_id = current_user_id
+        emp_id = _best_self_identifier(user_payload)
 
     allowed = get_allowed_user_identifiers(user_payload)
     emp = service.get_employee(emp_id)
@@ -119,9 +156,13 @@ async def update_employee(
     ).strip()
     user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
 
-    is_self = (emp_id == current_emp_code or emp_id == current_user_id)
+    is_self = (
+        emp_id == current_emp_code
+        or emp_id == current_user_id
+        or emp_id.lower() == "self"
+    )
     if is_self:
-        emp_id = current_user_id
+        emp_id = _best_self_identifier(user_payload)
 
     # ── Permission guard ────────────────────────────────────────────────────
     if not is_self:

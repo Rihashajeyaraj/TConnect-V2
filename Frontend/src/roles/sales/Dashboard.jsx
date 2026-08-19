@@ -436,18 +436,15 @@ export default function Dashboard() {
       }
     } catch (e) {}
 
-    // Fetch live profile details to ensure dynamic update
-    const empCodeVal = currentUser.employee_id || currentUser.auth_user_id || currentUser.id;
-    if (empCodeVal) {
-      hrmsAPI.getEmployeeById(empCodeVal)
-        .then((res) => {
-          if (res && res.data && res.data.incentive_percentage !== undefined && res.data.incentive_percentage !== null) {
-            setIncentiveRate(Number(res.data.incentive_percentage));
-          }
-        })
-        .catch((err) => console.warn("Could not retrieve live incentive rate:", err));
-    }
-  }, [currentUser.employee_id, currentUser.auth_user_id, currentUser.id]);
+    // Fetch live profile using "self" — backend resolves this to the authenticated user's real UUID
+    hrmsAPI.getEmployeeById("self")
+      .then((res) => {
+        if (res && res.data && res.data.incentive_percentage !== undefined && res.data.incentive_percentage !== null) {
+          setIncentiveRate(Number(res.data.incentive_percentage));
+        }
+      })
+      .catch((err) => console.warn("Could not retrieve live incentive rate:", err));
+  }, []);
 
   // ── Dashboard Direct Add Lead Submit Handler ─────────────────────────────────
   const handleAddLeadSubmit = (e) => {

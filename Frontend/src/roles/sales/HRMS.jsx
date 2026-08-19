@@ -187,28 +187,25 @@ export default function SalesHRMS() {
   });
 
   useEffect(() => {
-    const code = currentUser.employee_id || currentUser.auth_user_id || currentUser.id || empCode;
-    if (code) {
-      hrmsAPI.getEmployeeById(code)
-        .then((res) => {
-          if (res && res.data) {
-            const emp = res.data;
-            const mapped = {
-              fullName: emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.fullName,
-              employeeId: emp.employee_code || emp.employee_id,
-              officialEmail: emp.email,
-              role: emp.role,
-              team: emp.department,
-              designation: emp.designation,
-              reportingManager: emp.reporting_manager_name || "Not Assigned",
-              reportingManagerEmail: emp.reporting_manager_email || "",
-            };
-            setProfile(mapped);
-            localStorage.setItem("tc_se_profile", JSON.stringify(mapped));
-          }
-        })
-        .catch(() => null);
-    }
+    hrmsAPI.getEmployeeById("self")
+      .then((res) => {
+        if (res && res.data) {
+          const emp = res.data;
+          const mapped = {
+            fullName: emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.fullName,
+            employeeId: emp.employee_code || emp.employee_id,
+            officialEmail: emp.email,
+            role: emp.role,
+            team: emp.department,
+            designation: emp.designation,
+            reportingManager: emp.reporting_manager_name || "Not Assigned",
+            reportingManagerEmail: emp.reporting_manager_email || "",
+          };
+          setProfile(mapped);
+          localStorage.setItem("tc_se_profile", JSON.stringify(mapped));
+        }
+      })
+      .catch(() => null);
   }, [empCode, currentUser]);
 
 
