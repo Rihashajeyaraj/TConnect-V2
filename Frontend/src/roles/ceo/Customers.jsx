@@ -22,9 +22,12 @@ import {
 } from 'lucide-react'
 import { customerAPI, hrmsAPI, crmAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
+import useCurrentUser from '../../hooks/useCurrentUser.js'
 
 function CeoCustomers() {
   const { showToast } = useToast()
+  const currentUser = useCurrentUser()
+  const isAdmin = currentUser.role?.toLowerCase() === 'admin'
   
   // Raw Data State
   const [data, setData] = useState(null)
@@ -129,11 +132,26 @@ function CeoCustomers() {
   }
 
   // Extract filter dropdown options from raw data
-  const allManagersList = Array.from(new Set(rawCustomers.map(c => c.manager_name)))
-    .filter(name => name && name !== 'Unassigned / Direct' && name !== 'Unassigned')
-  const allExecutivesList = Array.from(new Set(rawCustomers.map(c => c.executive_name)))
-    .filter(name => name && name !== 'Direct / Unassigned' && name !== 'Unassigned')
-  const allProductsList = Array.from(new Set(rawCustomers.map(c => c.product))).filter(Boolean)
+  const allManagersList = Array.from(new Set([
+    ...employees.filter(emp => {
+      const r = (emp.role || emp.designation || '').toLowerCase()
+      return r.includes('manager')
+    }).map(emp => emp.name || emp.full_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim()),
+    ...rawCustomers.map(c => c.manager_name)
+  ])).filter(name => name && name !== 'Unassigned / Direct' && name !== 'Unassigned')
+
+  const allExecutivesList = Array.from(new Set([
+    ...employees.filter(emp => {
+      const r = (emp.role || emp.designation || '').toLowerCase()
+      return r.includes('executive')
+    }).map(emp => emp.name || emp.full_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim()),
+    ...rawCustomers.map(c => c.executive_name)
+  ])).filter(name => name && name !== 'Direct / Unassigned' && name !== 'Unassigned')
+
+  const allProductsList = Array.from(new Set([
+    ...rawCustomers.map(c => c.product),
+    ...leads.map(l => l.product_name || l.product)
+  ])).filter(Boolean)
 
   const q = searchQuery.toLowerCase().trim()
 
@@ -283,7 +301,7 @@ function CeoCustomers() {
 
       {/* Summary KPI Cards Grid */}
       {activeTab === 'customers' ? (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-2">
           <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
             <div className="flex justify-between items-start">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Customers</span>
@@ -304,28 +322,6 @@ function CeoCustomers() {
               ₹{liveTotalRevenue.toLocaleString()}
             </p>
             <p className="text-[10px] font-bold text-slate-500 mt-1">Contract value portfolio</p>
-          </div>
-
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sales Managers</span>
-              <Briefcase className="size-4.5 text-[#832D51]" />
-            </div>
-            <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
-              {liveManagersCount}
-            </p>
-            <p className="text-[10px] font-bold text-slate-500 mt-1">Active sales managers</p>
-          </div>
-
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Sales Executives</span>
-              <UserCheck className="size-4.5 text-blue-600" />
-            </div>
-            <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
-              {liveExecutivesCount}
-            </p>
-            <p className="text-[10px] font-bold text-slate-500 mt-1">Team sales executives</p>
           </div>
         </div>
       ) : (
@@ -441,7 +437,7 @@ function CeoCustomers() {
       </div>
 
       {/* Centralized Lead & Customer Reassignment Banner */}
-      {selectedCustIds.length > 0 && (
+      {selectedCustIds.length > 0 && isAdmin && (
         <div className="flex items-center justify-between bg-[#832D51]/10 border border-[#832D51]/20 rounded-2xl p-4 animate-in slide-in-from-top-2 duration-200">
           <span className="text-xs font-black text-[#832D51]">
             {selectedCustIds.length} {activeTab === 'leads' ? (selectedCustIds.length === 1 ? 'Lead' : 'Leads') : (selectedCustIds.length === 1 ? 'Customer' : 'Customers')} selected
@@ -472,28 +468,31 @@ function CeoCustomers() {
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-200/70 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                    <th className="px-4 py-3 w-12">
-                      <input 
-                        type="checkbox"
-                        checked={filteredCustomers.length > 0 && selectedCustIds.length === filteredCustomers.length}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedCustIds(filteredCustomers.map(c => c.customer_id || c.id).filter(Boolean))
-                          } else {
-                            setSelectedCustIds([])
-                          }
-                        }}
-                        className="rounded border-slate-300 text-[#832D51] focus:ring-[#832D51] cursor-pointer"
-                      />
-                    </th>
+                    {isAdmin && (
+                      <th className="px-4 py-3 w-12">
+                        <input 
+                          type="checkbox"
+                          checked={filteredCustomers.length > 0 && selectedCustIds.length === filteredCustomers.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCustIds(filteredCustomers.map(c => c.customer_id || c.id).filter(Boolean))
+                            } else {
+                              setSelectedCustIds([])
+                            }
+                          }}
+                          className="rounded border-slate-300 text-[#832D51] focus:ring-[#832D51] cursor-pointer"
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-3">Customer ID</th>
                     <th className="px-4 py-3">Customer Name</th>
                     <th className="px-4 py-3">Company Name</th>
                     <th className="px-4 py-3">Product</th>
                     <th className="px-4 py-3">Sales Manager</th>
                     <th className="px-4 py-3">Sales Executive</th>
+                    <th className="px-4 py-3 text-center">Assignment Status</th>
                     <th className="px-4 py-3 text-right">Amount</th>
-                    <th className="px-4 py-3 text-center">Action</th>
+                    {isAdmin && <th className="px-4 py-3 text-center">Action</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -513,20 +512,22 @@ function CeoCustomers() {
                           className="hover:bg-slate-50/60 transition cursor-pointer"
                           onClick={() => setSelectedCust(cust)}
                         >
-                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                            <input 
-                              type="checkbox"
-                              checked={selectedCustIds.includes(custId)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedCustIds(prev => [...prev, custId])
-                                } else {
-                                  setSelectedCustIds(prev => prev.filter(id => id !== custId))
-                                }
-                              }}
-                              className="rounded border-slate-300 text-[#832D51] focus:ring-[#832D51] cursor-pointer"
-                            />
-                          </td>
+                          {isAdmin && (
+                            <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                              <input 
+                                type="checkbox"
+                                checked={selectedCustIds.includes(custId)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedCustIds(prev => [...prev, custId])
+                                  } else {
+                                    setSelectedCustIds(prev => prev.filter(id => id !== custId))
+                                  }
+                                }}
+                                className="rounded border-slate-300 text-[#832D51] focus:ring-[#832D51] cursor-pointer"
+                              />
+                            </td>
+                          )}
                           <td className="px-4 py-3 font-mono text-slate-500 text-[10px]">
                             {cust.customer_id}
                           </td>
@@ -551,22 +552,33 @@ function CeoCustomers() {
                               </span>
                             )}
                           </td>
+                          <td className="px-4 py-3 text-center">
+                            <span className={`px-2.5 py-0.5 rounded-md text-[9px] font-extrabold uppercase border ${
+                              !hasExec
+                                ? 'bg-slate-50 text-slate-500 border-slate-200'
+                                : (cust.reassigned_at ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-250')
+                            }`}>
+                              {!hasExec ? 'Not Assigned' : (cust.reassigned_at ? 'Reassigned' : 'Assigned')}
+                            </span>
+                          </td>
                           <td className="px-4 py-3 text-right font-black text-slate-950">
                             ₹{(cust.amount || 0).toLocaleString()}
                           </td>
-                          <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedCustIds([custId])
-                                setSelectedExecutiveId(cust.executive_id || '')
-                                setIsAssignModalOpen(true)
-                              }}
-                              className="px-2.5 py-1 bg-[#832D51] text-white hover:bg-[#6c2442] rounded-md text-[10px] font-black shadow-2xs transition cursor-pointer"
-                            >
-                              {hasExec ? 'Reassign' : 'Assign'}
-                            </button>
-                          </td>
+                          {isAdmin && (
+                            <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCustIds([custId])
+                                  setSelectedExecutiveId(cust.executive_id || '')
+                                  setIsAssignModalOpen(true)
+                                }}
+                                className="px-2.5 py-1 bg-[#832D51] text-white hover:bg-[#6c2442] rounded-md text-[10px] font-black shadow-2xs transition cursor-pointer"
+                              >
+                                {hasExec ? 'Reassign' : 'Assign'}
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       )
                     })
@@ -581,27 +593,32 @@ function CeoCustomers() {
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50/80 border-b border-slate-200/70 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                    <th className="px-4 py-3 w-12">
-                      <input 
-                        type="checkbox"
-                        checked={filteredLeads.length > 0 && selectedCustIds.length === filteredLeads.length}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setSelectedCustIds(filteredLeads.map(l => l.id || l.lead_id).filter(Boolean))
-                          } else {
-                            setSelectedCustIds([])
-                          }
-                        }}
-                        className="rounded border-slate-300 text-[#832D51] focus:ring-[#832D51] cursor-pointer"
-                      />
-                    </th>
+                    {isAdmin && (
+                      <th className="px-4 py-3 w-12">
+                        <input 
+                          type="checkbox"
+                          checked={filteredLeads.length > 0 && selectedCustIds.length === filteredLeads.length}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setSelectedCustIds(filteredLeads.map(l => l.id || l.lead_id).filter(Boolean))
+                            } else {
+                              setSelectedCustIds([])
+                            }
+                          }}
+                          className="rounded border-slate-300 text-[#832D51] focus:ring-[#832D51] cursor-pointer"
+                        />
+                      </th>
+                    )}
                     <th className="px-4 py-3">Lead ID</th>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Company Name</th>
+                    <th className="px-4 py-3">Sales Manager</th>
+                    <th className="px-4 py-3">Sales Executive</th>
                     <th className="px-4 py-3">Location</th>
                     <th className="px-4 py-3">Category</th>
                     <th className="px-4 py-3">Product</th>
-                    <th className="px-4 py-3 text-center">Action</th>
+                    <th className="px-4 py-3 text-center">Assignment Status</th>
+                    {isAdmin && <th className="px-4 py-3 text-center">Action</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -619,20 +636,22 @@ function CeoCustomers() {
                           key={`${leadId}_${li}`}
                           className="hover:bg-slate-50/60 transition"
                         >
-                          <td className="px-4 py-3">
-                            <input 
-                              type="checkbox"
-                              checked={selectedCustIds.includes(leadId)}
-                              onChange={(e) => {
-                                if (e.target.checked) {
-                                  setSelectedCustIds(prev => [...prev, leadId])
-                                } else {
-                                  setSelectedCustIds(prev => prev.filter(id => id !== leadId))
-                                }
-                              }}
-                              className="rounded border-slate-300 text-[#832D51] focus:ring-[#832D51] cursor-pointer"
-                            />
-                          </td>
+                          {isAdmin && (
+                            <td className="px-4 py-3">
+                              <input 
+                                type="checkbox"
+                                checked={selectedCustIds.includes(leadId)}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedCustIds(prev => [...prev, leadId])
+                                  } else {
+                                    setSelectedCustIds(prev => prev.filter(id => id !== leadId))
+                                  }
+                                }}
+                                className="rounded border-slate-300 text-[#832D51] focus:ring-[#832D51] cursor-pointer"
+                              />
+                            </td>
+                          )}
                           <td className="px-4 py-3 font-mono text-slate-500 text-[10px]">
                             {leadId}
                           </td>
@@ -641,6 +660,18 @@ function CeoCustomers() {
                           </td>
                           <td className="px-4 py-3 text-slate-650">
                             {lead.company_name || lead.company}
+                          </td>
+                          <td className="px-4 py-3 text-[#3a7d63] font-bold">
+                            {lead.manager_name || 'Unassigned'}
+                          </td>
+                          <td className="px-4 py-3 text-slate-900 font-bold">
+                            {hasOwner ? (
+                              lead.sales_executive || lead.assigned_to
+                            ) : (
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-slate-100 text-slate-500 border border-slate-200">
+                                NOT ASSIGNED
+                              </span>
+                            )}
                           </td>
                           <td className="px-4 py-3 text-slate-550">
                             {lead.location || lead.city || 'N/A'}
@@ -660,18 +691,29 @@ function CeoCustomers() {
                             {lead.product_name || lead.product}
                           </td>
                           <td className="px-4 py-3 text-center">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedCustIds([leadId])
-                                setSelectedExecutiveId(lead.employee_id || '')
-                                setIsAssignModalOpen(true)
-                              }}
-                              className="px-2.5 py-1 bg-[#832D51] text-white hover:bg-[#6c2442] rounded-md text-[10px] font-black shadow-2xs transition cursor-pointer"
-                            >
-                              {hasOwner ? 'Reassign' : 'Assign'}
-                            </button>
+                            <span className={`px-2.5 py-0.5 rounded-md text-[9px] font-extrabold uppercase border ${
+                              !hasOwner
+                                ? 'bg-slate-50 text-slate-500 border-slate-200'
+                                : (lead.reassigned_at ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-250')
+                            }`}>
+                              {!hasOwner ? 'Not Assigned' : (lead.reassigned_at ? 'Reassigned' : 'Assigned')}
+                            </span>
                           </td>
+                          {isAdmin && (
+                            <td className="px-4 py-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedCustIds([leadId])
+                                  setSelectedExecutiveId(lead.employee_id || '')
+                                  setIsAssignModalOpen(true)
+                                }}
+                                className="px-2.5 py-1 bg-[#832D51] text-white hover:bg-[#6c2442] rounded-md text-[10px] font-black shadow-2xs transition cursor-pointer"
+                              >
+                                {hasOwner ? 'Reassign' : 'Assign'}
+                              </button>
+                            </td>
+                          )}
                         </tr>
                       )
                     })

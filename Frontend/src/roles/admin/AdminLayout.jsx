@@ -46,6 +46,7 @@ const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/admin' },
   { label: 'Company Overview', icon: Building2, path: '/admin/company' },
   { label: 'User Management', icon: Users, path: '/admin/users' },
+  { label: 'Customers', icon: Users, path: '/admin/customers' },
   { label: 'Role Management', icon: ShieldCheck, path: '/admin/roles' },
   { label: 'HRMS', icon: UserCheck2, path: '/admin/hrms' },
   { label: 'Reports & Audit Logs', icon: FileText, path: '/admin/reports' },

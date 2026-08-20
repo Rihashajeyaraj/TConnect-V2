@@ -165,6 +165,16 @@ async def update_user(
 ):
     """Update employee user account credentials and details."""
     updated = service.update_user(user_id, data)
+    
+    # ── Deactivation hook to unassign Leads and Customers ──────────────────
+    is_inactive = str(updated.get("status") or "").lower() in ("inactive", "deactivated", "terminated", "disabled")
+    if is_inactive:
+        try:
+            from app.modules.crm.service import CRMService
+            CRMService().unassign_employee_records(updated)
+        except Exception as e:
+            logger.warning(f"Deactivation unassign hook from users route failed: {e}")
+
     update_dict = data.model_dump(exclude_none=True)
     create_audit_log(
         "USER_UPDATED", "hrms.employees", user_payload,

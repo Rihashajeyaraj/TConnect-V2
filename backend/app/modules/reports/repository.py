@@ -102,6 +102,21 @@ class ReportsRepository:
             leads_raw = crm_repo.get_all_leads()
             customers_raw = customer_repo.get_all_customers()
 
+            # Fetch active targets from Supabase sales.sales_target
+            sales_targets = []
+            try:
+                res_tgt = self.supabase.schema("sales").table("sales_target").select("*").execute()
+                if res_tgt.data is not None:
+                    sales_targets = res_tgt.data
+            except Exception as e:
+                logger.debug(f"sales.sales_target fetch notice: {e}")
+                try:
+                    res_tgt = self.supabase.table("sales_target").select("*").execute()
+                    if res_tgt.data is not None:
+                        sales_targets = res_tgt.data
+                except Exception as e2:
+                    logger.warning(f"sales_target fallback fetch failed: {e2}")
+
             # Helper to parse currency/amount strings safely
             def _parse_amount(v):
                 if v is None:
@@ -253,7 +268,8 @@ class ReportsRepository:
             if not employees:
                 employees = self._safe_fetch("employees", limit=1000)
 
-            opportunities = self._safe_fetch("opportunities", limit=1000)
+            from app.modules.pipeline.repository import PipelineRepository
+            opportunities = PipelineRepository().get_all_opportunities()
             attendance = self._safe_fetch("attendance", limit=1000)
             visits = self._safe_fetch("visits", schema="field_management", limit=1000)
             settings_list = self._safe_fetch("company_profile", schema="organization", limit=1)
@@ -537,12 +553,16 @@ class ReportsRepository:
             customers_list = []
             for c in customers:
                 customers_list.append({
+                    "id": str(c.get("id") or c.get("customer_id") or ""),
                     "sales_manager": c.get("sales_manager") or "Direct/Unassigned",
                     "sales_executive": c.get("sales_executive") or "Direct/Unassigned",
                     "name": c.get("name") or c.get("company") or "Unnamed Customer",
                     "details": f"Email: {c.get('email', 'N/A')}, Phone: {c.get('phone', 'N/A')}, City: {c.get('city', 'N/A')}",
                     "product": c.get("product") or c.get("product_name") or "Software License",
-                    "amount": float(c.get("contract_value") or 0.0)
+                    "amount": float(c.get("contract_value") or 0.0),
+                    "date": str(c.get("onboarding_date") or (c.get("created_at")[:10] if c.get("created_at") else today_str)),
+                    "onboarding_date": str(c.get("onboarding_date") or (c.get("created_at")[:10] if c.get("created_at") else today_str)),
+                    "created_at": c.get("created_at") or today_str,
                 })
 
             # 3. Won Sales Opportunities
@@ -552,7 +572,11 @@ class ReportsRepository:
                 if not is_won:
                     continue
                 val = float(o.get("value") or o.get("amount") or 0.0)
-                created_str = o.get("created_at") or o.get("updated_at") or today_str
+                created_str = o.get("created_at") or o.get("updated_at")
+                if not created_str:
+                    created_str = today_str
+                elif not isinstance(created_str, str):
+                    created_str = created_str.isoformat()
                 opp_date = created_str[:10]
                 
                 # Resolve manager and executive
@@ -591,13 +615,25 @@ class ReportsRepository:
                 if val <= 0:
                     continue
                 
-                created_str = o.get("created_at") or o.get("updated_at") or today_str
+                created_str = o.get("created_at") or o.get("updated_at")
+                if not created_str:
+                    created_str = today_str
+                elif not isinstance(created_str, str):
+                    created_str = created_str.isoformat()
                 opp_date = created_str[:10]
                 
                 exec_email = str(o.get("assigned_to_email") or o.get("owner_email") or "").lower().strip()
                 se_user = user_map_by_email.get(exec_email)
                 exec_name = o.get("assigned_to_name") or o.get("owner_id") or (se_user.get("name") if se_user else None) or o.get("assigned_to") or "Unassigned"
                 
+                # Resolve custom incentive percentage
+                inc_pct = 5.0
+                if se_user and se_user.get("incentive_percentage") is not None:
+                    inc_pct = float(se_user["incentive_percentage"])
+                elif se_user and se_user.get("incentive_percentage_rate") is not None:
+                    inc_pct = float(se_user["incentive_percentage_rate"])
+                incentive_val = round(val * (inc_pct / 100.0))
+
                 sm_email = str(o.get("reporting_manager_email") or "").lower().strip()
                 if not sm_email and se_user:
                     sm_email = str(se_user.get("reporting_manager_email") or "").lower().strip()
@@ -609,10 +645,12 @@ class ReportsRepository:
                     mgr = o.get("sales_manager") or o.get("manager_name") or ("Direct/Unassigned" if not sm_email else sm_email.split("@")[0].replace(".", " ").title())
                 
                 revenue_records.append({
+                    "id": str(o.get("id") or o.get("opportunity_id") or o.get("lead_id") or ""),
                     "date": opp_date,
                     "sales_manager": mgr,
                     "sales_executive": exec_name,
-                    "amount": val
+                    "amount": val,
+                    "incentive": incentive_val
                 })
                 
             # Add Customer contract values to match the application's definition
@@ -620,17 +658,34 @@ class ReportsRepository:
                 val = float(c.get("contract_value") or 0.0)
                 if val <= 0:
                     continue
-                created_str = c.get("created_at") or today_str
+                created_str = c.get("created_at") or c.get("onboarding_date")
+                if not created_str:
+                    created_str = today_str
+                elif not isinstance(created_str, str):
+                    created_str = created_str.isoformat()
                 cust_date = created_str[:10]
                 
                 exec_name = c.get("sales_executive") or "Direct/Unassigned"
                 mgr_name = c.get("sales_manager") or "Direct/Unassigned"
                 
+                # Resolve custom incentive percentage
+                exec_email = str(c.get("assigned_to_email") or c.get("sales_executive_email") or "").lower().strip()
+                se_user = user_map_by_email.get(exec_email)
+                if not se_user and exec_name:
+                    se_user = user_map_by_name.get(exec_name.lower().strip())
+                
+                inc_pct = 5.0
+                if se_user and se_user.get("incentive_percentage") is not None:
+                    inc_pct = float(se_user["incentive_percentage"])
+                incentive_val = round(val * (inc_pct / 100.0))
+
                 revenue_records.append({
+                    "id": str(c.get("id") or c.get("customer_id") or ""),
                     "date": cust_date,
                     "sales_manager": mgr_name,
                     "sales_executive": exec_name,
-                    "amount": val
+                    "amount": val,
+                    "incentive": incentive_val
                 })
 
             # Ensure every executive and manager from Admin portal is present in the ledger
@@ -656,6 +711,7 @@ class ReportsRepository:
                         sm_name = "Sales Manager"
 
                     revenue_records.append({
+                        "id": f"mock-empty-{u_key.replace(' ', '')}",
                         "date": today_str,
                         "sales_manager": sm_name,
                         "sales_executive": u_name,
@@ -732,13 +788,19 @@ class ReportsRepository:
                     "status": "Pending"
                 })
 
+            default_annual_target = 35000000.0
+            target_sum = default_annual_target
+            active_targets = [t for t in sales_targets if str(t.get("status") or "").lower() == "active"]
+            if active_targets:
+                target_sum = float(sum(float(t.get("target_amount") or 0.0) for t in active_targets))
+
             return {
                 "metrics": {
                     "totalRevenue": total_rev,
                     "total_revenue": total_rev,
                     "monthlyRevenue": monthly_rev,
                     "monthly_revenue": monthly_rev,
-                    "annualTarget": 35000000.0,
+                    "annualTarget": target_sum,
                     "targetAchieved": total_rev,
                     "totalCustomers": total_cust,
                     "newCustomers": new_cust,
@@ -898,11 +960,8 @@ class ReportsRepository:
         )
 
         # ── Revenue / Pipeline ────────────────────────────────────────────────
-        opportunities = self._safe_fetch("opportunities", limit=300)
-        if not opportunities:
-            opportunities = self._safe_fetch("pipeline_opportunities", limit=300)
-        if allowed is not None:
-            opportunities = [o for o in opportunities if is_record_accessible(o, allowed)]
+        from app.modules.pipeline.repository import PipelineRepository
+        opportunities = PipelineRepository().get_all_opportunities(user_payload)
         revenue_this_month = sum(
             float(o.get("value", 0) or 0) for o in opportunities
             if str(o.get("stage", "")).upper() in ("CLOSED_WON", "CLOSED WON", "WON")
@@ -1392,6 +1451,21 @@ class ReportsRepository:
         all_customers = CustomerRepository().get_all_customers()
         all_opportunities = PipelineRepository().get_all_opportunities()
 
+        # Fetch active targets from Supabase sales.sales_target
+        sales_targets = []
+        try:
+            res_tgt = self.supabase.schema("sales").table("sales_target").select("*").execute()
+            if res_tgt.data is not None:
+                sales_targets = res_tgt.data
+        except Exception as e:
+            logger.debug(f"sales.sales_target fetch notice: {e}")
+            try:
+                res_tgt = self.supabase.table("sales_target").select("*").execute()
+                if res_tgt.data is not None:
+                    sales_targets = res_tgt.data
+            except Exception as e2:
+                logger.warning(f"sales_target fallback fetch failed: {e2}")
+
         # 3. Create User Maps
         user_map_by_email = {}
         user_map_by_name = {}
@@ -1532,6 +1606,7 @@ class ReportsRepository:
             c["_resolved_manager_name"] = sm_name
             c["_resolved_manager_id"] = sm_id
             c["_resolved_amount"] = float(c.get("amount") or c.get("contract_value") or c.get("revenue") or 0.0)
+            c["_resolved_date_obj"] = c_date
 
             filtered_customers.append(c)
 
@@ -1540,7 +1615,7 @@ class ReportsRepository:
         lost_deals = [o for o in filtered_opportunities if str(o.get("stage") or "").upper().strip() in LOST_STAGES]
         open_deals = [o for o in filtered_opportunities if str(o.get("stage") or "").upper().strip() not in (WON_STAGES + LOST_STAGES)]
 
-        total_revenue = sum(o["_resolved_amount"] for o in won_deals)
+        total_revenue = sum(o["_resolved_amount"] for o in won_deals) + sum(c["_resolved_amount"] for c in filtered_customers)
         total_pipeline = sum(o["_resolved_amount"] for o in open_deals)
         total_lost_val = sum(o["_resolved_amount"] for o in lost_deals)
 
@@ -1559,16 +1634,66 @@ class ReportsRepository:
         # 8. Detailed Ledger Lists
         revenue_details = []
         for o in won_deals:
+            # Resolve custom incentive percentage
+            exec_email = str(o.get("assigned_to_email") or o.get("owner_email") or "").lower().strip()
+            se_user = user_map_by_email.get(exec_email)
+            if not se_user:
+                exec_name_clean = str(o["_resolved_executive_name"] or "").lower().strip()
+                se_user = user_map_by_name.get(exec_name_clean)
+            
+            inc_pct = 5.0
+            if se_user and se_user.get("incentive_percentage") is not None:
+                inc_pct = float(se_user["incentive_percentage"])
+            elif se_user and se_user.get("incentive_percentage_rate") is not None:
+                inc_pct = float(se_user["incentive_percentage_rate"])
+            
+            incentive_val = round(o["_resolved_amount"] * (inc_pct / 100.0))
+
             revenue_details.append({
-                "date": o["_resolved_date"],
+                "id": str(o.get("id") or o.get("opportunity_id") or o.get("lead_id") or ""),
+                "date": o["_resolved_date_obj"].isoformat() if hasattr(o.get("_resolved_date_obj"), "isoformat") else str(o["_resolved_date"]),
                 "sales_manager": o["_resolved_manager_name"],
                 "sales_executive": o["_resolved_executive_name"],
                 "customer": o.get("company") or o.get("title") or "Corporate Account",
-                "amount": o["_resolved_amount"]
+                "amount": o["_resolved_amount"],
+                "incentive": incentive_val
+            })
+
+        for c in filtered_customers:
+            exec_name = c["_resolved_executive_name"]
+            se_user = None
+            if exec_name:
+                se_user = user_map_by_name.get(exec_name.lower().strip())
+            
+            inc_pct = 5.0
+            if se_user and se_user.get("incentive_percentage") is not None:
+                inc_pct = float(se_user["incentive_percentage"])
+            
+            incentive_val = round(c["_resolved_amount"] * (inc_pct / 100.0))
+
+            revenue_details.append({
+                "id": str(c.get("id") or c.get("customer_id") or ""),
+                "date": c["_resolved_date_obj"].isoformat() if hasattr(c.get("_resolved_date_obj"), "isoformat") else today_str,
+                "sales_manager": c["_resolved_manager_name"],
+                "sales_executive": c["_resolved_executive_name"],
+                "customer": c.get("customer_name") or c.get("company") or "Corporate Account",
+                "amount": c["_resolved_amount"],
+                "incentive": incentive_val
             })
 
         customers_details = []
         for c in filtered_customers:
+            exec_name = c["_resolved_executive_name"]
+            se_user = None
+            if exec_name:
+                se_user = user_map_by_name.get(exec_name.lower().strip())
+            
+            inc_pct = 5.0
+            if se_user and se_user.get("incentive_percentage") is not None:
+                inc_pct = float(se_user["incentive_percentage"])
+            
+            incentive_val = round(c["_resolved_amount"] * (inc_pct / 100.0))
+
             customers_details.append({
                 "sales_manager": c["_resolved_manager_name"],
                 "sales_executive": c["_resolved_executive_name"],
@@ -1576,7 +1701,9 @@ class ReportsRepository:
                 "company": c.get("company") or c.get("company_name") or "Enterprise",
                 "product": c.get("product") or "Software License",
                 "amount": c["_resolved_amount"],
-                "status": c.get("status") or "Active Customer"
+                "status": c.get("status") or "Active Customer",
+                "incentive": incentive_val,
+                "date": c["_resolved_date_obj"].isoformat() if hasattr(c.get("_resolved_date_obj"), "isoformat") else today_str
             })
 
         # 9. Manager and Executive Performance Aggregations
@@ -1615,23 +1742,27 @@ class ReportsRepository:
                 exec_perf_map[exec_n]["won_revenue"] += amount
             elif stage_str not in LOST_STAGES:
                 exec_perf_map[exec_n]["pipeline"] += amount
-
         # Include details from filtered customers list
         for c in filtered_customers:
             mgr = c["_resolved_manager_name"]
             exec_n = c["_resolved_executive_name"]
             cid = c.get("customer_id") or c.get("id")
+            amount = c["_resolved_amount"]
             
             if mgr not in manager_perf_map:
                 manager_perf_map[mgr] = {"manager": mgr, "executives": set(), "customers": set(), "won_deals": 0, "won_revenue": 0.0, "pipeline": 0.0}
             if cid:
                 manager_perf_map[mgr]["customers"].add(str(cid))
             manager_perf_map[mgr]["executives"].add(exec_n)
+            manager_perf_map[mgr]["won_revenue"] += amount
+            manager_perf_map[mgr]["won_deals"] += 1
 
             if exec_n not in exec_perf_map:
                 exec_perf_map[exec_n] = {"executive": exec_n, "manager": mgr, "customers": set(), "won_deals": 0, "won_revenue": 0.0, "pipeline": 0.0}
             if cid:
                 exec_perf_map[exec_n]["customers"].add(str(cid))
+            exec_perf_map[exec_n]["won_revenue"] += amount
+            exec_perf_map[exec_n]["won_deals"] += 1
 
         manager_performance = []
         for key, val in manager_perf_map.items():
@@ -1696,13 +1827,35 @@ class ReportsRepository:
         if abs(total_revenue - sum_exec_revenue) >= 0.01:
             logger.warning(f"Sales overview reconciliation: total_revenue {total_revenue} != sum_exec_revenue {sum_exec_revenue}")
 
-        # 12. Structure and return response
+        # 12. Dynamic target calculations
+        default_annual_target = 35000000.0
+        target_sum = 0.0
+        active_targets = [t for t in sales_targets if str(t.get("status") or "").lower() == "active"]
+        
+        if executive_id:
+            active_targets = [t for t in active_targets if str(t.get("executive_id")) == str(executive_id)]
+        elif manager_id:
+            active_targets = [t for t in active_targets if str(t.get("manager_id")) == str(manager_id)]
+            
+        if active_targets:
+            target_sum = float(sum(float(t.get("target_amount") or 0.0) for t in active_targets))
+        else:
+            if executive_id:
+                target_sum = 500000.0
+            elif manager_id:
+                target_sum = 2500000.0
+            else:
+                target_sum = default_annual_target
+
+        # 13. Structure and return response
         return {
             "metrics": {
                 "total_revenue": total_revenue,
                 "total_customers": total_customers,
                 "total_won_deals": len(won_deals),
-                "total_pipeline_value": total_pipeline
+                "total_pipeline_value": total_pipeline,
+                "annual_sales_target": target_sum,
+                "sales_target": target_sum
             },
             "revenue_details": revenue_details,
             "customers_details": customers_details,

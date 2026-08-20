@@ -111,6 +111,7 @@ function App() {
               <Route index element={<AdminDashboard />} />
               <Route path="company" element={<CompanyOverview />} />
               <Route path="users" element={<UserManagement />} />
+              <Route path="customers" element={<CeoCustomers />} />
               <Route path="roles" element={<RoleManagement />} />
               <Route path="hrms" element={<HRMS />} />
               <Route path="attendance" element={<Navigate to="/admin/hrms?tab=attendance" replace />} />

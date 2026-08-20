@@ -286,7 +286,22 @@ async def delete_employee(
     service: HRMSService = Depends(get_service)
 ):
     """Delete employee profile."""
+    existing = None
+    try:
+        existing = service.get_employee(emp_id)
+    except Exception:
+        pass
+
     service.delete_employee(emp_id)
+
+    if existing:
+        try:
+            from app.modules.crm.service import CRMService
+            CRMService().unassign_employee_records(existing)
+        except Exception as e:
+            import logging
+            logging.getLogger("TwiteConnect Backend").warning(f"Deletion unassign hook failed: {e}")
+
     create_audit_log(
         "EMPLOYEE_DELETED", "hrms.employees", user_payload,
         entity_id=emp_id, module="HRMS",

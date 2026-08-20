@@ -42,37 +42,8 @@ class ExpenseRepository:
         norm_role = normalize_user_role(user_role)
         
         if norm_role == "ceo":
-            try:
-                from app.modules.users.repository import UserRepository
-                all_users = UserRepository().get_all_users()
-            except Exception:
-                all_users = []
-
-            def get_user_role_by_id_or_email(uid: str, email_val: str) -> str:
-                uid_clean = str(uid or "").lower().strip()
-                email_clean = str(email_val or "").lower().strip()
-                for u in all_users:
-                    u_id = str(u.get("id") or u.get("auth_user_id") or u.get("user_id") or "").lower().strip()
-                    u_email = str(u.get("email") or "").lower().strip()
-                    if (uid_clean and u_id == uid_clean) or (email_clean and u_email == email_clean):
-                        return str(u.get("role") or u.get("designation") or "").lower().strip()
-                return "sales_executive"
-
-            filtered_claims = []
-            for e in claims:
-                sub_id = e.get("user_id")
-                desc = e.get("description") or ""
-                sub_email = ""
-                if "|" in desc:
-                    for part in desc.split("|"):
-                        if "Email:" in part:
-                            sub_email = part.split("Email:")[-1].strip().lower()
-                
-                sub_role = get_user_role_by_id_or_email(sub_id, sub_email)
-                norm_sub_role = normalize_user_role(sub_role)
-                if norm_sub_role in ("sales_manager", "admin", "super_admin"):
-                    filtered_claims.append(e)
-            claims = filtered_claims
+            # For general listing/reporting, CEO can view all expenses across the company.
+            pass
         else:
             allowed = get_allowed_user_identifiers(user_payload)
             if allowed is not None:
@@ -244,6 +215,42 @@ class ExpenseRepository:
     def get_manager_pending_expenses(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         all_claims = self.get_all_expenses(user_payload=user_payload)
         pending_claims = [c for c in all_claims if str(c.get("status", "")).upper() in ("PENDING", "SUBMITTED")]
+        
+        user_role = str((user_payload or {}).get("role") or "").strip()
+        from app.core.scoping import normalize_user_role
+        if normalize_user_role(user_role) == "ceo":
+            try:
+                from app.modules.users.repository import UserRepository
+                all_users = UserRepository().get_all_users()
+            except Exception:
+                all_users = []
+
+            def get_user_role_by_id_or_email(uid: str, email_val: str) -> str:
+                uid_clean = str(uid or "").lower().strip()
+                email_clean = str(email_val or "").lower().strip()
+                for u in all_users:
+                    u_id = str(u.get("id") or u.get("auth_user_id") or u.get("user_id") or "").lower().strip()
+                    u_email = str(u.get("email") or "").lower().strip()
+                    if (uid_clean and u_id == uid_clean) or (email_clean and u_email == email_clean):
+                        return str(u.get("role") or u.get("designation") or "").lower().strip()
+                return "sales_executive"
+
+            filtered_pending = []
+            for e in pending_claims:
+                sub_id = e.get("user_id")
+                desc = e.get("description") or e.get("title") or ""
+                sub_email = ""
+                if "|" in desc:
+                    for part in desc.split("|"):
+                        if "Email:" in part:
+                            sub_email = part.split("Email:")[-1].strip().lower()
+                
+                sub_role = get_user_role_by_id_or_email(sub_id, sub_email)
+                norm_sub_role = normalize_user_role(sub_role)
+                if norm_sub_role in ("sales_manager", "admin", "super_admin"):
+                    filtered_pending.append(e)
+            pending_claims = filtered_pending
+
         return pending_claims
 
     def get_manager_expenses(self, user_payload: Dict[str, Any] = None, params: Dict[str, Any] = None) -> Dict[str, Any]:

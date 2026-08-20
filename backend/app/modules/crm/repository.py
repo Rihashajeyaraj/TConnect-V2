@@ -74,6 +74,14 @@ class CRMRepository:
                 row["assigned_to"] = row.get("assigned_to") or str(matched_user.get("name") or matched_user.get("full_name") or "")
                 row["employee_code"] = row.get("employee_code") or str(matched_user.get("employee_code") or matched_user.get("employee_id") or "")
                 row["reporting_manager_email"] = row.get("reporting_manager_email") or str(matched_user.get("reporting_manager_email") or "").lower().strip()
+            
+            # Resolve manager name and manager ID for leads
+            mgr_email = row.get("reporting_manager_email")
+            if mgr_email:
+                matched_mgr = next((u for u in user_map.values() if str(u.get("email") or "").lower().strip() == mgr_email), None)
+                if matched_mgr:
+                    row["manager_name"] = str(matched_mgr.get("name") or matched_mgr.get("full_name") or "")
+                    row["manager_id"] = str(matched_mgr.get("employee_code") or matched_mgr.get("employee_id") or "")
 
             # Enrich fields for standard frontend mapping
             row["id"] = row.get("lead_id")

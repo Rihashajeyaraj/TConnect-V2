@@ -151,18 +151,21 @@ function CeoDashboard() {
 
       const rawCustomerPool = [...backendCustList, ...ceoCustList, ...ceoRawCustList, ...localCustList]
 
-      const seenCustKeys = new Set()
+      const seenCustIds = new Set()
+      const seenCustNames = new Set()
       const unifiedCustomersList = []
 
       rawCustomerPool.forEach((c) => {
         if (!c) return
+        const custId = c.id || c.customer_id
         const custName = c.name || c.company || c.company_name || c.clientName || 'Customer Account'
         const cleanName = String(custName).toLowerCase().replace(/[^a-z0-9]/g, '').trim()
-        const cleanEmail = String(c.email || c.contact_email || '').toLowerCase().trim()
-        const custKey = cleanEmail ? `${cleanName}|${cleanEmail}` : cleanName
 
-        if (seenCustKeys.has(custKey)) return
-        seenCustKeys.add(custKey)
+        if (custId && seenCustIds.has(custId)) return
+        if (cleanName && seenCustNames.has(cleanName)) return
+
+        if (custId) seenCustIds.add(custId)
+        if (cleanName) seenCustNames.add(cleanName)
 
         // Resolve Sales Executive from Admin employee directory
         const rawExecEmail = (c.assigned_to_email || c.sales_executive_email || c.assignedToEmail || c.email || '').toLowerCase().trim()
@@ -202,7 +205,7 @@ function CeoDashboard() {
 
         unifiedCustomersList.push({
           ...c,
-          id: c.id || c.customer_id || `CUST-${seenCustKeys.size}`,
+          id: c.id || c.customer_id || `CUST-${seenCustNames.size}`,
           date: custDate,
           name: custName,
           company: c.company || custName,
@@ -245,27 +248,27 @@ function CeoDashboard() {
       })
 
       const backendRevenueRecords = Array.isArray(res?.data?.revenueSummary?.revenueRecords) ? res.data.revenueSummary.revenueRecords : []
-      const rawRevenueTransactions = [...backendRevenueRecords]
+      const rawRevenueTransactions = []
+      const seenTransIds = new Set()
 
-      const seenTrans = new Set()
+      // Process backend records (main source of truth with unique IDs)
       backendRevenueRecords.forEach((rec) => {
         if (!rec) return
-        const execName = String(rec.sales_executive || 'Sales Executive').toLowerCase().replace(/[^a-z0-9]/g, '').trim()
-        const amt = typeof rec.amount === 'number' ? rec.amount : (parseFloat(String(rec.amount).replace(/[^0-9.]/g, '')) || 0)
-        const dateStr = String(rec.date || '').split('T')[0].split(' ')[0]
-        seenTrans.add(`${execName}|${amt}|${dateStr}`)
+        const transId = rec.id || `${String(rec.sales_executive).toLowerCase()}|${rec.amount}|${rec.date}`
+        if (!seenTransIds.has(transId)) {
+          seenTransIds.add(transId)
+          rawRevenueTransactions.push(rec)
+        }
       })
 
+      // Include client-side/local customer accounts only if not already covered
       unifiedCustomersList.forEach((c) => {
         if (c.amount > 0) {
-          const execName = String(c.sales_executive || 'Sales Executive').toLowerCase().replace(/[^a-z0-9]/g, '').trim()
-          const amt = typeof c.amount === 'number' ? c.amount : (parseFloat(String(c.amount).replace(/[^0-9.]/g, '')) || 0)
-          const dateStr = String(c.date || '').split('T')[0].split(' ')[0]
-          
-          const key = `${execName}|${amt}|${dateStr}`
-          if (!seenTrans.has(key)) {
-            seenTrans.add(key)
+          const transId = c.id || c.customer_id
+          if (transId && !seenTransIds.has(transId)) {
+            seenTransIds.add(transId)
             rawRevenueTransactions.push({
+              id: transId,
               date: c.date,
               sales_manager: c.sales_manager,
               sales_executive: c.sales_executive,
@@ -275,16 +278,14 @@ function CeoDashboard() {
         }
       })
 
+      // Include won opportunities only if not already covered
       wonOpps.forEach((w) => {
         if (w.amount > 0) {
-          const execName = String(w.sales_executive || 'Sales Executive').toLowerCase().replace(/[^a-z0-9]/g, '').trim()
-          const amt = typeof w.amount === 'number' ? w.amount : (parseFloat(String(w.amount).replace(/[^0-9.]/g, '')) || 0)
-          const dateStr = String(w.date || '').split('T')[0].split(' ')[0]
-
-          const key = `${execName}|${amt}|${dateStr}`
-          if (!seenTrans.has(key)) {
-            seenTrans.add(key)
+          const transId = w.id || w.opportunity_id
+          if (transId && !seenTransIds.has(transId)) {
+            seenTransIds.add(transId)
             rawRevenueTransactions.push({
+              id: transId,
               date: w.date,
               sales_manager: w.sales_manager,
               sales_executive: w.sales_executive,
@@ -311,8 +312,12 @@ function CeoDashboard() {
           }
         }
 
-        coveredExecNames.add(execName.toLowerCase().trim())
+        if (rec.amount > 0) {
+          coveredExecNames.add(execName.toLowerCase().trim())
+        }
+
         unifiedRevenueRecords.push({
+          id: rec.id || `${String(execName).toLowerCase()}|${rec.amount}|${rec.date}`,
           date: rec.date || todayDateStr,
           sales_manager: mgrName || 'Sales Manager',
           sales_executive: execName,
@@ -337,6 +342,7 @@ function CeoDashboard() {
           }
 
           unifiedRevenueRecords.push({
+            id: `mock-empty-${execKey.replace(/\s+/g, '')}`,
             date: todayDateStr,
             sales_manager: mgrName,
             sales_executive: execName,
@@ -552,7 +558,7 @@ function CeoDashboard() {
         startLimit = appliedCustomRange.start
         endLimit = appliedCustomRange.end
       } else {
-        return records
+        return records.filter(r => (r.amount || 0) > 0)
       }
     } else {
       const limits = getFilterDates(revenueFilter)
@@ -562,31 +568,13 @@ function CeoDashboard() {
       }
     }
     
-    if (!startLimit || !endLimit) return records
+    if (!startLimit || !endLimit) return records.filter(r => (r.amount || 0) > 0)
     
-    // 1. Transactions with real revenue in date range
-    const inRange = records.filter(r => {
+    // Transactions with real revenue in date range
+    return records.filter(r => {
       const d = r.date || ''
       return (r.amount || 0) > 0 && d >= startLimit && d <= endLimit
     })
-
-    // 2. Ensure every Sales Executive from Admin Portal is displayed even if 0 revenue in this range
-    const coveredExecs = new Set(inRange.map(r => (r.sales_executive || '').toLowerCase().trim()))
-    const missingExecs = []
-
-    records.forEach(r => {
-      const execKey = (r.sales_executive || '').toLowerCase().trim()
-      if (!coveredExecs.has(execKey)) {
-        coveredExecs.add(execKey)
-        missingExecs.push({
-          ...r,
-          date: startLimit,
-          amount: 0,
-        })
-      }
-    })
-
-    return [...inRange, ...missingExecs]
   }
 
   const handleApplyCustomRange = (e) => {
@@ -810,7 +798,7 @@ function CeoDashboard() {
                             </tr>
                           ) : (
                             filteredRevenue.map((rec, i) => (
-                              <tr key={i} className="hover:bg-slate-50/50">
+                              <tr key={rec.id || i} className="hover:bg-slate-50/50">
                                 <td className="px-5 py-3.5 text-slate-900 font-bold">{rec.date || '—'}</td>
                                 <td className="px-5 py-3.5 text-slate-700 font-medium">{rec.sales_manager || 'Sales Manager'}</td>
                                 <td className="px-5 py-3.5 text-slate-700 font-medium">{rec.sales_executive || 'Sales Executive'}</td>
@@ -893,7 +881,7 @@ function CeoDashboard() {
                               </tr>
                             ) : (
                               dashboardData.customerSummary.customersList.map((cust, i) => (
-                                <tr key={i} className="hover:bg-slate-50/50">
+                                <tr key={cust.id || i} className="hover:bg-slate-50/50">
                                   <td className="px-4 py-3.5 text-slate-500 font-semibold">{cust.date || 'N/A'}</td>
                                   <td className="px-4 py-3.5 text-slate-700 font-medium">{cust.sales_manager}</td>
                                   <td className="px-4 py-3.5 text-slate-700 font-medium">{cust.sales_executive}</td>

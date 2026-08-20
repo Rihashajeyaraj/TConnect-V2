@@ -61,6 +61,16 @@ function SalesOverview({ initialSection }) {
   const [toDate, setToDate] = useState('')
   const [customRangeApplied, setCustomRangeApplied] = useState(null)
 
+  // Financial report popup state
+  const [showFinancialReportModal, setShowFinancialReportModal] = useState(false)
+  const [modalTimeFilter, setModalTimeFilter] = useState('Monthly') // 'Monthly' | 'Yearly' | 'Custom'
+  const [modalFromDate, setModalFromDate] = useState('')
+  const [modalToDate, setModalToDate] = useState('')
+
+  // Targets popup state
+  const [showTargetsModal, setShowTargetsModal] = useState(false)
+  const [targetsYearFilter, setTargetsYearFilter] = useState(new Date().getFullYear())
+
   // Interactive Active View State
   const [activeKpi, setActiveKpi] = useState('revenue') // 'revenue' | 'customers' | 'won' | 'pipeline'
   const [wonToggle, setWonToggle] = useState(false) // false: All Customers, true: Won Deals only
@@ -75,8 +85,9 @@ function SalesOverview({ initialSection }) {
 
   // Date range resolver helper
   const getFilterDates = (range) => {
+    const pad = (n) => String(n).padStart(2, '0')
     const today = new Date()
-    const todayStr = today.toISOString().split('T')[0]
+    const todayStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`
 
     if (range === 'Today') {
       return { start: todayStr, end: todayStr }
@@ -87,17 +98,20 @@ function SalesOverview({ initialSection }) {
       const start = new Date(today.setDate(diff))
       const end = new Date(start)
       end.setDate(end.getDate() + 6)
+      const startStr = `${start.getFullYear()}-${pad(start.getMonth() + 1)}-${pad(start.getDate())}`
+      const endStr = `${end.getFullYear()}-${pad(end.getMonth() + 1)}-${pad(end.getDate())}`
       return {
-        start: start.toISOString().split('T')[0],
-        end: end.toISOString().split('T')[0],
+        start: startStr,
+        end: endStr,
       }
     }
     if (range === 'This Month') {
-      const start = new Date(today.getFullYear(), today.getMonth(), 1)
-      const end = new Date(today.getFullYear(), today.getMonth() + 1, 0)
+      const startStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`
+      const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+      const endStr = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(lastDay)}`
       return {
-        start: start.toISOString().split('T')[0],
-        end: end.toISOString().split('T')[0],
+        start: startStr,
+        end: endStr,
       }
     }
     return null
@@ -222,6 +236,120 @@ function SalesOverview({ initialSection }) {
     ).length
   }, [rawExpenses])
 
+  // Detailed Modal Financial Calculations
+  const modalRange = useMemo(() => {
+    const pad = (n) => String(n).padStart(2, '0')
+    const today = new Date()
+    if (modalTimeFilter === 'Monthly') {
+      const start = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`
+      const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+      const end = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(lastDay)}`
+      return { start, end }
+    }
+    if (modalTimeFilter === 'Yearly') {
+      const start = `${today.getFullYear()}-01-01`
+      const end = `${today.getFullYear()}-12-31`
+      return { start, end }
+    }
+    if (modalTimeFilter === 'Custom' && modalFromDate && modalToDate) {
+      return { start: modalFromDate, end: modalToDate }
+    }
+    // Fallback to monthly
+    const start = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-01`
+    const lastDay = new Date(today.getFullYear(), today.getMonth() + 1, 0).getDate()
+    const end = `${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(lastDay)}`
+    return { start, end }
+  }, [modalTimeFilter, modalFromDate, modalToDate])
+
+  const modalRevenueRecords = useMemo(() => {
+    const recs = data?.revenue_details || []
+    const { start, end } = modalRange
+    return recs.filter(r => {
+      const d = r.date || ''
+      return (r.amount || 0) > 0 && d >= start && d <= end
+    })
+  }, [data?.revenue_details, modalRange])
+
+  const modalTotalRevenue = useMemo(() => {
+    return modalRevenueRecords.reduce((sum, r) => sum + (r.amount || 0), 0)
+  }, [modalRevenueRecords])
+
+  const modalTotalReimbursements = useMemo(() => {
+    const { start, end } = modalRange
+    const approved = rawExpenses.filter((e) =>
+      APPROVED_STATUSES.includes(e.status || e.approval_status || '')
+    )
+    const inRange = approved.filter((e) => {
+      const expDate = e.claim_date || e.created_at || e.submitted_at || e.date
+      if (!expDate) return false
+      const dStr = String(expDate).substring(0, 10)
+      return dStr >= start && dStr <= end
+    })
+    return inRange.reduce((sum, e) => sum + Number(e.amount || 0), 0)
+  }, [rawExpenses, modalRange])
+
+  const modalReimbursementRecords = useMemo(() => {
+    const { start, end } = modalRange
+    const approved = rawExpenses.filter((e) =>
+      APPROVED_STATUSES.includes(e.status || e.approval_status || '')
+    )
+    return approved.filter((e) => {
+      const expDate = e.claim_date || e.created_at || e.submitted_at || e.date
+      if (!expDate) return false
+      const dStr = String(expDate).substring(0, 10)
+      return dStr >= start && dStr <= end
+    }).map(e => {
+      const expDate = e.claim_date || e.created_at || e.submitted_at || e.date
+      const dStr = String(expDate).substring(0, 10)
+      return {
+        id: e.id || `EXP-${e.claim_id || Math.random()}`,
+        date: dStr,
+        sales_manager: 'N/A',
+        sales_executive: e.employee_name || e.employee || e.submitted_by || 'Employee',
+        reimbursement: Number(e.amount || 0),
+        amount: 0,
+        incentive: 0,
+        type: 'Expense',
+        details: e.remarks || e.description || e.category || 'Reimbursement Claim'
+      }
+    })
+  }, [rawExpenses, modalRange])
+
+  const modalTotalIncentives = useMemo(() => {
+    return modalRevenueRecords.reduce((sum, r) => sum + (r.incentive || 0), 0)
+  }, [modalRevenueRecords])
+
+  const netProfitLoss = modalTotalRevenue - (modalTotalReimbursements + modalTotalIncentives)
+  const isProfit = netProfitLoss >= 0
+
+  const unifiedModalLedger = useMemo(() => {
+    const revenueItems = modalRevenueRecords.map(r => ({
+      ...r,
+      type: 'Revenue',
+      reimbursement: 0,
+      details: 'Won Deal / Customer SLA'
+    }))
+    const allItems = [...revenueItems, ...modalReimbursementRecords]
+    const grouped = {}
+    allItems.forEach(item => {
+      const d = item.date || 'N/A'
+      if (!grouped[d]) {
+        grouped[d] = {
+          date: d,
+          totalRevenue: 0,
+          totalReimbursements: 0,
+          totalIncentives: 0,
+          transactions: []
+        }
+      }
+      grouped[d].totalRevenue += (item.amount || 0)
+      grouped[d].totalReimbursements += (item.reimbursement || 0)
+      grouped[d].totalIncentives += (item.incentive || 0)
+      grouped[d].transactions.push(item)
+    })
+    return Object.values(grouped).sort((a, b) => b.date.localeCompare(a.date))
+  }, [modalRevenueRecords, modalReimbursementRecords])
+
   // Key Financial & Sales Metrics (Realized, Pipeline, Target, Net Margin)
   // Safe numeric helpers
   const safeNum = (v) => Number(v) || 0
@@ -232,8 +360,9 @@ function SalesOverview({ initialSection }) {
   const totalCustomersCount = safeNum(data?.metrics?.total_customers)
   const totalWonDealsCount = safeNum(data?.metrics?.total_won_deals)
 
+  const resolvedAnnualTarget = safeNum(data?.metrics?.annual_sales_target || data?.metrics?.sales_target || ANNUAL_TARGET)
   const targetAchievementRate =
-    ANNUAL_TARGET > 0 ? ((totalRevenue / ANNUAL_TARGET) * 100).toFixed(1) : '0.0'
+    resolvedAnnualTarget > 0 ? ((totalRevenue / resolvedAnnualTarget) * 100).toFixed(1) : '0.0'
   const netProfit = totalRevenue - totalOperationalExpenses
   const netProfitMargin =
     totalRevenue > 0 ? ((netProfit / totalRevenue) * 100).toFixed(1) : '0.0'
@@ -363,7 +492,7 @@ function SalesOverview({ initialSection }) {
   }, [data?.customers_details, totalRevenue])
 
   // Monthly Target vs Achieved — derived from revenue_details grouped by month
-  const MONTHLY_TARGET = Math.round(ANNUAL_TARGET / 12)
+  const MONTHLY_TARGET = Math.round(resolvedAnnualTarget / 12)
   const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
   const monthlyTargetData = useMemo(() => {
     const achieved = {}
@@ -398,6 +527,55 @@ function SalesOverview({ initialSection }) {
         isFuture: i > currentMonth,
       }
     })
+  }, [data?.revenue_details])
+
+  const modalTargetsData = useMemo(() => {
+    const achieved = {}
+    const revList = data?.revenue_details || []
+    for (const r of revList) {
+      const dateStr = r.date || ''
+      let year = -1
+      let monthIdx = -1
+      if (dateStr.includes('/')) {
+        const parts = dateStr.split('/')
+        monthIdx = parseInt(parts[1], 10) - 1
+        year = parseInt(parts[2], 10)
+      } else if (dateStr.includes('-')) {
+        const parts = dateStr.split('-')
+        monthIdx = parseInt(parts[1], 10) - 1
+        year = parseInt(parts[0], 10)
+      }
+      if (year === Number(targetsYearFilter)) {
+        if (monthIdx >= 0 && monthIdx <= 11) {
+          achieved[monthIdx] = (achieved[monthIdx] || 0) + Number(r.amount || 0)
+        }
+      }
+    }
+    return MONTH_NAMES.map((m, i) => {
+      const act = achieved[i] || 0
+      return {
+        month: m,
+        target: MONTHLY_TARGET,
+        achieved: act,
+        pct: MONTHLY_TARGET > 0 ? Math.round((act / MONTHLY_TARGET) * 100) : 0
+      }
+    })
+  }, [data?.revenue_details, targetsYearFilter])
+
+  const availableYears = useMemo(() => {
+    const years = new Set([new Date().getFullYear(), 2025, 2024])
+    const revList = data?.revenue_details || []
+    for (const r of revList) {
+      const dateStr = r.date || ''
+      let year = -1
+      if (dateStr.includes('/')) {
+        year = parseInt(dateStr.split('/')[2], 10)
+      } else if (dateStr.includes('-')) {
+        year = parseInt(dateStr.split('-')[0], 10)
+      }
+      if (year > 2000) years.add(year)
+    }
+    return Array.from(years).sort((a, b) => b - a)
   }, [data?.revenue_details])
 
   const handleExportStatement = (format) => {
@@ -517,8 +695,7 @@ function SalesOverview({ initialSection }) {
         {/* Card 1: Total Revenue */}
         <button
           onClick={() => {
-            setActiveKpi('revenue')
-            setWonToggle(true)
+            setShowFinancialReportModal(true)
           }}
           className={`text-left rounded-2xl p-4.5 border transition-all duration-200 relative overflow-hidden group cursor-pointer ${
             activeKpi === 'revenue' && wonToggle
@@ -643,62 +820,33 @@ function SalesOverview({ initialSection }) {
           </div>
         </div>
 
-        {/* Card 5–6: Monthly Target vs Achieved (spans 2 cols) */}
-        <div className="sm:col-span-2 bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
-          <div className="flex items-center justify-between mb-3">
-            <div className="flex items-center gap-2">
-              <span className="grid size-7 place-items-center rounded-lg bg-indigo-50 text-indigo-600">
-                <Target className="size-4" />
-              </span>
-              <div>
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Monthly Target vs Achieved</span>
-                <p className="text-[9px] font-bold text-slate-400 mt-0.5">
-                  Monthly target: ₹{MONTHLY_TARGET.toLocaleString()} &nbsp;·&nbsp; Annual: ₹{(ANNUAL_TARGET / 10000000).toFixed(2)} Cr
-                </p>
-              </div>
-            </div>
-            <span className={`text-[9px] font-black px-2 py-0.5 rounded-full ${
-              totalRevenue >= MONTHLY_TARGET
-                ? 'bg-emerald-50 text-emerald-700'
-                : 'bg-rose-50 text-rose-700'
-            }`}>
-              {targetAchievementRate}% YTD
+        {/* Card: Target Achieved */}
+        <button
+          onClick={() => setShowTargetsModal(true)}
+          className="text-left bg-white text-slate-900 border border-slate-200/90 hover:border-[#832D51] rounded-2xl p-4.5 shadow-xs transition-all duration-200 cursor-pointer focus:outline-none"
+        >
+          <div className="flex justify-between items-start">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+              Target Achieved
+            </span>
+            <span className="grid size-7 place-items-center rounded-lg bg-indigo-50 text-indigo-600">
+              <Target className="size-4" />
             </span>
           </div>
-
-          {/* Month rows — scrollable */}
-          <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 max-h-36 overflow-y-auto pr-1">
-            {monthlyTargetData.map((m) => (
-              <div key={m.month} className={`space-y-0.5 ${m.isFuture ? 'opacity-40' : ''}`}>
-                <div className="flex items-center justify-between text-[9px] font-bold">
-                  <span className={`flex items-center gap-1 ${
-                    m.isCurrent ? 'text-indigo-700 font-black' : 'text-slate-500'
-                  }`}>
-                    {m.isCurrent && <span className="size-1.5 rounded-full bg-indigo-500 inline-block" />}
-                    {m.month}
-                  </span>
-                  <span className={
-                    m.isFuture ? 'text-slate-300' :
-                    m.pct >= 100 ? 'text-emerald-600 font-black' :
-                    m.pct >= 60 ? 'text-amber-600' : 'text-rose-500'
-                  }>
-                    {m.isFuture ? '—' : `₹${(m.achieved / 1000).toFixed(0)}k / ${m.pct}%`}
-                  </span>
-                </div>
-                <div className="w-full bg-slate-100 rounded-full h-1 overflow-hidden">
-                  <div
-                    className={`h-1 rounded-full transition-all duration-500 ${
-                      m.isFuture ? 'bg-slate-200' :
-                      m.pct >= 100 ? 'bg-emerald-500' :
-                      m.pct >= 60 ? 'bg-amber-400' : 'bg-rose-400'
-                    }`}
-                    style={{ width: `${m.isFuture ? 0 : m.pct}%` }}
-                  />
-                </div>
-              </div>
-            ))}
+          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
+            {targetAchievementRate}%
+          </p>
+          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
+            <span className="text-[10px] font-bold text-slate-500">YTD Target Progress</span>
+            <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-black ${
+              Number(targetAchievementRate) >= 100 
+                ? 'bg-emerald-500/15 text-emerald-700' 
+                : 'bg-indigo-500/15 text-indigo-700'
+            }`}>
+              Target
+            </span>
           </div>
-        </div>
+        </button>
 
         <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
           <div className="flex justify-between items-start">
@@ -1228,6 +1376,302 @@ function SalesOverview({ initialSection }) {
           </div>
         </div>
       </div>
+
+      {/* ── DETAIL FINANCIAL PROFIT & LOSS BREAKDOWN MODAL ── */}
+      {showFinancialReportModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-[#832D51] text-white">
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-9 place-items-center rounded-xl bg-white/20 text-white">
+                  <TrendingUp className="size-5" />
+                </span>
+                <div>
+                  <h3 className="text-base font-black tracking-tight">Financial Profit & Loss Statement</h3>
+                  <p className="text-[10px] font-bold text-pink-100 uppercase tracking-widest mt-0.5">Real-time Revenue, Reimbursements & Incentives analysis</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowFinancialReportModal(false)}
+                className="rounded-xl p-1.5 text-pink-100 hover:bg-white/10 hover:text-white transition cursor-pointer"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {/* Time period switcher & Custom range inputs */}
+            <div className="p-6 pb-2 border-b border-slate-100 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/60">
+                <span className="text-xs font-black text-slate-500 uppercase tracking-wider px-2">Select statement period</span>
+                <div className="flex bg-slate-200/60 p-1 rounded-xl">
+                  {['Monthly', 'Yearly', 'Custom'].map((filter) => (
+                    <button
+                      key={filter}
+                      onClick={() => setModalTimeFilter(filter)}
+                      className={`px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                        modalTimeFilter === filter ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-800'
+                      }`}
+                    >
+                      {filter}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {modalTimeFilter === 'Custom' && (
+                <div className="flex items-center gap-3 bg-slate-50/50 p-3.5 border border-slate-200/50 rounded-2xl flex-wrap">
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">From</label>
+                    <input
+                      type="date"
+                      value={modalFromDate}
+                      onChange={(e) => setModalFromDate(e.target.value)}
+                      className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">To</label>
+                    <input
+                      type="date"
+                      value={modalToDate}
+                      onChange={(e) => setModalToDate(e.target.value)}
+                      className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Scrollable breakdown content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              {/* Financial Calculation Formula block */}
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                {/* 1. Revenue */}
+                <div className="bg-slate-50 border border-slate-200/70 p-4.5 rounded-2xl relative">
+                  <div className="flex justify-between items-center text-slate-400">
+                    <span className="text-[10px] font-black uppercase tracking-wider">Total Sales Revenue</span>
+                    <DollarSign className="size-4 text-[#832D51]" />
+                  </div>
+                  <h4 className="text-xl font-black text-slate-900 mt-2">₹{modalTotalRevenue.toLocaleString()}</h4>
+                  <p className="text-[9px] text-slate-400 font-bold mt-1">Sum of closed won deals</p>
+                </div>
+
+                {/* 2. Reimbursements */}
+                <div className="bg-slate-50 border border-slate-200/70 p-4.5 rounded-2xl relative">
+                  <div className="flex justify-between items-center text-slate-400">
+                    <span className="text-[10px] font-black uppercase tracking-wider">Reimbursements</span>
+                    <Wallet className="size-4 text-[#832D51]" />
+                  </div>
+                  <h4 className="text-xl font-black text-slate-900 mt-2">₹{modalTotalReimbursements.toLocaleString()}</h4>
+                  <p className="text-[9px] text-slate-400 font-bold mt-1">Approved executive expense claims</p>
+                </div>
+
+                {/* 3. Incentives Given */}
+                <div className="bg-slate-50 border border-slate-200/70 p-4.5 rounded-2xl relative">
+                  <div className="flex justify-between items-center text-slate-400">
+                    <span className="text-[10px] font-black uppercase tracking-wider">Incentives Given</span>
+                    <Award className="size-4 text-[#832D51]" />
+                  </div>
+                  <h4 className="text-xl font-black text-slate-900 mt-2">₹{modalTotalIncentives.toLocaleString()}</h4>
+                  <p className="text-[9px] text-slate-400 font-bold mt-1">Commission earned by executives</p>
+                </div>
+
+                {/* 4. Net Profit / Loss */}
+                <div className={`p-4.5 rounded-2xl border relative ${
+                  isProfit 
+                    ? 'bg-emerald-50/60 border-emerald-200/80 text-emerald-950' 
+                    : 'bg-red-50/60 border-red-200/80 text-red-950'
+                }`}>
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-black uppercase tracking-wider opacity-85">
+                      {isProfit ? 'Net Profit' : 'Net Loss'}
+                    </span>
+                    <Sparkles className={`size-4 ${isProfit ? 'text-emerald-600' : 'text-red-600'}`} />
+                  </div>
+                  <h4 className="text-xl font-black mt-2">₹{Math.abs(netProfitLoss).toLocaleString()}</h4>
+                  <p className="text-[9px] font-bold mt-1 opacity-70">
+                    {isProfit ? 'Revenue - Expenses = Profit' : 'Expenses exceeded Revenue'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Date-wise Sales Ledger List */}
+              <div className="space-y-3.5">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                    <Calendar className="size-4 text-slate-400" />
+                    Date-wise Transaction Ledger ({modalRevenueRecords.length + modalReimbursementRecords.length} records)
+                  </h4>
+                  <span className="text-[10px] font-black text-[#832D51] bg-[#F8CAE4]/25 px-2.5 py-1 rounded-md">
+                    Total Revenue: ₹{modalTotalRevenue.toLocaleString()}
+                  </span>
+                </div>
+
+                <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-2xs">
+                  <div className="overflow-x-auto max-h-[300px]">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-150 text-slate-400 font-bold uppercase tracking-wider">
+                          <th className="px-4 py-2.5">Date</th>
+                          <th className="px-4 py-2.5">Transaction Details</th>
+                          <th className="px-4 py-2.5">Employee / Executive</th>
+                          <th className="px-4 py-2.5 text-right">Revenue Amount</th>
+                          <th className="px-4 py-2.5 text-right">Reimbursement</th>
+                          <th className="px-4 py-2.5 text-right">Incentive</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                        {unifiedModalLedger.length === 0 ? (
+                          <tr>
+                            <td colSpan={6} className="py-10 text-center text-slate-400 font-bold">
+                              No transactions recorded for this period.
+                            </td>
+                          </tr>
+                        ) : (
+                          unifiedModalLedger.map((group) => (
+                            <React.Fragment key={group.date}>
+                              {/* Daily Summary Row */}
+                              <tr className="bg-slate-50/70 border-b border-slate-200">
+                                <td className="px-4 py-2 font-black text-slate-900">{group.date}</td>
+                                <td colSpan={2} className="px-4 py-2 text-slate-400 font-bold text-[10px] uppercase">Daily Subtotal</td>
+                                <td className="px-4 py-2 text-right font-black text-slate-950">
+                                  {group.totalRevenue > 0 ? `₹${group.totalRevenue.toLocaleString()}` : '—'}
+                                </td>
+                                <td className="px-4 py-2 text-right font-black text-amber-700">
+                                  {group.totalReimbursements > 0 ? `₹${group.totalReimbursements.toLocaleString()}` : '—'}
+                                </td>
+                                <td className="px-4 py-2 text-right font-black text-emerald-700">
+                                  {group.totalIncentives > 0 ? `₹${group.totalIncentives.toLocaleString()}` : '—'}
+                                </td>
+                              </tr>
+                              {/* Daily Transactions */}
+                              {group.transactions.map((tx, idx) => (
+                                <tr key={`${group.date}-${tx.id || idx}`} className="hover:bg-slate-50/30">
+                                  <td className="px-4 py-2.5 pl-6 text-slate-400 font-mono text-[10px]">↳ {tx.type}</td>
+                                  <td className="px-4 py-2.5 text-slate-600 font-semibold">{tx.details || '—'}</td>
+                                  <td className="px-4 py-2.5 text-slate-600">{tx.sales_executive}</td>
+                                  <td className="px-4 py-2.5 text-right font-bold text-slate-700">
+                                    {tx.amount > 0 ? `₹${tx.amount.toLocaleString()}` : '—'}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right font-bold text-amber-700">
+                                    {tx.reimbursement > 0 ? `₹${tx.reimbursement.toLocaleString()}` : '—'}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right font-semibold text-emerald-600">
+                                    {tx.incentive > 0 ? `₹${tx.incentive.toLocaleString()}` : '—'}
+                                  </td>
+                                </tr>
+                              ))}
+                            </React.Fragment>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4.5 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => setShowFinancialReportModal(false)}
+                className="bg-[#832D51] hover:bg-[#6c2442] text-white text-xs font-black px-5 py-2.5 rounded-xl shadow-xs transition cursor-pointer"
+              >
+                Close Statement
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── DETAIL TARGETS BREAKDOWN MODAL ── */}
+      {showTargetsModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-[#832D51] text-white">
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-9 place-items-center rounded-xl bg-white/20 text-white">
+                  <Target className="size-5" />
+                </span>
+                <div>
+                  <h3 className="text-base font-black tracking-tight">Monthly Sales Target vs Achieved</h3>
+                  <p className="text-[10px] font-bold text-pink-100 uppercase tracking-widest mt-0.5">Yearly Performance Analysis Statement</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowTargetsModal(false)}
+                className="rounded-xl p-1.5 text-pink-100 hover:bg-white/10 hover:text-white transition cursor-pointer"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {/* Year Selector */}
+            <div className="p-6 pb-2 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50 border-slate-200/60">
+              <span className="text-xs font-black text-slate-500 uppercase tracking-wider px-2">Select Target Year</span>
+              <select
+                value={targetsYearFilter}
+                onChange={(e) => setTargetsYearFilter(Number(e.target.value))}
+                className="bg-white border border-slate-200 rounded-xl px-4 py-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51] cursor-pointer shadow-xs"
+              >
+                {availableYears.map(y => (
+                  <option key={y} value={y}>{y} Target Year</option>
+                ))}
+              </select>
+            </div>
+
+            {/* Scrollable table content */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-2xs">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-150 text-slate-400 font-bold uppercase tracking-wider">
+                      <th className="px-5 py-3">Month</th>
+                      <th className="px-5 py-3 text-right">Target Value</th>
+                      <th className="px-5 py-3 text-right">Achieved Value</th>
+                      <th className="px-5 py-3 text-center">Achievement %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                    {modalTargetsData.map((m) => (
+                      <tr key={m.month} className="hover:bg-slate-50/50">
+                        <td className="px-5 py-3.5 font-bold text-slate-900">{m.month}</td>
+                        <td className="px-5 py-3.5 text-right text-slate-500">₹{m.target.toLocaleString()}</td>
+                        <td className="px-5 py-3.5 text-right font-black text-slate-900">
+                          ₹{m.achieved.toLocaleString()}
+                        </td>
+                        <td className="px-5 py-3.5 text-center">
+                          <span className={`inline-flex items-center rounded-md px-2 py-0.5 text-[10px] font-black border ${
+                            m.achieved >= m.target
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                              : m.pct >= 60
+                              ? 'bg-amber-50 text-amber-700 border-amber-100'
+                              : 'bg-rose-50 text-rose-700 border-rose-100'
+                          }`}>
+                            {m.pct}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4.5 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => setShowTargetsModal(false)}
+                className="bg-[#832D51] hover:bg-[#6c2442] text-white text-xs font-black px-5 py-2.5 rounded-xl shadow-xs transition cursor-pointer"
+              >
+                Close Statement
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
