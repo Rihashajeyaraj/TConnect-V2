@@ -142,10 +142,17 @@ class CustomerRepository:
                 sm_name = ""
                 product_val = "Software License"
                 
+                # Customer table own columns are the primary source of truth!
+                se_name = row.get("sales_executive") or ""
+                sm_name = row.get("sales_manager") or ""
+
                 if lead:
-                    se_email = str(lead.get("assigned_to_email") or "").lower().strip()
-                    se_name = lead.get("assigned_to") or ""
-                    sm_email = str(lead.get("reporting_manager_email") or "").lower().strip()
+                    if not se_name:
+                        se_name = lead.get("assigned_to") or ""
+                        se_email = str(lead.get("assigned_to_email") or "").lower().strip()
+                    if not sm_name:
+                        sm_name = lead.get("sales_manager") or ""
+                        sm_email = str(lead.get("reporting_manager_email") or "").lower().strip()
                     product_val = lead.get("product_name") or lead.get("product") or product_val
                     
                 notes = str(row.get("notes") or "")
@@ -175,6 +182,14 @@ class CustomerRepository:
                     if sm_user:
                         sm_name = sm_name or sm_user.get("name") or ""
                         sm_id = str(sm_user.get("id") or sm_user.get("auth_user_id") or "")
+
+                # If the assigned Sales Executive has resigned, left, or is inactive
+                if se_user:
+                    status_lower = str(se_user.get("status") or "").lower().strip()
+                    is_se_inactive = status_lower in ("inactive", "deactivated", "terminated", "disabled", "resigned", "left") or se_user.get("is_active") is False
+                    if is_se_inactive:
+                        se_name = "Needs Reassignment"
+                        se_id = ""
                         
                 if not se_name:
                     se_name = "Direct/Unassigned"
@@ -294,7 +309,33 @@ class CustomerRepository:
         if lead_info:
             assigned_to = lead_info.get("assigned_to") or assigned_to
 
-        # 5. Generate a NEW unique customer id
+        # Resolve manager name and executive name to populate sales_executive / sales_manager!
+        se_name = assigned_to
+        sm_name = "Direct/Unassigned"
+        
+        try:
+            from app.modules.users.repository import UserRepository
+            all_users = UserRepository().get_all_users()
+            user_map_by_email = {str(u.get("email") or "").lower().strip(): u for u in all_users}
+            user_map_by_name = {str(u.get("name") or u.get("full_name") or "").lower().strip(): u for u in all_users}
+            
+            se_user = None
+            if lead_info and lead_info.get("assigned_to_email"):
+                se_user = user_map_by_email.get(str(lead_info.get("assigned_to_email")).lower().strip())
+            if not se_user and assigned_to:
+                se_user = user_map_by_name.get(assigned_to.lower().strip())
+                if not se_user:
+                    se_user = user_map_by_email.get(assigned_to.lower().strip())
+            
+            se_id = None
+            if se_user:
+                se_name = se_user.get("name") or se_name
+                sm_name = se_user.get("reporting_manager_name") or "Direct/Unassigned"
+                se_id = se_user.get("user_id") or se_user.get("id") or se_user.get("employee_id")
+        except Exception:
+            pass
+
+        # Generate a NEW unique customer id
         customer_uuid = str(uuid.uuid4())
 
         notes_raw = str(data.get("notes") or data.get("reachOutReason") or data.get("onboardingRemarks") or f"Customer account for {comp_name}")
@@ -316,6 +357,12 @@ class CustomerRepository:
             "city": city_name,
             "location": city_name,
             "address": address_val,
+            "sales_executive": se_name,
+            "sales_manager": sm_name,
+            "original_owner": se_name,
+            "current_owner": se_name,
+            "generated_by_employee_name": se_name,
+            "generated_by_employee_id": se_id,
             "status": "Active Customer",
             "notes": full_notes,
             "is_active": True,

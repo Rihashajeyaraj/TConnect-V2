@@ -94,6 +94,21 @@ class PipelineRepository:
 
         prob = int(data.get("probability") or (100 if stage == "Won" else 0 if stage == "Lost" else 30))
         now_iso = datetime.utcnow().isoformat()
+        
+        se_id = None
+        se_name = rep
+        try:
+            from app.modules.users.repository import UserRepository
+            all_users = UserRepository().get_all_users()
+            user_map_by_name = {str(u.get("name") or u.get("full_name") or "").lower().strip(): u for u in all_users}
+            user_map_by_email = {str(u.get("email") or "").lower().strip(): u for u in all_users}
+            
+            se_user = user_map_by_name.get(rep.lower().strip()) or user_map_by_email.get(rep.lower().strip())
+            if se_user:
+                se_name = se_user.get("name") or se_name
+                se_id = se_user.get("user_id") or se_user.get("id") or se_user.get("employee_id")
+        except Exception:
+            pass
 
         payload = {
             "id": opp_id,
@@ -107,6 +122,8 @@ class PipelineRepository:
             "probability": prob,
             "rep": rep,
             "assigned_to": rep,
+            "generated_by_employee_name": se_name,
+            "generated_by_employee_id": se_id,
             "notes": str(data.get("notes") or data.get("remarks") or ""),
             "created_at": now_iso,
             "updated_at": now_iso,

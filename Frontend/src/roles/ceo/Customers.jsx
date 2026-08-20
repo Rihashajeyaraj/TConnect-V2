@@ -218,7 +218,7 @@ function CeoCustomers() {
 
   // Filter active Sales Executives for assignment dropdown
   const activeExecutives = employees.filter(emp => {
-    const isInactive = ['inactive', 'deactivated', 'terminated', 'disabled'].includes((emp.status || '').toLowerCase())
+    const isInactive = ['inactive', 'deactivated', 'terminated', 'disabled', 'resigned', 'left'].includes((emp.status || '').toLowerCase())
     const isNotActive = emp.is_active === false
     const isExec = (emp.role || emp.designation || '').toLowerCase().includes('executive')
     return !isInactive && !isNotActive && isExec
@@ -793,7 +793,7 @@ function CeoCustomers() {
       )}
 
       {/* Reassignment Modal */}
-      {isAssignModalOpen && (
+      {isAssignModalOpen && isAdmin && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/30 backdrop-blur-xs p-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-2xl max-w-md w-full space-y-4 animate-in zoom-in-95 duration-150">
             <div>
@@ -857,7 +857,8 @@ function CeoCustomers() {
                     }
                   } catch (err) {
                     console.error('Reassignment error:', err)
-                    showToast('Failed to complete reassignment', 'error')
+                    const errorMsg = err?.detail || err?.message || err?.error || "Failed to complete reassignment"
+                    showToast(errorMsg, 'error')
                   } finally {
                     setAssigning(false)
                   }

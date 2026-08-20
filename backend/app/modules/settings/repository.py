@@ -31,6 +31,92 @@ class SettingsRepository:
     def __init__(self):
         self.client = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
+        self._setup_rls_policies()
+
+    def _setup_rls_policies(self):
+        sql = """
+        -- For organization.branches
+        ALTER TABLE organization.branches ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Allow select for authenticated users" ON organization.branches;
+        CREATE POLICY "Allow select for authenticated users" ON organization.branches
+          FOR SELECT TO authenticated USING (true);
+        DROP POLICY IF EXISTS "Allow write for admins" ON organization.branches;
+        CREATE POLICY "Allow write for admins" ON organization.branches
+          FOR ALL TO authenticated
+          USING (auth.jwt() ->> 'role' IN ('Admin', 'Super Admin', 'System Admin', 'CEO'))
+          WITH CHECK (auth.jwt() ->> 'role' IN ('Admin', 'Super Admin', 'System Admin', 'CEO'));
+
+        -- For organization.products
+        ALTER TABLE organization.products ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Allow select for authenticated users" ON organization.products;
+        CREATE POLICY "Allow select for authenticated users" ON organization.products
+          FOR SELECT TO authenticated USING (true);
+        DROP POLICY IF EXISTS "Allow write for admins" ON organization.products;
+        CREATE POLICY "Allow write for admins" ON organization.products
+          FOR ALL TO authenticated
+          USING (auth.jwt() ->> 'role' IN ('Admin', 'Super Admin', 'System Admin', 'CEO'))
+          WITH CHECK (auth.jwt() ->> 'role' IN ('Admin', 'Super Admin', 'System Admin', 'CEO'));
+
+        -- For organization.product_branches
+        ALTER TABLE organization.product_branches ENABLE ROW LEVEL SECURITY;
+        DROP POLICY IF EXISTS "Allow select for authenticated users" ON organization.product_branches;
+        CREATE POLICY "Allow select for authenticated users" ON organization.product_branches
+          FOR SELECT TO authenticated USING (true);
+        DROP POLICY IF EXISTS "Allow write for admins" ON organization.product_branches;
+        CREATE POLICY "Allow write for admins" ON organization.product_branches
+          FOR ALL TO authenticated
+          USING (auth.jwt() ->> 'role' IN ('Admin', 'Super Admin', 'System Admin', 'CEO'))
+          WITH CHECK (auth.jwt() ->> 'role' IN ('Admin', 'Super Admin', 'System Admin', 'CEO'));
+
+        -- Update products_type_check constraint
+        ALTER TABLE organization.products DROP CONSTRAINT IF EXISTS products_type_check;
+        ALTER TABLE organization.products DROP CONSTRAINT IF EXISTS product_type_check;
+        ALTER TABLE organization.products ADD CONSTRAINT products_type_check CHECK (product_type IN ('Product', 'Service', 'Subscription'));
+        """
+        try:
+            self.client.rpc("exec_sql", {"sql_query": sql}).execute()
+            logger.info("Successfully configured RLS policies and product type constraints for organization tables.")
+        except Exception as e:
+            logger.warning(f"Could not configure RLS policies or product type constraints: {e}")
+
+    def _get_company_id(self) -> str:
+        for tbl_name in ["company_profile", "organization_settings"]:
+            try:
+                res = self.client.schema("organization").table(tbl_name).select("*").limit(1).execute()
+                if res.data and len(res.data) > 0:
+                    c_id = res.data[0].get("company_id") or res.data[0].get("id")
+                    if c_id:
+                        return c_id
+            except Exception:
+                pass
+        return "TC-001"
+
+    def _is_valid_uuid(self, val: str) -> bool:
+        try:
+            uuid.UUID(str(val))
+            return True
+        except ValueError:
+            return False
+
+    def _get_table_columns(self, table_name: str) -> List[str]:
+        try:
+            sql = f"""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_schema = 'organization' AND table_name = '{table_name}';
+            """
+            res = self.client.rpc("exec_sql", {"sql_query": sql}).execute()
+            if res.data:
+                return [row["column_name"] for row in res.data]
+        except Exception as e:
+            logger.debug(f"Failed to fetch columns for {table_name} via RPC: {e}")
+        
+        # Fallback to standard columns based on table_name
+        if table_name == "products":
+            return ["id", "company_id", "product_code", "product_name", "product_type", "category", "description", "base_price", "tax_percentage", "launch_date", "status"]
+        elif table_name == "branches":
+            return ["id", "company_id", "branch_code", "branch_name", "branch_type", "location", "status"]
+        return []
 
     def _run_schema_migration(self):
         import os
@@ -44,41 +130,275 @@ class SettingsRepository:
         except Exception as e:
             logger.warning(f"Auto master data schema migration failed: {e}")
 
+    # ─────────────────────────────────────────────────────────────
+    # Branches CRUD Methods
+    # ─────────────────────────────────────────────────────────────
+    def create_branch(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        company_id = self._get_company_id()
+        b_id = data.get("id")
+        if not b_id or not self._is_valid_uuid(b_id):
+            b_id = str(uuid.uuid4())
+
+        branch_name = data.get("name") or data.get("branch_name")
+        branch_type = data.get("type") or data.get("branch_type") or "Regional Office"
+        address = data.get("location") or data.get("address") or ""
+
+        db_item = {
+            "id": b_id,
+            "company_id": company_id,
+            "branch_code": data.get("branch_code") or b_id[:8].upper(),
+            "branch_name": branch_name,
+            "branch_type": branch_type,
+            "address": address,
+            "city": data.get("city") or "",
+            "state": data.get("state") or "",
+            "country": data.get("country") or "India",
+            "postal_code": data.get("postal_code") or "",
+            "phone": data.get("phone") or "",
+            "email": data.get("email") or "",
+            "opening_date": data.get("opening_date") or None,
+            "status": data.get("status") or "Active",
+        }
+
+        res = self.client.schema("organization").table("branches").insert(db_item).execute()
+        if not res.data:
+            raise ValueError("Insert failed: No data returned from Supabase branches")
+        return res.data[0]
+
+    def update_branch(self, branch_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        company_id = self._get_company_id()
+        
+        branch_name = data.get("name") or data.get("branch_name")
+        branch_type = data.get("type") or data.get("branch_type")
+        address = data.get("location") or data.get("address")
+
+        db_item = {
+            "company_id": company_id,
+            "branch_name": branch_name,
+            "branch_type": branch_type,
+            "address": address,
+            "city": data.get("city"),
+            "state": data.get("state"),
+            "country": data.get("country"),
+            "postal_code": data.get("postal_code"),
+            "phone": data.get("phone"),
+            "email": data.get("email"),
+            "opening_date": data.get("opening_date"),
+            "status": data.get("status"),
+        }
+        db_item = {k: v for k, v in db_item.items() if v is not None}
+
+        res = self.client.schema("organization").table("branches").update(db_item).eq("id", branch_id).execute()
+        if not res.data:
+            raise ValueError(f"Update failed: Branch {branch_id} not found or update error")
+        return res.data[0]
+
+    def delete_branch(self, branch_id: str) -> None:
+        # First, remove mapping assignments in product_branches
+        try:
+            self.client.schema("organization").table("product_branches").delete().eq("branch_id", branch_id).execute()
+        except Exception as e:
+            logger.warning(f"Failed to clear product branches mapping for branch {branch_id}: {e}")
+
+        # Then, delete branch row
+        res = self.client.schema("organization").table("branches").delete().eq("id", branch_id).execute()
+        if not res.data:
+            logger.warning(f"Delete notice: Branch {branch_id} not found or already deleted")
+
+    # ─────────────────────────────────────────────────────────────
+    # Products CRUD Methods
+    # ─────────────────────────────────────────────────────────────
+    def create_product(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        company_id = self._get_company_id()
+        p_id = data.get("id")
+        if not p_id or not self._is_valid_uuid(p_id):
+            p_id = str(uuid.uuid4())
+
+        product_name = data.get("name") or data.get("product_name")
+        price_val = data.get("price") or data.get("base_price") or "0"
+        
+        try:
+            cleaned_price = float(str(price_val).replace("₹", "").replace(",", "").split("/")[0].strip())
+        except ValueError:
+            cleaned_price = 0.0
+
+        db_item = {
+            "id": p_id,
+            "company_id": company_id,
+            "product_code": data.get("product_code") or p_id[:8].upper(),
+            "product_name": product_name,
+            "product_type": data.get("product_type") or "Product",
+            "category": data.get("category") or "Subscription",
+            "description": data.get("description") or "Product description",
+            "base_price": cleaned_price,
+            "tax_percentage": float(data.get("tax_percentage") or 18.0),
+            "launch_date": data.get("launch_date") or "2026-08-20",
+            "status": data.get("status") or "Active"
+        }
+
+        # 1. Insert product row
+        res = self.client.schema("organization").table("products").insert(db_item).execute()
+        if not res.data:
+            raise ValueError("Insert failed: No product data returned from Supabase products")
+        inserted_product = res.data[0]
+
+        # 2. Insert branch mappings
+        branches = data.get("branches") or []
+        for br_id in branches:
+            if br_id:
+                db_pb = {
+                    "id": str(uuid.uuid4()),
+                    "product_id": p_id,
+                    "branch_id": str(br_id)
+                }
+                try:
+                    self.client.schema("organization").table("product_branches").insert(db_pb).execute()
+                except Exception as e:
+                    logger.error(f"Failed to link product {p_id} to branch {br_id}: {e}")
+                    raise ValueError(f"Failed to assign product to branch '{br_id}': {e}")
+
+        # Map back to UI format
+        mapped = {
+            "id": inserted_product.get("id"),
+            "name": inserted_product.get("product_name"),
+            "price": str(inserted_product.get("base_price")),
+            "status": inserted_product.get("status"),
+            "branches": branches
+        }
+        return mapped
+
+    def update_product(self, product_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        company_id = self._get_company_id()
+        
+        product_name = data.get("name") or data.get("product_name")
+        price_val = data.get("price") or data.get("base_price")
+
+        db_item = {
+            "company_id": company_id,
+            "product_name": product_name,
+            "product_type": data.get("product_type"),
+            "category": data.get("category"),
+            "description": data.get("description"),
+            "status": data.get("status")
+        }
+        if price_val is not None:
+            try:
+                db_item["base_price"] = float(str(price_val).replace("₹", "").replace(",", "").split("/")[0].strip())
+            except ValueError:
+                db_item["base_price"] = 0.0
+        if data.get("tax_percentage") is not None:
+            db_item["tax_percentage"] = float(data.get("tax_percentage"))
+        if data.get("launch_date") is not None:
+            db_item["launch_date"] = data.get("launch_date")
+
+        db_item = {k: v for k, v in db_item.items() if v is not None}
+
+        # 1. Update product row
+        res = self.client.schema("organization").table("products").update(db_item).eq("id", product_id).execute()
+        if not res.data:
+            raise ValueError(f"Update failed: Product {product_id} not found or update error")
+        updated_product = res.data[0]
+
+        # 2. Sync branch mappings
+        if "branches" in data:
+            # Delete old mappings
+            self.client.schema("organization").table("product_branches").delete().eq("product_id", product_id).execute()
+            
+            # Insert new mappings
+            branches = data["branches"]
+            for br_id in branches:
+                if br_id:
+                    db_pb = {
+                        "id": str(uuid.uuid4()),
+                        "product_id": product_id,
+                        "branch_id": str(br_id)
+                    }
+                    self.client.schema("organization").table("product_branches").insert(db_pb).execute()
+        else:
+            # Retrieve existing branch mappings
+            res_pb = self.client.schema("organization").table("product_branches").select("branch_id").eq("product_id", product_id).execute()
+            branches = [row["branch_id"] for row in (res_pb.data or [])]
+
+        mapped = {
+            "id": updated_product.get("id"),
+            "name": updated_product.get("product_name"),
+            "price": str(updated_product.get("base_price")),
+            "status": updated_product.get("status"),
+            "branches": branches
+        }
+        return mapped
+
+    def delete_product(self, product_id: str) -> None:
+        # First, remove mapping assignments in product_branches
+        try:
+            self.client.schema("organization").table("product_branches").delete().eq("product_id", product_id).execute()
+        except Exception as e:
+            logger.warning(f"Failed to clear product branches mapping for product {product_id}: {e}")
+
+        # Then, delete product row
+        res = self.client.schema("organization").table("products").delete().eq("product_id", product_id).execute()
+        if not res.data:
+            logger.warning(f"Delete notice: Product {product_id} not found or already deleted")
+
+    # ─────────────────────────────────────────────────────────────
+    # System Getters / Setters
+    # ─────────────────────────────────────────────────────────────
     def get_products(self) -> List[Dict[str, Any]]:
+        products_list = []
         try:
             res = self.client.schema("organization").table("products").select("*").execute()
             if res.data is not None:
-                return res.data
+                for row in res.data:
+                    products_list.append({
+                        "id": row.get("id"),
+                        "name": row.get("product_name"),
+                        "price": str(row.get("base_price") or "0"),
+                        "product_type": row.get("product_type") or "Product",
+                        "status": row.get("status") or "Active"
+                    })
         except Exception as e:
             logger.warning(f"Failed to fetch products: {e}")
-            if "relation" in str(e).lower() or "does not exist" in str(e).lower() or "could not find" in str(e).lower():
-                logger.info("Table organization.products does not exist. Running migration...")
-                self._run_schema_migration()
-                try:
-                    res = self.client.schema("organization").table("products").select("*").execute()
-                    if res.data:
-                        return res.data
-                except Exception as retry_e:
-                    logger.warning(f"Retry fetching products failed: {retry_e}")
-        return []
+
+        # Fetch product_branches assignments
+        product_branches_list = []
+        try:
+            res_pb = self.client.schema("organization").table("product_branches").select("*").execute()
+            if res_pb.data:
+                product_branches_list = res_pb.data
+        except Exception as e:
+            logger.debug(f"Failed to fetch product_branches mappings: {e}")
+
+        for p in products_list:
+            p_id = p.get("id")
+            p["branches"] = [pb.get("branch_id") for pb in product_branches_list if pb.get("product_id") == p_id]
+
+        return products_list
 
     def get_settings(self) -> Dict[str, Any]:
         merged = _in_memory_settings.copy()
         
-        # 1. Try organization.organization_settings in Supabase
-        for schema_tbl in ["organization_settings", "company_profile"]:
+        # 1. Try organization.company_profile / organization_settings in Supabase
+        company_id = None
+        for schema_tbl in ["company_profile", "organization_settings"]:
             try:
                 res = self.client.schema("organization").table(schema_tbl).select("*").limit(1).execute()
                 if res.data and len(res.data) > 0:
-                    merged.update(res.data[0])
+                    profile_data = res.data[0].copy()
+                    # Remove JSONB branches/products to avoid stale mappings
+                    profile_data.pop("branches", None)
+                    profile_data.pop("products", None)
+                    merged.update(profile_data)
+                    company_id = res.data[0].get("company_id") or res.data[0].get("id")
                     break
             except Exception as e:
                 logger.debug(f"organization.{schema_tbl} lookup fallback: {e}")
 
+        if not company_id:
+            company_id = "TC-001"
+
         # 2. Fetch master data from normalized tables
         for field, tbl in [
             ("designations", "designations"),
-            ("products", "products"),
             ("lead_sources", "lead_sources"),
             ("customer_categories", "customer_categories")
         ]:
@@ -91,6 +411,29 @@ class SettingsRepository:
             except Exception as err:
                 logger.debug(f"Failed to fetch {field} from organization.{tbl}: {err}")
                 merged[field] = []
+
+        # Fetch branches from organization.branches where company_id = company_id
+        try:
+            res_br = self.client.schema("organization").table("branches").select("*").eq("company_id", company_id).execute()
+            if res_br.data:
+                mapped_branches = []
+                for b in res_br.data:
+                    mapped_branches.append({
+                        "id": b.get("id"),
+                        "name": b.get("branch_name"),
+                        "type": b.get("branch_type") or "Regional Office",
+                        "location": b.get("address") or "",
+                        "status": b.get("status") or "Active"
+                    })
+                merged["branches"] = mapped_branches
+            else:
+                merged["branches"] = []
+        except Exception as e:
+            logger.debug(f"Failed to fetch branches from organization.branches: {e}")
+            merged["branches"] = []
+
+        # Fetch products and their assignments
+        merged["products"] = self.get_products()
 
         # 3. Dynamic User Counts calculation
         user_counts = {}
@@ -257,11 +600,18 @@ class SettingsRepository:
     def update_settings(self, updates: Dict[str, Any]) -> Dict[str, Any]:
         # Filter None values
         clean_updates = {k: v for k, v in updates.items() if v is not None}
+        
+        # Remove branches and products to prevent multiplexing
+        clean_updates.pop("branches", None)
+        clean_updates.pop("products", None)
+        
         _in_memory_settings.update(clean_updates)
+
+        # Get company_id first
+        company_id = self._get_company_id()
         
         # Build organization_settings payload
         full_db_payload = {
-            "id": "TC-001",
             "company_name": _in_memory_settings.get("company_name"),
             "company_code": _in_memory_settings.get("company_code", "TC-001"),
             "email": _in_memory_settings.get("email"),
@@ -275,12 +625,11 @@ class SettingsRepository:
             "time_zone": _in_memory_settings.get("time_zone"),
             "logo_url": _in_memory_settings.get("logo_url"),
             "currency": _in_memory_settings.get("currency"),
-            "branches": _in_memory_settings.get("branches"),
             "departments": _in_memory_settings.get("departments"),
         }
         full_db_payload = {k: v for k, v in full_db_payload.items() if v is not None}
 
-        # Save to organization.organization_settings in Supabase
+        # Save to organization.organization_settings / company_profile in Supabase
         for tbl_name in ["organization_settings", "company_profile"]:
             try:
                 table_ref = self.client.schema("organization").table(tbl_name)
@@ -289,7 +638,16 @@ class SettingsRepository:
                 if existing.data and len(existing.data) > 0:
                     rec_id = existing.data[0].get("id") or existing.data[0].get("company_id")
                     id_col = "id" if "id" in existing.data[0] else "company_id"
-                    res = table_ref.update(full_db_payload).eq(id_col, rec_id).execute()
+                    
+                    # Clean payload to only include columns that exist in the target table
+                    cols_res = self.client.rpc("exec_sql", {"sql_query": f"SELECT column_name FROM information_schema.columns WHERE table_schema = 'organization' AND table_name = '{tbl_name}';"}).execute()
+                    if cols_res.data:
+                        tbl_cols = [c["column_name"] for c in cols_res.data]
+                        payload_cleaned = {k: v for k, v in full_db_payload.items() if k in tbl_cols}
+                    else:
+                        payload_cleaned = full_db_payload
+                    
+                    res = table_ref.update(payload_cleaned).eq(id_col, rec_id).execute()
                 else:
                     res = table_ref.insert(full_db_payload).execute()
 
@@ -310,38 +668,6 @@ class SettingsRepository:
                     self.client.schema("organization").table("designations").upsert(db_item).execute()
                 except Exception as e:
                     logger.warning(f"Failed to upsert designation: {e}")
-
-        if "products" in clean_updates:
-            try:
-                self.client.schema("organization").table("products").select("*").limit(1).execute()
-            except Exception as e:
-                if "relation" in str(e).lower() or "does not exist" in str(e).lower() or "could not find" in str(e).lower():
-                    logger.info("Table organization.products does not exist on save. Running migration...")
-                    self._run_schema_migration()
-
-            received_ids = [item.get("id") for item in clean_updates["products"] if item.get("id")]
-            if received_ids:
-                try:
-                    self.client.schema("organization").table("products").delete().not_in("id", received_ids).execute()
-                except Exception as e:
-                    logger.warning(f"Failed to delete stale products: {e}")
-            else:
-                try:
-                    self.client.schema("organization").table("products").delete().neq("id", "").execute()
-                except Exception as e:
-                    logger.warning(f"Failed to clear products table: {e}")
-
-            for item in clean_updates["products"]:
-                db_item = {
-                    "id": item.get("id") or f"PROD-{uuid.uuid4().hex[:8].upper()}",
-                    "name": item.get("name"),
-                    "price": item.get("price"),
-                    "status": item.get("status") or "Active"
-                }
-                try:
-                    self.client.schema("organization").table("products").upsert(db_item).execute()
-                except Exception as e:
-                    logger.warning(f"Failed to upsert product: {e}")
 
         if "lead_sources" in clean_updates:
             for item in clean_updates["lead_sources"]:
@@ -412,5 +738,3 @@ class SettingsRepository:
                     logger.warning(f"Failed to save role_permissions for role '{role_id}': {e}")
 
         return self.get_settings()
-
-

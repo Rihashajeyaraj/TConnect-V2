@@ -9,6 +9,17 @@ from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
 _in_memory_eod_reports: List[Dict[str, Any]] = []
 
 
+def _format_name_with_status(name: str, user_obj: Dict[str, Any] = None) -> str:
+    if not user_obj or not name:
+        return name
+    status = str(user_obj.get("status") or "").strip().title()
+    if status in ("Resigned", "Left", "Terminated", "Inactive", "Deactivated", "Disabled") or user_obj.get("is_active") is False:
+        tag = f" [{status}]" if status in ("Resigned", "Left", "Terminated") else " [Inactive]"
+        if tag not in name:
+            return f"{name}{tag}"
+    return name
+
+
 class ReportsRepository:
     def __init__(self):
         self.supabase = get_supabase_admin_client() or get_supabase_client()
@@ -374,9 +385,14 @@ class ReportsRepository:
                 opp_month = created_str[5:7]
 
                 # Resolve manager and executive for opportunities
-                exec_email = str(o.get("assigned_to_email") or o.get("owner_email") or "").lower().strip()
-                se_user = user_map_by_email.get(exec_email)
-                exec_name = o.get("assigned_to_name") or o.get("owner_id") or (se_user.get("name") if se_user else None) or o.get("assigned_to") or "Unassigned"
+                # transaction-level attribution over assignment
+                exec_name = o.get("generated_by_employee_name")
+                if not exec_name:
+                    exec_email = str(o.get("assigned_to_email") or o.get("owner_email") or "").lower().strip()
+                    se_user = user_map_by_email.get(exec_email)
+                    exec_name = o.get("assigned_to_name") or o.get("owner_id") or (se_user.get("name") if se_user else None) or o.get("assigned_to") or "Unassigned"
+                else:
+                    se_user = user_map_by_name.get(exec_name.lower().strip())
                 
                 sm_email = str(o.get("reporting_manager_email") or "").lower().strip()
                 if not sm_email and se_user:
@@ -421,8 +437,19 @@ class ReportsRepository:
                 opp_year = created_str[:4]
                 opp_month = created_str[5:7]
 
-                mgr = c.get("sales_manager") or "Direct/Unassigned"
-                exec_name = c.get("sales_executive") or "Direct/Unassigned"
+                exec_name = c.get("generated_by_employee_name") or c.get("original_owner") or c.get("sales_executive") or "Direct/Unassigned"
+                se_user = user_map_by_name.get(exec_name.lower().strip())
+                if se_user:
+                    mgr = se_user.get("reporting_manager_name") or "Direct/Unassigned"
+                else:
+                    mgr = c.get("sales_manager") or "Direct/Unassigned"
+
+                # Format names with status tags if resigned
+                exec_name = _format_name_with_status(exec_name, se_user)
+                mgr_user = None
+                if se_user and se_user.get("reporting_manager_email"):
+                    mgr_user = user_map_by_email.get(str(se_user.get("reporting_manager_email")).lower().strip())
+                mgr = _format_name_with_status(mgr, mgr_user)
                 cust = c.get("name") or c.get("company") or "Customer Account"
                 comp = c.get("company") or "Direct"
                 prod = c.get("product") or "Software License"
@@ -626,6 +653,9 @@ class ReportsRepository:
                 se_user = user_map_by_email.get(exec_email)
                 exec_name = o.get("assigned_to_name") or o.get("owner_id") or (se_user.get("name") if se_user else None) or o.get("assigned_to") or "Unassigned"
                 
+                # Format with status tags
+                exec_name = _format_name_with_status(exec_name, se_user)
+                
                 # Resolve custom incentive percentage
                 inc_pct = 5.0
                 if se_user and se_user.get("incentive_percentage") is not None:
@@ -643,6 +673,10 @@ class ReportsRepository:
                     mgr = se_user.get("reporting_manager_name")
                 if not mgr:
                     mgr = o.get("sales_manager") or o.get("manager_name") or ("Direct/Unassigned" if not sm_email else sm_email.split("@")[0].replace(".", " ").title())
+                
+                # Format with status tags
+                mgr_user = user_map_by_email.get(sm_email) if sm_email else None
+                mgr = _format_name_with_status(mgr, mgr_user)
                 
                 revenue_records.append({
                     "id": str(o.get("id") or o.get("opportunity_id") or o.get("lead_id") or ""),
@@ -665,15 +699,31 @@ class ReportsRepository:
                     created_str = created_str.isoformat()
                 cust_date = created_str[:10]
                 
-                exec_name = c.get("sales_executive") or "Direct/Unassigned"
-                mgr_name = c.get("sales_manager") or "Direct/Unassigned"
+                exec_name = c.get("original_owner") or c.get("sales_executive") or "Direct/Unassigned"
+                
+                # Resolve original executive user
+                se_user = user_map_by_name.get(exec_name.lower().strip())
+                if not se_user:
+                    exec_email = str(c.get("assigned_to_email") or c.get("sales_executive_email") or "").lower().strip()
+                    se_user = user_map_by_email.get(exec_email)
+                
+                # Format with status tags
+                exec_name = _format_name_with_status(exec_name, se_user)
+                
+                # Resolve manager from original executive user
+                mgr_user = None
+                if se_user:
+                    mgr_name = se_user.get("reporting_manager_name") or "Direct/Unassigned"
+                    mgr_email = str(se_user.get("reporting_manager_email") or "").lower().strip()
+                    if mgr_email:
+                        mgr_user = user_map_by_email.get(mgr_email)
+                else:
+                    mgr_name = c.get("sales_manager") or "Direct/Unassigned"
+                
+                # Format with status tags
+                mgr_name = _format_name_with_status(mgr_name, mgr_user)
                 
                 # Resolve custom incentive percentage
-                exec_email = str(c.get("assigned_to_email") or c.get("sales_executive_email") or "").lower().strip()
-                se_user = user_map_by_email.get(exec_email)
-                if not se_user and exec_name:
-                    se_user = user_map_by_name.get(exec_name.lower().strip())
-                
                 inc_pct = 5.0
                 if se_user and se_user.get("incentive_percentage") is not None:
                     inc_pct = float(se_user["incentive_percentage"])
@@ -2014,16 +2064,35 @@ class ReportsRepository:
             if lead and not raw_c.get("product"):
                 product = lead.get("product_name") or lead.get("product") or product
 
-            # Resolve executive:
-            # 1. lead.assigned_to (UUID or name)
-            # 2. customer.sales_executive (UUID or name)
-            # 3. customer.assigned_to
-            # 4. customer.created_by
-            # 5. lead.created_by
+            # Resolve executive owner for this customer.
+            # Priority order (most specific/recent first):
+            # 1. customer.sales_executive (set on create & on each reassignment)
+            # 2. customer.current_owner (updated on reassignment)
+            # 3. lead.assigned_to (fallback for older records without explicit SE)
+            # 4. customer/lead created_by
             exec_user = None
 
-            # Check lead assigned_to first if lead exists
-            if lead:
+            # 1. Check customer sales_executive field (primary — updated on reassign)
+            se_val = str(raw_c.get("sales_executive") or "").strip()
+            if se_val and se_val not in ("None", "Sales Executive", "Test Runner", "Direct/Unassigned"):
+                if se_val in user_by_id:
+                    exec_user = user_by_id[se_val]
+                elif se_val.lower() in user_by_name_lower:
+                    exec_user = user_by_name_lower[se_val.lower()]
+                elif se_val in user_by_email:
+                    exec_user = user_by_email[se_val]
+
+            # 2. Check customer current_owner (UUID or name, updated on reassignment)
+            if not exec_user:
+                co_val = str(raw_c.get("current_owner") or "").strip()
+                if co_val and co_val not in ("None", "—"):
+                    if co_val in user_by_id:
+                        exec_user = user_by_id[co_val]
+                    elif co_val.lower() in user_by_name_lower:
+                        exec_user = user_by_name_lower[co_val.lower()]
+
+            # 3. Check lead assigned_to as fallback for older records
+            if not exec_user and lead:
                 lat = str(lead.get("assigned_to") or "").strip()
                 if lat and lat != "None":
                     if lat in user_by_id:
@@ -2033,18 +2102,7 @@ class ReportsRepository:
                     elif lat in user_by_email:
                         exec_user = user_by_email[lat]
 
-            # Check customer sales_executive field
-            if not exec_user:
-                se_val = str(raw_c.get("sales_executive") or "").strip()
-                if se_val and se_val not in ("None", "Sales Executive", "Test Runner", "Direct/Unassigned"):
-                    if se_val in user_by_id:
-                        exec_user = user_by_id[se_val]
-                    elif se_val.lower() in user_by_name_lower:
-                        exec_user = user_by_name_lower[se_val.lower()]
-                    elif se_val in user_by_email:
-                        exec_user = user_by_email[se_val]
-
-            # Check customer assigned_to field
+            # 4. Check customer assigned_to field
             if not exec_user:
                 cat = str(raw_c.get("assigned_to") or "").strip()
                 if cat and cat != "None":
@@ -2055,7 +2113,7 @@ class ReportsRepository:
                     elif cat in user_by_email:
                         exec_user = user_by_email[cat]
 
-            # Check customer created_by
+            # 5. Check customer created_by
             if not exec_user:
                 cb = str(raw_c.get("created_by") or "").strip()
                 if cb and cb != "None":
@@ -2064,7 +2122,7 @@ class ReportsRepository:
                     elif cb.lower() in user_by_name_lower:
                         exec_user = user_by_name_lower[cb.lower()]
 
-            # Check lead created_by
+            # 6. Check lead created_by
             if not exec_user and lead:
                 lcb = str(lead.get("created_by") or "").strip()
                 if lcb and lcb != "None":

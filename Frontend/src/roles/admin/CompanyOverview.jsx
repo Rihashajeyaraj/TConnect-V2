@@ -78,6 +78,8 @@ function CompanyOverview() {
   const [itemLead, setItemLead] = useState('') // for department
   const [itemPrice, setItemPrice] = useState('') // for product
   const [itemStatus, setItemStatus] = useState('Active')
+  const [selectedBranches, setSelectedBranches] = useState([]) // for product-branch assignment
+  const [itemProductType, setItemProductType] = useState('Product') // for product ('Product', 'Service', 'Subscription')
 
   // Load Settings & Master Lists from Supabase
   const loadCompanySettings = async () => {
@@ -171,10 +173,6 @@ function CompanyOverview() {
   const handleSaveProfile = async () => {
     setSaving(true)
     try {
-      localStorage.setItem('tconnect_company_profile', JSON.stringify(companyProfile))
-    } catch (e) {}
-
-    try {
       await settingsAPI.updateSettings({
         company_name: companyProfile.companyName,
         legal_name: companyProfile.legalName,
@@ -187,9 +185,15 @@ function CompanyOverview() {
         currency: companyProfile.currency,
         time_zone: companyProfile.timezone,
       })
-      showToast('Company profile saved & updated in Supabase database!', 'success')
+      
+      try {
+        localStorage.setItem('tconnect_company_profile', JSON.stringify(companyProfile))
+      } catch (e) {}
+      
+      showToast('Company profile saved successfully!', 'success')
     } catch (err) {
-      showToast('Company details saved locally & updated on page!', 'info')
+      const errorMsg = err?.message || err?.detail || 'Failed to save company profile'
+      showToast(errorMsg, 'error')
     } finally {
       setSaving(false)
     }
@@ -271,7 +275,9 @@ function CompanyOverview() {
     setItemLocation('')
     setItemLead('')
     setItemPrice('')
+    setItemProductType('Product')
     setItemStatus('Active')
+    setSelectedBranches([])
     setEditingItem(null)
     setShowAddModal(true)
   }
@@ -285,7 +291,9 @@ function CompanyOverview() {
     setItemLocation(item.location || '')
     setItemLead(item.lead || '')
     setItemPrice(item.price || '')
+    setItemProductType(item.product_type || item.type || 'Product')
     setItemStatus(item.status || 'Active')
+    setSelectedBranches(item.branches || [])
     setShowAddModal(true)
   }
 
@@ -317,6 +325,8 @@ function CompanyOverview() {
             updated.lead = itemLead
           } else if (activeTab === 'products') {
             updated.price = itemPrice
+            updated.product_type = itemProductType
+            updated.branches = selectedBranches
           }
           return updated
         }
@@ -341,23 +351,76 @@ function CompanyOverview() {
         newItem.budget = '₹0'
       } else if (activeTab === 'products') {
         newItem.price = itemPrice || '₹0'
+        newItem.product_type = itemProductType
+        newItem.branches = selectedBranches
       }
       updatedList = [...currentList, newItem]
     }
 
     try {
-      const payload = { [activeTab]: updatedList }
-      await settingsAPI.updateSettings(payload)
-      
-      setMasterData((prev) => ({
-        ...prev,
-        [activeTab]: updatedList
-      }))
+      let savedItem
+      if (activeTab === 'branches') {
+        if (editingItem) {
+          const itemToSave = updatedList.find(x => x.id === editingItem.id)
+          const res = await settingsAPI.updateBranch(editingItem.id, itemToSave)
+          savedItem = res.data
+        } else {
+          const newItem = updatedList[updatedList.length - 1]
+          const res = await settingsAPI.createBranch(newItem)
+          savedItem = res.data
+        }
+      } else if (activeTab === 'products') {
+        if (editingItem) {
+          const itemToSave = updatedList.find(x => x.id === editingItem.id)
+          const res = await settingsAPI.updateProduct(editingItem.id, itemToSave)
+          savedItem = res.data
+        } else {
+          const newItem = updatedList[updatedList.length - 1]
+          const res = await settingsAPI.createProduct(newItem)
+          savedItem = res.data
+        }
+      } else {
+        const payload = { [activeTab]: updatedList }
+        await settingsAPI.updateSettings(payload)
+      }
+
+      // Map backend fields to UI format if needed
+      let finalItem
+      if (savedItem) {
+        finalItem = {
+          id: savedItem.id,
+          name: savedItem.branch_name || savedItem.product_name || savedItem.name,
+          status: savedItem.status || 'Active'
+        }
+        if (activeTab === 'branches') {
+          finalItem.type = savedItem.branch_type || 'Regional Office'
+          finalItem.location = savedItem.address || ''
+          finalItem.staffCount = 0
+        } else if (activeTab === 'products') {
+          finalItem.price = savedItem.base_price !== undefined ? `₹${savedItem.base_price}` : savedItem.price
+          finalItem.product_type = savedItem.product_type || 'Product'
+          finalItem.branches = savedItem.branches || []
+        }
+      }
+
+      setMasterData((prev) => {
+        let newList
+        if (editingItem) {
+          newList = prev[activeTab].map(item => item.id === editingItem.id ? (finalItem || item) : item)
+        } else {
+          newList = [...prev[activeTab], finalItem || updatedList[updatedList.length - 1]]
+        }
+        return {
+          ...prev,
+          [activeTab]: newList
+        }
+      })
       
       showToast(editingItem ? 'Item updated successfully!' : 'New item created successfully!', 'success')
       setShowAddModal(false)
     } catch (err) {
-      showToast('Failed to save master data list to database', 'error')
+      const errorMsg = err?.message || err?.detail || 'Failed to save master data list to database'
+      showToast(errorMsg, 'error')
     } finally {
       setSaving(false)
     }
@@ -374,8 +437,14 @@ function CompanyOverview() {
     )
 
     try {
-      const payload = { [categoryKey]: updatedList }
-      await settingsAPI.updateSettings(payload)
+      if (categoryKey === 'branches') {
+        await settingsAPI.updateBranch(item.id, { status: nextStatus })
+      } else if (categoryKey === 'products') {
+        await settingsAPI.updateProduct(item.id, { status: nextStatus })
+      } else {
+        const payload = { [categoryKey]: updatedList }
+        await settingsAPI.updateSettings(payload)
+      }
       
       setMasterData((prev) => ({
         ...prev,
@@ -384,7 +453,8 @@ function CompanyOverview() {
       
       showToast(`Status updated to ${nextStatus}`, 'success')
     } catch (err) {
-      showToast('Failed to toggle status in Supabase', 'error')
+      const errorMsg = err?.message || err?.detail || 'Failed to toggle status in Supabase'
+      showToast(errorMsg, 'error')
     } finally {
       setSaving(false)
     }
@@ -399,8 +469,14 @@ function CompanyOverview() {
     const updatedList = currentList.filter((x) => x.id !== itemId)
 
     try {
-      const payload = { [categoryKey]: updatedList }
-      await settingsAPI.updateSettings(payload)
+      if (categoryKey === 'branches') {
+        await settingsAPI.deleteBranch(itemId)
+      } else if (categoryKey === 'products') {
+        await settingsAPI.deleteProduct(itemId)
+      } else {
+        const payload = { [categoryKey]: updatedList }
+        await settingsAPI.updateSettings(payload)
+      }
       
       setMasterData((prev) => ({
         ...prev,
@@ -409,7 +485,8 @@ function CompanyOverview() {
       
       showToast('Item deleted successfully', 'success')
     } catch (err) {
-      showToast('Failed to delete item from database', 'error')
+      const errorMsg = err?.message || err?.detail || 'Failed to delete item from database'
+      showToast(errorMsg, 'error')
     } finally {
       setSaving(false)
     }
@@ -930,7 +1007,24 @@ function CompanyOverview() {
                   <div key={p.id} className="p-3 bg-[#F7F9FC]/40 rounded-xl border border-[#DCE3EF] flex items-center justify-between gap-3">
                     <div className="space-y-0.5">
                       <div className="font-extrabold text-[#071A45] text-xs">{p.name}</div>
-                      <div className="text-[10px] text-[#123A8C] font-extrabold">{p.price || '₹0'}</div>
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-[#123A8C] font-extrabold">{p.price || '₹0'}</span>
+                        <span className="inline-flex items-center rounded-md bg-slate-100 px-1.5 py-0.5 text-[9px] font-medium text-slate-700 border border-slate-200">
+                          {p.product_type || 'Product'}
+                        </span>
+                      </div>
+                      {p.branches && p.branches.length > 0 && (
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {p.branches.map(brId => {
+                            const brName = masterData.branches.find(b => b.id === brId)?.name || String(brId)
+                            return (
+                              <span key={brId} className="inline-flex items-center rounded-md bg-blue-50 px-1.5 py-0.5 text-[9px] font-medium text-blue-700 border border-blue-100">
+                                {brName}
+                              </span>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
@@ -1030,16 +1124,55 @@ function CompanyOverview() {
               )}
 
               {activeTab === 'products' && (
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1.5">Standard Price / Fee</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. ₹5,000 / Month"
-                    value={itemPrice}
-                    onChange={(e) => setItemPrice(e.target.value)}
-                    className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 text-xs font-semibold"
-                  />
-                </div>
+                <>
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1.5">Product Type</label>
+                    <select
+                      value={itemProductType}
+                      onChange={(e) => setItemProductType(e.target.value)}
+                      className="w-full h-10 border border-slate-300 rounded-xl px-2.5 text-slate-950 focus:outline-none focus:border-blue-600 text-xs font-bold"
+                    >
+                      <option value="Product">Product</option>
+                      <option value="Service">Service</option>
+                      <option value="Subscription">Subscription</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1.5">Standard Price / Fee</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. ₹5,000 / Month"
+                      value={itemPrice}
+                      onChange={(e) => setItemPrice(e.target.value)}
+                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 text-xs font-semibold"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1.5">Applicable Branches</label>
+                    <div className="space-y-2 border border-slate-200 rounded-xl p-3 max-h-40 overflow-y-auto bg-slate-50">
+                      {masterData.branches.map((b) => (
+                        <label key={b.id} className="flex items-center gap-2 font-semibold text-slate-700 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={selectedBranches.includes(b.id)}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedBranches([...selectedBranches, b.id])
+                              } else {
+                                setSelectedBranches(selectedBranches.filter(id => id !== b.id))
+                              }
+                            }}
+                            className="rounded text-blue-650 border-slate-300 focus:ring-blue-500"
+                          />
+                          <span>{b.name}</span>
+                        </label>
+                      ))}
+                      {masterData.branches.length === 0 && (
+                        <div className="text-slate-400 text-[10px]">No branches defined yet.</div>
+                      )}
+                    </div>
+                  </div>
+                </>
               )}
 
               <div>

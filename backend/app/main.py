@@ -75,6 +75,12 @@ def on_startup():
             ALTER TABLE crm.customers ADD COLUMN IF NOT EXISTS reassigned_by TEXT;
             ALTER TABLE crm.customers ADD COLUMN IF NOT EXISTS reassigned_at TIMESTAMPTZ;
             ALTER TABLE crm.customers ADD COLUMN IF NOT EXISTS reassignment_reason TEXT;
+            ALTER TABLE crm.customers ADD COLUMN IF NOT EXISTS generated_by_employee_id TEXT;
+            ALTER TABLE crm.customers ADD COLUMN IF NOT EXISTS generated_by_employee_name TEXT;
+
+            -- Add ownership tracking columns to crm.opportunities
+            ALTER TABLE crm.opportunities ADD COLUMN IF NOT EXISTS generated_by_employee_id TEXT;
+            ALTER TABLE crm.opportunities ADD COLUMN IF NOT EXISTS generated_by_employee_name TEXT;
             """
             client.rpc("exec_sql", {"sql_query": sql}).execute()
             print("✅ Database ownership reassignment columns checked/added.")

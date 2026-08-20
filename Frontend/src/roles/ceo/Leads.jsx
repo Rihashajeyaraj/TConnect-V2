@@ -372,7 +372,8 @@ function Leads() {
                     }
                   } catch (err) {
                     console.error('Reassignment error:', err)
-                    showToast('Failed to complete lead reassignment', 'error')
+                    const errorMsg = err?.detail || err?.message || err?.error || "Failed to complete lead reassignment"
+                    showToast(errorMsg, 'error')
                   } finally {
                     setAssigning(false)
                   }

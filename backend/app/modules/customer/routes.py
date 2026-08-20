@@ -305,19 +305,27 @@ async def reassign_customers(
     rbac: None = Depends(CanManageCustomers),
     service: CustomerService = Depends(get_service)
 ):
-    """Bulk reassign multiple customers to a new active Sales Executive."""
-    role = (user_payload.get("role") or "").lower()
-    if role not in ("ceo", "admin", "super_admin"):
+    from app.core.scoping import normalize_user_role
+    role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role") or "")
+    if role not in ("admin", "super_admin"):
         from fastapi import HTTPException
-        raise HTTPException(status_code=403, detail="Only CEO or Admin can perform bulk reassignment.")
+        raise HTTPException(status_code=403, detail="Only Admin can perform bulk reassignment.")
 
-    success_count = service.bulk_reassign_customers(
-        customer_ids=payload.customer_ids,
-        new_employee_id=payload.new_employee_id,
-        reassigned_by=user_payload.get("name") or user_payload.get("email") or "CEO",
-        reason=payload.reassignment_reason
-    )
-    return StandardResponse.success_response(
-        data={"reassigned_count": success_count},
-        message=f"Successfully reassigned {success_count} customers."
-    )
+    try:
+        success_count, updated_customers = service.bulk_reassign_customers(
+            customer_ids=payload.customer_ids,
+            new_employee_id=payload.new_employee_id,
+            reassigned_by=user_payload.get("name") or user_payload.get("email") or "Admin",
+            reason=payload.reassignment_reason
+        )
+        if success_count == 0:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=500, detail="No customers were updated in the database. Check the customer IDs and try again.")
+        return StandardResponse.success_response(
+            data={"reassigned_count": success_count, "updated_customers": updated_customers},
+            message=f"Successfully reassigned {success_count} customers."
+        )
+    except Exception as e:
+        from fastapi import HTTPException
+        # Propagate actual exception details cleanly with CORS headers
+        raise HTTPException(status_code=500, detail=f"Database or service error: {str(e)}")

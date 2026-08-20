@@ -1,11 +1,18 @@
 from typing import List, Optional, Dict, Any
 import uuid
+import re
 from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
 from app.core.logger import logger
 
 _in_memory_leads: List[Dict[str, Any]] = []
+
+_UUID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
+
+def _is_uuid_like(val: str) -> bool:
+    """Returns True if val looks like a UUID."""
+    return bool(_UUID_PATTERN.match(val.strip()))
 
 
 class CRMRepository:
@@ -49,31 +56,64 @@ class CRMRepository:
         for l in leads:
             row = dict(l)
             notes_str = str(row.get("notes") or row.get("remarks") or "")
+            parsed_from_notes = {}
             if notes_str and "|" in notes_str:
                 for part in notes_str.split("|"):
                     p_strip = part.strip()
                     if "Product:" in p_strip:
-                        row["product_name"] = p_strip.split("Product:")[-1].strip()
-                        row["product"] = p_strip.split("Product:")[-1].strip()
+                        parsed_from_notes["product_name"] = p_strip.split("Product:")[-1].strip()
                     elif "Email:" in p_strip:
-                        row["assigned_to_email"] = p_strip.split("Email:")[-1].strip().lower()
+                        parsed_from_notes["assigned_to_email"] = p_strip.split("Email:")[-1].strip().lower()
                     elif "EMP:" in p_strip:
-                        row["employee_code"] = p_strip.split("EMP:")[-1].strip()
+                        parsed_from_notes["employee_code"] = p_strip.split("EMP:")[-1].strip()
                     elif "Manager:" in p_strip:
-                        row["reporting_manager_email"] = p_strip.split("Manager:")[-1].strip().lower()
+                        parsed_from_notes["reporting_manager_email"] = p_strip.split("Manager:")[-1].strip().lower()
                     elif "AssignedTo:" in p_strip:
-                        row["assigned_to"] = p_strip.split("AssignedTo:")[-1].strip()
+                        parsed_from_notes["assigned_to"] = p_strip.split("AssignedTo:")[-1].strip()
                     elif "Category:" in p_strip:
-                        row["category"] = p_strip.split("Category:")[-1].strip().title()
+                        parsed_from_notes["category"] = p_strip.split("Category:")[-1].strip().title()
 
-            a_to = str(row.get("assigned_to") or "").strip()
+            # Set values: prioritize structured DB columns, fallback to notes
+            row["product_name"] = row.get("product_name") or parsed_from_notes.get("product_name") or row.get("product") or parsed_from_notes.get("product")
+            
+            db_assigned = row.get("assigned_to")
+            db_email = row.get("assigned_to_email")
+            db_code = row.get("employee_code")
+            db_mgr_email = row.get("reporting_manager_email")
+
+            # Resolve user mapping using db_assigned UUID or created_by
+            a_to = str(db_assigned or "").strip()
             c_by = str(row.get("created_by") or "").strip()
             matched_user = user_map.get(a_to) or user_map.get(c_by)
+
             if matched_user:
-                row["assigned_to_email"] = row.get("assigned_to_email") or str(matched_user.get("email") or "").lower().strip()
-                row["assigned_to"] = row.get("assigned_to") or str(matched_user.get("name") or matched_user.get("full_name") or "")
-                row["employee_code"] = row.get("employee_code") or str(matched_user.get("employee_code") or matched_user.get("employee_id") or "")
-                row["reporting_manager_email"] = row.get("reporting_manager_email") or str(matched_user.get("reporting_manager_email") or "").lower().strip()
+                status_lower = str(matched_user.get("status") or "").lower().strip()
+                is_matched_inactive = status_lower in ("inactive", "deactivated", "terminated", "disabled", "resigned", "left") or matched_user.get("is_active") is False
+                
+                if is_matched_inactive:
+                    row["assigned_to_email"] = None
+                    row["assigned_to"] = "Needs Reassignment"
+                    row["employee_code"] = None
+                    row["reporting_manager_email"] = None
+                else:
+                    # Authoritative resolution from matched active user
+                    row["assigned_to_email"] = str(matched_user.get("email") or "").lower().strip()
+                    row["assigned_to"] = str(matched_user.get("name") or matched_user.get("full_name") or "")
+                    row["employee_code"] = str(matched_user.get("employee_code") or matched_user.get("employee_id") or "")
+                    row["reporting_manager_email"] = str(matched_user.get("reporting_manager_email") or "").lower().strip()
+            else:
+                # If no matched active user, fall back to DB values, then notes
+                row["assigned_to"] = db_assigned or parsed_from_notes.get("assigned_to")
+                row["assigned_to_email"] = db_email or parsed_from_notes.get("assigned_to_email")
+                row["employee_code"] = db_code or parsed_from_notes.get("employee_code")
+                row["reporting_manager_email"] = db_mgr_email or parsed_from_notes.get("reporting_manager_email")
+
+            # If current_owner is set (updated on reassignment) and it is a name, it takes priority
+            if row.get("current_owner"):
+                co = str(row["current_owner"]).strip()
+                if co and co not in ("None", "—"):
+                    if not _is_uuid_like(co):
+                        row["assigned_to"] = co
             
             # Resolve manager name and manager ID for leads
             mgr_email = row.get("reporting_manager_email")

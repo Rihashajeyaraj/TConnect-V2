@@ -294,6 +294,12 @@ export const settingsAPI = {
   updateSettings: (data) => request('/settings/business', { method: 'PUT', body: JSON.stringify(data) }),
   getConfig: () => request('/settings/config'),
   getProducts: () => request('/settings/products'),
+  createBranch: (data) => request('/settings/branches', { method: 'POST', body: JSON.stringify(data) }),
+  updateBranch: (id, data) => request(`/settings/branches/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteBranch: (id) => request(`/settings/branches/${id}`, { method: 'DELETE' }),
+  createProduct: (data) => request('/settings/products', { method: 'POST', body: JSON.stringify(data) }),
+  updateProduct: (id, data) => request(`/settings/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteProduct: (id) => request(`/settings/products/${id}`, { method: 'DELETE' }),
 }
 
 export const spatialAPI = {

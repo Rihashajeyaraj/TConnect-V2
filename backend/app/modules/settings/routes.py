@@ -69,7 +69,12 @@ async def update_settings(
     except Exception:
         existing = {}
 
-    updated = service.update_settings(data)
+    from fastapi import HTTPException
+    try:
+        updated = service.update_settings(data)
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
     update_dict = data.model_dump(exclude_none=True)
     
     # Determine permission action vs general settings update
@@ -100,3 +105,113 @@ async def update_settings(
         data=updated,
         message="Business settings updated successfully"
     )
+
+
+# Branches CRUD
+@router.post("/branches", response_model=StandardResponse)
+async def create_branch(
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        inserted = service.create_branch(data)
+        return StandardResponse.success_response(
+            data=inserted,
+            message="Branch created successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/branches/{branch_id}", response_model=StandardResponse)
+async def update_branch(
+    branch_id: str,
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        updated = service.update_branch(branch_id, data)
+        return StandardResponse.success_response(
+            data=updated,
+            message="Branch updated successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/branches/{branch_id}", response_model=StandardResponse)
+async def delete_branch(
+    branch_id: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        service.delete_branch(branch_id)
+        return StandardResponse.success_response(
+            message="Branch deleted successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# Products CRUD
+@router.post("/products", response_model=StandardResponse)
+async def create_product(
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        inserted = service.create_product(data)
+        return StandardResponse.success_response(
+            data=inserted,
+            message="Product created successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/products/{product_id}", response_model=StandardResponse)
+async def update_product(
+    product_id: str,
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        updated = service.update_product(product_id, data)
+        return StandardResponse.success_response(
+            data=updated,
+            message="Product updated successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.delete("/products/{product_id}", response_model=StandardResponse)
+async def delete_product(
+    product_id: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        service.delete_product(product_id)
+        return StandardResponse.success_response(
+            message="Product deleted successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

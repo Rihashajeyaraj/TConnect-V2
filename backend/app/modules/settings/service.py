@@ -16,3 +16,21 @@ class SettingsService:
     def update_settings(self, data: SettingsUpdate) -> Dict[str, Any]:
         updates = data.model_dump(exclude_unset=True)
         return self.repo.update_settings(updates)
+
+    def create_branch(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repo.create_branch(data)
+
+    def update_branch(self, branch_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repo.update_branch(branch_id, data)
+
+    def delete_branch(self, branch_id: str) -> None:
+        self.repo.delete_branch(branch_id)
+
+    def create_product(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repo.create_product(data)
+
+    def update_product(self, product_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repo.update_product(product_id, data)
+
+    def delete_product(self, product_id: str) -> None:
+        self.repo.delete_product(product_id)

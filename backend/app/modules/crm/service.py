@@ -196,31 +196,132 @@ class CRMService:
             raise NotFoundException(resource="Employee", identifier=new_employee_id)
 
         # Check if active
-        is_inactive = str(new_emp.get("status") or "").lower() in ("inactive", "deactivated", "terminated", "disabled")
+        is_inactive = str(new_emp.get("status") or "").lower() in ("inactive", "deactivated", "terminated", "disabled", "resigned", "left")
         is_not_active = new_emp.get("is_active") is False
         if is_inactive or is_not_active:
-            raise Exception("Cannot assign leads to a deactivated employee.")
+            raise Exception("Cannot reassign to an inactive or resigned employee.")
 
+        # Log and verify inputs
+        logger.info(f"[REASSIGN LEAD START] IDs: {lead_ids}, Target Emp ID: {new_employee_id}, Reassigned By: {reassigned_by}, Reason: {reason}")
+        
         success_count = 0
+        updated_leads = []
         for lead_id in lead_ids:
             try:
-                res = sp.schema("crm").table("leads").select("*").or_(f"id.eq.{lead_id},lead_id.eq.{lead_id}").execute()
-                if res.data:
-                    lead = res.data[0]
-                    orig_owner = lead.get("original_owner") or lead.get("assigned_to") or "—"
+                # 1. Try to find the lead using 4 combinations of schema + key
+                lead = None
+                schema_used = None
+                key_used = None
+
+                # Option 1: crm.leads with lead_id
+                try:
+                    res = sp.schema("crm").table("leads").select("*").eq("lead_id", lead_id).execute()
+                    if res.data and len(res.data) > 0:
+                        lead = res.data[0]
+                        schema_used = "crm"
+                        key_used = "lead_id"
+                except Exception:
+                    pass
+
+                # Option 2: crm.leads with id
+                if not lead:
+                    try:
+                        res = sp.schema("crm").table("leads").select("*").eq("id", lead_id).execute()
+                        if res.data and len(res.data) > 0:
+                            lead = res.data[0]
+                            schema_used = "crm"
+                            key_used = "id"
+                    except Exception:
+                        pass
+
+                # Option 3: public.leads with lead_id
+                if not lead:
+                    try:
+                        res = sp.table("leads").select("*").eq("lead_id", lead_id).execute()
+                        if res.data and len(res.data) > 0:
+                            lead = res.data[0]
+                            schema_used = "public"
+                            key_used = "lead_id"
+                    except Exception:
+                        pass
+
+                # Option 4: public.leads with id
+                if not lead:
+                    try:
+                        res = sp.table("leads").select("*").eq("id", lead_id).execute()
+                        if res.data and len(res.data) > 0:
+                            lead = res.data[0]
+                            schema_used = "public"
+                            key_used = "id"
+                    except Exception:
+                        pass
+
+                if not lead:
+                    logger.warning(f"Lead {lead_id} not found in any schema/key combination, skipping.")
+                    continue
+
+                # Store original owner name if not set (no "—" strings to avoid UUID cast errors)
+                orig_owner = lead.get("original_owner") or lead.get("assigned_to_name") or lead.get("assigned_to") or None
+                prev_owner = lead.get("current_owner") or lead.get("assigned_to") or None
+
+                # Resolve the new employee's identifier fields
+                new_uid = new_emp.get("user_id") or new_emp.get("id") or new_emp.get("employee_id")
+                new_name = new_emp.get("name") or new_emp.get("full_name") or None
+                new_email = new_emp.get("email") or None
+                new_emp_code = new_emp.get("employee_code") or new_emp.get("employee_id") or None
+                new_mgr_name = new_emp.get("reporting_manager_name") or "Direct/Unassigned"
+
+                # Validate UUID format for assigned_to column
+                assigned_to_val = new_uid if (new_uid and len(str(new_uid)) == 36 and "-" in str(new_uid)) else None
+
+                update_payload = {
+                    "assigned_to": assigned_to_val,
+                    "assigned_to_email": new_email,
+                    "employee_code": new_emp_code,
+                    "sales_manager": new_mgr_name,
+                    "original_owner": orig_owner,
+                    "previous_owner": prev_owner,
+                    "current_owner": new_name,
+                    "reassigned_by": reassigned_by,
+                    "reassigned_at": datetime.now(timezone.utc).isoformat(),
+                    "reassignment_reason": reason
+                }
+
+                # Dynamically filter out columns that do not exist in the selected database table
+                update_payload = {k: v for k, v in update_payload.items() if k in lead}
+
+                # Perform the UPDATE on the exact schema and key that found the record
+                if schema_used == "crm":
+                    upd_res = sp.schema("crm").table("leads").update(update_payload).eq(key_used, lead_id).execute()
+                else:
+                    upd_res = sp.table("leads").update(update_payload).eq(key_used, lead_id).execute()
+
+                # Step 5 — Verify immediately after UPDATE
+                if upd_res.data and len(upd_res.data) > 0:
+                    # Query again using exact same verified combination
+                    if schema_used == "crm":
+                        verify_res = sp.schema("crm").table("leads").select("*").eq(key_used, lead_id).execute()
+                    else:
+                        verify_res = sp.table("leads").select("*").eq(key_used, lead_id).execute()
                     
-                    sp.schema("crm").table("leads").update({
-                        "assigned_to": new_emp.get("name"),
-                        "assigned_to_email": new_emp.get("email"),
-                        "employee_code": new_emp.get("employee_code"),
-                        "original_owner": orig_owner,
-                        "previous_owner": lead.get("assigned_to"),
-                        "current_owner": new_emp.get("name"),
-                        "reassigned_by": reassigned_by,
-                        "reassigned_at": datetime.now(timezone.utc).isoformat(),
-                        "reassignment_reason": reason
-                    }).eq("id", lead.get("id")).execute()
-                    success_count += 1
+                    if verify_res.data and len(verify_res.data) > 0:
+                        verified_lead = verify_res.data[0]
+                        # Verify the current Sales Executive matches the new employee name or UUID
+                        curr_exec = verified_lead.get("assigned_to")
+                        if curr_exec == new_name or curr_exec == new_uid or (assigned_to_val and curr_exec == assigned_to_val):
+                            success_count += 1
+                            updated_leads.append(verified_lead)
+                            logger.info(f"[REASSIGN LEAD SUCCESS] Lead {lead_id} reassigned to {new_name} via {schema_used}.leads.{key_used}. Verified.")
+                        else:
+                            logger.error(f"[REASSIGN LEAD VERIFICATION FAILED] Lead {lead_id} DB value after update was '{curr_exec}' instead of '{new_name}'/'{new_uid}'")
+                    else:
+                        logger.error(f"[REASSIGN LEAD VERIFICATION FAILED] Lead {lead_id} could not be read back after update.")
+                else:
+                    logger.error(f"DB UPDATE for lead {lead_id} returned no rows. Schema: {schema_used}, Key: {key_used}")
             except Exception as e:
                 logger.error(f"Failed to reassign lead {lead_id}: {e}")
-        return success_count
+                raise e
+
+        logger.info(f"[REASSIGN LEAD END] Success Count: {success_count}/{len(lead_ids)}")
+        return success_count, updated_leads
+
