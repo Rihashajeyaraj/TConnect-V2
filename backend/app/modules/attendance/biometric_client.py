@@ -69,7 +69,7 @@ class BiometricClient:
         Extract face template vector from image bytes by calling the biometric backend.
         """
         url = f"{self.base_url}/api/v1/extract-vectors"
-        files = {"images": ("frame.png", image_bytes, "image/png")}
+        files = [("images", ("frame.png", image_bytes, "image/png"))]
         timeout = 10.0
         
         try:
@@ -141,6 +141,16 @@ class BiometricClient:
             logger.info(f"Sending face images for matching to: {url} with {len(files)} frames")
             response = requests.post(url, files=files, data=data, timeout=timeout)
             status_code = response.status_code
+            
+            # Write debug log
+            try:
+                with open("debug_match.log", "w", encoding="utf-8") as f:
+                    f.write(f"URL: {url}\n")
+                    f.write(f"Status Code: {status_code}\n")
+                    f.write(f"Response: {response.text}\n")
+                    f.write(f"Candidate List: {candidate_list}\n")
+            except Exception as log_err:
+                logger.error(f"Failed to write debug log: {log_err}")
             
             if status_code == 200:
                 res_json = response.json()

@@ -208,7 +208,19 @@ class AttendanceRepository:
         valid_enrollments = []
         for entry in logs:
             vec = entry.get("face_template_vector")
+            if isinstance(vec, str):
+                try:
+                    import json
+                    vec = json.loads(vec)
+                except Exception:
+                    try:
+                        cleaned = vec.strip("[]{} ")
+                        if cleaned:
+                            vec = [float(x.strip()) for x in cleaned.split(",")]
+                    except Exception:
+                        pass
             if isinstance(vec, list) and len(vec) == 512:
+                entry["face_template_vector"] = vec
                 valid_enrollments.append(entry)
 
         return valid_enrollments

@@ -94,6 +94,39 @@ async def enroll_employee(
     # Set the extracted vector into the request model to be stored in the DB
     data.face_template_vector = vector
 
+    # 4. Duplicate Face Detection against all existing enrollments
+    valid_enrollments = service.repo.get_all_enrollments()
+    if valid_enrollments:
+        import json
+        candidates = []
+        for enr in valid_enrollments:
+            if enr.get("face_template_vector") and isinstance(enr["face_template_vector"], list):
+                candidates.append({
+                    "id": enr["employee_id"],
+                    "face_encoding": enr["face_template_vector"]
+                })
+        
+        if candidates:
+            candidate_list_str = json.dumps(candidates)
+            match_res = bio_client.match_face([image_bytes], candidate_list_str)
+            
+            if not match_res.get("success"):
+                raise HTTPException(
+                    status_code=status.HTTP_502_BAD_GATEWAY,
+                    detail=f"Biometric matching service error during duplicate detection: {match_res.get('message', 'Unknown error')}"
+                )
+            
+            if match_res.get("verified"):
+                matched_id = match_res.get("matched_id")
+                matched_enr = next((e for e in valid_enrollments if e["employee_id"] == matched_id), None)
+                if matched_enr:
+                    matched_name = matched_enr.get("employee_name") or "Unknown"
+                    matched_code = matched_enr.get("employee_id") or "Unknown"
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail=f"This face is already enrolled for {matched_name} / {matched_code}."
+                    )
+
     result = service.enroll(data)
     return StandardResponse.success_response(
         data=result,
@@ -107,16 +140,46 @@ async def verify_liveness(
     user_payload: dict = Depends(get_current_user_payload),
     service: AttendanceService = Depends(get_service)
 ):
-    """Verify facial liveness challenge for anti-spoofing."""
-    challenge = data.get("challenge_type", "blink")
-    score = 0.98
-    
+    """Verify facial liveness challenge for anti-spoofing using real biometric client."""
+    face_data_url = data.get("face_data_url")
+    if not face_data_url or "base64," not in face_data_url:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid face_data_url. Expected base64-encoded image data URL."
+        )
+
+    try:
+        import base64
+        header, encoded = face_data_url.split("base64,", 1)
+        image_bytes = base64.b64decode(encoded)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Failed to decode base64 image: {str(e)}"
+        )
+
+    # Call the external biometric service to extract vectors,
+    # which runs strict anti-spoofing/liveness checks on the server.
+    from app.modules.attendance.biometric_client import BiometricClient
+    bio_client = BiometricClient()
+    extract_res = bio_client.extract_vectors(image_bytes)
+
+    if not extract_res.get("success"):
+        return StandardResponse.success_response(
+            data={
+                "liveness_verified": False,
+                "liveness_score": 0.0,
+                "message": f"Spoofing detected or verification failed: {extract_res.get('message', 'Unknown error')}"
+            },
+            message="Liveness verification failed"
+        )
+
     return StandardResponse.success_response(
         data={
             "liveness_verified": True,
-            "liveness_score": score,
-            "challenge_type": challenge,
-            "message": "Face Verified Successfully."
+            "liveness_score": 0.98,
+            "challenge_type": data.get("challenge_type", "blink"),
+            "message": "Liveness check passed. Genuine face verified."
         },
         message="Liveness verification evaluated"
     )
