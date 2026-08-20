@@ -62,22 +62,21 @@ export default function Leads() {
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const res = await settingsAPI.getSettings();
+        const res = await settingsAPI.getProducts();
         if (res?.data?.products) {
           const activeProds = res.data.products
             .filter((p) => p.status === 'Active' || p.status === undefined)
-            .map((p) => p.name);
+            .map((p) => p.name || p.product_name || p.productName);
           setProductsList(activeProds);
         }
       } catch (err) {
-        console.warn("Failed to load company products:", err);
+        console.warn("Failed to load company products from Supabase products table:", err);
       }
     }
     fetchProducts();
   }, []);
 
-  const defaultProducts = ["TwiteConnect CRM", "Field GPS Tracking App", "Sales CRM Enterprise", "IT Support Service"];
-  const productOptions = productsList.length > 0 ? productsList : defaultProducts;
+  const productOptions = productsList;
 
   // Active view tab: "leads" | "followups" | "visits" | "opportunities"
   const [activeTab, setActiveTab] = useState("leads");
@@ -99,6 +98,7 @@ export default function Leads() {
     companyName: "",
     source: "Field Research (SE)",
     productRequirement: "",
+    customProductRequirement: "",
     contactPerson: "",
     phone: "",
     location: "",
@@ -376,6 +376,7 @@ export default function Leads() {
   const [addForm, setAddForm] = useState({
     company: "",
     product: "",
+    customProduct: "",
     person: "",
     phone: "",
     email: "",
@@ -592,7 +593,9 @@ export default function Leads() {
 
     setIsSubmitting(true);
 
-    const selectedProd = addForm.product?.trim() || "TwiteConnect CRM";
+    const selectedProd = addForm.product === "custom" 
+      ? (addForm.customProduct?.trim() || "Custom Product/Service") 
+      : (addForm.product?.trim() || "TwiteConnect CRM");
 
     // Clean and validate coordinates to avoid NaN or fabricated coordinates
     const lat = (addForm.latitude != null && !isNaN(Number(addForm.latitude))) ? Number(addForm.latitude) : null;
@@ -738,6 +741,7 @@ export default function Leads() {
     setAddForm({
       company: "",
       product: "",
+      customProduct: "",
       person: "",
       phone: "",
       email: "",
@@ -764,6 +768,9 @@ export default function Leads() {
       showToast("Company name and location are required.", "error");
       return;
     }
+    const requirementVal = oppForm.productRequirement === "custom" 
+      ? (oppForm.customProductRequirement?.trim() || "Custom Product/Service") 
+      : (oppForm.productRequirement || "");
 
     const newOpp = {
       id: `opp_${Date.now()}`,
@@ -771,7 +778,7 @@ export default function Leads() {
       customer: oppForm.companyName.trim(),
       company: oppForm.companyName.trim(),
       source: oppForm.source,
-      productRequirement: oppForm.productRequirement,
+      productRequirement: requirementVal,
       contactPerson: oppForm.contactPerson.trim(),
       phone: oppForm.phone.trim(),
       address: oppForm.location.trim(),
@@ -819,6 +826,7 @@ export default function Leads() {
       companyName: "",
       source: "Field Research (SE)",
       productRequirement: "",
+      customProductRequirement: "",
       contactPerson: "",
       phone: "",
       location: "",
@@ -2435,15 +2443,25 @@ export default function Leads() {
                 <div>
                   <label className="text-slate-800 font-extrabold block mb-1.5">Product / Service Needed (*Why reached out)</label>
                   <select
-                    value={addForm.product || (productOptions[0] || "")}
+                    value={addForm.product}
                     onChange={(e) => setAddForm({ ...addForm, product: e.target.value })}
-                    className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
+                    className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition cursor-pointer"
                   >
                     <option value="">-- Select Product / Service --</option>
                     {productOptions.map((prod) => (
                       <option key={prod} value={prod}>{prod}</option>
                     ))}
+                    <option value="custom">✍️ Custom Product / Service</option>
                   </select>
+                  {addForm.product === "custom" && (
+                    <input
+                      type="text"
+                      placeholder="Enter custom product name"
+                      value={addForm.customProduct || ""}
+                      onChange={(e) => setAddForm({ ...addForm, customProduct: e.target.value })}
+                      className="w-full mt-2 border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
+                    />
+                  )}
                 </div>
               </div>
 
@@ -3208,7 +3226,7 @@ export default function Leads() {
                 <div>
                   <label className="block text-slate-700 font-extrabold mb-1">Product / Requirement (*Why reach out)</label>
                   <select
-                    value={oppForm.productRequirement || (productOptions[0] || "")}
+                    value={oppForm.productRequirement}
                     onChange={(e) => setOppForm({ ...oppForm, productRequirement: e.target.value })}
                     className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm cursor-pointer"
                   >
@@ -3216,7 +3234,17 @@ export default function Leads() {
                     {productOptions.map((prod) => (
                       <option key={prod} value={prod}>{prod}</option>
                     ))}
+                    <option value="custom">✍️ Custom Product / Service</option>
                   </select>
+                  {oppForm.productRequirement === "custom" && (
+                    <input
+                      type="text"
+                      placeholder="Enter custom product requirement"
+                      value={oppForm.customProductRequirement || ""}
+                      onChange={(e) => setOppForm({ ...oppForm, customProductRequirement: e.target.value })}
+                      className="w-full h-10 mt-2 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
+                    />
+                  )}
                 </div>
 
                 <div>
