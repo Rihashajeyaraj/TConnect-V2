@@ -50,6 +50,8 @@ class ClockInRequest(BaseModel):
     remarks: Optional[str] = None
     mode: Optional[str] = "Biometric"
     verification_token: Optional[str] = None
+    location_signature: Optional[str] = None
+    signature_timestamp: Optional[int] = None
 
 
 class ClockOutRequest(BaseModel):
@@ -71,6 +73,8 @@ class ClockOutRequest(BaseModel):
     summary: Optional[str] = None
     remarks: Optional[str] = None
     verification_token: Optional[str] = None
+    location_signature: Optional[str] = None
+    signature_timestamp: Optional[int] = None
 
 
 class LeaveCreate(BaseModel):

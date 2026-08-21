@@ -205,6 +205,7 @@ export const attendanceAPI = {
   enroll: (data) => request('/attendance/enroll', { method: 'POST', body: JSON.stringify(data) }),
   verifyLiveness: (data) => request('/attendance/verify-liveness', { method: 'POST', body: JSON.stringify(data) }),
   matchFace: (data) => request('/attendance/match-face', { method: 'POST', body: JSON.stringify(data) }),
+  requestChallenge: () => request('/attendance/challenge', { method: 'POST' }),
   clockIn: (data) => request('/attendance/clock-in', { method: 'POST', body: JSON.stringify(data) }),
   clockOut: (data) => request('/attendance/clock-out', { method: 'POST', body: JSON.stringify(data) }),
   submitLeaveRequest: (data) => request('/attendance/leave', { method: 'POST', body: JSON.stringify(data) }),

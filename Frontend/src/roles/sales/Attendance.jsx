@@ -86,6 +86,7 @@ export default function Attendance() {
   // Biometric & Camera States
   const [matchStatus, setMatchStatus] = useState("PENDING"); // PENDING, DETECTING, MATCHED, FAILED, SPOOF
   const [verificationToken, setVerificationToken] = useState(null);
+  const [challengeSalt, setChallengeSalt] = useState("");
   const [matchedEmployeeName, setMatchedEmployeeName] = useState("");
   const [matchedEmployeeId, setMatchedEmployeeId] = useState("");
 
@@ -436,6 +437,7 @@ export default function Attendance() {
 
       if (res && res.data && res.data.verified) {
         setVerificationToken(res.data.verification_token);
+        setChallengeSalt(res.data.challenge_salt || "");
         setMatchedEmployeeName(res.data.matched_employee_name);
         setMatchedEmployeeId(res.data.matched_employee_id);
         setMatchStatus("MATCHED");
@@ -465,6 +467,31 @@ export default function Attendance() {
   };
 
   // Clock In submission
+  const generateLocationSignature = async (lat, lng, timestamp, userId, salt) => {
+    try {
+      const enc = new TextEncoder();
+      const message = enc.encode(`${Number(lat).toFixed(6)}:${Number(lng).toFixed(6)}:${timestamp}:${userId}`);
+      const key = await window.crypto.subtle.importKey(
+        "raw",
+        enc.encode(salt),
+        { name: "HMAC", hash: { name: "SHA-256" } },
+        false,
+        ["sign"]
+      );
+      const signatureBuffer = await window.crypto.subtle.sign(
+        "HMAC",
+        key,
+        message
+      );
+      return Array.from(new Uint8Array(signatureBuffer))
+        .map(b => b.toString(16).padStart(2, "0"))
+        .join("");
+    } catch (e) {
+      console.error("Cryptographic signing error:", e);
+      return "";
+    }
+  };
+
   const handleClockInSubmit = async () => {
     if (isSaving) return;
     
@@ -475,6 +502,33 @@ export default function Attendance() {
     }
 
     setIsSaving(true);
+
+    let currentToken = verificationToken;
+    let currentSalt = challengeSalt;
+
+    if (matchStatus === "FALLBACK") {
+      try {
+        const challengeRes = await attendanceAPI.requestChallenge();
+        if (challengeRes && challengeRes.data) {
+          currentToken = challengeRes.data.verification_token;
+          currentSalt = challengeRes.data.challenge_salt;
+        }
+      } catch (err) {
+        showToast("Failed to initiate secure location challenge. Please verify your connection.", "error");
+        setIsSaving(false);
+        return;
+      }
+    }
+
+    const signatureTimestamp = Math.floor(Date.now() / 1000);
+    const resolvedEmployeeId = matchedEmployeeId || userEmpCode;
+    const locationSig = await generateLocationSignature(
+      gpsCoords.lat,
+      gpsCoords.lng,
+      signatureTimestamp,
+      resolvedEmployeeId,
+      currentSalt
+    );
 
     const nowStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     let finalRemarks = punchRemarks.trim();
@@ -496,7 +550,7 @@ export default function Attendance() {
     }
 
     const payload = {
-      employee_id: matchedEmployeeId || userEmpCode,
+      employee_id: resolvedEmployeeId,
       employee_name: matchedEmployeeName || userName,
       attendance_date: new Date().toISOString().slice(0, 10),
       check_in_time: nowStr,
@@ -512,7 +566,9 @@ export default function Attendance() {
       liveness_score: 0.98,
       remarks: finalRemarks,
       notes: finalRemarks,
-      verification_token: verificationToken,
+      verification_token: currentToken,
+      location_signature: locationSig,
+      signature_timestamp: signatureTimestamp,
     };
 
     try {
@@ -644,13 +700,40 @@ export default function Attendance() {
     if (isSaving) return;
     setIsSaving(true);
 
+    let currentToken = verificationToken;
+    let currentSalt = challengeSalt;
+
+    if (matchStatus === "FALLBACK") {
+      try {
+        const challengeRes = await attendanceAPI.requestChallenge();
+        if (challengeRes && challengeRes.data) {
+          currentToken = challengeRes.data.verification_token;
+          currentSalt = challengeRes.data.challenge_salt;
+        }
+      } catch (err) {
+        showToast("Failed to initiate secure location challenge. Please verify your connection.", "error");
+        setIsSaving(false);
+        return;
+      }
+    }
+
+    const signatureTimestamp = Math.floor(Date.now() / 1000);
+    const resolvedEmployeeId = matchedEmployeeId || userEmpCode;
+    const locationSig = await generateLocationSignature(
+      gpsCoords.lat,
+      gpsCoords.lng,
+      signatureTimestamp,
+      resolvedEmployeeId,
+      currentSalt
+    );
+
     const nowStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     const checkInTime = todayAttendance ? todayAttendance.loginTime : "09:00 AM";
     const calcHours = calculateWorkHours(checkInTime, nowStr);
     const finalRemarks = checkoutRemarks.trim() || "Shift completed";
 
     const payload = {
-      employee_id: userEmpCode,
+      employee_id: resolvedEmployeeId,
       attendance_date: new Date().toISOString().slice(0, 10),
       check_out_time: nowStr,
       latitude: gpsCoords.lat,
@@ -663,7 +746,9 @@ export default function Attendance() {
       device_info: navigator.userAgent,
       verified_by_face: true,
       liveness_verified: true,
-      verification_token: verificationToken,
+      verification_token: currentToken,
+      location_signature: locationSig,
+      signature_timestamp: signatureTimestamp,
     };
 
     try {

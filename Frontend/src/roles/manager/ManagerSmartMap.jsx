@@ -457,8 +457,8 @@ export default function ManagerSmartMap() {
     const executiveName = executive?.employee_name || "Sales Executive"
     const clientId = clientDest?.id || session?.client_id || executive?.client_id || '—'
     const clientName = clientDest?.title || session?.client_name || executive?.client_name || '—'
-    const clientPhone = session?.client_phone || '—'
-    const productName = session?.product_name || '—'
+    const companyName = clientDest?.company_name || clientDest?.company || session?.company_name || executive?.company_name || '—'
+    const clientPhone = session?.client_phone || executive?.client_phone || '—'
 
     return `
       <div style="font-family:sans-serif;font-size:12px;padding:6px;color:#1e293b;min-width:200px;">
@@ -471,12 +471,12 @@ export default function ManagerSmartMap() {
           
           <span style="font-weight:700;color:#64748b;">Client Name:</span>
           <span style="font-weight:800;color:#0f172a;">${clientName}</span>
+
+          <span style="font-weight:700;color:#64748b;">Company Name:</span>
+          <span style="font-weight:800;color:#0f172a;">${companyName}</span>
           
           <span style="font-weight:700;color:#64748b;">Phone:</span>
           <span style="font-weight:800;color:#0f172a;font-family:monospace;">${clientPhone}</span>
-          
-          <span style="font-weight:700;color:#64748b;">Product:</span>
-          <span style="font-weight:800;color:#0f172a;">${productName}</span>
         </div>
       </div>
     `

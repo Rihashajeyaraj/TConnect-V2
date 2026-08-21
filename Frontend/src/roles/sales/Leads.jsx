@@ -637,7 +637,12 @@ export default function Leads() {
       serverLeadNum = leadData.lead_number || serverLeadNum;
     } catch (apiErr) {
       console.error("Backend API error when creating lead:", apiErr);
-      const errorDetail = apiErr?.detail || apiErr?.message || "Connection error or internal server failure.";
+      let errorDetail = apiErr?.detail || apiErr?.message || "Connection error or internal server failure.";
+      if (Array.isArray(apiErr?.detail)) {
+        errorDetail = apiErr.detail.map(d => `${d.loc ? d.loc.join('.') : 'error'}: ${d.msg}`).join(", ");
+      } else if (typeof apiErr?.detail === 'object' && apiErr?.detail !== null) {
+        errorDetail = JSON.stringify(apiErr.detail);
+      }
       showToast(`❌ Lead creation failed: ${errorDetail}`, "error");
       setIsSubmitting(false);
       return; // ABORT submission so local state is not updated with invalid data

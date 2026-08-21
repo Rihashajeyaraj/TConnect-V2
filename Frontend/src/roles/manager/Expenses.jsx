@@ -177,9 +177,33 @@ export default function ManagerExpenses() {
   const normalizeExpense = (eItem, idx = 0) => {
     if (!eItem) return null
     const id = eItem.id || eItem.expense_id || `EXP-${1001 + idx}`
-    const seName = eItem.assigned_to || eItem.assignedTo || eItem.executive || eItem.executiveName || eItem.sales_executive_name || 'Abi hastro'
+    const seName = eItem.employee_name || eItem.assigned_to || eItem.assignedTo || eItem.executive || eItem.executiveName || eItem.sales_executive_name || 'Abi hastro'
     const seEmail = eItem.assigned_to_email || eItem.assignedToEmail || eItem.executiveEmail || eItem.email || 'abi@gmail.com'
     const empCode = resolveEmployeeCode(seName, seEmail, eItem.employee_code || eItem.employee_id || eItem.emp_code)
+
+    let rawDesc = eItem.title || eItem.description || eItem.notes || eItem.purpose || '—';
+    let customerName = eItem.customer_name || eItem.customer || eItem.client || eItem.company || '—';
+    let companyName = eItem.company || eItem.customer_name || eItem.client || '—';
+    let visitLocation = eItem.visit_location || eItem.location || eItem.address || eItem.city || '—';
+    let visitDate = eItem.visit_date || eItem.expense_date || eItem.date || eItem.submitted_date || eItem.created_at || '—';
+    let submittedDate = eItem.submitted_date || eItem.created_at || eItem.submittedDate || '—';
+    let visitTime = '—';
+    let purpose = '—';
+
+    if (rawDesc && rawDesc.startsWith("EXPENSE_VISIT_DETAILS:::")) {
+      try {
+        const parsed = JSON.parse(rawDesc.replace("EXPENSE_VISIT_DETAILS:::", ""));
+        customerName = parsed.customer_name || customerName;
+        companyName = parsed.company || companyName;
+        visitLocation = parsed.visit_location || visitLocation;
+        visitDate = parsed.visit_date || visitDate;
+        visitTime = parsed.visit_time || visitTime;
+        purpose = parsed.purpose || purpose;
+        rawDesc = parsed.description || "";
+      } catch (err) {
+        console.warn("Failed to parse expense visit details JSON:", err);
+      }
+    }
 
     return {
       id: id,
@@ -189,26 +213,26 @@ export default function ManagerExpenses() {
       assigned_to: seName,
       assigned_to_email: seEmail,
       photo: eItem.photo || eItem.avatar || eItem.employee_photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${seName}`,
-      customer_name: eItem.customer_name || eItem.customer || eItem.client || eItem.company || 'Corp Field Tech',
-      company: eItem.company || eItem.customer_name || eItem.client || 'Corp Field Tech Ltd',
-      visit_location: eItem.visit_location || eItem.location || eItem.address || eItem.city || 'Guindy Industrial Estate, Chennai',
+      customer_name: customerName,
+      company: companyName,
+      visit_location: visitLocation,
       category: eItem.category || eItem.expense_category || eItem.type || 'Travel / Conveyance',
       amount: eItem.amount ? (String(eItem.amount).startsWith('₹') ? eItem.amount : `₹${Number(eItem.amount).toLocaleString('en-IN')}`) : '₹1,500',
       numeric_amount: parseFloat(String(eItem.amount || '1500').replace(/[^0-9.]/g, '')) || 1500,
-      visit_date: eItem.visit_date || eItem.date || eItem.visitDate || '2026-08-05',
-      submitted_date: eItem.submitted_date || eItem.created_at || eItem.submittedDate || '2026-08-05',
+      visit_date: visitDate,
+      submitted_date: submittedDate,
       receipt_url: eItem.receipt_url || eItem.receiptUrl || eItem.voucher_url || eItem.file_url || eItem.billFileUrl || null,
       receipt_name: eItem.receipt_name || eItem.file_name || eItem.billFileName || 'expense_receipt_voucher.pdf',
       status: eItem.status || eItem.current_status || 'Pending',
-      description: eItem.description || eItem.notes || eItem.purpose || 'Field travel fare and client site demo expenses.',
+      description: rawDesc,
       manager_remarks: eItem.manager_remarks || eItem.remarks || '',
       approved_by: eItem.approved_by || '',
       rejected_by: eItem.rejected_by || '',
       returned_by: eItem.returned_by || '',
-      visit_time: eItem.visit_time || '10:30 AM',
-      purpose: eItem.purpose || 'Client product demonstration & workflow presentation.',
+      visit_time: visitTime,
+      purpose: purpose,
       department: 'Sales & Field Operations',
-      manager_name: 'Jeeva Kumar (Sales Manager)',
+      manager_name: eItem.reporting_manager || eItem.manager_name || 'Jeeva Kumar (Sales Manager)',
     }
   }
 

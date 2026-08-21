@@ -15,6 +15,81 @@ def get_service() -> AttendanceService:
     return AttendanceService()
 
 
+def verify_location_signature(
+    lat: float,
+    lng: float,
+    timestamp: int,
+    employee_id: str,
+    location_signature: str,
+    verification_token: str
+) -> None:
+    import time
+    import jose.jwt
+    from app.core.config import settings
+    import hmac
+    import hashlib
+
+    # 1. Verification token MUST be present
+    if not verification_token:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing verification_token. Location verification is required."
+        )
+
+    # 2. Decode the token to get the challenge salt
+    try:
+        payload = jose.jwt.decode(verification_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Invalid or expired verification token: {str(e)}"
+        )
+
+    challenge_salt = payload.get("challenge_salt")
+    if not challenge_salt:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification token does not contain a valid challenge salt."
+        )
+
+    # 3. Enforce signature timestamp expiry (prevent replay attacks - e.g., max 2 minutes skew)
+    if not timestamp:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing signature_timestamp. Please sync your device clock."
+        )
+    current_time = int(time.time())
+    if abs(current_time - timestamp) > 120:
+         raise HTTPException(
+             status_code=status.HTTP_400_BAD_REQUEST,
+             detail="Signature timestamp has expired. Please re-try clocking in."
+         )
+
+    # 4. Check if coordinates are present
+    if lat is None or lng is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Missing latitude or longitude coordinates."
+        )
+
+    # 5. Compute HMAC expected signature with exact float string formatting
+    message = "{:.6f}:{:.6f}:{}:{}".format(lat, lng, timestamp, employee_id).encode("utf-8")
+    expected_sig = hmac.new(challenge_salt.encode("utf-8"), message, hashlib.sha256).hexdigest()
+
+    if not location_signature:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Location signature is missing. Console geolocation changes are disabled."
+        )
+
+    # 6. Verify HMAC signature securely
+    if not hmac.compare_digest(expected_sig, location_signature.strip()):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Location verification failed. Tampering or spoofing detected."
+        )
+
+
 @router.get("/enrollment-status", response_model=StandardResponse)
 async def get_enrollment_status(
     employee_id: str = Query(None),
@@ -261,13 +336,16 @@ async def match_face(
     
     matched_name = matched_enr.get("employee_name") or "Sales Executive"
 
-    # 5. Generate secure verification token
+    # 5. Generate secure verification token with dynamic challenge salt
+    import uuid
+    challenge_salt = str(uuid.uuid4())
     from app.core.security import create_biometric_token
     device_user_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "")
     token = create_biometric_token(
         employee_id=matched_id,
         employee_name=matched_name,
-        device_user_id=device_user_id
+        device_user_id=device_user_id,
+        challenge_salt=challenge_salt
     )
 
     return StandardResponse.success_response(
@@ -276,9 +354,38 @@ async def match_face(
             "matched_employee_id": matched_id,
             "matched_employee_name": matched_name,
             "similarity_score": match_res.get("similarity_score", 0.99),
-            "verification_token": token
+            "verification_token": token,
+            "challenge_salt": challenge_salt
         },
         message=f"Biometric match verified successfully as {matched_name}."
+    )
+
+
+@router.post("/challenge", response_model=StandardResponse)
+async def generate_challenge(
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """Generate a dynamic single-use location challenge token for clock-in/out fallback."""
+    import time
+    import uuid
+    import jose.jwt
+    from app.core.config import settings
+    
+    salt = str(uuid.uuid4())
+    payload = {
+        "challenge_salt": salt,
+        "type": "fallback_challenge",
+        "device_user_id": str(user_payload.get("employee_code") or user_payload.get("sub") or ""),
+        "exp": int(time.time()) + 120, # 2 minutes expiry
+        "created_at": int(time.time())
+    }
+    token = jose.jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
+    return StandardResponse.success_response(
+        data={
+            "verification_token": token,
+            "challenge_salt": salt
+        },
+        message="Verification challenge generated successfully"
     )
 
 
@@ -307,23 +414,39 @@ async def clock_in(
     actor_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "")
     
     if data.verification_token:
-        from app.core.security import verify_biometric_token
+        import jose.jwt
+        from app.core.config import settings
         try:
-            token_payload = verify_biometric_token(data.verification_token)
-            verified_id = token_payload.get("verified_employee_id")
-            verified_name = token_payload.get("verified_employee_name")
-            
-            target_employee_id = verified_id
-            target_employee_name = verified_name
-        except ValueError as ve:
+            token_payload = jose.jwt.decode(data.verification_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            if token_payload.get("type") == "biometric_verification":
+                target_employee_id = token_payload.get("verified_employee_id")
+                target_employee_name = token_payload.get("verified_employee_name")
+            elif token_payload.get("type") == "fallback_challenge":
+                user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
+                target_employee_id = str(user_payload.get("employee_code") or user_payload.get("employee_id") or user_id)
+                target_employee_name = str(user_payload.get("name") or user_payload.get("full_name") or "Sales Executive")
+            else:
+                raise ValueError("Invalid token type in verification token.")
+        except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(ve)
+                detail=f"Verification token failed: {str(e)}"
             )
     else:
-        user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
-        target_employee_id = str(user_payload.get("employee_code") or user_payload.get("employee_id") or user_id)
-        target_employee_name = str(user_payload.get("name") or user_payload.get("full_name") or "Sales Executive")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification token is missing. Location verification is required."
+        )
+
+    # Secure geofence location verification to prevent devtools/console spoofing
+    verify_location_signature(
+        lat=data.latitude,
+        lng=data.longitude,
+        timestamp=data.signature_timestamp,
+        employee_id=target_employee_id,
+        location_signature=data.location_signature,
+        verification_token=data.verification_token
+    )
 
     data.employee_id = target_employee_id
     data.employee_name = target_employee_name
@@ -380,20 +503,37 @@ async def clock_out(
     actor_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "")
     
     if data.verification_token:
-        from app.core.security import verify_biometric_token
+        import jose.jwt
+        from app.core.config import settings
         try:
-            token_payload = verify_biometric_token(data.verification_token)
-            verified_id = token_payload.get("verified_employee_id")
-            
-            target_employee_id = verified_id
-        except ValueError as ve:
+            token_payload = jose.jwt.decode(data.verification_token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+            if token_payload.get("type") == "biometric_verification":
+                target_employee_id = token_payload.get("verified_employee_id")
+            elif token_payload.get("type") == "fallback_challenge":
+                user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
+                target_employee_id = str(user_payload.get("employee_code") or user_payload.get("employee_id") or user_id)
+            else:
+                raise ValueError("Invalid token type in verification token.")
+        except Exception as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=str(ve)
+                detail=f"Verification token failed: {str(e)}"
             )
     else:
-        user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "")
-        target_employee_id = str(user_payload.get("employee_code") or user_payload.get("employee_id") or user_id)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Verification token is missing. Location verification is required."
+        )
+
+    # Secure geofence location verification to prevent devtools/console spoofing
+    verify_location_signature(
+        lat=data.latitude,
+        lng=data.longitude,
+        timestamp=data.signature_timestamp,
+        employee_id=target_employee_id,
+        location_signature=data.location_signature,
+        verification_token=data.verification_token
+    )
 
     data.employee_id = target_employee_id
 

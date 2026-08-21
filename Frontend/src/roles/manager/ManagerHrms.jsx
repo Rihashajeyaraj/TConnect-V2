@@ -263,14 +263,20 @@ export default function ManagerHrms() {
   useEffect(() => {
     attendanceAPI.getLogs()
       .then((res) => {
-        if (res && res.data && Array.isArray(res.data) && res.data.length > 0) {
-          setRealAttendanceLogs(res.data);
+        const rawLogs = Array.isArray(res) ? res : (res?.data || []);
+        if (rawLogs.length > 0) {
+          const myLogs = rawLogs.filter(p => {
+            const pId = String(p.employee_id || p.user_id || '').toLowerCase();
+            const pEmail = String(p.email || p.user_email || '').toLowerCase();
+            return pId === String(empCode).toLowerCase() || pId === String(currentUser.id).toLowerCase() || pEmail === managerEmail;
+          });
+          setRealAttendanceLogs(myLogs);
         }
       })
       .catch(() => null);
 
     loadTeamLeaves()
-  }, []);
+  }, [managerEmail, empCode, currentUser.id]);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   const getArr = (key) => { try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] } }
@@ -478,22 +484,7 @@ export default function ManagerHrms() {
               <CalendarOff className="w-5 h-5 text-[#b45309]" /> My Leave Summary (2026)
             </h3>
 
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-5 text-center space-y-1">
-                <span className="text-xs font-black text-blue-800 uppercase tracking-wider block">Leave Allowed</span>
-                <div className="text-4xl font-black text-blue-600">47 Days</div>
-              </div>
 
-              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-5 text-center space-y-1">
-                <span className="text-xs font-black text-amber-800 uppercase tracking-wider block">Leave Used</span>
-                <div className="text-4xl font-black text-amber-600">9 Days</div>
-              </div>
-
-              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-5 text-center space-y-1">
-                <span className="text-xs font-black text-emerald-800 uppercase tracking-wider block">Remaining Leave</span>
-                <div className="text-4xl font-black text-emerald-600">38 Days</div>
-              </div>
-            </div>
 
             {/* Leave Type Breakdown */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">

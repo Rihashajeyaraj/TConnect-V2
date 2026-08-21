@@ -55,6 +55,24 @@ export default function Expenses() {
       if (res?.data && Array.isArray(res.data)) {
         const normalized = res.data.map((e, idx) => {
           const eId = e.expense_id || e.id;
+          let rawDesc = e.title || e.description || "—";
+          let clientName = e.customer_name || e.employee_name || "—";
+          let location = e.location || "—";
+          let remarks = rawDesc;
+          let visitDate = e.expense_date || e.date || "";
+
+          if (rawDesc.startsWith("EXPENSE_VISIT_DETAILS:::")) {
+            try {
+              const parsed = JSON.parse(rawDesc.replace("EXPENSE_VISIT_DETAILS:::", ""));
+              clientName = parsed.customer_name || clientName;
+              location = parsed.visit_location || location;
+              remarks = parsed.description || "";
+              visitDate = parsed.visit_date || visitDate;
+            } catch (err) {
+              console.warn("Failed parsing expense JSON:", err);
+            }
+          }
+
           return {
             ...e,
             id: eId,
@@ -63,11 +81,11 @@ export default function Expenses() {
             category: e.category || "General",
             amount: e.amount ? `₹${parseFloat(e.amount).toLocaleString("en-IN")}` : "₹0",
             rawAmount: parseFloat(e.amount) || 0,
-            clientName: e.customer_name || e.employee_name || "Field Site Visit",
-            location: e.location || "Site Location",
-            remarks: e.title || e.description || "No description provided.",
+            clientName: clientName,
+            location: location,
+            remarks: remarks,
             status: e.status || "PENDING",
-            date: e.expense_date || e.date || "",
+            date: visitDate,
             submittedAt: e.created_at ? new Date(e.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "",
             billFileName: e.bill_file_name || "",
             reporting_manager: e.reporting_manager || "Not Assigned",
@@ -173,16 +191,28 @@ export default function Expenses() {
 
     // 1. Persist to Supabase via backend API
     try {
+      const selectedVisit = visitsList.find((v) => v.id === form.visitId);
+      const visitDetails = {
+        customer_name: form.clientName?.trim() || "Client Site",
+        company: form.clientName?.trim() || "Client Company",
+        visit_location: form.location?.trim() || "Client Location",
+        visit_date: form.date || new Date().toISOString().slice(0, 10),
+        visit_time: selectedVisit?.visit_time || "10:30 AM",
+        purpose: selectedVisit?.purpose || "Client meeting",
+        description: form.remarks || "Site visit expense"
+      };
+      const encodedDescription = `EXPENSE_VISIT_DETAILS:::${JSON.stringify(visitDetails)}`;
+
       await expenseAPI.createExpense({
         category: finalType,
         amount: numericVal,
-        description: form.remarks || "Site visit expense",
+        description: encodedDescription,
         currency: "INR",
         receipt_url: uploadedDataUrl || null,
         bill_file_name: form.billFile ? form.billFile.name : null,
         visit_id: form.visitId || null,
-        customer_name: form.clientName.trim() || null,
-        location: form.location.trim() || null,
+        customer_name: form.clientName?.trim() || null,
+        location: form.location?.trim() || null,
         date: form.date,
       });
 

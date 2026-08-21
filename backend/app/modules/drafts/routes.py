@@ -12,6 +12,7 @@ def get_repository() -> DraftsRepository:
 
 def get_service(repository: DraftsRepository = Depends(get_repository)) -> DraftsService:
     return DraftsService(repository)
+from fastapi import HTTPException, status
 
 @router.post("/drafts", response_model=StandardResponse)
 async def save_draft(
@@ -20,12 +21,18 @@ async def save_draft(
     service: DraftsService = Depends(get_service)
 ):
     """Save or update a form draft for the authenticated user."""
-    user_id = user_payload.get("sub")
-    draft = service.save_draft(user_id, payload.form_key, payload.record_id, payload.draft_data)
-    return StandardResponse.success_response(
-        data={"draft": draft},
-        message="Draft saved successfully"
-    )
+    try:
+        user_id = user_payload.get("sub")
+        draft = service.save_draft(user_id, payload.form_key, payload.record_id, payload.draft_data)
+        return StandardResponse.success_response(
+            data={"draft": draft},
+            message="Draft saved successfully"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save draft: {str(e)}"
+        )
 
 @router.get("/drafts/{form_key}", response_model=StandardResponse)
 async def get_draft(
@@ -35,12 +42,18 @@ async def get_draft(
     service: DraftsService = Depends(get_service)
 ):
     """Retrieve the saved draft matching the form key and record ID."""
-    user_id = user_payload.get("sub")
-    draft = service.get_draft(user_id, form_key, record_id)
-    return StandardResponse.success_response(
-        data={"draft": draft},
-        message="Draft retrieved successfully"
-    )
+    try:
+        user_id = user_payload.get("sub")
+        draft = service.get_draft(user_id, form_key, record_id)
+        return StandardResponse.success_response(
+            data={"draft": draft},
+            message="Draft retrieved successfully"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to retrieve draft: {str(e)}"
+        )
 
 @router.delete("/drafts/{form_key}", response_model=StandardResponse)
 async def delete_draft(
@@ -50,9 +63,15 @@ async def delete_draft(
     service: DraftsService = Depends(get_service)
 ):
     """Clear the saved draft matching the form key and record ID."""
-    user_id = user_payload.get("sub")
-    success = service.delete_draft(user_id, form_key, record_id)
-    return StandardResponse.success_response(
-        data={"success": success},
-        message="Draft cleared successfully"
-    )
+    try:
+        user_id = user_payload.get("sub")
+        success = service.delete_draft(user_id, form_key, record_id)
+        return StandardResponse.success_response(
+            data={"success": success},
+            message="Draft cleared successfully"
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete draft: {str(e)}"
+        )

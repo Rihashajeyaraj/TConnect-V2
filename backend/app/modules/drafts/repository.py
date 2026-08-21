@@ -14,7 +14,7 @@ class DraftsRepository:
         record_id = record_id or "new"
         payload = {
             "user_id": user_id,
-            "module": form_key,
+            "form_key": form_key,
             "record_id": record_id,
             "draft_data": draft_data
         }
@@ -30,7 +30,7 @@ class DraftsRepository:
                 _in_memory_drafts[key] = {
                     "draft_id": f"draft_{user_id}_{form_key}_{record_id}",
                     "user_id": user_id,
-                    "module": form_key,
+                    "form_key": form_key,
                     "record_id": record_id,
                     "draft_data": draft_data,
                     "created_at": "now",
@@ -46,7 +46,7 @@ class DraftsRepository:
             res = self.client.schema("system").table("auto_save_drafts")\
                 .select("*")\
                 .eq("user_id", user_id)\
-                .eq("module", form_key)\
+                .eq("form_key", form_key)\
                 .eq("record_id", record_id)\
                 .execute()
             if res.data:
@@ -65,7 +65,7 @@ class DraftsRepository:
             res = self.client.schema("system").table("auto_save_drafts")\
                 .delete()\
                 .eq("user_id", user_id)\
-                .eq("module", form_key)\
+                .eq("form_key", form_key)\
                 .eq("record_id", record_id)\
                 .execute()
             return True

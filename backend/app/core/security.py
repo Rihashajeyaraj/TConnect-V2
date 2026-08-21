@@ -38,7 +38,7 @@ def create_access_token(data: Dict[str, Any]) -> str:
     return jose.jwt.encode(data, secret, algorithm=settings.ALGORITHM)
 
 
-def create_biometric_token(employee_id: str, employee_name: str, device_user_id: str) -> str:
+def create_biometric_token(employee_id: str, employee_name: str, device_user_id: str, challenge_salt: str = None) -> str:
     """Create a short-lived cryptographically signed token verifying a successful face match."""
     import time
     payload = {
@@ -49,6 +49,8 @@ def create_biometric_token(employee_id: str, employee_name: str, device_user_id:
         "exp": int(time.time()) + 300, # 5 minutes expiry
         "matched_at": int(time.time())
     }
+    if challenge_salt:
+        payload["challenge_salt"] = challenge_salt
     # Use settings.SECRET_KEY to sign
     return jose.jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 

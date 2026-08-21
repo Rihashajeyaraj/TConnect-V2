@@ -62,6 +62,7 @@ export default function ManagerTeam() {
 
   // Team Leave & Permission Requests State
   const [teamLeaveRequests, setTeamLeaveRequests] = useState([])
+  const [activeTab, setActiveTab] = useState('attendance')
 
   // Filter leave requests to only include assigned executives and exclude manager/admin/ceo requests
   const filteredLeaveRequests = React.useMemo(() => {
@@ -378,8 +379,69 @@ export default function ManagerTeam() {
 
   return (
     <div className="space-y-6 text-slate-900 font-sans pb-12">
-      {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
+      {/* ── TWO CARDS TOGGLE (ATTENDANCE & PERMISSIONS) ── */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* CARD 1: Attendance */}
+        <div
+          onClick={() => setActiveTab('attendance')}
+          className={`p-5 rounded-3xl border transition cursor-pointer flex items-center gap-4 ${
+            activeTab === 'attendance'
+              ? 'bg-amber-50/50 border-[#ca8a04] shadow-md ring-2 ring-[#ca8a04]/10'
+              : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+          }`}
+        >
+          <div className={`p-3.5 rounded-2xl ${activeTab === 'attendance' ? 'bg-[#ca8a04] text-white' : 'bg-slate-100 text-slate-500'}`}>
+            <UserCheck size={24} />
+          </div>
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-black text-slate-900">Attendance</h3>
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+                activeTab === 'attendance' ? 'bg-amber-200 text-amber-950' : 'bg-slate-200 text-slate-700'
+              }`}>
+                {filteredReports.length} Reports
+              </span>
+            </div>
+            <p className="text-slate-500 text-[11px] font-semibold leading-relaxed">
+              Monitor check-in/out times, GPS locations & daily work report stats.
+            </p>
+          </div>
+        </div>
+
+        {/* CARD 2: Permissions */}
+        <div
+          onClick={() => setActiveTab('permissions')}
+          className={`p-5 rounded-3xl border transition cursor-pointer flex items-center gap-4 ${
+            activeTab === 'permissions'
+              ? 'bg-amber-50/50 border-[#ca8a04] shadow-md ring-2 ring-[#ca8a04]/10'
+              : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
+          }`}
+        >
+          <div className={`p-3.5 rounded-2xl ${activeTab === 'permissions' ? 'bg-[#ca8a04] text-white' : 'bg-slate-100 text-slate-500'}`}>
+            <Calendar size={24} />
+          </div>
+          <div className="space-y-0.5">
+            <div className="flex items-center gap-2">
+              <h3 className="text-sm font-black text-slate-900">Permissions</h3>
+              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+                filteredLeaveRequests.filter(r => r.status === 'Pending').length > 0
+                  ? 'bg-rose-100 text-rose-900'
+                  : 'bg-slate-200 text-slate-700'
+              }`}>
+                {filteredLeaveRequests.filter(r => r.status === 'Pending').length} Pending
+              </span>
+            </div>
+            <p className="text-slate-500 text-[11px] font-semibold leading-relaxed">
+              Review, approve, or reject leave & short permission requests.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      {activeTab === 'attendance' && (
+        <>
+          {/* ── HEADER ───────────────────────────────────────────────────────────── */}
+          <div className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
         <div>
           <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
             <Users className="w-7 h-7 text-[#ca8a04]" /> Team & EOD Daily Work Reports
@@ -414,68 +476,7 @@ export default function ManagerTeam() {
         </div>
       </div>
 
-      {/* ── TOP 6 EOD SUMMARY METRICS (MATCHES SE DAILY REPORT FIELDS) ─────── */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        {/* 1. Calls Made */}
-        <div className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-xs space-y-1">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] font-black uppercase text-slate-600">Calls Made</span>
-            <PhoneCall size={16} className="text-blue-600" />
-          </div>
-          <h2 className="text-2xl font-black text-slate-900">{totalCalls}</h2>
-          <p className="text-[10px] text-slate-500 font-semibold">Total Client Calls</p>
-        </div>
 
-        {/* 2. Visits Completed */}
-        <div className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-xs space-y-1">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] font-black uppercase text-emerald-800">Visits Completed</span>
-            <MapPin size={16} className="text-emerald-600" />
-          </div>
-          <h2 className="text-2xl font-black text-emerald-950">{totalVisits}</h2>
-          <p className="text-[10px] text-emerald-700 font-semibold">Site Demos & Meetings</p>
-        </div>
-
-        {/* 3. New Leads */}
-        <div className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-xs space-y-1">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] font-black uppercase text-indigo-800">New Leads</span>
-            <UserPlus size={16} className="text-indigo-600" />
-          </div>
-          <h2 className="text-2xl font-black text-indigo-950">{totalNewLeads}</h2>
-          <p className="text-[10px] text-indigo-700 font-semibold">Prospects Created</p>
-        </div>
-
-        {/* 4. Clients Interested */}
-        <div className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-xs space-y-1">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] font-black uppercase text-amber-900">Interested Clients</span>
-            <Star size={16} className="text-amber-600" />
-          </div>
-          <h2 className="text-2xl font-black text-amber-950">{totalInterested}</h2>
-          <p className="text-[10px] text-amber-800 font-semibold">High Potential Prospects</p>
-        </div>
-
-        {/* 5. Follow-ups Scheduled */}
-        <div className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-xs space-y-1">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] font-black uppercase text-sky-800">Follow-ups</span>
-            <Clock size={16} className="text-sky-600" />
-          </div>
-          <h2 className="text-2xl font-black text-sky-950">{totalFollowups}</h2>
-          <p className="text-[10px] text-sky-700 font-semibold">Next Action Items</p>
-        </div>
-
-        {/* 6. Deals Closed (Won) */}
-        <div className="bg-gradient-to-b from-[#ca8a04] to-[#a16207] text-white p-3.5 rounded-2xl shadow-md space-y-1">
-          <div className="flex items-center justify-between text-amber-200">
-            <span className="text-[10px] font-black uppercase tracking-wider">Deals Closed (Won)</span>
-            <Target size={16} />
-          </div>
-          <h2 className="text-2xl font-black">{totalDeals}</h2>
-          <p className="text-[10px] text-amber-100 font-semibold">Deals Converted</p>
-        </div>
-      </div>
 
       {/* ── FILTERS & SEARCH CONTROL BAR ────────────────────────────────────── */}
       <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
@@ -869,35 +870,30 @@ export default function ManagerTeam() {
           )}
         </div>
       ) : (
-        /* TABLE VIEW (12 COLUMNS) */
+        /* TABLE VIEW (5 COLUMNS: Date, Emp Id, Emp Name, Attendance, View Report) */
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-700 min-w-[1150px]">
+            <table className="w-full text-left text-xs text-slate-700">
               <thead className="bg-slate-50 text-slate-500 uppercase font-bold border-b border-slate-200">
                 <tr>
-                  <th className="px-3.5 py-3.5">Report Date</th>
-                  <th className="px-3.5 py-3.5">SE Code</th>
-                  <th className="px-3.5 py-3.5">Sales Executive Name</th>
-                  <th className="px-3.5 py-3.5">Log In / Out</th>
-                  <th className="px-3.5 py-3.5">Locations</th>
-                  <th className="px-3.5 py-3.5">Calls Made</th>
-                  <th className="px-3.5 py-3.5">Visits Done</th>
-                  <th className="px-3.5 py-3.5">SE Remarks</th>
-                  <th className="px-3.5 py-3.5">Status</th>
-                  <th className="px-3.5 py-3.5 text-right">Action</th>
+                  <th className="px-5 py-3.5">Date</th>
+                  <th className="px-5 py-3.5">Emp Id</th>
+                  <th className="px-5 py-3.5">Emp Name</th>
+                  <th className="px-5 py-3.5">Attendance</th>
+                  <th className="px-5 py-3.5 text-right">View Report</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {loading ? (
                   <tr>
-                    <td colSpan="10" className="text-center py-12 text-slate-400">
+                    <td colSpan="5" className="text-center py-12 text-slate-400">
                       <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#b45309] mb-2" />
                       Loading team EOD daily work reports...
                     </td>
                   </tr>
                 ) : filteredReports.length === 0 ? (
                   <tr>
-                    <td colSpan="10" className="text-center py-12 text-slate-400 font-semibold">
+                    <td colSpan="5" className="text-center py-12 text-slate-400 font-semibold">
                       No EOD daily work reports match your selected criteria.
                     </td>
                   </tr>
@@ -908,43 +904,24 @@ export default function ManagerTeam() {
                       onClick={() => setSelectedReportModal(report)}
                       className="hover:bg-amber-50/40 transition cursor-pointer"
                     >
-                      <td className="px-3.5 py-3 font-mono font-bold text-slate-800">{report.date}</td>
-                      <td className="px-3.5 py-3 font-mono font-black text-amber-950">
+                      <td className="px-5 py-3 font-mono font-bold text-slate-800">{report.date}</td>
+                      <td className="px-5 py-3 font-mono font-black text-amber-950">
                         <span className="bg-amber-100 text-amber-950 border border-amber-300 px-1.5 py-0.5 rounded text-[10px]">
                           [{report.employee_code || 'EMP000012'}]
                         </span>
                       </td>
-                      <td className="px-3.5 py-3 font-extrabold text-slate-900">{report.executive}</td>
-                      <td className="px-3.5 py-3 text-[11px] font-bold text-slate-700">
+                      <td className="px-5 py-3 font-extrabold text-slate-900">{report.executive}</td>
+                      <td className="px-5 py-3 text-[11px] font-bold text-slate-700">
                         <div>🟢 {report.loginTime}</div>
                         <div className="text-slate-500">🔴 {report.logoutTime}</div>
                       </td>
-                      <td className="px-3.5 py-3 text-[11px] max-w-[180px]">
-                        <p className="truncate font-semibold text-slate-700" title={report.loginLocation}>In: {report.loginLocation}</p>
-                        <p className="truncate font-medium text-slate-500" title={report.logoutLocation}>Out: {report.logoutLocation}</p>
-                      </td>
-                      <td className="px-3.5 py-3 font-black text-slate-800">{report.callsMade}</td>
-                      <td className="px-3.5 py-3 font-black text-emerald-700">{report.visitsCompleted}</td>
-                      <td className="px-3.5 py-3 max-w-[180px]">
-                        <p className="text-[11px] text-slate-600 line-clamp-1 italic">"{report.seRemarks}"</p>
-                      </td>
-                      <td className="px-3.5 py-3">
-                        <span
-                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${report.managerAck
-                              ? 'bg-emerald-100 text-emerald-950 border border-emerald-300'
-                              : 'bg-amber-100 text-amber-900 border border-amber-300'
-                            }`}
-                        >
-                          {report.managerAck ? 'Acknowledged' : 'Submitted'}
-                        </span>
-                      </td>
-                      <td className="px-3.5 py-3 text-right">
+                      <td className="px-5 py-3 text-right">
                         <button
                           onClick={(e) => {
                             e.stopPropagation()
                             setSelectedReportModal(report)
                           }}
-                          className="px-2.5 py-1 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition flex items-center gap-1 ml-auto"
+                          className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto"
                         >
                           <Eye size={12} /> View Full Report
                         </button>
@@ -957,9 +934,11 @@ export default function ManagerTeam() {
           </div>
         </div>
       )}
+      </>
+      )}
 
-      {/* ── TEAM LEAVE & PERMISSION REQUESTS SECTION ───────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-xs">
+      {activeTab === 'permissions' && (
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
           <div>
             <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
@@ -1066,6 +1045,7 @@ export default function ManagerTeam() {
           </table>
         </div>
       </div>
+      )}
       {selectedReportModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 lg:p-7 space-y-6 shadow-2xl my-auto animate-in fade-in zoom-in duration-150">
