@@ -68,7 +68,8 @@ export default function ManagerLeads() {
   const [toDate, setToDate] = useState(initToday)
   const [sortBy, setSortBy] = useState('created_at_desc')
   const [dateFilterTab, setDateFilterTab] = useState('This Month')
-  const [selectedLeadTab, setSelectedLeadTab] = useState('Total Lead')
+  const [selectedLeadTab, setSelectedLeadTab] = useState('Leads')
+  const [activeTableModal, setActiveTableModal] = useState(null) // 'leads' | 'customer' | null
 
   const handleLinearDateFilter = (tab) => {
     setDateFilterTab(tab)
@@ -484,21 +485,15 @@ export default function ManagerLeads() {
   const filteredLeads = React.useMemo(() => {
     return baseFilteredLeads.filter((l) => {
       const target = selectedLeadTab.toLowerCase().trim()
-      if (target === 'total lead') return true
-
       const catVal = String(l.category || l.priority || l.status || '').toLowerCase().trim()
       const isCust = catVal.includes('convert') || catVal.includes('customer') || catVal.includes('won') || !!l.converted_to_customer_id || !!l.customerId
 
       if (target === 'customer') {
         return isCust
       }
-
-      if (isCust) return false
-
-      const category = getLeadCategory(l)
-      return category === target
+      return !isCust
     })
-  }, [baseFilteredLeads, selectedLeadTab, getLeadCategory])
+  }, [baseFilteredLeads, selectedLeadTab])
 
   // Pagination calculation
   const totalPages = Math.ceil(filteredLeads.length / limit) || 1
@@ -525,271 +520,390 @@ export default function ManagerLeads() {
         </button>
       </div>
 
-      {/* ── FILTERS & SEARCH CONTROL BAR ────────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Sales Executive Filter */}
-          <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold shrink-0">
-            <span className="text-slate-600 font-bold">Sales Executive:</span>
-            <select
-              value={selectedSE}
-              onChange={(e) => {
-                setSelectedSE(e.target.value)
-                if (e.target.value !== 'Other') setCustomSEInput('')
-                setPage(1)
-              }}
-              className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-extrabold max-w-[260px] truncate text-sm"
-            >
-              <option value="All">All Executives (Combined Sum)</option>
-              {executives.map((ex) => (
-                <option key={ex.email || ex.id} value={ex.email || ex.name}>
-                  {ex.name} ({ex.employee_code || 'EMP'})
-                </option>
-              ))}
-              <option value="Other">Custom Search...</option>
-            </select>
-            {selectedSE === 'Other' && (
-              <input
-                type="text"
-                value={customSEInput}
-                onChange={(e) => {
-                  setCustomSEInput(e.target.value)
-                  setPage(1)
-                }}
-                placeholder="SE Name / Code..."
-                className="ml-2 w-32 h-6 px-2 bg-white border border-slate-200 rounded focus:outline-none font-bold text-xs"
-              />
-            )}
+      {/* ── TWO COMPACT KPI CARDS: LEADS & CUSTOMERS ────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+        {/* Card 1: Leads */}
+        <div
+          onClick={() => {
+            setSelectedLeadTab('Leads')
+            setActiveTableModal('leads')
+            setPage(1)
+          }}
+          className="p-4 rounded-2xl border bg-white text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/20 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+        >
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+              Assigned Team Leads
+            </p>
+            <h3 className="text-xl font-black text-slate-900">{tabCounts.total - tabCounts.customer} Active Leads</h3>
+            <p className="text-[10px] font-semibold text-slate-400">
+              Click to view active leads pipeline
+            </p>
           </div>
-
-          {/* Search bar */}
-          <div className="relative flex-1 min-w-[280px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                setPage(1)
-              }}
-              placeholder="Search Client, Lead ID, Employee Code, POC, Phone, Email..."
-              className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-sm text-slate-900 focus:outline-none focus:border-amber-500 font-semibold"
-            />
+          <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 border border-amber-200">
+            <Target className="w-5 h-5" />
           </div>
         </div>
 
-        {/* Linear Date Quick-Filter Strip & Leads Classification Toggles */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-sm">
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Date Filters */}
-            <div className="flex items-center gap-1.5 bg-amber-50/60 p-1 rounded-xl border border-amber-300">
-              <span className="text-xs font-black text-amber-950 px-2">Date Filter:</span>
-              {['Today', 'This Month', 'Custom'].map((tab) => (
-                <button
-                  key={tab}
-                  type="button"
-                  onClick={() => handleLinearDateFilter(tab)}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-black transition cursor-pointer ${
-                    dateFilterTab === tab
-                      ? 'bg-[#0c4160] text-white shadow-2xs'
-                      : 'text-amber-950 hover:bg-amber-100'
-                  }`}
-                >
-                  {tab}
-                </button>
-              ))}
+        {/* Card 2: Customers */}
+        <div
+          onClick={() => {
+            setSelectedLeadTab('customer')
+            setActiveTableModal('customer')
+            setPage(1)
+          }}
+          className="p-4 rounded-2xl border bg-white text-slate-800 border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/20 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+        >
+          <div className="space-y-0.5">
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+              Converted Accounts
+            </p>
+            <h3 className="text-xl font-black text-slate-900">{tabCounts.customer} Customers</h3>
+            <p className="text-[10px] font-semibold text-slate-400">
+              Click to view converted clients list
+            </p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200">
+            <Building2 className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+
+      {/* ── TABLE DETAILS MODAL POPUP ─────────────────────────────────────────── */}
+      {activeTableModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
+          <div className="bg-slate-50 border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh] overflow-y-auto relative animate-in fade-in zoom-in duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  {activeTableModal === 'customer' ? (
+                    <>
+                      <Building2 className="w-5 h-5 text-emerald-600" /> Converted Customers Directory
+                    </>
+                  ) : (
+                    <>
+                      <Target className="w-5 h-5 text-amber-600" /> Active Team Leads Pipeline
+                    </>
+                  )}
+                </h2>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  {activeTableModal === 'customer' 
+                    ? 'Monitor converted deals, contract values, and onboard details.' 
+                    : 'Filter, review status categories, and inspect active team leads.'}
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveTableModal(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-500 transition cursor-pointer"
+              >
+                <X size={20} />
+              </button>
             </div>
 
-            {/* Custom Date Range picker inputs */}
-            {dateFilterTab === 'Custom' && (
-              <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5 font-bold">
-                <span className="text-amber-900 font-extrabold text-sm">From:</span>
-                <input
-                  type="date"
-                  value={fromDate}
-                  onChange={(e) => setFromDate(e.target.value)}
-                  className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-sm"
-                />
-                <span className="text-amber-900 font-extrabold ml-1 text-sm">To:</span>
-                <input
-                  type="date"
-                  value={toDate}
-                  onChange={(e) => setToDate(e.target.value)}
-                  className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-sm"
-                />
+            {/* ── FILTERS & SEARCH CONTROL BAR ────────────────────────────────── */}
+            <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {/* Sales Executive Filter */}
+                <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold shrink-0">
+                  <span className="text-slate-600 font-bold">Sales Executive:</span>
+                  <select
+                    value={selectedSE}
+                    onChange={(e) => {
+                      setSelectedSE(e.target.value)
+                      if (e.target.value !== 'Other') setCustomSEInput('')
+                      setPage(1)
+                    }}
+                    className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-extrabold max-w-[260px] truncate text-sm"
+                  >
+                    <option value="All">All Executives (Combined Sum)</option>
+                    {executives.map((ex) => (
+                      <option key={ex.email || ex.id} value={ex.email || ex.name}>
+                        {ex.name} ({ex.employee_code || 'EMP'})
+                      </option>
+                    ))}
+                    <option value="Other">Custom Search...</option>
+                  </select>
+                  {selectedSE === 'Other' && (
+                    <input
+                      type="text"
+                      value={customSEInput}
+                      onChange={(e) => {
+                        setCustomSEInput(e.target.value)
+                        setPage(1)
+                      }}
+                      placeholder="SE Name / Code..."
+                      className="ml-2 w-32 h-6 px-2 bg-white border border-slate-200 rounded focus:outline-none font-bold text-xs"
+                    />
+                  )}
+                </div>
+
+                {/* Search bar */}
+                <div className="relative flex-1 min-w-[280px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => {
+                      setSearch(e.target.value)
+                      setPage(1)
+                    }}
+                    placeholder="Search Client, Lead ID, Employee Code, POC, Phone, Email..."
+                    className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-sm text-slate-900 focus:outline-none focus:border-amber-500 font-semibold"
+                  />
+                </div>
               </div>
-            )}
-          </div>
 
-          {/* Classification Toggles */}
-          <div className="inline-flex p-1 bg-slate-100 rounded-xl">
-            {[
-              { name: 'Total Lead', key: 'total', color: 'bg-[#0c4160] text-white shadow-xs' },
-              { name: 'Hot', key: 'hot', color: 'bg-emerald-600 text-white shadow-xs' },
-              { name: 'Warm', key: 'warm', color: 'bg-yellow-500 text-yellow-950 shadow-xs' },
-              { name: 'Cold', key: 'cold', color: 'bg-rose-600 text-white shadow-xs' },
-              { name: 'Customer', key: 'customer', color: 'bg-teal-600 text-white shadow-xs' }
-            ].map((t) => {
-              const active = selectedLeadTab === t.name
-              const count = tabCounts[t.key] || 0
-              return (
-                <button
-                  key={t.name}
-                  type="button"
-                  onClick={() => {
-                    setSelectedLeadTab(t.name)
-                    setPage(1)
-                  }}
-                  className={`px-3 py-1.5 rounded-lg text-sm font-black transition cursor-pointer ${
-                    active ? t.color : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  {t.name} ({count})
-                </button>
-              )
-            })}
-          </div>
-
-          {/* Reset Filters Button */}
-          {(selectedSE !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || search || fromDate || toDate || selectedLeadTab !== 'Total Lead') && (
-            <button
-              onClick={() => {
-                setSelectedSE('All')
-                setSelectedStatus('All')
-                setSelectedPriority('All')
-                setSearch('')
-                setFromDate('')
-                setToDate('')
-                setSelectedLeadTab('Total Lead')
-                setPage(1)
-              }}
-              className="text-sm font-extrabold text-rose-700 hover:underline cursor-pointer bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200"
-            >
-              Reset All Filters
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── TEAM LEAD REPORTS TABLE ─────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-800 min-w-[1000px]">
-            <thead>
-              <tr className="bg-slate-100/80 border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-700">
-                <th className="px-5 py-4">Date</th>
-                <th className="px-5 py-4">Sales Executive Name</th>
-                <th className="px-5 py-4">Company Name</th>
-                <th className="px-5 py-4">POC Name</th>
-                <th className="px-5 py-4">POC Mobile</th>
-                <th className="px-5 py-4">POC Email</th>
-                <th className="px-5 py-4">Product</th>
-                <th className="px-5 py-4">Priority</th>
-                <th className="px-5 py-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200 font-bold">
-              {loading ? (
-                <tr>
-                  <td colSpan="9" className="text-center py-16 text-slate-400">
-                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-600 mb-3" />
-                    <span className="text-sm font-black text-slate-700">Loading Team Lead Reports from Supabase...</span>
-                  </td>
-                </tr>
-              ) : paginatedLeads.length === 0 ? (
-                <tr>
-                  <td colSpan="9" className="text-center py-16 text-slate-500 font-bold text-sm bg-slate-50/50 border-b border-slate-200">
-                    No team leads match your search or filter requirements.
-                  </td>
-                </tr>
-              ) : (
-                paginatedLeads.map((lead, idx) => (
-                  <tr key={lead.id || lead.lead_id || idx} className="hover:bg-amber-50/50 transition-colors">
-                    {/* 0. Date */}
-                    <td className="px-5 py-4.5 font-bold text-slate-900 text-sm">
-                      {formatDate(lead.created_at || lead.date) || '—'}
-                    </td>
-
-                    {/* 1. SE Name */}
-                    <td className="px-5 py-4.5 font-black text-slate-900 text-sm sm:text-base">{lead.assigned_to || lead.assignedTo || lead.created_by_name || 'Sales Executive'}</td>
-
-                    {/* 2. Company Name */}
-                    <td className="px-5 py-4.5 font-black text-slate-900 text-sm sm:text-base">{lead.company_name || lead.company || lead.client_name || 'Company Ltd'}</td>
-
-                    {/* 3. POC Name */}
-                    <td className="px-5 py-4.5 font-extrabold text-slate-800 text-sm">{lead.contact_person || lead.person || lead.contact_name || '—'}</td>
-
-                    {/* 4. POC Mobile */}
-                    <td className="px-5 py-4.5 font-mono text-xs sm:text-sm font-bold text-slate-800">{lead.mobile || lead.phone || lead.contact_phone || '—'}</td>
-
-                    {/* 5. POC Email */}
-                    <td className="px-5 py-4.5 font-mono text-xs sm:text-sm font-bold text-slate-700">{lead.email || lead.contact_email || '—'}</td>
-
-                    {/* 6. Product */}
-                    <td className="px-5 py-4.5 max-w-[180px]">
-                      <span className="inline-block bg-amber-100/90 text-amber-950 border border-amber-300 px-3 py-1 rounded-xl text-xs font-black truncate max-w-[170px]">
-                        {lead.product || lead.product_name || 'TwiteConnect CRM Suite'}
-                      </span>
-                    </td>
-
-                    {/* 7. Lead Priority */}
-                    <td className="px-5 py-4.5">
-                      <span
-                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black shadow-2xs ${
-                          getLeadCategory(lead) === 'hot'
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                            : getLeadCategory(lead) === 'warm'
-                              ? 'bg-yellow-100 text-yellow-900 border border-yellow-300'
-                              : 'bg-rose-100 text-rose-800 border border-rose-300'
+              {/* Linear Date Quick-Filter Strip */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-sm">
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Date Filters */}
+                  <div className="flex items-center gap-1.5 bg-amber-50/60 p-1 rounded-xl border border-amber-300">
+                    <span className="text-xs font-black text-amber-950 px-2">Date Filter:</span>
+                    {['Today', 'This Month', 'Custom'].map((tab) => (
+                      <button
+                        key={tab}
+                        type="button"
+                        onClick={() => handleLinearDateFilter(tab)}
+                        className={`px-3 py-1.5 rounded-lg text-sm font-black transition cursor-pointer ${
+                          dateFilterTab === tab
+                            ? 'bg-[#0c4160] text-white shadow-2xs'
+                            : 'text-amber-950 hover:bg-amber-100'
                         }`}
                       >
-                        {getLeadCategory(lead) === 'hot' ? '🔥 Hot' : getLeadCategory(lead) === 'warm' ? '⚡ Warm' : '❄️ Cold'}
-                      </span>
-                    </td>
-
-                    {/* 8. View Full Report */}
-                    <td className="px-5 py-4.5 text-right">
-                      <button
-                        onClick={() => setSelectedLeadModal(lead)}
-                        className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto active:scale-95"
-                      >
-                        <Eye size={14} /> View Full Report
+                        {tab}
                       </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                    ))}
+                  </div>
 
-        {/* ── PAGINATION CONTROLS ────────────────────────────────────────── */}
-        <div className="bg-slate-50 p-4 border-t border-slate-200 flex items-center justify-between text-xs font-bold text-slate-600">
-          <div>
-            Showing <span className="text-slate-900 font-black">{paginatedLeads.length}</span> of <span className="text-slate-900 font-black">{filteredLeads.length}</span> Total Leads
-          </div>
+                  {/* Custom Date Range picker inputs */}
+                  {dateFilterTab === 'Custom' && (
+                    <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5 font-bold">
+                      <span className="text-amber-900 font-extrabold text-sm">From:</span>
+                      <input
+                        type="date"
+                        value={fromDate}
+                        onChange={(e) => setFromDate(e.target.value)}
+                        className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-sm"
+                      />
+                      <span className="text-amber-900 font-extrabold ml-1 text-sm">To:</span>
+                      <input
+                        type="date"
+                        value={toDate}
+                        onChange={(e) => setToDate(e.target.value)}
+                        className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-sm"
+                      />
+                    </div>
+                  )}
+                </div>
 
-          <div className="flex items-center gap-2">
-            <button
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <span>
-              Page {page} of {totalPages}
-            </span>
-            <button
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100"
-            >
-              <ChevronRight size={16} />
-            </button>
+                {/* Reset Filters Button */}
+                {(selectedSE !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || search || fromDate || toDate || selectedLeadTab !== 'Leads') && (
+                  <button
+                    onClick={() => {
+                      setSelectedSE('All')
+                      setSelectedStatus('All')
+                      setSelectedPriority('All')
+                      setSearch('')
+                      setFromDate('')
+                      setToDate('')
+                      setSelectedLeadTab('Leads')
+                      setPage(1)
+                    }}
+                    className="text-sm font-extrabold text-rose-700 hover:underline cursor-pointer bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200"
+                  >
+                    Reset All Filters
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* ── TEAM LEAD REPORTS TABLE ─────────────────────── */}
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                {selectedLeadTab === 'customer' ? (
+                  /* CUSTOMERS TABLE */
+                  <table className="w-full text-left text-sm text-slate-800">
+                    <thead>
+                      <tr className="bg-slate-100/80 border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-700">
+                        <th className="px-5 py-4">Date</th>
+                        <th className="px-5 py-4">Sales Executive</th>
+                        <th className="px-5 py-4">Customer Details</th>
+                        <th className="px-5 py-4">Product</th>
+                        <th className="px-5 py-4">Amount</th>
+                        <th className="px-5 py-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 font-bold">
+                      {loading ? (
+                        <tr>
+                          <td colSpan="6" className="text-center py-16 text-slate-400">
+                            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-emerald-600 mb-3" />
+                            <span className="text-sm font-black text-slate-700">Loading Customers from Supabase...</span>
+                          </td>
+                        </tr>
+                      ) : paginatedLeads.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" className="text-center py-16 text-slate-500 font-bold text-sm bg-slate-50/50 border-b border-slate-200">
+                            No customer accounts match your search or filter requirements.
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedLeads.map((lead, idx) => (
+                          <tr key={lead.id || lead.lead_id || idx} className="hover:bg-emerald-50/20 transition-colors">
+                            <td className="px-5 py-4.5 font-bold text-slate-900 text-sm">
+                              {formatDate(lead.created_at || lead.date) || '—'}
+                            </td>
+                            <td className="px-5 py-4.5 font-black text-slate-900 text-sm">
+                              {lead.assigned_to || lead.assignedTo || lead.created_by_name || '—'}
+                            </td>
+                            <td className="px-5 py-4">
+                              <div className="font-black text-slate-900">{lead.company_name || lead.company || 'Client Account'}</div>
+                              <div className="text-xs text-slate-500 font-semibold mt-1 flex items-center gap-1">
+                                <span className="font-bold text-slate-700">POC:</span> {lead.contact_person || lead.person || '—'}
+                              </div>
+                              <div className="text-xs text-slate-500 font-semibold mt-0.5 flex items-center gap-1">
+                                <span className="font-bold text-slate-700">Email:</span> {lead.email || '—'}
+                              </div>
+                              <div className="text-xs text-slate-500 font-semibold mt-0.5 flex items-center gap-1">
+                                <span className="font-bold text-slate-700">Addr:</span> {lead.city || lead.address || 'Chennai'}
+                              </div>
+                            </td>
+                            <td className="px-5 py-4.5">
+                              <span className="inline-block bg-teal-50 text-teal-950 border border-teal-200 px-3 py-1 rounded-xl text-xs font-black">
+                                {lead.product || lead.product_name || 'TwiteConnect CRM'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4.5 font-black text-emerald-700 text-sm">
+                              {lead.contractValue || lead.value || '₹0'}
+                            </td>
+                            <td className="px-5 py-4.5 text-right">
+                              <button
+                                onClick={() => setSelectedLeadModal(lead)}
+                                className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto active:scale-95"
+                              >
+                                <Eye size={14} /> View Details
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                ) : (
+                  /* LEADS TABLE */
+                  <table className="w-full text-left text-sm text-slate-800">
+                    <thead>
+                      <tr className="bg-slate-100/80 border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-700">
+                        <th className="px-5 py-4">Date</th>
+                        <th className="px-5 py-4">Executive Name</th>
+                        <th className="px-5 py-4">Client Details</th>
+                        <th className="px-5 py-4">Product</th>
+                        <th className="px-5 py-4">Category</th>
+                        <th className="px-5 py-4 text-right">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-200 font-bold">
+                      {loading ? (
+                        <tr>
+                          <td colSpan="6" className="text-center py-16 text-slate-400">
+                            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-600 mb-3" />
+                            <span className="text-sm font-black text-slate-700">Loading Leads from Supabase...</span>
+                          </td>
+                        </tr>
+                      ) : paginatedLeads.length === 0 ? (
+                        <tr>
+                          <td colSpan="6" className="text-center py-16 text-slate-500 font-bold text-sm bg-slate-50/50 border-b border-slate-200">
+                            No team leads match your search or filter requirements.
+                          </td>
+                        </tr>
+                      ) : (
+                        paginatedLeads.map((lead, idx) => (
+                          <tr key={lead.id || lead.lead_id || idx} className="hover:bg-amber-50/40 transition-colors">
+                            <td className="px-5 py-4.5 font-bold text-slate-900 text-sm">
+                              {formatDate(lead.created_at || lead.date) || '—'}
+                            </td>
+                            <td className="px-5 py-4.5 font-black text-slate-900 text-sm">
+                              {lead.assigned_to || lead.assignedTo || lead.created_by_name || '—'}
+                            </td>
+                            <td className="px-5 py-4">
+                              <div className="font-black text-slate-900">{lead.company_name || lead.company || 'Client Account'}</div>
+                              <div className="text-xs text-slate-500 font-semibold mt-1 flex items-center gap-1">
+                                <span className="font-bold text-slate-700">POC:</span> {lead.contact_person || lead.person || '—'}
+                              </div>
+                              <div className="text-xs text-slate-500 font-semibold mt-0.5 flex items-center gap-1">
+                                <span className="font-bold text-slate-700">Email:</span> {lead.email || '—'}
+                              </div>
+                              <div className="text-xs text-slate-500 font-semibold mt-0.5 flex items-center gap-1">
+                                <span className="font-bold text-slate-700">Addr:</span> {lead.city || lead.address || 'Chennai'}
+                              </div>
+                            </td>
+                            <td className="px-5 py-4.5">
+                              <span className="inline-block bg-amber-50 text-amber-950 border border-amber-200 px-3 py-1 rounded-xl text-xs font-black">
+                                {lead.product || lead.product_name || 'TwiteConnect CRM'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4.5">
+                              <span
+                                className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-black shadow-2xs ${
+                                  getLeadCategory(lead) === 'hot'
+                                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                    : getLeadCategory(lead) === 'warm'
+                                      ? 'bg-yellow-100 text-yellow-900 border border-yellow-300'
+                                      : 'bg-rose-100 text-rose-800 border border-rose-300'
+                                }`}
+                              >
+                                {getLeadCategory(lead) === 'hot' ? '🔥 Hot' : getLeadCategory(lead) === 'warm' ? '⚡ Warm' : '❄️ Cold'}
+                              </span>
+                            </td>
+                            <td className="px-5 py-4.5 text-right">
+                              <button
+                                onClick={() => setSelectedLeadModal(lead)}
+                                className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto active:scale-95"
+                              >
+                                <Eye size={14} /> View Full Report
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            </div>
+
+            {/* ── PAGINATION CONTROLS ────────────────────────────────────────── */}
+            <div className="bg-slate-50 p-4 border-t border-slate-200 flex items-center justify-between text-xs font-bold text-slate-600 rounded-b-2xl">
+              <div>
+                Showing <span className="text-slate-900 font-black">{paginatedLeads.length}</span> of <span className="text-slate-900 font-black">{filteredLeads.length}</span> {selectedLeadTab === 'customer' ? 'Total Customers' : 'Total Leads'}
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                <span>
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="p-1.5 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-      </div>
+      )}
+
+
 
       {/* ── FULL LEAD REPORT DETAIL MODAL ──────────────────────────────────── */}
       {selectedLeadModal && (

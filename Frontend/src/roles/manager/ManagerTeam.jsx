@@ -62,7 +62,8 @@ export default function ManagerTeam() {
 
   // Team Leave & Permission Requests State
   const [teamLeaveRequests, setTeamLeaveRequests] = useState([])
-  const [activeTab, setActiveTab] = useState('attendance')
+  const [activeTab, setActiveTab] = useState(null) // 'attendance' | 'permissions' | null
+  const [attendanceLogs, setAttendanceLogs] = useState([])
 
   // Filter leave requests to only include assigned executives and exclude manager/admin/ceo requests
   const filteredLeaveRequests = React.useMemo(() => {
@@ -228,11 +229,80 @@ export default function ManagerTeam() {
     return 'EMP000012'
   }
 
-  const normalizeReport = (r, idx = 0) => {
+  const formatDateToYYYYMMDD = (dateStr) => {
+    if (!dateStr) return '';
+    const trimmed = String(dateStr).trim();
+    if (trimmed.includes('T')) {
+      return trimmed.split('T')[0];
+    }
+    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+      return trimmed.substring(0, 10);
+    }
+    const parts = trimmed.split(/[\/\-]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    return trimmed;
+  }
+
+  const findMatchingLog = (empCode, seEmail, seName, reportDate, logList) => {
+    if (!Array.isArray(logList)) return null;
+    const normalizedReportDate = formatDateToYYYYMMDD(reportDate);
+    if (!normalizedReportDate) return null;
+
+    return logList.find((log) => {
+      const logDate = formatDateToYYYYMMDD(log.attendance_date || log.date || log.created_at);
+      if (logDate !== normalizedReportDate) return false;
+
+      const logEmpCode = String(log.employee_id || log.employee_code || log.emp_code || '').toLowerCase().trim();
+      const logEmail = String(log.email || '').toLowerCase().trim();
+      const logName = String(log.name || log.employee_name || '').toLowerCase().trim();
+
+      const targetEmpCode = String(empCode || '').toLowerCase().trim();
+      const targetEmail = String(seEmail || '').toLowerCase().trim();
+      const targetName = String(seName || '').toLowerCase().trim();
+
+      if (targetEmpCode && logEmpCode && targetEmpCode === logEmpCode) return true;
+      if (targetEmail && logEmail && targetEmail === logEmail) return true;
+      if (targetName && logName && (logName.includes(targetName) || targetName.includes(logName))) return true;
+
+      // First name fallback match
+      const targetFirstName = targetName.split(/\s+/)[0];
+      const logFirstName = logName.split(/\s+/)[0];
+      if (targetFirstName && logFirstName && targetFirstName.length > 2 && targetFirstName === logFirstName) return true;
+
+      return false;
+    });
+  }
+
+  const normalizeReport = (r, idx = 0, attLogs = []) => {
     if (!r) return null
     const seName = r.executive || r.executiveName || r.assigned_to || r.name || 'Abi hastro'
     const seEmail = r.executiveEmail || r.assigned_to_email || r.email || 'abi@gmail.com'
     const empCode = resolveEmployeeCode(seName, seEmail, r.employee_code || r.employee_id)
+
+    const repDate = r.date || '05/08/2026'
+    const matchingLog = findMatchingLog(empCode, seEmail, seName, repDate, attLogs)
+
+    const loginTime = matchingLog 
+      ? (matchingLog.check_in_time || matchingLog.clockIn || '—') 
+      : '—'
+    
+    const logoutTime = matchingLog 
+      ? (matchingLog.check_out_time || matchingLog.clockOut || '—') 
+      : '—'
+
+    const loginLocation = matchingLog 
+      ? (matchingLog.check_in_address || matchingLog.work_location || '—') 
+      : '—'
+
+    const logoutLocation = matchingLog 
+      ? (matchingLog.check_out_address || '—') 
+      : '—'
 
     return {
       id: r.id || `eod_${1001 + idx}`,
@@ -240,12 +310,12 @@ export default function ManagerTeam() {
       executiveEmail: seEmail,
       employee_code: empCode,
       designation: r.designation || 'Sales Executive',
-      date: r.date || '05/08/2026',
+      date: repDate,
       submittedAt: r.submittedAt || r.time || '05:30 PM',
-      loginTime: r.loginTime || r.login_time || r.checkInTime || '09:00 AM',
-      logoutTime: r.logoutTime || r.logout_time || r.checkOutTime || '06:30 PM',
-      loginLocation: r.loginLocation || r.login_location || r.checkInLocation || 'Adyar IT Park, Chennai (GPS Verified)',
-      logoutLocation: r.logoutLocation || r.logout_location || r.checkOutLocation || 'Guindy Industrial Estate, Chennai (GPS Verified)',
+      loginTime,
+      logoutTime,
+      loginLocation,
+      logoutLocation,
       seRemarks: r.seRemarks || r.se_remarks || r.remarks || r.executiveRemarks || 'Completed all daily field client activities.',
       status: r.status || 'Submitted',
       callsMade: parseInt(r.callsMade || r.calls || 0),
@@ -267,12 +337,21 @@ export default function ManagerTeam() {
   const fetchReports = async () => {
     setLoading(true)
     let combined = []
+    let attLogs = []
 
     try {
       const apiRes = await reportAPI.getEODReports()
       const apiData = Array.isArray(apiRes) ? apiRes : (apiRes?.data || [])
       if (Array.isArray(apiData)) combined = [...combined, ...apiData]
-    } catch (e) { console.error("Error fetching reports", e) }
+    } catch (e) { console.error("Error fetching EOD reports", e) }
+
+    try {
+      const attRes = await attendanceAPI.getLogs()
+      attLogs = Array.isArray(attRes) ? attRes : (attRes?.data || [])
+      setAttendanceLogs(attLogs)
+    } catch (e) {
+      console.error("Error fetching attendance logs", e)
+    }
 
     const keys = ['tc_eod_reports', 'tc_se_daily_reports', 'tc_daily_work_reports']
     keys.forEach((k) => {
@@ -287,7 +366,7 @@ export default function ManagerTeam() {
       } catch (e) { }
     })
 
-    const normalizedLocal = combined.map((r, idx) => normalizeReport(r, idx)).filter(Boolean)
+    const normalizedLocal = combined.map((r, idx) => normalizeReport(r, idx, attLogs)).filter(Boolean)
 
     const map = new Map()
     DEFAULT_EOD_REPORTS.forEach((d) => map.set(`${d.executive}_${d.date}`, d))
@@ -369,683 +448,543 @@ export default function ManagerTeam() {
     return matchesSearch && matchesStatus && matchesSE && matchesDate
   })
 
-  // Aggregated Totals
-  const totalCalls = filteredReports.reduce((acc, curr) => acc + curr.callsMade, 0)
-  const totalVisits = filteredReports.reduce((acc, curr) => acc + curr.visitsCompleted, 0)
-  const totalNewLeads = filteredReports.reduce((acc, curr) => acc + curr.leadsGenerated, 0)
-  const totalInterested = filteredReports.reduce((acc, curr) => acc + curr.clientsInterested, 0)
-  const totalFollowups = filteredReports.reduce((acc, curr) => acc + curr.followupsScheduled, 0)
-  const totalDeals = filteredReports.reduce((acc, curr) => acc + curr.dealsClosed, 0)
-
   return (
     <div className="space-y-6 text-slate-900 font-sans pb-12">
-      {/* ── TWO CARDS TOGGLE (ATTENDANCE & PERMISSIONS) ── */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+      {/* ── TWO COMPACT KPI CARDS: ATTENDANCE & PERMISSIONS ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
         {/* CARD 1: Attendance */}
         <div
           onClick={() => setActiveTab('attendance')}
-          className={`p-5 rounded-3xl border transition cursor-pointer flex items-center gap-4 ${
-            activeTab === 'attendance'
-              ? 'bg-amber-50/50 border-[#ca8a04] shadow-md ring-2 ring-[#ca8a04]/10'
-              : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
-          }`}
+          className="p-4 rounded-2xl border bg-white text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/20 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
         >
-          <div className={`p-3.5 rounded-2xl ${activeTab === 'attendance' ? 'bg-[#ca8a04] text-white' : 'bg-slate-100 text-slate-500'}`}>
-            <UserCheck size={24} />
-          </div>
           <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-black text-slate-900">Attendance</h3>
-              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
-                activeTab === 'attendance' ? 'bg-amber-200 text-amber-950' : 'bg-slate-200 text-slate-700'
-              }`}>
-                {filteredReports.length} Reports
-              </span>
-            </div>
-            <p className="text-slate-500 text-[11px] font-semibold leading-relaxed">
-              Monitor check-in/out times, GPS locations & daily work report stats.
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+              EOD Attendance
             </p>
+            <h3 className="text-xl font-black text-slate-900">{filteredReports.length} Reports</h3>
+            <p className="text-[10px] font-semibold text-slate-400">
+              Click to view attendance & work logs
+            </p>
+          </div>
+          <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 border border-amber-200">
+            <UserCheck className="w-5 h-5" />
           </div>
         </div>
 
         {/* CARD 2: Permissions */}
         <div
           onClick={() => setActiveTab('permissions')}
-          className={`p-5 rounded-3xl border transition cursor-pointer flex items-center gap-4 ${
-            activeTab === 'permissions'
-              ? 'bg-amber-50/50 border-[#ca8a04] shadow-md ring-2 ring-[#ca8a04]/10'
-              : 'bg-white border-slate-200 hover:border-slate-300 shadow-xs'
-          }`}
+          className="p-4 rounded-2xl border bg-white text-slate-800 border-slate-200 hover:border-amber-500 hover:bg-amber-50/20 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
         >
-          <div className={`p-3.5 rounded-2xl ${activeTab === 'permissions' ? 'bg-[#ca8a04] text-white' : 'bg-slate-100 text-slate-500'}`}>
-            <Calendar size={24} />
-          </div>
           <div className="space-y-0.5">
-            <div className="flex items-center gap-2">
-              <h3 className="text-sm font-black text-slate-900">Permissions</h3>
-              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
-                filteredLeaveRequests.filter(r => r.status === 'Pending').length > 0
-                  ? 'bg-rose-100 text-rose-900'
-                  : 'bg-slate-200 text-slate-700'
-              }`}>
-                {filteredLeaveRequests.filter(r => r.status === 'Pending').length} Pending
-              </span>
-            </div>
-            <p className="text-slate-500 text-[11px] font-semibold leading-relaxed">
-              Review, approve, or reject leave & short permission requests.
+            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+              Leave & Permissions
+            </p>
+            <h3 className="text-xl font-black text-slate-900">
+              {filteredLeaveRequests.filter(r => r.status === 'Pending').length} Pending
+            </h3>
+            <p className="text-[10px] font-semibold text-slate-400">
+              Click to view team leave requests
             </p>
           </div>
+          <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 border border-amber-200">
+            <Calendar className="w-5 h-5" />
+          </div>
         </div>
       </div>
 
+      {/* ── ATTENDANCE DETAILS MODAL POPUP ───────────────────────────────────── */}
       {activeTab === 'attendance' && (
-        <>
-          {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-          <div className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-            <Users className="w-7 h-7 text-[#ca8a04]" /> Team & EOD Daily Work Reports
-          </h1>
-        </div>
-
-        <div className="flex items-center gap-3">
-          {/* Card & Table View Toggle Options */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-            <button
-              onClick={() => setViewMode('cards')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${viewMode === 'cards' ? 'bg-[#ca8a04] text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
-                }`}
-            >
-              <LayoutGrid size={14} /> Cards View
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${viewMode === 'table' ? 'bg-[#ca8a04] text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
-                }`}
-            >
-              <Table size={14} /> Table View
-            </button>
-          </div>
-
-          <button
-            onClick={fetchReports}
-            className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-[#b45309] font-extrabold text-xs border border-amber-300 shadow-2xs transition cursor-pointer"
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh EOD Reports
-          </button>
-        </div>
-      </div>
-
-
-
-      {/* ── FILTERS & SEARCH CONTROL BAR ────────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Search Box */}
-          <div className="relative flex-1 min-w-[240px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search Executive Name, Employee Code, Highlights, Blockers, Tomorrow Plan..."
-              className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 font-semibold"
-            />
-          </div>
-
-          {/* Executive Wise Filter */}
-          <div className="flex items-center gap-1.5 bg-[#fffdf5] border border-amber-300 rounded-xl px-3 py-2 text-xs font-bold">
-            <UserCheck size={15} className="text-[#ca8a04]" />
-            <span className="text-amber-900 font-extrabold">Executive Filter:</span>
-            <select
-              value={selectedSE}
-              onChange={(e) => setSelectedSE(e.target.value)}
-              className="bg-transparent text-amber-950 focus:outline-none cursor-pointer font-black max-w-[220px] truncate"
-            >
-              <option value="All">All Executives (Team EOD)</option>
-              {executives.map((ex) => (
-                <option key={ex.email || ex.id} value={ex.name || ex.email}>
-                  [{ex.employee_code || 'EMP-101'}] {ex.name || ex.full_name} ({ex.email})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Linear Date Toggle Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-2.5 border-t border-slate-100 text-xs">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-slate-600 font-black uppercase text-[10px] tracking-wider flex items-center gap-1">
-              <Calendar size={14} className="text-[#ca8a04]" /> Date Filter:
-            </span>
-            
-            <div className="flex flex-wrap items-center gap-1 bg-slate-100/90 p-1 rounded-2xl border border-slate-200 shadow-2xs">
-              {[
-                { key: 'All', label: 'All Dates' },
-                { key: 'Today', label: 'Today' },
-                { key: 'Yesterday', label: 'Yesterday' },
-                { key: 'This Week', label: 'This Week' },
-                { key: 'This Month', label: 'This Month' },
-                { key: 'Custom Date', label: 'Custom Date' },
-              ].map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setSelectedDateFilter(item.key)}
-                  className={`px-3 py-1 rounded-xl font-extrabold text-xs transition cursor-pointer active:scale-95 ${
-                    selectedDateFilter === item.key
-                      ? 'bg-[#ca8a04] text-white shadow-2xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {selectedDateFilter === 'Custom Date' && (
-              <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 px-3 py-1 rounded-xl">
-                <span className="text-[11px] font-bold text-amber-950">Select Date:</span>
-                <input
-                  type="date"
-                  value={customDateInput}
-                  onChange={(e) => setCustomDateInput(e.target.value)}
-                  className="h-7 bg-white border border-amber-300 rounded-lg px-2 text-xs font-bold focus:outline-none text-slate-900"
-                />
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
+          <div className="bg-slate-50 border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh] overflow-y-auto relative animate-in fade-in zoom-in duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Users className="w-5 h-5 text-amber-600" /> Team EOD Attendance Reports
+                </h2>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  View check-in/out times, EOD summaries, and submission history.
+                </p>
               </div>
-            )}
-
-            {/* Status Filter */}
-            <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 font-bold">
-              <span className="text-slate-500">Status:</span>
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold"
+              <button
+                onClick={() => setActiveTab(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-500 transition cursor-pointer"
               >
-                <option value="All">All Statuses</option>
-                <option value="Submitted">Submitted EOD</option>
-                <option value="Pending">Pending EOD</option>
-              </select>
+                <X size={20} />
+              </button>
             </div>
-          </div>
 
-          {/* Reset Filters Button */}
-          {(selectedSE !== 'All' || selectedStatus !== 'All' || selectedDateFilter !== 'All' || search) && (
-            <button
-              onClick={() => {
-                setSelectedSE('All')
-                setSelectedStatus('All')
-                setSelectedDateFilter('All')
-                setCustomDateInput('')
-                setSearch('')
-              }}
-              className="text-[11px] font-extrabold text-rose-700 hover:underline cursor-pointer ml-auto"
-            >
-              Reset Filters
-            </button>
-          )}
-        </div>
-      </div>
+            {/* Header controls (Cards/Table view selector) */}
+            <div className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
+              <div>
+                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Users className="w-6 h-6 text-[#ca8a04]" /> EOD Daily Work Reports
+                </h1>
+              </div>
 
-      {/* ── CONDITIONAL RENDERING: CARDS VIEW VS TABLE VIEW ──────────────────── */}
-      {viewMode === 'cards' ? (
-        /* CARDS VIEW - ULTRA SPACIOUS & READABLE */
-        <div className="space-y-6">
-          {loading ? (
-            <div className="bg-white border border-slate-200 rounded-3xl p-16 text-center text-slate-400 font-semibold">
-              <RefreshCw className="w-7 h-7 animate-spin mx-auto text-[#ca8a04] mb-3" />
-              Loading team EOD daily work reports...
-            </div>
-          ) : filteredReports.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-3xl p-16 text-center text-slate-400 font-semibold">
-              No EOD daily work reports match your selected search or filter criteria.
-            </div>
-          ) : (
-            filteredReports.map((report) => {
-              const isExpanded = expandedCards[report.id] === true
-
-              return (
-                <div
-                  key={report.id}
-                  className="bg-white border border-slate-200/90 rounded-3xl p-5 lg:p-6 shadow-xs space-y-4 transition hover:shadow-md hover:border-amber-300"
-                >
-                  {/* 1. Sales Executive Compact Row Header (Clickable) */}
-                  <div
-                    onClick={() => toggleExpandCard(report.id)}
-                    className="flex flex-wrap items-center justify-between gap-4 cursor-pointer group"
+              <div className="flex items-center gap-3">
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  <button
+                    onClick={() => setViewMode('cards')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
+                      viewMode === 'cards' ? 'bg-[#ca8a04] text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
                   >
-                    <div className="flex items-center gap-4">
-                      <img
-                        src={report.photo}
-                        alt={report.executive}
-                        className="w-12 h-12 rounded-2xl object-cover border-2 border-amber-300 bg-amber-50 shadow-xs shrink-0 group-hover:scale-105 transition"
-                        onError={(e) => {
-                          e.target.src = 'https://api.dicebear.com/7.x/avataaars/svg?seed=Executive'
-                        }}
-                      />
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2.5 flex-wrap">
-                          <span className="text-xs font-mono font-black text-[#ca8a04] bg-amber-50 px-2.5 py-0.5 rounded-lg border border-amber-200">
-                            [{report.employee_code || 'EMP000012'}]
-                          </span>
-                          <h3 className="text-base font-black text-slate-900 group-hover:text-[#ca8a04] transition flex items-center gap-2">
-                            {report.executive}
-                            <Eye size={15} className="text-[#ca8a04] opacity-0 group-hover:opacity-100 transition" />
-                          </h3>
-                        </div>
-                        <p className="text-xs text-slate-500 font-semibold flex items-center gap-2 flex-wrap">
-                          <span>{report.designation}</span>
-                          <span>•</span>
-                          <span className="text-slate-700 font-bold">{report.executiveEmail}</span>
-                        </p>
-                      </div>
-                    </div>
+                    <LayoutGrid size={14} /> Cards View
+                  </button>
+                  <button
+                    onClick={() => setViewMode('table')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
+                      viewMode === 'table' ? 'bg-[#ca8a04] text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <Table size={14} /> Table View
+                  </button>
+                </div>
+              </div>
+            </div>
 
-                    <div className="flex items-center gap-4 flex-wrap">
-                      {/* Compact Quick Summary Metrics */}
-                      {!isExpanded && (
-                        <div className="hidden lg:flex items-center gap-2 text-xs font-black">
-                          <span className="bg-slate-100 text-slate-700 px-2.5 py-1 rounded-xl">
-                            📞 {report.callsMade} Calls
-                          </span>
-                          <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-1 rounded-xl">
-                            📍 {report.visitsCompleted} Visits
-                          </span>
-                          {report.dealsClosed > 0 && (
-                            <span className="bg-amber-100 text-amber-900 border border-amber-300 px-2.5 py-1 rounded-xl">
-                              🏆 {report.dealsClosed} Won
-                            </span>
-                          )}
-                        </div>
-                      )}
+            {/* Filter Panel */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-4 space-y-4 shadow-xs">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3.5 py-1.5 text-xs font-bold text-slate-700">
+                  <span className="text-slate-500">Sales Executive:</span>
+                  <select
+                    value={selectedSE}
+                    onChange={(e) => setSelectedSE(e.target.value)}
+                    className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-black text-xs"
+                  >
+                    <option value="All">All Executives (Combined Sum)</option>
+                    {executives.map((ex) => (
+                      <option key={ex.id || ex.email} value={ex.name}>
+                        {ex.name} ({ex.employee_code || 'EMP'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-                      <div className="text-right">
-                        <span className="text-[10px] font-extrabold text-slate-400 block uppercase tracking-wider">Report Date</span>
-                        <span className="text-xs font-mono font-black text-slate-800">{report.date} ({report.submittedAt})</span>
-                      </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {['All', 'Submitted', 'Acknowledged'].map((status) => (
+                    <button
+                      key={status}
+                      onClick={() => setSelectedStatus(status)}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer border ${
+                        selectedStatus === status
+                          ? 'bg-[#ca8a04] text-white border-[#ca8a04] shadow-xs'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {status}
+                    </button>
+                  ))}
+                </div>
 
-                      <span
-                        className={`px-3 py-1 rounded-full text-xs font-black border ${report.status === 'Submitted'
-                            ? 'bg-emerald-50 text-emerald-800 border-emerald-300'
-                            : 'bg-amber-50 text-amber-900 border-amber-300'
-                          }`}
-                      >
-                        {report.status}
-                      </span>
+                <div className="relative flex-1 min-w-[260px]">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    type="text"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                    placeholder="Search by Employee Code, Executive Name, Remarks..."
+                    className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#ca8a04] placeholder-slate-400"
+                  />
+                </div>
+              </div>
 
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs font-bold">
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex items-center gap-1 bg-amber-50/60 p-0.5 rounded-xl border border-amber-300">
+                    <span className="text-[10px] font-black text-amber-955 px-2 uppercase">Date Filter:</span>
+                    {['All', 'Today', 'Yesterday', 'This Week', 'This Month', 'Custom Date'].map((tab) => (
                       <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          toggleExpandCard(report.id)
-                        }}
-                        className={`px-4 py-2 rounded-xl text-xs font-black flex items-center gap-1.5 transition cursor-pointer shadow-xs ${isExpanded
-                            ? 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                            : 'bg-[#ca8a04] hover:bg-[#a16207] text-white shadow-md shadow-yellow-600/20'
-                          }`}
+                        key={tab}
+                        onClick={() => handleLinearDateFilter(tab)}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                          selectedDateFilter === tab
+                            ? 'bg-[#ca8a04] text-white shadow-2xs'
+                            : 'text-amber-955 hover:bg-amber-100'
+                        }`}
                       >
-                        {isExpanded ? 'Hide Details' : 'View EOD Report'}
-                        {isExpanded ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+                        {tab}
                       </button>
-                    </div>
+                    ))}
                   </div>
 
-                  {/* FULL DETAILS DISPLAYED ONLY WHEN EXPANDED */}
-                  {isExpanded && (
-                    <div className="space-y-6 pt-4 border-t border-slate-100 animate-in fade-in duration-150">
-                      {/* 2. Log-In / Log-Out & Telemetry Strip */}
-                      <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
-                            <Clock size={16} className="text-[#ca8a04]" /> Attendance & GPS Location Telemetry
-                          </span>
-                          <span className="text-[10px] font-black bg-emerald-100 text-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-300">
-                            GPS Verified
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-1">
-                          {/* Log In Box */}
-                          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-black text-emerald-700 flex items-center gap-1.5">
-                                🟢 Log In Time
-                              </span>
-                              <span className="text-xs font-black text-slate-900 font-mono bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                                {report.loginTime}
-                              </span>
-                            </div>
-                            <p className="text-xs font-semibold text-slate-700 flex items-center gap-1.5 pt-1 truncate" title={report.loginLocation}>
-                              <MapPin size={14} className="text-emerald-600 shrink-0" />
-                              <span>{report.loginLocation}</span>
-                            </p>
-                          </div>
-
-                          {/* Log Out Box */}
-                          <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs space-y-1">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-black text-rose-700 flex items-center gap-1.5">
-                                🔴 Log Out Time
-                              </span>
-                              <span className="text-xs font-mono font-black text-slate-900 bg-rose-50 px-2 py-0.5 rounded border border-rose-200">
-                                {report.logoutTime}
-                              </span>
-                            </div>
-                            <p className="text-xs font-semibold text-slate-700 flex items-center gap-1.5 pt-1 truncate" title={report.logoutLocation}>
-                              <MapPin size={14} className="text-rose-600 shrink-0" />
-                              <span>{report.logoutLocation}</span>
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* 3. TODAY'S KPI NUMBERS */}
-                      <div className="space-y-3">
-                        <span className="text-xs font-black uppercase tracking-wider text-slate-400">TODAY'S ACTIVITY METRICS</span>
-                        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-                          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
-                            <span className="text-[11px] font-extrabold text-slate-500 block uppercase">Calls Made</span>
-                            <p className="text-2xl font-black text-slate-900">{report.callsMade}</p>
-                          </div>
-
-                          <div className="p-4 rounded-2xl bg-emerald-50/80 border border-emerald-200 space-y-1">
-                            <span className="text-[11px] font-extrabold text-emerald-800 block uppercase">Visits Completed</span>
-                            <p className="text-2xl font-black text-emerald-950">{report.visitsCompleted}</p>
-                          </div>
-
-                          <div className="p-4 rounded-2xl bg-indigo-50/80 border border-indigo-200 space-y-1">
-                            <span className="text-[11px] font-extrabold text-indigo-800 block uppercase">New Leads</span>
-                            <p className="text-2xl font-black text-indigo-950">{report.leadsGenerated}</p>
-                          </div>
-
-                          <div className="p-4 rounded-2xl bg-amber-50/80 border border-amber-200 space-y-1">
-                            <span className="text-[11px] font-extrabold text-amber-900 block uppercase">Interested</span>
-                            <p className="text-2xl font-black text-amber-950">{report.clientsInterested}</p>
-                          </div>
-
-                          <div className="p-4 rounded-2xl bg-sky-50/80 border border-sky-200 space-y-1">
-                            <span className="text-[11px] font-extrabold text-sky-800 block uppercase">Follow-ups</span>
-                            <p className="text-2xl font-black text-sky-950">{report.followupsScheduled}</p>
-                          </div>
-
-                          <div className="p-4 rounded-2xl bg-[#ca8a04] text-white shadow-md shadow-yellow-600/20 space-y-1">
-                            <span className="text-[11px] font-black text-amber-100 block uppercase">Deals Closed</span>
-                            <p className="text-2xl font-black">{report.dealsClosed}</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Grid for SE Remarks & Key Highlights */}
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* SE REMARKS */}
-                        <div className="p-4 rounded-2xl bg-sky-50/60 border border-sky-200 space-y-1.5 text-xs">
-                          <span className="text-xs font-black uppercase text-sky-900 flex items-center gap-1.5">
-                            <MessageSquare size={15} className="text-sky-600" /> SE REMARKS & DAILY NOTES
-                          </span>
-                          <p className="text-sky-950 font-semibold leading-relaxed italic bg-white p-3 rounded-xl border border-sky-100">
-                            "{report.seRemarks}"
-                          </p>
-                        </div>
-
-                        {/* KEY HIGHLIGHTS */}
-                        <div className="p-4 rounded-2xl bg-emerald-50/60 border border-emerald-200 space-y-1.5 text-xs">
-                          <span className="text-xs font-black uppercase text-emerald-900 flex items-center gap-1.5">
-                            <Star size={15} className="text-emerald-600" /> KEY HIGHLIGHTS & WINS TODAY
-                          </span>
-                          <p className="text-emerald-950 font-semibold leading-relaxed bg-white p-3 rounded-xl border border-emerald-100">
-                            {report.highlights}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* Grid for Blockers & Tomorrow Plan */}
-                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                        {/* BLOCKERS */}
-                        <div className="p-4 rounded-2xl bg-rose-50/60 border border-rose-200 space-y-1.5 text-xs">
-                          <span className="text-xs font-black uppercase text-rose-900 flex items-center gap-1.5">
-                            <AlertCircle size={15} className="text-rose-600" /> BLOCKERS & ISSUES
-                          </span>
-                          <p className="text-rose-950 font-semibold leading-relaxed bg-white p-3 rounded-xl border border-rose-100">
-                            {report.blockers}
-                          </p>
-                        </div>
-
-                        {/* TOMORROW PLAN */}
-                        <div className="p-4 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-1.5 text-xs">
-                          <span className="text-xs font-black uppercase text-amber-900 flex items-center gap-1.5">
-                            <Target size={15} className="text-amber-600" /> TOMORROW'S ACTION PLAN
-                          </span>
-                          <p className="text-amber-950 font-semibold leading-relaxed bg-white p-3 rounded-xl border border-amber-100">
-                            {report.nextDayPlan}
-                          </p>
-                        </div>
-                      </div>
-
-                      {/* 5. SALES MANAGER REVIEW & FEEDBACK */}
-                      <div className="p-5 rounded-2xl bg-slate-900 text-white space-y-4 shadow-sm">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-black uppercase tracking-wider text-amber-400 flex items-center gap-2">
-                            <CheckCircle2 size={16} /> Sales Manager Review & Feedback
-                          </span>
-                          {report.managerAck && (
-                            <span className="text-xs font-black bg-emerald-500 text-slate-950 px-3 py-1 rounded-full">
-                              ✓ Report Acknowledged
-                            </span>
-                          )}
-                        </div>
-
-                        {report.managerAck && report.managerComment && (
-                          <div className="p-3 bg-slate-800 rounded-xl border border-slate-700 text-xs text-amber-200 italic">
-                            "{report.managerComment}"
-                          </div>
-                        )}
-
-                        {!report.managerAck && (
-                          <div className="space-y-3">
-                            <input
-                              type="text"
-                              value={ackComments[report.id] || ''}
-                              onChange={(e) => setAckComments({ ...ackComments, [report.id]: e.target.value })}
-                              placeholder="Enter encouragement, instructions, or feedback for executive..."
-                              className="w-full bg-slate-800 border border-slate-700 rounded-xl p-3 text-xs text-white placeholder-slate-400 focus:outline-none focus:border-amber-400 font-semibold"
-                            />
-                            <div className="flex justify-end">
-                              <button
-                                onClick={() => handleAcknowledgeReport(report.id)}
-                                className="px-5 py-2.5 bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs rounded-xl shadow-md shadow-yellow-600/20 cursor-pointer transition flex items-center gap-2"
-                              >
-                                <CheckCircle size={15} /> Acknowledge EOD Report
-                              </button>
-                            </div>
-                          </div>
-                        )}
-                      </div>
+                  {selectedDateFilter === 'Custom Date' && (
+                    <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5">
+                      <span className="text-amber-900 font-extrabold text-[11px]">Select Date:</span>
+                      <input
+                        type="date"
+                        value={customDateInput}
+                        onChange={(e) => setCustomDateInput(e.target.value)}
+                        className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
+                      />
                     </div>
                   )}
                 </div>
-              )
-            })
-          )}
-        </div>
-      ) : (
-        /* TABLE VIEW (5 COLUMNS: Date, Emp Id, Emp Name, Attendance, View Report) */
-        <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-700">
-              <thead className="bg-slate-50 text-slate-500 uppercase font-bold border-b border-slate-200">
-                <tr>
-                  <th className="px-5 py-3.5">Date</th>
-                  <th className="px-5 py-3.5">Emp Id</th>
-                  <th className="px-5 py-3.5">Emp Name</th>
-                  <th className="px-5 py-3.5">Attendance</th>
-                  <th className="px-5 py-3.5 text-right">View Report</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {loading ? (
-                  <tr>
-                    <td colSpan="5" className="text-center py-12 text-slate-400">
-                      <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#b45309] mb-2" />
-                      Loading team EOD daily work reports...
-                    </td>
-                  </tr>
-                ) : filteredReports.length === 0 ? (
-                  <tr>
-                    <td colSpan="5" className="text-center py-12 text-slate-400 font-semibold">
-                      No EOD daily work reports match your selected criteria.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredReports.map((report) => (
-                    <tr
-                      key={report.id}
-                      onClick={() => setSelectedReportModal(report)}
-                      className="hover:bg-amber-50/40 transition cursor-pointer"
-                    >
-                      <td className="px-5 py-3 font-mono font-bold text-slate-800">{report.date}</td>
-                      <td className="px-5 py-3 font-mono font-black text-amber-950">
-                        <span className="bg-amber-100 text-amber-950 border border-amber-300 px-1.5 py-0.5 rounded text-[10px]">
-                          [{report.employee_code || 'EMP000012'}]
-                        </span>
-                      </td>
-                      <td className="px-5 py-3 font-extrabold text-slate-900">{report.executive}</td>
-                      <td className="px-5 py-3 text-[11px] font-bold text-slate-700">
-                        <div>🟢 {report.loginTime}</div>
-                        <div className="text-slate-500">🔴 {report.logoutTime}</div>
-                      </td>
-                      <td className="px-5 py-3 text-right">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setSelectedReportModal(report)
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto"
-                        >
-                          <Eye size={12} /> View Full Report
-                        </button>
-                      </td>
-                    </tr>
-                  ))
+
+                {(selectedSE !== 'All' || selectedStatus !== 'All' || selectedDateFilter !== 'All' || search) && (
+                  <button
+                    onClick={() => {
+                      setSelectedSE('All')
+                      setSelectedStatus('All')
+                      setSelectedDateFilter('All')
+                      setSearch('')
+                      setCustomDateInput('')
+                    }}
+                    className="text-xs font-extrabold text-rose-700 hover:underline cursor-pointer bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200"
+                  >
+                    Reset All Filters
+                  </button>
                 )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-      </>
-      )}
+              </div>
+            </div>
 
-      {activeTab === 'permissions' && (
-        <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
-          <div>
-            <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-              <Calendar className="w-6 h-6 text-amber-600" /> Team Leave & Permission Requests
-            </h2>
-            <p className="text-xs font-semibold text-slate-500 mt-0.5">
-              Review, Approve, or Reject Leave & Permission requests submitted by your assigned Sales Executives.
-            </p>
-          </div>
-          <button
-            onClick={() => {
-              attendanceAPI.getLeaveRequests().then((res) => {
-                const raw = Array.isArray(res) ? res : (res?.data || [])
-                if (Array.isArray(raw)) setTeamLeaveRequests(raw)
-              })
-            }}
-            className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-950 border border-amber-300 font-extrabold text-xs transition cursor-pointer flex items-center gap-1.5"
-          >
-            <RefreshCw size={14} /> Refresh Requests
-          </button>
-        </div>
+            {/* List/Table View Rendering */}
+            {viewMode === 'cards' ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+                {loading ? (
+                  <div className="col-span-full py-16 text-center text-slate-400">
+                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-[#ca8a04] mb-3" />
+                    <span className="text-sm font-black text-slate-700">Fetching team EOD daily work reports...</span>
+                  </div>
+                ) : filteredReports.length === 0 ? (
+                  <div className="col-span-full py-16 text-center text-slate-500 font-bold text-sm bg-white border border-slate-200 rounded-3xl">
+                    No EOD daily work reports match your selected criteria.
+                  </div>
+                ) : (
+                  filteredReports.map((report) => {
+                    const isExpanded = !!expandedCards[report.id]
+                    return (
+                      <div
+                        key={report.id}
+                        className={`bg-white border rounded-3xl p-5 space-y-4 transition hover:shadow-md ${
+                          isExpanded ? 'border-amber-500/80 shadow-md ring-1 ring-amber-500/10' : 'border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+                          <div className="space-y-0.5">
+                            <span className="bg-amber-100 text-amber-955 border border-amber-300 px-1.5 py-0.5 rounded font-mono font-black text-[9px] uppercase tracking-wider">
+                              {report.employee_code || 'EMP-112'}
+                            </span>
+                            <h4 className="font-black text-slate-900 text-sm mt-1">{report.executive}</h4>
+                            <p className="text-[10px] font-semibold text-slate-400">{report.designation || 'Sales Executive'}</p>
+                          </div>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
+                              report.managerAck
+                                ? 'bg-emerald-100 text-emerald-955 border border-emerald-300'
+                                : 'bg-amber-100 text-amber-900 border border-amber-300'
+                            }`}
+                          >
+                            {report.managerAck ? 'Acknowledged' : 'Submitted'}
+                          </span>
+                        </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs font-bold text-slate-800 min-w-[850px]">
-            <thead>
-              <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-700">
-                <th className="px-4 py-3.5">Executive Name</th>
-                <th className="px-4 py-3.5">Request Type</th>
-                <th className="px-4 py-3.5">Date & Slot</th>
-                <th className="px-4 py-3.5">Reason</th>
-                <th className="px-4 py-3.5">Current Status</th>
-                <th className="px-4 py-3.5 text-right">Approve / Reject Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-200">
-              {filteredLeaveRequests.length === 0 ? (
-                <tr>
-                  <td colSpan="6" className="text-center py-10 text-slate-500 font-bold text-sm bg-slate-50/50">
-                    No leave or permission requests currently pending for your team.
-                  </td>
-                </tr>
-              ) : (
-                filteredLeaveRequests.map((req, idx) => (
-                  <tr key={req.id || idx} className="hover:bg-amber-50/40 transition-colors">
-                    <td className="px-4 py-3.5 font-black text-slate-900 text-sm">
-                      {req.executive_name || req.executive || "Sales Executive"}
-                      <div className="text-[10px] text-slate-400 font-extrabold font-mono">[{req.employee_code || "EMP000012"}]</div>
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black border ${
-                        req.leave_type?.includes("Half")
-                          ? "bg-amber-100 text-amber-950 border-amber-300"
-                          : req.leave_type?.includes("Permission")
-                            ? "bg-sky-100 text-sky-950 border-sky-300"
-                            : "bg-emerald-100 text-emerald-950 border-emerald-300"
-                      }`}>
-                        {req.leave_type || "Leave Request"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 font-mono text-slate-900">
-                      <div>{req.from_date || req.date}</div>
-                      <div className="text-[10px] text-slate-500 font-extrabold">{req.time_slot || req.duration || "Full Day"}</div>
-                    </td>
-                    <td className="px-4 py-3.5 max-w-[200px] text-slate-800 font-semibold truncate">
-                      {req.raw_reason || req.reason?.split("|")[0]?.trim() || req.reason}
-                    </td>
-                    <td className="px-4 py-3.5">
-                      <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black border ${
-                        req.status?.toLowerCase() === "approved" || req.status?.toLowerCase().includes("approv")
-                          ? "bg-emerald-100 text-emerald-900 border-emerald-300"
-                          : req.status?.toLowerCase() === "rejected" || req.status?.toLowerCase().includes("reject")
-                            ? "bg-rose-100 text-rose-900 border-rose-300"
-                            : "bg-amber-100 text-amber-950 border-amber-300"
-                      }`}>
-                        {req.status?.toLowerCase() === "approved" || req.status?.toLowerCase().includes("approv")
-                          ? "✅ Approved"
-                          : req.status?.toLowerCase() === "rejected" || req.status?.toLowerCase().includes("reject")
-                            ? "❌ Rejected"
-                            : "⏳ Pending"}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3.5 text-right space-y-1">
-                      <div className="flex items-center justify-end gap-2">
+                        <div className="grid grid-cols-3 gap-2.5 text-center text-xs">
+                          <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
+                            <span className="text-[9px] font-bold text-slate-400 block">Calls</span>
+                            <span className="font-black text-slate-800 text-sm">{report.callsMade}</span>
+                          </div>
+                          <div className="bg-emerald-50/60 p-2 rounded-xl border border-emerald-200">
+                            <span className="text-[9px] font-bold text-emerald-80 block">Visits</span>
+                            <span className="font-black text-emerald-955 text-sm">{report.visitsCompleted}</span>
+                          </div>
+                          <div className="bg-indigo-50/60 p-2 rounded-xl border border-indigo-200">
+                            <span className="text-[9px] font-bold text-indigo-800 block">Leads</span>
+                            <span className="font-black text-indigo-950 text-sm">{report.leadsGenerated}</span>
+                          </div>
+                        </div>
+
+                        <div className="space-y-1.5 bg-slate-50/60 p-3 rounded-2xl border border-slate-200 text-[10px] font-semibold text-slate-700">
+                          <p className="flex items-center gap-1.5 truncate">
+                            <span className="text-emerald-700 font-bold shrink-0">In:</span> {report.loginLocation}
+                          </p>
+                          <p className="flex items-center gap-1.5 truncate">
+                            <span className="text-rose-700 font-bold shrink-0">Out:</span> {report.logoutLocation}
+                          </p>
+                        </div>
+
                         <button
-                          onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Approved")}
-                          disabled={req.status === "Approved"}
-                          className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
+                          onClick={() => toggleExpandCard(report.id)}
+                          className="w-full py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-[10px] font-black text-slate-600 transition flex items-center justify-center gap-1"
                         >
-                          <CheckCircle2 size={14} /> Approve
+                          {isExpanded ? (
+                            <>
+                              Collapse Report <ChevronUp size={12} />
+                            </>
+                          ) : (
+                            <>
+                              Expand Full EOD Report <ChevronDown size={12} />
+                            </>
+                          )}
                         </button>
-                        <button
-                          onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Rejected")}
-                          disabled={req.status === "Rejected"}
-                          className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
-                        >
-                          <XCircle size={14} /> Reject
-                        </button>
+
+                        {isExpanded && (
+                          <div className="space-y-4 pt-3 border-t border-slate-100 text-xs animate-in slide-in-from-top-2 duration-200">
+                            <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                              <div className="bg-amber-50 p-2 rounded-xl border border-amber-200">
+                                <span className="text-[9px] font-bold text-amber-955 block">Interested</span>
+                                <span className="font-black text-sm">{report.clientsInterested}</span>
+                              </div>
+                              <div className="bg-sky-50 p-2 rounded-xl border border-sky-200">
+                                <span className="text-[9px] font-bold text-sky-800 block">Follow-ups</span>
+                                <span className="font-black text-sm">{report.followupsScheduled}</span>
+                              </div>
+                              <div className="bg-yellow-555 text-white p-2 rounded-xl shadow-xs">
+                                <span className="text-[9px] font-bold text-amber-100 block">Won</span>
+                                <span className="font-black text-sm">{report.dealsClosed}</span>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1 bg-sky-50/50 p-3 rounded-2xl border border-sky-200 text-xs">
+                              <span className="text-[10px] font-black text-sky-800 uppercase">Remarks / Notes</span>
+                              <p className="font-medium text-slate-700 italic">"{report.seRemarks}"</p>
+                            </div>
+
+                            <div className="space-y-2">
+                              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                                <span className="text-[9px] font-extrabold uppercase text-slate-500 block">Highlights</span>
+                                <p className="text-slate-800 font-semibold leading-relaxed mt-0.5">{report.highlights}</p>
+                              </div>
+                              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl">
+                                <span className="text-[9px] font-extrabold uppercase text-rose-900 block">Blockers</span>
+                                <p className="text-rose-955 font-semibold leading-relaxed mt-0.5">{report.blockers}</p>
+                              </div>
+                              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                                <span className="text-[9px] font-extrabold uppercase text-amber-900 block">Tomorrow Plan</span>
+                                <p className="text-amber-955 font-semibold leading-relaxed mt-0.5">{report.nextDayPlan}</p>
+                              </div>
+                            </div>
+
+                            <div className="p-4 bg-slate-900 text-white rounded-2xl space-y-3">
+                              <div className="flex items-center justify-between text-[10px] font-extrabold text-amber-400 uppercase tracking-wider">
+                                <span>Manager Comments & Ack</span>
+                                {report.managerAck && <span className="text-emerald-400">✓ Acknowledged</span>}
+                              </div>
+                              {report.managerAck && report.managerComment && (
+                                <p className="text-[11px] text-amber-200 italic font-semibold">"{report.managerComment}"</p>
+                              )}
+                              {!report.managerAck && (
+                                <div className="space-y-2.5">
+                                  <input
+                                    type="text"
+                                    value={ackComments[report.id] || ''}
+                                    onChange={(e) => setAckComments({ ...ackComments, [report.id]: e.target.value })}
+                                    placeholder="Enter comments..."
+                                    className="w-full bg-slate-850 border border-slate-750 rounded-xl p-2.5 text-[11px] text-white focus:outline-none focus:border-amber-400 font-semibold"
+                                  />
+                                  <button
+                                    onClick={() => handleAcknowledgeReport(report.id)}
+                                    className="w-full py-2 bg-[#ca8a04] hover:bg-[#a16207] text-white font-extrabold text-xs rounded-xl shadow-xs transition"
+                                  >
+                                    Acknowledge Report
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
                       </div>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
+                    )
+                  })
+                )}
+              </div>
+            ) : (
+              <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs text-slate-700">
+                    <thead className="bg-slate-50 text-slate-500 uppercase font-bold border-b border-slate-200">
+                      <tr>
+                        <th className="px-5 py-3.5">Date</th>
+                        <th className="px-5 py-3.5">Emp Id</th>
+                        <th className="px-5 py-3.5">Emp Name</th>
+                        <th className="px-5 py-3.5">Attendance</th>
+                        <th className="px-5 py-3.5 text-right">View Report</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {loading ? (
+                        <tr>
+                          <td colSpan="5" className="text-center py-12 text-slate-400">
+                            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-amber-600 mb-2" />
+                            Loading team EOD daily work reports...
+                          </td>
+                        </tr>
+                      ) : filteredReports.length === 0 ? (
+                        <tr>
+                          <td colSpan="5" className="text-center py-12 text-slate-400 font-semibold">
+                            No EOD daily work reports match your selected criteria.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredReports.map((report) => (
+                          <tr
+                            key={report.id}
+                            onClick={() => setSelectedReportModal(report)}
+                            className="hover:bg-amber-50/40 transition cursor-pointer"
+                          >
+                            <td className="px-5 py-3 font-mono font-bold text-slate-800">{report.date}</td>
+                            <td className="px-5 py-3 font-mono font-black text-amber-955">
+                              <span className="bg-amber-100 text-amber-955 border border-amber-300 px-1.5 py-0.5 rounded text-[10px]">
+                                [{report.employee_code || 'EMP000012'}]
+                              </span>
+                            </td>
+                            <td className="px-5 py-3 font-extrabold text-slate-900">{report.executive}</td>
+                            <td className="px-5 py-3 text-[11px] font-bold text-slate-700">
+                              <div>🟢 {report.loginTime}</div>
+                              <div className="text-slate-500">🔴 {report.logoutTime}</div>
+                            </td>
+                            <td className="px-5 py-3 text-right">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setSelectedReportModal(report)
+                                }}
+                                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto"
+                              >
+                                <Eye size={12} /> View Full Report
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
       )}
+
+      {/* ── PERMISSIONS DETAILS MODAL POPUP ──────────────────────────────────── */}
+      {activeTab === 'permissions' && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
+          <div className="bg-slate-50 border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh] overflow-y-auto relative animate-in fade-in zoom-in duration-150">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-[#ca8a04]" /> Team Leave & Permission Requests
+                </h2>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  Approve or Reject Leave & Permission requests submitted by assigned Sales Executives.
+                </p>
+              </div>
+              <button
+                onClick={() => setActiveTab(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-500 transition cursor-pointer"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-xs">
+              <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-100 pb-3">
+                <button
+                  onClick={() => {
+                    attendanceAPI.getLeaveRequests().then((res) => {
+                      const raw = Array.isArray(res) ? res : (res?.data || [])
+                      if (Array.isArray(raw)) setTeamLeaveRequests(raw)
+                    })
+                  }}
+                  className="px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-955 border border-amber-300 font-extrabold text-xs transition cursor-pointer flex items-center gap-1.5"
+                >
+                  <RefreshCw size={14} /> Refresh Requests
+                </button>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs font-bold text-slate-800 min-w-[850px]">
+                  <thead>
+                    <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-700">
+                      <th className="px-4 py-3.5">Executive Name</th>
+                      <th className="px-4 py-3.5">Request Type</th>
+                      <th className="px-4 py-3.5">Date & Slot</th>
+                      <th className="px-4 py-3.5">Reason</th>
+                      <th className="px-4 py-3.5">Current Status</th>
+                      <th className="px-4 py-3.5 text-right">Approve / Reject Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200">
+                    {filteredLeaveRequests.length === 0 ? (
+                      <tr>
+                        <td colSpan="6" className="text-center py-10 text-slate-500 font-bold text-sm bg-slate-50/50">
+                          No leave or permission requests currently pending for your team.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredLeaveRequests.map((req, idx) => (
+                        <tr key={req.id || idx} className="hover:bg-amber-50/40 transition-colors">
+                          <td className="px-4 py-3.5 font-black text-slate-900 text-sm">
+                            {req.executive_name || req.executive || "Sales Executive"}
+                            <div className="text-[10px] text-slate-400 font-extrabold font-mono">[{req.employee_code || "EMP000012"}]</div>
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black border ${
+                              req.leave_type?.includes("Half")
+                                ? "bg-amber-100 text-amber-955 border-amber-300"
+                                : req.leave_type?.includes("Permission")
+                                  ? "bg-sky-100 text-sky-955 border-sky-300"
+                                  : "bg-emerald-100 text-emerald-955 border-emerald-300"
+                            }`}>
+                              {req.leave_type || "Leave Request"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-slate-700">
+                            <div>📅 {req.start_date} {req.end_date && req.end_date !== req.start_date ? `to ${req.end_date}` : ""}</div>
+                            <div className="text-[10px] text-slate-400 font-extrabold mt-0.5">({req.duration || "Full Day"})</div>
+                          </td>
+                          <td className="px-4 py-3.5 max-w-[240px]">
+                            <p className="text-slate-600 font-medium leading-relaxed italic">"{req.reason || "No reason specified."}"</p>
+                          </td>
+                          <td className="px-4 py-3.5">
+                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                              req.status === "Approved"
+                                ? "bg-emerald-100 text-emerald-955 border-emerald-300"
+                                : req.status === "Rejected"
+                                  ? "bg-rose-100 text-rose-955 border-rose-300"
+                                  : "bg-amber-100 text-amber-900 border-amber-300"
+                            }`}>
+                              {req.status === "Approved"
+                                ? "✓ Approved"
+                                : req.status === "Rejected"
+                                  ? "✗ Rejected"
+                                  : "⏳ Pending"}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3.5 text-right space-y-1">
+                            <div className="flex items-center justify-end gap-2">
+                              <button
+                                onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Approved")}
+                                disabled={req.status === "Approved"}
+                                className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
+                              >
+                                <CheckCircle2 size={14} /> Approve
+                              </button>
+                              <button
+                                onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Rejected")}
+                                disabled={req.status === "Rejected"}
+                                className="px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
+                              >
+                                <XCircle size={14} /> Reject
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── FULL EOD DETAIL MODAL popup ── */}
       {selectedReportModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
           <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 lg:p-7 space-y-6 shadow-2xl my-auto animate-in fade-in zoom-in duration-150">
@@ -1077,7 +1016,7 @@ export default function ManagerTeam() {
                 <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
                   <Clock size={16} className="text-[#ca8a04]" /> Log-In / Log-Out GPS Telemetry
                 </span>
-                <span className="text-[10px] font-black bg-emerald-100 text-emerald-950 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                <span className="text-[10px] font-black bg-emerald-100 text-emerald-955 px-2.5 py-0.5 rounded-full border border-emerald-300">
                   GPS Verified
                 </span>
               </div>
@@ -1106,20 +1045,20 @@ export default function ManagerTeam() {
                   <p className="font-black text-slate-900 text-lg">{selectedReportModal.callsMade}</p>
                 </div>
                 <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 space-y-0.5">
-                  <span className="text-[10px] font-bold text-emerald-800 uppercase">Visits</span>
-                  <p className="font-black text-emerald-950 text-lg">{selectedReportModal.visitsCompleted}</p>
+                  <span className="text-[10px] font-bold text-emerald-805 uppercase">Visits</span>
+                  <p className="font-black text-emerald-955 text-lg">{selectedReportModal.visitsCompleted}</p>
                 </div>
                 <div className="p-3 rounded-xl bg-indigo-50 border border-indigo-200 space-y-0.5">
-                  <span className="text-[10px] font-bold text-indigo-800 uppercase">Leads</span>
-                  <p className="font-black text-indigo-950 text-lg">{selectedReportModal.leadsGenerated}</p>
+                  <span className="text-[10px] font-bold text-indigo-805 uppercase">Leads</span>
+                  <p className="font-black text-indigo-955 text-lg">{selectedReportModal.leadsGenerated}</p>
                 </div>
                 <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 space-y-0.5">
                   <span className="text-[10px] font-bold text-amber-900 uppercase">Interested</span>
-                  <p className="font-black text-amber-950 text-lg">{selectedReportModal.clientsInterested}</p>
+                  <p className="font-black text-amber-955 text-lg">{selectedReportModal.clientsInterested}</p>
                 </div>
                 <div className="p-3 rounded-xl bg-sky-50 border border-sky-200 space-y-0.5">
                   <span className="text-[10px] font-bold text-sky-800 uppercase">Follow-ups</span>
-                  <p className="font-black text-sky-950 text-lg">{selectedReportModal.followupsScheduled}</p>
+                  <p className="font-black text-sky-955 text-lg">{selectedReportModal.followupsScheduled}</p>
                 </div>
                 <div className="p-3 rounded-xl bg-[#ca8a04] text-white shadow-sm space-y-0.5">
                   <span className="text-[10px] font-bold text-amber-100 uppercase">Won Deals</span>
@@ -1133,7 +1072,7 @@ export default function ManagerTeam() {
               <span className="text-xs font-black uppercase text-sky-900 flex items-center gap-1.5">
                 <MessageSquare size={15} className="text-sky-600" /> SE REMARKS / DAILY NOTES
               </span>
-              <p className="text-sky-950 font-semibold italic bg-white p-3 rounded-xl border border-sky-100">
+              <p className="text-sky-955 font-semibold italic bg-white p-3 rounded-xl border border-sky-100">
                 "{selectedReportModal.seRemarks}"
               </p>
             </div>
@@ -1147,22 +1086,42 @@ export default function ManagerTeam() {
 
               <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 space-y-1">
                 <span className="text-[10px] font-extrabold uppercase text-rose-800 block">Blockers</span>
-                <p className="text-rose-950 font-semibold leading-relaxed">{selectedReportModal.blockers}</p>
+                <p className="text-rose-955 font-semibold leading-relaxed">{selectedReportModal.blockers}</p>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-200 space-y-1">
                 <span className="text-[10px] font-extrabold uppercase text-amber-900 block">Tomorrow Plan</span>
-                <p className="text-amber-950 font-semibold leading-relaxed">{selectedReportModal.nextDayPlan}</p>
+                <p className="text-amber-955 font-semibold leading-relaxed">{selectedReportModal.nextDayPlan}</p>
               </div>
             </div>
 
-            <div className="flex items-center justify-end pt-3 border-t border-slate-100">
-              <button
-                onClick={() => handleAcknowledgeReport(selectedReportModal.id)}
-                className="px-6 py-2.5 bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs rounded-xl shadow-md shadow-yellow-600/20 cursor-pointer transition flex items-center gap-2"
-              >
-                <CheckCircle size={15} /> Acknowledge EOD Report
-              </button>
+            {/* Review feedback inside the details modal */}
+            <div className="pt-3 border-t border-slate-100">
+              {selectedReportModal.managerAck ? (
+                <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200 p-3 rounded-xl">
+                  <span className="text-xs font-black text-emerald-955">✓ Acknowledged with remarks:</span>
+                  <span className="text-xs font-semibold text-emerald-850 italic">"{selectedReportModal.managerComment || 'No comment provided'}"</span>
+                </div>
+              ) : (
+                <div className="flex flex-col sm:flex-row gap-2 w-full sm:w-auto items-stretch sm:items-center">
+                  <input
+                    type="text"
+                    value={ackComments[selectedReportModal.id] || ''}
+                    onChange={(e) => setAckComments({ ...ackComments, [selectedReportModal.id]: e.target.value })}
+                    placeholder="Enter acknowledgment comments or notes..."
+                    className="flex-1 sm:w-64 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs placeholder-slate-400 focus:outline-none focus:border-amber-400 font-semibold"
+                  />
+                  <button
+                    onClick={() => {
+                      handleAcknowledgeReport(selectedReportModal.id)
+                      setSelectedReportModal(null)
+                    }}
+                    className="px-6 py-2.5 bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs rounded-xl shadow-md shadow-yellow-600/20 cursor-pointer transition flex items-center justify-center gap-2 shrink-0"
+                  >
+                    <CheckCircle size={15} /> Acknowledge EOD Report
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>

@@ -1119,7 +1119,20 @@ export default function Leads() {
 
     // 3. Remove from followups and active leads
     setFollowupsList((prev) => prev.filter((f) => f.id !== item.id));
-    setAllLeads((prev) => prev.filter((l) => l.id !== item.leadId && l.company !== item.company));
+    setAllLeads((prev) => {
+      const updated = prev.filter((l) => l.id !== item.leadId && l.company !== item.company);
+      try {
+        const stored = JSON.parse(localStorage.getItem("tc_sm_leads") || "[]");
+        const updatedStored = stored.map(l => {
+          if (l.id === item.leadId || l.lead_id === item.leadId || l.company === item.company || l.company_name === item.company) {
+            return { ...l, status: "Converted to Customer", converted_to_customer_id: newCustomer.id };
+          }
+          return l;
+        });
+        localStorage.setItem("tc_sm_leads", JSON.stringify(updatedStored));
+      } catch (e) {}
+      return updated;
+    });
 
     setIsConvertSubmitting(false);
     showToast(`🎉 "${item.company}" converted to Customer & saved in Supabase! Moving to Customer page...`, "success");
@@ -1230,7 +1243,20 @@ export default function Leads() {
 
       // 2. Remove from visits and active leads
       setVisitList((prev) => prev.filter((item) => item.id !== v.id));
-      setAllLeads((prev) => prev.filter((l) => l.company !== newCustomer.name && l.id !== v.leadId));
+      setAllLeads((prev) => {
+        const updated = prev.filter((l) => l.company !== newCustomer.name && l.id !== v.leadId);
+        try {
+          const stored = JSON.parse(localStorage.getItem("tc_sm_leads") || "[]");
+          const updatedStored = stored.map(l => {
+            if (l.id === v.leadId || l.lead_id === v.leadId || l.company === newCustomer.name || l.company_name === newCustomer.name) {
+              return { ...l, status: "Converted to Customer", converted_to_customer_id: newCustomer.id };
+            }
+            return l;
+          });
+          localStorage.setItem("tc_sm_leads", JSON.stringify(updatedStored));
+        } catch (e) {}
+        return updated;
+      });
 
       setSelectedVisitForOutcome(null);
       showToast(`🎉 Deal Won! "${newCustomer.name}" converted to Customer & saved in Supabase! Moving to Customer page...`, "success");
@@ -2965,14 +2991,40 @@ export default function Leads() {
                         });
 
                         // Remove lead from local active list
-                        setAllLeads((prev) => prev.filter((l) => l.id !== selectedLead.id));
+                        setAllLeads((prev) => {
+                          const updated = prev.filter((l) => l.id !== selectedLead.id);
+                          try {
+                            const stored = JSON.parse(localStorage.getItem("tc_sm_leads") || "[]");
+                            const updatedStored = stored.map(l => {
+                              if (l.id === selectedLead.id || l.lead_id === selectedLead.id || l.company === selectedLead.company || l.company_name === selectedLead.company) {
+                                return { ...l, status: "Converted to Customer", converted_to_customer_id: newCustomer.id };
+                              }
+                              return l;
+                            });
+                            localStorage.setItem("tc_sm_leads", JSON.stringify(updatedStored));
+                          } catch (e) {}
+                          return updated;
+                        });
                         setSelectedLead(null);
                         showToast(`🎉 "${selectedLead.company}" converted to Customer and saved in Supabase! Moving to Customer page...`, "success");
                         setTimeout(() => navigate("/sales/customers"), 500);
                       } catch (err) {
                         console.warn("Customer conversion error:", err);
                         // Still mark lead converted in local state and navigate
-                        setAllLeads((prev) => prev.filter((l) => l.id !== selectedLead.id));
+                        setAllLeads((prev) => {
+                          const updated = prev.filter((l) => l.id !== selectedLead.id);
+                          try {
+                            const stored = JSON.parse(localStorage.getItem("tc_sm_leads") || "[]");
+                            const updatedStored = stored.map(l => {
+                              if (l.id === selectedLead.id || l.lead_id === selectedLead.id || l.company === selectedLead.company || l.company_name === selectedLead.company) {
+                                return { ...l, status: "Converted to Customer", converted_to_customer_id: newCustomer.id };
+                              }
+                              return l;
+                            });
+                            localStorage.setItem("tc_sm_leads", JSON.stringify(updatedStored));
+                          } catch (e) {}
+                          return updated;
+                        });
                         setSelectedLead(null);
                         showToast(`"${selectedLead.company}" converted locally. Check your connection.`, "info");
                         setTimeout(() => navigate("/sales/customers"), 500);

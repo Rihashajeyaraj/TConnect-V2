@@ -43,11 +43,19 @@ class CustomerConversionService:
     def _is_valid_uuid(val: Any) -> bool:
         if not val:
             return False
+        val_str = str(val).strip()
         try:
-            uuid.UUID(str(val))
+            uuid.UUID(val_str)
             return True
         except (ValueError, AttributeError, TypeError):
-            return False
+            pass
+        # Accept custom prefixes like LED-, FLP-, VST-, cust_ followed by hex/alnum chars
+        import re
+        if re.match(r"^(LED-|FLP-|VST-|cust_)[a-zA-Z0-9-]{4,36}$", val_str):
+            return True
+        if len(val_str) >= 6 and len(val_str) <= 40 and re.match(r"^[a-zA-Z0-9_-]+$", val_str):
+            return True
+        return False
 
     @staticmethod
     def _normalize_phone(phone: str) -> str:

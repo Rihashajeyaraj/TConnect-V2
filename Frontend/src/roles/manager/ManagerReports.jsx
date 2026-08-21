@@ -30,7 +30,7 @@ import {
   Eye,
   X,
 } from 'lucide-react'
-import { hrmsAPI, reportAPI } from '../../services/api.js'
+import { hrmsAPI, reportAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 
 const DEFAULT_EOD_REPORTS = []
@@ -55,6 +55,7 @@ export default function ManagerReports() {
   // EOD Reports List
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
+  const [attendanceLogs, setAttendanceLogs] = useState([])
 
   const resolveEmployeeCode = (seName, seEmail, rawCode) => {
     const n = (seName || '').toLowerCase().trim()
@@ -81,11 +82,80 @@ export default function ManagerReports() {
     return 'EMP000012'
   }
 
-  const normalizeReport = (r, idx = 0) => {
+  const formatDateToYYYYMMDD = (dateStr) => {
+    if (!dateStr) return '';
+    const trimmed = String(dateStr).trim();
+    if (trimmed.includes('T')) {
+      return trimmed.split('T')[0];
+    }
+    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+      return trimmed.substring(0, 10);
+    }
+    const parts = trimmed.split(/[\/\-]/);
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      } else {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    return trimmed;
+  }
+
+  const findMatchingLog = (empCode, seEmail, seName, reportDate, logList) => {
+    if (!Array.isArray(logList)) return null;
+    const normalizedReportDate = formatDateToYYYYMMDD(reportDate);
+    if (!normalizedReportDate) return null;
+
+    return logList.find((log) => {
+      const logDate = formatDateToYYYYMMDD(log.attendance_date || log.date || log.created_at);
+      if (logDate !== normalizedReportDate) return false;
+
+      const logEmpCode = String(log.employee_id || log.employee_code || log.emp_code || '').toLowerCase().trim();
+      const logEmail = String(log.email || '').toLowerCase().trim();
+      const logName = String(log.name || log.employee_name || '').toLowerCase().trim();
+
+      const targetEmpCode = String(empCode || '').toLowerCase().trim();
+      const targetEmail = String(seEmail || '').toLowerCase().trim();
+      const targetName = String(seName || '').toLowerCase().trim();
+
+      if (targetEmpCode && logEmpCode && targetEmpCode === logEmpCode) return true;
+      if (targetEmail && logEmail && targetEmail === logEmail) return true;
+      if (targetName && logName && (logName.includes(targetName) || targetName.includes(logName))) return true;
+
+      // First name fallback match
+      const targetFirstName = targetName.split(/\s+/)[0];
+      const logFirstName = logName.split(/\s+/)[0];
+      if (targetFirstName && logFirstName && targetFirstName.length > 2 && targetFirstName === logFirstName) return true;
+
+      return false;
+    });
+  }
+
+  const normalizeReport = (r, idx = 0, attLogs = []) => {
     if (!r) return null
     const seName = r.executive || r.executiveName || r.assigned_to || r.name || 'Abi hastro'
     const seEmail = r.executiveEmail || r.assigned_to_email || r.email || 'abi@gmail.com'
     const empCode = resolveEmployeeCode(seName, seEmail, r.employee_code || r.employee_id)
+
+    const repDate = r.date || '05/08/2026'
+    const matchingLog = findMatchingLog(empCode, seEmail, seName, repDate, attLogs)
+
+    const loginTime = matchingLog 
+      ? (matchingLog.check_in_time || matchingLog.clockIn || '—') 
+      : '—'
+    
+    const logoutTime = matchingLog 
+      ? (matchingLog.check_out_time || matchingLog.clockOut || '—') 
+      : '—'
+
+    const loginLocation = matchingLog 
+      ? (matchingLog.check_in_address || matchingLog.work_location || '—') 
+      : '—'
+
+    const logoutLocation = matchingLog 
+      ? (matchingLog.check_out_address || '—') 
+      : '—'
 
     return {
       id: r.id || `eod_${1001 + idx}`,
@@ -93,8 +163,12 @@ export default function ManagerReports() {
       executiveEmail: seEmail,
       employee_code: empCode,
       designation: r.designation || 'Sales Executive',
-      date: r.date || '05/08/2026',
+      date: repDate,
       submittedAt: r.submittedAt || r.time || '05:30 PM',
+      loginTime,
+      logoutTime,
+      loginLocation,
+      logoutLocation,
       status: r.status || 'Submitted',
       callsMade: parseInt(r.callsMade || r.calls || 0),
       visitsCompleted: parseInt(r.visitsCompleted || r.visits || 0),
@@ -115,6 +189,7 @@ export default function ManagerReports() {
   const fetchReports = async () => {
     setLoading(true)
     let combined = []
+    let attLogs = []
 
     try {
       const apiRes = await reportAPI.getEODReports()
@@ -124,6 +199,14 @@ export default function ManagerReports() {
       }
     } catch (e) {
       console.error("Error fetching EOD reports from API", e)
+    }
+
+    try {
+      const attRes = await attendanceAPI.getLogs()
+      attLogs = Array.isArray(attRes) ? attRes : (attRes?.data || [])
+      setAttendanceLogs(attLogs)
+    } catch (e) {
+      console.error("Error fetching attendance logs", e)
     }
 
     const keys = ['tc_eod_reports', 'tc_se_daily_reports', 'tc_daily_work_reports']
@@ -139,7 +222,7 @@ export default function ManagerReports() {
       } catch (e) {}
     })
 
-    const normalizedLocal = combined.map((r, idx) => normalizeReport(r, idx)).filter(Boolean)
+    const normalizedLocal = combined.map((r, idx) => normalizeReport(r, idx, attLogs)).filter(Boolean)
 
     const map = new Map()
     DEFAULT_EOD_REPORTS.forEach((d) => map.set(`${d.executive}_${d.date}`, d))
@@ -558,10 +641,10 @@ export default function ManagerReports() {
           )}
         </div>
       ) : (
-        /* TABLE VIEW (12 COLUMNS) */
+        /* TABLE VIEW (13 COLUMNS) */
         <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-700 min-w-[1150px]">
+            <table className="w-full text-left text-xs text-slate-700 min-w-[1250px]">
               <thead className="bg-slate-50 text-slate-500 uppercase font-bold border-b border-slate-200">
                 <tr>
                   <th className="px-3.5 py-3.5">Report Date</th>
@@ -573,6 +656,7 @@ export default function ManagerReports() {
                   <th className="px-3.5 py-3.5">Interested</th>
                   <th className="px-3.5 py-3.5">Follow-ups</th>
                   <th className="px-3.5 py-3.5">Deals Closed</th>
+                  <th className="px-3.5 py-3.5">Attendance</th>
                   <th className="px-3.5 py-3.5">Key Highlights</th>
                   <th className="px-3.5 py-3.5">Status</th>
                   <th className="px-3.5 py-3.5 text-right">Action</th>
@@ -581,14 +665,14 @@ export default function ManagerReports() {
               <tbody className="divide-y divide-slate-100 font-medium">
                 {loading ? (
                   <tr>
-                    <td colSpan="12" className="text-center py-12 text-slate-400">
+                    <td colSpan="13" className="text-center py-12 text-slate-400">
                       <RefreshCw className="w-6 h-6 animate-spin mx-auto text-[#b45309] mb-2" />
                       Loading team EOD daily work reports...
                     </td>
                   </tr>
                 ) : filteredReports.length === 0 ? (
                   <tr>
-                    <td colSpan="12" className="text-center py-12 text-slate-400 font-semibold">
+                    <td colSpan="13" className="text-center py-12 text-slate-400 font-semibold">
                       No EOD daily work reports match your selected criteria.
                     </td>
                   </tr>
@@ -600,8 +684,8 @@ export default function ManagerReports() {
                       className="hover:bg-amber-50/40 transition cursor-pointer"
                     >
                       <td className="px-3.5 py-3 font-mono font-bold text-slate-800">{report.date}</td>
-                      <td className="px-3.5 py-3 font-mono font-black text-amber-950">
-                        <span className="bg-amber-100 text-amber-950 border border-amber-300 px-1.5 py-0.5 rounded text-[10px]">
+                      <td className="px-3.5 py-3 font-mono font-black text-amber-955">
+                        <span className="bg-amber-100 text-amber-955 border border-amber-300 px-1.5 py-0.5 rounded text-[10px]">
                           [{report.employee_code || 'EMP000012'}]
                         </span>
                       </td>
@@ -612,6 +696,10 @@ export default function ManagerReports() {
                       <td className="px-3.5 py-3 font-black text-amber-700">{report.clientsInterested}</td>
                       <td className="px-3.5 py-3 font-black text-sky-700">{report.followupsScheduled}</td>
                       <td className="px-3.5 py-3 font-black text-amber-900">{report.dealsClosed}</td>
+                      <td className="px-3.5 py-3 text-[11px] font-bold text-slate-700">
+                        <div>🟢 {report.loginTime || '—'}</div>
+                        <div className="text-slate-500">🔴 {report.logoutTime || '—'}</div>
+                      </td>
                       <td className="px-3.5 py-3 max-w-[200px]">
                         <p className="text-[11px] text-slate-600 line-clamp-1 italic">"{report.highlights}"</p>
                       </td>
@@ -619,7 +707,7 @@ export default function ManagerReports() {
                         <span
                           className={`px-2.5 py-0.5 rounded-full text-[10px] font-black ${
                             report.managerAck
-                              ? 'bg-emerald-100 text-emerald-950 border border-emerald-300'
+                              ? 'bg-emerald-100 text-emerald-955 border border-emerald-300'
                               : 'bg-amber-100 text-amber-900 border border-amber-300'
                           }`}
                         >
@@ -665,6 +753,32 @@ export default function ManagerReports() {
               <button onClick={() => setSelectedReportModal(null)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100">
                 <X size={20} />
               </button>
+            </div>
+
+            {/* Attendance & Telemetry Box in Modal */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-2">
+                  <Clock size={16} className="text-[#ca8a04]" /> Log-In / Log-Out GPS Telemetry
+                </span>
+                <span className="text-[10px] font-black bg-emerald-100 text-emerald-955 px-2.5 py-0.5 rounded-full border border-emerald-300">
+                  GPS Verified
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-xs font-black text-emerald-700">🟢 Log In: {selectedReportModal.loginTime || '—'}</span>
+                  <p className="text-xs font-semibold text-slate-700 flex items-center gap-1 mt-0.5 truncate">
+                    <MapPin size={13} className="text-emerald-600 shrink-0" /> {selectedReportModal.loginLocation || '—'}
+                  </p>
+                </div>
+                <div className="bg-white p-3 rounded-xl border border-slate-200 space-y-1">
+                  <span className="text-xs font-black text-rose-700">🔴 Log Out: {selectedReportModal.logoutTime || '—'}</span>
+                  <p className="text-xs font-semibold text-slate-700 flex items-center gap-1 mt-0.5 truncate">
+                    <MapPin size={13} className="text-rose-600 shrink-0" /> {selectedReportModal.logoutLocation || '—'}
+                  </p>
+                </div>
+              </div>
             </div>
 
             {/* Numbers Badges */}
