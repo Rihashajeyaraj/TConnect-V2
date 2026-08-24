@@ -56,12 +56,15 @@ export default function ManagerReports() {
   const [reports, setReports] = useState([])
   const [loading, setLoading] = useState(true)
   const [attendanceLogs, setAttendanceLogs] = useState([])
+  const [executives, setExecutives] = useState([])
 
   const resolveEmployeeCode = (seName, seEmail, rawCode) => {
+    if (rawCode && String(rawCode).trim() !== '' && String(rawCode).trim() !== 'EMP000012') {
+      return String(rawCode).trim();
+    }
+
     const n = (seName || '').toLowerCase().trim()
     const e = (seEmail || '').toLowerCase().trim()
-
-    if (e.includes('abi') || n.includes('abi')) return 'EMP000012'
 
     try {
       const appUsers = JSON.parse(localStorage.getItem('tc_app_users') || '[]')
@@ -74,10 +77,6 @@ export default function ManagerReports() {
         return matchedUser.employee_code || matchedUser.employee_id || matchedUser.emp_code
       }
     } catch (err) {}
-
-    if (rawCode && rawCode !== 'EMP-101' && !rawCode.startsWith('EMP10')) {
-      return rawCode
-    }
 
     return 'EMP000012'
   }
@@ -139,23 +138,11 @@ export default function ManagerReports() {
     const empCode = resolveEmployeeCode(seName, seEmail, r.employee_code || r.employee_id)
 
     const repDate = r.date || '05/08/2026'
-    const matchingLog = findMatchingLog(empCode, seEmail, seName, repDate, attLogs)
 
-    const loginTime = matchingLog 
-      ? (matchingLog.check_in_time || matchingLog.clockIn || '—') 
-      : '—'
-    
-    const logoutTime = matchingLog 
-      ? (matchingLog.check_out_time || matchingLog.clockOut || '—') 
-      : '—'
-
-    const loginLocation = matchingLog 
-      ? (matchingLog.check_in_address || matchingLog.work_location || '—') 
-      : '—'
-
-    const logoutLocation = matchingLog 
-      ? (matchingLog.check_out_address || '—') 
-      : '—'
+    const loginTime = r.loginTime && r.loginTime !== '—' && r.loginTime !== 'None' ? r.loginTime : 'N/A';
+    const logoutTime = r.logoutTime && r.logoutTime !== '—' && r.logoutTime !== 'None' ? r.logoutTime : 'N/A';
+    const loginLocation = r.loginLocation && r.loginLocation !== '—' && r.loginLocation !== 'None' ? r.loginLocation : 'N/A';
+    const logoutLocation = r.logoutLocation && r.logoutLocation !== '—' && r.logoutLocation !== 'None' ? r.logoutLocation : 'N/A';
 
     return {
       id: r.id || `eod_${1001 + idx}`,
@@ -237,6 +224,95 @@ export default function ManagerReports() {
     fetchReports()
   }, [])
 
+  const getStoredUser = () => {
+    try {
+      const u = localStorage.getItem('user') || localStorage.getItem('tc_user')
+      return u ? JSON.parse(u) : {}
+    } catch (e) { return {} }
+  }
+
+  const getAssignedExecutivesList = (rawEmployees) => {
+    const mgrUser = getStoredUser()
+    const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
+    const mgrId = (mgrUser.id || mgrUser.employee_id || mgrUser.user_id || '').toLowerCase().trim()
+    const mgrName = (mgrUser.name || mgrUser.full_name || '').toLowerCase().trim()
+
+    let assignedSet = new Set()
+    try {
+      const assignMap = JSON.parse(localStorage.getItem('tc_manager_assignments') || '{}')
+      Object.keys(assignMap).forEach((key) => {
+        const kLower = key.toLowerCase().trim()
+        if (kLower === mgrEmail || kLower === mgrId || (mgrName && kLower.includes(mgrName.split(' ')[0]))) {
+          const list = assignMap[key] || []
+          list.forEach((item) => assignedSet.add(String(item).toLowerCase().trim()))
+        }
+      })
+    } catch (e) {}
+
+    const assignedOnly = rawEmployees.filter((e) => {
+      const rId = String(e.reporting_manager_id || e.manager_id || '').toLowerCase().trim()
+      const rEmail = String(e.reporting_manager_email || e.manager_email || '').toLowerCase().trim()
+      const rName = String(e.reporting_manager_name || e.manager_name || '').toLowerCase().trim()
+      const eId = String(e.id || e.employee_id || '').toLowerCase().trim()
+      const eEmail = String(e.email || '').toLowerCase().trim()
+      const eCode = String(e.employee_code || e.emp_code || '').toLowerCase().trim()
+
+      const isReportingManagerMatch =
+        (rEmail && mgrEmail && (rEmail === mgrEmail || rEmail.includes(mgrEmail))) ||
+        (rId && mgrId && (rId === mgrId || rId.includes(mgrId))) ||
+        (rName && mgrName && (rName.includes(mgrName.split(' ')[0]) || mgrName.includes(rName.split(' ')[0])))
+
+      const isAssignmentMapMatch = assignedSet.has(eId) || assignedSet.has(eEmail) || assignedSet.has(eCode)
+
+      return isReportingManagerMatch || isAssignmentMapMatch
+    })
+
+    return assignedOnly
+  }
+
+  useEffect(() => {
+    hrmsAPI.getEmployees().then((res) => {
+      const raw = Array.isArray(res) ? res : res?.data || []
+      if (raw && raw.length > 0) {
+        const execsOnly = getAssignedExecutivesList(raw)
+        if (execsOnly.length > 0) {
+          setExecutives(
+            execsOnly.map((e, idx) => ({
+              id: e.id || e.employee_id || `se_${idx}`,
+              name: e.name || e.full_name || 'Sales Executive',
+              email: e.email || '',
+              employee_code: e.employee_code || e.employee_id || e.emp_code || 'EMP000012',
+            }))
+          )
+          return
+        }
+      }
+      fallbackLoadExecs()
+    }).catch(() => fallbackLoadExecs())
+  }, [])
+
+  const fallbackLoadExecs = () => {
+    try {
+      const savedUsersStr = localStorage.getItem('tc_app_users')
+      if (savedUsersStr) {
+        const parsed = JSON.parse(savedUsersStr)
+        const execsOnly = getAssignedExecutivesList(parsed)
+        if (execsOnly.length > 0) {
+          setExecutives(
+            execsOnly.map((u, idx) => ({
+              id: u.id || `se_${idx}`,
+              name: u.name || u.full_name || 'Sales Executive',
+              email: u.email || '',
+              employee_code: u.employee_code || u.employee_id || u.emp_code || 'EMP000012',
+            }))
+          )
+          return
+        }
+      }
+    } catch (e) {}
+    setExecutives([])
+  }
+
   const toggleExpandCard = (id) => {
     setExpandedCards((prev) => ({ ...prev, [id]: !prev[id] }))
   }
@@ -256,6 +332,28 @@ export default function ManagerReports() {
   // Filtering Calculation
   const filteredReports = reports.filter((r) => {
     if (!r) return false
+
+    // Check if the report belongs to one of the manager's assigned executives
+    const matchesExecutiveScope = executives.some((exec) => {
+      const execEmail = (exec.email || '').toLowerCase().trim()
+      const execCode = (exec.employee_code || '').toLowerCase().trim()
+      const execName = (exec.name || '').toLowerCase().trim()
+
+      const repEmail = (r.executiveEmail || r.executive_email || '').toLowerCase().trim()
+      const repCode = (r.employee_code || r.employee_id || '').toLowerCase().trim()
+      const repName = (r.executive || r.executive_name || '').toLowerCase().trim()
+
+      return (
+        (execEmail && repEmail === execEmail) ||
+        (execCode && repCode === execCode) ||
+        (execName && repName.includes(execName))
+      )
+    })
+
+    if (executives.length > 0 && !matchesExecutiveScope) {
+      return false
+    }
+
     const q = search.toLowerCase().trim()
     const seName = (r.executive || '').toLowerCase()
     const seCode = (r.employee_code || '').toLowerCase()
@@ -419,9 +517,9 @@ export default function ManagerReports() {
               className="bg-transparent text-amber-950 focus:outline-none cursor-pointer font-black max-w-[220px] truncate"
             >
               <option value="All">All Executives (Team EOD)</option>
-              {reports.map((r) => (
-                <option key={r.id} value={r.executive}>
-                  [{r.employee_code || 'EMP000012'}] {r.executive} ({r.executiveEmail})
+              {executives.map((ex) => (
+                <option key={ex.id || ex.email} value={ex.name}>
+                  [{ex.employee_code || 'EMP'}] {ex.name} ({ex.email})
                 </option>
               ))}
             </select>

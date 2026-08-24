@@ -15,39 +15,8 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { MapPin, Search, CheckCircle2, X, AlertCircle, Loader2 } from 'lucide-react'
-
-const LEAFLET_CSS = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
-const LEAFLET_JS  = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-const NOMINATIM   = 'https://nominatim.openstreetmap.org/search'
-const NOMINATIM_REVERSE = 'https://nominatim.openstreetmap.org/reverse'
-const TILE_URL    = 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png'
-
-let _leafletLoading = false
-const _leafletCallbacks = []
-
-function loadLeaflet(cb) {
-  if (typeof window !== 'undefined' && window.L) { cb(); return }
-  _leafletCallbacks.push(cb)
-  if (_leafletLoading) return
-  _leafletLoading = true
-
-  if (!document.querySelector('link[href*="leaflet"]')) {
-    const link = document.createElement('link')
-    link.rel = 'stylesheet'
-    link.href = LEAFLET_CSS
-    document.head.appendChild(link)
-  }
-
-  const script = document.createElement('script')
-  script.src = LEAFLET_JS
-  script.async = true
-  script.onload = () => {
-    _leafletLoading = false
-    _leafletCallbacks.forEach(fn => fn())
-    _leafletCallbacks.length = 0
-  }
-  document.head.appendChild(script)
-}
+import { settingsAPI } from '../services/api.js'
+import { loadGoogleMaps } from '../utils/loadGoogleMaps.js'
 
 export default function LocationPickerModal({
   isOpen,
@@ -61,6 +30,9 @@ export default function LocationPickerModal({
   const mapContainerRef = useRef(null)
   const mapRef          = useRef(null)
   const markerRef       = useRef(null)
+
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState('')
+  const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false)
 
   const [searchQuery, setSearchQuery]     = useState(initialAddress)
   const [searchResults, setSearchResults] = useState([])
@@ -77,64 +49,63 @@ export default function LocationPickerModal({
     setPickedLat(parseFloat(lat.toFixed(7)))
     setPickedLng(parseFloat(lng.toFixed(7)))
     setReverseLoading(true)
-    try {
-      const res = await fetch(
-        `${NOMINATIM_REVERSE}?format=json&lat=${lat}&lon=${lng}&zoom=17&addressdetails=1`,
-        { headers: { 'Accept-Language': 'en' } }
-      )
-      if (!res.ok) throw new Error('reverse failed')
-      const data = await res.json()
-      const addr = data.display_name || `${lat.toFixed(6)}, ${lng.toFixed(6)}`
-      setPickedAddress(addr)
-      setSearchQuery(addr)
-    } catch {
+    
+    if (!window.google || !window.google.maps) {
       const fallback = `${lat.toFixed(6)}, ${lng.toFixed(6)}`
       setPickedAddress(fallback)
       setSearchQuery(fallback)
-    } finally {
       setReverseLoading(false)
+      return
     }
+
+    const geocoder = new window.google.maps.Geocoder()
+    geocoder.geocode({ location: { lat, lng } }, (results, status) => {
+      if (status === 'OK' && results[0]) {
+        const addr = results[0].formatted_address
+        setPickedAddress(addr)
+        setSearchQuery(addr)
+      } else {
+        const fallback = `${lat.toFixed(6)}, ${lng.toFixed(6)}`
+        setPickedAddress(fallback)
+        setSearchQuery(fallback)
+      }
+      setReverseLoading(false)
+    })
   }, [])
 
   // ── Map initialization ─────────────────────────────────────────────────────
   const initMap = useCallback(() => {
-    if (!mapContainerRef.current || mapRef.current) return
-    const L = window.L
+    if (!mapContainerRef.current || mapRef.current || !googleMapsLoaded) return
 
     const lat0 = initialLat || 13.0067
     const lng0 = initialLng || 80.2570
+    const center = { lat: lat0, lng: lng0 }
 
-    const map = L.map(mapContainerRef.current, {
-      center: [lat0, lng0],
+    const map = new window.google.maps.Map(mapContainerRef.current, {
+      center: center,
       zoom: 14,
       zoomControl: true,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
     })
 
-    L.tileLayer(TILE_URL, {
-      attribution: '© OpenStreetMap © CARTO',
-      subdomains: 'abcd',
-      maxZoom: 19,
-    }).addTo(map)
-
-    const icon = L.divIcon({
-      html: `<div style="width:32px;height:32px;background:#2563eb;border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 10px rgba(0,0,0,.4)"></div>`,
-      className: '',
-      iconSize: [32, 32],
-      iconAnchor: [16, 32],
+    const marker = new window.google.maps.Marker({
+      position: center,
+      map: map,
+      draggable: true,
     })
 
-    const marker = L.marker([lat0, lng0], { draggable: true, icon }).addTo(map)
     markerRef.current = marker
 
-    marker.on('dragend', (e) => {
-      const { lat, lng } = e.target.getLatLng()
-      reverseGeocode(lat, lng)
+    marker.addListener('dragend', () => {
+      const pos = marker.getPosition()
+      reverseGeocode(pos.lat(), pos.lng())
     })
 
-    map.on('click', (e) => {
-      const { lat, lng } = e.latlng
-      marker.setLatLng([lat, lng])
-      reverseGeocode(lat, lng)
+    map.addListener('click', (e) => {
+      marker.setPosition(e.latLng)
+      reverseGeocode(e.latLng.lat(), e.latLng.lng())
     })
 
     mapRef.current = map
@@ -145,19 +116,38 @@ export default function LocationPickerModal({
       setPickedLng(parseFloat(lng0.toFixed(7)))
       if (initialAddress) setPickedAddress(initialAddress)
     }
-  }, [reverseGeocode, initialLat, initialLng, initialAddress])
+  }, [reverseGeocode, initialLat, initialLng, initialAddress, googleMapsLoaded])
 
   useEffect(() => {
     if (!isOpen) return
-    loadLeaflet(() => setTimeout(initMap, 60))
+    
+    settingsAPI.getConfig()
+      .then(res => {
+        const key = res?.data?.google_maps_api_key
+        if (key) {
+          setGoogleMapsApiKey(key)
+          loadGoogleMaps(key)
+            .then(() => setGoogleMapsLoaded(true))
+            .catch(err => console.error('Failed to load Google Maps SDK:', err))
+        }
+      })
+      .catch(err => {
+        console.warn('Failed to load config in LocationPickerModal:', err)
+      })
+
     return () => {
       if (mapRef.current) {
-        mapRef.current.remove()
         mapRef.current = null
         markerRef.current = null
       }
     }
-  }, [isOpen, initMap])
+  }, [isOpen])
+
+  useEffect(() => {
+    if (isOpen && googleMapsLoaded) {
+      setTimeout(initMap, 60)
+    }
+  }, [isOpen, googleMapsLoaded, initMap])
 
   useEffect(() => {
     setSearchQuery(initialAddress || '')
@@ -171,23 +161,27 @@ export default function LocationPickerModal({
     setSearching(true)
     setSearchError('')
     setSearchResults([])
-    try {
-      const res = await fetch(
-        `${NOMINATIM}?format=json&q=${encodeURIComponent(q)}&limit=6&addressdetails=1`,
-        { headers: { 'Accept-Language': 'en' } }
-      )
-      if (!res.ok) throw new Error('search failed')
-      const data = await res.json()
-      if (!data.length) {
-        setSearchError('No locations found. Try a more specific query or click on the map.')
-      } else {
-        setSearchResults(data)
-      }
-    } catch {
-      setSearchError('Search failed. Check your connection or click on the map to place a pin.')
-    } finally {
+
+    if (!window.google || !window.google.maps) {
+      setSearchError('Google Maps SDK is not loaded.')
       setSearching(false)
+      return
     }
+
+    const geocoder = new window.google.maps.Geocoder()
+    geocoder.geocode({ address: q }, (results, status) => {
+      setSearching(false)
+      if (status === 'OK' && results && results.length > 0) {
+        const formattedResults = results.map(res => ({
+          display_name: res.formatted_address,
+          lat: res.geometry.location.lat(),
+          lon: res.geometry.location.lng()
+        }))
+        setSearchResults(formattedResults)
+      } else {
+        setSearchError('No locations found. Try a more specific query or click on the map.')
+      }
+    })
   }
 
   const handleSelectResult = (result) => {
@@ -200,8 +194,10 @@ export default function LocationPickerModal({
     setSearchQuery(addr)
     setSearchResults([])
     if (mapRef.current && markerRef.current) {
-      markerRef.current.setLatLng([lat, lng])
-      mapRef.current.flyTo([lat, lng], 15)
+      const pos = { lat, lng }
+      markerRef.current.setPosition(pos)
+      mapRef.current.panTo(pos)
+      mapRef.current.setZoom(15)
     }
   }
 

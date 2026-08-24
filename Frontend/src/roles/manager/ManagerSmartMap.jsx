@@ -6,10 +6,13 @@ import {
   Route, Milestone
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
-import { spatialAPI, authAPI } from '../../services/api.js'
+import { spatialAPI, authAPI, settingsAPI, crmAPI, customerAPI, visitAPI, auditAPI } from '../../services/api.js'
+import { loadGoogleMaps } from '../../utils/loadGoogleMaps.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser, { getStoredUser } from '../../hooks/useCurrentUser.js'
 import { formatDate } from '../../utils/dateUtils.js'
+import { filterUserItems } from '../../utils/userScope.js'
+import { detectRouteClients, shouldNotify } from '../../utils/routeProximityUtils.js'
 
 const DEFAULT_CENTER = { lat: 13.0067, lng: 80.2570 }
 
@@ -97,6 +100,85 @@ export default function ManagerSmartMap() {
   const [trackStatus,      setTrackStatus]       = useState('idle') // idle|loading|live|stale|ended
   const [lastPingMs,       setLastPingMs]        = useState(null)
   const [realtimeOk,       setRealtimeOk]        = useState(false)
+  const [trackEvents,      setTrackEvents]       = useState([])
+
+// ─── Custom HTML Map Marker for Google Maps Overlay ───────────────────────────
+let HTMLMapMarker = null
+
+function initializeHTMLMapMarker() {
+  if (HTMLMapMarker) return
+  HTMLMapMarker = class extends window.google.maps.OverlayView {
+    constructor(latlng, map, html, onClick, anchor = 'center') {
+      super()
+      this.latlng = latlng
+      this.html = html
+      this.onClick = onClick
+      this.anchor = anchor
+      this.div = null
+      this.setMap(map)
+    }
+
+    onAdd() {
+      const div = document.createElement('div')
+      div.style.position = 'absolute'
+      div.style.cursor = 'pointer'
+      div.innerHTML = this.html
+      
+      if (this.onClick) {
+        div.addEventListener('click', (e) => {
+          e.stopPropagation()
+          this.onClick(e)
+        })
+      }
+
+      window.google.maps.event.addDomListener(div, 'mousedown', (e) => {
+        e.stopPropagation()
+      })
+      window.google.maps.event.addDomListener(div, 'contextmenu', (e) => {
+        e.stopPropagation()
+      })
+
+      this.div = div
+      const panes = this.getPanes()
+      panes.overlayImage.appendChild(div)
+    }
+
+    draw() {
+      if (!this.div) return
+      const projection = this.getProjection()
+      if (!projection) return
+      const point = projection.fromLatLngToDivPixel(this.latlng)
+      if (point) {
+        const width = this.div.offsetWidth || 32
+        const height = this.div.offsetHeight || 32
+        this.div.style.left = (point.x - width / 2) + 'px'
+        if (this.anchor === 'bottom') {
+          this.div.style.top = (point.y - height) + 'px'
+        } else {
+          this.div.style.top = (point.y - height / 2) + 'px'
+        }
+      }
+    }
+
+    onRemove() {
+      if (this.div) {
+        if (this.div.parentNode) {
+          this.div.parentNode.removeChild(this.div)
+        }
+        this.div = null
+      }
+    }
+
+    setLatLng(latlng) {
+      this.latlng = latlng
+      this.draw()
+    }
+
+    getPosition() {
+      return this.latlng
+    }
+  }
+}
 
   // Client destination details state
   const [destClient,       setDestClient]        = useState(null)
@@ -121,19 +203,19 @@ export default function ManagerSmartMap() {
     }
   }, [showToast])
 
-  // Map & Leaflet Refs
+  // Map & Google Maps Refs
   const mapContainerRef = useRef(null)
-  const leafletMapRef   = useRef(null)
-  const teamGroupRef    = useRef(null)
-  const clientGroupRef  = useRef(null)
+  const googleMapRef    = useRef(null)
+  const activeTeamMarkersRef = useRef([])
+  const infoWindowRef   = useRef(null)
 
   // Tracking-layer refs (one set per selected executive)
-  const trackRouteRef   = useRef(null)  // L.Polyline breadcrumb route
+  const trackRouteRef   = useRef(null)  // Polyline breadcrumb route
   const startMarkerRef  = useRef(null)  // green start pin
   const liveMarkerRef   = useRef(null)  // animated live position
   const endMarkerRef    = useRef(null)  // grey end pin
   const destMarkerRef   = useRef(null)  // client destination pin
-  const destRouteRef    = useRef(null)  // L.Polyline route to destination
+  const destRouteRef    = useRef(null)  // Polyline route to destination
   const destClientRef   = useRef(null)  // ref to avoid stale closures for selected client
   const selectedExecutiveRef = useRef(null)
   const trackSessionRef = useRef(null)
@@ -144,33 +226,56 @@ export default function ManagerSmartMap() {
   const crumbsRef       = useRef([])
   const lastRouteRecalcPosRef = useRef(null)
   const lastRouteRecalcTimeRef = useRef(0)
+  const nearbyClientMarkersRef = useRef([])
+  const destRoutePathRef        = useRef([])    // [[lat,lng],...] raw planned route
+  const nearbyNotifiedMap       = useRef(new Map()) // Map<id,{lat,lng}> hysteresis dedup
+  const candidatesRef           = useRef([])    // latest normalised leads+customers list
+
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState('')
+
 
   const _handleSessionEnded = useCallback((sess) => {
-    if (!leafletMapRef.current || !window.L) return
+    if (!googleMapRef.current) return
     if (liveMarkerRef.current) {
-      liveMarkerRef.current.remove()
+      liveMarkerRef.current.setMap(null)
       liveMarkerRef.current = null
     }
     fetchData(true)
   }, [fetchData])
 
+  const showInfoWindow = (latlng, htmlContent) => {
+    if (!infoWindowRef.current) {
+      infoWindowRef.current = new window.google.maps.InfoWindow()
+    }
+    infoWindowRef.current.setContent(htmlContent)
+    infoWindowRef.current.setPosition(latlng)
+    infoWindowRef.current.open(googleMapRef.current)
+  }
+
   const _drawRouteToDestination = async (originLat, originLng, clientDest) => {
-    if (!leafletMapRef.current || !window.L || !clientDest?.latitude || !clientDest?.longitude) return;
+    if (!googleMapRef.current || !window.google || !clientDest?.latitude || !clientDest?.longitude) return;
     
     // Draw destination client marker (📍) if not exists
     if (!destMarkerRef.current) {
-      destMarkerRef.current = window.L.marker([clientDest.latitude, clientDest.longitude], { icon: _buildDestIcon() })
-        .bindPopup(`
-          <div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;">
-            <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:#ef4444;text-transform:uppercase;font-size:9px;letter-spacing:0.5px;margin-bottom:4px;">
-              <span>📍 Client Destination</span>
+      const destLatLng = new window.google.maps.LatLng(clientDest.latitude, clientDest.longitude)
+      destMarkerRef.current = new HTMLMapMarker(
+        destLatLng,
+        googleMapRef.current,
+        _buildDestIcon(),
+        () => {
+          showInfoWindow(destLatLng, `
+            <div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;">
+              <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:#ef4444;text-transform:uppercase;font-size:9px;letter-spacing:0.5px;margin-bottom:4px;">
+                <span>📍 Client Destination</span>
+              </div>
+              <div style="font-weight:800;font-size:13px;color:#0f172a;">${clientDest.title}</div>
+              ${clientDest.company_name && clientDest.company_name !== clientDest.title ? `<div style="font-weight:700;color:#64748b;font-size:11px;margin-top:1px;">${clientDest.company_name}</div>` : ''}
+              <div style="color:#475569;font-size:10px;margin-top:4px;line-height:1.4;">${clientDest.address}</div>
             </div>
-            <div style="font-weight:800;font-size:13px;color:#0f172a;">${clientDest.title}</div>
-            ${clientDest.company_name && clientDest.company_name !== clientDest.title ? `<div style="font-weight:700;color:#64748b;font-size:11px;margin-top:1px;">${clientDest.company_name}</div>` : ''}
-            <div style="color:#475569;font-size:10px;margin-top:4px;line-height:1.4;">${clientDest.address}</div>
-          </div>
-        `)
-        .addTo(leafletMapRef.current);
+          `)
+        },
+        'bottom'
+      )
     }
 
     let routePts = [];
@@ -258,18 +363,21 @@ export default function ManagerSmartMap() {
       }
     }
 
-    // 3. Render route polyline on Leaflet map
+    // 3. Render route polyline on Google Map
     if (routeFetched && routePts.length > 1) {
-      // Force endpoints mapping
-      routePts[0] = [Number(originLat), Number(originLng)];
-      routePts[routePts.length - 1] = [Number(clientDest.latitude), Number(clientDest.longitude)];
+      const pathCoords = routePts.map(pt => ({ lat: pt[0], lng: pt[1] }))
 
       if (destRouteRef.current) {
-        destRouteRef.current.setLatLngs(routePts);
+        destRouteRef.current.setPath(pathCoords);
       } else {
-        destRouteRef.current = window.L.polyline(routePts, {
-          color: '#2563eb', weight: 5, opacity: 0.9, lineCap: 'round', lineJoin: 'round'
-        }).addTo(leafletMapRef.current);
+        destRouteRef.current = new window.google.maps.Polyline({
+          path: pathCoords,
+          geodesic: true,
+          strokeColor: '#2563eb',
+          strokeWeight: 5,
+          strokeOpacity: 0.9,
+          map: googleMapRef.current
+        });
       }
 
       setDestRouteMeta({
@@ -277,29 +385,39 @@ export default function ManagerSmartMap() {
         etaMins: etaMins,
         staticEtaMins: staticEtaMins
       });
+      // Store raw [[lat,lng]] path for route-corridor nearby detection
+      destRoutePathRef.current = routePts;
       lastRouteRecalcPosRef.current = { lat: originLat, lng: originLng };
       lastRouteRecalcTimeRef.current = Date.now();
     } else {
       console.warn("[SmartMap] Road route unavailable. Clearing route layer from map.");
       if (destRouteRef.current) {
-        destRouteRef.current.remove();
+        destRouteRef.current.setMap(null);
         destRouteRef.current = null;
       }
+      destRoutePathRef.current = [];
       setDestRouteMeta(null);
     }
   };
 
-  // ─── 1. Load Leaflet CDN ──────────────────────────────────────────────────
+  // ─── 1. Load Google Maps CDN ──────────────────────────────────────────────
   useEffect(() => {
-    if (window.L) { setMapLoaded(true); return }
-    const css = document.createElement('link')
-    css.rel = 'stylesheet'
-    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
-    document.head.appendChild(css)
-    const js = document.createElement('script')
-    js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-    js.onload = () => setMapLoaded(true)
-    document.body.appendChild(js)
+    settingsAPI.getConfig()
+      .then(res => {
+        const key = res?.data?.google_maps_api_key
+        if (key) {
+          setGoogleMapsApiKey(key)
+          loadGoogleMaps(key)
+            .then(() => {
+              initializeHTMLMapMarker()
+              setMapLoaded(true)
+            })
+            .catch(err => console.error('Failed to load Google Maps SDK:', err))
+        }
+      })
+      .catch(err => {
+        console.warn('Failed to load map configuration:', err)
+      })
   }, [])
 
   useEffect(() => { fetchData() }, [fetchData])
@@ -310,21 +428,66 @@ export default function ManagerSmartMap() {
     return () => clearInterval(t)
   }, [autoRefresh, fetchData])
 
-  // ─── 3. Leaflet map init ──────────────────────────────────────────────────
+  // ─── Load all leads + customers for route-corridor nearby detection ──────────
   useEffect(() => {
-    if (!mapLoaded || !mapContainerRef.current || leafletMapRef.current) return
-    const map = window.L.map(mapContainerRef.current, { zoomControl: false })
-      .setView([DEFAULT_CENTER.lat, DEFAULT_CENTER.lng], 13)
-    window.L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-      attribution: '© OpenStreetMap contributors © CARTO',
-      maxZoom: 20
-    }).addTo(map)
-    window.L.control.zoom({ position: 'bottomright' }).addTo(map)
-    teamGroupRef.current   = window.L.featureGroup().addTo(map)
-    clientGroupRef.current = window.L.featureGroup().addTo(map)
-    leafletMapRef.current  = map
+    async function loadCandidates() {
+      try {
+        const [leadsRes, custsRes] = await Promise.allSettled([
+          crmAPI.getLeads(),
+          customerAPI.getCustomers(),
+        ])
+        const safeArray = (res) => {
+          if (res.status !== 'fulfilled') return []
+          return Array.isArray(res.value) ? res.value : (res.value?.data || [])
+        }
+        const toNorm = (item, category, idx) => {
+          const lat = item.latitude  != null ? Number(item.latitude)  : null
+          const lng = item.longitude != null ? Number(item.longitude) : null
+          const ok  = lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0
+          return {
+            id:               item.id || item.lead_id || item.customer_id || `${category}_${idx}`,
+            title:            item.company || item.company_name || item.name || item.client_name || `Client #${idx + 1}`,
+            category,
+            latitude:         ok ? lat : null,
+            longitude:        ok ? lng : null,
+            has_exact_coords: ok,
+            address:          item.address || item.location || item.city || '—',
+            phone:            item.phone || item.mobile || '',
+            originalItem:     item,
+          }
+        }
+        const leads = safeArray(leadsRes).map((i, idx) => toNorm(i, 'Lead', idx))
+        const custs = safeArray(custsRes).map((i, idx) => toNorm(i, 'Customer', idx))
+        candidatesRef.current = [...leads, ...custs].filter(c => c.has_exact_coords)
+      } catch (e) {
+        console.warn('[ManagerSmartMap] Failed to load candidates for nearby detection:', e)
+      }
+    }
+    loadCandidates()
+  }, [])
+
+  // ─── 3. Google Maps init ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!mapLoaded || !mapContainerRef.current || googleMapRef.current) return
+    const map = new window.google.maps.Map(mapContainerRef.current, {
+      center: { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng },
+      zoom: 13,
+      zoomControl: true,
+      zoomControlOptions: {
+        position: window.google.maps.ControlPosition.RIGHT_BOTTOM
+      },
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false
+    })
+
+    googleMapRef.current = map
+
     return () => {
-      if (leafletMapRef.current) { leafletMapRef.current.remove(); leafletMapRef.current = null }
+      _clearTrackingLayer()
+      activeTeamMarkersRef.current.forEach(m => m.setMap(null))
+      activeTeamMarkersRef.current = []
+      googleMapRef.current = null
     }
   }, [mapLoaded])
 
@@ -349,9 +512,10 @@ export default function ManagerSmartMap() {
 
   // ─── 5. Team / Client markers ─────────────────────────────────────────────
   useEffect(() => {
-    if (!leafletMapRef.current || !window.L) return
-    if (teamGroupRef.current)   teamGroupRef.current.clearLayers()
-    if (clientGroupRef.current) clientGroupRef.current.clearLayers()
+    if (!googleMapRef.current || !window.google) return
+    
+    activeTeamMarkersRef.current.forEach(m => m.setMap(null))
+    activeTeamMarkersRef.current = []
 
     const bounds = []
 
@@ -367,46 +531,65 @@ export default function ManagerSmartMap() {
         const sc = isCV ? '#8b5cf6' : (ex.is_online ? '#10b981' : '#64748b')
         const glow = isCV ? 'rgba(139,92,246,0.5)' : (ex.is_online ? 'rgba(16,185,129,0.4)' : 'rgba(100,116,139,0.2)')
 
-        const icon = window.L.divIcon({
-          className: 'custom-div-icon',
-          html: `<div style="display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;background:#0f172a;border:3px solid ${sc};box-shadow:0 0 12px ${glow};color:#f8fafc;font-family:ui-sans-serif,system-ui;font-weight:800;font-size:13px;position:relative;">
-            ${initials}
-            <span style="position:absolute;bottom:-2px;right:-2px;width:12px;height:12px;background:${sc};border:2px solid #0f172a;border-radius:50%;"></span>
-          </div>`,
-          iconSize: [42, 42], iconAnchor: [21, 21]
-        })
+        const html = `<div style="display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;background:#0f172a;border:3px solid ${sc};box-shadow:0 0 12px ${glow};color:#f8fafc;font-family:ui-sans-serif,system-ui;font-weight:800;font-size:13px;position:relative;">
+          ${initials}
+          <span style="position:absolute;bottom:-2px;right:-2px;width:12px;height:12px;background:${sc};border:2px solid #0f172a;border-radius:50%;"></span>
+        </div>`
 
-        window.L.marker([ex.latitude, ex.longitude], { icon })
-          .bindPopup(`<div style="font-family:sans-serif;font-size:12px"><strong>${ex.employee_name}</strong><br/>${ex.is_online ? '● Online' : '○ Offline'}<br/>Last: ${formatLastSeen(ex.last_seen_at)}</div>`)
-          .addTo(teamGroupRef.current)
+        const latlng = new window.google.maps.LatLng(ex.latitude, ex.longitude)
+        const marker = new HTMLMapMarker(
+          latlng,
+          googleMapRef.current,
+          html,
+          () => {
+            showInfoWindow(latlng, `<div style="font-family:sans-serif;font-size:12px"><strong>${ex.employee_name}</strong><br/>${ex.is_online ? '● Online' : '○ Offline'}<br/>Last: ${formatLastSeen(ex.last_seen_at)}</div>`)
+          },
+          'center'
+        )
 
+        activeTeamMarkersRef.current.push(marker)
         bounds.push([ex.latitude, ex.longitude])
       })
     }
 
-
-    if (bounds.length > 0 && !initialFitBoundsDoneRef.current && !selectedExecutive) {
-      leafletMapRef.current.fitBounds(bounds, { padding: [50, 50], maxZoom: 15 })
-      initialFitBoundsDoneRef.current = true
+    if (bounds.length > 0 && !initialFitDone && !selectedExecutive) {
+      const gBounds = new window.google.maps.LatLngBounds()
+      bounds.forEach(pt => gBounds.extend({ lat: pt[0], lng: pt[1] }))
+      googleMapRef.current.fitBounds(gBounds, 50)
+      
+      const listener = googleMapRef.current.addListener('idle', () => {
+        if (googleMapRef.current && googleMapRef.current.getZoom() > 15) {
+          googleMapRef.current.setZoom(15)
+        }
+        window.google.maps.event.removeListener(listener)
+      })
+      setInitialFitDone(true)
     }
-  }, [viewMode, executives, selectedExecutive])
+  }, [viewMode, executives, selectedExecutive, mapLoaded])
 
   // ─── 6. Live tracking: load history + subscribe Realtime ─────────────────
   const _clearTrackingLayer = useCallback(() => {
-    if (trackRouteRef.current)  { trackRouteRef.current.remove();  trackRouteRef.current  = null }
-    if (startMarkerRef.current) { startMarkerRef.current.remove(); startMarkerRef.current = null }
-    if (liveMarkerRef.current)  { liveMarkerRef.current.remove();  liveMarkerRef.current  = null }
-    if (endMarkerRef.current)   { endMarkerRef.current.remove();   endMarkerRef.current   = null }
-    if (destMarkerRef.current)  { destMarkerRef.current.remove();  destMarkerRef.current  = null }
-    if (destRouteRef.current)   { destRouteRef.current.remove();   destRouteRef.current   = null }
+    if (trackRouteRef.current)  { trackRouteRef.current.setMap(null);  trackRouteRef.current  = null }
+    if (startMarkerRef.current) { startMarkerRef.current.setMap(null); startMarkerRef.current = null }
+    if (liveMarkerRef.current)  { liveMarkerRef.current.setMap(null);  liveMarkerRef.current  = null }
+    if (endMarkerRef.current)   { endMarkerRef.current.setMap(null);   endMarkerRef.current   = null }
+    if (destMarkerRef.current)  { destMarkerRef.current.setMap(null);  destMarkerRef.current  = null }
+    if (destRouteRef.current)   { destRouteRef.current.setMap(null);   destRouteRef.current   = null }
+    if (nearbyClientMarkersRef.current) {
+      nearbyClientMarkersRef.current.forEach(m => m.setMap(null))
+      nearbyClientMarkersRef.current = []
+    }
     if (animFrameRef.current)   { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null }
     if (pollTimerRef.current)   { clearInterval(pollTimerRef.current); pollTimerRef.current = null }
     if (realtimeChRef.current)  { try { realtimeChRef.current.unsubscribe() } catch {} realtimeChRef.current = null }
     setDestClient(null)
     setDestRouteMeta(null)
     crumbsRef.current = []
+    destRoutePathRef.current = []
+    nearbyNotifiedMap.current.clear()
     selectedExecutiveRef.current = null
     trackSessionRef.current = null
+    setTrackEvents([])
   }, [])
 
   // Calculate bearing/heading between two coordinates
@@ -425,9 +608,9 @@ export default function ManagerSmartMap() {
   // Smooth marker animation between two lat/lng points with direction rotation
   const _animateMarker = (marker, toLat, toLng) => {
     if (!marker) return
-    const from = marker.getLatLng()
-    const prevLat = from.lat
-    const prevLng = from.lng
+    const from = marker.getPosition()
+    const prevLat = from.lat()
+    const prevLng = from.lng()
     const heading = getBearing(prevLat, prevLng, toLat, toLng)
     
     const dur = 1000
@@ -438,10 +621,11 @@ export default function ManagerSmartMap() {
       const ease = p < 0.5 ? 2 * p * p : -1 + (4 - 2 * p) * p // ease-in-out
       const currLat = prevLat + (toLat - prevLat) * ease
       const currLng = prevLng + (toLng - prevLng) * ease
-      marker.setLatLng([currLat, currLng])
+      const latlng = new window.google.maps.LatLng(currLat, currLng)
+      marker.setLatLng(latlng)
       
       // Rotate wrapper if found
-      const el = marker.getElement()
+      const el = marker.div
       if (el) {
         const wrapper = el.querySelector('.live-vehicle-wrapper')
         if (wrapper) wrapper.style.transform = `rotate(${heading}deg)`
@@ -452,6 +636,98 @@ export default function ManagerSmartMap() {
     if (animFrameRef.current) cancelAnimationFrame(animFrameRef.current)
     animFrameRef.current = requestAnimationFrame(step)
   }
+
+  /**
+   * Route-corridor nearby client detection.
+   * Replaces the old GPS-radius spatialAPI.getNearby call.
+   * Uses destRoutePathRef (planned route polyline) and detectRouteClients from
+   * routeProximityUtils for a 500m corridor filter with ahead-only and hysteresis.
+   */
+  const _fetchAndRenderNearbyClients = async (execLat, execLng) => {
+    if (!googleMapRef.current || !window.google || !execLat || !execLng) return;
+
+    const routePath = destRoutePathRef.current;
+    const destId    = destClientRef.current?.id;
+
+    // If no planned route exists yet, fall back to clearing markers silently
+    if (!routePath || routePath.length < 2) {
+      nearbyClientMarkersRef.current.forEach(m => m.setMap(null));
+      nearbyClientMarkersRef.current = [];
+      return;
+    }
+
+    // Build normalised candidates from cached data
+    const candidates = candidatesRef.current;
+    if (!candidates || candidates.length === 0) return;
+
+    // Run shared detection (500m hard corridor, segment-based, ahead-only)
+    const matched = detectRouteClients({
+      candidates,
+      routePath,
+      execPos:  { lat: execLat, lng: execLng },
+      destId,
+      // completedVisitIds / scheduledVisitIds not available in manager context
+      // — classification will default to 'unvisited' (shown as Nearby Client)
+    });
+
+    // Clear old markers
+    nearbyClientMarkersRef.current.forEach(m => m.setMap(null));
+    nearbyClientMarkersRef.current = [];
+
+    matched.forEach(item => {
+      const itemLatLng = new window.google.maps.LatLng(item.latitude, item.longitude);
+      const isPrev   = item.alertType === 'previous';
+      const pinColor = isPrev ? '#7c3aed' : (item.category === 'Customer' ? '#10b981' : '#3b82f6');
+      const label    = isPrev ? 'P' : (item.category === 'Customer' ? 'C' : 'L');
+
+      const pinHtml = `
+        <div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#0f172a;border:2.5px solid ${pinColor};box-shadow:0 2px 8px rgba(0,0,0,0.4);color:#fff;">
+          <span style="font-size:11px;font-weight:900;">${label}</span>
+        </div>
+      `;
+
+      const marker = new HTMLMapMarker(
+        itemLatLng,
+        googleMapRef.current,
+        pinHtml,
+        () => {
+          googleMapRef.current.panTo(itemLatLng);
+          showInfoWindow(itemLatLng, `
+            <div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;min-width:180px;">
+              <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:${pinColor};text-transform:uppercase;font-size:9px;letter-spacing:0.5px;margin-bottom:4px;">
+                <span>${isPrev ? '🔄 Previous Client Nearby' : '📍 Nearby ' + item.category}</span>
+              </div>
+              <div style="font-weight:800;font-size:12px;color:#0f172a;">${item.title}</div>
+              <div style="color:#475569;font-size:10px;margin-top:4px;">${item.distToRouteM}m from route</div>
+            </div>
+          `);
+        },
+        'center'
+      );
+
+      nearbyClientMarkersRef.current.push(marker);
+
+      // Toast + audit log (hysteresis — only once per 200m movement)
+      if (shouldNotify(item.id, { lat: execLat, lng: execLng }, nearbyNotifiedMap.current)) {
+        const typeLabel = isPrev ? '🔄 Previous Client Nearby' : '📍 Nearby Client';
+        showToast(`${typeLabel}: ${item.title} — ${item.distToRouteM}m from route`, 'info');
+
+        auditAPI.logEvent({
+          action: 'MANAGER_NEARBY_CLIENT',
+          entity_type: item.category,
+          entity_id: String(item.id),
+          details: {
+            client_name:      item.title,
+            alert_type:       item.alertType,
+            dist_to_route_m:  item.distToRouteM,
+            exec_name:        selectedExecutiveRef.current?.employee_name || '',
+            destination:      destClientRef.current?.title || '',
+            timestamp:        new Date().toISOString(),
+          }
+        }).catch(() => null);
+      }
+    });
+  };
 
   const _buildLivePopupContent = (executive, session, clientDest) => {
     const executiveName = executive?.employee_name || "Sales Executive"
@@ -482,9 +758,7 @@ export default function ManagerSmartMap() {
     `
   }
 
-  const _buildLiveIcon = (color = '#8b5cf6', heading = 0) => window.L.divIcon({
-    className: 'live-vehicle-marker-container',
-    html: `
+  const _buildLiveIcon = (color = '#8b5cf6', heading = 0) => `
       <div class="live-vehicle-wrapper" style="transform: rotate(${heading}deg); transition: transform 0.3s ease; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; position: relative;">
         <!-- Pulse glow -->
         <div style="position: absolute; width: 36px; height: 36px; border-radius: 50%; background: ${color}22; border: 2px solid ${color}44; animation: vehiclePulse 2s infinite ease-in-out; z-index: -1;"></div>
@@ -507,42 +781,28 @@ export default function ManagerSmartMap() {
           100% { transform: scale(0.9); opacity: 0.9; }
         }
       </style>
-    `,
-    iconSize: [44, 44], iconAnchor: [22, 22]
-  })
+  `
 
-  const _buildStartIcon = () => window.L.divIcon({
-    className: '',
-    html: `
+  const _buildStartIcon = () => `
       <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #10b981; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(16,185,129,0.4); color: #fff; font-family: sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">
         START
       </div>
-    `,
-    iconSize: [34, 34], iconAnchor: [17, 17]
-  })
+  `
 
-  const _buildEndIcon = () => window.L.divIcon({
-    className: '',
-    html: `
+  const _buildEndIcon = () => `
       <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #475569; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(71,85,105,0.4); color: #fff; font-family: sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">
         END
       </div>
-    `,
-    iconSize: [34, 34], iconAnchor: [17, 17]
-  })
+  `
 
-  const _buildDestIcon = () => window.L.divIcon({
-    className: '',
-    html: `
+  const _buildDestIcon = () => `
       <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #ef4444; border: 2.5px solid #fff; box-shadow: 0 4px 12px rgba(239,68,68,0.5); color: #fff;">
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
       </div>
-    `,
-    iconSize: [34, 34], iconAnchor: [17, 17]
-  })
+  `
 
   const _applyNewCrumb = useCallback((crumb) => {
-    if (!leafletMapRef.current || !window.L || !crumb) return
+    if (!googleMapRef.current || !window.google || !crumb) return
     const lat = Number(crumb.latitude)
     const lng = Number(crumb.longitude)
     if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return
@@ -554,9 +814,8 @@ export default function ManagerSmartMap() {
     // Extend polyline (if any)
     try {
       if (trackRouteRef.current) {
-        const lls = trackRouteRef.current.getLatLngs()
-        lls.push([lat, lng])
-        trackRouteRef.current.setLatLngs(lls)
+        const path = trackRouteRef.current.getPath()
+        path.push(new window.google.maps.LatLng(lat, lng))
       }
     } catch (polylineErr) {
       console.warn("Failed to extend polyline:", polylineErr)
@@ -564,9 +823,9 @@ export default function ManagerSmartMap() {
 
     // Animate live marker
     try {
+      const latlng = new window.google.maps.LatLng(lat, lng)
       if (liveMarkerRef.current) {
         _animateMarker(liveMarkerRef.current, lat, lng)
-        liveMarkerRef.current.setPopupContent(_buildLivePopupContent(selectedExecutiveRef.current, trackSessionRef.current, destClientRef.current))
       } else {
         let initialHeading = 0
         if (crumbsRef.current.length > 1) {
@@ -574,9 +833,15 @@ export default function ManagerSmartMap() {
           const prev = crumbsRef.current[lastIndex - 1]
           initialHeading = getBearing(Number(prev.latitude), Number(prev.longitude), lat, lng)
         }
-        liveMarkerRef.current = window.L.marker([lat, lng], { icon: _buildLiveIcon('#8b5cf6', initialHeading), zIndexOffset: 1000 })
-          .bindPopup(`<div style="font-family:sans-serif;font-size:12px"><strong>Live Position</strong><br/>${lat.toFixed(5)}, ${lng.toFixed(5)}</div>`)
-          .addTo(leafletMapRef.current)
+        liveMarkerRef.current = new HTMLMapMarker(
+          latlng,
+          googleMapRef.current,
+          _buildLiveIcon('#8b5cf6', initialHeading),
+          () => {
+            showInfoWindow(latlng, _buildLivePopupContent(selectedExecutiveRef.current, trackSessionRef.current, destClientRef.current))
+          },
+          'center'
+        )
       }
     } catch (markerErr) {
       console.warn("Failed to animate or render live marker:", markerErr)
@@ -602,10 +867,11 @@ export default function ManagerSmartMap() {
         }
       }
     }
+    _fetchAndRenderNearbyClients(lat, lng)
   }, [])
 
   const _loadTrackingHistory = useCallback(async (executive) => {
-    if (!leafletMapRef.current || !window.L) return
+    if (!googleMapRef.current || !window.google) return
     selectedExecutiveRef.current = executive
     setTrackStatus('loading')
     console.log("[SmartMap] Loading tracking history for executive:", executive?.employee_name, executive?.employee_id)
@@ -623,7 +889,7 @@ export default function ManagerSmartMap() {
       setTrackBreadcrumbs(crumbs)
       setTrackStatus(status)
 
-      const map = leafletMapRef.current
+      const map = googleMapRef.current
 
       // Parse Client Destination (prefer DB columns, fallback to executive coordinates, fallback to encoded check_in_address)
       let clientDest = null
@@ -683,15 +949,22 @@ export default function ManagerSmartMap() {
         latestLng = executive.longitude != null ? Number(executive.longitude) : null
       }
 
-      // Isolated Leaflet rendering block
+      // Isolated Google Maps rendering block
       try {
         if (session && status === 'ended' && session.end_latitude != null && session.end_longitude != null) {
           latestLat = Number(session.end_latitude)
           latestLng = Number(session.end_longitude)
           const badgeColor = '#64748b'
-          liveMarkerRef.current = window.L.marker(
-            [latestLat, latestLng], { icon: _buildLiveIcon(badgeColor, 0), zIndexOffset: 1000 }
-          ).bindPopup(_buildLivePopupContent(executive, session, clientDest)).addTo(map)
+          const latlng = new window.google.maps.LatLng(latestLat, latestLng)
+          liveMarkerRef.current = new HTMLMapMarker(
+            latlng,
+            map,
+            _buildLiveIcon(badgeColor, 0),
+            () => {
+              showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
+            },
+            'center'
+          )
         } else if (crumbs.length > 0) {
           const last = crumbs[crumbs.length - 1]
           latestLat = Number(last.latitude)
@@ -705,29 +978,133 @@ export default function ManagerSmartMap() {
           
           const age = Date.now() - new Date(last.recorded_at).getTime()
           const badgeColor = age > GONE_MS ? '#dc2626' : age > STALE_MS ? '#f97316' : '#10b981'
-          liveMarkerRef.current = window.L.marker(
-            [latestLat, latestLng], { icon: _buildLiveIcon(badgeColor, initialHeading), zIndexOffset: 1000 }
-          ).bindPopup(_buildLivePopupContent(executive, session, clientDest)).addTo(map)
+          const latlng = new window.google.maps.LatLng(latestLat, latestLng)
+          liveMarkerRef.current = new HTMLMapMarker(
+            latlng,
+            map,
+            _buildLiveIcon(badgeColor, initialHeading),
+            () => {
+              showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
+            },
+            'center'
+          )
           setLastPingMs(new Date(last.recorded_at).getTime())
         } else if (session && session.start_latitude != null && session.start_longitude != null) {
           latestLat = Number(session.start_latitude)
           latestLng = Number(session.start_longitude)
           const badgeColor = '#10b981'
-          liveMarkerRef.current = window.L.marker(
-            [latestLat, latestLng], { icon: _buildLiveIcon(badgeColor, 0), zIndexOffset: 1000 }
-          ).bindPopup(_buildLivePopupContent(executive, session, clientDest)).addTo(map)
+          const latlng = new window.google.maps.LatLng(latestLat, latestLng)
+          liveMarkerRef.current = new HTMLMapMarker(
+            latlng,
+            map,
+            _buildLiveIcon(badgeColor, 0),
+            () => {
+              showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
+            },
+            'center'
+          )
           setLastPingMs(new Date(session.start_time).getTime())
         } else if (executive.latitude != null && executive.longitude != null) {
           latestLat = Number(executive.latitude)
           latestLng = Number(executive.longitude)
           const badgeColor = '#10b981'
-          liveMarkerRef.current = window.L.marker(
-            [latestLat, latestLng], { icon: _buildLiveIcon(badgeColor, 0), zIndexOffset: 1000 }
-          ).bindPopup(_buildLivePopupContent(executive, session, clientDest)).addTo(map)
+          const latlng = new window.google.maps.LatLng(latestLat, latestLng)
+          liveMarkerRef.current = new HTMLMapMarker(
+            latlng,
+            map,
+            _buildLiveIcon(badgeColor, 0),
+            () => {
+              showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
+            },
+            'center'
+          )
           setLastPingMs(Date.now())
         }
-      } catch (leafletErr) {
-        console.error("[SmartMap] Error rendering live/end markers:", leafletErr)
+      } catch (gErr) {
+        console.error("[SmartMap] Error rendering live/end markers:", gErr)
+      }
+
+      // ─── Draw traveled trail as dotted polyline + start/end markers ───
+      try {
+        const pathCoords = crumbs.map(c => ({ lat: Number(c.latitude), lng: Number(c.longitude) })).filter(pt => !isNaN(pt.lat) && !isNaN(pt.lng) && pt.lat !== 0 && pt.lng !== 0)
+        
+        let startLat = session?.start_latitude != null ? Number(session.start_latitude) : (crumbs.length > 0 ? Number(crumbs[0].latitude) : null)
+        let startLng = session?.start_longitude != null ? Number(session.start_longitude) : (crumbs.length > 0 ? Number(crumbs[0].longitude) : null)
+
+        if (startLat != null && startLng != null && !isNaN(startLat) && !isNaN(startLng)) {
+          if (pathCoords.length === 0 || haversineDistance(startLat, startLng, pathCoords[0].lat, pathCoords[0].lng) > 0.005) {
+            pathCoords.unshift({ lat: startLat, lng: startLng })
+          }
+          const startLatLng = new window.google.maps.LatLng(startLat, startLng)
+          startMarkerRef.current = new HTMLMapMarker(
+            startLatLng,
+            map,
+            _buildStartIcon(),
+            () => {
+              showInfoWindow(startLatLng, `<div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;"><strong>🟢 Start Point</strong><br/>Time: ${session?.start_time ? new Date(session.start_time).toLocaleTimeString() : '—'}</div>`)
+            },
+            'center'
+          )
+        }
+
+        if (status === 'ended' && session?.end_latitude != null && session?.end_longitude != null) {
+          const endLat = Number(session.end_latitude)
+          const endLng = Number(session.end_longitude)
+          const endLatLng = new window.google.maps.LatLng(endLat, endLng)
+          endMarkerRef.current = new HTMLMapMarker(
+            endLatLng,
+            map,
+            _buildEndIcon(),
+            () => {
+              showInfoWindow(endLatLng, `<div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;"><strong>⬛ End Point</strong><br/>Time: ${session?.end_time ? new Date(session.end_time).toLocaleTimeString() : '—'}</div>`)
+            },
+            'center'
+          )
+        }
+
+        if (pathCoords.length > 1) {
+          const lineSymbol = {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            fillOpacity: 1,
+            scale: 3,
+            strokeColor: '#8b5cf6',
+            fillColor: '#8b5cf6'
+          }
+          trackRouteRef.current = new window.google.maps.Polyline({
+            path: pathCoords,
+            strokeOpacity: 0,
+            icons: [{
+              icon: lineSymbol,
+              offset: '0%',
+              repeat: '12px'
+            }],
+            map: map
+          })
+        }
+      } catch (trailErr) {
+        console.error("[SmartMap] Error rendering traveled trail or start/end markers:", trailErr)
+      }
+
+      // ─── Fetch nearby client markers ───
+      if (latestLat != null && latestLng != null && !isNaN(latestLat) && !isNaN(latestLng)) {
+        _fetchAndRenderNearbyClients(latestLat, latestLng)
+      }
+
+      // ─── Fetch historical tracking events ───
+      if (session && supabase) {
+        try {
+          const { data: evs, error: evsErr } = await supabase
+            .schema('hrms')
+            .table('tracking_events')
+            .select('*')
+            .eq('session_id', session.id)
+            .order('created_at', { ascending: false })
+          if (!evsErr && evs) {
+            setTrackEvents(evs)
+          }
+        } catch (evsErr) {
+          console.warn("Failed to load tracking events history:", evsErr)
+        }
       }
 
       // Draw route to destination (if client visit active, draw regardless of ended/active status)
@@ -763,7 +1140,16 @@ export default function ManagerSmartMap() {
 
         const validPts = allPts.filter(pt => pt && !isNaN(pt[0]) && !isNaN(pt[1]) && pt[0] !== 0 && pt[1] !== 0)
         if (validPts.length > 0) {
-          map.fitBounds(validPts, { padding: [60, 60], maxZoom: 17 })
+          const gBounds = new window.google.maps.LatLngBounds()
+          validPts.forEach(pt => gBounds.extend({ lat: pt[0], lng: pt[1] }))
+          map.fitBounds(gBounds, 60)
+          
+          const listener = map.addListener('idle', () => {
+            if (map.getZoom() > 17) {
+              map.setZoom(17)
+            }
+            window.google.maps.event.removeListener(listener)
+          })
         }
       } catch (boundsErr) {
         console.error("[SmartMap] Error fitting map bounds:", boundsErr)
@@ -805,6 +1191,21 @@ export default function ManagerSmartMap() {
           }
         })
         .on('postgres_changes', {
+          event: 'INSERT',
+          schema: 'hrms',
+          table: 'tracking_events',
+          filter: sessionId ? `session_id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
+        }, (payload) => {
+          const newEvent = payload.new
+          if (!newEvent) return
+          setTrackEvents(prev => {
+            const exists = prev.some(e => e.id === newEvent.id)
+            if (exists) return prev
+            return [newEvent, ...prev]
+          })
+          showToast(newEvent.title || `New tracking event: ${newEvent.event_type}`, "info")
+        })
+        .on('postgres_changes', {
           event: 'UPDATE',
           schema: 'hrms',
           table: 'tracking_sessions',
@@ -825,7 +1226,7 @@ export default function ManagerSmartMap() {
       realtimeChRef.current = channel
     }
 
-    // Always start polling timer as secure backend API fallback (does not blindly call setSession on Supabase)
+    // Always start polling timer as secure backend API fallback
     pollTimerRef.current = setInterval(async () => {
       try {
         const r = await spatialAPI.getLocationHistory(employeeId, sessionId)
@@ -850,6 +1251,19 @@ export default function ManagerSmartMap() {
         
         if (status === 'ended' && sess) {
           _handleSessionEnded(sess)
+        }
+
+        // Fallback: poll tracking events
+        if (supabase && sess) {
+          const { data: evs, error: evsErr } = await supabase
+            .schema('hrms')
+            .table('tracking_events')
+            .select('*')
+            .eq('session_id', sess.id)
+            .order('created_at', { ascending: false })
+          if (!evsErr && evs) {
+            setTrackEvents(evs)
+          }
         }
       } catch (err) {
         console.warn("Polling error:", err)
@@ -886,8 +1300,9 @@ export default function ManagerSmartMap() {
     
     // Only zoom/fly to executive location if there is NO active client visit destination
     const isClientVisit = ex.check_in_mode === 'Client Visit' || ex.client_latitude != null
-    if (!isClientVisit && ex.latitude && ex.longitude && leafletMapRef.current) {
-      leafletMapRef.current.flyTo([ex.latitude, ex.longitude], 16)
+    if (!isClientVisit && ex.latitude && ex.longitude && googleMapRef.current) {
+      googleMapRef.current.panTo({ lat: ex.latitude, lng: ex.longitude })
+      googleMapRef.current.setZoom(16)
     } else if (!ex.latitude || !ex.longitude) {
       showToast(`${ex.employee_name} has no available location logs yet.`, 'warning')
     }
@@ -1027,6 +1442,53 @@ export default function ManagerSmartMap() {
                     <div className="text-slate-200 font-black mt-0.5">
                       {trackSession?.start_time ? formatDuration(trackSession.start_time) : '—'}
                     </div>
+                  </div>
+                </div>
+
+                {/* Live Activity Feed */}
+                <div className="border-t border-white/5 pt-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Live Activity Feed</span>
+                    <span className="text-[9px] text-slate-500 font-semibold">{trackEvents.length} events</span>
+                  </div>
+                  <div className="max-h-48 overflow-y-auto space-y-2 pr-1 font-sans">
+                    {trackEvents.length === 0 ? (
+                      <div className="text-[10px] text-slate-500 italic py-1">No activities logged yet.</div>
+                    ) : (
+                      trackEvents.map(evt => {
+                        let icon = 'ℹ️'
+                        let color = 'text-slate-400'
+                        if (evt.event_type === 'CLIENT_REACHED' || evt.event_type === 'VISIT_COMPLETED') {
+                          icon = '🟢'
+                          color = 'text-emerald-400'
+                        } else if (evt.event_type === 'CLIENT_LEFT') {
+                          icon = '🔵'
+                          color = 'text-blue-400'
+                        } else if (evt.event_type === 'ROUTE_DEVIATION') {
+                          icon = '⚠️'
+                          color = 'text-amber-500'
+                        } else if (evt.event_type.startsWith('STATIONARY')) {
+                          icon = '🟠'
+                          color = 'text-orange-400'
+                        } else if (evt.event_type === 'VISIT_STARTED') {
+                          icon = '🚩'
+                          color = 'text-violet-400'
+                        }
+
+                        const timeStr = new Date(evt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                        
+                        return (
+                          <div key={evt.id} className="flex gap-2 text-[10px] bg-slate-900/40 p-2 rounded-lg border border-white/5 items-start">
+                            <span className="shrink-0">{icon}</span>
+                            <div className="flex-1 min-w-0">
+                              <div className={`font-black truncate ${color}`}>{evt.title || evt.event_type.replace(/_/g, ' ')}</div>
+                              {evt.message && <div className="text-slate-400 text-[9px] font-medium leading-snug mt-0.5">{evt.message}</div>}
+                              <div className="text-slate-500 text-[8px] font-bold mt-1">{timeStr}</div>
+                            </div>
+                          </div>
+                        )
+                      })
+                    )}
                   </div>
                 </div>
 

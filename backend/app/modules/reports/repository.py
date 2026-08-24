@@ -1,5 +1,5 @@
 import uuid
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 from datetime import datetime, date
 from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
@@ -24,6 +24,39 @@ class ReportsRepository:
     def __init__(self):
         self.supabase = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
+        self._geocoded_cache = {}
+
+    def _reverse_geocode_coords(self, lat, lng) -> Optional[str]:
+        if lat is None or lng is None:
+            return None
+        try:
+            lat_f = float(lat)
+            lng_f = float(lng)
+            
+            # Skip default mock / default coordinates if they are exactly the default ones
+            # The default coordinates in database checks: 13.0067 and 80.2570
+            if abs(lat_f - 13.0067) < 1e-4 and abs(lng_f - 80.2570) < 1e-4:
+                return None
+            if lat_f == 0.0 or lng_f == 0.0:
+                return None
+                
+            key = f"{round(lat_f, 5)},{round(lng_f, 5)}"
+            if key in self._geocoded_cache:
+                return self._geocoded_cache[key]
+                
+            import requests
+            url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat_f}&lon={lng_f}&zoom=18"
+            headers = {"User-Agent": "TConnect-Backend/1.0"}
+            res = requests.get(url, headers=headers, timeout=2)
+            if res.status_code == 200:
+                data = res.json()
+                display_name = data.get("display_name")
+                if display_name:
+                    self._geocoded_cache[key] = display_name
+                    return display_name
+        except Exception as e:
+            logger.warning(f"Reverse geocode failed for {lat}, {lng}: {e}")
+        return None
 
     def _safe_count(self, table: str, schema=None) -> int:
         """Safely count rows in a table, returning 0 on any error."""
@@ -1115,7 +1148,7 @@ class ReportsRepository:
             "notifications_count": notif_count if notif_count > 0 else 6,
         }
 
-    def _standardize_eod_report(self, r: Dict[str, Any]) -> Dict[str, Any]:
+    def _standardize_eod_report(self, r: Dict[str, Any], attendance_logs: List[Dict[str, Any]] = None) -> Dict[str, Any]:
         if not r:
             return {}
         row = dict(r)
@@ -1198,6 +1231,101 @@ class ReportsRepository:
         is_ack = bool(row.get("acknowledged", False))
         ack_by = row.get("acknowledged_by") or ""
         
+        # In-memory fallback lookup for older / in-memory records
+        in_mem_fallback = {}
+        for r_mem in _in_memory_eod_reports:
+            if str(r_mem.get("id")) == str(rep_id) or str(r_mem.get("report_id")) == str(rep_id):
+                in_mem_fallback = r_mem
+                break
+
+        db_leads = row.get("leads_generated")
+        if db_leads is None:
+            db_leads = in_mem_fallback.get("leads_generated") or in_mem_fallback.get("leadsGenerated") or 0
+            
+        db_interested = row.get("clients_interested")
+        if db_interested is None:
+            db_interested = in_mem_fallback.get("clients_interested") or in_mem_fallback.get("clientsInterested") or 0
+            
+        db_followups = row.get("followups_scheduled")
+        if db_followups is None:
+            db_followups = in_mem_fallback.get("followups_scheduled") or in_mem_fallback.get("followupsScheduled") or 0
+
+        # Match attendance record
+        login_time = None
+        login_location = None
+        logout_time = None
+        logout_location = None
+        matched_log = None
+
+        if attendance_logs:
+            for log in attendance_logs:
+                log_date = log.get("attendance_date") or log.get("date")
+                if isinstance(log_date, date):
+                    log_date = log_date.isoformat()
+                else:
+                    log_date = str(log_date or "")
+                
+                if log_date.split("T")[0] == report_date.split("T")[0]:
+                    log_emp = str(log.get("employee_id") or log.get("employee_code") or "").strip().lower()
+                    log_name = str(log.get("employee_name") or log.get("name") or "").strip().lower()
+                    log_email = str(log.get("email") or "").strip().lower()
+
+                    target_emp = str(emp_code or "").strip().lower()
+                    target_name = str(exec_name or "").strip().lower()
+                    target_email = str(exec_email or "").strip().lower()
+
+                    if (target_emp and log_emp and target_emp == log_emp) or \
+                       (target_email and log_email and target_email == log_email) or \
+                       (target_name and log_name and (target_name in log_name or log_name in target_name)):
+                        matched_log = log
+                        break
+
+        if not matched_log and (emp_code or exec_email):
+            try:
+                q = self.supabase.schema("hrms").table("attendance").select("*").eq("date", report_date.split("T")[0])
+                if emp_code:
+                    res_att = q.eq("employee_id", emp_code).execute()
+                    if res_att.data:
+                        matched_log = res_att.data[0]
+                if not matched_log and exec_email:
+                    res_att = q.eq("email", exec_email).execute()
+                    if res_att.data:
+                        matched_log = res_att.data[0]
+            except Exception:
+                pass
+
+        if matched_log:
+            login_time = matched_log.get("check_in_time") or matched_log.get("punch_in_time") or matched_log.get("clockIn")
+            if login_time == "—": 
+                login_time = None
+
+            c_in_lat = matched_log.get("check_in_latitude") or matched_log.get("latitude")
+            c_in_lng = matched_log.get("check_in_longitude") or matched_log.get("longitude")
+            if c_in_lat is not None and c_in_lng is not None:
+                login_location = self._reverse_geocode_coords(c_in_lat, c_in_lng)
+            if not login_location:
+                stored_in_addr = matched_log.get("check_in_address") or matched_log.get("work_location") or matched_log.get("location_name")
+                if stored_in_addr and stored_in_addr != "Adyar IT Corridor, Chennai" and stored_in_addr != "—" and stored_in_addr.strip() != "":
+                    login_location = stored_in_addr
+
+            logout_time = matched_log.get("check_out_time") or matched_log.get("punch_out_time") or matched_log.get("clockOut")
+            if logout_time == "—": 
+                logout_time = None
+
+            c_out_lat = matched_log.get("check_out_latitude")
+            c_out_lng = matched_log.get("check_out_longitude")
+            if c_out_lat is not None and c_out_lng is not None:
+                logout_location = self._reverse_geocode_coords(c_out_lat, c_out_lng)
+            if not logout_location:
+                stored_out_addr = matched_log.get("check_out_address")
+                if stored_out_addr and stored_out_addr != "Adyar IT Corridor, Chennai" and stored_out_addr != "—" and stored_out_addr.strip() != "":
+                    logout_location = stored_out_addr
+
+        if not login_time or login_time == "—": login_time = "N/A"
+        if not login_location or login_location == "—": login_location = "N/A"
+        if not logout_time or logout_time == "—": logout_time = "N/A"
+        if not logout_location or logout_location == "—": logout_location = "N/A"
+
         std_report = {
             "id": rep_id,
             "report_id": rep_id,
@@ -1216,12 +1344,12 @@ class ReportsRepository:
             "calls_made": int(row.get("leads_contacted") or 0),
             "visitsCompleted": int(row.get("visits_count") or 0),
             "visits_completed": int(row.get("visits_count") or 0),
-            "leadsGenerated": 0,
-            "leads_generated": 0,
-            "clientsInterested": 0,
-            "clients_interested": 0,
-            "followupsScheduled": 0,
-            "followups_scheduled": 0,
+            "leadsGenerated": int(db_leads),
+            "leads_generated": int(db_leads),
+            "clientsInterested": int(db_interested),
+            "clients_interested": int(db_interested),
+            "followupsScheduled": int(db_followups),
+            "followups_scheduled": int(db_followups),
             "dealsClosed": int(row.get("deals_won") or 0),
             "deals_closed": int(row.get("deals_won") or 0),
             "highlights": highlights_val,
@@ -1230,7 +1358,11 @@ class ReportsRepository:
             "status": "Acknowledged" if is_ack else "Submitted",
             "managerAck": is_ack,
             "managerComment": ack_by,
-            "created_at": row.get("created_at")
+            "created_at": row.get("created_at"),
+            "loginTime": login_time,
+            "loginLocation": login_location,
+            "logoutTime": logout_time,
+            "logoutLocation": logout_location
         }
         return std_report
 
@@ -1363,7 +1495,10 @@ class ReportsRepository:
             "next_day_plan": report_obj["nextDayPlan"],
             "acknowledged": False,
             "acknowledged_by": None,
-            "created_at": now_iso
+            "created_at": now_iso,
+            "leads_generated": leads,
+            "clients_interested": interested,
+            "followups_scheduled": followups
         }
 
         # Try inserting to system.reports_eod in Supabase
@@ -1399,20 +1534,28 @@ class ReportsRepository:
         caller_role = str((user_payload or {}).get("role") or "").strip().lower()
         is_manager_role = any(r in caller_role for r in ("manager", "admin", "ceo", "hr"))
 
+        # Fetch all attendance logs once
+        attendance_logs = []
+        try:
+            from app.modules.attendance.repository import AttendanceRepository
+            attendance_logs = AttendanceRepository().get_all_logs(user_payload)
+        except Exception as e:
+            logger.debug(f"Failed to fetch attendance logs for EOD reports: {e}")
+
         db_reports = []
         try:
             res = self.supabase.schema("system").table("reports_eod").select("*").order("created_at", desc=True).execute()
             if res.data is not None:
-                db_reports = [self._standardize_eod_report(r) for r in res.data]
+                db_reports = [self._standardize_eod_report(r, attendance_logs) for r in res.data]
         except Exception:
             try:
                 res = self.supabase.table("reports_eod").select("*").order("created_at", desc=True).execute()
                 if res.data is not None:
-                    db_reports = [self._standardize_eod_report(r) for r in res.data]
+                    db_reports = [self._standardize_eod_report(r, attendance_logs) for r in res.data]
             except Exception as e:
                 logger.debug(f"reports_eod fetch failed: {e}")
 
-        all_r = list(db_reports) if db_reports else [self._standardize_eod_report(r) for r in _in_memory_eod_reports]
+        all_r = list(db_reports) if db_reports else [self._standardize_eod_report(r, attendance_logs) for r in _in_memory_eod_reports]
 
         if allowed is not None:
             def _is_accessible(r: Dict[str, Any]) -> bool:

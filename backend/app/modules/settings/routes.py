@@ -19,6 +19,7 @@ async def get_public_config(
         data={
             "client_route_alert_radius_km": app_settings.CLIENT_ROUTE_ALERT_RADIUS_KM,
             "gps_accuracy_threshold": app_settings.GPS_ACCURACY_THRESHOLD,
+            "google_maps_api_key": app_settings.GOOGLE_MAPS_API_KEY,
         },
         message="Public configuration retrieved successfully"
     )

@@ -205,10 +205,12 @@ export default function ManagerTeam() {
   }
 
   const resolveEmployeeCode = (seName, seEmail, rawCode) => {
+    if (rawCode && String(rawCode).trim() !== '' && String(rawCode).trim() !== 'EMP000012') {
+      return String(rawCode).trim();
+    }
+
     const n = (seName || '').toLowerCase().trim()
     const e = (seEmail || '').toLowerCase().trim()
-
-    if (e.includes('abi') || n.includes('abi')) return 'EMP000012'
 
     try {
       const appUsers = JSON.parse(localStorage.getItem('tc_app_users') || '[]')
@@ -221,10 +223,6 @@ export default function ManagerTeam() {
         return matchedUser.employee_code || matchedUser.employee_id || matchedUser.emp_code
       }
     } catch (err) { }
-
-    if (rawCode && rawCode !== 'EMP-101' && !rawCode.startsWith('EMP10')) {
-      return rawCode
-    }
 
     return 'EMP000012'
   }
@@ -286,23 +284,11 @@ export default function ManagerTeam() {
     const empCode = resolveEmployeeCode(seName, seEmail, r.employee_code || r.employee_id)
 
     const repDate = r.date || '05/08/2026'
-    const matchingLog = findMatchingLog(empCode, seEmail, seName, repDate, attLogs)
 
-    const loginTime = matchingLog 
-      ? (matchingLog.check_in_time || matchingLog.clockIn || '—') 
-      : '—'
-    
-    const logoutTime = matchingLog 
-      ? (matchingLog.check_out_time || matchingLog.clockOut || '—') 
-      : '—'
-
-    const loginLocation = matchingLog 
-      ? (matchingLog.check_in_address || matchingLog.work_location || '—') 
-      : '—'
-
-    const logoutLocation = matchingLog 
-      ? (matchingLog.check_out_address || '—') 
-      : '—'
+    const loginTime = r.loginTime && r.loginTime !== '—' && r.loginTime !== 'None' ? r.loginTime : 'N/A';
+    const logoutTime = r.logoutTime && r.logoutTime !== '—' && r.logoutTime !== 'None' ? r.logoutTime : 'N/A';
+    const loginLocation = r.loginLocation && r.loginLocation !== '—' && r.loginLocation !== 'None' ? r.loginLocation : 'N/A';
+    const logoutLocation = r.logoutLocation && r.logoutLocation !== '—' && r.logoutLocation !== 'None' ? r.logoutLocation : 'N/A';
 
     return {
       id: r.id || `eod_${1001 + idx}`,
@@ -402,6 +388,28 @@ export default function ManagerTeam() {
   // Filtering Calculation
   const filteredReports = reports.filter((r) => {
     if (!r) return false
+
+    // Check if the report belongs to one of the manager's assigned executives
+    const matchesExecutiveScope = executives.some((exec) => {
+      const execEmail = (exec.email || '').toLowerCase().trim()
+      const execCode = (exec.employee_code || '').toLowerCase().trim()
+      const execName = (exec.name || '').toLowerCase().trim()
+
+      const repEmail = (r.executiveEmail || r.executive_email || '').toLowerCase().trim()
+      const repCode = (r.employee_code || r.employee_id || '').toLowerCase().trim()
+      const repName = (r.executive || r.executive_name || '').toLowerCase().trim()
+
+      return (
+        (execEmail && repEmail === execEmail) ||
+        (execCode && repCode === execCode) ||
+        (execName && repName.includes(execName))
+      )
+    })
+
+    if (executives.length > 0 && !matchesExecutiveScope) {
+      return false
+    }
+
     const q = search.toLowerCase().trim()
     const seName = (r.executive || '').toLowerCase()
     const seCode = (r.employee_code || '').toLowerCase()
@@ -599,7 +607,7 @@ export default function ManagerTeam() {
                     {['All', 'Today', 'Yesterday', 'This Week', 'This Month', 'Custom Date'].map((tab) => (
                       <button
                         key={tab}
-                        onClick={() => handleLinearDateFilter(tab)}
+                        onClick={() => setSelectedDateFilter(tab)}
                         className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
                           selectedDateFilter === tab
                             ? 'bg-[#ca8a04] text-white shadow-2xs'

@@ -6,7 +6,7 @@
 
 -- 1. Create hrms.employee_locations table
 CREATE TABLE IF NOT EXISTS hrms.employee_locations (
-    employee_id     TEXT PRIMARY KEY REFERENCES hrms.employees(employee_id) ON DELETE CASCADE,
+    employee_id     UUID PRIMARY KEY REFERENCES hrms.employees(employee_id) ON DELETE CASCADE,
     latitude        DOUBLE PRECISION NOT NULL,
     longitude       DOUBLE PRECISION NOT NULL,
     accuracy        DOUBLE PRECISION,
@@ -34,13 +34,13 @@ TO authenticated
 USING (
     employee_id IN (
         SELECT e.employee_id FROM hrms.employees e 
-        WHERE e.user_id = auth.jwt() ->> 'sub' OR e.auth_user_id = auth.jwt() ->> 'sub' OR e.employee_id = auth.jwt() ->> 'sub'
+        WHERE e.user_id::text = auth.jwt() ->> 'sub' OR e.auth_user_id::text = auth.jwt() ->> 'sub' OR e.employee_id::text = auth.jwt() ->> 'sub'
     )
 ) 
 WITH CHECK (
     employee_id IN (
         SELECT e.employee_id FROM hrms.employees e 
-        WHERE e.user_id = auth.jwt() ->> 'sub' OR e.auth_user_id = auth.jwt() ->> 'sub' OR e.employee_id = auth.jwt() ->> 'sub'
+        WHERE e.user_id::text = auth.jwt() ->> 'sub' OR e.auth_user_id::text = auth.jwt() ->> 'sub' OR e.employee_id::text = auth.jwt() ->> 'sub'
     )
 );
 
@@ -53,20 +53,18 @@ TO authenticated
 USING (
     employee_id IN (
         SELECT e.employee_id FROM hrms.employees e 
-        WHERE e.user_id = auth.jwt() ->> 'sub' OR e.auth_user_id = auth.jwt() ->> 'sub' OR e.employee_id = auth.jwt() ->> 'sub'
+        WHERE e.user_id::text = auth.jwt() ->> 'sub' OR e.auth_user_id::text = auth.jwt() ->> 'sub' OR e.employee_id::text = auth.jwt() ->> 'sub'
     )
     OR EXISTS (
         SELECT 1 FROM hrms.employees subordinate 
         JOIN hrms.employees manager ON (
-            subordinate.reporting_manager = manager.employee_id 
-            OR subordinate.reporting_manager_id = manager.employee_id 
-            OR subordinate.reporting_manager_email = manager.email
+            subordinate.reporting_manager::text = manager.employee_id::text 
         )
-        WHERE subordinate.employee_id = hrms.employee_locations.employee_id 
+        WHERE subordinate.employee_id::text = hrms.employee_locations.employee_id::text 
           AND (
-              manager.user_id = auth.jwt() ->> 'sub' 
-              OR manager.auth_user_id = auth.jwt() ->> 'sub' 
-              OR manager.employee_id = auth.jwt() ->> 'sub'
+              manager.user_id::text = auth.jwt() ->> 'sub' 
+              OR manager.auth_user_id::text = auth.jwt() ->> 'sub' 
+              OR manager.employee_id::text = auth.jwt() ->> 'sub'
           )
     )
     OR auth.jwt() ->> 'role' IN ('Admin', 'Super Admin', 'System Admin', 'CEO')

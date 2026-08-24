@@ -10,28 +10,11 @@ function LoginForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [selectedRole, setSelectedRole] = useState('sales')
 
-  const [email, setEmail] = useState('executive@tconnect.com')
-  const [password, setPassword] = useState('SalesPassword2026#')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
 
   const navigate = useNavigate()
-
-  const handleSelectRolePill = (roleId) => {
-    setSelectedRole(roleId)
-    if (roleId === 'ceo') {
-      setEmail('ceo@tconnect.com')
-      setPassword('Admin2026#')
-    } else if (roleId === 'admin') {
-      setEmail('admin@tconnect.com')
-      setPassword('Admin2026#')
-    } else if (roleId === 'manager') {
-      setEmail('manager@tconnect.com')
-      setPassword('ManagerPassword2026#')
-    } else if (roleId === 'sales') {
-      setEmail('executive@tconnect.com')
-      setPassword('SalesPassword2026#')
-    }
-  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -108,6 +91,7 @@ function LoginForm() {
             <input
               id="email"
               type="email"
+              autoComplete="off"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               placeholder="e.g. user@tconnect.com"
@@ -131,6 +115,7 @@ function LoginForm() {
             <input
               id="password"
               type={showPassword ? 'text' : 'password'}
+              autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               placeholder="Enter portal password"

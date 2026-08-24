@@ -111,7 +111,7 @@ def extract_lat_lng(item: dict, default_lat: float, default_lng: float, idx: int
 def get_nearby_entities(
     lat: float = Query(..., description="Current Executive Latitude"),
     lng: float = Query(..., description="Current Executive Longitude"),
-    radius: float = Query(2000.0, description="Search radius in meters"),
+    radius: float = Query(500.0, description="Search radius in meters"),
     entity_type: Optional[str] = Query("all", description="all | lead | customer | opportunity | visit"),
 ):
     """
@@ -852,6 +852,357 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
 # LIVE GPS TRACKING  — Session + Breadcrumb Endpoints
 # ══════════════════════════════════════════════════════════════════════════════
 
+def decode_polyline(polyline_str: str):
+    """Decodes a Google encoded polyline string to a list of (lat, lng) tuples."""
+    if not polyline_str:
+        return []
+    index = 0
+    len_str = len(polyline_str)
+    lat = 0
+    lng = 0
+    coordinates = []
+    
+    while index < len_str:
+        b = 0
+        shift = 0
+        result = 0
+        while True:
+            if index >= len_str:
+                break
+            b = ord(polyline_str[index]) - 63
+            index += 1
+            result |= (b & 0x1f) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlat = ~(result >> 1) if (result & 1) else (result >> 1)
+        lat += dlat
+        
+        shift = 0
+        result = 0
+        while True:
+            if index >= len_str:
+                break
+            b = ord(polyline_str[index]) - 63
+            index += 1
+            result |= (b & 0x1f) << shift
+            shift += 5
+            if b < 0x20:
+                break
+        dlng = ~(result >> 1) if (result & 1) else (result >> 1)
+        lng += dlng
+        
+        coordinates.append((lat * 1e-5, lng * 1e-5))
+        
+    return coordinates
+
+def distance_to_polyline_meters(lat: float, lng: float, polyline_str: str) -> float:
+    pts = decode_polyline(polyline_str)
+    if not pts:
+        return 0.0
+    return min(haversine_distance_meters(lat, lng, pt[0], pt[1]) for pt in pts)
+
+def get_osrm_route_polyline(o_lat: float, o_lng: float, d_lat: float, d_lng: float) -> str:
+    import requests
+    try:
+        osrm_url = f"http://router.project-osrm.org/route/v1/driving/{o_lng},{o_lat};{d_lng},{d_lat}?overview=full"
+        r = requests.get(osrm_url, timeout=5)
+        if r.status_code == 200:
+            res_data = r.json()
+            routes = res_data.get("routes")
+            if routes:
+                return routes[0].get("geometry") or ""
+    except Exception as e:
+        logger.warning(f"Error fetching OSRM route: {e}")
+    return ""
+
+def _send_manager_notif(sp, manager_id, employee_id, employee_code, title, message):
+    try:
+        manager_user_id = None
+        if manager_id:
+            mgr_user_res = sp.schema("hrms").table("employees").select("user_id").eq("employee_id", manager_id).limit(1).execute()
+            if mgr_user_res.data:
+                manager_user_id = mgr_user_res.data[0]["user_id"]
+        
+        from app.modules.notification.repository import NotificationRepository
+        notif_repo = NotificationRepository()
+        notif_payload = {
+            "recipient_id": manager_user_id,
+            "recipient_role": "sales_manager",
+            "employee_id": employee_id,
+            "employee_code": employee_code,
+            "title": title,
+            "message": message,
+            "type": "SUCCESS",
+            "notification_type": "SUCCESS",
+            "reference_module": "CRM"
+        }
+        notif_repo.create_notification(notif_payload)
+    except Exception as e:
+        logger.warning(f"Failed to send manager notification: {e}")
+
+def _create_tracking_event(sp, session_id: str, employee_id: str, manager_id: str, event_type: str, lat: float, lng: float, client_id: str = None, metadata: dict = None):
+    try:
+        event = {
+            "session_id": session_id,
+            "employee_id": employee_id,
+            "manager_id": manager_id,
+            "event_type": event_type,
+            "latitude": lat,
+            "longitude": lng,
+            "client_id": client_id,
+            "metadata": metadata or {}
+        }
+        sp.schema("hrms").table("tracking_events").insert(event).execute()
+        logger.info(f"[TRACKING EVENT] Logged {event_type} event for session {session_id}")
+    except Exception as e:
+        logger.warning(f"Error logging tracking event: {e}")
+
+def _process_tracking_events(sp, employee_id: str, employee_name: str, employee_code: str, session_id: str, lat: float, lng: float, accuracy: float):
+    import datetime
+    
+    if accuracy > 80:
+        logger.info(f"Skipping telemetry events for poor accuracy: {accuracy}m")
+        return
+        
+    try:
+        sess_res = sp.schema("hrms").table("tracking_sessions").select(
+            "client_latitude,client_longitude,client_name,client_id,client_reached,left_client,manager_id,route_polyline,last_stationary_alert,start_time"
+        ).eq("id", session_id).limit(1).execute()
+        
+        if not sess_res.data:
+            return
+            
+        sess = sess_res.data[0]
+        client_lat = sess.get("client_latitude")
+        client_lng = sess.get("client_longitude")
+        client_name = sess.get("client_name") or "Client"
+        client_id = sess.get("client_id")
+        client_reached = sess.get("client_reached") or False
+        left_client = sess.get("left_client") or False
+        manager_id = sess.get("manager_id")
+        route_polyline = sess.get("route_polyline")
+        last_alert = sess.get("last_stationary_alert") or 0
+        start_time_str = sess.get("start_time")
+        
+        now_iso = datetime.datetime.utcnow().isoformat()
+        
+        if client_lat is not None and client_lng is not None:
+            dist_m = haversine_distance_meters(lat, lng, float(client_lat), float(client_lng))
+            
+            if dist_m < 50 and not client_reached:
+                sp.schema("hrms").table("tracking_sessions").update({
+                    "client_reached": True,
+                    "reached_at": now_iso
+                }).eq("id", session_id).execute()
+                
+                _create_tracking_event(
+                    sp, session_id, employee_id, manager_id,
+                    "CLIENT_REACHED", lat, lng, client_id,
+                    {"client_name": client_name, "distance_meters": round(dist_m, 1)}
+                )
+                _send_manager_notif(
+                    sp, manager_id, employee_id, employee_code,
+                    "🟢 Client Reached", f"{employee_name} has reached {client_name}."
+                )
+            
+            elif dist_m > 100 and client_reached and not left_client:
+                sp.schema("hrms").table("tracking_sessions").update({
+                    "left_client": True,
+                    "left_at": now_iso
+                }).eq("id", session_id).execute()
+                
+                _create_tracking_event(
+                    sp, session_id, employee_id, manager_id,
+                    "CLIENT_LEFT", lat, lng, client_id,
+                    {"client_name": client_name, "distance_meters": round(dist_m, 1)}
+                )
+                _send_manager_notif(
+                    sp, manager_id, employee_id, employee_code,
+                    "🔵 Left Client", f"{employee_name} has left {client_name}."
+                )
+                
+        try:
+            locs_res = sp.schema("hrms").table("tracking_locations").select(
+                "latitude,longitude,recorded_at,accuracy"
+            ).eq("tracking_session_id", session_id).lte("accuracy", 80).order("recorded_at", desc=True).limit(50).execute()
+            
+            crumbs = locs_res.data or []
+            if len(crumbs) >= 2:
+                latest_time = datetime.datetime.fromisoformat(crumbs[0]["recorded_at"].replace("Z", "+00:00"))
+                stationary_since = latest_time
+                
+                for c in crumbs[1:]:
+                    c_lat = float(c["latitude"])
+                    c_lng = float(c["longitude"])
+                    c_time = datetime.datetime.fromisoformat(c["recorded_at"].replace("Z", "+00:00"))
+                    
+                    dist_m = haversine_distance_meters(lat, lng, c_lat, c_lng)
+                    if dist_m < 30:
+                        stationary_since = c_time
+                    else:
+                        break
+                        
+                if len(crumbs) == 50 and stationary_since == datetime.datetime.fromisoformat(crumbs[-1]["recorded_at"].replace("Z", "+00:00")):
+                    start_time = datetime.datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                    if (latest_time - start_time).total_seconds() > (latest_time - stationary_since).total_seconds():
+                        stationary_since = start_time
+                        
+                stationary_duration_min = int((latest_time - stationary_since).total_seconds() / 60)
+                
+                if stationary_duration_min >= 10:
+                    if last_alert < 10:
+                        sp.schema("hrms").table("tracking_sessions").update({"last_stationary_alert": 10}).eq("id", session_id).execute()
+                        _create_tracking_event(
+                            sp, session_id, employee_id, manager_id,
+                            "STATIONARY_10_MIN", lat, lng, None,
+                            {"duration_minutes": stationary_duration_min}
+                        )
+                        _send_manager_notif(
+                            sp, manager_id, employee_id, employee_code,
+                            "🟠 Stationary for 10 minutes", f"{employee_name} has been stationary for 10 minutes."
+                        )
+                elif stationary_duration_min >= 5:
+                    if last_alert < 5:
+                        sp.schema("hrms").table("tracking_sessions").update({"last_stationary_alert": 5}).eq("id", session_id).execute()
+                        _create_tracking_event(
+                            sp, session_id, employee_id, manager_id,
+                            "STATIONARY_5_MIN", lat, lng, None,
+                            {"duration_minutes": stationary_duration_min}
+                        )
+                        _send_manager_notif(
+                            sp, manager_id, employee_id, employee_code,
+                            "🟠 Stationary for 5 minutes", f"{employee_name} has been stationary for 5 minutes."
+                        )
+                elif stationary_duration_min >= 2:
+                    if last_alert < 2:
+                        sp.schema("hrms").table("tracking_sessions").update({"last_stationary_alert": 2}).eq("id", session_id).execute()
+                        _create_tracking_event(
+                            sp, session_id, employee_id, manager_id,
+                            "STATIONARY_2_MIN", lat, lng, None,
+                            {"duration_minutes": stationary_duration_min}
+                        )
+                        _send_manager_notif(
+                            sp, manager_id, employee_id, employee_code,
+                            "🟡 Executive Stopped", f"{employee_name} has stopped."
+                        )
+                else:
+                    if last_alert > 0:
+                        sp.schema("hrms").table("tracking_sessions").update({"last_stationary_alert": 0}).eq("id", session_id).execute()
+                        _create_tracking_event(
+                            sp, session_id, employee_id, manager_id,
+                            "EXECUTIVE_MOVING", lat, lng, None,
+                            {}
+                        )
+                        _send_manager_notif(
+                            sp, manager_id, employee_id, employee_code,
+                            "🔵 Executive Moving", f"{employee_name} is moving."
+                        )
+        except Exception as stationary_err:
+            logger.warning(f"Error in stationary calculation: {stationary_err}")
+            
+        if route_polyline:
+            try:
+                dist_to_route = distance_to_polyline_meters(lat, lng, route_polyline)
+                if dist_to_route > 150:
+                    prev_crumbs = sp.schema("hrms").table("tracking_locations").select(
+                        "latitude,longitude"
+                    ).eq("tracking_session_id", session_id).order("recorded_at", desc=True).limit(2).execute()
+                    
+                    if prev_crumbs.data and len(prev_crumbs.data) >= 2:
+                        prev_pt = prev_crumbs.data[1]
+                        prev_dist = distance_to_polyline_meters(float(prev_pt["latitude"]), float(prev_pt["longitude"]), route_polyline)
+                        
+                        if prev_dist > 150:
+                            last_dev_res = sp.schema("hrms").table("tracking_events").select(
+                                "created_at"
+                            ).eq("session_id", session_id).eq("event_type", "ROUTE_DEVIATION").order("created_at", desc=True).limit(1).execute()
+                            
+                            should_log_deviation = True
+                            if last_dev_res.data:
+                                last_dev_time = datetime.datetime.fromisoformat(last_dev_res.data[0]["created_at"].replace("Z", "+00:00"))
+                                if (datetime.datetime.utcnow().replace(tzinfo=datetime.timezone.utc) - last_dev_time).total_seconds() < 300:
+                                    should_log_deviation = False
+                                    
+                            if should_log_deviation:
+                                _create_tracking_event(
+                                    sp, session_id, employee_id, manager_id,
+                                    "ROUTE_DEVIATION", lat, lng, None,
+                                    {"distance_meters": round(dist_to_route, 1)}
+                                )
+                                _send_manager_notif(
+                                    sp, manager_id, employee_id, employee_code,
+                                    "⚠️ Route Deviation", f"{employee_name} is off the planned route."
+                                )
+            except Exception as route_dev_err:
+                logger.warning(f"Error checking route deviation: {route_dev_err}")
+                
+        try:
+            clients_res = sp.rpc("exec_sql", {
+                "sql_query": """
+                SELECT id::text, name as title, company_name, 'Customer' as category, latitude, longitude FROM crm.customers WHERE latitude IS NOT NULL
+                UNION ALL
+                SELECT id::text, name as title, company_name, 'Lead' as category, latitude, longitude FROM crm.leads WHERE latitude IS NOT NULL
+                """
+            }).execute()
+            
+            all_clients = clients_res.data or []
+            for client in all_clients:
+                c_id = client["id"]
+                if client_id and str(c_id) == str(client_id):
+                    continue
+                    
+                c_lat = float(client["latitude"] or 0)
+                c_lng = float(client["longitude"] or 0)
+                c_title = client["title"] or "Client"
+                c_company = client["company_name"] or c_title
+                
+                dist_m = haversine_distance_meters(lat, lng, c_lat, c_lng)
+                if dist_m < 500:
+                    past_alerts = sp.schema("hrms").table("tracking_events").select(
+                        "latitude,longitude,created_at"
+                    ).eq("session_id", session_id).eq("client_id", c_id).in_("event_type", ["NEARBY_CLIENT", "PREVIOUS_CLIENT_NEARBY"]).order("created_at", desc=True).limit(1).execute()
+                    
+                    already_triggered = False
+                    if past_alerts.data:
+                        past_alert_time = past_alerts.data[0]["created_at"]
+                        crumbs_since_alert = sp.schema("hrms").table("tracking_locations").select(
+                            "latitude,longitude"
+                        ).eq("tracking_session_id", session_id).gt("recorded_at", past_alert_time).execute()
+                        
+                        has_left_radius = False
+                        for crumb in (crumbs_since_alert.data or []):
+                            dist_from_client = haversine_distance_meters(c_lat, c_lng, float(crumb["latitude"]), float(crumb["longitude"]))
+                            if dist_from_client > 600:
+                                has_left_radius = True
+                                break
+                                
+                        if not has_left_radius:
+                            already_triggered = True
+                            
+                    if not already_triggered:
+                        visits_check = sp.schema("hrms").table("tracking_events").select("id").eq("session_id", session_id).eq("event_type", "VISIT_COMPLETED").eq("client_id", c_id).limit(1).execute()
+                        is_previous = len(visits_check.data) > 0 if visits_check.data else False
+                        
+                        event_type = "PREVIOUS_CLIENT_NEARBY" if is_previous else "NEARBY_CLIENT"
+                        title = "🔄 Previous Client Nearby" if is_previous else "📍 Nearby Client"
+                        message = f"{c_title} (previously visited) is {round(dist_m)}m away." if is_previous else f"{c_title} is {round(dist_m)}m away."
+                        
+                        _create_tracking_event(
+                            sp, session_id, employee_id, manager_id,
+                            event_type, lat, lng, c_id,
+                            {"client_name": c_title, "company_name": c_company, "distance_meters": round(dist_m)}
+                        )
+                        _send_manager_notif(
+                            sp, manager_id, employee_id, employee_code,
+                            title, message
+                        )
+        except Exception as nearby_err:
+            logger.warning(f"Error checking nearby clients: {nearby_err}")
+            
+    except Exception as e:
+        logger.error(f"Error in tracking event processor: {e}")
+
 def _resolve_emp(sp_client, auth_uid: str) -> str:
     """Resolve auth UID → hrms.employees.employee_id."""
     try:
@@ -945,13 +1296,17 @@ async def start_tracking_session(
     except Exception as e:
         logger.debug(f"stale session close: {e}")
 
-    session_data: Dict[str, Any] = {
-        "employee_id": emp_id, "status": "active",
-        "start_time": now_iso, "updated_at": now_iso, "total_distance": 0,
-    }
-    if lat is not None and lng is not None:
-        session_data["start_latitude"] = float(lat)
-        session_data["start_longitude"] = float(lng)
+    manager_id = None
+    employee_name = "Sales Executive"
+    employee_code = "EMP000012"
+    try:
+        emp_res = sp.schema("hrms").table("employees").select("reporting_manager, name, employee_code").eq("employee_id", emp_id).limit(1).execute()
+        if emp_res.data:
+            manager_id = emp_res.data[0]["reporting_manager"]
+            employee_name = emp_res.data[0]["name"] or employee_name
+            employee_code = emp_res.data[0]["employee_code"] or employee_code
+    except Exception as mgr_err:
+        logger.warning(f"Error finding employee manager on session start: {mgr_err}")
 
     # Optional Client Destination details for Client Visits
     client_id = payload.get("client_id")
@@ -960,6 +1315,20 @@ async def start_tracking_session(
     client_address = payload.get("client_address")
     client_lat = payload.get("client_latitude") or payload.get("client_lat")
     client_lng = payload.get("client_longitude") or payload.get("client_lng")
+
+    # Fetch OSRM planned route polyline
+    route_polyline = ""
+    if lat is not None and lng is not None and client_lat is not None and client_lng is not None:
+        route_polyline = get_osrm_route_polyline(float(lat), float(lng), float(client_lat), float(client_lng))
+
+    session_data: Dict[str, Any] = {
+        "employee_id": emp_id, "status": "active",
+        "start_time": now_iso, "updated_at": now_iso, "total_distance": 0,
+        "manager_id": manager_id, "route_polyline": route_polyline
+    }
+    if lat is not None and lng is not None:
+        session_data["start_latitude"] = float(lat)
+        session_data["start_longitude"] = float(lng)
 
     full_session_data = dict(session_data)
     if client_id:
@@ -988,7 +1357,23 @@ async def start_tracking_session(
             else:
                 raise db_err
         session = res.data[0] if res.data else session_data
-        return {"success": True, "session_id": session.get("id"), "employee_id": emp_id}
+        session_id = session.get("id")
+        
+        # Log VISIT_STARTED event and send manager notification
+        try:
+            _create_tracking_event(
+                sp, session_id, emp_id, manager_id,
+                "VISIT_STARTED", lat, lng, client_id,
+                {"client_name": client_name or "Client", "company_name": company_name or "Company"}
+            )
+            _send_manager_notif(
+                sp, manager_id, emp_id, employee_code,
+                "🟢 Visit Started", f"{employee_name} has started a visit to {client_name or 'Client'}."
+            )
+        except Exception as event_err:
+            logger.warning(f"Error logging visit started event: {event_err}")
+            
+        return {"success": True, "session_id": session_id, "employee_id": emp_id}
     except Exception as e:
         logger.error(f"tracking session start error: {e}")
         return {"success": False, "error": str(e)}
@@ -1019,6 +1404,15 @@ async def push_live_location(
     speed = payload.get("speed")
     heading = payload.get("heading")
     session_id = payload.get("session_id")
+    
+    if not session_id:
+        # Resolve active session if none provided
+        try:
+            active_sess_res = sp.schema("hrms").table("tracking_sessions").select("id").eq("employee_id", emp_id).eq("status", "active").limit(1).execute()
+            if active_sess_res.data:
+                session_id = active_sess_res.data[0]["id"]
+        except Exception as active_err:
+            logger.debug(f"Failed to lookup active session: {active_err}")
 
     if lat == 0 and lng == 0:
         return {"success": False, "skipped": True, "reason": "zero_coords"}
@@ -1087,7 +1481,20 @@ async def push_live_location(
         except Exception as e:
             logger.debug(f"session distance update: {e}")
 
-    return {"success": True, "employee_id": emp_id, "lat": lat, "lng": lng}
+        # Process tracking geofencing/stops/deviations/nearby alerts
+        try:
+            employee_name = payload.get("name") or "Sales Executive"
+            employee_code = payload.get("employee_code") or "EMP000012"
+            emp_info = sp.schema("hrms").table("employees").select("name, employee_code").eq("employee_id", emp_id).limit(1).execute()
+            if emp_info.data:
+                employee_name = emp_info.data[0]["name"] or employee_name
+                employee_code = emp_info.data[0]["employee_code"] or employee_code
+                
+            _process_tracking_events(sp, emp_id, employee_name, employee_code, session_id, lat, lng, accuracy)
+        except Exception as event_err:
+            logger.warning(f"Error processing tracking events: {event_err}")
+
+    return {"success": True, "employee_id": emp_id, "lat": lat, "lng": lng, "session_id": session_id}
 
 
 @router.post("/location/session/end")
@@ -1111,6 +1518,27 @@ async def end_tracking_session(
     if lat is not None and lng is not None:
         upd["end_latitude"] = float(lat)
         upd["end_longitude"] = float(lng)
+
+    # Fetch details before ending the session to trigger VISIT_COMPLETED
+    client_name = "Client"
+    client_id = None
+    manager_id = None
+    resolved_session_id = session_id
+    try:
+        sess_query = sp.schema("hrms").table("tracking_sessions").select("id, client_name, client_id, manager_id").eq("employee_id", emp_id)
+        if session_id:
+            sess_query = sess_query.eq("id", session_id)
+        else:
+            sess_query = sess_query.eq("status", "active")
+        sess_res = sess_query.limit(1).execute()
+        if sess_res.data:
+            client_name = sess_res.data[0].get("client_name") or "Client"
+            client_id = sess_res.data[0].get("client_id")
+            manager_id = sess_res.data[0].get("manager_id")
+            resolved_session_id = sess_res.data[0]["id"]
+    except Exception as fetch_sess_err:
+        logger.warning(f"Could not load session details before end: {fetch_sess_err}")
+
     try:
         q = sp.schema("hrms").table("tracking_sessions").update(upd).eq("employee_id", emp_id)
         if session_id:
@@ -1128,7 +1556,29 @@ async def end_tracking_session(
     except Exception as e:
         logger.debug(f"mark offline: {e}")
 
-    return {"success": True, "employee_id": emp_id, "session_id": session_id}
+    # Log VISIT_COMPLETED tracking event and send notification
+    if resolved_session_id:
+        try:
+            employee_name = "Sales Executive"
+            employee_code = "EMP000012"
+            emp_info = sp.schema("hrms").table("employees").select("name, employee_code").eq("employee_id", emp_id).limit(1).execute()
+            if emp_info.data:
+                employee_name = emp_info.data[0]["name"] or employee_name
+                employee_code = emp_info.data[0]["employee_code"] or employee_code
+                
+            _create_tracking_event(
+                sp, resolved_session_id, emp_id, manager_id,
+                "VISIT_COMPLETED", lat, lng, client_id,
+                {"client_name": client_name}
+            )
+            _send_manager_notif(
+                sp, manager_id, emp_id, employee_code,
+                "✅ Visit Completed", f"{employee_name} has completed the visit to {client_name}."
+            )
+        except Exception as event_err:
+            logger.warning(f"Error logging visit completed event: {event_err}")
+
+    return {"success": True, "employee_id": emp_id, "session_id": resolved_session_id}
 
 
 @router.get("/location/history/{employee_id}")

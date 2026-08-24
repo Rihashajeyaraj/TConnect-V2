@@ -15,10 +15,11 @@ import {
   Map
 } from "lucide-react";
 import { useToast } from "../../common/ToastContext.jsx";
-import { attendanceAPI, spatialAPI, crmAPI, customerAPI } from "../../services/api.js";
+import { attendanceAPI, spatialAPI, crmAPI, customerAPI, settingsAPI } from "../../services/api.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { exportToExcel, exportToCSV } from "../../utils/exportUtils.js";
 import { FaceLivenessEngine, LIVENESS_CHALLENGES } from "./FaceLivenessEngine.js";
+import { loadGoogleMaps } from "../../utils/loadGoogleMaps.js";
 import { filterUserItems } from "../../utils/userScope.js";
 import { extractCoordsFromUrlOrString } from "./SmartClientMap.jsx";
 
@@ -127,8 +128,12 @@ export default function Attendance() {
   const canvasRef = useRef(null);
   const streamRef = useRef(null);
   const mapContainerRef = useRef(null);
-  const leafletInstanceRef = useRef(null);
+  const googleMapRef = useRef(null);
+  const mapMarkerRef = useRef(null);
   const engineRef = useRef(new FaceLivenessEngine());
+
+  const [googleMapsLoaded, setGoogleMapsLoaded] = useState(false);
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState("");
 
   // ── GPS Tracking refs (never start on mount — only on clock-in) ────────────
   const gpsWatchRef = useRef(null);         // watchPosition ID
@@ -317,6 +322,20 @@ export default function Attendance() {
 
   useEffect(() => {
     captureLocation();
+
+    settingsAPI.getConfig()
+      .then(res => {
+        const key = res?.data?.google_maps_api_key;
+        if (key) {
+          setGoogleMapsApiKey(key);
+          loadGoogleMaps(key)
+            .then(() => setGoogleMapsLoaded(true))
+            .catch(err => console.error("Failed to load Google Maps SDK:", err));
+        }
+      })
+      .catch(err => {
+        console.warn("Failed to load map configuration:", err);
+      });
   }, []);
 
   // Today log locator
@@ -765,36 +784,56 @@ export default function Attendance() {
     }
   };
 
-  // Leaflet map renderer hook
+  // Google Maps renderer hook
   useEffect(() => {
-    if (!selectedLogForMap || !mapContainerRef.current || !window.L) return;
-    if (leafletInstanceRef.current) {
-      leafletInstanceRef.current.remove();
-      leafletInstanceRef.current = null;
-    }
-    const L = window.L;
+    if (!selectedLogForMap || !mapContainerRef.current || !googleMapsLoaded) return;
+    
     const lat = selectedLogForMap.latitude || gpsCoords.lat;
     const lng = selectedLogForMap.longitude || gpsCoords.lng;
 
-    const map = L.map(mapContainerRef.current, {
-      center: [lat, lng],
-      zoom: 15,
-      zoomControl: false,
-    });
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png").addTo(map);
-    L.marker([lat, lng])
-      .bindPopup(`<b>${userName}</b><br/>Login: ${selectedLogForMap.loginTime}`)
-      .addTo(map)
-      .openPopup();
+    if (mapMarkerRef.current) {
+      mapMarkerRef.current.setMap(null);
+      mapMarkerRef.current = null;
+    }
 
-    leafletInstanceRef.current = map;
+    const center = { lat, lng };
+
+    const map = new window.google.maps.Map(mapContainerRef.current, {
+      center: center,
+      zoom: 15,
+      zoomControl: true,
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
+    });
+
+    googleMapRef.current = map;
+
+    const infoContent = `<div style="font-family:sans-serif;font-size:12px;color:#1e293b;padding:2px;">
+      <b>${userName}</b><br/>Login: ${selectedLogForMap.loginTime}
+    </div>`;
+
+    const infoWindow = new window.google.maps.InfoWindow({
+      content: infoContent,
+      position: center,
+    });
+
+    const marker = new window.google.maps.Marker({
+      position: center,
+      map: map,
+    });
+    
+    mapMarkerRef.current = marker;
+    infoWindow.open(map, marker);
+
     return () => {
-      if (leafletInstanceRef.current) {
-        leafletInstanceRef.current.remove();
-        leafletInstanceRef.current = null;
+      if (mapMarkerRef.current) {
+        mapMarkerRef.current.setMap(null);
+        mapMarkerRef.current = null;
       }
+      googleMapRef.current = null;
     };
-  }, [selectedLogForMap]);
+  }, [selectedLogForMap, googleMapsLoaded]);
 
   return (
     <div className="min-h-screen w-full bg-slate-50 text-slate-800 font-sans p-4 sm:p-6 lg:p-8 space-y-6">

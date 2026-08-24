@@ -81,11 +81,25 @@ def on_startup():
             -- Add ownership tracking columns to crm.opportunities
             ALTER TABLE crm.opportunities ADD COLUMN IF NOT EXISTS generated_by_employee_id TEXT;
             ALTER TABLE crm.opportunities ADD COLUMN IF NOT EXISTS generated_by_employee_name TEXT;
+
+            -- Add missing columns to system.reports_eod
+            ALTER TABLE system.reports_eod ADD COLUMN IF NOT EXISTS leads_generated INTEGER DEFAULT 0;
+            ALTER TABLE system.reports_eod ADD COLUMN IF NOT EXISTS clients_interested INTEGER DEFAULT 0;
+            ALTER TABLE system.reports_eod ADD COLUMN IF NOT EXISTS followups_scheduled INTEGER DEFAULT 0;
             """
             client.rpc("exec_sql", {"sql_query": sql}).execute()
-            print("✅ Database ownership reassignment columns checked/added.")
+            print("[OK] Database startup columns checked/added.")
+
+            # Run tracking events migration
+            import os
+            migration_path = os.path.join("backend", "migrations", "create_tracking_events.sql")
+            if os.path.exists(migration_path):
+                with open(migration_path, "r", encoding="utf-8") as f:
+                    migration_sql = f.read()
+                client.rpc("exec_sql", {"sql_query": migration_sql}).execute()
+                print("[OK] Real-time tracking events migration executed successfully.")
     except Exception as e:
-        print(f"❌ Database startup migration failed: {e}")
+        print(f"[ERROR] Database startup migration failed: {e}")
 
 
 @app.get("/", include_in_schema=False)

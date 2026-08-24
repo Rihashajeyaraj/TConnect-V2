@@ -2,14 +2,16 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import {
   MapPin, Navigation, Compass, Search, Phone, Calendar,
   CheckCircle2, Clock, User, Building2, X, Plus,
-  Navigation2, Bell, Sparkles, PhoneCall, Check, Map,
+  Navigation2, Bell, Sparkles, PhoneCall, Check, Map as MapIcon,
   ChevronRight, AlertCircle, Loader2, Route, Target,
   ArrowLeft, List, Radio, Activity, AlertTriangle
 } from 'lucide-react'
-import { crmAPI, customerAPI, visitAPI, spatialAPI, authAPI, settingsAPI } from '../../services/api.js'
+import { crmAPI, customerAPI, visitAPI, spatialAPI, authAPI, settingsAPI, auditAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser, { getStoredUser } from '../../hooks/useCurrentUser.js'
+import { loadGoogleMaps } from '../../utils/loadGoogleMaps.js'
 import { filterUserItems } from '../../utils/userScope.js'
+import { detectRouteClients, shouldNotify } from '../../utils/routeProximityUtils.js'
 
 // ─── Configuration ────────────────────────────────────────────────────────────
 // Minimum GPS movement (km) before re-fetching OSRM route (debounce)
@@ -119,6 +121,84 @@ function alertTypeLabel(alertType) {
   return { label: 'Client on Route', color: 'from-emerald-600 to-teal-600', border: 'border-emerald-500/25' }
 }
 
+// ─── Custom HTML Map Marker for Google Maps Overlay ───────────────────────────
+let HTMLMapMarker = null
+
+function initializeHTMLMapMarker() {
+  if (HTMLMapMarker) return
+  HTMLMapMarker = class extends window.google.maps.OverlayView {
+    constructor(latlng, map, html, onClick, anchor = 'center') {
+      super()
+      this.latlng = latlng
+      this.html = html
+      this.onClick = onClick
+      this.anchor = anchor
+      this.div = null
+      this.setMap(map)
+    }
+
+    onAdd() {
+      const div = document.createElement('div')
+      div.style.position = 'absolute'
+      div.style.cursor = 'pointer'
+      div.innerHTML = this.html
+      
+      if (this.onClick) {
+        div.addEventListener('click', (e) => {
+          e.stopPropagation()
+          this.onClick(e)
+        })
+      }
+
+      window.google.maps.event.addDomListener(div, 'mousedown', (e) => {
+        e.stopPropagation()
+      })
+      window.google.maps.event.addDomListener(div, 'contextmenu', (e) => {
+        e.stopPropagation()
+      })
+
+      this.div = div
+      const panes = this.getPanes()
+      panes.overlayImage.appendChild(div)
+    }
+
+    draw() {
+      if (!this.div) return
+      const projection = this.getProjection()
+      if (!projection) return
+      const point = projection.fromLatLngToDivPixel(this.latlng)
+      if (point) {
+        const width = this.div.offsetWidth || 32
+        const height = this.div.offsetHeight || 32
+        this.div.style.left = (point.x - width / 2) + 'px'
+        if (this.anchor === 'bottom') {
+          this.div.style.top = (point.y - height) + 'px'
+        } else {
+          this.div.style.top = (point.y - height / 2) + 'px'
+        }
+      }
+    }
+
+    onRemove() {
+      if (this.div) {
+        if (this.div.parentNode) {
+          this.div.parentNode.removeChild(this.div)
+        }
+        this.div = null
+      }
+    }
+
+    setLatLng(latlng) {
+      this.latlng = latlng
+      this.draw()
+    }
+
+    getPosition() {
+      return this.latlng
+    }
+  }
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function SmartClientMap() {
   const { showToast } = useToast()
@@ -126,16 +206,22 @@ export default function SmartClientMap() {
 
   // Refs
   const mapContainerRef  = useRef(null)
-  const leafletMapRef    = useRef(null)
-  const markersGroupRef  = useRef(null)
-  const polylinesGroupRef = useRef(null)
+  const googleMapRef     = useRef(null)
   const execMarkerRef    = useRef(null)
-  const dismissedAlerts  = useRef(new Set())    // session-scoped dedupe
+  const activeMarkersRef = useRef([])
+  const activePolylinesRef = useRef([])
+  const accuracyCircleRef = useRef(null)
+  const infoWindowRef    = useRef(null)
+  const dismissedAlerts  = useRef(new Set())    // session-scoped dismissed ids
+  const notifiedClientsMap = useRef(new globalThis.Map())  // Map<id,{lat,lng}> for hysteresis deduplication
+  const execPosRef        = useRef(DEFAULT_CENTER) // latest GPS pos, no re-render dep
+  const allCandidatesRef  = useRef([])             // latest candidates, no re-render dep
   const lastRoutePos     = useRef(null)         // last OSRM fetch position
   const routeFetchTimer  = useRef(null)         // debounce timer id
   const lastTelemetryUpdate = useRef(0)         // throttled updates tracking
 
   // ── GPS & Map ────────────────────────────────────────────────────────────
+  const [googleMapsApiKey, setGoogleMapsApiKey] = useState('')
   const [mapLoaded,    setMapLoaded]    = useState(false)
   const [gpsStatus,    setGpsStatus]    = useState('loading') // 'loading'|'active'|'denied'|'unavailable'
   const [executivePos, setExecutivePos] = useState(DEFAULT_CENTER)
@@ -168,39 +254,31 @@ export default function SmartClientMap() {
 
   // ── On-route alerts ───────────────────────────────────────────────────────
   const [onRouteClients, setOnRouteClients] = useState([])     // [{...entity, alertType, distToRoute}]
-  const [showRouteAlerts, setShowRouteAlerts] = useState(true) // toggle visibility
-  const [routeAlertRadius, setRouteAlertRadius] = useState(2.0) // fallback default
+  const [showRouteAlerts, setShowRouteAlerts] = useState(true) // desktop toggle
+  const [showAlertSheet,  setShowAlertSheet]  = useState(false) // mobile bottom drawer
 
   // Load config dynamically on mount
   useEffect(() => {
     settingsAPI.getConfig()
       .then(res => {
-        const radius = res?.data?.client_route_alert_radius_km
-        if (radius != null && !isNaN(radius)) {
-          setRouteAlertRadius(Number(radius))
-        }
         const threshold = res?.data?.gps_accuracy_threshold
         if (threshold != null && !isNaN(threshold)) {
           setGpsAccuracyThreshold(Number(threshold))
+        }
+        const key = res?.data?.google_maps_api_key
+        if (key) {
+          setGoogleMapsApiKey(key)
+          loadGoogleMaps(key)
+            .then(() => {
+              initializeHTMLMapMarker()
+              setMapLoaded(true)
+            })
+            .catch(err => console.error('Failed to load Google Maps SDK:', err))
         }
       })
       .catch(err => {
         console.warn('Failed to load map configuration:', err)
       })
-  }, [])
-
-
-  // ─── 1. Load Leaflet ────────────────────────────────────────────────────
-  useEffect(() => {
-    if (window.L) { setMapLoaded(true); return }
-    const css = document.createElement('link')
-    css.rel = 'stylesheet'
-    css.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
-    document.head.appendChild(css)
-    const js = document.createElement('script')
-    js.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
-    js.onload = () => setMapLoaded(true)
-    document.body.appendChild(js)
   }, [])
 
   // ─── 2. GPS watchPosition ───────────────────────────────────────────────
@@ -478,8 +556,9 @@ export default function SmartClientMap() {
     setNavDestination({ lat: selectedStop.latitude, lng: selectedStop.longitude })
     lastRoutePos.current = { lat: executivePos.lat, lng: executivePos.lng }
     showToast(`Navigation started to ${selectedStop.title}`, 'success')
-    if (leafletMapRef.current) {
-      leafletMapRef.current.flyTo([executivePos.lat, executivePos.lng], 15)
+    if (googleMapRef.current) {
+      googleMapRef.current.panTo({ lat: executivePos.lat, lng: executivePos.lng })
+      googleMapRef.current.setZoom(15)
     }
   }, [selectedStop, executivePos, showToast])
 
@@ -519,51 +598,73 @@ export default function SmartClientMap() {
     }
   }, [executivePos, navMode, navDestination, routePath, fetchRoute])
 
-  // ─── 10. On-route client detection ─────────────────────────────────────
+  // Keep refs in sync with latest reactive values (no extra renders)
+  useEffect(() => { execPosRef.current = executivePos }, [executivePos])
+  useEffect(() => { allCandidatesRef.current = allCandidates }, [allCandidates])
+
+  // ─── 10. On-route client detection (route-corridor, ahead-only, hysteresis) ───
+  // Deliberately omits executivePos + allCandidates from deps — those are read
+  // via refs so this effect only fires when the ROUTE or DESTINATION changes,
+  // not on every GPS tick (which caused the infinite re-render loop).
   useEffect(() => {
     if (routePath.length < 2) {
       setOnRouteClients([])
       return
     }
 
-    const destId = selectedStop?.id
-    const found  = []
+    const execPos    = execPosRef.current
+    const candidates = allCandidatesRef.current
 
-    for (const entity of allCandidates) {
-      if (!entity.has_exact_coords)     continue
-      if (entity.id === destId)         continue
-      if (dismissedAlerts.current.has(entity.id)) continue
+    const found = detectRouteClients({
+      candidates,
+      routePath,
+      execPos,
+      destId:            selectedStop?.id,
+      completedVisitIds,
+      scheduledVisitIds: scheduledVisitClientIds,
+      dismissedIds:      dismissedAlerts.current,
+    })
 
-      const dist = distanceToPolyline(entity.latitude, entity.longitude, routePath)
-      if (dist > routeAlertRadius) continue
-
-      // Classify alert type
-      let alertType = 'unvisited'
-      if (completedVisitIds.has(entity.id) ||
-          completedVisitIds.has(entity.originalItem?.lead_id) ||
-          completedVisitIds.has(entity.originalItem?.customer_id)) {
-        alertType = 'previous'
-      } else if (scheduledVisitClientIds.has(entity.id) ||
-                 scheduledVisitClientIds.has(entity.originalItem?.lead_id) ||
-                 scheduledVisitClientIds.has(entity.originalItem?.customer_id) ||
-                 entity.category === 'Visit') {
-        alertType = 'scheduled'
-      }
-
-      found.push({ ...entity, alertType, distToRouteKm: dist.toFixed(1) })
-    }
-
-    // Sort: closest to route first
-    found.sort((a, b) => parseFloat(a.distToRouteKm) - parseFloat(b.distToRouteKm))
     setOnRouteClients(found)
-  }, [routePath, allCandidates, selectedStop, completedVisitIds, scheduledVisitClientIds, routeAlertRadius])
+
+    // Notify with hysteresis
+    found.forEach(client => {
+      if (!shouldNotify(client.id, execPos, notifiedClientsMap.current)) return
+
+      const typeLabel =
+        client.alertType === 'previous'  ? '🔄 Previous Client Nearby' :
+        client.alertType === 'scheduled' ? '📅 Scheduled Visit Nearby' : '📍 Nearby Client'
+
+      showToast(
+        `${typeLabel}: ${client.title} — ${client.distToRouteM}m from route`,
+        'info'
+      )
+
+      auditAPI.logEvent({
+        action: 'NEARBY_CLIENT_DETECTED',
+        entity_type: client.category,
+        entity_id: String(client.id),
+        details: {
+          client_name:     client.title,
+          alert_type:      client.alertType,
+          dist_to_route_m: client.distToRouteM,
+          destination:     selectedStop?.title || '',
+          exec_email:      currentUser?.email  || '',
+          exec_name:       currentUser?.name   || '',
+          timestamp:       new Date().toISOString(),
+        }
+      }).catch(() => null)
+    })
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [routePath, selectedStop, completedVisitIds, scheduledVisitClientIds])
 
 
   // ─── 11. View client from route alert ──────────────────────────────────
   const handleViewRouteClient = useCallback((client) => {
     setSelectedEntity(client)
-    if (leafletMapRef.current && client.latitude && client.longitude) {
-      leafletMapRef.current.flyTo([client.latitude, client.longitude], 15)
+    if (googleMapRef.current && client.latitude && client.longitude) {
+      googleMapRef.current.panTo({ lat: client.latitude, lng: client.longitude })
+      googleMapRef.current.setZoom(15)
     }
   }, [])
 
@@ -577,118 +678,187 @@ export default function SmartClientMap() {
     setOnRouteClients(prev => prev.filter(c => c.id !== clientId))
   }, [])
 
-  // ─── 12. Initialize Leaflet map ─────────────────────────────────────────
+  // ─── 12. Initialize Google Map ─────────────────────────────────────────
   useEffect(() => {
-    if (!mapLoaded || !mapContainerRef.current || leafletMapRef.current) return
-    const L   = window.L
-    const map = L.map(mapContainerRef.current, {
-      center: [executivePos.lat, executivePos.lng],
+    if (!mapLoaded || !mapContainerRef.current || googleMapRef.current) return
+
+    const map = new window.google.maps.Map(mapContainerRef.current, {
+      center: { lat: executivePos.lat, lng: executivePos.lng },
       zoom: 14,
-      zoomControl: false,
+      zoomControl: true,
+      zoomControlOptions: {
+        position: window.google.maps.ControlPosition.RIGHT_BOTTOM
+      },
+      mapTypeControl: false,
+      streetViewControl: false,
+      fullscreenControl: false,
     })
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
-      attribution: '&copy; CARTO &copy; OpenStreetMap',
-      maxZoom: 19,
-    }).addTo(map)
-    L.control.zoom({ position: 'bottomright' }).addTo(map)
-    markersGroupRef.current   = L.layerGroup().addTo(map)
-    polylinesGroupRef.current = L.layerGroup().addTo(map)
-    leafletMapRef.current     = map
+
+    googleMapRef.current = map
+
     return () => {
-      if (leafletMapRef.current) { leafletMapRef.current.remove(); leafletMapRef.current = null }
+      if (execMarkerRef.current) {
+        execMarkerRef.current.setMap(null)
+        execMarkerRef.current = null
+      }
+      if (accuracyCircleRef.current) {
+        accuracyCircleRef.current.setMap(null)
+        accuracyCircleRef.current = null
+      }
+      activeMarkersRef.current.forEach(m => m.setMap(null))
+      activeMarkersRef.current = []
+      activePolylinesRef.current.forEach(p => p.setMap(null))
+      activePolylinesRef.current = []
+      googleMapRef.current = null
     }
   }, [mapLoaded])
 
+  const showInfoWindow = (latlng, htmlContent) => {
+    if (!infoWindowRef.current) {
+      infoWindowRef.current = new window.google.maps.InfoWindow()
+    }
+    infoWindowRef.current.setContent(htmlContent)
+    infoWindowRef.current.setPosition(latlng)
+    infoWindowRef.current.open(googleMapRef.current)
+  }
+
   // ─── 13. Update exec marker smoothly ────────────────────────────────────
   useEffect(() => {
-    if (!leafletMapRef.current || !window.L) return
-    const L = window.L
+    if (!googleMapRef.current || !window.google) return
+    const latlng = new window.google.maps.LatLng(executivePos.lat, executivePos.lng)
+    
     if (!execMarkerRef.current) {
-      const icon = L.divIcon({
-        html: `<div class="relative flex items-center justify-center">
-          <span class="animate-ping absolute inline-flex h-8 w-8 rounded-full bg-cyan-400 opacity-75"></span>
-          <div class="relative w-8 h-8 rounded-full bg-cyan-600 border-2 border-white text-white flex items-center justify-center font-black shadow-lg text-xs">👤</div>
-        </div>`,
-        className: 'exec-location-pin', iconSize: [32,32], iconAnchor: [16,16],
-      })
-      execMarkerRef.current = L.marker([executivePos.lat, executivePos.lng], { icon, zIndexOffset: 1000 })
-        .bindPopup('<p class="text-xs font-black text-slate-800">📍 Your Current Location</p>')
-        .addTo(markersGroupRef.current)
+      const html = `<div class="relative flex items-center justify-center">
+        <span class="animate-ping absolute inline-flex h-8 w-8 rounded-full bg-cyan-400 opacity-75"></span>
+        <div class="relative w-8 h-8 rounded-full bg-cyan-600 border-2 border-white text-white flex items-center justify-center font-black shadow-lg text-xs">👤</div>
+      </div>`
+      
+      execMarkerRef.current = new HTMLMapMarker(
+        latlng,
+        googleMapRef.current,
+        html,
+        () => {
+          showInfoWindow(latlng, '<p class="text-xs font-black text-slate-800">📍 Your Location</p>')
+        },
+        'center'
+      )
     } else {
-      execMarkerRef.current.setLatLng([executivePos.lat, executivePos.lng])
+      execMarkerRef.current.setLatLng(latlng)
     }
-    // In nav mode: keep map centred on executive
-    if (navMode && leafletMapRef.current) {
-      leafletMapRef.current.panTo([executivePos.lat, executivePos.lng])
+
+    if (navMode && googleMapRef.current) {
+      googleMapRef.current.panTo(latlng)
     }
-  }, [executivePos, navMode])
+  }, [executivePos, navMode, mapLoaded])
 
   // ─── 14. Redraw destination + on-route markers + polyline ───────────────
   useEffect(() => {
-    if (!leafletMapRef.current || !window.L || !markersGroupRef.current || !polylinesGroupRef.current) return
-    const L = window.L
-    // Clear destination + route markers + accuracy circles (not exec marker)
-    const group = markersGroupRef.current
-    group.eachLayer(layer => {
-      if (layer !== execMarkerRef.current) group.removeLayer(layer)
-    })
-    polylinesGroupRef.current.clearLayers()
+    if (!googleMapRef.current || !window.google) return
 
-    // GPS Accuracy Circle around current position
+    activeMarkersRef.current.forEach(m => m.setMap(null))
+    activeMarkersRef.current = []
+
+    activePolylinesRef.current.forEach(p => p.setMap(null))
+    activePolylinesRef.current = []
+
+    if (accuracyCircleRef.current) {
+      accuracyCircleRef.current.setMap(null)
+      accuracyCircleRef.current = null
+    }
+
+    const map = googleMapRef.current
+
     if (gpsAccuracy && gpsStatus === 'active') {
-      L.circle([executivePos.lat, executivePos.lng], {
-        radius: gpsAccuracy,
-        color: '#06b6d4',
+      accuracyCircleRef.current = new window.google.maps.Circle({
+        strokeColor: '#06b6d4',
+        strokeOpacity: 0.8,
+        strokeWeight: 1,
         fillColor: '#06b6d4',
         fillOpacity: 0.12,
-        weight: 1,
-      }).addTo(group)
-    }
-
-    // Destination marker
-    if (selectedStop?.has_exact_coords) {
-      const destIcon = L.divIcon({
-        html: `<div style="width:36px;height:36px;background:#2563eb;border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 10px rgba(0,0,0,.4)"></div>`,
-        className: '', iconSize: [36,36], iconAnchor: [18,36],
+        map: map,
+        center: { lat: executivePos.lat, lng: executivePos.lng },
+        radius: gpsAccuracy,
       })
-      L.marker([selectedStop.latitude, selectedStop.longitude], { icon: destIcon })
-        .addTo(group)
-        .bindPopup(`<div style="font-size:12px;font-weight:700">${selectedStop.title}<br/><span style="color:#64748b;font-size:10px">${selectedStop.address}</span></div>`)
-        .on('click', () => setSelectedEntity(selectedStop))
     }
 
-    // On-route client markers
+    if (selectedStop?.has_exact_coords) {
+      const destLatLng = new window.google.maps.LatLng(selectedStop.latitude, selectedStop.longitude)
+      const destHtml = `<div style="width:36px;height:36px;background:#2563eb;border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 10px rgba(0,0,0,.4)"></div>`
+      
+      const destMarker = new HTMLMapMarker(
+        destLatLng,
+        map,
+        destHtml,
+        () => {
+          setSelectedEntity(selectedStop)
+          showInfoWindow(destLatLng, `<div style="font-size:12px;font-weight:700">${selectedStop.title}<br/><span style="color:#64748b;font-size:10px">${selectedStop.address}</span></div>`)
+        },
+        'bottom'
+      )
+      activeMarkersRef.current.push(destMarker)
+    }
+
     onRouteClients.forEach(client => {
       const color = client.alertType === 'previous' ? '#7c3aed' : client.alertType === 'scheduled' ? '#d97706' : '#059669'
-      const icon = L.divIcon({
-        html: `<div style="width:28px;height:28px;background:${color};border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.3)">
-          ${client.alertType === 'previous' ? '📌' : client.alertType === 'scheduled' ? '📅' : '⭐'}
-        </div>`,
-        className: '', iconSize: [28,28], iconAnchor: [14,14],
-      })
-      L.marker([client.latitude, client.longitude], { icon })
-        .addTo(group)
-        .bindPopup(`<div style="font-size:11px;font-weight:700">${client.title}<br/><span style="color:#64748b;font-size:10px">${client.distToRouteKm} km from route</span></div>`)
-        .on('click', () => handleViewRouteClient(client))
+      const clientHtml = `<div style="width:28px;height:28px;background:${color};border:2px solid #fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;box-shadow:0 2px 6px rgba(0,0,0,.3)">
+        ${client.alertType === 'previous' ? '📌' : client.alertType === 'scheduled' ? '📅' : '⭐'}
+      </div>`
+      const clientLatLng = new window.google.maps.LatLng(client.latitude, client.longitude)
+      
+      const clientMarker = new HTMLMapMarker(
+        clientLatLng,
+        map,
+        clientHtml,
+        () => {
+          handleViewRouteClient(client)
+          showInfoWindow(clientLatLng, `<div style="font-size:11px;font-weight:700">${client.title}<br/><span style="color:#64748b;font-size:10px">${client.distToRouteM}m from route</span></div>`)
+        },
+        'center'
+      )
+      activeMarkersRef.current.push(clientMarker)
     })
 
-    // Route polyline
     if (routePath.length > 1) {
-      L.polyline(routePath, { color: '#2563eb', weight: 5, opacity: 0.85, lineCap: 'round', lineJoin: 'round' })
-        .addTo(polylinesGroupRef.current)
-      // Dashed off-route overlay if applicable
+      const pathCoords = routePath.map(pt => ({ lat: pt[0], lng: pt[1] }))
+      
+      const mainPolyline = new window.google.maps.Polyline({
+        path: pathCoords,
+        geodesic: true,
+        strokeColor: '#2563eb',
+        strokeOpacity: 0.85,
+        strokeWeight: 5,
+        map: map,
+      })
+      activePolylinesRef.current.push(mainPolyline)
+
       if (offRoute) {
-        L.polyline(routePath, { color: '#ef4444', weight: 3, opacity: 0.6, dashArray: '8 6' })
-          .addTo(polylinesGroupRef.current)
+        const offRoutePolyline = new window.google.maps.Polyline({
+          path: pathCoords,
+          geodesic: true,
+          strokeColor: '#ef4444',
+          strokeOpacity: 0.8,
+          strokeWeight: 3,
+          icons: [{
+            icon: {
+              path: 'M 0,-1 0,1',
+              strokeOpacity: 1,
+              scale: 3,
+            },
+            offset: '0',
+            repeat: '20px',
+          }],
+          map: map,
+        })
+        activePolylinesRef.current.push(offRoutePolyline)
       }
     }
-  }, [selectedStop, onRouteClients, routePath, offRoute, handleViewRouteClient, executivePos, gpsAccuracy, gpsStatus])
+  }, [selectedStop, onRouteClients, routePath, offRoute, handleViewRouteClient, executivePos, gpsAccuracy, gpsStatus, mapLoaded])
 
-  // ─── Render ──────────────────────────────────────────────────────────────
+  // ─── Render ──────────────────────────────────────────────────────────────────
   const visibleAlerts = onRouteClients.filter(c => !dismissedAlerts.current.has(c.id))
 
   return (
-    <div className="relative w-full h-[88vh] rounded-3xl overflow-hidden border border-slate-200 shadow-xl bg-slate-50 font-sans">
+    <div className="relative w-full h-[100dvh] md:h-[88vh] rounded-none md:rounded-3xl overflow-hidden border-0 md:border border-slate-200 shadow-xl bg-slate-50 font-sans">
 
       {/* ══ MAP CANVAS ══ */}
       <div ref={mapContainerRef} className="w-full h-full z-10" />
@@ -697,367 +867,356 @@ export default function SmartClientMap() {
       {gpsStatus === 'denied' && (
         <div className="absolute top-0 left-0 right-0 z-[1100] bg-rose-600 text-white text-xs font-extrabold px-4 py-2.5 flex items-center gap-2 shadow-lg">
           <AlertCircle size={14} className="flex-shrink-0" />
-          Location permission is required to use Smart Map. Please enable GPS access in your browser settings.
+          Location permission required. Enable GPS in browser settings.
         </div>
       )}
       {gpsStatus === 'unavailable' && (
         <div className="absolute top-0 left-0 right-0 z-[1100] bg-amber-500 text-white text-xs font-extrabold px-4 py-2.5 flex items-center gap-2 shadow-lg">
           <AlertCircle size={14} className="flex-shrink-0" />
-          GPS is unavailable on this device. Location features are disabled.
+          GPS unavailable on this device.
         </div>
       )}
 
-      {/* ══ TOP CONTROL BAR ══ */}
-      <div className={`absolute left-4 right-4 md:left-6 md:right-auto md:w-[420px] z-[1000] ${gpsStatus !== 'active' && gpsStatus !== 'loading' ? 'top-12' : 'top-4'}`}>
-        {/* A. Low GPS Accuracy Alert Banner */}
+      {/* ══ TOP SEARCH BAR ══ */}
+      <div className={`absolute left-2 right-2 sm:left-4 sm:right-4 md:left-6 md:right-auto md:w-[400px] z-[1000] ${
+        gpsStatus !== 'active' && gpsStatus !== 'loading' ? 'top-11' : 'top-2 sm:top-3'
+      }`}>
+        {/* Low accuracy banner */}
         {gpsStatus === 'active' && gpsAccuracy && gpsAccuracyThreshold && gpsAccuracy > gpsAccuracyThreshold && (
-          <div className="bg-rose-600 text-white text-[11px] font-black p-2.5 rounded-xl shadow-lg mb-2 flex items-center gap-1.5 border border-rose-500 animate-pulse">
-            <AlertTriangle size={13} className="flex-shrink-0" />
-            <span>GPS location accuracy is low. Move outdoors/open the location services and try again.</span>
+          <div className="bg-rose-600/95 text-white text-[10px] font-black px-3 py-1.5 rounded-xl shadow-lg mb-1.5 flex items-center gap-1.5 animate-pulse">
+            <AlertTriangle size={11} className="flex-shrink-0" />
+            GPS accuracy low — move outdoors.
           </div>
         )}
 
-        <div className="bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200/80 p-3 space-y-2">
-
-          {/* Search row */}
-          <div className="flex items-center gap-2">
-            {/* GPS indicator */}
-            <div className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 ${
-              gpsStatus === 'active'   ? 'bg-cyan-100' :
-              gpsStatus === 'loading'  ? 'bg-slate-100' :
-              'bg-rose-100'
+        <div className="bg-white/96 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-200/90 overflow-hidden">
+          {/* Main search row */}
+          <div className="flex items-center gap-2 px-2.5 py-2">
+            <div className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ${
+              gpsStatus === 'active' ? 'bg-cyan-50' : gpsStatus === 'loading' ? 'bg-slate-50' : 'bg-rose-50'
             }`}>
               {gpsStatus === 'loading'
-                ? <Loader2 size={14} className="text-slate-400 animate-spin" />
+                ? <Loader2 size={13} className="text-slate-400 animate-spin" />
                 : gpsStatus === 'active'
-                ? <Radio size={14} className="text-cyan-600" />
-                : <AlertCircle size={14} className="text-rose-500" />
-              }
+                ? <Radio size={13} className="text-cyan-500" />
+                : <AlertCircle size={13} className="text-rose-500" />}
             </div>
-
-            {/* Search input */}
             <div className="relative flex-1">
-              <Search size={13} className="text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+              <Search size={12} className="text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
               <input
-                type="text"
-                value={searchQuery}
+                type="text" value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
                 onKeyDown={e => e.key === 'Escape' && setSearchQuery('')}
-                placeholder="Search lead, customer, company…"
-                className="w-full h-9 bg-slate-50 border border-slate-100 rounded-xl pl-9 pr-3 text-xs font-bold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:bg-white transition"
+                placeholder="Search lead or customer…"
+                className="w-full h-8 bg-slate-50 border border-slate-100 rounded-xl pl-8 pr-3 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:bg-white transition placeholder:text-slate-300"
               />
               {searchQuery && (
                 <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500">
-                  <X size={12} />
+                  <X size={11} />
                 </button>
               )}
             </div>
             <button
               onClick={() => setShowAddModal(true)}
-              className="w-9 h-9 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 transition flex-shrink-0 cursor-pointer"
-              title="Browse all leads & customers"
+              className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 transition flex-shrink-0 cursor-pointer"
             >
-              <List size={15} />
+              <List size={14} />
             </button>
           </div>
 
-          {/* GPS Accuracy display */}
+          {/* GPS accuracy sub-row */}
           {gpsStatus === 'active' && gpsAccuracy && (
-            <div className="flex items-center gap-1 text-[10px] text-cyan-600 font-bold px-1 select-none">
-              <Compass size={11} className="animate-spin-slow" />
-              <span>GPS Accuracy: {Math.round(gpsAccuracy)} m</span>
-              {gpsAccuracy <= gpsAccuracyThreshold ? (
-                <span className="text-[9px] text-emerald-500 bg-emerald-50 px-1 py-0.5 rounded ml-auto">Precise</span>
-              ) : (
-                <span className="text-[9px] text-rose-500 bg-rose-50 px-1 py-0.5 rounded ml-auto flex items-center gap-0.5">⚠️ Poor</span>
-              )}
+            <div className="px-3 pb-1.5 flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold border-t border-slate-50">
+              <Compass size={9} />
+              <span>GPS {Math.round(gpsAccuracy)}m</span>
+              <span className={`ml-auto px-1.5 py-0.5 rounded text-[9px] font-black ${
+                gpsAccuracy <= gpsAccuracyThreshold ? 'text-emerald-600 bg-emerald-50' : 'text-rose-500 bg-rose-50'
+              }`}>
+                {gpsAccuracy <= gpsAccuracyThreshold ? 'Precise' : '⚠️ Poor'}
+              </span>
+              {navMode && <span className="ml-1 text-blue-500 font-black flex items-center gap-1"><Activity size={9} className="animate-pulse" />Nav</span>}
             </div>
           )}
 
-          {/* Search suggestions dropdown */}
+          {/* Suggestions */}
           {searchSuggestions.length > 0 && searchQuery && (
-            <div className="bg-white rounded-xl shadow-2xl border border-slate-100 max-h-64 overflow-y-auto divide-y divide-slate-50">
+            <div className="border-t border-slate-100 max-h-52 overflow-y-auto divide-y divide-slate-50">
               {searchSuggestions.map(item => (
-                <div
-                  key={item.id}
-                  onClick={() => handleSelectStop(item)}
-                  className="p-2.5 hover:bg-blue-50 cursor-pointer flex items-center justify-between gap-2 transition"
-                >
+                <div key={item.id} onClick={() => handleSelectStop(item)}
+                  className="px-3 py-2.5 hover:bg-blue-50 cursor-pointer flex items-center justify-between gap-2">
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-1.5">
-                      <span className={`text-[9px] font-black border px-1.5 py-0.5 rounded uppercase flex-shrink-0 ${categoryColor(item.category)}`}>
-                        {item.category}
-                      </span>
-                      <h4 className="text-xs font-black text-slate-900 truncate">{item.title}</h4>
+                      <span className={`text-[8px] font-black border px-1 py-0.5 rounded uppercase flex-shrink-0 ${categoryColor(item.category)}`}>{item.category}</span>
+                      <h4 className="text-xs font-bold text-slate-900 truncate">{item.title}</h4>
                     </div>
-                    <p className="text-[10px] text-slate-400 font-semibold mt-0.5 truncate">{item.address}</p>
+                    <p className="text-[10px] text-slate-400 mt-0.5 truncate">{item.address}</p>
                   </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    {item.has_exact_coords
-                      ? <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">📍 {item.distanceKm} km</span>
-                      : <span className="text-[9px] font-black text-rose-500 bg-rose-50 px-1.5 py-0.5 rounded">No coords</span>
-                    }
-                    <ChevronRight size={13} className="text-slate-300" />
-                  </div>
+                  {item.has_exact_coords
+                    ? <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded flex-shrink-0">{item.distanceKm}km</span>
+                    : <span className="text-[9px] font-black text-rose-400 bg-rose-50 px-1.5 py-0.5 rounded flex-shrink-0">No loc</span>}
                 </div>
               ))}
-              {dataLoading && (
-                <div className="p-2.5 text-center text-xs text-slate-400 font-bold flex items-center justify-center gap-1.5">
-                  <Loader2 size={12} className="animate-spin" /> Loading…
-                </div>
-              )}
             </div>
           )}
           {searchQuery && !dataLoading && searchSuggestions.length === 0 && (
-            <p className="text-[11px] text-slate-400 font-bold px-1 pb-1">No results found for "{searchQuery}"</p>
+            <p className="px-3 py-2 text-[11px] text-slate-400 font-semibold border-t border-slate-50">No results for "{searchQuery}"</p>
           )}
         </div>
       </div>
 
-      {/* ══ ROUTE INFORMATION PANEL ══ */}
+      {/* ══ DESKTOP: ROUTE PANEL (top-left below search) ══ */}
       {selectedStop && (
-        <div className="absolute z-[1000] left-4 right-4 md:left-6 md:right-auto md:w-[420px]"
-          style={{ top: gpsStatus !== 'active' && gpsStatus !== 'loading' ? '11rem' : '9rem' }}>
-          <div className="bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700 p-3.5 space-y-2.5 animate-slideDown">
-
-            {/* Destination header */}
+        <div className="hidden md:block absolute z-[1000] left-6 w-[400px]"
+          style={{ top: gpsStatus !== 'active' && gpsStatus !== 'loading' ? '10.5rem' : '8.5rem' }}>
+          <div className="bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700/80 p-3.5 space-y-3 animate-slideDown">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Destination</p>
-                <h3 className="text-sm font-black text-white truncate mt-0.5">{selectedStop.title}</h3>
-                {selectedStop.contact_person && (
-                  <p className="text-[11px] text-slate-400 font-semibold">{selectedStop.contact_person}</p>
-                )}
-                <p className="text-[10px] text-slate-500 font-semibold truncate">{selectedStop.address}</p>
-                {selectedStop.has_exact_coords && (
-                  <p className="text-[9px] text-slate-600 font-mono mt-0.5">
-                    {selectedStop.latitude?.toFixed(5)}, {selectedStop.longitude?.toFixed(5)}
-                  </p>
-                )}
+                <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider mb-0.5">Destination</p>
+                <h3 className="text-sm font-black text-white truncate">{selectedStop.title}</h3>
+                {selectedStop.contact_person && <p className="text-[11px] text-slate-400">{selectedStop.contact_person}</p>}
+                <p className="text-[10px] text-slate-500 truncate">{selectedStop.address}</p>
               </div>
-              <button
-                onClick={() => {
-                  setSelectedStop(null); setRoutePath([]); setRouteDetails(null)
-                  setRouteStatus('idle'); setNavMode(false); setOnRouteClients([])
-                  setSelectedEntity(null)
-                }}
-                className="p-1.5 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition flex-shrink-0"
-              >
+              <button onClick={() => { setSelectedStop(null); setRoutePath([]); setRouteDetails(null); setRouteStatus('idle'); setNavMode(false); setOnRouteClients([]); setSelectedEntity(null) }}
+                className="p-1.5 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition flex-shrink-0">
                 <X size={14} />
               </button>
             </div>
-
-            {/* Route metrics loading/fallback messages only (no distance/duration/ETA display) */}
-            {routeStatus === 'loading' && (
-              <div className="flex items-center gap-2 text-xs text-slate-400 font-bold">
-                <Loader2 size={13} className="animate-spin text-blue-400" />
-                Calculating road route…
-              </div>
-            )}
-
-            {routeStatus === 'fallback' && (
-              <div className="bg-slate-800 rounded-xl px-4 py-3 border border-rose-500/30">
-                <p className="text-xs font-black text-rose-400 flex items-center gap-1.5">
-                  <AlertTriangle size={13} /> Road route unavailable
-                </p>
-              </div>
-            )}
-            {routeStatus === 'failed' && (
-              <p className="text-xs text-rose-400 font-bold">Route calculation failed. Check connection.</p>
-            )}
-
-            {/* Action buttons */}
+            {routeStatus === 'loading' && <div className="flex items-center gap-2 text-xs text-slate-400 font-bold"><Loader2 size={12} className="animate-spin text-blue-400" /> Calculating…</div>}
+            {routeStatus === 'fallback' && <div className="bg-slate-800 rounded-xl px-3 py-2 border border-rose-500/30"><p className="text-xs font-black text-rose-400 flex items-center gap-1.5"><AlertTriangle size={12} /> Route unavailable</p></div>}
+            {routeStatus === 'failed' && <p className="text-xs text-rose-400 font-bold">Route failed. Check connection.</p>}
             <div className="flex gap-2">
-              <button
-                onClick={() => {
-                  if (leafletMapRef.current && selectedStop.has_exact_coords) {
-                    leafletMapRef.current.flyTo([selectedStop.latitude, selectedStop.longitude], 15)
-                  }
-                }}
-                className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
-              >
-                <Map size={13} /> View Route
+              <button onClick={() => { if (googleMapRef.current && selectedStop.has_exact_coords) { googleMapRef.current.panTo({ lat: selectedStop.latitude, lng: selectedStop.longitude }); googleMapRef.current.setZoom(15) } }}
+                className="flex-1 py-2 bg-slate-700 hover:bg-slate-600 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95">
+                <MapIcon size={12} /> View
               </button>
-              {navMode ? (
-                <button
-                  onClick={stopNavigation}
-                  className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
-                >
-                  <X size={13} /> Stop Nav
-                </button>
-              ) : (
-                <button
-                  onClick={startNavigation}
-                  disabled={!selectedStop.has_exact_coords || routeStatus === 'loading' || routeStatus === 'fallback'}
-                  className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
-                >
-                  <Navigation size={13} /> Navigate
-                </button>
-              )}
+              {navMode
+                ? <button onClick={stopNavigation} className="flex-1 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95"><X size={12} /> Stop Nav</button>
+                : <button onClick={startNavigation} disabled={!selectedStop.has_exact_coords || routeStatus === 'loading' || routeStatus === 'fallback'}
+                    className="flex-1 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95">
+                    <Navigation size={12} /> Navigate
+                  </button>}
             </div>
           </div>
         </div>
       )}
 
-      {/* ══ NAVIGATION MODE OVERLAY ══ */}
+      {/* ══ DESKTOP: NAV STATUS (top-right) ══ */}
       {navMode && (
-        <div className="absolute top-4 right-4 z-[1000] space-y-2 max-w-[200px]">
-          <div className="bg-blue-600 text-white rounded-2xl shadow-xl px-3 py-2.5 flex items-center gap-2">
-            <Activity size={14} className="animate-pulse" />
+        <div className="hidden md:block absolute top-4 right-4 z-[1000] space-y-2">
+          <div className="bg-blue-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2">
+            <Activity size={13} className="animate-pulse" />
             <span className="text-xs font-black">Navigation Active</span>
           </div>
           {offRoute && (
-            <div className="bg-rose-600 text-white rounded-2xl shadow-xl px-3 py-2.5 flex items-center gap-2 animate-pulse">
-              <AlertTriangle size={14} />
-              <div>
-                <p className="text-[10px] font-black leading-tight">You're off your</p>
-                <p className="text-[10px] font-black leading-tight">planned route.</p>
-                <p className="text-[9px] text-rose-200 font-bold mt-0.5">Recalculating…</p>
-              </div>
+            <div className="bg-rose-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2 animate-pulse">
+              <AlertTriangle size={13} />
+              <div><p className="text-[10px] font-black">Off route.</p><p className="text-[9px] text-rose-200">Recalculating…</p></div>
             </div>
           )}
           {nearDestination && !offRoute && (
-            <div className="bg-emerald-600 text-white rounded-2xl shadow-xl px-3 py-2.5 flex items-center gap-2">
-              <Target size={14} />
-              <div>
-                <p className="text-[10px] font-black leading-tight">You are near your</p>
-                <p className="text-[10px] font-black leading-tight">destination.</p>
-              </div>
+            <div className="bg-emerald-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2">
+              <Target size={13} />
+              <p className="text-[10px] font-black">Near destination!</p>
             </div>
           )}
         </div>
       )}
 
-      {/* ══ ON-ROUTE CLIENTS PANEL ══ */}
-      {visibleAlerts.length > 0 && (
-        <div className="absolute bottom-4 right-4 z-[1000] w-[90%] max-w-sm space-y-2">
-          {/* Toggle header */}
-          <div className="bg-white/95 backdrop-blur-sm rounded-xl border border-slate-200 shadow-lg px-3 py-2 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Bell size={14} className="text-blue-600 animate-bounce" />
-              <span className="text-xs font-black text-slate-900">
-                {visibleAlerts.length === 1
-                  ? '1 client on your route'
-                  : `${visibleAlerts.length} clients on your route`}
-              </span>
-            </div>
-            <button
-              onClick={() => setShowRouteAlerts(v => !v)}
-              className="text-[10px] font-black text-slate-400 hover:text-slate-700 transition"
-            >
-              {showRouteAlerts ? 'Hide' : 'Show'}
-            </button>
-          </div>
-
-          {showRouteAlerts && visibleAlerts.map((client, idx) => {
-            const { label, color, border } = alertTypeLabel(client.alertType)
-            return (
-              <div
-                key={client.id}
-                className={`bg-gradient-to-r ${color} text-white p-3 rounded-2xl shadow-2xl flex items-start justify-between gap-2 border ${border} animate-fadeIn`}
-              >
-                <div className="flex items-start gap-2.5 min-w-0 flex-1">
-                  <div className="w-7 h-7 rounded-lg bg-white/20 flex items-center justify-center flex-shrink-0 mt-0.5">
-                    <Bell size={13} className="text-white" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="text-[9px] font-black uppercase tracking-wide opacity-75">{label}</p>
-                    <p className="text-xs font-black leading-tight truncate">{client.title}</p>
-                    {/* No distance or duration display */}
-                  </div>
-                </div>
-                <div className="flex flex-col gap-1 flex-shrink-0">
-                  <button
-                    onClick={() => handleViewRouteClient(client)}
-                    className="px-2.5 py-1 bg-white/20 hover:bg-white/30 font-black text-[10px] rounded-lg transition cursor-pointer text-center"
-                  >
-                    View
-                  </button>
-                  <button
-                    onClick={() => handleDismissAlert(client.id)}
-                    className="px-2.5 py-1 bg-white/10 hover:bg-white/20 font-bold text-[9px] rounded-lg transition cursor-pointer text-center opacity-70"
-                  >
-                    Dismiss
-                  </button>
-                </div>
-              </div>
-            )
-          })}
+      {/* ══ MOBILE: CENTERED TOP BANNERS (nav/off-route) ══ */}
+      {navMode && offRoute && (
+        <div className="md:hidden absolute top-2 left-1/2 -translate-x-1/2 z-[1050] bg-rose-600 text-white rounded-xl shadow-xl px-3 py-1.5 flex items-center gap-1.5 animate-pulse whitespace-nowrap">
+          <AlertTriangle size={12} /><span className="text-xs font-black">Off route — Recalculating</span>
+        </div>
+      )}
+      {navMode && nearDestination && !offRoute && (
+        <div className="md:hidden absolute top-2 left-1/2 -translate-x-1/2 z-[1050] bg-emerald-600 text-white rounded-xl shadow-xl px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
+          <Target size={12} /><span className="text-xs font-black">Near destination!</span>
         </div>
       )}
 
-      {/* ══ SELECTED ENTITY DETAIL CARD ══ */}
+      {/* ══ DESKTOP: ALERT PANEL (bottom-right) ══ */}
+      {visibleAlerts.length > 0 && (
+        <div className="hidden md:block absolute bottom-4 right-4 z-[1000] w-80 space-y-1.5">
+          <div className="bg-white/95 backdrop-blur-sm rounded-xl border border-slate-200 shadow-lg px-3 py-2 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Bell size={13} className="text-blue-600 animate-bounce" />
+              <span className="text-xs font-black text-slate-900">{visibleAlerts.length} client{visibleAlerts.length > 1 ? 's' : ''} on route</span>
+            </div>
+            <button onClick={() => setShowRouteAlerts(v => !v)} className="text-[10px] font-black text-slate-400 hover:text-slate-700">
+              {showRouteAlerts ? 'Hide' : 'Show'}
+            </button>
+          </div>
+          {showRouteAlerts && (
+            <div className="max-h-72 overflow-y-auto space-y-1.5">
+              {visibleAlerts.map(client => {
+                const { label, color, border } = alertTypeLabel(client.alertType)
+                return (
+                  <div key={client.id} className={`bg-gradient-to-r ${color} text-white px-3 py-2.5 rounded-2xl shadow-xl flex items-center justify-between gap-2 border ${border}`}>
+                    <div className="flex items-center gap-2 min-w-0 flex-1">
+                      <Bell size={11} className="text-white flex-shrink-0" />
+                      <div className="min-w-0">
+                        <p className="text-[9px] font-black uppercase opacity-75">{label}</p>
+                        <p className="text-[11px] font-black truncate">{client.title}</p>
+                        <p className="text-[9px] opacity-70">{client.distToRouteM}m from route</p>
+                      </div>
+                    </div>
+                    <div className="flex gap-1 flex-shrink-0">
+                      <button onClick={() => handleViewRouteClient(client)} className="px-2 py-1 bg-white/20 hover:bg-white/30 font-black text-[10px] rounded-lg">View</button>
+                      <button onClick={() => handleDismissAlert(client.id)} className="px-2 py-1 bg-white/10 hover:bg-white/20 text-[10px] rounded-lg opacity-70">✕</button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ══ MOBILE: ALERT BADGE FAB (floating action button) ══
+           Shows a pulsing badge with count. Tap to open bottom drawer. */}
+      {visibleAlerts.length > 0 && (
+        <button
+          onClick={() => setShowAlertSheet(true)}
+          className="md:hidden absolute right-3 z-[1000] bg-blue-600 text-white rounded-2xl shadow-2xl px-3 py-2.5 flex items-center gap-2 active:scale-95 transition"
+          style={{ bottom: selectedStop ? '70px' : '12px' }}
+        >
+          <Bell size={15} className="animate-bounce" />
+          <div className="text-left">
+            <p className="text-[10px] font-black leading-none">{visibleAlerts.length} on route</p>
+            <p className="text-[9px] opacity-75 mt-0.5">Tap to view</p>
+          </div>
+          <span className="bg-white text-blue-600 text-[9px] font-black w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0">{visibleAlerts.length}</span>
+        </button>
+      )}
+
+      {/* ══ MOBILE: ALERT BOTTOM SHEET ══ */}
+      {showAlertSheet && visibleAlerts.length > 0 && (
+        <div className="md:hidden fixed inset-0 z-[2000] flex flex-col justify-end">
+          {/* backdrop */}
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => setShowAlertSheet(false)} />
+          <div className="relative bg-white rounded-t-3xl shadow-2xl max-h-[70vh] flex flex-col">
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-1 flex-shrink-0">
+              <div className="w-10 h-1 bg-slate-200 rounded-full" />
+            </div>
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 pb-3 border-b border-slate-100 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <Bell size={15} className="text-blue-600" />
+                <span className="text-sm font-black text-slate-900">{visibleAlerts.length} Client{visibleAlerts.length > 1 ? 's' : ''} on Your Route</span>
+              </div>
+              <button onClick={() => setShowAlertSheet(false)} className="p-1.5 hover:bg-slate-100 rounded-xl text-slate-400">
+                <X size={16} />
+              </button>
+            </div>
+            {/* Alert list */}
+            <div className="overflow-y-auto flex-1 px-4 py-3 space-y-2.5">
+              {visibleAlerts.map(client => {
+                const { label, color, border } = alertTypeLabel(client.alertType)
+                return (
+                  <div key={client.id} className={`bg-gradient-to-r ${color} text-white rounded-2xl p-4 shadow-lg border ${border}`}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <p className="text-[9px] font-black uppercase opacity-75 tracking-wider">{label}</p>
+                        <p className="text-sm font-black leading-tight">{client.title}</p>
+                      </div>
+                      <span className="bg-white/20 text-white text-[10px] font-black px-2 py-1 rounded-lg">{client.distToRouteM}m</span>
+                    </div>
+                    <div className="flex gap-2">
+                      <button onClick={() => { handleViewRouteClient(client); setShowAlertSheet(false) }}
+                        className="flex-1 py-2 bg-white/20 hover:bg-white/30 font-black text-xs rounded-xl flex items-center justify-center gap-1.5">
+                        <MapPin size={12} /> View on Map
+                      </button>
+                      <button onClick={() => { handleDismissAlert(client.id); if (visibleAlerts.length <= 1) setShowAlertSheet(false) }}
+                        className="px-4 py-2 bg-white/10 hover:bg-white/20 font-bold text-xs rounded-xl">
+                        Dismiss
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MOBILE: DESTINATION SLIM BAR (bottom) ══ */}
+      {selectedStop && (
+        <div className="md:hidden absolute bottom-0 left-0 right-0 z-[1010] bg-slate-900/97 backdrop-blur-xl border-t border-slate-700/60">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Destination</p>
+              <p className="text-xs font-black text-white truncate">{selectedStop.title}</p>
+              {routeStatus === 'loading' && <p className="text-[9px] text-blue-400 font-semibold animate-pulse">Calculating route…</p>}
+              {routeStatus === 'fallback' && <p className="text-[9px] text-rose-400 font-semibold">Route unavailable</p>}
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              {navMode
+                ? <button onClick={stopNavigation} className="px-3 py-1.5 bg-rose-600 text-white text-xs font-black rounded-xl flex items-center gap-1"><X size={11} /> Stop</button>
+                : <button onClick={startNavigation} disabled={!selectedStop.has_exact_coords || routeStatus === 'loading' || routeStatus === 'fallback'}
+                    className="px-4 py-1.5 bg-blue-600 disabled:opacity-50 text-white text-xs font-black rounded-xl flex items-center gap-1">
+                    <Navigation size={11} /> Go
+                  </button>}
+              <button
+                onClick={() => { setSelectedStop(null); setRoutePath([]); setRouteDetails(null); setRouteStatus('idle'); setNavMode(false); setOnRouteClients([]); setSelectedEntity(null) }}
+                className="w-8 h-8 bg-slate-700 rounded-xl flex items-center justify-center text-slate-300">
+                <X size={13} />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ══ ENTITY DETAIL CARD ══ */}
+      {/* Desktop: bottom-left floating card; Mobile: bottom sheet above destination bar */}
       {selectedEntity && !showAddModal && (
-        <div className="absolute bottom-4 left-4 right-4 md:left-6 md:right-auto md:w-[420px] z-[1000]">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 p-4 space-y-3 animate-slideUp">
+        <div className={`absolute z-[1015] left-0 right-0 md:left-6 md:right-auto md:w-[400px] md:bottom-4 ${
+          selectedStop ? 'bottom-[70px]' : 'bottom-0'
+        }`}>
+          {/* Mobile drag handle */}
+          <div className="md:hidden flex justify-center pt-2 bg-white rounded-t-3xl border-t border-slate-100">
+            <div className="w-8 h-1 bg-slate-200 rounded-full" />
+          </div>
+          <div className="bg-white md:rounded-2xl md:border md:shadow-2xl border-slate-200 px-4 pt-3 pb-4 space-y-3">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
-                <span className={`text-[9px] font-black border px-1.5 py-0.5 rounded uppercase ${categoryColor(selectedEntity.category)}`}>
-                  {selectedEntity.category}
-                </span>
+                <span className={`text-[9px] font-black border px-1.5 py-0.5 rounded uppercase ${categoryColor(selectedEntity.category)}`}>{selectedEntity.category}</span>
                 <h3 className="text-sm font-black text-slate-900 mt-1 leading-tight">{selectedEntity.title}</h3>
-                {selectedEntity.contact_person && (
-                  <p className="text-[11px] text-slate-400 font-semibold">{selectedEntity.contact_person}</p>
-                )}
+                {selectedEntity.contact_person && <p className="text-[11px] text-slate-400">{selectedEntity.contact_person}</p>}
               </div>
-              <button
-                onClick={() => setSelectedEntity(null)}
-                className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-xl transition flex-shrink-0"
-              >
-                <X size={15} />
-              </button>
+              <button onClick={() => setSelectedEntity(null)} className="p-1.5 hover:bg-slate-100 text-slate-400 rounded-xl"><X size={15} /></button>
             </div>
 
             {!selectedEntity.has_exact_coords ? (
               <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  <AlertCircle size={14} className="text-rose-500 flex-shrink-0" />
-                  <span className="text-rose-700 font-extrabold">Exact location unavailable</span>
-                </div>
-                <button
-                  onClick={() => showToast('Open Leads or Customers to set coordinates via the location picker.', 'info')}
-                  className="px-2.5 py-1.5 bg-rose-600 text-white rounded-lg text-[10px] font-extrabold hover:bg-rose-700 transition cursor-pointer"
-                >
-                  How to fix
-                </button>
+                <div className="flex items-center gap-2"><AlertCircle size={13} className="text-rose-500" /><span className="text-rose-700 font-bold">No location set</span></div>
+                <button onClick={() => showToast('Set coordinates in Leads or Customers.', 'info')} className="px-2.5 py-1.5 bg-rose-600 text-white rounded-lg text-[10px] font-bold">How?</button>
               </div>
             ) : (
-              <div className="bg-slate-50 rounded-xl border border-slate-100 p-2.5 space-y-1 text-xs text-slate-600 font-semibold">
+              <div className="bg-slate-50 rounded-xl border border-slate-100 px-3 py-2.5 text-xs text-slate-600 space-y-1">
                 <p className="truncate">📍 {selectedEntity.address}</p>
-                <p className="font-mono text-[10px] text-slate-400">
-                  {selectedEntity.latitude?.toFixed(6)}, {selectedEntity.longitude?.toFixed(6)}
-                </p>
                 {selectedEntity.phone && <p>📞 {selectedEntity.phone}</p>}
-                {selectedEntity.distanceKm && <p>📏 {selectedEntity.distanceKm} km away (straight-line)</p>}
-                {selectedEntity.last_visited && <p>⏰ Last visited: {selectedEntity.last_visited}</p>}
-                {selectedEntity.next_followup && <p>📅 Scheduled: {selectedEntity.next_followup}</p>}
+                {selectedEntity.distanceKm && <p className="text-slate-400">{selectedEntity.distanceKm} km away</p>}
               </div>
             )}
 
             <div className="flex gap-2">
               {selectedEntity.has_exact_coords && selectedEntity.id !== selectedStop?.id && (
-                <button
-                  onClick={() => handleSelectAsDestination(selectedEntity)}
-                  className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
-                >
-                  <Route size={13} /> Set as Destination
+                <button onClick={() => handleSelectAsDestination(selectedEntity)}
+                  className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95">
+                  <Route size={12} /> Set Route
                 </button>
               )}
               {selectedEntity.phone && (
-                <a
-                  href={`tel:${selectedEntity.phone}`}
-                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
-                >
-                  <PhoneCall size={13} /> Call
+                <a href={`tel:${selectedEntity.phone}`}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95">
+                  <PhoneCall size={12} /> Call
                 </a>
               )}
               {selectedEntity.has_exact_coords && (
-                <a
-                  href={getDirectionsUrl(selectedEntity, executivePos.lat, executivePos.lng)}
-                  target="_blank" rel="noopener noreferrer"
-                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 transition active:scale-95 cursor-pointer"
-                >
-                  <Navigation size={13} /> Google Nav
+                <a href={getDirectionsUrl(selectedEntity, executivePos.lat, executivePos.lng)} target="_blank" rel="noopener noreferrer"
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 active:scale-95">
+                  <Navigation size={12} /> Nav
                 </a>
               )}
             </div>
@@ -1065,97 +1224,66 @@ export default function SmartClientMap() {
         </div>
       )}
 
-      {/* ══ BROWSE MODAL ══ */}
+      {/* ══ BROWSE MODAL (bottom sheet on mobile, centered on desktop) ══ */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] animate-fadeIn">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-5 space-y-4 shadow-2xl border border-slate-200 flex flex-col max-h-[85vh] overflow-hidden">
-
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
-              <div>
-                <h3 className="text-sm font-black text-slate-900 flex items-center gap-2">
-                  <MapPin className="w-4 h-4 text-blue-600" /> Select Destination
-                </h3>
-                <p className="text-[11px] text-slate-400 font-semibold mt-0.5">
-                  Choose a Lead or Customer to route to
-                </p>
-              </div>
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="p-1.5 hover:bg-slate-100 text-slate-400 rounded-xl transition cursor-pointer"
-              >
-                <X size={16} />
-              </button>
+        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-sm flex items-end md:items-center justify-center z-[9999]">
+          <div className="bg-white rounded-t-3xl md:rounded-3xl w-full md:max-w-lg flex flex-col max-h-[88vh] md:max-h-[85vh] shadow-2xl overflow-hidden">
+            {/* Mobile drag handle */}
+            <div className="md:hidden flex justify-center pt-3 pb-1 flex-shrink-0">
+              <div className="w-10 h-1 bg-slate-200 rounded-full" />
+            </div>
+            <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 flex-shrink-0">
+              <h3 className="text-sm font-black text-slate-900 flex items-center gap-2"><MapPin className="w-4 h-4 text-blue-600" /> Select Destination</h3>
+              <button onClick={() => setShowAddModal(false)} className="p-1.5 hover:bg-slate-100 text-slate-400 rounded-xl"><X size={16} /></button>
             </div>
 
             {/* Tabs */}
-            <div className="flex gap-1.5 bg-slate-100 p-1 rounded-xl flex-shrink-0">
-              {[
-                { key: 'leads', label: 'Leads', count: allLeads.length },
-                { key: 'customers', label: 'Customers', count: allCustomers.length },
-                { key: 'visits', label: 'Visits', count: allVisits.length },
-              ].map(tab => (
-                <button
-                  key={tab.key}
-                  onClick={() => setActiveTab(tab.key)}
-                  className={`flex-1 py-2 rounded-lg text-xs font-black transition cursor-pointer text-center ${
-                    activeTab === tab.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'
-                  }`}
-                >
-                  {tab.label}
-                  <span className="ml-1 text-[9px] font-black text-slate-400">({tab.count})</span>
-                </button>
-              ))}
+            <div className="px-4 py-2 flex-shrink-0">
+              <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
+                {[
+                  { key: 'leads', label: 'Leads', count: allLeads.length },
+                  { key: 'customers', label: 'Customers', count: allCustomers.length },
+                  { key: 'visits', label: 'Visits', count: allVisits.length },
+                ].map(tab => (
+                  <button key={tab.key} onClick={() => setActiveTab(tab.key)}
+                    className={`flex-1 py-2 rounded-lg text-xs font-black transition cursor-pointer ${
+                      activeTab === tab.key ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500'
+                    }`}>
+                    {tab.label} <span className="text-[9px] text-slate-400">({tab.count})</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {/* List */}
-            <div className="flex-1 overflow-y-auto space-y-2 p-0.5 min-h-0">
-              {dataLoading ? (
-                <div className="flex items-center justify-center py-12 gap-2 text-xs text-slate-400 font-bold">
-                  <Loader2 size={16} className="animate-spin text-blue-500" /> Loading records…
-                </div>
-              ) : (
-                <>
-                  {activeTab === 'leads' && (allLeads.length === 0
-                    ? <p className="text-xs text-slate-400 text-center py-10 font-bold">No leads assigned to you.</p>
-                    : allLeads.map(l => (
-                        <DestItem key={l.id} item={l} onSelect={() => handleSelectStop(l)} isSelected={selectedStop?.id === l.id} />
-                      ))
-                  )}
-                  {activeTab === 'customers' && (allCustomers.length === 0
-                    ? <p className="text-xs text-slate-400 text-center py-10 font-bold">No customers assigned to you.</p>
-                    : allCustomers.map(c => (
-                        <DestItem key={c.id} item={c} onSelect={() => handleSelectStop(c)} isSelected={selectedStop?.id === c.id} />
-                      ))
-                  )}
-                  {activeTab === 'visits' && (allVisits.length === 0
-                    ? <p className="text-xs text-slate-400 text-center py-10 font-bold">No visits scheduled.</p>
-                    : allVisits.map(v => (
-                        <DestItem key={v.id} item={v} onSelect={() => handleSelectStop(v)} isSelected={selectedStop?.id === v.id} />
-                      ))
-                  )}
-                </>
-              )}
-            </div>
-
-            <div className="border-t border-slate-100 pt-3 flex justify-end flex-shrink-0">
-              <button
-                onClick={() => setShowAddModal(false)}
-                className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-black text-xs transition cursor-pointer"
-              >
-                Close
-              </button>
+            <div className="flex-1 overflow-y-auto px-4 pb-4 space-y-2 min-h-0">
+              {dataLoading
+                ? <div className="flex items-center justify-center py-12 gap-2 text-xs text-slate-400"><Loader2 size={16} className="animate-spin text-blue-500" /> Loading…</div>
+                : (
+                  <>
+                    {activeTab === 'leads' && (allLeads.length === 0
+                      ? <p className="text-xs text-slate-400 text-center py-10">No leads assigned.</p>
+                      : allLeads.map(l => <DestItem key={l.id} item={l} onSelect={() => handleSelectStop(l)} isSelected={selectedStop?.id === l.id} />))}
+                    {activeTab === 'customers' && (allCustomers.length === 0
+                      ? <p className="text-xs text-slate-400 text-center py-10">No customers assigned.</p>
+                      : allCustomers.map(c => <DestItem key={c.id} item={c} onSelect={() => handleSelectStop(c)} isSelected={selectedStop?.id === c.id} />))}
+                    {activeTab === 'visits' && (allVisits.length === 0
+                      ? <p className="text-xs text-slate-400 text-center py-10">No visits scheduled.</p>
+                      : allVisits.map(v => <DestItem key={v.id} item={v} onSelect={() => handleSelectStop(v)} isSelected={selectedStop?.id === v.id} />))}
+                  </>
+                )}
             </div>
           </div>
         </div>
       )}
 
-      {/* ══ GPS LOADING OVERLAY (initial) ══ */}
+      {/* ══ GPS LOADING OVERLAY ══ */}
       {gpsStatus === 'loading' && !mapLoaded && (
         <div className="absolute inset-0 bg-white/80 backdrop-blur-sm flex items-center justify-center z-[2000]">
           <div className="text-center space-y-3">
             <Loader2 size={32} className="text-blue-600 animate-spin mx-auto" />
             <p className="text-sm font-black text-slate-700">Loading Smart Map…</p>
-            <p className="text-xs text-slate-400 font-semibold">Acquiring GPS position</p>
+            <p className="text-xs text-slate-400">Acquiring GPS position</p>
           </div>
         </div>
       )}
