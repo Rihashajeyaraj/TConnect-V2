@@ -17,6 +17,7 @@ import {
   Table as TableIcon,
   Download,
   CheckCircle2,
+  User,
   Users,
   Briefcase,
   Star,
@@ -48,6 +49,7 @@ export default function ManagerCustomers() {
   const [toDate, setToDate] = useState('')
   const [showExportMenu, setShowExportMenu] = useState(false)
   const [selectedCustomer, setSelectedCustomer] = useState(null)
+  const [popupOpen, setPopupOpen] = useState(false)
   const [showAddModal, setShowAddModal] = useState(false)
 
   // New Customer Form State
@@ -326,414 +328,259 @@ export default function ManagerCustomers() {
       tier: 'Standard Corporate Pack',
       status: 'Active',
       reachOutReason: '',
-      specialRemarks: '',
+      specialRemarks: 'Newly onboarded client account.',
+      remarksHistory: [],
     })
   }
 
   return (
     <div className="space-y-6 font-sans text-slate-900 bg-slate-50 min-h-screen pb-12">
-      {/* ── Header Banner (Warm Amber Theme) ────────────────────────────────── */}
-      <div className="bg-white border border-amber-200 p-6 rounded-3xl shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      {/* ── HEADER ───────────────────────────────────────────────────────────── */}
+      <div className="bg-gradient-to-r from-teal-500/10 via-white to-amber-500/5 border-2 border-amber-500 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2.5">
-            <Building2 className="w-7 h-7 text-[#b45309]" /> Team Customer Accounts Directory
+          <div className="flex items-center gap-2">
+            <span className="bg-amber-600 text-white font-black text-[10px] uppercase px-2.5 py-0.5 rounded-full shadow-xs">
+              CUSTOMER MANAGEMENT
+            </span>
+            <span className="text-slate-500 text-xs font-black">Sales Manager Portal</span>
+          </div>
+          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2.5 mt-1">
+            <Building2 className="w-7 h-7 text-[#b45309]" /> Customer Directory & Accounts
           </h1>
           <p className="text-xs text-slate-500 font-semibold mt-1">
-            Complete dossier of all customer accounts converted & managed by Sales Executives under your management.
+            Overview and details of all customer accounts managed by Sales Executives under your direct team.
           </p>
         </div>
 
-        {/* Header Actions */}
-        <div className="flex items-center gap-2.5 flex-wrap shrink-0">
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="px-4 py-2.5 rounded-xl bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs shadow-md shadow-yellow-600/20 flex items-center gap-1.5 cursor-pointer transition"
+        >
+          <Plus size={16} /> Onboard Customer Account
+        </button>
+      </div>
+
+      {/* ── SINGLE CUSTOMER CARD ────────────────────────────────────────────── */}
+      <div className="max-w-md">
+        <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-md text-white flex flex-col gap-4 hover:scale-[1.01] transition duration-200">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20">
+              <Building2 className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-lg font-black tracking-wide text-slate-100">Customer</h2>
+              <p className="text-xs text-slate-400 font-bold">Manage team customer accounts</p>
+            </div>
+          </div>
+
+          {/* Quick Metrics grid */}
+          <div className="grid grid-cols-2 gap-3 border-t border-white/5 pt-4 text-xs font-bold text-slate-400">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Total Accounts</div>
+              <div className="text-base font-black text-amber-400">{totalCustomers} Clients</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Active Status</div>
+              <div className="text-base font-black text-emerald-400">{activeCount} Accounts</div>
+            </div>
+            <div className="col-span-2 border-t border-white/5 pt-2 flex justify-between items-center text-[11px] font-black text-slate-300">
+              <span>Total Team Revenue</span>
+              <span className="text-teal-400 text-sm font-black">{formattedTotalRevenue}</span>
+            </div>
+          </div>
+
           <button
-            onClick={() => setShowAddModal(true)}
-            className="px-4 py-2.5 rounded-xl bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs shadow-md shadow-yellow-600/20 flex items-center gap-1.5 cursor-pointer transition"
+            onClick={() => setPopupOpen(true)}
+            className="w-full mt-2 py-3 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
           >
-            <Plus size={16} /> Onboard Customer Account
+            <Eye size={14} /> Open Customer Ledger
           </button>
+        </div>
+      </div>
 
-          {/* Cards / Table View Toggle */}
-          <div className="bg-amber-50 p-1 rounded-xl border border-amber-300 flex items-center gap-1">
-            <button
-              onClick={() => setViewMode('card')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${viewMode === 'card'
-                  ? 'bg-[#ca8a04] text-white shadow-xs'
-                  : 'text-amber-900 hover:bg-amber-100'
-                }`}
-            >
-              <LayoutGrid size={14} /> Cards
-            </button>
-            <button
-              onClick={() => setViewMode('table')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${viewMode === 'table'
-                  ? 'bg-[#ca8a04] text-white shadow-xs'
-                  : 'text-amber-900 hover:bg-amber-100'
-                }`}
-            >
-              <TableIcon size={14} /> Table
-            </button>
-          </div>
-
-          {/* Export Dropdown */}
-          <div className="relative">
-            <button
-              onClick={() => setShowExportMenu(!showExportMenu)}
-              className="px-4 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs flex items-center gap-1.5 cursor-pointer transition shadow-xs"
-            >
-              <Download size={15} /> Export <span className="text-[10px]">▼</span>
-            </button>
-
-            {showExportMenu && (
-              <div className="absolute right-0 mt-1.5 w-48 bg-white border border-slate-200 rounded-xl shadow-2xl z-50 p-1 flex flex-col gap-0.5 text-slate-900">
-                <button
-                  type="button"
-                  onClick={() => {
-                    const exportRows = filteredCustomers.map((c) => ({
-                      Customer_ID: c.id,
-                      Company: c.name || c.company,
-                      Contact_Person: c.contactPerson || c.person,
-                      Executive: c.assignedExecutive,
-                      City: c.city,
-                      Revenue: c.revenue,
-                      Tier: c.tier,
-                      Status: c.status,
-                    }))
-                    exportToPDF(`Manager_Customers_Report_${new Date().toISOString().slice(0, 10)}`, 'Manager Team Customers Dossier', exportRows)
-                    setShowExportMenu(false)
-                  }}
-                  className="px-3 py-2 rounded-lg text-left text-xs font-bold hover:bg-amber-50 hover:text-amber-900 transition cursor-pointer"
-                >
-                  📄 Export as PDF
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const exportRows = filteredCustomers.map((c) => ({
-                      Customer_ID: c.id,
-                      Company: c.name || c.company,
-                      Contact_Person: c.contactPerson || c.person,
-                      Executive: c.assignedExecutive,
-                      City: c.city,
-                      Revenue: c.revenue,
-                      Tier: c.tier,
-                      Status: c.status,
-                    }))
-                    exportToExcel(`Manager_Customers_Report_${new Date().toISOString().slice(0, 10)}.xls`, exportRows)
-                    setShowExportMenu(false)
-                  }}
-                  className="px-3 py-2 rounded-lg text-left text-xs font-bold hover:bg-amber-50 hover:text-amber-900 transition cursor-pointer"
-                >
-                  📊 Export as Excel (.xls)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const exportRows = filteredCustomers.map((c) => ({
-                      Customer_ID: c.id,
-                      Company: c.name || c.company,
-                      Contact_Person: c.contactPerson || c.person,
-                      Executive: c.assignedExecutive,
-                      City: c.city,
-                      Revenue: c.revenue,
-                      Tier: c.tier,
-                      Status: c.status,
-                    }))
-                    exportToCSV(`Manager_Customers_Report_${new Date().toISOString().slice(0, 10)}.csv`, exportRows)
-                    setShowExportMenu(false)
-                  }}
-                  className="px-3 py-2 rounded-lg text-left text-xs font-bold hover:bg-amber-50 hover:text-amber-900 transition cursor-pointer"
-                >
-                  📝 Export as CSV (.csv)
-                </button>
+      {/* ── CUSTOMER POPUP LEDGER MODAL ─────────────────────────────────────── */}
+      {popupOpen && (
+        <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh]">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
+              <div>
+                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Building2 className="w-6 h-6 text-amber-600" /> Customer Accounts Ledger
+                </h3>
+                <p className="text-xs text-slate-500 font-bold mt-0.5">
+                  Filter by sales executive and date range to inspect team account conversions
+                </p>
               </div>
-            )}
-          </div>
-        </div>
-      </div>
-
-      {/* ── KPI Summary Cards (2 CARDS) ──────────────────────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <div className="bg-[#fffdf5] border border-amber-300 p-4 rounded-2xl shadow-2xs space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-[#7c2d12]">Total Accounts</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-[#b45309] flex items-center justify-center font-bold">
-              <Building2 size={16} />
-            </div>
-          </div>
-          <h2 className="text-2xl font-black text-slate-900">{totalCustomers} Clients</h2>
-          <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9px] font-black border border-emerald-300">
-            ✅ {activeCount} Active
-          </span>
-        </div>
-
-        <div className="bg-[#fffdf5] border border-amber-300 p-4 rounded-2xl shadow-2xs space-y-1.5">
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-[#7c2d12]">Customer Revenue</span>
-            <div className="w-8 h-8 rounded-xl bg-amber-100 text-[#b45309] flex items-center justify-center font-bold">
-              <DollarSign size={16} />
-            </div>
-          </div>
-          <h2 className="text-2xl font-black text-slate-900">{formattedTotalRevenue}</h2>
-          <span className="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-[#b45309] text-[9px] font-black border border-amber-300">
-            📈 Annualized Account Portfolio
-          </span>
-        </div>
-      </div>
-
-      {/* ── Filter Bar ──────────────────────────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Executive & Status Filters (Positioned on Left Side) */}
-          <div className="flex items-center gap-2 flex-wrap text-xs">
-            {/* Executive Filter (With 'Other' Custom Search Option) */}
-            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5 font-extrabold text-amber-900">
-              <span className="text-amber-800 font-bold">Executive:</span>
-              <select
-                value={executiveFilter}
-                onChange={(e) => setExecutiveFilter(e.target.value)}
-                className="bg-transparent text-amber-950 font-black focus:outline-none cursor-pointer"
-              >
-                <option value="All">All Executives</option>
-                <option value="Ashwini E">Ashwini E</option>
-                <option value="Suresh Raina">Suresh Raina</option>
-                <option value="Vikram Singh">Vikram Singh</option>
-                <option value="Abi hastro">Abi hastro</option>
-                <option value="Ananya Roy">Ananya Roy</option>
-                <option value="Karthik Raja">Karthik Raja</option>
-                <option value="Other">Other (Type Custom...)</option>
-              </select>
-            </div>
-
-            {/* Custom Executive Input Box (Visible when 'Other' is selected) */}
-            {executiveFilter === 'Other' && (
-              <input
-                type="text"
-                value={customExecInput}
-                onChange={(e) => setCustomExecInput(e.target.value)}
-                placeholder="Type SE name or code..."
-                className="h-8 bg-white border border-amber-300 rounded-xl px-3 text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500 shadow-2xs"
-              />
-            )}
-
-            {/* Status Filter (With 'Other' Custom Search Option) */}
-            <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5 font-extrabold text-amber-900">
-              <span className="text-amber-800 font-bold">Status:</span>
-              <select
-                value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
-                className="bg-transparent text-amber-950 font-black focus:outline-none cursor-pointer"
-              >
-                <option value="All">All Status</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-                <option value="Other">Other (Type Custom...)</option>
-              </select>
-            </div>
-
-            {/* Custom Status Input Box (Visible when 'Other' is selected) */}
-            {statusFilter === 'Other' && (
-              <input
-                type="text"
-                value={customStatusInput}
-                onChange={(e) => setCustomStatusInput(e.target.value)}
-                placeholder="Type custom status..."
-                className="h-8 bg-white border border-amber-300 rounded-xl px-3 text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500 shadow-2xs"
-              />
-            )}
-          </div>
-
-          {/* Search Input (Positioned on Right Side) */}
-          <div className="relative flex-1 min-w-[220px] max-w-md">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search company, contact person, email, city..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full h-9 bg-amber-50/50 border border-amber-300 rounded-xl pl-9 pr-4 text-xs font-semibold text-slate-900 focus:outline-none focus:border-amber-500"
-            />
-          </div>
-        </div>
-
-        {/* ── LINEAR DATE SORTING & FILTER PILLS ──────────────────────────── */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
-          <div className="flex flex-wrap items-center gap-1.5 bg-amber-50/60 p-1 rounded-xl border border-amber-200/80 text-xs font-black">
-            <span className="text-amber-900 px-2 py-0.5 font-black uppercase tracking-wider text-[10px]">
-              Date Filter:
-            </span>
-            {['All Time', 'Today', 'Yesterday', 'Tomorrow', 'This Month', 'Custom'].map((tab) => (
               <button
-                key={tab}
-                onClick={() => setDateFilterTab(tab)}
-                className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
-                  dateFilterTab === tab
-                    ? 'bg-[#ca8a04] text-white shadow-2xs'
-                    : 'text-amber-950 hover:bg-amber-100'
-                }`}
+                onClick={() => setPopupOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition active:scale-95"
               >
-                {tab}
+                <X size={20} />
               </button>
-            ))}
-          </div>
-
-          {/* Custom Date Range Picker Inputs */}
-          {dateFilterTab === 'Custom' && (
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5 font-bold text-xs">
-              <span className="text-amber-900 font-extrabold">From:</span>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
-              />
-              <span className="text-amber-900 font-extrabold ml-1">To:</span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
-              />
             </div>
-          )}
 
-          {/* Reset Filters Button */}
-          {(executiveFilter !== 'All' || statusFilter !== 'All' || customExecInput || customStatusInput || dateFilterTab !== 'All Time' || search || fromDate || toDate) && (
-            <button
-              onClick={() => {
-                setExecutiveFilter('All')
-                setStatusFilter('All')
-                setCustomExecInput('')
-                setCustomStatusInput('')
-                setDateFilterTab('All Time')
-                setSearch('')
-                setFromDate('')
-                setToDate('')
-              }}
-              className="text-[11px] font-extrabold text-rose-700 hover:underline cursor-pointer ml-auto"
-            >
-              Reset All Filters
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── CARD VIEW ───────────────────────────────────────────────────────── */}
-      {viewMode === 'card' ? (
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {filteredCustomers.map((cust) => {
-            const initials = (cust.name || cust.company || 'C').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
-            return (
-              <div
-                key={cust.id}
-                className="bg-[#fffdf5] border border-amber-300 rounded-3xl p-5 shadow-2xs hover:shadow-md hover:border-amber-400 transition-all space-y-4 flex flex-col justify-between group"
-              >
-                <div>
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-3">
-                      <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-amber-700 text-white font-black text-base flex items-center justify-center shadow-md shrink-0">
-                        {initials}
-                      </div>
-                      <div>
-                        <h3 className="text-base font-black text-slate-900 group-hover:text-[#b45309] transition leading-tight">
-                          {cust.name || cust.company}
-                        </h3>
-                        <p className="text-xs font-semibold text-slate-500 mt-0.5">{cust.contactPerson || cust.person}</p>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center gap-2 mt-3 flex-wrap">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-950 border border-amber-300">
-                      {cust.tier || 'Enterprise Suite'}
-                    </span>
-                    <span className="text-xs font-black text-emerald-700 bg-emerald-50 px-2.5 py-0.5 rounded-lg border border-emerald-300">
-                      {cust.revenue || '₹4,50,000'}
-                    </span>
-                  </div>
-
-                  <div className="space-y-1.5 mt-3 text-xs font-semibold text-slate-700">
-                    <div className="flex items-center gap-2">
-                      <UserCheck size={14} className="text-[#b45309]" />
-                      <span className="text-amber-950 font-black">Sales Exec: {cust.assignedExecutive}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <Phone size={14} className="text-blue-600" />
-                      <span>{cust.phone}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <MapPin size={14} className="text-rose-500" />
-                      <span>{cust.city}</span>
-                    </div>
-                  </div>
-
-                  {/* Initial Manager Reach-Out Reason */}
-                  <div className="mt-3.5 p-3 bg-amber-100/70 border border-amber-300 rounded-xl text-[11px] font-medium text-amber-950 space-y-0.5">
-                    <span className="text-[10px] font-black text-[#b45309] block uppercase tracking-wider">
-                      ❓ WHY THEY REACHED OUT TO US
-                    </span>
-                    <p className="leading-relaxed font-semibold">{cust.reachOutReason || 'Needed multi-device GPS field tracking & real-time visit reports.'}</p>
-                  </div>
-                </div>
-
-                <div className="pt-3 border-t border-amber-200/60 flex items-center justify-between">
-                  <span className="text-[11px] font-bold text-slate-500">Converted: {cust.lastVisitDate || 'Active'}</span>
-                  <button
-                    onClick={() => setSelectedCustomer(cust)}
-                    className="px-3.5 py-1.5 rounded-xl bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
-                  >
-                    <Eye size={13} /> View Full Dossier
-                  </button>
-                </div>
+            {/* Filter Control Options inside Modal */}
+            <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 flex-shrink-0 text-xs font-bold text-slate-600">
+              {/* Executive Filter Dropdown */}
+              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5 font-bold text-xs">
+                <span className="text-slate-500">Sales Executive:</span>
+                <select
+                  value={executiveFilter}
+                  onChange={(e) => setExecutiveFilter(e.target.value)}
+                  className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-black"
+                >
+                  <option value="All">All Executives</option>
+                  {executives.map((ex) => (
+                    <option key={ex.id} value={ex.name || ex.full_name}>
+                      {ex.name || ex.full_name}
+                    </option>
+                  ))}
+                </select>
               </div>
-            )
-          })}
-        </div>
-      ) : (
-        /* ── TABLE VIEW ──────────────────────────────────────────────────────── */
-        <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs overflow-x-auto">
-          <table className="w-full text-left border-collapse min-w-[750px]">
-            <thead>
-              <tr className="bg-amber-50/80 text-[10px] font-black uppercase text-amber-950 border-b border-amber-300">
-                <th className="py-3 px-4">Customer / Company</th>
-                <th className="py-3 px-4">Contact Person</th>
-                <th className="py-3 px-4">Assigned Sales Executive</th>
-                <th className="py-3 px-4">City</th>
-                <th className="py-3 px-4">Revenue</th>
-                <th className="py-3 px-4 text-center">Status</th>
-                <th className="py-3 px-4 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
-              {filteredCustomers.map((cust) => (
-                <tr key={cust.id} className="hover:bg-amber-50/40 transition">
-                  <td className="py-3.5 px-4">
-                    <p className="font-black text-slate-900">{cust.name || cust.company}</p>
-                    <p className="text-[10px] text-slate-400 font-mono">{cust.id}</p>
-                  </td>
-                  <td className="py-3.5 px-4">
-                    <p className="font-extrabold text-slate-800">{cust.contactPerson || cust.person}</p>
-                    <p className="text-[10px] text-slate-500">{cust.email}</p>
-                  </td>
-                  <td className="py-3.5 px-4 font-black text-amber-900">{cust.assignedExecutive}</td>
-                  <td className="py-3.5 px-4">{cust.city}</td>
-                  <td className="py-3.5 px-4 font-black text-emerald-700">{cust.revenue || '₹4,50,000'}</td>
-                  <td className="py-3.5 px-4 text-center">
-                    <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">
-                      ✅ {cust.status}
-                    </span>
-                  </td>
-                  <td className="py-3.5 px-4 text-right">
-                    <button
-                      onClick={() => setSelectedCustomer(cust)}
-                      className="px-3 py-1 rounded-xl bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-[11px] cursor-pointer transition inline-flex items-center gap-1 shadow-2xs"
-                    >
-                      <Eye size={12} /> View Dossier
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+
+              {/* Date Filter Pills */}
+              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl p-1 text-xs">
+                <span className="text-slate-500 px-2 font-bold uppercase tracking-wider text-[9px]">Date:</span>
+                {['All Time', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setDateFilterTab(tab)}
+                    className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                      dateFilterTab === tab
+                        ? 'bg-amber-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom date range if picker tab is selected */}
+              {dateFilterTab === 'Custom' && (
+                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs">
+                  <span className="text-slate-500 font-bold">From:</span>
+                  <input
+                    type="date"
+                    value={fromDate}
+                    onChange={(e) => setFromDate(e.target.value)}
+                    className="bg-transparent text-slate-800 focus:outline-none font-bold"
+                  />
+                  <span className="text-slate-500 font-bold ml-1">To:</span>
+                  <input
+                    type="date"
+                    value={toDate}
+                    onChange={(e) => setToDate(e.target.value)}
+                    className="bg-transparent text-slate-800 focus:outline-none font-bold"
+                  />
+                </div>
+              )}
+
+              {/* Search Inside Modal */}
+              <div className="relative flex-1 max-w-xs ml-auto">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search customer, person, city..."
+                  className="w-full h-8 bg-white border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 font-semibold"
+                />
+              </div>
+
+              {/* Reset filter buttons */}
+              {(executiveFilter !== 'All' || dateFilterTab !== 'All Time' || search || fromDate || toDate) && (
+                <button
+                  onClick={() => {
+                    setExecutiveFilter('All')
+                    setDateFilterTab('All Time')
+                    setSearch('')
+                    setFromDate('')
+                    setToDate('')
+                  }}
+                  className="text-xs font-black text-rose-600 hover:underline cursor-pointer"
+                >
+                  Reset
+                </button>
+              )}
+            </div>
+
+            {/* Popup Table Container */}
+            <div className="overflow-y-auto flex-1 min-h-[300px] border border-slate-200 rounded-2xl shadow-2xs">
+              <table className="w-full text-left text-sm text-slate-800 min-w-[800px]">
+                <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-700 z-10">
+                  <tr>
+                    <th className="px-5 py-4">Sales Executive name</th>
+                    <th className="px-5 py-4">Customer Details</th>
+                    <th className="px-5 py-4">Revenue</th>
+                    <th className="px-5 py-4">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-semibold">
+                  {filteredCustomers.length === 0 ? (
+                    <tr>
+                      <td colSpan="4" className="text-center py-16 text-slate-400 font-bold text-xs">
+                        No customer account records match your selected filters.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCustomers.map((cust) => (
+                      <tr key={cust.id} className="hover:bg-slate-50/70 transition">
+                        
+                        {/* 1. Sales Executive name */}
+                        <td className="px-5 py-4.5 font-black text-slate-900 text-sm">
+                          {cust.assignedExecutive || '—'}
+                        </td>
+
+                        {/* 2. Customer Details */}
+                        <td className="px-5 py-4.5 max-w-[320px]">
+                          <div className="font-black text-slate-900 text-sm">
+                            {cust.name || cust.company}
+                          </div>
+                          <div className="text-[10px] text-slate-400 font-bold font-mono">
+                            ID: {cust.id}
+                          </div>
+                          <div className="text-xs text-slate-600 font-semibold mt-1 space-y-0.5">
+                            <p className="flex items-center gap-1">
+                              <User size={12} className="text-amber-700 shrink-0" />
+                              <span>{cust.contactPerson || cust.person || '—'}</span>
+                            </p>
+                            <p className="flex items-center gap-1">
+                              <Mail size={12} className="text-amber-700 shrink-0" />
+                              <span className="truncate">{cust.email || '—'}</span>
+                            </p>
+                            <p className="flex items-center gap-1">
+                              <MapPin size={12} className="text-amber-700 shrink-0" />
+                              <span>{cust.city || '—'}</span>
+                            </p>
+                          </div>
+                        </td>
+
+                        {/* 3. Revenue */}
+                        <td className="px-5 py-4.5 font-black text-emerald-700 text-base">
+                          {cust.revenue || '₹5,00,000'}
+                        </td>
+
+                        {/* 4. Action */}
+                        <td className="px-5 py-4.5">
+                          <button
+                            onClick={() => setSelectedCustomer(cust)}
+                            className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-[11px] cursor-pointer transition shadow-3xs flex items-center gap-1 active:scale-95 inline-flex"
+                          >
+                            <Eye size={12} /> View Details
+                          </button>
+                        </td>
+
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+          </div>
         </div>
       )}
 

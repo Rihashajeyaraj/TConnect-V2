@@ -65,6 +65,8 @@ async def log_frontend_event(
         "SIDEBAR_ORDER_RESET",
         "HRMS_TOGGLE_ORDER_CHANGED",
         "HRMS_TOGGLE_ORDER_RESET",
+        "NEARBY_CLIENT_DETECTED",
+        "MANAGER_NEARBY_CLIENT",
     }
     
     if action not in ALLOWED_FRONTEND_ACTIONS:

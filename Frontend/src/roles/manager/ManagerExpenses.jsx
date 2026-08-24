@@ -70,6 +70,8 @@ export default function ManagerExpenses() {
   const [managerRemarks, setManagerRemarks] = useState('')
   const [zoomReceiptUrl, setZoomReceiptUrl] = useState(null)
   const [actionLoading, setActionLoading] = useState(false)
+  const [popupOpen, setPopupOpen] = useState(false)
+  const [selectedToggle, setSelectedToggle] = useState('Pending')
 
   const getStoredUser = () => {
     try {
@@ -387,6 +389,50 @@ export default function ManagerExpenses() {
     }
   }
 
+  const handleQuickAction = async (expense, actionType) => {
+    let remarks = ""
+    if (actionType === 'REJECT') {
+      remarks = window.prompt("Please enter mandatory Manager Remarks for Rejection:")
+      if (remarks === null) return // cancelled
+      if (!remarks.trim()) {
+        showToast("Manager remarks are mandatory for rejection.", "error")
+        return
+      }
+      remarks = remarks.trim()
+    } else {
+      remarks = "Approved by Sales Manager."
+    }
+
+    setLoading(true)
+    let newStatus = actionType === 'APPROVE' ? 'Approved' : 'Rejected'
+    try {
+      if (actionType === 'APPROVE') {
+        await expenseAPI.approveExpense(expense.id, { remarks })
+      } else {
+        await expenseAPI.rejectExpense(expense.id, { remarks })
+      }
+
+      showToast(`Expense claim has been successfully ${newStatus.toLowerCase()}!`, 'success')
+
+      // Trigger SE Notification
+      const seNotif = {
+        recipientEmail: expense.assigned_to_email || expense.email,
+        title: `Expense Claim ${newStatus}: #${expense.id}`,
+        message: `Your expense claim of ${expense.amount} for "${expense.category}" has been ${newStatus.toLowerCase()} by Sales Manager. Remarks: ${remarks}`,
+        type: 'Expense',
+      }
+      notificationAPI.sendNotification(seNotif).catch(() => null)
+
+      // Reload latest data
+      await fetchExpensesData()
+    } catch (apiErr) {
+      const errMsg = apiErr.response?.data?.detail || apiErr.message || "Failed to update expense status."
+      showToast(errMsg, 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
   // Filtering Calculation
   const filteredExpenses = expenses.filter((e) => {
     if (!e) return false
@@ -409,7 +455,15 @@ export default function ManagerExpenses() {
       cat.includes(q) ||
       desc.includes(q)
 
-    const matchesStatus = selectedStatus === 'All' || String(e.status || '').toLowerCase().includes(selectedStatus.toLowerCase())
+    let matchesStatus = true
+    if (selectedToggle === 'Pending') {
+      const s = String(e.status || '').toLowerCase()
+      matchesStatus = s.includes('pend') || s.includes('review') || s.includes('return')
+    } else if (selectedToggle === 'Approved') {
+      matchesStatus = String(e.status || '').toLowerCase().includes('approv')
+    } else if (selectedToggle === 'Rejected') {
+      matchesStatus = String(e.status || '').toLowerCase().includes('reject')
+    }
 
     let matchesCategory = selectedCategory === 'All'
     if (selectedCategory === 'Custom') {
@@ -461,401 +515,278 @@ export default function ManagerExpenses() {
 
   return (
     <div className="space-y-6 text-slate-900 font-sans pb-12">
-      {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      {!window.location.pathname.includes('/ceo') && (
-        <div className="bg-gradient-to-r from-teal-500/10 via-white to-amber-500/5 border-2 border-teal-500 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="bg-teal-600 text-white font-black text-[10px] uppercase px-2.5 py-0.5 rounded-full shadow-xs">
-                APPROVAL DASHBOARD
-              </span>
-              <span className="text-slate-500 text-xs font-black">Sales Manager Portal</span>
+
+
+      {/* ── SINGLE EXPENSE CARD ──────────────────────────────────────────────── */}
+      <div className="max-w-md">
+        <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-md text-white flex flex-col gap-4 hover:scale-[1.01] transition duration-200">
+          <div className="flex items-center gap-3.5">
+            <div className="p-3 bg-teal-500/10 text-teal-400 rounded-xl border border-teal-500/20">
+              <Receipt className="w-6 h-6" />
             </div>
-            <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2 mt-1">
-              <Receipt className="w-7 h-7 text-teal-600" /> Expense Claims & Approval
-            </h1>
-            <p className="text-xs text-slate-600 font-bold mt-1">
-              Review, verify receipts, and process expense claim approvals for Sales Executives under your direct team management.
-            </p>
+            <div>
+              <h2 className="text-lg font-black tracking-wide text-slate-100">Expense</h2>
+              <p className="text-xs text-slate-400 font-bold">Manage team expense approvals</p>
+            </div>
+          </div>
+
+          {/* Quick Metrics grid */}
+          <div className="grid grid-cols-2 gap-3 border-t border-white/5 pt-4 text-xs font-bold text-slate-400">
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Pending</div>
+              <div className="text-base font-black text-amber-400">{summary.pending_approval} Claims</div>
+            </div>
+            <div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Approved Today</div>
+              <div className="text-base font-black text-emerald-400">{summary.approved_today} Claims</div>
+            </div>
+            <div className="col-span-2 border-t border-white/5 pt-2 flex justify-between items-center text-[11px] font-black text-slate-300">
+              <span>Total Claims Volume</span>
+              <span className="text-teal-400 text-sm font-black">{summary.today_claim_amount}</span>
+            </div>
           </div>
 
           <button
-            onClick={fetchExpensesData}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs shadow-md transition cursor-pointer"
+            onClick={() => setPopupOpen(true)}
+            className="w-full mt-2 py-3 bg-teal-600 hover:bg-teal-500 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
           >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh Expense Claims
+            <Eye size={14} /> Open Expense Claims Ledger
           </button>
         </div>
-      )}
-
-      {/* ── TOP 4 KPI CARDS (PREVIOUS CARD COLORS WITH 1PX THIN BORDERS) ─────────────────────────────────────────────────── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        {/* 1. Pending Approval */}
-        <div className="bg-amber-50 border border-amber-300 p-4 rounded-xl shadow-2xs space-y-1 hover:scale-[1.02] transition">
-          <span className="text-[10px] font-black uppercase tracking-wider text-amber-900">Pending Approval</span>
-          <h2 className="text-2xl font-black text-amber-950">{summary.pending_approval} Claims</h2>
-          <p className="text-[11px] text-amber-800 font-bold">Pending Amount: {summary.pending_amount}</p>
-        </div>
-
-        {/* 2. Approved Today */}
-        <div className="bg-emerald-50 border border-emerald-300 p-4 rounded-xl shadow-2xs space-y-1 hover:scale-[1.02] transition">
-          <span className="text-[10px] font-black uppercase tracking-wider text-emerald-900">Approved Claims</span>
-          <h2 className="text-2xl font-black text-emerald-950">{summary.approved_today} Claims</h2>
-          <p className="text-[11px] text-emerald-800 font-bold">Approved Value: {summary.approved_amount}</p>
-        </div>
-
-        {/* 3. Rejected Today */}
-        <div className="bg-rose-50 border border-rose-300 p-4 rounded-xl shadow-2xs space-y-1 hover:scale-[1.02] transition">
-          <span className="text-[10px] font-black uppercase tracking-wider text-rose-900">Rejected Claims</span>
-          <h2 className="text-2xl font-black text-rose-950">{summary.rejected_today} Claims</h2>
-          <p className="text-[11px] text-rose-800 font-bold">Rejected Value: {summary.rejected_amount}</p>
-        </div>
-
-        {/* 4. Total Claims & Today's Claim Amount */}
-        <div className="bg-gradient-to-br from-teal-700 to-teal-900 border border-teal-900 text-white p-4 rounded-xl shadow-xs space-y-1 hover:scale-[1.02] transition">
-          <span className="text-[10px] font-black uppercase tracking-wider text-teal-100">Total Claim Volume</span>
-          <h2 className="text-2xl font-black">{summary.today_claim_amount}</h2>
-          <p className="text-[11px] text-teal-100 font-bold">{summary.total_claims} Total Submitted Claims</p>
-        </div>
       </div>
 
-      {/* ── FILTERS & SEARCH CONTROL BAR ────────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Search Box */}
-          <div className="relative flex-1 min-w-[240px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                setPage(1)
-              }}
-              placeholder="Search Request ID, SE Code, Executive Name, Customer, Location..."
-              className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-teal-500 font-semibold"
-            />
-          </div>
-
-          {/* Sales Executive Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold">
-            <span className="text-slate-500">Sales Executive:</span>
-            <select
-              value={selectedSE}
-              onChange={(e) => {
-                setSelectedSE(e.target.value)
-                setPage(1)
-              }}
-              className="bg-transparent text-teal-950 focus:outline-none cursor-pointer font-black max-w-[220px] truncate"
-            >
-              <option value="All">All Executives (Team Only)</option>
-              {executives.map((ex) => (
-                <option key={ex.email || ex.id} value={ex.email || ex.name}>
-                  [{ex.employee_code || 'EMP000012'}] {ex.name || ex.full_name} ({ex.email})
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        {/* Multi-Filter Bar */}
-        <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100 text-xs">
-          {/* Status Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 font-bold">
-            <span className="text-slate-500">Status:</span>
-            <select
-              value={selectedStatus}
-              onChange={(e) => {
-                setSelectedStatus(e.target.value)
-                setPage(1)
-              }}
-              className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold"
-            >
-              <option value="All">All Statuses</option>
-              <option value="Pending">Pending Review</option>
-              <option value="Approved">Approved</option>
-              <option value="Rejected">Rejected</option>
-              <option value="Returned">Returned for Correction</option>
-            </select>
-          </div>
-
-          {/* Category Filter */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 font-bold">
-            <span className="text-slate-500">Category:</span>
-            <select
-              value={selectedCategory}
-              onChange={(e) => {
-                setSelectedCategory(e.target.value)
-                setPage(1)
-              }}
-              className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold"
-            >
-              <option value="All">All Categories</option>
-              <option value="Travel">Travel / Conveyance</option>
-              <option value="Fuel">Fuel Reimbursement</option>
-              <option value="Food">Food / Client Lunch</option>
-              <option value="Hotel">Hotel & Accommodation</option>
-              <option value="Stationary">Stationary & Printing</option>
-              <option value="Misc">Miscellaneous</option>
-              <option value="Custom">Custom Category...</option>
-            </select>
-          </div>
-
-          {/* Custom Category Input */}
-          {selectedCategory === 'Custom' && (
-            <input
-              type="text"
-              value={customCategoryInput}
-              onChange={(e) => {
-                setCustomCategoryInput(e.target.value)
-                setPage(1)
-              }}
-              placeholder="Type custom category..."
-              className="h-8 bg-white border border-amber-300 rounded-xl px-2.5 text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
-            />
-          )}
-
-        </div>
-
-        {/* ── LINEAR DATE SORTING & FILTER PILLS ──────────────────────────── */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
-          <div className="flex flex-wrap items-center gap-1.5 bg-amber-50/60 p-1 rounded-xl border border-amber-200/80 text-xs font-black">
-            <span className="text-amber-900 px-2 py-0.5 font-black uppercase tracking-wider text-[10px]">
-              Date Filter:
-            </span>
-            {['All Time', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
+      {/* ── EXPENSE CLAIMS POPUP LEDGER MODAL ───────────────────────────────── */}
+      {popupOpen && (
+        <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+            
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
+              <div>
+                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Receipt className="w-6 h-6 text-teal-600" /> Expense Claims Ledger
+                </h3>
+                <p className="text-xs text-slate-500 font-bold mt-0.5">
+                  Filter by status toggles and process executive expense requests
+                </p>
+              </div>
               <button
-                key={tab}
-                onClick={() => {
-                  setDateFilterTab(tab)
-                  setPage(1)
-                }}
-                className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
-                  dateFilterTab === tab
-                    ? 'bg-[#ca8a04] text-white shadow-2xs'
-                    : 'text-amber-950 hover:bg-amber-100'
-                }`}
+                onClick={() => setPopupOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition active:scale-95"
               >
-                {tab}
+                <X size={20} />
               </button>
-            ))}
-          </div>
-
-          {/* Custom Date Range Picker Inputs (Only visible when Custom is selected) */}
-          {dateFilterTab === 'Custom' && (
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5 font-bold text-xs">
-              <span className="text-amber-900 font-extrabold">From:</span>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => {
-                  setFromDate(e.target.value)
-                  setPage(1)
-                }}
-                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
-              />
-              <span className="text-amber-900 font-extrabold ml-1">To:</span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => {
-                  setToDate(e.target.value)
-                  setPage(1)
-                }}
-                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
-              />
             </div>
-          )}
 
-          {/* Reset Filters */}
-          {(selectedSE !== 'All' || selectedStatus !== 'All' || selectedCategory !== 'All' || customCategoryInput || dateFilterTab !== 'All Time' || search || fromDate || toDate) && (
-            <button
-              onClick={() => {
-                setSelectedSE('All')
-                setSelectedStatus('All')
-                setSelectedCategory('All')
-                setCustomCategoryInput('')
-                setDateFilterTab('All Time')
-                setSearch('')
-                setFromDate('')
-                setToDate('')
-                setMinAmount('')
-                setMaxAmount('')
-                setPage(1)
-              }}
-              className="text-[11px] font-extrabold text-rose-700 hover:underline cursor-pointer ml-auto"
-            >
-              Reset All Filters
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── EXPENSE APPROVAL TABLE ─────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-800 min-w-[1100px]">
-            <thead>
-              <tr className="bg-slate-100/80 border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-700">
-                <th className="px-5 py-4.5">Submitted Date</th>
-                <th className="px-5 py-4.5">EMP ID</th>
-                <th className="px-5 py-4.5">SE Name</th>
-                <th className="px-5 py-4.5">Receipt</th>
-                <th className="px-5 py-4.5">Customer Name, Location & Date</th>
-                <th className="px-5 py-4.5">Category</th>
-                <th className="px-5 py-4.5">Amount</th>
-                <th className="px-5 py-4.5">Status</th>
-                <th className="px-5 py-4.5 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-semibold">
-              {loading ? (
-                <tr>
-                  <td colSpan="9" className="text-center py-16 text-slate-400">
-                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-3" />
-                    <span className="text-sm font-bold">Loading team expense claims from Supabase database...</span>
-                  </td>
-                </tr>
-              ) : paginatedExpenses.length === 0 ? (
-                <tr>
-                  <td colSpan="9" className="text-center py-16 text-slate-400 font-bold text-sm">
-                    No expense claim records match your selected filter criteria.
-                  </td>
-                </tr>
-              ) : (
-                paginatedExpenses.map((expense, idx) => (
-                  <tr
-                    key={expense.id || idx}
+            {/* Toggle Status Buttons & Filters */}
+            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 flex-shrink-0">
+              {/* Toggles */}
+              <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-xl">
+                {['Pending', 'Approved', 'Rejected', 'Total'].map((toggle) => (
+                  <button
+                    key={toggle}
                     onClick={() => {
-                      setSelectedExpenseModal(expense)
-                      setManagerRemarks(expense.manager_remarks || '')
+                      setSelectedToggle(toggle)
+                      setPage(1)
                     }}
-                    className="hover:bg-teal-50/40 transition cursor-pointer"
+                    className={`px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                      selectedToggle === toggle
+                        ? 'bg-teal-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-300/40 hover:text-slate-900'
+                    }`}
                   >
-                    {/* 1. Submitted Date */}
-                    <td className="px-5 py-4.5 font-mono text-xs sm:text-sm font-bold text-slate-700">
-                      {expense.submitted_date}
-                    </td>
+                    {toggle}
+                  </button>
+                ))}
+              </div>
 
-                    {/* 2. EMP ID */}
-                    <td className="px-5 py-4.5 font-mono font-black text-slate-900">
-                      <span className="bg-slate-100 text-slate-800 border border-slate-300 px-2 py-0.5 rounded-md text-xs">
-                        [{expense.employee_code || 'EMP000012'}]
-                      </span>
-                    </td>
+              {/* Search Inside Modal */}
+              <div className="relative flex-1 max-w-md min-w-[200px]">
+                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value)
+                    setPage(1)
+                  }}
+                  placeholder="Search Request ID, SE Name, Customer, Location..."
+                  className="w-full h-9 bg-white border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-teal-500 font-semibold"
+                />
+              </div>
 
-                    {/* 3. SE Name */}
-                    <td className="px-5 py-4.5 font-black text-slate-900 text-sm sm:text-base">
-                      {expense.assigned_to || expense.executive}
-                    </td>
-
-                    {/* 4. Receipt */}
-                    <td className="px-5 py-4.5">
-                      {expense.receipt_url ? (
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setZoomReceiptUrl(expense.receipt_url)
-                          }}
-                          className="px-3 py-1.5 rounded-xl bg-teal-100/80 text-teal-900 border border-teal-300 hover:bg-teal-200 transition font-black text-xs inline-flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
-                        >
-                          <FileText size={13} className="text-teal-700" /> View Receipt
-                        </button>
-                      ) : (
-                        <span className="px-2.5 py-1 rounded-lg text-xs font-bold bg-slate-100 text-slate-500 border border-slate-200 inline-block">
-                          No Receipt
-                        </span>
-                      )}
-                    </td>
-
-                    {/* 5. Combined Customer Name, Location & Date */}
-                    <td className="px-5 py-4.5 max-w-[280px]">
-                      <p className="font-black text-slate-900 text-sm sm:text-base leading-tight">
-                        {expense.customer_name || 'Corp Field Tech'}
-                      </p>
-                      <p className="text-xs text-slate-600 font-semibold flex items-center gap-1 mt-1 flex-wrap">
-                        <MapPin size={12} className="text-teal-700 shrink-0" />
-                        <span className="truncate">{expense.visit_location || 'Guindy, Chennai'}</span>
-                        <span className="text-amber-800 font-mono font-bold shrink-0 ml-1">• Visit: {expense.visit_date}</span>
-                      </p>
-                    </td>
-
-                    {/* 6. Category */}
-                    <td className="px-5 py-4.5">
-                      <span className="px-3 py-1 rounded-xl text-xs font-black bg-amber-100/90 text-amber-950 border border-amber-300">
-                        {expense.category}
-                      </span>
-                    </td>
-
-                    {/* 7. Amount */}
-                    <td className="px-5 py-4.5 font-black text-teal-900 text-base sm:text-lg">
-                      {expense.amount}
-                    </td>
-
-                    {/* 8. Status */}
-                    <td className="px-5 py-4.5">
-                      <span
-                        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black shadow-2xs ${
-                          String(expense.status).toLowerCase().includes('approv')
-                            ? 'bg-emerald-100 text-emerald-950 border border-emerald-300'
-                            : String(expense.status).toLowerCase().includes('reject')
-                            ? 'bg-rose-100 text-rose-950 border border-rose-300'
-                            : String(expense.status).toLowerCase().includes('return')
-                            ? 'bg-amber-100 text-amber-950 border border-amber-300'
-                            : 'bg-amber-100/80 text-amber-900 border border-amber-300'
-                        }`}
-                      >
-                        {expense.status}
-                      </span>
-                    </td>
-
-                    {/* 9. Action */}
-                    <td className="px-5 py-4.5 text-right">
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setSelectedExpenseModal(expense)
-                          setManagerRemarks(expense.manager_remarks || '')
-                        }}
-                        className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs shadow-xs cursor-pointer transition inline-flex items-center gap-1.5 active:scale-95 ml-auto"
-                      >
-                        <Eye size={14} /> Review & Approve
-                      </button>
-                    </td>
-                  </tr>
-                ))
+              {/* Reset filter inside modal */}
+              {search && (
+                <button
+                  onClick={() => {
+                    setSearch('')
+                    setPage(1)
+                  }}
+                  className="text-xs font-black text-rose-600 hover:underline cursor-pointer"
+                >
+                  Clear Search
+                </button>
               )}
-            </tbody>
-          </table>
-        </div>
+            </div>
 
-        {/* ── PAGINATION CONTROLS ────────────────────────────────────────── */}
-        <div className="bg-slate-50 p-4 border-t border-slate-200 flex items-center justify-between text-xs font-bold text-slate-600">
-          <div>
-            Showing <span className="text-slate-900 font-black">{paginatedExpenses.length}</span> of <span className="text-slate-900 font-black">{filteredExpenses.length}</span> Total Claims
-          </div>
+            {/* Table Container */}
+            <div className="overflow-y-auto flex-1 min-h-[300px] border border-slate-200 rounded-2xl shadow-2xs">
+              <table className="w-full text-left text-sm text-slate-800 min-w-[1000px]">
+                <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-700 z-10">
+                  <tr>
+                    <th className="px-5 py-4">Date</th>
+                    <th className="px-5 py-4">Sales Executive name</th>
+                    <th className="px-5 py-4">Customer Details</th>
+                    <th className="px-5 py-4">Amount</th>
+                    <th className="px-5 py-4">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-semibold">
+                  {loading ? (
+                    <tr>
+                      <td colSpan="5" className="text-center py-16 text-slate-400">
+                        <RefreshCw className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-3" />
+                        <span className="text-xs font-bold">Loading expense claims...</span>
+                      </td>
+                    </tr>
+                  ) : paginatedExpenses.length === 0 ? (
+                    <tr>
+                      <td colSpan="5" className="text-center py-16 text-slate-400 font-bold text-xs">
+                        No expense claims found matching this status toggle.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedExpenses.map((expense, idx) => (
+                      <tr key={expense.id || idx} className="hover:bg-slate-50/70 transition">
+                        
+                        {/* 1. Date */}
+                        <td className="px-5 py-4.5 font-mono text-xs text-slate-600">
+                          {expense.submitted_date}
+                        </td>
 
-          <div className="flex items-center gap-2">
-            <button
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <span>
-              Page {page} of {totalPages}
-            </span>
-            <button
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100"
-            >
-              <ChevronRight size={16} />
-            </button>
+                        {/* 2. Sales Executive name */}
+                        <td className="px-5 py-4.5">
+                          <div className="font-black text-slate-900 text-sm">
+                            {expense.assigned_to || expense.executive}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-bold font-mono">
+                            Code: {expense.employee_code || 'EMP000012'}
+                          </div>
+                        </td>
+
+                        {/* 3. Customer Details */}
+                        <td className="px-5 py-4.5 max-w-[300px]">
+                          <div className="font-black text-slate-900 text-sm">
+                            {expense.customer_name || 'Corp Field Tech'}
+                          </div>
+                          <div className="text-xs text-slate-500 font-semibold flex items-center gap-1 mt-0.5">
+                            <MapPin size={11} className="text-teal-700 shrink-0" />
+                            <span className="truncate">{expense.visit_location || 'Guindy, Chennai'}</span>
+                          </div>
+                          <div className="text-[10px] text-amber-800 font-mono font-bold mt-0.5">
+                            Visit Date: {expense.visit_date}
+                          </div>
+                        </td>
+
+                        {/* 4. Amount */}
+                        <td className="px-5 py-4.5 font-black text-teal-950 text-base">
+                          {expense.amount}
+                        </td>
+
+                        {/* 5. Action (receipt, status, category, approve, reject options) */}
+                        <td className="px-5 py-4.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Receipt */}
+                            {expense.receipt_url ? (
+                              <button
+                                onClick={() => setZoomReceiptUrl(expense.receipt_url)}
+                                className="px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 transition font-black text-[10px] flex items-center gap-1 cursor-pointer active:scale-95 shadow-3xs"
+                              >
+                                <FileText size={12} /> Receipt
+                              </button>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-slate-100 text-slate-400 border border-slate-200">
+                                No Receipt
+                              </span>
+                            )}
+
+                            {/* Status */}
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
+                                String(expense.status).toLowerCase().includes('approv')
+                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                  : String(expense.status).toLowerCase().includes('reject')
+                                  ? 'bg-rose-100 text-rose-800 border-rose-300'
+                                  : 'bg-amber-100 text-amber-800 border-amber-300'
+                              }`}
+                            >
+                              {expense.status}
+                            </span>
+
+                            {/* Category */}
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
+                              {expense.category}
+                            </span>
+
+                            {/* Approve option */}
+                            {!String(expense.status).toLowerCase().includes('approv') && (
+                              <button
+                                onClick={() => handleQuickAction(expense, 'APPROVE')}
+                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] transition active:scale-95 shadow-3xs cursor-pointer flex items-center gap-1"
+                              >
+                                <CheckCircle2 size={11} /> Approve
+                              </button>
+                            )}
+
+                            {/* Reject option */}
+                            {!String(expense.status).toLowerCase().includes('reject') && (
+                              <button
+                                onClick={() => handleQuickAction(expense, 'REJECT')}
+                                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] transition active:scale-95 shadow-3xs cursor-pointer flex items-center gap-1"
+                              >
+                                <XCircle size={11} /> Reject
+                              </button>
+                            )}
+                          </div>
+                        </td>
+
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Pagination controls inside modal */}
+            <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex items-center justify-between text-xs font-bold text-slate-600 flex-shrink-0">
+              <div>
+                Showing <span className="text-slate-900 font-black">{paginatedExpenses.length}</span> of <span className="text-slate-900 font-black">{filteredExpenses.length}</span> Claims
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  disabled={page <= 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="p-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                >
+                  <ChevronLeft size={14} />
+                </button>
+                <span>
+                  Page {page} of {totalPages}
+                </span>
+                <button
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  className="p-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                >
+                  <ChevronRight size={14} />
+                </button>
+              </div>
+            </div>
+
           </div>
         </div>
-      </div>
+      )}
 
       {/* ── EXPENSE DETAILS DRAWER & APPROVAL MODAL ────────────────────────── */}
       {selectedExpenseModal && (

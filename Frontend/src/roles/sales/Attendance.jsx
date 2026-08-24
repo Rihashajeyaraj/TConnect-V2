@@ -609,7 +609,7 @@ export default function Attendance() {
         client_longitude: selectedClient.longitude
       } : {};
 
-      _startGpsTracking(gpsCoords.lat, gpsCoords.lng, clientData);
+      _startGpsTrackingDelegate(gpsCoords.lat, gpsCoords.lng, clientData);
     } catch (err) {
       showToast(err?.message || "Failed to clock in.", "error");
     } finally {
@@ -617,13 +617,9 @@ export default function Attendance() {
     }
   };
 
-  // ─── GPS Tracking helpers ──────────────────────────────────────────────────
+  // ─── GPS Tracking custom event delegates ────────────────────────────────────
 
-  const _startGpsTracking = async (initLat, initLng, clientData = {}) => {
-    if (!navigator.geolocation) {
-      showToast("GPS not available on this device.", "warning");
-      return;
-    }
+  const _startGpsTrackingDelegate = async (initLat, initLng, clientData = {}) => {
     try {
       const sessionRes = await spatialAPI.startSession(initLat, initLng, clientData);
       const sessionId = sessionRes?.session_id || sessionRes?.data?.session_id || null;
@@ -631,78 +627,23 @@ export default function Attendance() {
       localStorage.setItem('tc_tracking_session', sessionId || '');
       setTrackingStatus('active');
 
-      // Push check-in location as first breadcrumb
-      if (initLat && initLng) {
-        _pushGpsPoint({ lat: initLat, lng: initLng, accuracy: 10, sessionId });
-      }
-    } catch {
-      showToast("⚠️ Location tracking could not start. Attendance is saved.", "warning");
-      setTrackingStatus('error');
-      return;
-    }
-    // Start continuous watchPosition
-    gpsWatchRef.current = navigator.geolocation.watchPosition(
-      (pos) => {
-        const { latitude, longitude, accuracy, speed, heading } = pos.coords;
-        if (accuracy > 100) return; // reject inaccurate fix
-        const sessionId = activeSessionRef.current;
-        _pushGpsPoint({ lat: latitude, lng: longitude, accuracy, speed, heading, sessionId });
-      },
-      (err) => {
-        if (err.code === 1) {
-          showToast("GPS permission denied — tracking paused.", "warning");
-          setTrackingStatus('error');
+      // Trigger tracking in parent wrapper (SalesLayout.jsx)
+      window.dispatchEvent(new CustomEvent("tc:start-tracking", {
+        detail: {
+          lat: initLat,
+          lng: initLng,
+          clientData,
+          sessionId
         }
-      },
-      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
-    );
-
-    // Flush queued points when connectivity restores
-    window.addEventListener('online', _flushRetryQueue);
-    // Mark stale when tab hidden (iOS suspends GPS when screen locks)
-    document.addEventListener('visibilitychange', _handleVisibilityChange);
-  };
-
-  const _pushGpsPoint = async ({ lat, lng, accuracy = 10, speed = null, heading = null, sessionId }) => {
-    // Client-side dedup: skip if < 10 m from last accepted point
-    if (lastPushedPosRef.current) {
-      const dlat = lat - lastPushedPosRef.current.lat;
-      const dlng = lng - lastPushedPosRef.current.lng;
-      const approxM = Math.sqrt(dlat * dlat + dlng * dlng) * 111000;
-      if (approxM < 10) return;
-    }
-    const point = { latitude: lat, longitude: lng, accuracy, speed, heading, session_id: sessionId };
-    try {
-      await spatialAPI.pushLocation(point);
-      lastPushedPosRef.current = { lat, lng };
-      // Also update employee_locations for backward-compat team radar
-      spatialAPI.updateLocation({ latitude: lat, longitude: lng, accuracy }).catch(() => null);
-    } catch {
-      // Queue for retry (cap at 20 points)
-      if (gpsRetryQueue.current.length < 20) gpsRetryQueue.current.push(point);
+      }));
+    } catch (err) {
+      console.warn("Location tracking session could not start:", err);
+      showToast("⚠️ Location tracking session could not start.", "warning");
+      setTrackingStatus('error');
     }
   };
 
-  const _flushRetryQueue = async () => {
-    const queue = gpsRetryQueue.current.splice(0);
-    for (const pt of queue) {
-      try { await spatialAPI.pushLocation(pt); } catch { break; }
-    }
-  };
-
-  const _handleVisibilityChange = () => {
-    // Nothing to stop — backend stale detection handles this automatically
-    // (tracking_status becomes 'stale' after 5 min without a push)
-  };
-
-  const _stopGpsTracking = async (finalLat, finalLng) => {
-    if (gpsWatchRef.current !== null) {
-      navigator.geolocation.clearWatch(gpsWatchRef.current);
-      gpsWatchRef.current = null;
-    }
-    window.removeEventListener('online', _flushRetryQueue);
-    document.removeEventListener('visibilitychange', _handleVisibilityChange);
-
+  const _stopGpsTrackingDelegate = async (finalLat, finalLng) => {
     const sessionId = activeSessionRef.current || localStorage.getItem('tc_tracking_session');
     if (sessionId) {
       try {
@@ -712,6 +653,9 @@ export default function Attendance() {
     activeSessionRef.current = null;
     localStorage.removeItem('tc_tracking_session');
     setTrackingStatus('idle');
+
+    // Trigger cleanup in parent wrapper (SalesLayout.jsx)
+    window.dispatchEvent(new CustomEvent("tc:stop-tracking"));
   };
 
   // Clock Out submission
@@ -776,7 +720,7 @@ export default function Attendance() {
       setCheckedOutSuccessfully(true);
       loadAttendanceLogs();
       // Stop GPS tracking after successful clock-out
-      await _stopGpsTracking(gpsCoords.lat, gpsCoords.lng);
+      await _stopGpsTrackingDelegate(gpsCoords.lat, gpsCoords.lng);
     } catch (err) {
       showToast(err?.message || "Failed to clock out.", "error");
     } finally {
@@ -877,13 +821,16 @@ export default function Attendance() {
       </div>
 
       {activeTab === "punch" ? (
-        <div className="max-w-md mx-auto bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-md space-y-6">
-          <div className="text-center">
-            <h2 className="text-sm font-black text-slate-900">My Attendance</h2>
+        <div className="max-w-4xl mx-auto bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-md space-y-6">
+          {/* Header section (Title & Location) */}
+          <div className="text-center border-b border-slate-100 pb-4">
+            <h2 className="text-lg font-black text-slate-900">My Attendance</h2>
             {locationError ? (
-              <span className="text-[10px] text-rose-600 font-bold">⚠️ {locationError}</span>
+              <span className="text-xs text-rose-600 font-bold">⚠️ {locationError}</span>
             ) : (
-              <span className="text-[10px] text-slate-455 font-bold truncate block">📍 {currentLocation}</span>
+              <span className="text-xs text-slate-600 font-bold mt-1 max-w-2xl mx-auto block leading-relaxed">
+                📍 {currentLocation}
+              </span>
             )}
           </div>
 
@@ -899,8 +846,11 @@ export default function Attendance() {
             </div>
           )}
 
-          {/* Unified Kiosk Check-In & Check-Out View */}
-          <div className="space-y-6">
+          {/* 2-Column Grid Layout: Camera (Left) and Controls (Right) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+            
+            {/* Left Column: Camera and Face Guide */}
+            <div className="space-y-4">
               {/* Camera Section */}
               <div className="relative w-full aspect-[4/3] rounded-2xl bg-slate-950 overflow-hidden shadow-inner border border-slate-200 flex items-center justify-center">
                 {isCameraActive ? (
@@ -915,15 +865,15 @@ export default function Attendance() {
                     </div>
                   </>
                 ) : (
-                  <div className="flex flex-col items-center gap-2 text-slate-500 font-semibold text-xs">
+                  <div className="flex flex-col items-center gap-2 text-slate-500 font-semibold text-xs py-12">
                     <VideoOff size={32} />
                     <span>{isEnrolled ? "Camera is Off" : "🔒 Biometrics Required"}</span>
                   </div>
                 )}
               </div>
 
-              {/* Progress Indicator */}
-              <div className="text-center space-y-1">
+              {/* Face Guide / Status Feedback */}
+              <div className="text-center py-2 bg-slate-50 rounded-xl border border-slate-100">
                 {matchStatus === "MATCHED" ? (
                   <div className="text-emerald-600 font-black text-xs flex items-center justify-center gap-1">
                     <CheckCircle2 size={14} /> Face verified ✓
@@ -949,7 +899,7 @@ export default function Attendance() {
                         {blinkCount >= 2 && "● ●"}
                       </span>
                     </div>
-                    <div className="text-[11px] text-slate-455 font-bold">Blink naturally</div>
+                    <div className="text-[10px] text-slate-550 font-bold">Blink naturally</div>
                   </div>
                 ) : (
                   <div className="text-[11px] text-slate-455 font-bold">
@@ -957,10 +907,13 @@ export default function Attendance() {
                   </div>
                 )}
               </div>
+            </div>
 
+            {/* Right Column: Controls, Remarks, Punch button, Status */}
+            <div className="space-y-5">
               {/* Work Mode Selection */}
               <div className="space-y-2">
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block text-center">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
                   Where are you working today?
                 </label>
                 <div className="grid grid-cols-2 gap-3.5">
@@ -985,22 +938,23 @@ export default function Attendance() {
                     Client Visit
                   </button>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsCameraActive(false);
-                    setTimeout(() => {
-                      setIsCameraActive(true);
-                      startLivenessScan();
-                    }, 100);
-                  }}
-                  disabled={!isEnrolled}
-                  className="w-full py-2 px-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-black text-slate-700 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isEnrolled ? "📹 Start Camera" : "🔒 Biometrics Required"}
-                </button>
               </div>
+
+              {/* Start Camera button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCameraActive(false);
+                  setTimeout(() => {
+                    setIsCameraActive(true);
+                    startLivenessScan();
+                  }, 100);
+                }}
+                disabled={!isEnrolled}
+                className="w-full py-2.5 px-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-black text-slate-700 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isEnrolled ? "📹 Start Camera" : "🔒 Biometrics Required"}
+              </button>
 
               {/* Destination Dropdown for Client Visit */}
               {workMode === "client" && (
@@ -1136,6 +1090,7 @@ export default function Attendance() {
               </div>
             </div>
           </div>
+        </div>
         ) : (
         /* History logs list view */
         <div className="max-w-6xl mx-auto space-y-6">

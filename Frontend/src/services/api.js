@@ -20,7 +20,7 @@ function clearSession() {
 
 function redirectToLogin() {
   // Only redirect if we're not already on the login page
-  if (!window.location.pathname.startsWith('/login') && !window.location.pathname === '/') {
+  if (!window.location.pathname.startsWith('/login') && window.location.pathname !== '/') {
     window.location.href = '/login'
   }
 }

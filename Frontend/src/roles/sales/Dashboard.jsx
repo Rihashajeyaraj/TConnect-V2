@@ -533,23 +533,26 @@ export default function Dashboard() {
           <p className="text-xs text-slate-500 font-medium mt-0.5">Welcome back, {userName}! Here is your performance overview today.</p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-            <div className="flex border border-slate-200 bg-slate-50/50 p-1 rounded-2xl gap-1.5 shadow-2xs w-full sm:w-auto">
+        <div className="flex items-center gap-2 flex-wrap w-full sm:w-auto">
+          <div className="flex flex-col sm:flex-row sm:items-center gap-2 w-full sm:w-auto">
+            {/* Filter tabs — compact on mobile */}
+            <div className="flex border border-slate-200 bg-slate-50/50 p-0.5 rounded-xl gap-0.5 shadow-2xs w-full sm:w-auto overflow-x-auto">
               {["Today", "This Month", "This Year", "Custom Date"].map((opt) => {
                 const isActive = selectedMonth === opt;
+                const shortLabel = opt === "Today" ? "📍 Today" : opt === "This Month" ? "Month" : opt === "This Year" ? "Year" : "Custom";
                 return (
                   <button
                     key={opt}
                     type="button"
                     onClick={() => handleDateFilterChange(opt)}
-                    className={`flex-1 sm:flex-none text-center px-4 py-2 rounded-xl text-xs font-black transition cursor-pointer ${
+                    className={`flex-1 sm:flex-none text-center px-2.5 py-1.5 rounded-lg text-[11px] sm:text-xs font-black transition cursor-pointer whitespace-nowrap ${
                       isActive
                         ? "bg-teal-600 text-white shadow-xs"
                         : "text-slate-600 hover:text-teal-700 hover:bg-teal-50"
                     }`}
                   >
-                    {opt === "Today" ? "📍 Today" : opt}
+                    <span className="sm:hidden">{shortLabel}</span>
+                    <span className="hidden sm:inline">{opt === "Today" ? "📍 Today" : opt}</span>
                   </button>
                 );
               })}
@@ -559,7 +562,7 @@ export default function Dashboard() {
                 type="date"
                 value={customDateVal}
                 onChange={(e) => handleCustomDateChange(e.target.value)}
-                className="h-9 text-xs border border-teal-500/50 rounded-xl px-3 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs w-full sm:w-auto"
+                className="h-8 text-xs border border-teal-500/50 rounded-xl px-2 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs w-full sm:w-auto"
               />
             )}
           </div>
@@ -567,10 +570,11 @@ export default function Dashboard() {
           <div className="relative">
             <button
               onClick={() => setShowExportMenu(!showExportMenu)}
-              className="h-9 px-3.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+              className="h-7 sm:h-8 px-2 sm:px-3 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-[10px] sm:text-xs shadow-xs flex items-center gap-1 transition cursor-pointer"
             >
-              <span>Export Report</span>
-              <span className="text-[10px]">▼</span>
+              <span className="hidden sm:inline">Export Report</span>
+              <span className="sm:hidden">Export</span>
+              <span className="text-[8px]">▼</span>
             </button>
 
             {showExportMenu && (
@@ -637,10 +641,10 @@ export default function Dashboard() {
           <button
             onClick={handleRefresh}
             disabled={refreshing}
-            className="p-2 rounded-xl bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 transition cursor-pointer"
+            className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 hover:bg-slate-100 text-slate-600 transition cursor-pointer"
             title="Refresh data"
           >
-            <RefreshCw size={15} className={refreshing ? "animate-spin text-teal-500" : ""} />
+            <RefreshCw size={13} className={refreshing ? "animate-spin text-teal-500" : ""} />
           </button>
         </div>
       </div>

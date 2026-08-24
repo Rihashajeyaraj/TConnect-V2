@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { NavLink, Outlet, useNavigate, Link } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -39,6 +39,7 @@ import {
   GripVertical,
   CheckCircle2,
 } from "lucide-react";
+import { createClient } from "@supabase/supabase-js";
 import { notificationAPI, hrmsAPI, spatialAPI } from "../../services/api.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { clearUserCache } from "../../utils/userScope.js";
@@ -186,7 +187,7 @@ const mapFrontendToDb = (prof) => {
 export default function SalesLayout() {
   const { showToast } = useToast();
   const [open, setOpen] = useState(false);
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
   const [notifCount, setNotifCount] = useState(0);
   const [gpsActive, setGpsActive] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
@@ -195,17 +196,6 @@ export default function SalesLayout() {
   const [showProfileConfirm, setShowProfileConfirm] = useState(false);
   const [previewDoc, setPreviewDoc] = useState(null);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    const handleResize = () => {
-      const mobile = window.innerWidth < 768;
-      setIsMobile(mobile);
-      if (!mobile) setOpen(true);
-    };
-    handleResize();
-    window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
-  }, []);
 
   const user = (() => {
     try {
@@ -220,6 +210,217 @@ export default function SalesLayout() {
   const empCode = user.employee_code || user.employee_id || "EMP000012";
   const seRole = user.role || "Sales Executive";
   const seInitials = (seName.split(" ").map((w) => w[0]).join("").slice(0, 2) || "SE").toUpperCase();
+
+  // ── Supabase & Background Tracking Pipeline ──────────────────────────────
+  const SUPA_URL = import.meta.env.VITE_SUPABASE_URL;
+  const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
+  const supabaseRef = useRef(null);
+  const activeChannelRef = useRef(null);
+  const gpsWatchRef = useRef(null);
+  const activeSessionRef = useRef(null);
+  const lastPushedPosRef = useRef(null);
+  const gpsRetryQueue = useRef([]);
+
+  useEffect(() => {
+    if (SUPA_URL && SUPA_ANON && !supabaseRef.current) {
+      supabaseRef.current = createClient(SUPA_URL, SUPA_ANON);
+    }
+  }, [SUPA_URL, SUPA_ANON]);
+
+  const _pushGpsPoint = useCallback(async ({ lat, lng, accuracy = 10, speed = null, heading = null, sessionId }) => {
+    const empId = user.employee_id || user.auth_user_id || user.id || empCode;
+    
+    // Client-side dedup: skip if < 10 m from last accepted point
+    if (lastPushedPosRef.current) {
+      const dlat = lat - lastPushedPosRef.current.lat;
+      const dlng = lng - lastPushedPosRef.current.lng;
+      const approxM = Math.sqrt(dlat * dlat + dlng * dlng) * 111000;
+      if (approxM < 10) return;
+    }
+
+    const point = { 
+      id: Math.random().toString(36).substring(7),
+      employee_id: empId, 
+      latitude: lat, 
+      longitude: lng, 
+      accuracy, 
+      speed, 
+      heading, 
+      recorded_at: new Date().toISOString() 
+    };
+
+    // 1. Broadcast immediately for near-real-time live map updates
+    if (activeChannelRef.current) {
+      activeChannelRef.current.send({
+        type: 'broadcast',
+        event: 'location',
+        payload: {
+          ...point,
+          broadcast_sent_at: Date.now()
+        }
+      });
+    }
+
+    // 2. Persist to DB asynchronously
+    const dbPoint = { latitude: lat, longitude: lng, accuracy, speed, heading, session_id: sessionId };
+    try {
+      spatialAPI.pushLocation(dbPoint).catch(() => null);
+      lastPushedPosRef.current = { lat, lng };
+      spatialAPI.updateLocation({ latitude: lat, longitude: lng, accuracy }).catch(() => null);
+    } catch {
+      // Queue for retry (cap at 20 points)
+      if (gpsRetryQueue.current.length < 20) {
+        gpsRetryQueue.current.push(dbPoint);
+      }
+    }
+  }, [user, empCode]);
+
+  const _flushRetryQueue = useCallback(async () => {
+    const queue = gpsRetryQueue.current.splice(0);
+    for (const pt of queue) {
+      try {
+        await spatialAPI.pushLocation(pt);
+      } catch {
+        break;
+      }
+    }
+  }, []);
+
+  const _startGpsTracking = useCallback((initLat, initLng, clientData = {}, sessionId = null) => {
+    if (!navigator.geolocation) {
+      showToast("GPS not available on this device.", "warning");
+      return;
+    }
+
+    const empId = user.employee_id || user.auth_user_id || user.id || empCode;
+    const resolvedSessionId = sessionId || localStorage.getItem('tc_tracking_session');
+    
+    activeSessionRef.current = resolvedSessionId;
+    setGpsActive(true);
+
+    // Initialize Supabase Broadcast channel
+    if (supabaseRef.current && resolvedSessionId) {
+      if (activeChannelRef.current) {
+        try { activeChannelRef.current.unsubscribe(); } catch {}
+      }
+      const chName = `tracking_${empId}_${resolvedSessionId}`;
+      const channel = supabaseRef.current.channel(chName);
+      channel.subscribe();
+      activeChannelRef.current = channel;
+    }
+
+    // Push starting point if available
+    if (initLat && initLng && resolvedSessionId) {
+      _pushGpsPoint({ lat: initLat, lng: initLng, accuracy: 10, sessionId: resolvedSessionId });
+    }
+
+    // Start continuous watchPosition
+    if (gpsWatchRef.current !== null) {
+      navigator.geolocation.clearWatch(gpsWatchRef.current);
+    }
+
+    gpsWatchRef.current = navigator.geolocation.watchPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy, speed, heading } = pos.coords;
+        if (accuracy > 100) return; // reject inaccurate fix
+        const currentSessId = activeSessionRef.current;
+        _pushGpsPoint({ lat: latitude, lng: longitude, accuracy, speed, heading, sessionId: currentSessId });
+      },
+      (err) => {
+        if (err.code === 1) {
+          showToast("GPS permission denied — tracking paused.", "warning");
+          setGpsActive(false);
+        }
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 5000 }
+    );
+
+    window.addEventListener('online', _flushRetryQueue);
+  }, [user, empCode, _pushGpsPoint, _flushRetryQueue, showToast]);
+
+  const _stopGpsTracking = useCallback(() => {
+    if (gpsWatchRef.current !== null) {
+      navigator.geolocation.clearWatch(gpsWatchRef.current);
+      gpsWatchRef.current = null;
+    }
+    window.removeEventListener('online', _flushRetryQueue);
+    
+    if (activeChannelRef.current) {
+      try { activeChannelRef.current.unsubscribe(); } catch {}
+      activeChannelRef.current = null;
+    }
+
+    activeSessionRef.current = null;
+    setGpsActive(false);
+  }, [_flushRetryQueue]);
+
+  const _resumeGpsTracking = useCallback(async (savedSessionId) => {
+    const empId = user.employee_id || user.auth_user_id || user.id || empCode;
+    try {
+      const res = await spatialAPI.getLocationHistory("self");
+      const data = res?.data || res;
+      const session = data?.session;
+      
+      // Strict validation
+      if (session && session.status === 'active' && String(session.employee_id) === String(empId) && String(session.id) === String(savedSessionId)) {
+        console.log("Validated session for resume:", session.id);
+        _startGpsTracking(null, null, {}, session.id);
+      } else {
+        console.warn("Session in localStorage is inactive or invalid. Clearing cache.");
+        localStorage.removeItem('tc_tracking_session');
+        _stopGpsTracking();
+      }
+    } catch (err) {
+      console.warn("Tracking resume validation failed:", err);
+      if (err?.status === 401) {
+        localStorage.removeItem('tc_tracking_session');
+        _stopGpsTracking();
+      }
+    }
+  }, [user, empCode, _startGpsTracking, _stopGpsTracking]);
+
+  useEffect(() => {
+    const handleStart = (e) => {
+      const { lat, lng, clientData, sessionId } = e.detail || {};
+      _startGpsTracking(lat, lng, clientData, sessionId);
+    };
+    const handleStop = () => {
+      _stopGpsTracking();
+    };
+
+    window.addEventListener("tc:start-tracking", handleStart);
+    window.addEventListener("tc:stop-tracking", handleStop);
+
+    // Auto-resume check
+    const savedSession = localStorage.getItem("tc_tracking_session");
+    if (savedSession && !gpsWatchRef.current) {
+      _resumeGpsTracking(savedSession);
+    }
+
+    return () => {
+      window.removeEventListener("tc:start-tracking", handleStart);
+      window.removeEventListener("tc:stop-tracking", handleStop);
+      if (gpsWatchRef.current !== null) {
+        navigator.geolocation.clearWatch(gpsWatchRef.current);
+      }
+      if (activeChannelRef.current) {
+        try { activeChannelRef.current.unsubscribe(); } catch {}
+      }
+    };
+  }, [user, _startGpsTracking, _stopGpsTracking, _resumeGpsTracking]);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const mobile = window.innerWidth < 1024;
+      setIsMobile(mobile);
+      if (!mobile) setOpen(true);
+    };
+    handleResize();
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
+
+
 
   // ── Profile Photo State ───────────────────────────────────────────────────
   const [profilePhoto, setProfilePhoto] = useState(() => {
@@ -465,7 +666,11 @@ export default function SalesLayout() {
   useEffect(() => {
     if ("geolocation" in navigator) {
       navigator.geolocation.getCurrentPosition(
-        () => setGpsActive(true),
+        () => {
+          if (gpsWatchRef.current) {
+            setGpsActive(true);
+          }
+        },
         () => setGpsActive(false)
       );
     }
@@ -577,214 +782,211 @@ export default function SalesLayout() {
   };
 
   return (
-    <div className="flex h-screen bg-slate-50 font-sans text-slate-900 overflow-hidden relative">
-      {isMobile && open && (
-        <div onClick={() => setOpen(false)} className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-30 transition-opacity" />
-      )}
-      {/* ── Sidebar ──────────────────────────────────────────────────────────── */}
-      <aside
-        className={`fixed md:static inset-y-0 left-0 z-40 bg-white border-r border-slate-200 transition-all duration-300 ease-in-out flex flex-col ${open ? "w-64" : "w-0 md:w-20"
-          } ${isMobile && !open ? "-translate-x-full" : "translate-x-0"}`}
-      >
-        <div className="h-16 flex items-center justify-between px-4 border-b border-slate-100 flex-shrink-0">
-          <Link to="/sales/dashboard" className="flex items-center gap-2.5 shrink-0 overflow-hidden">
-            <TwiteConnectLogo className="w-8 h-8 shrink-0" showText={open} />
-          </Link>
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
+      {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
+      <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
+        <div className="flex items-center gap-3">
           <button
-            onClick={() => setOpen(false)}
-            className={`text-slate-400 hover:text-slate-600 p-1 transition ${open ? 'block' : 'hidden'}`}
-            aria-label="Close sidebar"
+            onClick={() => setOpen(!open)}
+            className="lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer shrink-0"
+            aria-label="Toggle Navigation Sidebar"
           >
-            <X size={20} />
+            {open ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
+          <Link to="/sales/dashboard" className="flex items-center gap-2.5">
+            <TwiteConnectLogo className="w-9 h-9" />
+          </Link>
         </div>
 
-        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-          {sidebarItems.map((m, index) => (
-            <div
-              key={m.path}
-              draggable={isCustomizing}
-              onDragStart={(e) => handleDragStart(e, index)}
-              onDragOver={(e) => handleDragOver(e, index)}
-              onDrop={(e) => handleDrop(e, index)}
-              onDragEnd={handleDragEnd}
-              className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-teal-200 rounded-xl" : ""}`}
+        {/* Right Header Navigation */}
+        <div className="flex items-center gap-2 sm:gap-3">
+          {/* MY PROFILE BUTTON */}
+          <button
+            onClick={() => {
+              setMyProfileOpen(true);
+              setShowUserMenu(false);
+              setEditMode(false);
+            }}
+            className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer"
+          >
+            <UserCircle size={15} /> My Profile
+          </button>
+
+          <button
+            onClick={() => navigate("/sales/notifications")}
+            className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 relative transition cursor-pointer"
+          >
+            <Bell size={19} />
+            {notifCount > 0 && (
+              <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-black">
+                {notifCount}
+              </span>
+            )}
+          </button>
+
+          {/* Profile Menu Trigger */}
+          <div className="relative">
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 transition cursor-pointer"
             >
-              <NavLink
-                to={isCustomizing ? "#" : m.path}
-                onClick={(e) => {
-                  if (isCustomizing) {
-                    e.preventDefault();
-                    return;
-                  }
-                  if (isMobile) setOpen(false);
-                }}
-                className={({ isActive }) =>
-                  `flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-black transition ${!isCustomizing && isActive ? "bg-teal-600 text-white shadow-md shadow-teal-600/30" : "text-slate-600 hover:bg-teal-50 hover:text-teal-900"
-                  } ${!open ? "justify-center" : ""}`
-                }
-                title={!open ? m.title : undefined}
-              >
-                {isCustomizing && open && <GripVertical size={14} className="text-slate-400 shrink-0 mr-1" />}
-                <m.icon size={18} className="flex-shrink-0" />
-                {open && <span className="truncate">{m.title}</span>}
-              </NavLink>
-            </div>
-          ))}
-          {open && (
-            <div className="pt-2">
-              {isCustomizing ? (
-                <div className="pt-2 border-t border-slate-100 space-y-1.5 px-1">
-                  <button
-                    type="button"
-                    onClick={saveCustomization}
-                    className="w-full py-2 px-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[11px] font-black transition cursor-pointer"
-                  >
-                    Save Order
-                  </button>
-                  <button
-                    type="button"
-                    onClick={resetCustomization}
-                    className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[11px] font-black transition cursor-pointer"
-                  >
-                    Reset Default
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsCustomizing(true)}
-                  className="w-full py-2 px-3 border border-dashed border-slate-200 hover:border-teal-400 text-slate-500 hover:text-teal-600 rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <span>⚙️ Customize Sidebar</span>
-                </button>
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="p-3 border-t border-slate-100 flex-shrink-0">
-          {open ? (
-            <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200">
-              {gpsActive ? <Wifi size={16} className="text-green-600 shrink-0" /> : <WifiOff size={16} className="text-slate-400 shrink-0" />}
-              <div className="min-w-0">
-                <p className={`text-xs font-bold ${gpsActive ? "text-green-700" : "text-slate-500"}`}>GPS Location</p>
-                <p className={`text-[10px] truncate ${gpsActive ? "text-green-600" : "text-slate-400"}`}>
-                  {gpsActive ? "Live GPS Active" : "GPS Ready"}
-                </p>
+              <div className="w-8 h-8 rounded-full overflow-hidden bg-teal-600 text-white flex items-center justify-center font-bold text-xs ring-2 ring-teal-500/20 shrink-0">
+                {profilePhoto ? (
+                  <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
+                ) : (
+                  seInitials
+                )}
               </div>
-              {gpsActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0 ml-auto" />}
-            </div>
-          ) : (
-            <div className="flex justify-center">
-              {gpsActive ? <Wifi size={18} className="text-green-600" /> : <WifiOff size={18} className="text-slate-400" />}
-            </div>
-          )}
-        </div>
-      </aside>
-
-      {/* ── Main App Content ─────────────────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col min-w-0 w-full overflow-x-hidden">
-        {/* Top Navbar */}
-        <header className="h-16 bg-white shadow-xs flex justify-between items-center px-4 sm:px-6 flex-shrink-0 border-b border-slate-100 z-30">
-          <div className="flex items-center gap-2.5 min-w-0">
-            {/* Hamburger — visible on all screen sizes */}
-            <button
-              onClick={() => setOpen(!open)}
-              className="p-2 rounded-lg text-slate-600 hover:bg-slate-100 transition cursor-pointer shrink-0"
-              aria-label="Toggle navigation drawer"
-            >
-              <Menu size={20} />
-            </button>
-          </div>
-
-          {/* Right Header Navigation */}
-          <div className="flex items-center gap-2 sm:gap-3">
-            {/* MY PROFILE BUTTON */}
-            <button
-              onClick={() => {
-                setMyProfileOpen(true);
-                setShowUserMenu(false);
-                setEditMode(false);
-              }}
-              className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer"
-            >
-              <UserCircle size={15} /> My Profile
+              <div className="hidden sm:block text-left min-w-0">
+                <p className="text-xs font-bold text-slate-900 truncate max-w-[100px]">{seName}</p>
+                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{seRole}</p>
+              </div>
+              <ChevronDown size={14} className="text-slate-400 hidden sm:block" />
             </button>
 
-            <button
-              onClick={() => navigate("/sales/notifications")}
-              className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 relative transition cursor-pointer"
-            >
-              <Bell size={19} />
-              {notifCount > 0 && (
-                <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-black">
-                  {notifCount}
-                </span>
-              )}
-            </button>
-
-            {/* Profile Menu Trigger */}
-            <div className="relative">
-              <button
-                onClick={() => setShowUserMenu(!showUserMenu)}
-                className="flex items-center gap-2 p-1.5 rounded-xl hover:bg-slate-100 transition cursor-pointer"
-              >
-                <div className="w-8 h-8 rounded-full overflow-hidden bg-teal-600 text-white flex items-center justify-center font-bold text-xs ring-2 ring-teal-500/20 shrink-0">
-                  {profilePhoto ? (
-                    <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
-                  ) : (
-                    seInitials
-                  )}
-                </div>
-                <div className="hidden sm:block text-left min-w-0">
-                  <p className="text-xs font-bold text-slate-900 truncate max-w-[100px]">{seName}</p>
-                  <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{seRole}</p>
-                </div>
-                <ChevronDown size={14} className="text-slate-400 hidden sm:block" />
-              </button>
-
-              {/* Profile Menu Dropdown */}
-              {showUserMenu && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
+            {/* Profile Menu Dropdown */}
+            {showUserMenu && (
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setShowUserMenu(false);
+                  }}
+                />
+                <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 space-y-1">
+                  <div className="p-2.5 bg-slate-50 rounded-xl space-y-0.5">
+                    <p className="text-xs font-black text-slate-900 truncate">{seName}</p>
+                    <p className="text-[11px] text-slate-500 truncate">{seEmail}</p>
+                  </div>
+                  <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
+                      e.preventDefault();
                       setShowUserMenu(false);
+                      handleLogout();
                     }}
-                  />
-                  <div className="absolute right-0 mt-2 w-56 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 space-y-1">
-                    <div className="p-2.5 bg-slate-50 rounded-xl space-y-0.5">
-                      <p className="text-xs font-black text-slate-900 truncate">{seName}</p>
-                      <p className="text-[11px] text-slate-500 truncate">{seEmail}</p>
-                    </div>
+                    className="w-full flex items-center gap-2 p-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                  >
+                    <LogOut size={14} /> Log Out
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      </header>
+
+      {/* ── Main Layout Wrapper ───────────────────────────────────────────── */}
+      <div className="flex flex-1 min-w-0 relative">
+        {/* Backdrop for mobile drawer */}
+        {open && (
+          <div
+            onClick={() => setOpen(false)}
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 lg:hidden transition-opacity"
+          />
+        )}
+
+        {/* ── Sidebar ─────────────────────────────────────────────────── */}
+        <aside
+          className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 shrink-0 flex flex-col ${
+            open ? "translate-x-0" : "-translate-x-full"
+          }`}
+        >
+          {/* Note: Sidebar header logo row is completely removed to match Manager layout */}
+
+          <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+            {sidebarItems.map((m, index) => (
+              <div
+                key={m.path}
+                draggable={isCustomizing}
+                onDragStart={(e) => handleDragStart(e, index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDrop={(e) => handleDrop(e, index)}
+                onDragEnd={handleDragEnd}
+                className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-teal-200 rounded-xl" : ""}`}
+              >
+                <NavLink
+                  to={isCustomizing ? "#" : m.path}
+                  onClick={(e) => {
+                    if (isCustomizing) {
+                      e.preventDefault();
+                      return;
+                    }
+                    if (isMobile) setOpen(false);
+                  }}
+                  className={({ isActive }) =>
+                    `flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-black transition ${!isCustomizing && isActive ? "bg-teal-600 text-white shadow-md shadow-teal-600/30" : "text-slate-600 hover:bg-teal-50 hover:text-teal-900"
+                    } ${(!open && isMobile) ? "justify-center" : ""}`
+                  }
+                  title={(!open && isMobile) ? m.title : undefined}
+                >
+                  {isCustomizing && (open || !isMobile) && <GripVertical size={14} className="text-slate-400 shrink-0 mr-1" />}
+                  <m.icon size={18} className="flex-shrink-0" />
+                  {(open || !isMobile) && <span className="truncate">{m.title}</span>}
+                </NavLink>
+              </div>
+            ))}
+            {(open || !isMobile) && (
+              <div className="pt-2">
+                {isCustomizing ? (
+                  <div className="pt-2 border-t border-slate-100 space-y-1.5 px-1">
                     <button
                       type="button"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        e.preventDefault();
-                        setShowUserMenu(false);
-                        handleLogout();
-                      }}
-                      className="w-full flex items-center gap-2 p-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                      onClick={saveCustomization}
+                      className="w-full py-2 px-3 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-[11px] font-black transition cursor-pointer"
                     >
-                      <LogOut size={14} /> Log Out
+                      Save Order
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetCustomization}
+                      className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-[11px] font-black transition cursor-pointer"
+                    >
+                      Reset Default
                     </button>
                   </div>
-                </>
-              )}
-            </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setIsCustomizing(true)}
+                    className="w-full py-2 px-3 border border-dashed border-slate-200 hover:border-teal-400 text-slate-500 hover:text-teal-600 rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <span>⚙️ Customize Sidebar</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
-        </header>
+
+          <div className="p-3 border-t border-slate-100 flex-shrink-0">
+            {(open || !isMobile) ? (
+              <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200">
+                {gpsActive ? <Wifi size={16} className="text-green-600 shrink-0" /> : <WifiOff size={16} className="text-slate-400 shrink-0" />}
+                <div className="min-w-0">
+                  <p className={`text-xs font-bold ${gpsActive ? "text-green-700" : "text-slate-500"}`}>GPS Location</p>
+                  <p className={`text-[10px] truncate ${gpsActive ? "text-green-600" : "text-slate-400"}`}>
+                    {gpsActive ? "Live GPS Active" : "GPS Ready"}
+                  </p>
+                </div>
+                {gpsActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0 ml-auto" />}
+              </div>
+            ) : (
+              <div className="flex justify-center">
+                {gpsActive ? <Wifi size={18} className="text-green-600" /> : <WifiOff size={18} className="text-slate-400" />}
+              </div>
+            )}
+          </div>
+        </aside>
 
         {/* Page Content Container */}
-        <main className="flex-1 p-3 sm:p-5 lg:p-6 overflow-y-auto min-w-0 pb-20 md:pb-6">
+        <main className="flex-1 p-3 sm:p-5 lg:p-6 overflow-y-auto min-w-0 pb-20 lg:pb-6">
           <Outlet />
         </main>
 
         {/* ── Mobile Bottom Navigation Dock ────────────────────────── */}
-        <div className="md:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 px-2 py-1.5 flex items-center justify-around shadow-lg">
+        <div className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 px-2 py-1.5 flex items-center justify-around shadow-lg">
           <NavLink to="/sales/dashboard" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-teal-600' : 'text-slate-500'}`}>
             <LayoutDashboard size={18} />
             <span>Home</span>

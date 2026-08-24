@@ -3,7 +3,7 @@ import {
   MapPin, Radio, Users, Activity, Clock, RefreshCw,
   Search, Shield, Map, Eye, Compass, Navigation,
   AlertCircle, ChevronRight, Phone, Mail, Award, CheckCircle2, X,
-  Route, Milestone
+  Route, Milestone, Minimize2, Maximize2
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 import { spatialAPI, authAPI, settingsAPI, crmAPI, customerAPI, visitAPI, auditAPI } from '../../services/api.js'
@@ -77,30 +77,6 @@ function getTrackingBadge(status, lastUpdatedMs) {
   if (age > STALE_MS) return { label: 'Stale',    color: '#f97316', dot: '🟠' }
   return                       { label: 'Live',    color: '#10b981', dot: '🟢' }
 }
-
-export default function ManagerSmartMap() {
-  const { showToast } = useToast()
-  const currentUser = useCurrentUser()
-
-  // State
-  const [mapLoaded,        setMapLoaded]        = useState(false)
-  const [loading,          setLoading]           = useState(true)
-  const [panelOpen,        setPanelOpen]         = useState(window.innerWidth >= 1024)
-  const [lastUpdated,      setLastUpdated]       = useState(null)
-  const [autoRefresh,      setAutoRefresh]       = useState(true)
-  const [viewMode,         setViewMode]          = useState('both')
-  const [searchQuery,      setSearchQuery]       = useState('')
-  const [executives,       setExecutives]        = useState([])
-  const [selectedExecutive,setSelectedExecutive] = useState(null)
-  const [stats,            setStats]             = useState({ total: 0, online: 0, offline: 0 })
-
-  // Live-tracking panel state
-  const [trackSession,     setTrackSession]      = useState(null)
-  const [trackBreadcrumbs, setTrackBreadcrumbs]  = useState([])
-  const [trackStatus,      setTrackStatus]       = useState('idle') // idle|loading|live|stale|ended
-  const [lastPingMs,       setLastPingMs]        = useState(null)
-  const [realtimeOk,       setRealtimeOk]        = useState(false)
-  const [trackEvents,      setTrackEvents]       = useState([])
 
 // ─── Custom HTML Map Marker for Google Maps Overlay ───────────────────────────
 let HTMLMapMarker = null
@@ -180,9 +156,36 @@ function initializeHTMLMapMarker() {
   }
 }
 
+export default function ManagerSmartMap() {
+  const { showToast } = useToast()
+  const currentUser = useCurrentUser()
+
+  // State
+  const [mapLoaded,        setMapLoaded]        = useState(false)
+  const [loading,          setLoading]           = useState(true)
+  const [panelOpen,        setPanelOpen]         = useState(window.innerWidth >= 1024)
+  const [lastUpdated,      setLastUpdated]       = useState(null)
+  const [autoRefresh,      setAutoRefresh]       = useState(true)
+  const [viewMode,         setViewMode]          = useState('both')
+  const [searchQuery,      setSearchQuery]       = useState('')
+  const [executives,       setExecutives]        = useState([])
+  const [selectedExecutive,setSelectedExecutive] = useState(null)
+  const [stats,            setStats]             = useState({ total: 0, online: 0, offline: 0 })
+  const [initialFitDone,   setInitialFitDone]    = useState(false)
+  const [isTrackingMinimized, setIsTrackingMinimized] = useState(false)
+
+  // Live-tracking panel state
+  const [trackSession,     setTrackSession]      = useState(null)
+  const [trackBreadcrumbs, setTrackBreadcrumbs]  = useState([])
+  const [trackStatus,      setTrackStatus]       = useState('idle') // idle|loading|live|stale|ended
+  const [lastPingMs,       setLastPingMs]        = useState(null)
+  const [realtimeOk,       setRealtimeOk]        = useState(false)
+  const [trackEvents,      setTrackEvents]       = useState([])
+
   // Client destination details state
   const [destClient,       setDestClient]        = useState(null)
   const [destRouteMeta,    setDestRouteMeta]     = useState(null)
+  const [latestExecPos,    setLatestExecPos]     = useState(null)
 
   // ─── 2. Fetch team locations ──────────────────────────────────────────────
   const fetchData = useCallback(async (isSilent = false) => {
@@ -220,15 +223,17 @@ function initializeHTMLMapMarker() {
   const selectedExecutiveRef = useRef(null)
   const trackSessionRef = useRef(null)
   const realtimeChRef   = useRef(null)  // supabase channel
+  const latestTimestampRef = useRef(0)  // track latest received GPS timestamp
+  const lastMovedTimeRef = useRef(Date.now())
+  const lastMovedPosRef = useRef(null)
   const animFrameRef    = useRef(null)  // requestAnimationFrame id
   const pollTimerRef    = useRef(null)  // fallback polling timer
-  const initialFitBoundsDoneRef = useRef(false)
   const crumbsRef       = useRef([])
   const lastRouteRecalcPosRef = useRef(null)
   const lastRouteRecalcTimeRef = useRef(0)
   const nearbyClientMarkersRef = useRef([])
   const destRoutePathRef        = useRef([])    // [[lat,lng],...] raw planned route
-  const nearbyNotifiedMap       = useRef(new Map()) // Map<id,{lat,lng}> hysteresis dedup
+  const nearbyNotifiedMap       = useRef(new globalThis.Map()) // Map<id,{lat,lng}> hysteresis dedup
   const candidatesRef           = useRef([])    // latest normalised leads+customers list
 
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState('')
@@ -510,6 +515,46 @@ function initializeHTMLMapMarker() {
     return h > 0 ? `${h}h ${m}m` : `${m}m`
   }
 
+  const getProximityStatus = () => {
+    if (trackStatus === 'ended') return 'Session Ended';
+    if (!latestExecPos || !destClient) return 'Travelling';
+
+    const distM = haversineDistance(latestExecPos.lat, latestExecPos.lng, Number(destClient.latitude), Number(destClient.longitude)) * 1000;
+    
+    if (distM <= 50) {
+      return 'Arrived';
+    }
+    
+    if (distM <= 450) {
+      return 'Near Location';
+    }
+
+    // Check if Idle (no movement >= 10m for > 3 minutes)
+    const timeSinceLastMove = Date.now() - lastMovedTimeRef.current;
+    if (timeSinceLastMove > 3 * 60 * 1000) {
+      return 'Idle';
+    }
+
+    return 'Travelling';
+  };
+
+  const getHeartbeatStatus = () => {
+    if (trackStatus === 'ended') return { label: 'Ended', color: 'text-slate-400 bg-slate-500/10 border-slate-500/20', dot: 'bg-slate-500' };
+    if (!lastPingMs) return { label: 'No Signal', color: 'text-slate-400 bg-slate-500/10 border-slate-500/20', dot: 'bg-slate-500' };
+    
+    const age = Date.now() - lastPingMs;
+    if (age <= 10000) {
+      return { label: 'Live Connection', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', dot: 'bg-emerald-500 animate-pulse' };
+    }
+    if (age <= 30000) {
+      return { label: 'Connection Unstable', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20', dot: 'bg-amber-550' };
+    }
+    if (age <= 60000) {
+      return { label: 'GPS Stale', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20', dot: 'bg-orange-500' };
+    }
+    return { label: 'Offline', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20', dot: 'bg-rose-500' };
+  };
+
   // ─── 5. Team / Client markers ─────────────────────────────────────────────
   useEffect(() => {
     if (!googleMapRef.current || !window.google) return
@@ -584,8 +629,14 @@ function initializeHTMLMapMarker() {
     if (realtimeChRef.current)  { try { realtimeChRef.current.unsubscribe() } catch {} realtimeChRef.current = null }
     setDestClient(null)
     setDestRouteMeta(null)
+    setLatestExecPos(null)
+    setLastPingMs(null)
+    setTrackBreadcrumbs([])
     crumbsRef.current = []
     destRoutePathRef.current = []
+    latestTimestampRef.current = 0
+    lastMovedPosRef.current = null
+    lastMovedTimeRef.current = Date.now()
     nearbyNotifiedMap.current.clear()
     selectedExecutiveRef.current = null
     trackSessionRef.current = null
@@ -807,9 +858,30 @@ function initializeHTMLMapMarker() {
     const lng = Number(crumb.longitude)
     if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return
 
+    const crumbTime = new Date(crumb.recorded_at || crumb.timestamp || Date.now()).getTime()
+    if (crumbTime && crumbTime <= latestTimestampRef.current) {
+      console.log("[SmartMap] Ignored older/stale coordinate update:", crumb.recorded_at || crumb.timestamp)
+      return
+    }
+    if (crumbTime) {
+      latestTimestampRef.current = crumbTime
+    }
+
     const now = Date.now()
     setLastPingMs(now)
     setTrackStatus('live')
+    setLatestExecPos({ lat, lng })
+
+    if (!lastMovedPosRef.current) {
+      lastMovedPosRef.current = { lat, lng }
+      lastMovedTimeRef.current = now
+    } else {
+      const distMoved = haversineDistance(lat, lng, lastMovedPosRef.current.lat, lastMovedPosRef.current.lng) * 1000
+      if (distMoved >= 10) {
+        lastMovedPosRef.current = { lat, lng }
+        lastMovedTimeRef.current = now
+      }
+    }
 
     // Extend polyline (if any)
     try {
@@ -1087,7 +1159,13 @@ function initializeHTMLMapMarker() {
 
       // ─── Fetch nearby client markers ───
       if (latestLat != null && latestLng != null && !isNaN(latestLat) && !isNaN(latestLng)) {
+        setLatestExecPos({ lat: latestLat, lng: latestLng })
         _fetchAndRenderNearbyClients(latestLat, latestLng)
+        if (crumbs.length > 0) {
+          latestTimestampRef.current = new Date(crumbs[crumbs.length - 1].recorded_at).getTime()
+        } else if (session && session.start_time) {
+          latestTimestampRef.current = new Date(session.start_time).getTime()
+        }
       }
 
       // ─── Fetch historical tracking events ───
@@ -1174,6 +1252,22 @@ function initializeHTMLMapMarker() {
     if (supabase) {
       const channel = supabase
         .channel(`tracking_${employeeId}_${sessionId || 'live'}`)
+        .on('broadcast', { event: 'location' }, (payload) => {
+          const crumb = payload.payload
+          if (!crumb) return
+          
+          if (crumb.broadcast_sent_at) {
+            const latVal = Date.now() - crumb.broadcast_sent_at
+            console.log(`[SmartMap] Realtime Broadcast Latency: ${latVal}ms`)
+          }
+          
+          const exists = crumbsRef.current.some(c => c.id === crumb.id)
+          if (!exists) {
+            crumbsRef.current = [...crumbsRef.current, crumb]
+            setTrackBreadcrumbs(crumbsRef.current)
+            _applyNewCrumb(crumb)
+          }
+        })
         .on('postgres_changes', {
           event: 'INSERT',
           schema: 'hrms',
@@ -1297,6 +1391,7 @@ function initializeHTMLMapMarker() {
     setRealtimeOk(false)
 
     setSelectedExecutive(ex)
+    setIsTrackingMinimized(false)
     
     // Only zoom/fly to executive location if there is NO active client visit destination
     const isClientVisit = ex.check_in_mode === 'Client Visit' || ex.client_latitude != null
@@ -1339,6 +1434,8 @@ function initializeHTMLMapMarker() {
   }
 
   const badge = getTrackingBadge(trackStatus === 'ended' ? 'ended' : trackStatus, lastPingMs)
+  const proxStatus = getProximityStatus()
+  const hb = getHeartbeatStatus()
 
   // ─── 8. Render ────────────────────────────────────────────────────────────
   return (
@@ -1394,7 +1491,7 @@ function initializeHTMLMapMarker() {
                 <button onClick={() => {
                   _clearTrackingLayer()
                   setSelectedExecutive(null)
-                  initialFitBoundsDoneRef.current = false
+                  setInitialFitDone(false)
                 }} className="p-1 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition active:scale-95">
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -1608,67 +1705,117 @@ function initializeHTMLMapMarker() {
 
         {/* Compact Zomato/Swiggy-style Floating Live Tracking Card */}
         {selectedExecutive && trackStatus !== 'idle' && trackStatus !== 'loading' && destClient && (
-          <div className="absolute top-5 left-5 z-20 w-80 bg-slate-900/95 border border-white/10 rounded-2xl p-4 shadow-2xl backdrop-blur-md text-white pointer-events-auto flex flex-col gap-3">
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-400 flex items-center gap-1.5 animate-pulse">
-                <span className="w-2 h-2 rounded-full bg-emerald-500"></span> LIVE TRACKING
-              </span>
-              <button onClick={() => {
-                _clearTrackingLayer()
-                setSelectedExecutive(null)
-                initialFitBoundsDoneRef.current = false
-              }} className="p-1 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition active:scale-95">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            
-            <div>
-              <h3 className="text-sm font-black text-slate-100">{selectedExecutive.employee_name}</h3>
-              <p className="text-[10px] font-bold text-slate-400">{selectedExecutive.role}</p>
-            </div>
-            
-            <div className="border-t border-white/5 pt-3 space-y-2">
-              <div className="flex items-start gap-2.5">
-                <div className="mt-0.5 p-1.5 rounded-lg bg-violet-500/10 text-violet-400">
-                  <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Moving to Client</div>
-                  <div className="text-xs font-black text-slate-200 truncate">{destClient.title}</div>
-                  <div className="text-[10px] text-slate-400 font-semibold truncate">{destClient.address}</div>
-                  <div className="text-[9px] text-slate-500 font-mono mt-1">
-                    Coordinates: {destClient.latitude.toFixed(5)}, {destClient.longitude.toFixed(5)}
+          isTrackingMinimized ? (
+            /* Minimized state: slim pill at the top of the map */
+            <div className="absolute top-4 left-4 right-4 lg:right-auto lg:w-85 z-20 bg-slate-950/96 border border-white/10 rounded-xl p-3 shadow-2xl backdrop-blur-md text-white pointer-events-auto flex items-center justify-between gap-3 animate-in slide-in-from-top duration-200">
+              <div className="flex items-center gap-2.5 min-w-0">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
+                <div className="min-w-0">
+                  <div className="text-xs font-black truncate">{selectedExecutive.employee_name}</div>
+                  <div className="text-[9px] text-slate-400 font-bold">
+                    {destRouteMeta ? `${destRouteMeta.etaMins} mins remaining (${destRouteMeta.distanceKm.toFixed(1)} km)` : 'Live tracking'}
                   </div>
                 </div>
               </div>
+              <div className="flex items-center gap-1.5 flex-shrink-0">
+                <button onClick={() => setIsTrackingMinimized(false)}
+                  title="Expand live tracking info"
+                  className="p-1.5 rounded-lg hover:bg-white/5 text-slate-300 hover:text-white transition active:scale-95">
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+                <button onClick={() => {
+                  _clearTrackingLayer()
+                  setSelectedExecutive(null)
+                  setInitialFitDone(false)
+                  setIsTrackingMinimized(false)
+                }} className="p-1.5 rounded-lg hover:bg-white/5 text-rose-400 hover:text-rose-300 transition active:scale-95">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
             </div>
+          ) : (
+            /* Full layout: floating card on desktop, bottom sheet style card on mobile */
+            <div className="absolute bottom-2 left-2 right-2 top-auto lg:bottom-auto lg:top-5 lg:left-5 lg:right-auto lg:w-80 z-20 bg-slate-950/96 border border-white/10 rounded-2xl p-4 shadow-2xl backdrop-blur-md text-white pointer-events-auto flex flex-col gap-3 max-h-[45vh] lg:max-h-none overflow-y-auto lg:overflow-visible animate-in slide-in-from-bottom lg:slide-in-from-top duration-200">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-slate-400"></span> TRACKING SESSION
+                </span>
+                <div className="flex items-center gap-1.5">
+                  {/* Heartbeat Badge */}
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border flex items-center gap-1 ${hb.color}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${hb.dot}`} />
+                    {hb.label}
+                  </span>
+                  <button onClick={() => setIsTrackingMinimized(true)}
+                    title="Minimize tracking info"
+                    className="p-1 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition active:scale-95">
+                    <Minimize2 className="w-4 h-4" />
+                  </button>
+                  <button onClick={() => {
+                    _clearTrackingLayer()
+                    setSelectedExecutive(null)
+                    setInitialFitDone(false)
+                    setIsTrackingMinimized(false)
+                  }} className="p-1 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition active:scale-95">
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+              
+              <div>
+                <h3 className="text-sm font-black text-slate-100">{selectedExecutive.employee_name}</h3>
+                <p className="text-[10px] font-bold text-slate-400">{selectedExecutive.role}</p>
+              </div>
+              
+              <div className="border-t border-white/5 pt-3 space-y-2">
+                <div className="flex items-start gap-2.5">
+                  <div className="mt-0.5 p-1.5 rounded-lg bg-violet-500/10 text-violet-400">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
+                      Status: <span className={`font-black uppercase ${
+                        proxStatus === 'Arrived' ? 'text-green-400' :
+                        proxStatus === 'Near Location' ? 'text-amber-400' :
+                        proxStatus === 'Idle' ? 'text-orange-400 animate-pulse' : 'text-blue-400'
+                      }`}>{proxStatus}</span>
+                    </div>
+                    <div className="text-xs font-black text-slate-200 truncate">{destClient.title}</div>
+                    <div className="text-[10px] text-slate-400 font-semibold truncate">{destClient.address}</div>
+                    <div className="text-[9px] text-slate-500 font-mono mt-1">
+                      Coordinates: {destClient.latitude.toFixed(5)}, {destClient.longitude.toFixed(5)}
+                    </div>
+                  </div>
+                </div>
+              </div>
 
-            {trackStatus === 'ended' ? (
-              <div className="text-center py-2.5 text-[10px] text-slate-400 font-extrabold border-t border-white/5 bg-slate-950/20 rounded-xl">
-                ⚫ Trip completed / Session ended
-              </div>
-            ) : destRouteMeta ? (
-              <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5">
-                <div className="bg-slate-950/40 border border-white/5 rounded-xl p-2.5">
-                  <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Remaining Distance</div>
-                  <div className="text-sm font-black text-violet-400 mt-0.5">{destRouteMeta.distanceKm.toFixed(1)} km</div>
+              {trackStatus === 'ended' ? (
+                <div className="text-center py-2.5 text-[10px] text-slate-400 font-extrabold border-t border-white/5 bg-slate-950/20 rounded-xl">
+                  ⚫ Trip completed / Session ended
                 </div>
-                <div className="bg-slate-950/40 border border-white/5 rounded-xl p-2.5">
-                  <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Est. Time of Arrival</div>
-                  <div className="text-sm font-black text-violet-400 mt-0.5">{destRouteMeta.etaMins} mins</div>
+              ) : destRouteMeta ? (
+                <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5">
+                  <div className="bg-slate-950/40 border border-white/5 rounded-xl p-2.5">
+                    <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Remaining Distance</div>
+                    <div className="text-sm font-black text-violet-400 mt-0.5">{destRouteMeta.distanceKm.toFixed(1)} km</div>
+                  </div>
+                  <div className="bg-slate-950/40 border border-white/5 rounded-xl p-2.5">
+                    <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Est. Time of Arrival</div>
+                    <div className="text-sm font-black text-violet-400 mt-0.5">{destRouteMeta.etaMins} mins</div>
+                  </div>
                 </div>
+              ) : (
+                <div className="text-center py-2 text-[10px] text-rose-500 font-black border-t border-white/5">
+                  ⚠️ Route unavailable (Road network path not resolved)
+                </div>
+              )}
+              
+              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-2 font-bold">
+                <span>Last updated: {lastPingMs ? formatLastSeen(new Date(lastPingMs).toISOString()) : 'Just now'}</span>
+                <span>{trackSession?.total_distance ? `${(trackSession.total_distance / 1000).toFixed(2)} km total` : ''}</span>
               </div>
-            ) : (
-              <div className="text-center py-2 text-[10px] text-rose-500 font-black border-t border-white/5">
-                ⚠️ Route unavailable (Road network path not resolved)
-              </div>
-            )}
-            
-            <div className="flex items-center justify-between text-[10px] text-slate-500 pt-2 font-bold">
-              <span>Last updated: {lastPingMs ? formatLastSeen(new Date(lastPingMs).toISOString()) : 'Just now'}</span>
-              <span>{trackSession?.total_distance ? `${(trackSession.total_distance / 1000).toFixed(2)} km total` : ''}</span>
             </div>
-          </div>
+          )
         )}
 
         {/* Top Floating Controls */}
