@@ -219,6 +219,7 @@ export default function SmartClientMap() {
   const lastRoutePos     = useRef(null)         // last OSRM fetch position
   const routeFetchTimer  = useRef(null)         // debounce timer id
   const lastTelemetryUpdate = useRef(0)         // throttled updates tracking
+  const hasCenteredOnGpsRef = useRef(false)     // initial GPS pan tracking
 
   // ── GPS & Map ────────────────────────────────────────────────────────────
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState('')
@@ -748,8 +749,11 @@ export default function SmartClientMap() {
 
     if (navMode && googleMapRef.current) {
       googleMapRef.current.panTo(latlng)
+    } else if (!hasCenteredOnGpsRef.current && gpsStatus === 'active' && googleMapRef.current) {
+      googleMapRef.current.panTo(latlng)
+      hasCenteredOnGpsRef.current = true
     }
-  }, [executivePos, navMode, mapLoaded])
+  }, [executivePos, navMode, mapLoaded, gpsStatus])
 
   // ─── 14. Redraw destination + on-route markers + polyline ───────────────
   useEffect(() => {
