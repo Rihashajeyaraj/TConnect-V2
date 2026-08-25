@@ -186,6 +186,9 @@ export default function ManagerSmartMap() {
   const [destClient,       setDestClient]        = useState(null)
   const [destRouteMeta,    setDestRouteMeta]     = useState(null)
   const [latestExecPos,    setLatestExecPos]     = useState(null)
+  const [onRouteClients,   setOnRouteClients]    = useState([])
+  const completedVisitIdsRef = useRef(new Set())
+  const scheduledVisitIdsRef = useRef(new Set())
 
   // ─── 2. Fetch team locations ──────────────────────────────────────────────
   const fetchData = useCallback(async (isSilent = false) => {
@@ -404,6 +407,9 @@ export default function ManagerSmartMap() {
       destRoutePathRef.current = routePts;
       lastRouteRecalcPosRef.current = { lat: originLat, lng: originLng };
       lastRouteRecalcTimeRef.current = Date.now();
+
+      // Trigger nearby and previous client corridor detection!
+      _fetchAndRenderNearbyClients(originLat, originLng);
     } else {
       console.warn("[SmartMap] Road route unavailable. Clearing route layer from map.");
       if (destRouteRef.current) {
@@ -443,13 +449,14 @@ export default function ManagerSmartMap() {
     return () => clearInterval(t)
   }, [autoRefresh, fetchData])
 
-  // ─── Load all leads + customers for route-corridor nearby detection ──────────
+  // ─── Load all leads + customers + visits for route-corridor nearby detection ───
   useEffect(() => {
     async function loadCandidates() {
       try {
-        const [leadsRes, custsRes] = await Promise.allSettled([
+        const [leadsRes, custsRes, visitsRes] = await Promise.allSettled([
           crmAPI.getLeads(),
           customerAPI.getCustomers(),
+          visitAPI.getVisits(),
         ])
         const safeArray = (res) => {
           if (res.status !== 'fulfilled') return []
@@ -460,7 +467,7 @@ export default function ManagerSmartMap() {
           const lng = item.longitude != null ? Number(item.longitude) : null
           const ok  = lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0
           return {
-            id:               item.id || item.lead_id || item.customer_id || `${category}_${idx}`,
+            id:               item.id || item.lead_id || item.customer_id || item.visit_id || `${category}_${idx}`,
             title:            item.company || item.company_name || item.name || item.client_name || `Client #${idx + 1}`,
             category,
             latitude:         ok ? lat : null,
@@ -473,6 +480,21 @@ export default function ManagerSmartMap() {
         }
         const leads = safeArray(leadsRes).map((i, idx) => toNorm(i, 'Lead', idx))
         const custs = safeArray(custsRes).map((i, idx) => toNorm(i, 'Customer', idx))
+        const visits = safeArray(visitsRes)
+
+        const completedIds = new Set(
+          visits.filter(v => ['COMPLETED', 'CHECKED_OUT', 'visited', 'completed'].includes(v.status || v.visit_status))
+                .map(v => v.lead_id || v.customer_id || v.client_id || v.id)
+                .filter(Boolean)
+        )
+        const scheduledIds = new Set(
+          visits.filter(v => !completedIds.has(v.lead_id || v.customer_id || v.client_id || v.id))
+                .map(v => v.lead_id || v.customer_id || v.client_id || v.id)
+                .filter(Boolean)
+        )
+        completedVisitIdsRef.current = completedIds
+        scheduledVisitIdsRef.current = scheduledIds
+
         candidatesRef.current = [...leads, ...custs].filter(c => c.has_exact_coords)
       } catch (e) {
         console.warn('[ManagerSmartMap] Failed to load candidates for nearby detection:', e)
@@ -713,6 +735,7 @@ export default function ManagerSmartMap() {
     nearbyNotifiedMap.current.clear()
     selectedExecutiveRef.current = null
     trackSessionRef.current = null
+    setOnRouteClients([])
     setTrackEvents([])
   }, [])
 
@@ -780,19 +803,68 @@ export default function ManagerSmartMap() {
       return;
     }
 
-    // Build normalised candidates from cached data
-    const candidates = candidatesRef.current;
+    // Build normalised candidates from cached data or auto-fetch if empty
+    let candidates = candidatesRef.current;
+    if (!candidates || candidates.length === 0) {
+      try {
+        const [lRes, cRes] = await Promise.allSettled([crmAPI.getLeads(), customerAPI.getCustomers()]);
+        const safeArray = (r) => (r.status === 'fulfilled' ? (Array.isArray(r.value) ? r.value : (r.value?.data || [])) : []);
+        const toNorm = (item, category, idx) => {
+          const lat = item.latitude != null ? Number(item.latitude) : null;
+          const lng = item.longitude != null ? Number(item.longitude) : null;
+          const ok = lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+          return {
+            id: item.id || item.lead_id || item.customer_id || `${category}_${idx}`,
+            title: item.company || item.company_name || item.name || item.client_name || `Client #${idx + 1}`,
+            category,
+            latitude: ok ? lat : null,
+            longitude: ok ? lng : null,
+            has_exact_coords: ok,
+            address: item.address || item.location || item.city || '—',
+            phone: item.phone || item.mobile || '',
+            originalItem: item,
+          };
+        };
+        const leads = safeArray(lRes).map((i, idx) => toNorm(i, 'Lead', idx));
+        const custs = safeArray(cRes).map((i, idx) => toNorm(i, 'Customer', idx));
+        candidates = [...leads, ...custs].filter(c => c.has_exact_coords);
+        candidatesRef.current = candidates;
+      } catch (e) {
+        console.warn("Failed to load candidates on the fly:", e);
+      }
+    }
     if (!candidates || candidates.length === 0) return;
 
-    // Run shared detection (500m hard corridor, segment-based, ahead-only)
-    const matched = detectRouteClients({
-      candidates,
-      routePath,
-      execPos:  { lat: execLat, lng: execLng },
-      destId,
-      // completedVisitIds / scheduledVisitIds not available in manager context
-      // — classification will default to 'unvisited' (shown as Nearby Client)
-    });
+    let matched = [];
+    if (routePath && routePath.length >= 2) {
+      // 1. Run shared detection (500m hard corridor, segment-based, ahead-only)
+      matched = detectRouteClients({
+        candidates,
+        routePath,
+        execPos:  { lat: execLat, lng: execLng },
+        destId,
+        completedVisitIds: completedVisitIdsRef.current,
+        scheduledVisitIds: scheduledVisitIdsRef.current,
+      });
+    } else {
+      // 2. Fallback: Radius-based detection within 2.5 km of executive
+      matched = candidates.filter(c => {
+        if (destId && String(c.id) === String(destId)) return false;
+        const d = haversineDistance(execLat, execLng, c.latitude, c.longitude);
+        return d <= 2.5;
+      }).map(c => {
+        const d = haversineDistance(execLat, execLng, c.latitude, c.longitude);
+        const isPrev = completedVisitIdsRef.current?.has(c.id);
+        const isSched = scheduledVisitIdsRef.current?.has(c.id);
+        return {
+          ...c,
+          distToRouteM: Math.round(d * 1000),
+          alertType: isPrev ? 'previous' : (isSched ? 'scheduled' : 'unvisited')
+        };
+      });
+    }
+
+    setOnRouteClients(matched);
 
     // Clear old markers
     nearbyClientMarkersRef.current.forEach(m => m.setMap(null));
@@ -801,12 +873,13 @@ export default function ManagerSmartMap() {
     matched.forEach(item => {
       const itemLatLng = new window.google.maps.LatLng(item.latitude, item.longitude);
       const isPrev   = item.alertType === 'previous';
-      const pinColor = isPrev ? '#7c3aed' : (item.category === 'Customer' ? '#10b981' : '#3b82f6');
-      const label    = isPrev ? 'P' : (item.category === 'Customer' ? 'C' : 'L');
+      const isSched  = item.alertType === 'scheduled';
+      const pinColor = isPrev ? '#7c3aed' : (isSched ? '#2563eb' : (item.category === 'Customer' ? '#10b981' : '#f59e0b'));
+      const label    = isPrev ? 'P' : (isSched ? 'S' : (item.category === 'Customer' ? 'C' : 'L'));
 
       const pinHtml = `
-        <div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#0f172a;border:2.5px solid ${pinColor};box-shadow:0 2px 8px rgba(0,0,0,0.4);color:#fff;">
-          <span style="font-size:11px;font-weight:900;">${label}</span>
+        <div style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:#0f172a;border:2.5px solid ${pinColor};box-shadow:0 3px 10px rgba(0,0,0,0.5);color:#fff;">
+          <span style="font-size:10px;font-weight:900;">${label}</span>
         </div>
       `;
 
@@ -817,12 +890,21 @@ export default function ManagerSmartMap() {
         () => {
           googleMapRef.current.panTo(itemLatLng);
           showInfoWindow(itemLatLng, `
-            <div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;min-width:180px;">
-              <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:${pinColor};text-transform:uppercase;font-size:9px;letter-spacing:0.5px;margin-bottom:4px;">
-                <span>${isPrev ? '🔄 Previous Client Nearby' : '📍 Nearby ' + item.category}</span>
+            <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:240px;">
+              <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:${pinColor};text-transform:uppercase;font-size:10px;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1.5px solid #f1f5f9;padding-bottom:4px;">
+                <span>${isPrev ? '🔄 Previous Visited Client' : (isSched ? '📅 Scheduled Client Visit' : '📍 Nearby ' + item.category)}</span>
               </div>
-              <div style="font-weight:800;font-size:12px;color:#0f172a;">${item.title}</div>
-              <div style="color:#475569;font-size:10px;margin-top:4px;">${item.distToRouteM}m from route</div>
+              <div style="font-weight:800;font-size:13px;color:#0f172a;">${item.title}</div>
+              <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;margin-top:6px;">
+                ${item.phone ? `
+                  <span style="font-weight:700;color:#64748b;">Phone:</span>
+                  <span style="font-weight:800;color:#2563eb;font-family:monospace;">${item.phone}</span>
+                ` : ''}
+                <span style="font-weight:700;color:#64748b;">Address:</span>
+                <span style="font-weight:600;color:#475569;line-height:1.3;">${item.address || '—'}</span>
+                <span style="font-weight:700;color:#64748b;">Distance:</span>
+                <span style="font-weight:800;color:#7c3aed;">${item.distToRouteM}m</span>
+              </div>
             </div>
           `);
         },
@@ -833,8 +915,8 @@ export default function ManagerSmartMap() {
 
       // Toast + audit log (hysteresis — only once per 200m movement)
       if (shouldNotify(item.id, { lat: execLat, lng: execLng }, nearbyNotifiedMap.current)) {
-        const typeLabel = isPrev ? '🔄 Previous Client Nearby' : '📍 Nearby Client';
-        showToast(`${typeLabel}: ${item.title} — ${item.distToRouteM}m from route`, 'info');
+        const typeLabel = isPrev ? '🔄 Previous Client Nearby' : (isSched ? '📅 Scheduled Visit Nearby' : '📍 Nearby Client');
+        showToast(`${typeLabel}: ${item.title} — ${item.distToRouteM}m`, 'info');
 
         auditAPI.logEvent({
           action: 'MANAGER_NEARBY_CLIENT',
@@ -852,6 +934,8 @@ export default function ManagerSmartMap() {
       }
     });
   };
+
+
 
   const _buildLivePopupContent = (executive, session, clientDest) => {
     const executiveName = resolveRealName(executive)
@@ -1749,6 +1833,50 @@ export default function ManagerSmartMap() {
                     </div>
                   </div>
                 </div>
+
+                {/* Route Corridor Nearby / Previous Client Alerts */}
+                {onRouteClients.length > 0 && (
+                  <div className="border-t border-white/5 pt-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                        <span>🔔</span> Clients on Route ({onRouteClients.length})
+                      </span>
+                      <span className="text-[9px] text-slate-500 font-semibold">500m corridor</span>
+                    </div>
+                    <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1 font-sans">
+                      {onRouteClients.map(client => {
+                        const isPrev = client.alertType === 'previous';
+                        const isSched = client.alertType === 'scheduled';
+                        return (
+                          <div key={client.id}
+                            onClick={() => {
+                              if (googleMapRef.current && client.latitude && client.longitude) {
+                                googleMapRef.current.panTo({ lat: client.latitude, lng: client.longitude });
+                                googleMapRef.current.setZoom(16);
+                              }
+                            }}
+                            className="p-2 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-white/5 cursor-pointer transition flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                  isPrev ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+                                  isSched ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
+                                  'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                }`}>
+                                  {isPrev ? '🔄 Previous Client' : (isSched ? '📅 Scheduled' : '📍 Nearby ' + client.category)}
+                                </span>
+                                <span className="text-[9px] font-mono font-bold text-slate-400">{client.distToRouteM}m</span>
+                              </div>
+                              <div className="text-xs font-black text-slate-200 truncate mt-1">{client.title}</div>
+                              {client.address && <div className="text-[9px] text-slate-500 truncate">{client.address}</div>}
+                            </div>
+                            <span className="text-[10px] text-violet-400 font-extrabold shrink-0">View ➔</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Live Activity Feed */}
                 <div className="border-t border-white/5 pt-3 space-y-2">

@@ -550,7 +550,7 @@ export default function SmartClientMap() {
   }, [fetchRoute, showToast])
 
   // ─── 8. Start Navigation Mode ───────────────────────────────────────────
-  const startNavigation = useCallback(() => {
+  const startNavigation = useCallback(async () => {
     if (!selectedStop?.has_exact_coords) return
     setNavMode(true)
     setNavDestination({ lat: selectedStop.latitude, lng: selectedStop.longitude })
@@ -560,15 +560,52 @@ export default function SmartClientMap() {
       googleMapRef.current.panTo({ lat: executivePos.lat, lng: executivePos.lng })
       googleMapRef.current.setZoom(15)
     }
+
+    try {
+      const clientData = {
+        client_id: selectedStop.id,
+        client_name: selectedStop.title,
+        company_name: selectedStop.title,
+        client_address: selectedStop.address,
+        client_phone: selectedStop.phone,
+        client_latitude: selectedStop.latitude,
+        client_longitude: selectedStop.longitude,
+      }
+      const res = await spatialAPI.startSession(executivePos.lat, executivePos.lng, clientData)
+      const data = res?.data || res
+      const sessId = data?.session?.id || data?.id
+      if (sessId) {
+        localStorage.setItem('tc_tracking_session', sessId)
+        window.dispatchEvent(new CustomEvent('tc:start-tracking', {
+          detail: { lat: executivePos.lat, lng: executivePos.lng, clientData, sessionId: sessId }
+        }))
+      }
+    } catch (err) {
+      console.warn('Notice: Background session initiation:', err)
+      window.dispatchEvent(new CustomEvent('tc:start-tracking', {
+        detail: { lat: executivePos.lat, lng: executivePos.lng, clientData: selectedStop, sessionId: null }
+      }))
+    }
   }, [selectedStop, executivePos, showToast])
 
-  const stopNavigation = useCallback(() => {
+  const stopNavigation = useCallback(async () => {
     setNavMode(false)
     setNavDestination(null)
     setOffRoute(false)
     setNearDestination(false)
     showToast('Navigation stopped.', 'info')
-  }, [showToast])
+
+    const sessId = localStorage.getItem('tc_tracking_session')
+    if (sessId) {
+      try {
+        await spatialAPI.endSession({ session_id: sessId, latitude: executivePos.lat, longitude: executivePos.lng })
+      } catch (err) {
+        console.warn('Notice: Session end notice:', err)
+      }
+      localStorage.removeItem('tc_tracking_session')
+    }
+    window.dispatchEvent(new CustomEvent('tc:stop-tracking'))
+  }, [executivePos, showToast])
 
   // ─── 9. GPS update handler (navigation mode logic + debounce) ───────────
   useEffect(() => {
