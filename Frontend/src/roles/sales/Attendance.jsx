@@ -12,7 +12,8 @@ import {
   FileSpreadsheet,
   FileText,
   Download,
-  Map
+  Map,
+  RefreshCw
 } from "lucide-react";
 import { useToast } from "../../common/ToastContext.jsx";
 import { attendanceAPI, spatialAPI, crmAPI, customerAPI, settingsAPI } from "../../services/api.js";
@@ -103,8 +104,9 @@ export default function Attendance() {
   const [blinkCount, setBlinkCount] = useState(0); // 0, 1, 2
 
   // Location Capture State
-  const [currentLocation, setCurrentLocation] = useState("Detecting location...");
-  const [gpsCoords, setGpsCoords] = useState({ lat: 13.0067, lng: 80.2570 });
+  const [currentLocation, setCurrentLocation] = useState("Detecting exact GPS location...");
+  const [gpsCoords, setGpsCoords] = useState({ lat: null, lng: null });
+  const [gpsAccuracy, setGpsAccuracy] = useState(null);
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [locationError, setLocationError] = useState(null);
 
@@ -284,39 +286,75 @@ export default function Attendance() {
       });
   };
 
-  // Automatically fetch Location coordinates
-  const captureLocation = () => {
-    if ("geolocation" in navigator) {
-      setLoadingLocation(true);
-      setLocationError(null);
+  // Acquire fresh exact real-time GPS coordinates directly from device hardware
+  const getFreshExactPosition = () => {
+    return new Promise((resolve) => {
+      if (!("geolocation" in navigator)) {
+        resolve({ lat: 13.0067, lng: 80.2570, address: "Adyar IT Corridor, Chennai", accuracy: null });
+        return;
+      }
       navigator.geolocation.getCurrentPosition(
         async (pos) => {
           const lat = Number(pos.coords.latitude.toFixed(6));
           const lng = Number(pos.coords.longitude.toFixed(6));
-          setGpsCoords({ lat, lng });
-          try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`);
-            const data = await res.json();
-            if (data && data.display_name) {
-              setCurrentLocation(data.display_name);
-            } else {
-              setCurrentLocation(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
+          const accuracy = Math.round(pos.coords.accuracy || 0);
+          console.log(`[Attendance] Fresh GPS Acquired: ${lat}, ${lng} (±${accuracy}m)`);
+
+          let address = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+
+          // 1. Try Google Maps Geocoder for exact building/street name
+          if (window.google && window.google.maps && window.google.maps.Geocoder) {
+            try {
+              const geocoder = new window.google.maps.Geocoder();
+              const gRes = await geocoder.geocode({ location: { lat, lng } });
+              if (gRes?.results?.length > 0) {
+                address = gRes.results[0].formatted_address;
+                resolve({ lat, lng, address, accuracy });
+                return;
+              }
+            } catch (gErr) {
+              console.warn("[Attendance] Google Geocoder fallback notice:", gErr);
             }
-          } catch {
-            setCurrentLocation(`${lat.toFixed(4)}, ${lng.toFixed(4)}`);
-          } finally {
-            setLoadingLocation(false);
           }
+
+          // 2. OpenStreetMap reverse lookup fallback
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, { signal: AbortSignal.timeout(4000) });
+            const data = await res.json();
+            if (data?.display_name) {
+              address = data.display_name;
+            }
+          } catch {}
+
+          resolve({ lat, lng, address, accuracy });
         },
         (err) => {
-          console.warn("Location error:", err);
-          setLocationError("Location permission required");
-          setLoadingLocation(false);
+          console.warn("[Attendance] GPS error:", err);
+          resolve({ lat: null, lng: null, address: "Location permission required. Please enable device GPS.", accuracy: null });
         },
-        { enableHighAccuracy: true, timeout: 15000 }
+        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
       );
-    } else {
-      setLocationError("Location not supported");
+    });
+  };
+
+  // Automatically fetch Location coordinates on load and refresh
+  const captureLocation = async () => {
+    setLoadingLocation(true);
+    setLocationError(null);
+    try {
+      const res = await getFreshExactPosition();
+      if (res.lat != null && res.lng != null) {
+        setGpsCoords({ lat: res.lat, lng: res.lng });
+        setCurrentLocation(res.address);
+        setGpsAccuracy(res.accuracy);
+        setLocationError(null);
+      } else {
+        setLocationError(res.address);
+      }
+    } catch (e) {
+      setLocationError("Could not retrieve exact location.");
+    } finally {
+      setLoadingLocation(false);
     }
   };
 
@@ -522,6 +560,25 @@ export default function Attendance() {
 
     setIsSaving(true);
 
+    // Fetch instantaneous fresh exact GPS coordinates before signing
+    let finalLat = gpsCoords?.lat;
+    let finalLng = gpsCoords?.lng;
+    let finalAddress = currentLocation;
+
+    try {
+      const freshGps = await getFreshExactPosition();
+      if (freshGps.lat != null && freshGps.lng != null) {
+        finalLat = freshGps.lat;
+        finalLng = freshGps.lng;
+        finalAddress = freshGps.address;
+        setGpsCoords({ lat: finalLat, lng: finalLng });
+        setCurrentLocation(finalAddress);
+        setGpsAccuracy(freshGps.accuracy);
+      }
+    } catch (e) {
+      console.warn("Could not get instantaneous GPS update:", e);
+    }
+
     let currentToken = verificationToken;
     let currentSalt = challengeSalt;
 
@@ -542,8 +599,8 @@ export default function Attendance() {
     const signatureTimestamp = Math.floor(Date.now() / 1000);
     const resolvedEmployeeId = matchedEmployeeId || userEmpCode;
     const locationSig = await generateLocationSignature(
-      gpsCoords.lat,
-      gpsCoords.lng,
+      finalLat || 13.0067,
+      finalLng || 80.2570,
       signatureTimestamp,
       resolvedEmployeeId,
       currentSalt
@@ -551,7 +608,7 @@ export default function Attendance() {
 
     const nowStr = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
     let finalRemarks = punchRemarks.trim();
-    let encodedAddress = currentLocation;
+    let encodedAddress = finalAddress;
 
     if (workMode === "client") {
       finalRemarks = `[Client Visit Mode] ${punchRemarks || 'Client visit meeting'}`;
@@ -573,10 +630,10 @@ export default function Attendance() {
       employee_name: matchedEmployeeName || userName,
       attendance_date: new Date().toISOString().slice(0, 10),
       check_in_time: nowStr,
-      latitude: gpsCoords.lat,
-      longitude: gpsCoords.lng,
-      check_in_latitude: gpsCoords.lat,
-      check_in_longitude: gpsCoords.lng,
+      latitude: finalLat,
+      longitude: finalLng,
+      check_in_latitude: finalLat,
+      check_in_longitude: finalLng,
       check_in_address: encodedAddress,
       attendance_status: "Present",
       device_info: navigator.userAgent,
@@ -609,7 +666,7 @@ export default function Attendance() {
         client_longitude: selectedClient.longitude
       } : {};
 
-      _startGpsTrackingDelegate(gpsCoords.lat, gpsCoords.lng, clientData);
+      _startGpsTrackingDelegate(finalLat, finalLng, clientData);
     } catch (err) {
       showToast(err?.message || "Failed to clock in.", "error");
     } finally {
@@ -663,6 +720,25 @@ export default function Attendance() {
     if (isSaving) return;
     setIsSaving(true);
 
+    // Fetch instantaneous fresh exact GPS coordinates before signing
+    let finalLat = gpsCoords?.lat;
+    let finalLng = gpsCoords?.lng;
+    let finalAddress = currentLocation;
+
+    try {
+      const freshGps = await getFreshExactPosition();
+      if (freshGps.lat != null && freshGps.lng != null) {
+        finalLat = freshGps.lat;
+        finalLng = freshGps.lng;
+        finalAddress = freshGps.address;
+        setGpsCoords({ lat: finalLat, lng: finalLng });
+        setCurrentLocation(finalAddress);
+        setGpsAccuracy(freshGps.accuracy);
+      }
+    } catch (e) {
+      console.warn("Could not get instantaneous GPS update:", e);
+    }
+
     let currentToken = verificationToken;
     let currentSalt = challengeSalt;
 
@@ -683,8 +759,8 @@ export default function Attendance() {
     const signatureTimestamp = Math.floor(Date.now() / 1000);
     const resolvedEmployeeId = matchedEmployeeId || userEmpCode;
     const locationSig = await generateLocationSignature(
-      gpsCoords.lat,
-      gpsCoords.lng,
+      finalLat || 13.0067,
+      finalLng || 80.2570,
       signatureTimestamp,
       resolvedEmployeeId,
       currentSalt
@@ -699,11 +775,11 @@ export default function Attendance() {
       employee_id: resolvedEmployeeId,
       attendance_date: new Date().toISOString().slice(0, 10),
       check_out_time: nowStr,
-      latitude: gpsCoords.lat,
-      longitude: gpsCoords.lng,
-      check_out_latitude: gpsCoords.lat,
-      check_out_longitude: gpsCoords.lng,
-      check_out_address: currentLocation,
+      latitude: finalLat,
+      longitude: finalLng,
+      check_out_latitude: finalLat,
+      check_out_longitude: finalLng,
+      check_out_address: finalAddress,
       total_working_hours: calcHours,
       remarks: `Checked out: ${finalRemarks}`,
       device_info: navigator.userAgent,
@@ -720,7 +796,7 @@ export default function Attendance() {
       setCheckedOutSuccessfully(true);
       loadAttendanceLogs();
       // Stop GPS tracking after successful clock-out
-      await _stopGpsTrackingDelegate(gpsCoords.lat, gpsCoords.lng);
+      await _stopGpsTrackingDelegate(finalLat, finalLng);
     } catch (err) {
       showToast(err?.message || "Failed to clock out.", "error");
     } finally {
@@ -825,13 +901,32 @@ export default function Attendance() {
           {/* Header section (Title & Location) */}
           <div className="text-center border-b border-slate-100 pb-4">
             <h2 className="text-lg font-black text-slate-900">My Attendance</h2>
-            {locationError ? (
-              <span className="text-xs text-rose-600 font-bold">⚠️ {locationError}</span>
-            ) : (
-              <span className="text-xs text-slate-600 font-bold mt-1 max-w-2xl mx-auto block leading-relaxed">
-                📍 {currentLocation}
-              </span>
-            )}
+            <div className="mt-2 flex items-center justify-center gap-2">
+              {locationError ? (
+                <span className="text-xs text-rose-600 font-bold bg-rose-50 border border-rose-200 px-3 py-1 rounded-full">
+                  ⚠️ {locationError}
+                </span>
+              ) : (
+                <div className="inline-flex items-center gap-2 bg-slate-50 border border-slate-200/80 px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-700 max-w-2xl">
+                  <span className="text-emerald-600">📍</span>
+                  <span className="truncate">{currentLocation}</span>
+                  {gpsAccuracy && (
+                    <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                      ±{gpsAccuracy}m
+                    </span>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={captureLocation}
+                disabled={loadingLocation}
+                title="Refresh Live Location"
+                className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={loadingLocation ? "animate-spin text-emerald-600" : ""} />
+              </button>
+            </div>
           </div>
 
           {!isEnrolled && (

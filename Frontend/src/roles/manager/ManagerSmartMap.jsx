@@ -941,30 +941,43 @@ export default function ManagerSmartMap() {
 
   const _buildLivePopupContent = (executive, session, clientDest) => {
     const executiveName = resolveRealName(executive)
-    const clientName = clientDest?.title || clientDest?.company_name || session?.client_name || executive?.client_name || 'GRT'
-    const companyName = clientDest?.company_name || clientDest?.company || session?.company_name || executive?.company_name || 'GRT Jewellers'
-    const clientPhone = clientDest?.phone || session?.client_phone || executive?.client_phone || '+91 98400 12345'
-    const clientAddress = clientDest?.address || session?.client_address || executive?.client_address || 'No.2, 5th Street, AA Block 3rd Main Rd, AB Block, Anna Nagar, Chennai - 600040'
+    const isLive = Boolean(executive?.is_online || session?.status === 'active')
+    const statusBadge = isLive 
+      ? '<span style="font-size:9px;font-weight:800;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:12px;">● LIVE</span>'
+      : '<span style="font-size:9px;font-weight:800;background:#f1f5f9;color:#64748b;padding:2px 6px;border-radius:12px;">○ OFFLINE</span>'
+
+    const clientName = clientDest?.title || clientDest?.company_name || session?.client_name || executive?.client_name || null
+    const companyName = clientDest?.company_name || clientDest?.company || session?.company_name || executive?.company_name || null
+    const clientPhone = clientDest?.phone || session?.client_phone || executive?.client_phone || null
+    const clientAddress = clientDest?.address || session?.client_address || executive?.client_address || null
 
     return `
       <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:240px;">
         <div style="font-weight:900;font-size:13px;color:#7c3aed;margin-bottom:8px;border-bottom:1.5px solid #e2e8f0;padding-bottom:5px;display:flex;align-items:center;justify-content:space-between;">
           <span>👤 ${executiveName}</span>
-          <span style="font-size:9px;font-weight:800;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:12px;">● LIVE</span>
+          ${statusBadge}
         </div>
         
         <div style="display:grid;grid-template-columns:auto 1fr;gap:5px 10px;font-size:11px;color:#334155;">
-          <span style="font-weight:700;color:#64748b;">Client Name:</span>
-          <span style="font-weight:800;color:#2563eb;">${clientName}</span>
-
-          <span style="font-weight:700;color:#64748b;">Company:</span>
-          <span style="font-weight:800;color:#0f172a;">${companyName}</span>
-          
-          <span style="font-weight:700;color:#64748b;">Phone:</span>
-          <span style="font-weight:800;color:#0f172a;font-family:monospace;">${clientPhone}</span>
-
-          <span style="font-weight:700;color:#64748b;">Address:</span>
-          <span style="font-weight:600;color:#475569;line-height:1.3;">${clientAddress}</span>
+          ${clientName ? `
+            <span style="font-weight:700;color:#64748b;">Client Name:</span>
+            <span style="font-weight:800;color:#2563eb;">${clientName}</span>
+            <span style="font-weight:700;color:#64748b;">Company:</span>
+            <span style="font-weight:800;color:#0f172a;">${companyName || clientName}</span>
+            ${clientPhone ? `
+              <span style="font-weight:700;color:#64748b;">Phone:</span>
+              <span style="font-weight:800;color:#0f172a;font-family:monospace;">${clientPhone}</span>
+            ` : ''}
+            ${clientAddress ? `
+              <span style="font-weight:700;color:#64748b;">Address:</span>
+              <span style="font-weight:600;color:#475569;line-height:1.3;">${clientAddress}</span>
+            ` : ''}
+          ` : `
+            <span style="font-weight:700;color:#64748b;">Status:</span>
+            <span style="font-weight:800;color:#475569;">${executive?.check_in_mode === 'Office' ? '🏢 In Office' : (isLive ? 'Online (Idle)' : '○ Offline / Not Logged In')}</span>
+            <span style="font-weight:700;color:#64748b;">Client:</span>
+            <span style="font-weight:600;color:#64748b;">No active client visit</span>
+          `}
         </div>
       </div>
     `
