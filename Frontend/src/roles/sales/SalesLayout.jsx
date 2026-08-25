@@ -364,7 +364,7 @@ export default function SalesLayout() {
     gpsWatchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, accuracy, speed, heading } = pos.coords;
-        if (accuracy > 100) return; // reject inaccurate fix
+        if (accuracy > 500) return; // reject extreme inaccuracy
         const currentSessId = activeSessionRef.current;
         _pushGpsPoint({ lat: latitude, lng: longitude, accuracy, speed, heading, sessionId: currentSessId });
       },

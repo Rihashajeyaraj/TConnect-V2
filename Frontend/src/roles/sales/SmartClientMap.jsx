@@ -218,6 +218,8 @@ export default function SmartClientMap() {
   const allCandidatesRef  = useRef([])             // latest candidates, no re-render dep
   const lastRoutePos     = useRef(null)         // last OSRM fetch position
   const routeFetchTimer  = useRef(null)         // debounce timer id
+  const trailPolylineRef = useRef(null)         // Traveled breadcrumb polyline
+  const trailPointsRef   = useRef([])           // Breadcrumb points array
   const lastTelemetryUpdate = useRef(0)         // throttled updates tracking
 
   // ── GPS & Map ────────────────────────────────────────────────────────────
@@ -555,6 +557,11 @@ export default function SmartClientMap() {
     setNavMode(true)
     setNavDestination({ lat: selectedStop.latitude, lng: selectedStop.longitude })
     lastRoutePos.current = { lat: executivePos.lat, lng: executivePos.lng }
+    trailPointsRef.current = [{ lat: executivePos.lat, lng: executivePos.lng }]
+    if (trailPolylineRef.current) {
+      trailPolylineRef.current.setMap(null)
+      trailPolylineRef.current = null
+    }
     showToast(`Navigation started to ${selectedStop.title}`, 'success')
     if (googleMapRef.current) {
       googleMapRef.current.panTo({ lat: executivePos.lat, lng: executivePos.lng })
@@ -593,6 +600,11 @@ export default function SmartClientMap() {
     setNavDestination(null)
     setOffRoute(false)
     setNearDestination(false)
+    if (trailPolylineRef.current) {
+      trailPolylineRef.current.setMap(null)
+      trailPolylineRef.current = null
+    }
+    trailPointsRef.current = []
     showToast('Navigation stopped.', 'info')
 
     const sessId = localStorage.getItem('tc_tracking_session')
@@ -619,6 +631,46 @@ export default function SmartClientMap() {
     if (routePath.length > 2) {
       const distToRoute = distanceToPolyline(executivePos.lat, executivePos.lng, routePath)
       setOffRoute(distToRoute > OFF_ROUTE_THRESHOLD_KM)
+    }
+
+    // Dynamic traveled trail polyline (purple dotted line)
+    try {
+      const lat = executivePos.lat
+      const lng = executivePos.lng
+      const pts = trailPointsRef.current
+      const last = pts.length > 0 ? pts[pts.length - 1] : null
+      if (!last || haversineDistance(last.lat, last.lng, lat, lng) > 0.001) {
+        pts.push({ lat, lng })
+      }
+
+      if (pts.length >= 2 && googleMapRef.current && window.google) {
+        const gPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
+        if (trailPolylineRef.current) {
+          trailPolylineRef.current.setPath(gPath)
+        } else {
+          const lineSymbol = {
+            path: window.google.maps.SymbolPath.CIRCLE,
+            fillOpacity: 1,
+            scale: 4,
+            strokeColor: '#9333ea', // Vibrant Purple Dotted Line
+            fillColor: '#a855f7',
+            strokeWeight: 1.5
+          }
+          trailPolylineRef.current = new window.google.maps.Polyline({
+            path: gPath,
+            strokeOpacity: 0,
+            icons: [{
+              icon: lineSymbol,
+              offset: '0%',
+              repeat: '12px'
+            }],
+            map: googleMapRef.current,
+            zIndex: 20
+          })
+        }
+      }
+    } catch (trailErr) {
+      console.warn('Failed to update traveled trail on Sales map:', trailErr)
     }
 
     // Debounced OSRM re-fetch

@@ -217,6 +217,7 @@ export default function ManagerSmartMap() {
 
   // Tracking-layer refs (one set per selected executive)
   const trackRouteRef   = useRef(null)  // Polyline breadcrumb route
+  const trailPointsRef  = useRef([])    // In-memory array of all breadcrumb points for trail
   const startMarkerRef  = useRef(null)  // green start pin
   const liveMarkerRef   = useRef(null)  // animated live position
   const endMarkerRef    = useRef(null)  // grey end pin
@@ -703,6 +704,7 @@ export default function ManagerSmartMap() {
   // ─── 6. Live tracking: load history + subscribe Realtime ─────────────────
   const _clearTrackingLayer = useCallback(() => {
     if (trackRouteRef.current)  { trackRouteRef.current.setMap(null);  trackRouteRef.current  = null }
+    trailPointsRef.current = []
     if (startMarkerRef.current) { startMarkerRef.current.setMap(null); startMarkerRef.current = null }
     if (liveMarkerRef.current)  { liveMarkerRef.current.setMap(null);  liveMarkerRef.current  = null }
     if (endMarkerRef.current)   { endMarkerRef.current.setMap(null);   endMarkerRef.current   = null }
@@ -1086,36 +1088,40 @@ export default function ManagerSmartMap() {
       }
     }
 
-    // Extend traveled trail polyline (or initialize if first moving coordinates)
+    // Extend traveled trail polyline dynamically
     try {
-      const newPt = new window.google.maps.LatLng(lat, lng)
-      if (trackRouteRef.current) {
-        const path = trackRouteRef.current.getPath()
-        path.push(newPt)
-      } else if (googleMapRef.current && window.google) {
+      const newPt = { lat, lng }
+      const pts = trailPointsRef.current
+      const lastPt = pts.length > 0 ? pts[pts.length - 1] : null
+      if (!lastPt || haversineDistance(lastPt.lat, lastPt.lng, lat, lng) > 0.001) {
+        pts.push(newPt)
+      }
+
+      if (pts.length >= 1 && googleMapRef.current && window.google) {
         const lineSymbol = {
           path: window.google.maps.SymbolPath.CIRCLE,
           fillOpacity: 1,
           scale: 4,
-          strokeColor: '#a855f7',
-          fillColor: '#a855f7'
+          strokeColor: '#9333ea',
+          fillColor: '#a855f7',
+          strokeWeight: 1.5
         }
-        const initialPath = []
-        if (startMarkerRef.current) {
-          initialPath.push(startMarkerRef.current.getPosition())
+        const gPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
+        if (trackRouteRef.current) {
+          trackRouteRef.current.setPath(gPath)
+        } else if (gPath.length >= 2) {
+          trackRouteRef.current = new window.google.maps.Polyline({
+            path: gPath,
+            strokeOpacity: 0,
+            icons: [{
+              icon: lineSymbol,
+              offset: '0%',
+              repeat: '12px'
+            }],
+            map: googleMapRef.current,
+            zIndex: 15
+          })
         }
-        initialPath.push(newPt)
-        trackRouteRef.current = new window.google.maps.Polyline({
-          path: initialPath,
-          strokeOpacity: 0,
-          icons: [{
-            icon: lineSymbol,
-            offset: '0%',
-            repeat: '10px'
-          }],
-          map: googleMapRef.current,
-          zIndex: 10
-        })
       }
     } catch (polylineErr) {
       console.warn("Failed to extend traveled trail polyline:", polylineErr)
@@ -1403,13 +1409,16 @@ export default function ManagerSmartMap() {
           )
         }
 
+        trailPointsRef.current = pathCoords
+
         if (pathCoords.length > 1) {
           const lineSymbol = {
             path: window.google.maps.SymbolPath.CIRCLE,
             fillOpacity: 1,
             scale: 4,
-            strokeColor: '#a855f7',
-            fillColor: '#a855f7'
+            strokeColor: '#9333ea',
+            fillColor: '#a855f7',
+            strokeWeight: 1.5
           }
           trackRouteRef.current = new window.google.maps.Polyline({
             path: pathCoords,
@@ -1417,10 +1426,10 @@ export default function ManagerSmartMap() {
             icons: [{
               icon: lineSymbol,
               offset: '0%',
-              repeat: '10px'
+              repeat: '12px'
             }],
             map: map,
-            zIndex: 10
+            zIndex: 15
           })
         }
       } catch (trailErr) {
