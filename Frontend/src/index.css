@@ -309,3 +309,44 @@ main[class*="bg-slate-9"] {
 .custom-slider::-moz-range-thumb:hover {
   transform: scale(1.2);
 }
+
+/* ── Admin Portal Font Size Zoom / Scale ── */
+.admin-portal-root {
+  font-size: 15px !important;
+}
+.admin-portal-root .text-\[10px\],
+.admin-portal-root .text-\[9px\] {
+  font-size: 11px !important;
+}
+.admin-portal-root .text-xs,
+.admin-portal-root .text-\[11px\] {
+  font-size: 13px !important;
+}
+.admin-portal-root .text-sm {
+  font-size: 15px !important;
+}
+.admin-portal-root .text-base {
+  font-size: 17px !important;
+}
+.admin-portal-root .text-lg {
+  font-size: 19px !important;
+}
+.admin-portal-root .text-xl {
+  font-size: 22px !important;
+}
+.admin-portal-root .text-2xl {
+  font-size: 26px !important;
+}
+.admin-portal-root th,
+.admin-portal-root td {
+  font-size: 13.5px !important;
+}
+.admin-portal-root p,
+.admin-portal-root span,
+.admin-portal-root div,
+.admin-portal-root label,
+.admin-portal-root input,
+.admin-portal-root select,
+.admin-portal-root button {
+  text-rendering: optimizeLegibility;
+}

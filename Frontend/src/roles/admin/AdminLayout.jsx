@@ -537,7 +537,7 @@ function AdminLayout() {
   }
 
   return (
-    <div className="min-h-screen bg-[#F7F9FC] text-[#071A45] flex flex-col font-sans">
+    <div className="min-h-screen bg-[#F7F9FC] text-[#071A45] flex flex-col font-sans admin-portal-root">
       {/* Top Header */}
       <header className="h-16 bg-white border-b border-[#DCE3EF] flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
         <div className="flex items-center gap-3">

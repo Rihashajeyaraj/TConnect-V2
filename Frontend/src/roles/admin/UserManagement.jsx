@@ -1645,38 +1645,38 @@ function UserManagement() {
                               🔒 Protected
                             </span>
                           ) : (
-                            <div className="flex items-center justify-end gap-1.5">
+                            <div className="flex items-center justify-end gap-2">
                               <button
                                 onClick={() => {
                                   setDuplicateErrorUser(null)
                                   setSelectedEnrollUser(user)
                                   setShowEnrollFaceModal(true)
                                 }}
-                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-250 rounded-lg transition cursor-pointer"
+                                className="p-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition cursor-pointer active:scale-95 flex items-center justify-center"
                                 title="Enroll Biometric Face"
                               >
-                                <Camera className="w-3.5 h-3.5 text-emerald-650" />
+                                <Camera className="w-4.5 h-4.5" />
                               </button>
                               <button
                                 onClick={() => setSelectedEmployeeProfile(user)}
-                                className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 border border-transparent hover:border-teal-200 rounded-lg transition cursor-pointer"
+                                className="p-1.5 text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition cursor-pointer active:scale-95 flex items-center justify-center"
                                 title="View Employee Profile"
                               >
-                                <Eye className="w-3.5 h-3.5" />
+                                <Eye className="w-4.5 h-4.5" />
                               </button>
                               <button
                                 onClick={() => handleOpenEditModal(user)}
-                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 rounded-lg transition cursor-pointer"
+                                className="p-1.5 text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition cursor-pointer active:scale-95 flex items-center justify-center"
                                 title="Edit User Account"
                               >
-                                <Edit3 className="w-3.5 h-3.5" />
+                                <Edit3 className="w-4.5 h-4.5" />
                               </button>
                               <button
                                 onClick={() => handleDeleteUser(user.id)}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg transition cursor-pointer"
+                                className="p-1.5 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition cursor-pointer active:scale-95 flex items-center justify-center"
                                 title="Delete Account"
                               >
-                                <Trash2 className="w-3.5 h-3.5" />
+                                <Trash2 className="w-4.5 h-4.5" />
                               </button>
                             </div>
                           )}
@@ -1740,6 +1740,7 @@ function UserManagement() {
                     value={newUser.email}
                     onChange={(e) => setNewUser({ ...newUser, email: e.target.value, name: `${newUser.first_name} ${newUser.last_name}`.trim() })}
                     className="w-full h-10 border border-slate-350 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
+                    autoComplete="new-email"
                     required
                   />
                 </div>
@@ -1755,6 +1756,7 @@ function UserManagement() {
                       value={newUser.password}
                       onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
                       className="w-full h-10 border border-slate-350 rounded-xl pl-3 pr-10 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
+                      autoComplete="new-password"
                       required
                     />
                     <button
