@@ -1600,6 +1600,10 @@ async def get_location_history(
     role = normalize_user_role(user_payload.get("role") or "")
     caller_emp_id = _resolve_emp(sp, auth_uid)
 
+    # Allow "self" alias for current executive to fetch their own session/history
+    if employee_id.lower() == "self":
+        employee_id = caller_emp_id
+
     if role not in ("sales_manager", "ceo", "admin", "super_admin"):
         if caller_emp_id != employee_id:
             raise HTTPException(status_code=403, detail="Access denied.")
@@ -1610,7 +1614,7 @@ async def get_location_history(
     # Get active or latest session
     session = None
     try:
-        q = sp.schema("hrms").table("tracking_sessions").select("*").eq("employee_id", employee_id)
+        q = sp.schema("hrms").table("tracking_sessions").select("*").or_(f"employee_id.eq.{employee_id},employee_id.eq.{caller_emp_id}")
         if session_id:
             q = q.eq("id", session_id)
         else:

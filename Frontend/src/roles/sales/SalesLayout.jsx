@@ -214,33 +214,76 @@ export default function SalesLayout() {
   // ── Supabase & Background Tracking Pipeline ──────────────────────────────
   const SUPA_URL = import.meta.env.VITE_SUPABASE_URL;
   const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
-  const supabaseRef = useRef(null);
-  const activeChannelRef = useRef(null);
+  const supabaseRef = useRef(window.__supabase_client || null);
+  const activeChannelsRef = useRef([]);
   const gpsWatchRef = useRef(null);
   const activeSessionRef = useRef(null);
   const lastPushedPosRef = useRef(null);
   const gpsRetryQueue = useRef([]);
 
-  useEffect(() => {
-    if (SUPA_URL && SUPA_ANON && !supabaseRef.current) {
+  if (SUPA_URL && SUPA_ANON && !supabaseRef.current) {
+    try {
       supabaseRef.current = createClient(SUPA_URL, SUPA_ANON);
+      window.__supabase_client = supabaseRef.current;
+    } catch {}
+  }
+
+  const _initBroadcastChannels = useCallback((empId, code, sessionId) => {
+    if (!supabaseRef.current && SUPA_URL && SUPA_ANON) {
+      try {
+        supabaseRef.current = createClient(SUPA_URL, SUPA_ANON);
+        window.__supabase_client = supabaseRef.current;
+      } catch {}
     }
+    if (!supabaseRef.current) return;
+    
+    // Clean up old channels
+    activeChannelsRef.current.forEach(ch => {
+      try { ch.unsubscribe(); } catch {}
+    });
+    activeChannelsRef.current = [];
+
+    const channelNames = new Set();
+    if (empId) {
+      channelNames.add(`tracking_${empId}`);
+      channelNames.add(`tracking_${empId}_live`);
+      if (sessionId) channelNames.add(`tracking_${empId}_${sessionId}`);
+    }
+    if (code && code !== empId) {
+      channelNames.add(`tracking_${code}`);
+      channelNames.add(`tracking_${code}_live`);
+      if (sessionId) channelNames.add(`tracking_${code}_${sessionId}`);
+    }
+
+    channelNames.forEach(chName => {
+      try {
+        const ch = supabaseRef.current.channel(chName);
+        ch.subscribe((status) => {
+          console.log(`[SalesLayout] Channel ${chName} subscription status:`, status);
+        });
+        activeChannelsRef.current.push(ch);
+      } catch (err) {
+        console.warn(`Failed to subscribe to ${chName}:`, err);
+      }
+    });
   }, [SUPA_URL, SUPA_ANON]);
 
   const _pushGpsPoint = useCallback(async ({ lat, lng, accuracy = 10, speed = null, heading = null, sessionId }) => {
     const empId = user.employee_id || user.auth_user_id || user.id || empCode;
     
-    // Client-side dedup: skip if < 10 m from last accepted point
+    // Client-side dedup for database persistence: skip DB write if < 10 m from last point
+    let shouldPersist = true;
     if (lastPushedPosRef.current) {
       const dlat = lat - lastPushedPosRef.current.lat;
       const dlng = lng - lastPushedPosRef.current.lng;
       const approxM = Math.sqrt(dlat * dlat + dlng * dlng) * 111000;
-      if (approxM < 10) return;
+      if (approxM < 10) shouldPersist = false;
     }
 
     const point = { 
       id: Math.random().toString(36).substring(7),
-      employee_id: empId, 
+      employee_id: empId,
+      employee_code: empCode,
       latitude: lat, 
       longitude: lng, 
       accuracy, 
@@ -249,24 +292,31 @@ export default function SalesLayout() {
       recorded_at: new Date().toISOString() 
     };
 
-    // 1. Broadcast immediately for near-real-time live map updates
-    if (activeChannelRef.current) {
-      activeChannelRef.current.send({
-        type: 'broadcast',
-        event: 'location',
-        payload: {
-          ...point,
-          broadcast_sent_at: Date.now()
-        }
+    // 1. Broadcast immediately for near-real-time live map updates (ALWAYS)
+    if (activeChannelsRef.current.length > 0) {
+      activeChannelsRef.current.forEach(ch => {
+        try {
+          ch.send({
+            type: 'broadcast',
+            event: 'location',
+            payload: {
+              ...point,
+              broadcast_sent_at: Date.now()
+            }
+          });
+        } catch {}
       });
     }
+
+    // Skip database writes for tiny movements to save bandwidth
+    if (!shouldPersist) return;
 
     // 2. Persist to DB asynchronously
     const dbPoint = { latitude: lat, longitude: lng, accuracy, speed, heading, session_id: sessionId };
     try {
       spatialAPI.pushLocation(dbPoint).catch(() => null);
       lastPushedPosRef.current = { lat, lng };
-      spatialAPI.updateLocation({ latitude: lat, longitude: lng, accuracy }).catch(() => null);
+      spatialAPI.updateLocation({ latitude: lat, longitude: lng, accuracy, employee_code: empCode }).catch(() => null);
     } catch {
       // Queue for retry (cap at 20 points)
       if (gpsRetryQueue.current.length < 20) {
@@ -293,24 +343,16 @@ export default function SalesLayout() {
     }
 
     const empId = user.employee_id || user.auth_user_id || user.id || empCode;
-    const resolvedSessionId = sessionId || localStorage.getItem('tc_tracking_session');
+    const resolvedSessionId = sessionId || localStorage.getItem('tc_tracking_session') || null;
     
     activeSessionRef.current = resolvedSessionId;
     setGpsActive(true);
 
-    // Initialize Supabase Broadcast channel
-    if (supabaseRef.current && resolvedSessionId) {
-      if (activeChannelRef.current) {
-        try { activeChannelRef.current.unsubscribe(); } catch {}
-      }
-      const chName = `tracking_${empId}_${resolvedSessionId}`;
-      const channel = supabaseRef.current.channel(chName);
-      channel.subscribe();
-      activeChannelRef.current = channel;
-    }
+    // Initialize Supabase Broadcast channels
+    _initBroadcastChannels(empId, empCode, resolvedSessionId);
 
     // Push starting point if available
-    if (initLat && initLng && resolvedSessionId) {
+    if (initLat && initLng) {
       _pushGpsPoint({ lat: initLat, lng: initLng, accuracy: 10, sessionId: resolvedSessionId });
     }
 
@@ -336,7 +378,7 @@ export default function SalesLayout() {
     );
 
     window.addEventListener('online', _flushRetryQueue);
-  }, [user, empCode, _pushGpsPoint, _flushRetryQueue, showToast]);
+  }, [user, empCode, _pushGpsPoint, _flushRetryQueue, _initBroadcastChannels, showToast]);
 
   const _stopGpsTracking = useCallback(() => {
     if (gpsWatchRef.current !== null) {
@@ -345,10 +387,10 @@ export default function SalesLayout() {
     }
     window.removeEventListener('online', _flushRetryQueue);
     
-    if (activeChannelRef.current) {
-      try { activeChannelRef.current.unsubscribe(); } catch {}
-      activeChannelRef.current = null;
-    }
+    activeChannelsRef.current.forEach(ch => {
+      try { ch.unsubscribe(); } catch {}
+    });
+    activeChannelsRef.current = [];
 
     activeSessionRef.current = null;
     setGpsActive(false);
@@ -361,23 +403,21 @@ export default function SalesLayout() {
       const data = res?.data || res;
       const session = data?.session;
       
-      // Strict validation
-      if (session && session.status === 'active' && String(session.employee_id) === String(empId) && String(session.id) === String(savedSessionId)) {
+      // Validation (flexible to match employee id or code)
+      if (session && session.status === 'active' && (String(session.employee_id) === String(empId) || String(session.employee_id) === String(empCode))) {
         console.log("Validated session for resume:", session.id);
         _startGpsTracking(null, null, {}, session.id);
+      } else if (savedSessionId) {
+        // Resume session from saved ID
+        _startGpsTracking(null, null, {}, savedSessionId);
       } else {
-        console.warn("Session in localStorage is inactive or invalid. Clearing cache.");
-        localStorage.removeItem('tc_tracking_session');
-        _stopGpsTracking();
+        _startGpsTracking(null, null, {}, null);
       }
     } catch (err) {
-      console.warn("Tracking resume validation failed:", err);
-      if (err?.status === 401) {
-        localStorage.removeItem('tc_tracking_session');
-        _stopGpsTracking();
-      }
+      console.warn("Tracking resume validation notice:", err);
+      _startGpsTracking(null, null, {}, savedSessionId);
     }
-  }, [user, empCode, _startGpsTracking, _stopGpsTracking]);
+  }, [user, empCode, _startGpsTracking]);
 
   useEffect(() => {
     const handleStart = (e) => {
@@ -391,10 +431,12 @@ export default function SalesLayout() {
     window.addEventListener("tc:start-tracking", handleStart);
     window.addEventListener("tc:stop-tracking", handleStop);
 
-    // Auto-resume check
+    // Auto-resume check or initial background GPS start
     const savedSession = localStorage.getItem("tc_tracking_session");
-    if (savedSession && !gpsWatchRef.current) {
+    if (savedSession) {
       _resumeGpsTracking(savedSession);
+    } else if (!gpsWatchRef.current) {
+      _startGpsTracking(null, null, {}, null);
     }
 
     return () => {
@@ -403,9 +445,10 @@ export default function SalesLayout() {
       if (gpsWatchRef.current !== null) {
         navigator.geolocation.clearWatch(gpsWatchRef.current);
       }
-      if (activeChannelRef.current) {
-        try { activeChannelRef.current.unsubscribe(); } catch {}
-      }
+      activeChannelsRef.current.forEach(ch => {
+        try { ch.unsubscribe(); } catch {}
+      });
+      activeChannelsRef.current = [];
     };
   }, [user, _startGpsTracking, _stopGpsTracking, _resumeGpsTracking]);
 

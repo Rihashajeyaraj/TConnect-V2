@@ -457,6 +457,12 @@ function UserManagement() {
   const [showAssignToManagerModal, setShowAssignToManagerModal] = useState(false)
   const [assigningToManager, setAssigningToManager] = useState(false)
 
+  // Reassign Manager Modal State
+  const [showReassignModal, setShowReassignModal] = useState(false)
+  const [reassignUser, setReassignUser] = useState(null)
+  const [selectedNewManagerId, setSelectedNewManagerId] = useState('')
+  const [reassigning, setReassigning] = useState(false)
+
   // Derived lists
   const salesManagers = useMemo(() => {
     return users.filter((u) => {
@@ -575,13 +581,15 @@ function UserManagement() {
   const handleAssignToManager = async (managerId) => {
     if (!selectedUnassignedExec) return
     setAssigningToManager(true)
-    const mgr = users.find(u => String(u.id) === String(managerId))
+    const mgr = users.find(u => String(u.id) === String(managerId) || String(u.employee_id) === String(managerId))
     const mName = mgr?.name || 'Sales Manager'
     const mEmail = mgr?.email || ''
-    const mId = mgr?.id || managerId
+    const mId = mgr?.id || mgr?.employee_id || managerId
 
     try {
       await userAPI.updateUser(selectedUnassignedExec.id, {
+        name: selectedUnassignedExec.name,
+        email: selectedUnassignedExec.email,
         reporting_manager_id: mId,
         reporting_manager_name: mName,
         reporting_manager_email: mEmail
@@ -602,13 +610,74 @@ function UserManagement() {
     }
   }
 
+  const handleOpenReassignModal = (user) => {
+    setReassignUser(user)
+    setSelectedNewManagerId(user.reporting_manager_id || user.reporting_manager || '')
+    setShowReassignModal(true)
+  }
+
+  const handleSaveReassignment = async (e) => {
+    if (e && e.preventDefault) e.preventDefault()
+    if (!reassignUser) return
+    setReassigning(true)
+
+    const targetManager = selectedNewManagerId ? users.find(u => String(u.id) === String(selectedNewManagerId) || String(u.employee_id) === String(selectedNewManagerId)) : null
+    const mName = targetManager ? targetManager.name : null
+    const mEmail = targetManager ? targetManager.email : null
+    const mId = targetManager ? (targetManager.id || targetManager.employee_id) : null
+
+    try {
+      await userAPI.updateUser(reassignUser.id, {
+        name: reassignUser.name,
+        email: reassignUser.email,
+        reporting_manager_id: mId,
+        reporting_manager_name: mName,
+        reporting_manager_email: mEmail,
+      })
+
+      setUsers(prev => prev.map(u => {
+        if (String(u.id) === String(reassignUser.id)) {
+          return {
+            ...u,
+            reporting_manager_id: mId,
+            reporting_manager_name: mName,
+            reporting_manager_email: mEmail,
+          }
+        }
+        return u
+      }))
+
+      if (targetManager) {
+        showToast(`Reassigned ${reassignUser.name} to ${mName} successfully!`, 'success')
+      } else {
+        showToast(`Unassigned Reporting Manager for ${reassignUser.name}.`, 'info')
+      }
+
+      setShowReassignModal(false)
+      setReassignUser(null)
+
+      const freshRes = await userAPI.getUsers()
+      if (freshRes && freshRes.data) {
+        setUsers(Array.isArray(freshRes.data) ? freshRes.data : [])
+      }
+    } catch (err) {
+      showToast(err?.message || 'Failed to reassign reporting manager', 'error')
+    } finally {
+      setReassigning(false)
+    }
+  }
+
   const handleUnassignExecutive = async (execId, execName, managerName) => {
     if (!window.confirm(`Are you sure you want to remove ${execName} from ${managerName}'s team?`)) {
       return
     }
 
+    const execObj = users.find(u => String(u.id) === String(execId) || String(u.employee_id) === String(execId))
+
     try {
       await userAPI.updateUser(execId, {
+        name: execObj?.name || execName,
+        email: execObj?.email || '',
         reporting_manager_id: null,
         reporting_manager_name: null,
         reporting_manager_email: null
@@ -1244,6 +1313,13 @@ function UserManagement() {
                                   {exec.status || 'Active'}
                                 </span>
                                 <button
+                                  onClick={() => handleOpenReassignModal(exec)}
+                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 text-[10px] font-bold px-1.5 flex items-center gap-1 cursor-pointer transition"
+                                  title="Transfer / Reassign Manager"
+                                >
+                                  🔄 Reassign
+                                </button>
+                                <button
                                   onClick={() => handleUnassignExecutive(exec.id, exec.name, mgrObj.name)}
                                   className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                                   title="Remove from Manager's Team"
@@ -1436,18 +1512,26 @@ function UserManagement() {
 
                         {/* Reporting Manager */}
                         <td className="p-4 text-slate-700 font-bold text-xs">
-                          {user.reporting_manager_name ? (
-                            <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
-                              👤 {user.reporting_manager_name}
-                            </span>
-                          ) : (
-                            <button
-                              onClick={() => setShowAssignModal(true)}
-                              className="text-amber-600 hover:text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 px-2 py-0.5 rounded-md text-[10px] font-bold cursor-pointer"
-                            >
-                              + Assign Manager
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {user.reporting_manager_name ? (
+                              <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
+                                👤 {user.reporting_manager_name}
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-md text-[10px]">
+                                Unassigned
+                              </span>
+                            )}
+                            {!isProtected && (
+                              <button
+                                onClick={() => handleOpenReassignModal(user)}
+                                className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-md text-[10px] font-extrabold cursor-pointer transition flex items-center gap-1"
+                                title="Reassign Reporting Manager"
+                              >
+                                🔄 Reassign
+                              </button>
+                            )}
+                          </div>
                         </td>
 
                         {/* Department */}
@@ -2497,6 +2581,98 @@ function UserManagement() {
               </div>
             </div>
 
+          </div>
+        </div>
+      )}
+      {/* Reassign Reporting Manager Modal */}
+      {showReassignModal && reassignUser && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-slate-200 shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
+                  <Network className="w-5 h-5 text-blue-600" /> Reassign Reporting Manager
+                </h3>
+                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                  Change or transfer reporting manager for <span className="text-slate-900 font-extrabold">{reassignUser.name}</span>.
+                </p>
+              </div>
+              <button
+                onClick={() => {
+                  setShowReassignModal(false)
+                  setReassignUser(null)
+                }}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveReassignment} className="space-y-4 text-xs">
+              {/* Employee Summary Card */}
+              <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-1.5">
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-slate-500">Employee:</span>
+                  <span className="font-extrabold text-slate-900">{reassignUser.name}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-slate-500">Role:</span>
+                  <span className={`px-2 py-0.5 rounded-full border text-[10px] font-extrabold ${ROLE_BADGE_CLASSES[reassignUser.role] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
+                    {reassignUser.role}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-slate-500">Current Manager:</span>
+                  <span className="font-bold text-slate-800">
+                    {reassignUser.reporting_manager_name ? `👤 ${reassignUser.reporting_manager_name}` : 'None (Unassigned)'}
+                  </span>
+                </div>
+              </div>
+
+              {/* Select New Reporting Manager */}
+              <div>
+                <label className="block text-slate-800 font-extrabold mb-1.5">
+                  Select New Reporting Manager <span className="text-rose-500">*</span>
+                </label>
+                <select
+                  value={selectedNewManagerId}
+                  onChange={(e) => setSelectedNewManagerId(e.target.value)}
+                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-blue-600 bg-white"
+                >
+                  <option value="">-- No Reporting Manager (Unassign) --</option>
+                  {potentialReportingManagers
+                    .filter(m => String(m.id) !== String(reassignUser.id))
+                    .map((m) => (
+                      <option key={m.id} value={m.id}>
+                        👤 {m.name} ({m.email}) [{m.role}]
+                      </option>
+                    ))}
+                </select>
+                <p className="text-[10px] text-slate-400 font-semibold mt-1">
+                  Once saved, reporting lines, live map tracking, and approvals will instantly route to the selected manager in Supabase.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReassignModal(false)
+                    setReassignUser(null)
+                  }}
+                  className="w-1/2 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={reassigning}
+                  className="w-1/2 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md transition cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-50"
+                >
+                  {reassigning ? 'Updating Supabase...' : 'Save & Reassign'}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

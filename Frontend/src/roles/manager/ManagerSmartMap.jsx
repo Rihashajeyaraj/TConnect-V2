@@ -626,7 +626,14 @@ export default function ManagerSmartMap() {
     }
     if (animFrameRef.current)   { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null }
     if (pollTimerRef.current)   { clearInterval(pollTimerRef.current); pollTimerRef.current = null }
-    if (realtimeChRef.current)  { try { realtimeChRef.current.unsubscribe() } catch {} realtimeChRef.current = null }
+    if (realtimeChRef.current)  { 
+      if (Array.isArray(realtimeChRef.current)) {
+        realtimeChRef.current.forEach(ch => { try { ch.unsubscribe() } catch {} })
+      } else {
+        try { realtimeChRef.current.unsubscribe() } catch {}
+      }
+      realtimeChRef.current = null 
+    }
     setDestClient(null)
     setDestRouteMeta(null)
     setLatestExecPos(null)
@@ -809,30 +816,74 @@ export default function ManagerSmartMap() {
     `
   }
 
-  const _buildLiveIcon = (color = '#8b5cf6', heading = 0) => `
-      <div class="live-vehicle-wrapper" style="transform: rotate(${heading}deg); transition: transform 0.3s ease; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; position: relative;">
-        <!-- Pulse glow -->
-        <div style="position: absolute; width: 36px; height: 36px; border-radius: 50%; background: ${color}22; border: 2px solid ${color}44; animation: vehiclePulse 2s infinite ease-in-out; z-index: -1;"></div>
+  const _buildLiveIcon = (color = '#8b5cf6', heading = 0, name = '') => {
+    const displayName = name ? name.split(' ')[0] : 'Executive'
+    return `
+      <div class="live-scooty-container" style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; user-select: none;">
         
-        <!-- Scooter/Bike Icon -->
-        <div style="width: 32px; height: 32px; border-radius: 50%; background: #0f172a; border: 2.5px solid ${color}; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 18px; height: 18px;">
-            <circle cx="5.5" cy="17.5" r="2.5"/>
-            <circle cx="18.5" cy="17.5" r="2.5"/>
-            <path d="M5.5 17.5H12l3-7h4"/>
-            <path d="M12 10.5h4.5"/>
-            <circle cx="12" cy="7" r="1"/>
-          </svg>
+        <!-- Top Floating Executive Name Pill -->
+        <div style="background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(6px); border: 1.5px solid ${color}; border-radius: 20px; padding: 2px 7px; color: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 800; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); margin-bottom: 3px; display: flex; align-items: center; gap: 4px;">
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; animation: liveBlink 1.2s infinite ease-in-out;"></span>
+          <span>${displayName}</span>
+        </div>
+
+        <!-- Animated Scooty & Radar Ring Wrapper -->
+        <div class="live-vehicle-wrapper" style="transform: rotate(${heading}deg); transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; position: relative;">
+          
+          <!-- Outer Radar Pulse Halo (Zomato/Swiggy style) -->
+          <div style="position: absolute; width: 44px; height: 44px; border-radius: 50%; background: ${color}28; border: 1.5px solid ${color}66; animation: scootyRadarPulse 2s infinite cubic-bezier(0.2, 0.8, 0.2, 1); z-index: -1;"></div>
+          
+          <!-- Forward Direction Arrow Pointer -->
+          <div style="position: absolute; top: -5px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 7px solid ${color}; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));"></div>
+
+          <!-- Main Scooty Badge Circle -->
+          <div style="width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #1e293b, #090d16); border: 2.5px solid ${color}; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,255,255,0.2);">
+            
+            <!-- Detailed Scooty Graphic (Delivery / Live Tracker style) -->
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <!-- Rear Wheel -->
+              <circle cx="6" cy="18" r="2.5" fill="#0f172a" stroke="#f1f5f9" stroke-width="1.2"/>
+              <circle cx="6" cy="18" r="1" fill="${color}"/>
+              
+              <!-- Front Wheel -->
+              <circle cx="18" cy="18" r="2.5" fill="#0f172a" stroke="#f1f5f9" stroke-width="1.2"/>
+              <circle cx="18" cy="18" r="1" fill="${color}"/>
+
+              <!-- Scooty Base Frame & Footboard -->
+              <path d="M8 18 H15 L16.5 13 H10 L8 18 Z" fill="${color}"/>
+              
+              <!-- Rear Delivery Box / Bag (Zomato/Swiggy style) -->
+              <rect x="4.5" y="10.5" width="4.5" height="4.5" rx="1" fill="#f59e0b" stroke="#0f172a" stroke-width="0.8"/>
+              <path d="M5.5 12.5 H8" stroke="#ffffff" stroke-width="0.8"/>
+
+              <!-- Front Steering Column & Handlebar -->
+              <path d="M14 14 L17 7.5 H15.5 M17 7.5 H18.5" stroke="#f8fafc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              
+              <!-- Headlight Beam -->
+              <circle cx="17.5" cy="8" r="1" fill="#fef08a"/>
+              <path d="M19 7 L23 5 L23 10 Z" fill="#fef08a" opacity="0.45"/>
+
+              <!-- Rider Helmet -->
+              <circle cx="11.5" cy="7.5" r="2.8" fill="#38bdf8" stroke="#0f172a" stroke-width="1"/>
+              <path d="M12.5 7.5 Q13.5 8 13.8 9.5" stroke="#0f172a" stroke-width="0.8"/>
+            </svg>
+
+          </div>
         </div>
       </div>
       <style>
-        @keyframes vehiclePulse {
-          0% { transform: scale(0.9); opacity: 0.9; }
-          50% { transform: scale(1.3); opacity: 0.4; }
-          100% { transform: scale(0.9); opacity: 0.9; }
+        @keyframes scootyRadarPulse {
+          0% { transform: scale(0.85); opacity: 0.9; }
+          60% { transform: scale(1.45); opacity: 0.25; }
+          100% { transform: scale(1.6); opacity: 0; }
+        }
+        @keyframes liveBlink {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.3; transform: scale(0.8); }
         }
       </style>
-  `
+    `
+  }
 
   const _buildStartIcon = () => `
       <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #10b981; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(16,185,129,0.4); color: #fff; font-family: sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">
@@ -883,14 +934,39 @@ export default function ManagerSmartMap() {
       }
     }
 
-    // Extend polyline (if any)
+    // Extend traveled trail polyline (or initialize if first moving coordinates)
     try {
+      const newPt = new window.google.maps.LatLng(lat, lng)
       if (trackRouteRef.current) {
         const path = trackRouteRef.current.getPath()
-        path.push(new window.google.maps.LatLng(lat, lng))
+        path.push(newPt)
+      } else if (googleMapRef.current && window.google) {
+        const lineSymbol = {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          fillOpacity: 1,
+          scale: 4,
+          strokeColor: '#a855f7',
+          fillColor: '#a855f7'
+        }
+        const initialPath = []
+        if (startMarkerRef.current) {
+          initialPath.push(startMarkerRef.current.getPosition())
+        }
+        initialPath.push(newPt)
+        trackRouteRef.current = new window.google.maps.Polyline({
+          path: initialPath,
+          strokeOpacity: 0,
+          icons: [{
+            icon: lineSymbol,
+            offset: '0%',
+            repeat: '10px'
+          }],
+          map: googleMapRef.current,
+          zIndex: 10
+        })
       }
     } catch (polylineErr) {
-      console.warn("Failed to extend polyline:", polylineErr)
+      console.warn("Failed to extend traveled trail polyline:", polylineErr)
     }
 
     // Animate live marker
@@ -908,7 +984,7 @@ export default function ManagerSmartMap() {
         liveMarkerRef.current = new HTMLMapMarker(
           latlng,
           googleMapRef.current,
-          _buildLiveIcon('#8b5cf6', initialHeading),
+          _buildLiveIcon('#8b5cf6', initialHeading, selectedExecutiveRef.current?.employee_name),
           () => {
             showInfoWindow(latlng, _buildLivePopupContent(selectedExecutiveRef.current, trackSessionRef.current, destClientRef.current))
           },
@@ -1007,6 +1083,23 @@ export default function ManagerSmartMap() {
       if (clientDest) {
         setDestClient(clientDest)
         destClientRef.current = clientDest
+        
+        if (clientDest.latitude != null && clientDest.longitude != null && !isNaN(clientDest.latitude) && !isNaN(clientDest.longitude)) {
+          const destLatLng = new window.google.maps.LatLng(Number(clientDest.latitude), Number(clientDest.longitude))
+          if (destMarkerRef.current) {
+            destMarkerRef.current.setLatLng(destLatLng)
+          } else {
+            destMarkerRef.current = new HTMLMapMarker(
+              destLatLng,
+              map,
+              _buildDestIcon(),
+              () => {
+                showInfoWindow(destLatLng, `<div style="font-family:sans-serif;font-size:12px;padding:6px;color:#1e293b;"><strong>🎯 Destination Client</strong><br/><span style="color:#ef4444;font-weight:bold;">${clientDest.title || clientDest.company_name}</span><br/>${clientDest.address || '—'}</div>`)
+              },
+              'center'
+            )
+          }
+        }
       }
 
       // Live / end marker coordinates calculation
@@ -1031,7 +1124,7 @@ export default function ManagerSmartMap() {
           liveMarkerRef.current = new HTMLMapMarker(
             latlng,
             map,
-            _buildLiveIcon(badgeColor, 0),
+            _buildLiveIcon(badgeColor, 0, executive?.employee_name),
             () => {
               showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
             },
@@ -1054,7 +1147,7 @@ export default function ManagerSmartMap() {
           liveMarkerRef.current = new HTMLMapMarker(
             latlng,
             map,
-            _buildLiveIcon(badgeColor, initialHeading),
+            _buildLiveIcon(badgeColor, initialHeading, executive?.employee_name),
             () => {
               showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
             },
@@ -1069,7 +1162,7 @@ export default function ManagerSmartMap() {
           liveMarkerRef.current = new HTMLMapMarker(
             latlng,
             map,
-            _buildLiveIcon(badgeColor, 0),
+            _buildLiveIcon(badgeColor, 0, executive?.employee_name),
             () => {
               showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
             },
@@ -1084,7 +1177,7 @@ export default function ManagerSmartMap() {
           liveMarkerRef.current = new HTMLMapMarker(
             latlng,
             map,
-            _buildLiveIcon(badgeColor, 0),
+            _buildLiveIcon(badgeColor, 0, executive?.employee_name),
             () => {
               showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
             },
@@ -1138,9 +1231,9 @@ export default function ManagerSmartMap() {
           const lineSymbol = {
             path: window.google.maps.SymbolPath.CIRCLE,
             fillOpacity: 1,
-            scale: 3,
-            strokeColor: '#8b5cf6',
-            fillColor: '#8b5cf6'
+            scale: 4,
+            strokeColor: '#a855f7',
+            fillColor: '#a855f7'
           }
           trackRouteRef.current = new window.google.maps.Polyline({
             path: pathCoords,
@@ -1148,9 +1241,10 @@ export default function ManagerSmartMap() {
             icons: [{
               icon: lineSymbol,
               offset: '0%',
-              repeat: '12px'
+              repeat: '10px'
             }],
-            map: map
+            map: map,
+            zIndex: 10
           })
         }
       } catch (trailErr) {
@@ -1233,10 +1327,8 @@ export default function ManagerSmartMap() {
         console.error("[SmartMap] Error fitting map bounds:", boundsErr)
       }
 
-      // Subscribe Realtime (or fall back to polling)
-      if (session) {
-        _subscribeRealtime(executive.employee_id, session.id)
-      }
+      // Subscribe Realtime (ALWAYS, whether session is null or active)
+      _subscribeRealtime(executive.employee_id, session?.id, executive.employee_code)
 
     } catch (err) {
       console.error('Tracking history error:', err)
@@ -1244,80 +1336,104 @@ export default function ManagerSmartMap() {
     }
   }, [_applyNewCrumb])
 
-  const _subscribeRealtime = useCallback((employeeId, sessionId) => {
-    // Clean up previous channel first
-    if (realtimeChRef.current) { try { realtimeChRef.current.unsubscribe() } catch {} }
+  const _subscribeRealtime = useCallback((employeeId, sessionId, employeeCode = null) => {
+    // Clean up previous channels first
+    if (realtimeChRef.current) {
+      if (Array.isArray(realtimeChRef.current)) {
+        realtimeChRef.current.forEach(ch => { try { ch.unsubscribe() } catch {} })
+      } else {
+        try { realtimeChRef.current.unsubscribe() } catch {}
+      }
+      realtimeChRef.current = null
+    }
     if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null }
 
     if (supabase) {
-      const channel = supabase
-        .channel(`tracking_${employeeId}_${sessionId || 'live'}`)
-        .on('broadcast', { event: 'location' }, (payload) => {
-          const crumb = payload.payload
-          if (!crumb) return
-          
-          if (crumb.broadcast_sent_at) {
-            const latVal = Date.now() - crumb.broadcast_sent_at
-            console.log(`[SmartMap] Realtime Broadcast Latency: ${latVal}ms`)
-          }
-          
-          const exists = crumbsRef.current.some(c => c.id === crumb.id)
-          if (!exists) {
-            crumbsRef.current = [...crumbsRef.current, crumb]
-            setTrackBreadcrumbs(crumbsRef.current)
-            _applyNewCrumb(crumb)
-          }
-        })
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'hrms',
-          table: 'tracking_locations',
-          filter: sessionId ? `tracking_session_id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
-        }, (payload) => {
-          const crumb = payload.new
-          if (!crumb) return
-          
-          const exists = crumbsRef.current.some(c => c.id === crumb.id)
-          if (!exists) {
-            crumbsRef.current = [...crumbsRef.current, crumb]
-            setTrackBreadcrumbs(crumbsRef.current)
-            _applyNewCrumb(crumb)
-          }
-        })
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'hrms',
-          table: 'tracking_events',
-          filter: sessionId ? `session_id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
-        }, (payload) => {
-          const newEvent = payload.new
-          if (!newEvent) return
-          setTrackEvents(prev => {
-            const exists = prev.some(e => e.id === newEvent.id)
-            if (exists) return prev
-            return [newEvent, ...prev]
-          })
-          showToast(newEvent.title || `New tracking event: ${newEvent.event_type}`, "info")
-        })
-        .on('postgres_changes', {
-          event: 'UPDATE',
-          schema: 'hrms',
-          table: 'tracking_sessions',
-          filter: sessionId ? `id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
-        }, (payload) => {
-          const sess = payload.new
-          if (!sess) return
-          setTrackSession(sess)
-          setTrackStatus(sess.status || 'ended')
-          if (sess.status === 'ended') {
-            _handleSessionEnded(sess)
-          }
-        })
-        .subscribe((s) => {
-          setRealtimeOk(s === 'SUBSCRIBED')
-        })
+      const chNames = new Set()
+      if (employeeId) {
+        chNames.add(`tracking_${employeeId}`)
+        chNames.add(`tracking_${employeeId}_live`)
+        if (sessionId) chNames.add(`tracking_${employeeId}_${sessionId}`)
+      }
+      if (employeeCode && employeeCode !== employeeId) {
+        chNames.add(`tracking_${employeeCode}`)
+        chNames.add(`tracking_${employeeCode}_live`)
+        if (sessionId) chNames.add(`tracking_${employeeCode}_${sessionId}`)
+      }
 
-      realtimeChRef.current = channel
+      const channels = []
+      chNames.forEach(name => {
+        const channel = supabase
+          .channel(name)
+          .on('broadcast', { event: 'location' }, (payload) => {
+            const crumb = payload?.payload
+            if (!crumb) return
+            
+            if (crumb.broadcast_sent_at) {
+              const latVal = Date.now() - crumb.broadcast_sent_at
+              console.log(`[SmartMap] Realtime Broadcast Latency (${name}): ${latVal}ms`)
+            }
+            
+            const crumbId = crumb.id || `bc_${Date.now()}_${Math.random()}`
+            const exists = crumbsRef.current.some(c => c.id === crumbId)
+            if (!exists) {
+              crumbsRef.current = [...crumbsRef.current, { ...crumb, id: crumbId }]
+              setTrackBreadcrumbs(crumbsRef.current)
+            }
+            _applyNewCrumb(crumb)
+          })
+          .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'hrms',
+            table: 'tracking_locations',
+            filter: sessionId ? `tracking_session_id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
+          }, (payload) => {
+            const crumb = payload.new
+            if (!crumb) return
+            const exists = crumbsRef.current.some(c => c.id === crumb.id)
+            if (!exists) {
+              crumbsRef.current = [...crumbsRef.current, crumb]
+              setTrackBreadcrumbs(crumbsRef.current)
+              _applyNewCrumb(crumb)
+            }
+          })
+          .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'hrms',
+            table: 'tracking_events',
+            filter: sessionId ? `session_id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
+          }, (payload) => {
+            const newEvent = payload.new
+            if (!newEvent) return
+            setTrackEvents(prev => {
+              const exists = prev.some(e => e.id === newEvent.id)
+              if (exists) return prev
+              return [newEvent, ...prev]
+            })
+            showToast(newEvent.title || `New tracking event: ${newEvent.event_type}`, "info")
+          })
+          .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'hrms',
+            table: 'tracking_sessions',
+            filter: sessionId ? `id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
+          }, (payload) => {
+            const sess = payload.new
+            if (!sess) return
+            setTrackSession(sess)
+            setTrackStatus(sess.status || 'ended')
+            if (sess.status === 'ended') {
+              _handleSessionEnded(sess)
+            }
+          })
+          .subscribe((s) => {
+            if (s === 'SUBSCRIBED') setRealtimeOk(true)
+          })
+
+        channels.push(channel)
+      })
+
+      realtimeChRef.current = channels
     }
 
     // Always start polling timer as secure backend API fallback
@@ -1362,7 +1478,7 @@ export default function ManagerSmartMap() {
       } catch (err) {
         console.warn("Polling error:", err)
       }
-    }, 10000)
+    }, 2500)
   }, [_applyNewCrumb, _handleSessionEnded, fetchData])
 
   // Stale detection timer: re-evaluate badge every 30s
@@ -1810,7 +1926,19 @@ export default function ManagerSmartMap() {
                 </div>
               )}
               
-              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-2 font-bold">
+              {/* Route Path Legend (Traveled shortcut/trail vs Planned Route) */}
+              <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 border-t border-white/5 pt-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full border border-purple-400 bg-purple-500/30"></span>
+                  <span className="text-purple-300">Dotted: Actual Path / Shortcut</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3.5 h-1 bg-blue-500 rounded-full"></span>
+                  <span className="text-blue-300">Solid: Planned Route</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 font-bold">
                 <span>Last updated: {lastPingMs ? formatLastSeen(new Date(lastPingMs).toISOString()) : 'Just now'}</span>
                 <span>{trackSession?.total_distance ? `${(trackSession.total_distance / 1000).toFixed(2)} km total` : ''}</span>
               </div>
