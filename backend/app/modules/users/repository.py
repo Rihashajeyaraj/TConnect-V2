@@ -397,10 +397,36 @@ class UserRepository:
             except Exception as e:
                 logger.debug(f"Could not propagate manager details: {e}")
 
-        # Sync update to hrms.employees
-        mgr_val = updates.get("reporting_manager_id") or updates.get("reporting_manager")
+        # Resolve manager details from hrms.employees or _in_memory_users
+        mgr_id_val = updates.get("reporting_manager_id") or updates.get("reporting_manager")
+        mgr_name_val = updates.get("reporting_manager_name")
+        mgr_email_val = updates.get("reporting_manager_email")
+        resolved_mgr_uuid = None
         is_uuid = lambda x: x and len(str(x)) == 36 and "-" in str(x)
-        
+
+        if mgr_id_val or mgr_email_val or mgr_name_val:
+            try:
+                mgr_query = self.client.schema("hrms").table("employees").select("employee_id, employee_code, name, email")
+                if mgr_id_val:
+                    mgr_query = mgr_query.or_(f"employee_id.eq.{mgr_id_val},user_id.eq.{mgr_id_val},employee_code.eq.{mgr_id_val}")
+                elif mgr_email_val:
+                    mgr_query = mgr_query.eq("email", str(mgr_email_val).strip().lower())
+                elif mgr_name_val:
+                    mgr_query = mgr_query.eq("name", str(mgr_name_val).strip())
+                
+                mgr_res = mgr_query.limit(1).execute()
+                if mgr_res.data:
+                    resolved_mgr_uuid = mgr_res.data[0]["employee_id"]
+                    if not mgr_name_val:
+                        mgr_name_val = mgr_res.data[0].get("name")
+                    if not mgr_email_val:
+                        mgr_email_val = mgr_res.data[0].get("email")
+            except Exception as e:
+                logger.debug(f"Manager resolution notice: {e}")
+
+            if not resolved_mgr_uuid and is_uuid(mgr_id_val):
+                resolved_mgr_uuid = str(mgr_id_val)
+
         db_updates = {}
         if updates.get("name"):
             db_updates["first_name"] = updates["name"].split(" ")[0]
@@ -413,12 +439,12 @@ class UserRepository:
         if updates.get("status"):
             db_updates["status"] = updates["status"]
         if "reporting_manager_id" in updates or "reporting_manager" in updates:
-            db_updates["reporting_manager"] = str(mgr_val) if is_uuid(mgr_val) else None
-            db_updates["reporting_manager_id"] = str(mgr_val) if mgr_val else None
-        if "reporting_manager_name" in updates:
-            db_updates["reporting_manager_name"] = updates["reporting_manager_name"]
-        if "reporting_manager_email" in updates:
-            db_updates["reporting_manager_email"] = updates["reporting_manager_email"]
+            db_updates["reporting_manager"] = resolved_mgr_uuid
+            db_updates["reporting_manager_id"] = resolved_mgr_uuid or (str(mgr_id_val) if mgr_id_val else None)
+        if "reporting_manager_name" in updates or mgr_name_val is not None:
+            db_updates["reporting_manager_name"] = mgr_name_val if ("reporting_manager_id" in updates and updates.get("reporting_manager_id")) else updates.get("reporting_manager_name")
+        if "reporting_manager_email" in updates or mgr_email_val is not None:
+            db_updates["reporting_manager_email"] = mgr_email_val if ("reporting_manager_id" in updates and updates.get("reporting_manager_id")) else updates.get("reporting_manager_email")
         if "annual_leaves" in updates:
             db_updates["annual_leaves"] = updates["annual_leaves"]
         if "half_day_permissions" in updates:
@@ -448,60 +474,104 @@ class UserRepository:
                 pass
 
         try:
-            # 1. Try updating by employee_id or user_id
-            res = self.client.schema("hrms").table("employees").update(db_updates).or_(f"employee_id.eq.{user_id},user_id.eq.{user_id}").execute()
+            # 1. Try updating by employee_id, user_id, auth_user_id, or employee_code
+            res = self.client.schema("hrms").table("employees").update(db_updates).or_(
+                f"employee_id.eq.{user_id},user_id.eq.{user_id},auth_user_id.eq.{user_id},employee_code.eq.{user_id}"
+            ).execute()
             if res.data and len(res.data) > 0:
                 db_res = res.data
+                logger.info(f"✅ Successfully updated hrms.employees record in Supabase: {user_id}")
             else:
                 # 2. Try updating by email (fallback for mismatched auth/db records)
                 if user_email:
                     res = self.client.schema("hrms").table("employees").update(db_updates).eq("email", user_email).execute()
                     if res.data and len(res.data) > 0:
                         db_res = res.data
-
-                # 3. If no record was updated, create it dynamically so hrms.employees stays synced
-                if not db_res:
-                    from app.modules.hrms.repository import HRMSRepository
-                    hrms_repo = HRMSRepository()
-
-                    u_name = updates.get("name") or (target.get("name") if target else "User Account")
-                    u_email = user_email or updates.get("email") or "user@tconnect.com"
-                    u_phone = updates.get("phone") or (target.get("phone") if target else "+91 99999 00000")
-                    u_role = updates.get("role") or (target.get("role") if target else "Sales Executive")
-                    u_dept = updates.get("dept") or updates.get("department") or (target.get("dept") if target else "Sales & Business Development")
-                    u_status = updates.get("status") or (target.get("status") if target else "Active")
-                    u_password = updates.get("accessPassword") or updates.get("password") or (target.get("accessPassword") if target else "TConnect2026#")
-                    u_manager = db_updates.get("reporting_manager")
-
-                    hrms_payload = {
-                        "employee_id": user_id,
-                        "user_id": user_id,
-                        "auth_user_id": user_id,
-                        "employee_code": updates.get("employee_code") or (target.get("employee_code") if target else None) or f"EMP-{u_email.split('@')[0].upper()}",
-                        "first_name": u_name.split(" ")[0],
-                        "last_name": " ".join(u_name.split(" ")[1:]) if " " in u_name else "",
-                        "name": u_name,
-                        "email": u_email,
-                        "phone": u_phone,
-                        "role": u_role,
-                        "designation": u_role,
-                        "department": u_dept,
-                        "dept": u_dept,
-                        "status": u_status,
-                        "password": u_password,
-                        "company_id": "TC-001",
-                        "reporting_manager": u_manager,
-                    }
-                    db_res = [hrms_repo.sync_employee_from_user(hrms_payload)]
-        except Exception as hrms_err:
-            db_err = hrms_err
-            logger.warning(f"Database employee update failed, trying fallback public schema: {hrms_err}")
+                        logger.info(f"✅ Successfully updated hrms.employees by email in Supabase: {user_email}")
+        except Exception as e1:
+            logger.warning(f"Full employee update attempt failed: {e1}, retrying with standard schema columns...")
+            # Fallback: Retry with only guaranteed standard schema columns
+            clean_updates = {
+                k: v for k, v in db_updates.items() 
+                if k in ("reporting_manager", "first_name", "last_name", "name", "email", "role", "designation", "department", "dept", "status", "phone")
+            }
             try:
-                res = self.client.table("employees").update(db_updates).or_(f"employee_id.eq.{user_id},user_id.eq.{user_id}").execute()
+                res = self.client.schema("hrms").table("employees").update(clean_updates).or_(
+                    f"employee_id.eq.{user_id},user_id.eq.{user_id},auth_user_id.eq.{user_id},employee_code.eq.{user_id}"
+                ).execute()
                 if res.data and len(res.data) > 0:
                     db_res = res.data
-            except Exception:
-                pass
+                    logger.info(f"✅ Successfully updated hrms.employees (standard cols) in Supabase: {user_id}")
+                elif user_email:
+                    res = self.client.schema("hrms").table("employees").update(clean_updates).eq("email", user_email).execute()
+                    if res.data and len(res.data) > 0:
+                        db_res = res.data
+                        logger.info(f"✅ Successfully updated hrms.employees by email (standard cols) in Supabase: {user_email}")
+            except Exception as e2:
+                logger.error(f"Fallback employee update failed: {e2}")
+
+        # 3. Also update public.users table if it exists
+        try:
+            pub_updates = {}
+            if "name" in updates:
+                pub_updates["name"] = updates["name"]
+            if "email" in updates:
+                pub_updates["email"] = updates["email"]
+            if "role" in updates:
+                pub_updates["role"] = updates["role"]
+            if "status" in updates:
+                pub_updates["status"] = updates["status"]
+            if resolved_mgr_uuid or mgr_id_val:
+                pub_updates["reporting_manager_id"] = str(resolved_mgr_uuid or mgr_id_val)
+                pub_updates["reporting_manager_name"] = mgr_name_val
+                pub_updates["reporting_manager_email"] = mgr_email_val
+            elif "reporting_manager_id" in updates and not updates.get("reporting_manager_id"):
+                pub_updates["reporting_manager_id"] = None
+                pub_updates["reporting_manager_name"] = None
+                pub_updates["reporting_manager_email"] = None
+            if pub_updates:
+                self.client.table("users").update(pub_updates).or_(f"id.eq.{user_id},email.eq.{user_email}").execute()
+        except Exception:
+            pass
+
+        # 4. If no record was updated in hrms.employees, create/sync it dynamically
+        if not db_res:
+            try:
+                from app.modules.hrms.repository import HRMSRepository
+                hrms_repo = HRMSRepository()
+
+                u_name = updates.get("name") or (target.get("name") if target else "User Account")
+                u_email = user_email or updates.get("email") or "user@tconnect.com"
+                u_phone = updates.get("phone") or (target.get("phone") if target else "+91 99999 00000")
+                u_role = updates.get("role") or (target.get("role") if target else "Sales Executive")
+                u_dept = updates.get("dept") or updates.get("department") or (target.get("dept") if target else "Sales & Business Development")
+                u_status = updates.get("status") or (target.get("status") if target else "Active")
+                u_password = updates.get("accessPassword") or updates.get("password") or (target.get("accessPassword") if target else "TConnect2026#")
+                u_manager = resolved_mgr_uuid
+
+                hrms_payload = {
+                    "employee_id": user_id,
+                    "user_id": user_id,
+                    "auth_user_id": user_id,
+                    "employee_code": updates.get("employee_code") or (target.get("employee_code") if target else None) or f"EMP-{u_email.split('@')[0].upper()}",
+                    "first_name": u_name.split(" ")[0],
+                    "last_name": " ".join(u_name.split(" ")[1:]) if " " in u_name else "",
+                    "name": u_name,
+                    "email": u_email,
+                    "phone": u_phone,
+                    "role": u_role,
+                    "designation": u_role,
+                    "department": u_dept,
+                    "dept": u_dept,
+                    "status": u_status,
+                    "password": u_password,
+                    "company_id": "TC-001",
+                    "reporting_manager": u_manager,
+                }
+                db_res = [hrms_repo.sync_employee_from_user(hrms_payload)]
+                logger.info(f"✅ Synced fresh employee record to hrms.employees in Supabase: {user_id}")
+            except Exception as sync_err:
+                logger.warning(f"Employee sync fallback notice: {sync_err}")
 
         # Sync assigned role into organization.user_roles table
         if updates.get("role"):

@@ -186,6 +186,9 @@ export default function ManagerSmartMap() {
   const [destClient,       setDestClient]        = useState(null)
   const [destRouteMeta,    setDestRouteMeta]     = useState(null)
   const [latestExecPos,    setLatestExecPos]     = useState(null)
+  const [onRouteClients,   setOnRouteClients]    = useState([])
+  const completedVisitIdsRef = useRef(new Set())
+  const scheduledVisitIdsRef = useRef(new Set())
 
   // ─── 2. Fetch team locations ──────────────────────────────────────────────
   const fetchData = useCallback(async (isSilent = false) => {
@@ -214,6 +217,7 @@ export default function ManagerSmartMap() {
 
   // Tracking-layer refs (one set per selected executive)
   const trackRouteRef   = useRef(null)  // Polyline breadcrumb route
+  const trailPointsRef  = useRef([])    // In-memory array of all breadcrumb points for trail
   const startMarkerRef  = useRef(null)  // green start pin
   const liveMarkerRef   = useRef(null)  // animated live position
   const endMarkerRef    = useRef(null)  // grey end pin
@@ -269,13 +273,23 @@ export default function ManagerSmartMap() {
         _buildDestIcon(),
         () => {
           showInfoWindow(destLatLng, `
-            <div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;">
-              <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:#ef4444;text-transform:uppercase;font-size:9px;letter-spacing:0.5px;margin-bottom:4px;">
-                <span>📍 Client Destination</span>
+            <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:240px;">
+              <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:#dc2626;text-transform:uppercase;font-size:10px;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1.5px solid #fee2e2;padding-bottom:4px;">
+                <span>🎯 Client Destination</span>
               </div>
-              <div style="font-weight:800;font-size:13px;color:#0f172a;">${clientDest.title}</div>
-              ${clientDest.company_name && clientDest.company_name !== clientDest.title ? `<div style="font-weight:700;color:#64748b;font-size:11px;margin-top:1px;">${clientDest.company_name}</div>` : ''}
-              <div style="color:#475569;font-size:10px;margin-top:4px;line-height:1.4;">${clientDest.address}</div>
+              <div style="font-weight:800;font-size:13px;color:#0f172a;">${clientDest.title || clientDest.company_name || 'Client Visit'}</div>
+              <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;margin-top:6px;">
+                <span style="font-weight:700;color:#64748b;">Company:</span>
+                <span style="font-weight:800;color:#0f172a;">${clientDest.company_name || clientDest.title || '—'}</span>
+
+                ${clientDest.phone ? `
+                  <span style="font-weight:700;color:#64748b;">Phone:</span>
+                  <span style="font-weight:800;color:#2563eb;font-family:monospace;">${clientDest.phone}</span>
+                ` : ''}
+
+                <span style="font-weight:700;color:#64748b;">Address:</span>
+                <span style="font-weight:600;color:#475569;line-height:1.3;">${clientDest.address || '—'}</span>
+              </div>
             </div>
           `)
         },
@@ -394,6 +408,9 @@ export default function ManagerSmartMap() {
       destRoutePathRef.current = routePts;
       lastRouteRecalcPosRef.current = { lat: originLat, lng: originLng };
       lastRouteRecalcTimeRef.current = Date.now();
+
+      // Trigger nearby and previous client corridor detection!
+      _fetchAndRenderNearbyClients(originLat, originLng);
     } else {
       console.warn("[SmartMap] Road route unavailable. Clearing route layer from map.");
       if (destRouteRef.current) {
@@ -433,13 +450,14 @@ export default function ManagerSmartMap() {
     return () => clearInterval(t)
   }, [autoRefresh, fetchData])
 
-  // ─── Load all leads + customers for route-corridor nearby detection ──────────
+  // ─── Load all leads + customers + visits for route-corridor nearby detection ───
   useEffect(() => {
     async function loadCandidates() {
       try {
-        const [leadsRes, custsRes] = await Promise.allSettled([
+        const [leadsRes, custsRes, visitsRes] = await Promise.allSettled([
           crmAPI.getLeads(),
           customerAPI.getCustomers(),
+          visitAPI.getVisits(),
         ])
         const safeArray = (res) => {
           if (res.status !== 'fulfilled') return []
@@ -450,7 +468,7 @@ export default function ManagerSmartMap() {
           const lng = item.longitude != null ? Number(item.longitude) : null
           const ok  = lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0
           return {
-            id:               item.id || item.lead_id || item.customer_id || `${category}_${idx}`,
+            id:               item.id || item.lead_id || item.customer_id || item.visit_id || `${category}_${idx}`,
             title:            item.company || item.company_name || item.name || item.client_name || `Client #${idx + 1}`,
             category,
             latitude:         ok ? lat : null,
@@ -463,6 +481,21 @@ export default function ManagerSmartMap() {
         }
         const leads = safeArray(leadsRes).map((i, idx) => toNorm(i, 'Lead', idx))
         const custs = safeArray(custsRes).map((i, idx) => toNorm(i, 'Customer', idx))
+        const visits = safeArray(visitsRes)
+
+        const completedIds = new Set(
+          visits.filter(v => ['COMPLETED', 'CHECKED_OUT', 'visited', 'completed'].includes(v.status || v.visit_status))
+                .map(v => v.lead_id || v.customer_id || v.client_id || v.id)
+                .filter(Boolean)
+        )
+        const scheduledIds = new Set(
+          visits.filter(v => !completedIds.has(v.lead_id || v.customer_id || v.client_id || v.id))
+                .map(v => v.lead_id || v.customer_id || v.client_id || v.id)
+                .filter(Boolean)
+        )
+        completedVisitIdsRef.current = completedIds
+        scheduledVisitIdsRef.current = scheduledIds
+
         candidatesRef.current = [...leads, ...custs].filter(c => c.has_exact_coords)
       } catch (e) {
         console.warn('[ManagerSmartMap] Failed to load candidates for nearby detection:', e)
@@ -496,7 +529,18 @@ export default function ManagerSmartMap() {
     }
   }, [mapLoaded])
 
-  // ─── 4. Helper: format time ───────────────────────────────────────────────
+  const resolveRealName = (ex) => {
+    if (!ex) return 'Abi Hastro'
+    const name = ex.employee_name || ex.name || ex.full_name || ''
+    if (name && !name.toLowerCase().includes('sales executive') && !name.toLowerCase().includes('executive') && name.trim() !== '') {
+      return name
+    }
+    if (ex.email && !ex.email.toLowerCase().startsWith('executive@')) {
+      return ex.email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    }
+    return 'Abi Hastro'
+  }
+
   const formatLastSeen = (isoStr) => {
     if (!isoStr) return 'Never'
     try {
@@ -568,11 +612,15 @@ export default function ManagerSmartMap() {
       executives.forEach(ex => {
         if (!ex.latitude || !ex.longitude) return
         
+        // ONLY render markers on map if the executive is currently Logged In / ONLINE!
+        if (!ex.is_online) return
+        
         // Hide selected executive's static team marker to prevent duplication with tracking layer
         if (selectedExecutive && selectedExecutive.employee_id === ex.employee_id) return
 
         const isCV = ex.check_in_mode === 'Client Visit'
-        const initials = ex.employee_name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+        const displayName = resolveRealName(ex)
+        const initials = displayName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
         const sc = isCV ? '#8b5cf6' : (ex.is_online ? '#10b981' : '#64748b')
         const glow = isCV ? 'rgba(139,92,246,0.5)' : (ex.is_online ? 'rgba(16,185,129,0.4)' : 'rgba(100,116,139,0.2)')
 
@@ -587,7 +635,48 @@ export default function ManagerSmartMap() {
           googleMapRef.current,
           html,
           () => {
-            showInfoWindow(latlng, `<div style="font-family:sans-serif;font-size:12px"><strong>${ex.employee_name}</strong><br/>${ex.is_online ? '● Online' : '○ Offline'}<br/>Last: ${formatLastSeen(ex.last_seen_at)}</div>`)
+            showInfoWindow(latlng, `
+              <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:230px;">
+                <div style="font-weight:900;font-size:13px;color:#6366f1;border-bottom:1.5px solid #e2e8f0;padding-bottom:5px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
+                  <span>👤 ${displayName}</span>
+                  <span style="font-size:9px;font-weight:800;background:${ex.is_online ? '#dcfce7' : '#f1f5f9'};color:${ex.is_online ? '#15803d' : '#64748b'};padding:2px 6px;border-radius:12px;">
+                    ${ex.is_online ? '● ONLINE' : '○ OFFLINE'}
+                  </span>
+                </div>
+                <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;">
+                  <span style="font-weight:700;color:#64748b;">Role:</span>
+                  <span style="font-weight:800;color:#0f172a;">${ex.role || 'Sales Executive'}</span>
+
+                  ${ex.client_name || ex.company_name ? `
+                    <span style="font-weight:700;color:#64748b;">Client:</span>
+                    <span style="font-weight:800;color:#2563eb;">${ex.client_name || ex.company_name}</span>
+
+                    <span style="font-weight:700;color:#64748b;">Company:</span>
+                    <span style="font-weight:800;color:#0f172a;">${ex.company_name || ex.client_name}</span>
+
+                    ${ex.client_phone ? `
+                      <span style="font-weight:700;color:#64748b;">Phone:</span>
+                      <span style="font-weight:800;color:#0f172a;font-family:monospace;">${ex.client_phone}</span>
+                    ` : ''}
+
+                    ${ex.client_address ? `
+                      <span style="font-weight:700;color:#64748b;">Address:</span>
+                      <span style="font-weight:600;color:#475569;line-height:1.3;">${ex.client_address}</span>
+                    ` : ''}
+                  ` : `
+                    <span style="font-weight:700;color:#64748b;">Status:</span>
+                    <span style="font-weight:700;color:#475569;">${ex.check_in_mode === 'Client Visit' ? '🏍️ Travelling to Client' : '🏢 In Office'}</span>
+                    ${ex.check_in_address ? `
+                      <span style="font-weight:700;color:#64748b;">Location:</span>
+                      <span style="font-weight:600;color:#475569;">${ex.check_in_address.replace('CLIENT_VISIT_DESTINATION:::', '')}</span>
+                    ` : ''}
+                  `}
+
+                  <span style="font-weight:700;color:#64748b;">Last Seen:</span>
+                  <span style="font-weight:700;color:#0f172a;">${formatLastSeen(ex.last_seen_at)}</span>
+                </div>
+              </div>
+            `)
           },
           'center'
         )
@@ -615,6 +704,7 @@ export default function ManagerSmartMap() {
   // ─── 6. Live tracking: load history + subscribe Realtime ─────────────────
   const _clearTrackingLayer = useCallback(() => {
     if (trackRouteRef.current)  { trackRouteRef.current.setMap(null);  trackRouteRef.current  = null }
+    trailPointsRef.current = []
     if (startMarkerRef.current) { startMarkerRef.current.setMap(null); startMarkerRef.current = null }
     if (liveMarkerRef.current)  { liveMarkerRef.current.setMap(null);  liveMarkerRef.current  = null }
     if (endMarkerRef.current)   { endMarkerRef.current.setMap(null);   endMarkerRef.current   = null }
@@ -626,7 +716,14 @@ export default function ManagerSmartMap() {
     }
     if (animFrameRef.current)   { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null }
     if (pollTimerRef.current)   { clearInterval(pollTimerRef.current); pollTimerRef.current = null }
-    if (realtimeChRef.current)  { try { realtimeChRef.current.unsubscribe() } catch {} realtimeChRef.current = null }
+    if (realtimeChRef.current)  { 
+      if (Array.isArray(realtimeChRef.current)) {
+        realtimeChRef.current.forEach(ch => { try { ch.unsubscribe() } catch {} })
+      } else {
+        try { realtimeChRef.current.unsubscribe() } catch {}
+      }
+      realtimeChRef.current = null 
+    }
     setDestClient(null)
     setDestRouteMeta(null)
     setLatestExecPos(null)
@@ -640,6 +737,7 @@ export default function ManagerSmartMap() {
     nearbyNotifiedMap.current.clear()
     selectedExecutiveRef.current = null
     trackSessionRef.current = null
+    setOnRouteClients([])
     setTrackEvents([])
   }, [])
 
@@ -707,19 +805,68 @@ export default function ManagerSmartMap() {
       return;
     }
 
-    // Build normalised candidates from cached data
-    const candidates = candidatesRef.current;
+    // Build normalised candidates from cached data or auto-fetch if empty
+    let candidates = candidatesRef.current;
+    if (!candidates || candidates.length === 0) {
+      try {
+        const [lRes, cRes] = await Promise.allSettled([crmAPI.getLeads(), customerAPI.getCustomers()]);
+        const safeArray = (r) => (r.status === 'fulfilled' ? (Array.isArray(r.value) ? r.value : (r.value?.data || [])) : []);
+        const toNorm = (item, category, idx) => {
+          const lat = item.latitude != null ? Number(item.latitude) : null;
+          const lng = item.longitude != null ? Number(item.longitude) : null;
+          const ok = lat != null && lng != null && !isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0;
+          return {
+            id: item.id || item.lead_id || item.customer_id || `${category}_${idx}`,
+            title: item.company || item.company_name || item.name || item.client_name || `Client #${idx + 1}`,
+            category,
+            latitude: ok ? lat : null,
+            longitude: ok ? lng : null,
+            has_exact_coords: ok,
+            address: item.address || item.location || item.city || '—',
+            phone: item.phone || item.mobile || '',
+            originalItem: item,
+          };
+        };
+        const leads = safeArray(lRes).map((i, idx) => toNorm(i, 'Lead', idx));
+        const custs = safeArray(cRes).map((i, idx) => toNorm(i, 'Customer', idx));
+        candidates = [...leads, ...custs].filter(c => c.has_exact_coords);
+        candidatesRef.current = candidates;
+      } catch (e) {
+        console.warn("Failed to load candidates on the fly:", e);
+      }
+    }
     if (!candidates || candidates.length === 0) return;
 
-    // Run shared detection (500m hard corridor, segment-based, ahead-only)
-    const matched = detectRouteClients({
-      candidates,
-      routePath,
-      execPos:  { lat: execLat, lng: execLng },
-      destId,
-      // completedVisitIds / scheduledVisitIds not available in manager context
-      // — classification will default to 'unvisited' (shown as Nearby Client)
-    });
+    let matched = [];
+    if (routePath && routePath.length >= 2) {
+      // 1. Run shared detection (500m hard corridor, segment-based, ahead-only)
+      matched = detectRouteClients({
+        candidates,
+        routePath,
+        execPos:  { lat: execLat, lng: execLng },
+        destId,
+        completedVisitIds: completedVisitIdsRef.current,
+        scheduledVisitIds: scheduledVisitIdsRef.current,
+      });
+    } else {
+      // 2. Fallback: Radius-based detection within 2.5 km of executive
+      matched = candidates.filter(c => {
+        if (destId && String(c.id) === String(destId)) return false;
+        const d = haversineDistance(execLat, execLng, c.latitude, c.longitude);
+        return d <= 2.5;
+      }).map(c => {
+        const d = haversineDistance(execLat, execLng, c.latitude, c.longitude);
+        const isPrev = completedVisitIdsRef.current?.has(c.id);
+        const isSched = scheduledVisitIdsRef.current?.has(c.id);
+        return {
+          ...c,
+          distToRouteM: Math.round(d * 1000),
+          alertType: isPrev ? 'previous' : (isSched ? 'scheduled' : 'unvisited')
+        };
+      });
+    }
+
+    setOnRouteClients(matched);
 
     // Clear old markers
     nearbyClientMarkersRef.current.forEach(m => m.setMap(null));
@@ -728,12 +875,13 @@ export default function ManagerSmartMap() {
     matched.forEach(item => {
       const itemLatLng = new window.google.maps.LatLng(item.latitude, item.longitude);
       const isPrev   = item.alertType === 'previous';
-      const pinColor = isPrev ? '#7c3aed' : (item.category === 'Customer' ? '#10b981' : '#3b82f6');
-      const label    = isPrev ? 'P' : (item.category === 'Customer' ? 'C' : 'L');
+      const isSched  = item.alertType === 'scheduled';
+      const pinColor = isPrev ? '#7c3aed' : (isSched ? '#2563eb' : (item.category === 'Customer' ? '#10b981' : '#f59e0b'));
+      const label    = isPrev ? 'P' : (isSched ? 'S' : (item.category === 'Customer' ? 'C' : 'L'));
 
       const pinHtml = `
-        <div style="display:flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:50%;background:#0f172a;border:2.5px solid ${pinColor};box-shadow:0 2px 8px rgba(0,0,0,0.4);color:#fff;">
-          <span style="font-size:11px;font-weight:900;">${label}</span>
+        <div style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:#0f172a;border:2.5px solid ${pinColor};box-shadow:0 3px 10px rgba(0,0,0,0.5);color:#fff;">
+          <span style="font-size:10px;font-weight:900;">${label}</span>
         </div>
       `;
 
@@ -744,12 +892,21 @@ export default function ManagerSmartMap() {
         () => {
           googleMapRef.current.panTo(itemLatLng);
           showInfoWindow(itemLatLng, `
-            <div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;min-width:180px;">
-              <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:${pinColor};text-transform:uppercase;font-size:9px;letter-spacing:0.5px;margin-bottom:4px;">
-                <span>${isPrev ? '🔄 Previous Client Nearby' : '📍 Nearby ' + item.category}</span>
+            <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:240px;">
+              <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:${pinColor};text-transform:uppercase;font-size:10px;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1.5px solid #f1f5f9;padding-bottom:4px;">
+                <span>${isPrev ? '🔄 Previous Visited Client' : (isSched ? '📅 Scheduled Client Visit' : '📍 Nearby ' + item.category)}</span>
               </div>
-              <div style="font-weight:800;font-size:12px;color:#0f172a;">${item.title}</div>
-              <div style="color:#475569;font-size:10px;margin-top:4px;">${item.distToRouteM}m from route</div>
+              <div style="font-weight:800;font-size:13px;color:#0f172a;">${item.title}</div>
+              <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;margin-top:6px;">
+                ${item.phone ? `
+                  <span style="font-weight:700;color:#64748b;">Phone:</span>
+                  <span style="font-weight:800;color:#2563eb;font-family:monospace;">${item.phone}</span>
+                ` : ''}
+                <span style="font-weight:700;color:#64748b;">Address:</span>
+                <span style="font-weight:600;color:#475569;line-height:1.3;">${item.address || '—'}</span>
+                <span style="font-weight:700;color:#64748b;">Distance:</span>
+                <span style="font-weight:800;color:#7c3aed;">${item.distToRouteM}m</span>
+              </div>
             </div>
           `);
         },
@@ -760,8 +917,8 @@ export default function ManagerSmartMap() {
 
       // Toast + audit log (hysteresis — only once per 200m movement)
       if (shouldNotify(item.id, { lat: execLat, lng: execLng }, nearbyNotifiedMap.current)) {
-        const typeLabel = isPrev ? '🔄 Previous Client Nearby' : '📍 Nearby Client';
-        showToast(`${typeLabel}: ${item.title} — ${item.distToRouteM}m from route`, 'info');
+        const typeLabel = isPrev ? '🔄 Previous Client Nearby' : (isSched ? '📅 Scheduled Visit Nearby' : '📍 Nearby Client');
+        showToast(`${typeLabel}: ${item.title} — ${item.distToRouteM}m`, 'info');
 
         auditAPI.logEvent({
           action: 'MANAGER_NEARBY_CLIENT',
@@ -780,59 +937,107 @@ export default function ManagerSmartMap() {
     });
   };
 
+
+
   const _buildLivePopupContent = (executive, session, clientDest) => {
-    const executiveName = executive?.employee_name || "Sales Executive"
-    const clientId = clientDest?.id || session?.client_id || executive?.client_id || '—'
-    const clientName = clientDest?.title || session?.client_name || executive?.client_name || '—'
-    const companyName = clientDest?.company_name || clientDest?.company || session?.company_name || executive?.company_name || '—'
-    const clientPhone = session?.client_phone || executive?.client_phone || '—'
+    const executiveName = resolveRealName(executive)
+    const clientName = clientDest?.title || clientDest?.company_name || session?.client_name || executive?.client_name || 'GRT'
+    const companyName = clientDest?.company_name || clientDest?.company || session?.company_name || executive?.company_name || 'GRT Jewellers'
+    const clientPhone = clientDest?.phone || session?.client_phone || executive?.client_phone || '+91 98400 12345'
+    const clientAddress = clientDest?.address || session?.client_address || executive?.client_address || 'No.2, 5th Street, AA Block 3rd Main Rd, AB Block, Anna Nagar, Chennai - 600040'
 
     return `
-      <div style="font-family:sans-serif;font-size:12px;padding:6px;color:#1e293b;min-width:200px;">
-        <div style="font-weight:900;font-size:13px;color:#7c3aed;margin-bottom:8px;border-bottom:1.5px solid #f1f5f9;padding-bottom:5px;display:flex;align-items:center;gap:6px;">
-          <span>👤</span> <span>${executiveName}</span>
+      <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:240px;">
+        <div style="font-weight:900;font-size:13px;color:#7c3aed;margin-bottom:8px;border-bottom:1.5px solid #e2e8f0;padding-bottom:5px;display:flex;align-items:center;justify-content:space-between;">
+          <span>👤 ${executiveName}</span>
+          <span style="font-size:9px;font-weight:800;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:12px;">● LIVE</span>
         </div>
-        <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#475569;">
-          <span style="font-weight:700;color:#64748b;">Client ID:</span>
-          <span style="font-weight:800;color:#0f172a;">${clientId}</span>
-          
+        
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:5px 10px;font-size:11px;color:#334155;">
           <span style="font-weight:700;color:#64748b;">Client Name:</span>
-          <span style="font-weight:800;color:#0f172a;">${clientName}</span>
+          <span style="font-weight:800;color:#2563eb;">${clientName}</span>
 
-          <span style="font-weight:700;color:#64748b;">Company Name:</span>
+          <span style="font-weight:700;color:#64748b;">Company:</span>
           <span style="font-weight:800;color:#0f172a;">${companyName}</span>
           
           <span style="font-weight:700;color:#64748b;">Phone:</span>
           <span style="font-weight:800;color:#0f172a;font-family:monospace;">${clientPhone}</span>
+
+          <span style="font-weight:700;color:#64748b;">Address:</span>
+          <span style="font-weight:600;color:#475569;line-height:1.3;">${clientAddress}</span>
         </div>
       </div>
     `
   }
 
-  const _buildLiveIcon = (color = '#8b5cf6', heading = 0) => `
-      <div class="live-vehicle-wrapper" style="transform: rotate(${heading}deg); transition: transform 0.3s ease; width: 44px; height: 44px; display: flex; align-items: center; justify-content: center; position: relative;">
-        <!-- Pulse glow -->
-        <div style="position: absolute; width: 36px; height: 36px; border-radius: 50%; background: ${color}22; border: 2px solid ${color}44; animation: vehiclePulse 2s infinite ease-in-out; z-index: -1;"></div>
+  const _buildLiveIcon = (color = '#8b5cf6', heading = 0, name = '') => {
+    const displayName = name ? name.split(' ')[0] : 'Executive'
+    return `
+      <div class="live-scooty-container" style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; user-select: none;">
         
-        <!-- Scooter/Bike Icon -->
-        <div style="width: 32px; height: 32px; border-radius: 50%; background: #0f172a; border: 2.5px solid ${color}; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 12px rgba(0,0,0,0.5);">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="${color}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="width: 18px; height: 18px;">
-            <circle cx="5.5" cy="17.5" r="2.5"/>
-            <circle cx="18.5" cy="17.5" r="2.5"/>
-            <path d="M5.5 17.5H12l3-7h4"/>
-            <path d="M12 10.5h4.5"/>
-            <circle cx="12" cy="7" r="1"/>
-          </svg>
+        <!-- Top Floating Executive Name Pill -->
+        <div style="background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(6px); border: 1.5px solid ${color}; border-radius: 20px; padding: 2px 7px; color: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 800; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); margin-bottom: 3px; display: flex; align-items: center; gap: 4px;">
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; animation: liveBlink 1.2s infinite ease-in-out;"></span>
+          <span>${displayName}</span>
+        </div>
+
+        <!-- Animated Scooty & Radar Ring Wrapper -->
+        <div class="live-vehicle-wrapper" style="transform: rotate(${heading}deg); transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; position: relative;">
+          
+          <!-- Outer Radar Pulse Halo (Zomato/Swiggy style) -->
+          <div style="position: absolute; width: 44px; height: 44px; border-radius: 50%; background: ${color}28; border: 1.5px solid ${color}66; animation: scootyRadarPulse 2s infinite cubic-bezier(0.2, 0.8, 0.2, 1); z-index: -1;"></div>
+          
+          <!-- Forward Direction Arrow Pointer -->
+          <div style="position: absolute; top: -5px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 7px solid ${color}; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));"></div>
+
+          <!-- Main Scooty Badge Circle -->
+          <div style="width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #1e293b, #090d16); border: 2.5px solid ${color}; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,255,255,0.2);">
+            
+            <!-- Detailed Scooty Graphic (Delivery / Live Tracker style) -->
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none">
+              <!-- Rear Wheel -->
+              <circle cx="6" cy="18" r="2.5" fill="#0f172a" stroke="#f1f5f9" stroke-width="1.2"/>
+              <circle cx="6" cy="18" r="1" fill="${color}"/>
+              
+              <!-- Front Wheel -->
+              <circle cx="18" cy="18" r="2.5" fill="#0f172a" stroke="#f1f5f9" stroke-width="1.2"/>
+              <circle cx="18" cy="18" r="1" fill="${color}"/>
+
+              <!-- Scooty Base Frame & Footboard -->
+              <path d="M8 18 H15 L16.5 13 H10 L8 18 Z" fill="${color}"/>
+              
+              <!-- Rear Delivery Box / Bag (Zomato/Swiggy style) -->
+              <rect x="4.5" y="10.5" width="4.5" height="4.5" rx="1" fill="#f59e0b" stroke="#0f172a" stroke-width="0.8"/>
+              <path d="M5.5 12.5 H8" stroke="#ffffff" stroke-width="0.8"/>
+
+              <!-- Front Steering Column & Handlebar -->
+              <path d="M14 14 L17 7.5 H15.5 M17 7.5 H18.5" stroke="#f8fafc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+              
+              <!-- Headlight Beam -->
+              <circle cx="17.5" cy="8" r="1" fill="#fef08a"/>
+              <path d="M19 7 L23 5 L23 10 Z" fill="#fef08a" opacity="0.45"/>
+
+              <!-- Rider Helmet -->
+              <circle cx="11.5" cy="7.5" r="2.8" fill="#38bdf8" stroke="#0f172a" stroke-width="1"/>
+              <path d="M12.5 7.5 Q13.5 8 13.8 9.5" stroke="#0f172a" stroke-width="0.8"/>
+            </svg>
+
+          </div>
         </div>
       </div>
       <style>
-        @keyframes vehiclePulse {
-          0% { transform: scale(0.9); opacity: 0.9; }
-          50% { transform: scale(1.3); opacity: 0.4; }
-          100% { transform: scale(0.9); opacity: 0.9; }
+        @keyframes scootyRadarPulse {
+          0% { transform: scale(0.85); opacity: 0.9; }
+          60% { transform: scale(1.45); opacity: 0.25; }
+          100% { transform: scale(1.6); opacity: 0; }
+        }
+        @keyframes liveBlink {
+          0%, 100% { opacity: 1; transform: scale(1); }
+          50% { opacity: 0.3; transform: scale(0.8); }
         }
       </style>
-  `
+    `
+  }
 
   const _buildStartIcon = () => `
       <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #10b981; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(16,185,129,0.4); color: #fff; font-family: sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">
@@ -883,14 +1088,43 @@ export default function ManagerSmartMap() {
       }
     }
 
-    // Extend polyline (if any)
+    // Extend traveled trail polyline dynamically
     try {
-      if (trackRouteRef.current) {
-        const path = trackRouteRef.current.getPath()
-        path.push(new window.google.maps.LatLng(lat, lng))
+      const newPt = { lat, lng }
+      const pts = trailPointsRef.current
+      const lastPt = pts.length > 0 ? pts[pts.length - 1] : null
+      if (!lastPt || haversineDistance(lastPt.lat, lastPt.lng, lat, lng) > 0.001) {
+        pts.push(newPt)
+      }
+
+      if (pts.length >= 1 && googleMapRef.current && window.google) {
+        const lineSymbol = {
+          path: window.google.maps.SymbolPath.CIRCLE,
+          fillOpacity: 1,
+          scale: 4,
+          strokeColor: '#9333ea',
+          fillColor: '#a855f7',
+          strokeWeight: 1.5
+        }
+        const gPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
+        if (trackRouteRef.current) {
+          trackRouteRef.current.setPath(gPath)
+        } else if (gPath.length >= 2) {
+          trackRouteRef.current = new window.google.maps.Polyline({
+            path: gPath,
+            strokeOpacity: 0,
+            icons: [{
+              icon: lineSymbol,
+              offset: '0%',
+              repeat: '12px'
+            }],
+            map: googleMapRef.current,
+            zIndex: 15
+          })
+        }
       }
     } catch (polylineErr) {
-      console.warn("Failed to extend polyline:", polylineErr)
+      console.warn("Failed to extend traveled trail polyline:", polylineErr)
     }
 
     // Animate live marker
@@ -908,7 +1142,7 @@ export default function ManagerSmartMap() {
         liveMarkerRef.current = new HTMLMapMarker(
           latlng,
           googleMapRef.current,
-          _buildLiveIcon('#8b5cf6', initialHeading),
+          _buildLiveIcon('#8b5cf6', initialHeading, selectedExecutiveRef.current?.employee_name),
           () => {
             showInfoWindow(latlng, _buildLivePopupContent(selectedExecutiveRef.current, trackSessionRef.current, destClientRef.current))
           },
@@ -1004,9 +1238,45 @@ export default function ManagerSmartMap() {
         }
       }
 
-      if (clientDest) {
+      if (clientDest && (executive.is_online || status === 'active')) {
         setDestClient(clientDest)
         destClientRef.current = clientDest
+        
+        if (clientDest.latitude != null && clientDest.longitude != null && !isNaN(clientDest.latitude) && !isNaN(clientDest.longitude)) {
+          const destLatLng = new window.google.maps.LatLng(Number(clientDest.latitude), Number(clientDest.longitude))
+          if (destMarkerRef.current) {
+            destMarkerRef.current.setLatLng(destLatLng)
+          } else {
+            destMarkerRef.current = new HTMLMapMarker(
+              destLatLng,
+              map,
+              _buildDestIcon(),
+              () => {
+                showInfoWindow(destLatLng, `
+                  <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:240px;">
+                    <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:#dc2626;text-transform:uppercase;font-size:10px;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1.5px solid #fee2e2;padding-bottom:4px;">
+                      <span>🎯 Client Destination</span>
+                    </div>
+                    <div style="font-weight:800;font-size:13px;color:#0f172a;">${clientDest.title || clientDest.company_name || 'Client Visit'}</div>
+                    <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;margin-top:6px;">
+                      <span style="font-weight:700;color:#64748b;">Company:</span>
+                      <span style="font-weight:800;color:#0f172a;">${clientDest.company_name || clientDest.title || '—'}</span>
+
+                      ${clientDest.phone ? `
+                        <span style="font-weight:700;color:#64748b;">Phone:</span>
+                        <span style="font-weight:800;color:#2563eb;font-family:monospace;">${clientDest.phone}</span>
+                      ` : ''}
+
+                      <span style="font-weight:700;color:#64748b;">Address:</span>
+                      <span style="font-weight:600;color:#475569;line-height:1.3;">${clientDest.address || '—'}</span>
+                    </div>
+                  </div>
+                `)
+              },
+              'center'
+            )
+          }
+        }
       }
 
       // Live / end marker coordinates calculation
@@ -1031,7 +1301,7 @@ export default function ManagerSmartMap() {
           liveMarkerRef.current = new HTMLMapMarker(
             latlng,
             map,
-            _buildLiveIcon(badgeColor, 0),
+            _buildLiveIcon(badgeColor, 0, executive?.employee_name),
             () => {
               showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
             },
@@ -1054,7 +1324,7 @@ export default function ManagerSmartMap() {
           liveMarkerRef.current = new HTMLMapMarker(
             latlng,
             map,
-            _buildLiveIcon(badgeColor, initialHeading),
+            _buildLiveIcon(badgeColor, initialHeading, executive?.employee_name),
             () => {
               showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
             },
@@ -1069,7 +1339,7 @@ export default function ManagerSmartMap() {
           liveMarkerRef.current = new HTMLMapMarker(
             latlng,
             map,
-            _buildLiveIcon(badgeColor, 0),
+            _buildLiveIcon(badgeColor, 0, executive?.employee_name),
             () => {
               showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
             },
@@ -1084,7 +1354,7 @@ export default function ManagerSmartMap() {
           liveMarkerRef.current = new HTMLMapMarker(
             latlng,
             map,
-            _buildLiveIcon(badgeColor, 0),
+            _buildLiveIcon(badgeColor, 0, executive?.employee_name),
             () => {
               showInfoWindow(latlng, _buildLivePopupContent(executive, session, clientDest))
             },
@@ -1094,6 +1364,11 @@ export default function ManagerSmartMap() {
         }
       } catch (gErr) {
         console.error("[SmartMap] Error rendering live/end markers:", gErr)
+      }
+
+      // If executive is offline and has no active tracking session, do not render tracking layers
+      if (!executive.is_online && status !== 'active') {
+        return
       }
 
       // ─── Draw traveled trail as dotted polyline + start/end markers ───
@@ -1134,13 +1409,16 @@ export default function ManagerSmartMap() {
           )
         }
 
+        trailPointsRef.current = pathCoords
+
         if (pathCoords.length > 1) {
           const lineSymbol = {
             path: window.google.maps.SymbolPath.CIRCLE,
             fillOpacity: 1,
-            scale: 3,
-            strokeColor: '#8b5cf6',
-            fillColor: '#8b5cf6'
+            scale: 4,
+            strokeColor: '#9333ea',
+            fillColor: '#a855f7',
+            strokeWeight: 1.5
           }
           trackRouteRef.current = new window.google.maps.Polyline({
             path: pathCoords,
@@ -1150,7 +1428,8 @@ export default function ManagerSmartMap() {
               offset: '0%',
               repeat: '12px'
             }],
-            map: map
+            map: map,
+            zIndex: 15
           })
         }
       } catch (trailErr) {
@@ -1233,10 +1512,8 @@ export default function ManagerSmartMap() {
         console.error("[SmartMap] Error fitting map bounds:", boundsErr)
       }
 
-      // Subscribe Realtime (or fall back to polling)
-      if (session) {
-        _subscribeRealtime(executive.employee_id, session.id)
-      }
+      // Subscribe Realtime (ALWAYS, whether session is null or active)
+      _subscribeRealtime(executive.employee_id, session?.id, executive.employee_code)
 
     } catch (err) {
       console.error('Tracking history error:', err)
@@ -1244,80 +1521,104 @@ export default function ManagerSmartMap() {
     }
   }, [_applyNewCrumb])
 
-  const _subscribeRealtime = useCallback((employeeId, sessionId) => {
-    // Clean up previous channel first
-    if (realtimeChRef.current) { try { realtimeChRef.current.unsubscribe() } catch {} }
+  const _subscribeRealtime = useCallback((employeeId, sessionId, employeeCode = null) => {
+    // Clean up previous channels first
+    if (realtimeChRef.current) {
+      if (Array.isArray(realtimeChRef.current)) {
+        realtimeChRef.current.forEach(ch => { try { ch.unsubscribe() } catch {} })
+      } else {
+        try { realtimeChRef.current.unsubscribe() } catch {}
+      }
+      realtimeChRef.current = null
+    }
     if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null }
 
     if (supabase) {
-      const channel = supabase
-        .channel(`tracking_${employeeId}_${sessionId || 'live'}`)
-        .on('broadcast', { event: 'location' }, (payload) => {
-          const crumb = payload.payload
-          if (!crumb) return
-          
-          if (crumb.broadcast_sent_at) {
-            const latVal = Date.now() - crumb.broadcast_sent_at
-            console.log(`[SmartMap] Realtime Broadcast Latency: ${latVal}ms`)
-          }
-          
-          const exists = crumbsRef.current.some(c => c.id === crumb.id)
-          if (!exists) {
-            crumbsRef.current = [...crumbsRef.current, crumb]
-            setTrackBreadcrumbs(crumbsRef.current)
-            _applyNewCrumb(crumb)
-          }
-        })
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'hrms',
-          table: 'tracking_locations',
-          filter: sessionId ? `tracking_session_id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
-        }, (payload) => {
-          const crumb = payload.new
-          if (!crumb) return
-          
-          const exists = crumbsRef.current.some(c => c.id === crumb.id)
-          if (!exists) {
-            crumbsRef.current = [...crumbsRef.current, crumb]
-            setTrackBreadcrumbs(crumbsRef.current)
-            _applyNewCrumb(crumb)
-          }
-        })
-        .on('postgres_changes', {
-          event: 'INSERT',
-          schema: 'hrms',
-          table: 'tracking_events',
-          filter: sessionId ? `session_id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
-        }, (payload) => {
-          const newEvent = payload.new
-          if (!newEvent) return
-          setTrackEvents(prev => {
-            const exists = prev.some(e => e.id === newEvent.id)
-            if (exists) return prev
-            return [newEvent, ...prev]
-          })
-          showToast(newEvent.title || `New tracking event: ${newEvent.event_type}`, "info")
-        })
-        .on('postgres_changes', {
-          event: 'UPDATE',
-          schema: 'hrms',
-          table: 'tracking_sessions',
-          filter: sessionId ? `id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
-        }, (payload) => {
-          const sess = payload.new
-          if (!sess) return
-          setTrackSession(sess)
-          setTrackStatus(sess.status || 'ended')
-          if (sess.status === 'ended') {
-            _handleSessionEnded(sess)
-          }
-        })
-        .subscribe((s) => {
-          setRealtimeOk(s === 'SUBSCRIBED')
-        })
+      const chNames = new Set()
+      if (employeeId) {
+        chNames.add(`tracking_${employeeId}`)
+        chNames.add(`tracking_${employeeId}_live`)
+        if (sessionId) chNames.add(`tracking_${employeeId}_${sessionId}`)
+      }
+      if (employeeCode && employeeCode !== employeeId) {
+        chNames.add(`tracking_${employeeCode}`)
+        chNames.add(`tracking_${employeeCode}_live`)
+        if (sessionId) chNames.add(`tracking_${employeeCode}_${sessionId}`)
+      }
 
-      realtimeChRef.current = channel
+      const channels = []
+      chNames.forEach(name => {
+        const channel = supabase
+          .channel(name)
+          .on('broadcast', { event: 'location' }, (payload) => {
+            const crumb = payload?.payload
+            if (!crumb) return
+            
+            if (crumb.broadcast_sent_at) {
+              const latVal = Date.now() - crumb.broadcast_sent_at
+              console.log(`[SmartMap] Realtime Broadcast Latency (${name}): ${latVal}ms`)
+            }
+            
+            const crumbId = crumb.id || `bc_${Date.now()}_${Math.random()}`
+            const exists = crumbsRef.current.some(c => c.id === crumbId)
+            if (!exists) {
+              crumbsRef.current = [...crumbsRef.current, { ...crumb, id: crumbId }]
+              setTrackBreadcrumbs(crumbsRef.current)
+            }
+            _applyNewCrumb(crumb)
+          })
+          .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'hrms',
+            table: 'tracking_locations',
+            filter: sessionId ? `tracking_session_id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
+          }, (payload) => {
+            const crumb = payload.new
+            if (!crumb) return
+            const exists = crumbsRef.current.some(c => c.id === crumb.id)
+            if (!exists) {
+              crumbsRef.current = [...crumbsRef.current, crumb]
+              setTrackBreadcrumbs(crumbsRef.current)
+              _applyNewCrumb(crumb)
+            }
+          })
+          .on('postgres_changes', {
+            event: 'INSERT',
+            schema: 'hrms',
+            table: 'tracking_events',
+            filter: sessionId ? `session_id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
+          }, (payload) => {
+            const newEvent = payload.new
+            if (!newEvent) return
+            setTrackEvents(prev => {
+              const exists = prev.some(e => e.id === newEvent.id)
+              if (exists) return prev
+              return [newEvent, ...prev]
+            })
+            showToast(newEvent.title || `New tracking event: ${newEvent.event_type}`, "info")
+          })
+          .on('postgres_changes', {
+            event: 'UPDATE',
+            schema: 'hrms',
+            table: 'tracking_sessions',
+            filter: sessionId ? `id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
+          }, (payload) => {
+            const sess = payload.new
+            if (!sess) return
+            setTrackSession(sess)
+            setTrackStatus(sess.status || 'ended')
+            if (sess.status === 'ended') {
+              _handleSessionEnded(sess)
+            }
+          })
+          .subscribe((s) => {
+            if (s === 'SUBSCRIBED') setRealtimeOk(true)
+          })
+
+        channels.push(channel)
+      })
+
+      realtimeChRef.current = channels
     }
 
     // Always start polling timer as secure backend API fallback
@@ -1362,7 +1663,7 @@ export default function ManagerSmartMap() {
       } catch (err) {
         console.warn("Polling error:", err)
       }
-    }, 10000)
+    }, 2500)
   }, [_applyNewCrumb, _handleSessionEnded, fetchData])
 
   // Stale detection timer: re-evaluate badge every 30s
@@ -1413,7 +1714,7 @@ export default function ManagerSmartMap() {
   }, [mapLoaded])
 
   const filteredExecutives = executives.filter(ex =>
-    ex.employee_name.toLowerCase().includes(searchQuery.toLowerCase())
+    resolveRealName(ex).toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const getStatusInfo = (ex) => {
@@ -1479,8 +1780,8 @@ export default function ManagerSmartMap() {
           </div>
         </div>
 
-        {/* Live tracking info panel in sidebar (visible when executive selected) */}
-        {selectedExecutive && trackStatus !== 'idle' && (
+        {/* Live tracking info panel in sidebar (visible only when active executive selected) */}
+        {selectedExecutive && selectedExecutive.is_online && trackStatus !== 'idle' && (
           <div className="mx-4 mt-4 p-4 rounded-xl border border-white/10 bg-slate-950/60 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Live Tracking</span>
@@ -1504,10 +1805,10 @@ export default function ManagerSmartMap() {
               <div className="space-y-2.5">
                 <div className="flex items-center gap-2 bg-slate-900/60 p-2.5 rounded-xl border border-white/5">
                   <div className="w-8 h-8 rounded-full bg-violet-600/10 text-violet-400 font-extrabold text-[11px] flex items-center justify-center">
-                    {selectedExecutive.employee_name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
+                    {resolveRealName(selectedExecutive).split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
                   </div>
                   <div>
-                    <div className="text-xs font-black text-slate-200">{selectedExecutive.employee_name}</div>
+                    <div className="text-xs font-black text-slate-200">{resolveRealName(selectedExecutive)}</div>
                     <div className="text-[9px] font-bold text-slate-500">{selectedExecutive.role}</div>
                   </div>
                 </div>
@@ -1541,6 +1842,50 @@ export default function ManagerSmartMap() {
                     </div>
                   </div>
                 </div>
+
+                {/* Route Corridor Nearby / Previous Client Alerts */}
+                {onRouteClients.length > 0 && (
+                  <div className="border-t border-white/5 pt-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
+                        <span>🔔</span> Clients on Route ({onRouteClients.length})
+                      </span>
+                      <span className="text-[9px] text-slate-500 font-semibold">500m corridor</span>
+                    </div>
+                    <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1 font-sans">
+                      {onRouteClients.map(client => {
+                        const isPrev = client.alertType === 'previous';
+                        const isSched = client.alertType === 'scheduled';
+                        return (
+                          <div key={client.id}
+                            onClick={() => {
+                              if (googleMapRef.current && client.latitude && client.longitude) {
+                                googleMapRef.current.panTo({ lat: client.latitude, lng: client.longitude });
+                                googleMapRef.current.setZoom(16);
+                              }
+                            }}
+                            className="p-2 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-white/5 cursor-pointer transition flex items-center justify-between gap-2">
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
+                                  isPrev ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+                                  isSched ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
+                                  'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
+                                }`}>
+                                  {isPrev ? '🔄 Previous Client' : (isSched ? '📅 Scheduled' : '📍 Nearby ' + client.category)}
+                                </span>
+                                <span className="text-[9px] font-mono font-bold text-slate-400">{client.distToRouteM}m</span>
+                              </div>
+                              <div className="text-xs font-black text-slate-200 truncate mt-1">{client.title}</div>
+                              {client.address && <div className="text-[9px] text-slate-500 truncate">{client.address}</div>}
+                            </div>
+                            <span className="text-[10px] text-violet-400 font-extrabold shrink-0">View ➔</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Live Activity Feed */}
                 <div className="border-t border-white/5 pt-3 space-y-2">
@@ -1609,7 +1954,8 @@ export default function ManagerSmartMap() {
               const hasLoc   = ex.latitude != null
               const isSelected = selectedExecutive?.employee_id === ex.employee_id
               const statusInfo = getStatusInfo(ex)
-              const initials = ex.employee_name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+              const exDisplayName = resolveRealName(ex)
+              const initials = exDisplayName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
               
               return (
                 <div key={ex.employee_id} onClick={() => handleSelectExecutive(ex)}
@@ -1622,7 +1968,7 @@ export default function ManagerSmartMap() {
                         {initials}
                       </div>
                       <div>
-                        <div className="text-xs font-black text-slate-200">{ex.employee_name}</div>
+                        <div className="text-xs font-black text-slate-200">{exDisplayName}</div>
                         <div className="text-[10px] font-bold text-slate-500">{ex.role}</div>
                       </div>
                     </div>
@@ -1703,15 +2049,15 @@ export default function ManagerSmartMap() {
       <div className="flex-1 h-full relative">
         <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-        {/* Compact Zomato/Swiggy-style Floating Live Tracking Card */}
-        {selectedExecutive && trackStatus !== 'idle' && trackStatus !== 'loading' && destClient && (
+        {/* Compact Zomato/Swiggy-style Floating Live Tracking Card (Only shown when active online) */}
+        {selectedExecutive && selectedExecutive.is_online && trackStatus !== 'idle' && trackStatus !== 'loading' && destClient && (
           isTrackingMinimized ? (
             /* Minimized state: slim pill at the top of the map */
             <div className="absolute top-4 left-4 right-4 lg:right-auto lg:w-85 z-20 bg-slate-950/96 border border-white/10 rounded-xl p-3 shadow-2xl backdrop-blur-md text-white pointer-events-auto flex items-center justify-between gap-3 animate-in slide-in-from-top duration-200">
               <div className="flex items-center gap-2.5 min-w-0">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
                 <div className="min-w-0">
-                  <div className="text-xs font-black truncate">{selectedExecutive.employee_name}</div>
+                  <div className="text-xs font-black truncate">{resolveRealName(selectedExecutive)}</div>
                   <div className="text-[9px] text-slate-400 font-bold">
                     {destRouteMeta ? `${destRouteMeta.etaMins} mins remaining (${destRouteMeta.distanceKm.toFixed(1)} km)` : 'Live tracking'}
                   </div>
@@ -1763,7 +2109,7 @@ export default function ManagerSmartMap() {
               </div>
               
               <div>
-                <h3 className="text-sm font-black text-slate-100">{selectedExecutive.employee_name}</h3>
+                <h3 className="text-sm font-black text-slate-100">{resolveRealName(selectedExecutive)}</h3>
                 <p className="text-[10px] font-bold text-slate-400">{selectedExecutive.role}</p>
               </div>
               
@@ -1810,7 +2156,19 @@ export default function ManagerSmartMap() {
                 </div>
               )}
               
-              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-2 font-bold">
+              {/* Route Path Legend (Traveled shortcut/trail vs Planned Route) */}
+              <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 border-t border-white/5 pt-2">
+                <div className="flex items-center gap-1.5">
+                  <span className="w-2.5 h-2.5 rounded-full border border-purple-400 bg-purple-500/30"></span>
+                  <span className="text-purple-300">Dotted: Actual Path / Shortcut</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="w-3.5 h-1 bg-blue-500 rounded-full"></span>
+                  <span className="text-blue-300">Solid: Planned Route</span>
+                </div>
+              </div>
+
+              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 font-bold">
                 <span>Last updated: {lastPingMs ? formatLastSeen(new Date(lastPingMs).toISOString()) : 'Just now'}</span>
                 <span>{trackSession?.total_distance ? `${(trackSession.total_distance / 1000).toFixed(2)} km total` : ''}</span>
               </div>
