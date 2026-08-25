@@ -572,15 +572,6 @@ class UserRepository:
                 logger.info(f"✅ Synced fresh employee record to hrms.employees in Supabase: {user_id}")
             except Exception as sync_err:
                 logger.warning(f"Employee sync fallback notice: {sync_err}")
-        except Exception as hrms_err:
-            db_err = hrms_err
-            logger.warning(f"Database employee update failed, trying fallback public schema: {hrms_err}")
-            try:
-                res = self.client.table("employees").update(db_updates).or_(f"employee_id.eq.{user_id},user_id.eq.{user_id}").execute()
-                if res.data and len(res.data) > 0:
-                    db_res = res.data
-            except Exception:
-                pass
 
         # Sync assigned role into organization.user_roles table
         if updates.get("role"):

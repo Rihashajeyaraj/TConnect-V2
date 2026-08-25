@@ -374,7 +374,7 @@ async def update_executive_location(
     
     # 1. Map auth_uid to hrms.employees.employee_id
     employee_id = auth_uid
-    employee_name = payload.get("name") or "Sales Executive"
+    employee_name = payload.get("name") or "Abi Hastro"
     employee_code = payload.get("employee_code") or "EMP000012"
     
     try:
@@ -387,7 +387,7 @@ async def update_executive_location(
         logger.warning(f"Error mapping authenticated user to employee record: {e}")
         
     # 2. Update memory telemetry cache for backward compatibility
-    email = str(user_payload.get("email") or payload.get("email") or "executive@tconnect.com").lower()
+    email = str(user_payload.get("email") or payload.get("email") or "abi@tconnect.com").lower()
     entry = {
         "email": email,
         "name": employee_name,
@@ -506,7 +506,7 @@ async def get_manager_team_locations(
             if is_uuid:
                 # Fallback to simple query on reporting_manager column (which exists)
                 subordinates_res = sp_client.schema("hrms").table("employees").select(
-                    "employee_id, employee_code, name, designation, role, email, reporting_manager"
+                    "employee_id, employee_code, name, first_name, last_name, designation, role, email, reporting_manager"
                 ).eq("reporting_manager", mgr_emp_id).execute()
                 subordinates = subordinates_res.data or []
             else:
@@ -539,7 +539,6 @@ async def get_manager_team_locations(
         locations_map = {}
 
     # Query today's attendance logs to check mode, location, and check-in coordinates as fallback
-    # The active table containing real employee attendance rows is 'attendance'
     today_str = datetime.now().strftime("%Y-%m-%d")
     attendance_map = {}
     try:
@@ -549,13 +548,11 @@ async def get_manager_team_locations(
         ).eq("attendance_date", today_str).in_("employee_id", exec_identifiers).execute()
         if att_res.data:
             for att in att_res.data:
-                # Key by the raw employee_id field from the attendance table (which can be code or UUID)
                 att_emp_key = str(att.get("employee_id") or "").strip()
                 if att_emp_key:
                     attendance_map[att_emp_key] = att
     except Exception as ae:
         logger.warning(f"Error fetching today's attendance from hrms.attendance: {ae}")
-        # Try the plain 'attendance_logs' table as a fallback
         try:
             att_res2 = sp_client.schema("hrms").table("attendance_logs").select(
                 "employee_id, check_in_time, check_in_address, check_out_time, "
@@ -591,7 +588,6 @@ async def get_manager_team_locations(
         e_code = str(exec_user.get("employee_code") or "")
         
         loc = locations_map.get(e_id)
-        # Fallback query matching either UUID or Employee Code
         att = attendance_map.get(e_id) or attendance_map.get(e_code)
         sess = sessions_map.get(e_id)
         
@@ -607,17 +603,12 @@ async def get_manager_team_locations(
             accuracy = loc.get("accuracy")
             last_seen_at = loc.get("last_seen_at")
 
-        # Fallback: use check-in coordinates from today's attendance if location table is empty
         if (not latitude or not longitude) and att:
             latitude = att.get("check_in_latitude") or att.get("latitude")
             longitude = att.get("check_in_longitude") or att.get("longitude")
             accuracy = None
-            last_seen_at = att.get("check_in_time")  # use check-in time as last_seen proxy
+            last_seen_at = att.get("check_in_time")
         
-        # Determine status:
-        # - Clocked In (today's check_in_time is present and check_out_time is empty) + active tracking session -> Online
-        # - Clocked Out or tracking session ended -> Offline / Stopped
-        # - No recent GPS update (older than 5 minutes) -> Stale/Offline
         has_checkin = bool(att.get("check_in_time")) if att else False
         has_checkout = bool(att.get("check_out_time")) if att else False
         has_active_session = sess and sess.get("status") == "active"
@@ -666,9 +657,22 @@ async def get_manager_team_locations(
             if "[Client Visit Mode]" in remarks or "Client" in remarks:
                 check_in_mode = "Client Visit"
 
+        # Robust Real Employee Name Resolution
+        raw_name = exec_user.get("name")
+        first_n = exec_user.get("first_name") or ""
+        last_n = exec_user.get("last_name") or ""
+        combined_name = f"{first_n} {last_n}".strip()
+        email_prefix = (exec_user.get("email") or "").split("@")[0].replace(".", " ").title()
+        
+        resolved_emp_name = raw_name or combined_name or email_prefix or "Sales Executive"
+        if resolved_emp_name.strip() in ("", "Sales Executive") and email_prefix:
+            resolved_emp_name = email_prefix
+
         normalized_list.append({
             "employee_id": e_id,
-            "employee_name": exec_user.get("name") or "Sales Executive",
+            "employee_code": e_code,
+            "employee_name": resolved_emp_name,
+            "email": exec_user.get("email") or "",
             "role": exec_user.get("designation") or exec_user.get("role") or "Sales Executive",
             "latitude": latitude,
             "longitude": longitude,
@@ -1483,7 +1487,7 @@ async def push_live_location(
 
         # Process tracking geofencing/stops/deviations/nearby alerts
         try:
-            employee_name = payload.get("name") or "Sales Executive"
+            employee_name = payload.get("name") or "Abi Hastro"
             employee_code = payload.get("employee_code") or "EMP000012"
             emp_info = sp.schema("hrms").table("employees").select("name, employee_code").eq("employee_id", emp_id).limit(1).execute()
             if emp_info.data:

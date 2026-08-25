@@ -47,9 +47,9 @@ import TwiteConnectLogo from "../../common/TwiteConnectLogo.jsx";
 import { useToast } from "../../common/ToastContext.jsx";
 
 const PROFILE_DEFAULTS = {
-  fullName: "",
+  fullName: "Abi Hastro",
   employeeId: "EMP000012",
-  officialEmail: "",
+  officialEmail: "abi@tconnect.com",
   phone: "+91 98765 00012",
   role: "Sales Executive",
   team: "Sales & Business Development",
@@ -205,8 +205,8 @@ export default function SalesLayout() {
     }
   })();
 
-  const seName = user.name || user.full_name || "Sales Executive";
-  const seEmail = user.email || "executive@tconnect.com";
+  const seName = user.name || user.full_name || "Abi Hastro";
+  const seEmail = user.email || "abi@tconnect.com";
   const empCode = user.employee_code || user.employee_id || "EMP000012";
   const seRole = user.role || "Sales Executive";
   const seInitials = (seName.split(" ").map((w) => w[0]).join("").slice(0, 2) || "SE").toUpperCase();

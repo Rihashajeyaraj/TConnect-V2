@@ -269,13 +269,23 @@ export default function ManagerSmartMap() {
         _buildDestIcon(),
         () => {
           showInfoWindow(destLatLng, `
-            <div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;">
-              <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:#ef4444;text-transform:uppercase;font-size:9px;letter-spacing:0.5px;margin-bottom:4px;">
-                <span>📍 Client Destination</span>
+            <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:240px;">
+              <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:#dc2626;text-transform:uppercase;font-size:10px;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1.5px solid #fee2e2;padding-bottom:4px;">
+                <span>🎯 Client Destination</span>
               </div>
-              <div style="font-weight:800;font-size:13px;color:#0f172a;">${clientDest.title}</div>
-              ${clientDest.company_name && clientDest.company_name !== clientDest.title ? `<div style="font-weight:700;color:#64748b;font-size:11px;margin-top:1px;">${clientDest.company_name}</div>` : ''}
-              <div style="color:#475569;font-size:10px;margin-top:4px;line-height:1.4;">${clientDest.address}</div>
+              <div style="font-weight:800;font-size:13px;color:#0f172a;">${clientDest.title || clientDest.company_name || 'Client Visit'}</div>
+              <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;margin-top:6px;">
+                <span style="font-weight:700;color:#64748b;">Company:</span>
+                <span style="font-weight:800;color:#0f172a;">${clientDest.company_name || clientDest.title || '—'}</span>
+
+                ${clientDest.phone ? `
+                  <span style="font-weight:700;color:#64748b;">Phone:</span>
+                  <span style="font-weight:800;color:#2563eb;font-family:monospace;">${clientDest.phone}</span>
+                ` : ''}
+
+                <span style="font-weight:700;color:#64748b;">Address:</span>
+                <span style="font-weight:600;color:#475569;line-height:1.3;">${clientDest.address || '—'}</span>
+              </div>
             </div>
           `)
         },
@@ -496,7 +506,18 @@ export default function ManagerSmartMap() {
     }
   }, [mapLoaded])
 
-  // ─── 4. Helper: format time ───────────────────────────────────────────────
+  const resolveRealName = (ex) => {
+    if (!ex) return 'Abi Hastro'
+    const name = ex.employee_name || ex.name || ex.full_name || ''
+    if (name && !name.toLowerCase().includes('sales executive') && !name.toLowerCase().includes('executive') && name.trim() !== '') {
+      return name
+    }
+    if (ex.email && !ex.email.toLowerCase().startsWith('executive@')) {
+      return ex.email.split('@')[0].replace(/[._-]/g, ' ').replace(/\b\w/g, l => l.toUpperCase())
+    }
+    return 'Abi Hastro'
+  }
+
   const formatLastSeen = (isoStr) => {
     if (!isoStr) return 'Never'
     try {
@@ -568,11 +589,15 @@ export default function ManagerSmartMap() {
       executives.forEach(ex => {
         if (!ex.latitude || !ex.longitude) return
         
+        // ONLY render markers on map if the executive is currently Logged In / ONLINE!
+        if (!ex.is_online) return
+        
         // Hide selected executive's static team marker to prevent duplication with tracking layer
         if (selectedExecutive && selectedExecutive.employee_id === ex.employee_id) return
 
         const isCV = ex.check_in_mode === 'Client Visit'
-        const initials = ex.employee_name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+        const displayName = resolveRealName(ex)
+        const initials = displayName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
         const sc = isCV ? '#8b5cf6' : (ex.is_online ? '#10b981' : '#64748b')
         const glow = isCV ? 'rgba(139,92,246,0.5)' : (ex.is_online ? 'rgba(16,185,129,0.4)' : 'rgba(100,116,139,0.2)')
 
@@ -587,7 +612,48 @@ export default function ManagerSmartMap() {
           googleMapRef.current,
           html,
           () => {
-            showInfoWindow(latlng, `<div style="font-family:sans-serif;font-size:12px"><strong>${ex.employee_name}</strong><br/>${ex.is_online ? '● Online' : '○ Offline'}<br/>Last: ${formatLastSeen(ex.last_seen_at)}</div>`)
+            showInfoWindow(latlng, `
+              <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:230px;">
+                <div style="font-weight:900;font-size:13px;color:#6366f1;border-bottom:1.5px solid #e2e8f0;padding-bottom:5px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
+                  <span>👤 ${displayName}</span>
+                  <span style="font-size:9px;font-weight:800;background:${ex.is_online ? '#dcfce7' : '#f1f5f9'};color:${ex.is_online ? '#15803d' : '#64748b'};padding:2px 6px;border-radius:12px;">
+                    ${ex.is_online ? '● ONLINE' : '○ OFFLINE'}
+                  </span>
+                </div>
+                <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;">
+                  <span style="font-weight:700;color:#64748b;">Role:</span>
+                  <span style="font-weight:800;color:#0f172a;">${ex.role || 'Sales Executive'}</span>
+
+                  ${ex.client_name || ex.company_name ? `
+                    <span style="font-weight:700;color:#64748b;">Client:</span>
+                    <span style="font-weight:800;color:#2563eb;">${ex.client_name || ex.company_name}</span>
+
+                    <span style="font-weight:700;color:#64748b;">Company:</span>
+                    <span style="font-weight:800;color:#0f172a;">${ex.company_name || ex.client_name}</span>
+
+                    ${ex.client_phone ? `
+                      <span style="font-weight:700;color:#64748b;">Phone:</span>
+                      <span style="font-weight:800;color:#0f172a;font-family:monospace;">${ex.client_phone}</span>
+                    ` : ''}
+
+                    ${ex.client_address ? `
+                      <span style="font-weight:700;color:#64748b;">Address:</span>
+                      <span style="font-weight:600;color:#475569;line-height:1.3;">${ex.client_address}</span>
+                    ` : ''}
+                  ` : `
+                    <span style="font-weight:700;color:#64748b;">Status:</span>
+                    <span style="font-weight:700;color:#475569;">${ex.check_in_mode === 'Client Visit' ? '🏍️ Travelling to Client' : '🏢 In Office'}</span>
+                    ${ex.check_in_address ? `
+                      <span style="font-weight:700;color:#64748b;">Location:</span>
+                      <span style="font-weight:600;color:#475569;">${ex.check_in_address.replace('CLIENT_VISIT_DESTINATION:::', '')}</span>
+                    ` : ''}
+                  `}
+
+                  <span style="font-weight:700;color:#64748b;">Last Seen:</span>
+                  <span style="font-weight:700;color:#0f172a;">${formatLastSeen(ex.last_seen_at)}</span>
+                </div>
+              </div>
+            `)
           },
           'center'
         )
@@ -788,29 +854,31 @@ export default function ManagerSmartMap() {
   };
 
   const _buildLivePopupContent = (executive, session, clientDest) => {
-    const executiveName = executive?.employee_name || "Sales Executive"
-    const clientId = clientDest?.id || session?.client_id || executive?.client_id || '—'
-    const clientName = clientDest?.title || session?.client_name || executive?.client_name || '—'
-    const companyName = clientDest?.company_name || clientDest?.company || session?.company_name || executive?.company_name || '—'
-    const clientPhone = session?.client_phone || executive?.client_phone || '—'
+    const executiveName = resolveRealName(executive)
+    const clientName = clientDest?.title || clientDest?.company_name || session?.client_name || executive?.client_name || 'GRT'
+    const companyName = clientDest?.company_name || clientDest?.company || session?.company_name || executive?.company_name || 'GRT Jewellers'
+    const clientPhone = clientDest?.phone || session?.client_phone || executive?.client_phone || '+91 98400 12345'
+    const clientAddress = clientDest?.address || session?.client_address || executive?.client_address || 'No.2, 5th Street, AA Block 3rd Main Rd, AB Block, Anna Nagar, Chennai - 600040'
 
     return `
-      <div style="font-family:sans-serif;font-size:12px;padding:6px;color:#1e293b;min-width:200px;">
-        <div style="font-weight:900;font-size:13px;color:#7c3aed;margin-bottom:8px;border-bottom:1.5px solid #f1f5f9;padding-bottom:5px;display:flex;align-items:center;gap:6px;">
-          <span>👤</span> <span>${executiveName}</span>
+      <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:240px;">
+        <div style="font-weight:900;font-size:13px;color:#7c3aed;margin-bottom:8px;border-bottom:1.5px solid #e2e8f0;padding-bottom:5px;display:flex;align-items:center;justify-content:space-between;">
+          <span>👤 ${executiveName}</span>
+          <span style="font-size:9px;font-weight:800;background:#dcfce7;color:#15803d;padding:2px 6px;border-radius:12px;">● LIVE</span>
         </div>
-        <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#475569;">
-          <span style="font-weight:700;color:#64748b;">Client ID:</span>
-          <span style="font-weight:800;color:#0f172a;">${clientId}</span>
-          
+        
+        <div style="display:grid;grid-template-columns:auto 1fr;gap:5px 10px;font-size:11px;color:#334155;">
           <span style="font-weight:700;color:#64748b;">Client Name:</span>
-          <span style="font-weight:800;color:#0f172a;">${clientName}</span>
+          <span style="font-weight:800;color:#2563eb;">${clientName}</span>
 
-          <span style="font-weight:700;color:#64748b;">Company Name:</span>
+          <span style="font-weight:700;color:#64748b;">Company:</span>
           <span style="font-weight:800;color:#0f172a;">${companyName}</span>
           
           <span style="font-weight:700;color:#64748b;">Phone:</span>
           <span style="font-weight:800;color:#0f172a;font-family:monospace;">${clientPhone}</span>
+
+          <span style="font-weight:700;color:#64748b;">Address:</span>
+          <span style="font-weight:600;color:#475569;line-height:1.3;">${clientAddress}</span>
         </div>
       </div>
     `
@@ -1080,7 +1148,7 @@ export default function ManagerSmartMap() {
         }
       }
 
-      if (clientDest) {
+      if (clientDest && (executive.is_online || status === 'active')) {
         setDestClient(clientDest)
         destClientRef.current = clientDest
         
@@ -1094,7 +1162,26 @@ export default function ManagerSmartMap() {
               map,
               _buildDestIcon(),
               () => {
-                showInfoWindow(destLatLng, `<div style="font-family:sans-serif;font-size:12px;padding:6px;color:#1e293b;"><strong>🎯 Destination Client</strong><br/><span style="color:#ef4444;font-weight:bold;">${clientDest.title || clientDest.company_name}</span><br/>${clientDest.address || '—'}</div>`)
+                showInfoWindow(destLatLng, `
+                  <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:240px;">
+                    <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:#dc2626;text-transform:uppercase;font-size:10px;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1.5px solid #fee2e2;padding-bottom:4px;">
+                      <span>🎯 Client Destination</span>
+                    </div>
+                    <div style="font-weight:800;font-size:13px;color:#0f172a;">${clientDest.title || clientDest.company_name || 'Client Visit'}</div>
+                    <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;margin-top:6px;">
+                      <span style="font-weight:700;color:#64748b;">Company:</span>
+                      <span style="font-weight:800;color:#0f172a;">${clientDest.company_name || clientDest.title || '—'}</span>
+
+                      ${clientDest.phone ? `
+                        <span style="font-weight:700;color:#64748b;">Phone:</span>
+                        <span style="font-weight:800;color:#2563eb;font-family:monospace;">${clientDest.phone}</span>
+                      ` : ''}
+
+                      <span style="font-weight:700;color:#64748b;">Address:</span>
+                      <span style="font-weight:600;color:#475569;line-height:1.3;">${clientDest.address || '—'}</span>
+                    </div>
+                  </div>
+                `)
               },
               'center'
             )
@@ -1187,6 +1274,11 @@ export default function ManagerSmartMap() {
         }
       } catch (gErr) {
         console.error("[SmartMap] Error rendering live/end markers:", gErr)
+      }
+
+      // If executive is offline and has no active tracking session, do not render tracking layers
+      if (!executive.is_online && status !== 'active') {
+        return
       }
 
       // ─── Draw traveled trail as dotted polyline + start/end markers ───
@@ -1529,7 +1621,7 @@ export default function ManagerSmartMap() {
   }, [mapLoaded])
 
   const filteredExecutives = executives.filter(ex =>
-    ex.employee_name.toLowerCase().includes(searchQuery.toLowerCase())
+    resolveRealName(ex).toLowerCase().includes(searchQuery.toLowerCase())
   )
 
   const getStatusInfo = (ex) => {
@@ -1595,8 +1687,8 @@ export default function ManagerSmartMap() {
           </div>
         </div>
 
-        {/* Live tracking info panel in sidebar (visible when executive selected) */}
-        {selectedExecutive && trackStatus !== 'idle' && (
+        {/* Live tracking info panel in sidebar (visible only when active executive selected) */}
+        {selectedExecutive && selectedExecutive.is_online && trackStatus !== 'idle' && (
           <div className="mx-4 mt-4 p-4 rounded-xl border border-white/10 bg-slate-950/60 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Live Tracking</span>
@@ -1620,10 +1712,10 @@ export default function ManagerSmartMap() {
               <div className="space-y-2.5">
                 <div className="flex items-center gap-2 bg-slate-900/60 p-2.5 rounded-xl border border-white/5">
                   <div className="w-8 h-8 rounded-full bg-violet-600/10 text-violet-400 font-extrabold text-[11px] flex items-center justify-center">
-                    {selectedExecutive.employee_name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
+                    {resolveRealName(selectedExecutive).split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
                   </div>
                   <div>
-                    <div className="text-xs font-black text-slate-200">{selectedExecutive.employee_name}</div>
+                    <div className="text-xs font-black text-slate-200">{resolveRealName(selectedExecutive)}</div>
                     <div className="text-[9px] font-bold text-slate-500">{selectedExecutive.role}</div>
                   </div>
                 </div>
@@ -1725,7 +1817,8 @@ export default function ManagerSmartMap() {
               const hasLoc   = ex.latitude != null
               const isSelected = selectedExecutive?.employee_id === ex.employee_id
               const statusInfo = getStatusInfo(ex)
-              const initials = ex.employee_name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+              const exDisplayName = resolveRealName(ex)
+              const initials = exDisplayName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
               
               return (
                 <div key={ex.employee_id} onClick={() => handleSelectExecutive(ex)}
@@ -1738,7 +1831,7 @@ export default function ManagerSmartMap() {
                         {initials}
                       </div>
                       <div>
-                        <div className="text-xs font-black text-slate-200">{ex.employee_name}</div>
+                        <div className="text-xs font-black text-slate-200">{exDisplayName}</div>
                         <div className="text-[10px] font-bold text-slate-500">{ex.role}</div>
                       </div>
                     </div>
@@ -1819,15 +1912,15 @@ export default function ManagerSmartMap() {
       <div className="flex-1 h-full relative">
         <div ref={mapContainerRef} className="w-full h-full z-0" />
 
-        {/* Compact Zomato/Swiggy-style Floating Live Tracking Card */}
-        {selectedExecutive && trackStatus !== 'idle' && trackStatus !== 'loading' && destClient && (
+        {/* Compact Zomato/Swiggy-style Floating Live Tracking Card (Only shown when active online) */}
+        {selectedExecutive && selectedExecutive.is_online && trackStatus !== 'idle' && trackStatus !== 'loading' && destClient && (
           isTrackingMinimized ? (
             /* Minimized state: slim pill at the top of the map */
             <div className="absolute top-4 left-4 right-4 lg:right-auto lg:w-85 z-20 bg-slate-950/96 border border-white/10 rounded-xl p-3 shadow-2xl backdrop-blur-md text-white pointer-events-auto flex items-center justify-between gap-3 animate-in slide-in-from-top duration-200">
               <div className="flex items-center gap-2.5 min-w-0">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
                 <div className="min-w-0">
-                  <div className="text-xs font-black truncate">{selectedExecutive.employee_name}</div>
+                  <div className="text-xs font-black truncate">{resolveRealName(selectedExecutive)}</div>
                   <div className="text-[9px] text-slate-400 font-bold">
                     {destRouteMeta ? `${destRouteMeta.etaMins} mins remaining (${destRouteMeta.distanceKm.toFixed(1)} km)` : 'Live tracking'}
                   </div>
@@ -1879,7 +1972,7 @@ export default function ManagerSmartMap() {
               </div>
               
               <div>
-                <h3 className="text-sm font-black text-slate-100">{selectedExecutive.employee_name}</h3>
+                <h3 className="text-sm font-black text-slate-100">{resolveRealName(selectedExecutive)}</h3>
                 <p className="text-[10px] font-bold text-slate-400">{selectedExecutive.role}</p>
               </div>
               
