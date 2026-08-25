@@ -1221,12 +1221,21 @@ class ReportsRepository:
         
         challenges = row.get("challenges_faced") or ""
         highlights_val = challenges
-        blockers_val = "None"
-        if " | " in challenges:
+        blockers_val = row.get("blockers") or "None"
+        if " | Blockers: " in challenges:
+            try:
+                blockers_val = challenges.split(" | Blockers: ")[1].split(" | ")[0].strip()
+            except Exception:
+                blockers_val = "None"
+        elif " | " in challenges:
             parts = challenges.split(" | ")
-            highlights_val = parts[0]
-            if len(parts) > 3:
-                blockers_val = parts[1]
+            if len(parts) > 1 and not any(parts[1].strip().startswith(p) for p in ("Executive:", "Email:", "EMP:", "Manager:")):
+                blockers_val = parts[1].strip()
+            else:
+                blockers_val = row.get("blockers") or "None"
+
+        if " | " in challenges:
+            highlights_val = challenges.split(" | ")[0].strip()
                 
         is_ack = bool(row.get("acknowledged", False))
         ack_by = row.get("acknowledged_by") or ""
@@ -1444,8 +1453,9 @@ class ReportsRepository:
         followups = int(data.get("followupsScheduled") or data.get("followups_scheduled") or 0)
         deals = int(data.get("dealsClosed") or data.get("deals_closed") or 0)
 
-        high_str = str(data.get("highlights") or "Completed daily client meetings.")
-        full_high = f"{high_str} | Executive: {exec_name} | Email: {exec_email} | EMP: {emp_code} | Manager: {mgr_email}"
+        high_str = str(data.get("highlights") or "Completed daily client meetings.").replace(" | ", " - ")
+        block_str = str(data.get("blockers") or "None").replace(" | ", " - ")
+        full_high = f"{high_str} | Blockers: {block_str} | Executive: {exec_name} | Email: {exec_email} | EMP: {emp_code} | Manager: {mgr_email}"
 
         report_obj = {
             "id": report_id,

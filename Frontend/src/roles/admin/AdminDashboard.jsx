@@ -114,9 +114,19 @@ export default function AdminDashboard() {
         return r.includes('executive') || r.includes('sales');
       }).length
 
-      // Attendance stats
-      const presentCount = attList.filter(a => String(a.status || '').toUpperCase() === 'PRESENT').length
-      const lateCount = attList.filter(a => a.clock_in && String(a.clock_in).slice(11, 16) > '09:15').length
+      // Attendance stats (Count unique employees to avoid double counting multiple punches)
+      const presentCount = new Set(
+        attList
+          .filter(a => String(a.status || '').toUpperCase() === 'PRESENT' || a.check_in || a.clock_in || a.check_in_time)
+          .map(a => a.employee_id || a.user_id || a.employee_code || a.email || a.employee_name || a.name)
+          .filter(Boolean)
+      ).size
+      const lateCount = new Set(
+        attList
+          .filter(a => (a.clock_in || a.check_in_time) && String(a.clock_in || a.check_in_time).slice(11, 16) > '09:15')
+          .map(a => a.employee_id || a.user_id || a.employee_code || a.email || a.employee_name || a.name)
+          .filter(Boolean)
+      ).size
       const absentCount = Math.max(0, empsList.length - presentCount)
 
       setStats({

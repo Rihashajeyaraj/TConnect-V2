@@ -187,10 +187,24 @@ export default function SalesHRMS() {
   });
 
   useEffect(() => {
-    hrmsAPI.getEmployeeById("self")
-      .then((res) => {
-        if (res && res.data) {
-          const emp = res.data;
+    async function loadUserProfile() {
+      try {
+        let emp = null;
+        const selfRes = await hrmsAPI.getEmployeeById("self").catch(() => null);
+        if (selfRes && selfRes.data) {
+          emp = selfRes.data;
+        } else {
+          const listRes = await hrmsAPI.getEmployees().catch(() => null);
+          const allEmps = listRes?.data || [];
+          const userEmailStr = String(currentUser.email || '').toLowerCase().trim();
+          const empCodeStr = String(empCode || currentUser.employee_code || currentUser.employee_id || '').toLowerCase().trim();
+          emp = allEmps.find(e => 
+            (e.email && String(e.email).toLowerCase().trim() === userEmailStr) ||
+            (empCodeStr && (String(e.employee_code || e.employee_id || '').toLowerCase().trim() === empCodeStr))
+          );
+        }
+
+        if (emp) {
           const mapped = {
             fullName: emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.fullName,
             employeeId: emp.employee_code || emp.employee_id,
@@ -200,12 +214,21 @@ export default function SalesHRMS() {
             designation: emp.designation,
             reportingManager: emp.reporting_manager_name || "Not Assigned",
             reportingManagerEmail: emp.reporting_manager_email || "",
+            annualLeaves: emp.annual_leaves ?? emp.annualLeaves,
+            halfDayPermissions: emp.half_day_permissions ?? emp.halfDayPermissions,
+            shortPermissions: emp.short_permissions ?? emp.shortPermissions,
+            annual_leaves: emp.annual_leaves ?? emp.annualLeaves,
+            half_day_permissions: emp.half_day_permissions ?? emp.halfDayPermissions,
+            short_permissions: emp.short_permissions ?? emp.shortPermissions,
           };
           setProfile(mapped);
           localStorage.setItem("tc_se_profile", JSON.stringify(mapped));
         }
-      })
-      .catch(() => null);
+      } catch (err) {
+        console.warn("Could not load employee profile for leaves:", err);
+      }
+    }
+    loadUserProfile();
   }, [empCode, currentUser]);
 
 
@@ -476,6 +499,18 @@ export default function SalesHRMS() {
     return new Date(temp.setDate(diff));
   };
 
+  const getLogDateKey = (log) => {
+    const raw = log.date || log.attendance_date || log.created_at || log.check_in_time || '';
+    if (!raw) return '';
+    try {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().slice(0, 10);
+      }
+    } catch {}
+    return String(raw).trim();
+  };
+
   const filteredLogs = realAttendanceLogs.filter((log) => {
     const dStr = String(log.date || log.attendance_date || "");
     const logDate = new Date(dStr);
@@ -507,10 +542,22 @@ export default function SalesHRMS() {
     return true;
   });
 
-  const dynamicPresentCount = filteredLogs.length;
+  // Calculate UNIQUE present days / employee-days so multiple logins on the same day count as 1 Present
+  const distinctPresentKeys = new Set(
+    filteredLogs.map((l) => {
+      const dateKey = getLogDateKey(l);
+      if (isUserAdmin) {
+        const empId = l.employee_id || l.user_id || l.employee_code || l.email || l.name || 'emp';
+        return `${empId}___${dateKey}`;
+      }
+      return dateKey;
+    }).filter(Boolean)
+  );
+
+  const dynamicPresentCount = distinctPresentKeys.size;
   const dynamicAbsentCount = isUserAdmin
-    ? (reportFilterMode === "TODAY" ? Math.max(0, employeesCount - filteredLogs.length) : "—")
-    : (filteredLogs.length === 0 && (reportFilterMode === "TODAY" || reportFilterMode === "YESTERDAY") ? 1 : 0);
+    ? (reportFilterMode === "TODAY" ? Math.max(0, employeesCount - dynamicPresentCount) : "—")
+    : (dynamicPresentCount === 0 && (reportFilterMode === "TODAY" || reportFilterMode === "YESTERDAY") ? 1 : 0);
 
   return (
     <div className="space-y-6 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-6">
@@ -1272,13 +1319,18 @@ export default function SalesHRMS() {
 
         {/* ── LEAVE MANAGEMENT (Twite HRMS UI Match) ── */}
         {activeSection === "leave" && (() => {
-          const savedLeaves = localStorage.getItem(`tc_leaves_${userEmail.toLowerCase().trim()}`);
-          const localAllocation = savedLeaves ? JSON.parse(savedLeaves) : { annualLeaves: 12, halfDayPermissions: 6, shortPermissions: 2 };
+          const userEmailClean = String(userEmail || currentUser.email || profile.officialEmail || '').toLowerCase().trim();
+          const savedLeaves = userEmailClean ? localStorage.getItem(`tc_leaves_${userEmailClean}`) : null;
+          const localAllocation = savedLeaves ? JSON.parse(savedLeaves) : null;
+
+          const annualQuota = profile.annual_leaves ?? profile.annualLeaves ?? currentUser.annual_leaves ?? currentUser.annualLeaves ?? localAllocation?.annualLeaves ?? 12;
+          const halfDayQuota = profile.half_day_permissions ?? profile.halfDayPermissions ?? currentUser.half_day_permissions ?? currentUser.halfDayPermissions ?? localAllocation?.halfDayPermissions ?? 6;
+          const shortQuota = profile.short_permissions ?? profile.shortPermissions ?? currentUser.short_permissions ?? currentUser.shortPermissions ?? localAllocation?.shortPermissions ?? 2;
 
           const leaveAllocation = {
-            annualLeaves: profile.annual_leaves ?? profile.annualLeaves ?? localAllocation.annualLeaves,
-            halfDayPermissions: profile.half_day_permissions ?? profile.halfDayPermissions ?? localAllocation.halfDayPermissions,
-            shortPermissions: profile.short_permissions ?? profile.shortPermissions ?? localAllocation.shortPermissions,
+            annualLeaves: Number(annualQuota),
+            halfDayPermissions: Number(halfDayQuota),
+            shortPermissions: Number(shortQuota),
           };
 
           const consumedFullLeaves = myLeaveRequests

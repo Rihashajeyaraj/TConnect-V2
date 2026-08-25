@@ -311,7 +311,13 @@ export default function ManagerTeam() {
       followupsScheduled: parseInt(r.followupsScheduled || r.followups || 0),
       dealsClosed: parseInt(r.dealsClosed || r.deals || 0),
       highlights: r.highlights || r.keyHighlights || 'Completed daily field client meetings.',
-      blockers: r.blockers || r.issues || 'None',
+      blockers: (() => {
+        const b = r.blockers || r.issues || 'None';
+        if (typeof b === 'string' && (b.startsWith('Executive:') || b.startsWith('Email:') || b.startsWith('EMP:') || b.startsWith('Manager:'))) {
+          return 'None';
+        }
+        return b;
+      })(),
       nextDayPlan: r.nextDayPlan || r.tomorrowPlan || 'Follow up with interested client accounts.',
       photo: r.photo || `https://api.dicebear.com/7.x/avataaars/svg?seed=${seName}`,
       phone: r.phone || '+91 98765 43210',

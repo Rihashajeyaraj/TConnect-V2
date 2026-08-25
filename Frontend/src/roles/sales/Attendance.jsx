@@ -308,7 +308,13 @@ export default function Attendance() {
               const geocoder = new window.google.maps.Geocoder();
               const gRes = await geocoder.geocode({ location: { lat, lng } });
               if (gRes?.results?.length > 0) {
-                address = gRes.results[0].formatted_address;
+                // Pick cleanest street/premise address over administrative ward names
+                const bestRes = gRes.results.find(r => r.types.includes('street_address') || r.types.includes('premise') || r.types.includes('subpremise'))
+                  || gRes.results.find(r => r.types.includes('route') || r.types.includes('sublocality_level_1'))
+                  || gRes.results[0];
+                let cleanAddr = (bestRes.formatted_address || gRes.results[0].formatted_address || '');
+                cleanAddr = cleanAddr.replace(/^(CMWSSB[^,]*|GCC[^,]*|Ward\s*\d+[^,]*|Division\s*\d+[^,]*|Zone\s*\d+[^,]*)[,\s]*/gi, '');
+                address = cleanAddr || gRes.results[0].formatted_address;
                 resolve({ lat, lng, address, accuracy });
                 return;
               }
