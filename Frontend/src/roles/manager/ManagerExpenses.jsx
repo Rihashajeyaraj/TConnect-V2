@@ -80,6 +80,28 @@ export default function ManagerExpenses() {
     } catch (e) { return {} }
   }
 
+  const formatDateDDMMYYYY = (val) => {
+    if (!val || val === '—' || val === 'N/A') return '—'
+    try {
+      const s = String(val).trim()
+      if (s.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) return s
+      const d = new Date(s)
+      if (!isNaN(d.getTime())) {
+        const day = String(d.getDate()).padStart(2, '0')
+        const month = String(d.getMonth() + 1).padStart(2, '0')
+        const year = d.getFullYear()
+        return `${day}/${month}/${year}`
+      }
+      const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+      if (match) {
+        return `${match[3]}/${match[2]}/${match[1]}`
+      }
+      return s
+    } catch {
+      return val
+    }
+  }
+
   // Helper to filter ONLY assigned executives under current manager
   const getAssignedExecutivesList = (rawEmployees) => {
     const mgrUser = getStoredUser()
@@ -660,93 +682,94 @@ export default function ManagerExpenses() {
                       <tr key={expense.id || idx} className="hover:bg-slate-50/70 transition">
                         
                         {/* 1. Date */}
-                        <td className="px-5 py-4.5 font-mono text-xs text-slate-600">
-                          {expense.submitted_date}
+                        <td className="px-5 py-4 font-bold text-xs text-slate-700 whitespace-nowrap">
+                          {formatDateDDMMYYYY(expense.submitted_date || expense.created_at || expense.date)}
                         </td>
 
-                        {/* 2. Sales Executive name */}
-                        <td className="px-5 py-4.5">
-                          <div className="font-black text-slate-900 text-sm">
-                            {expense.assigned_to || expense.executive}
-                          </div>
-                          <div className="text-[10px] text-slate-500 font-bold font-mono">
-                            Code: {expense.employee_code || 'EMP000012'}
+                        {/* 2. Sales Executive name (Name only, without code) */}
+                        <td className="px-5 py-4">
+                          <div className="font-extrabold text-slate-900 text-sm">
+                            {expense.assigned_to || expense.executive || 'Sales Executive'}
                           </div>
                         </td>
 
                         {/* 3. Customer Details */}
-                        <td className="px-5 py-4.5 max-w-[300px]">
-                          <div className="font-black text-slate-900 text-sm">
+                        <td className="px-5 py-4 max-w-[280px]">
+                          <div className="font-extrabold text-slate-900 text-sm">
                             {expense.customer_name || 'Corp Field Tech'}
                           </div>
                           <div className="text-xs text-slate-500 font-semibold flex items-center gap-1 mt-0.5">
                             <MapPin size={11} className="text-teal-700 shrink-0" />
                             <span className="truncate">{expense.visit_location || 'Guindy, Chennai'}</span>
                           </div>
-                          <div className="text-[10px] text-amber-800 font-mono font-bold mt-0.5">
-                            Visit Date: {expense.visit_date}
+                          <div className="text-[11px] text-amber-800 font-bold mt-1">
+                            Visit Date: {formatDateDDMMYYYY(expense.visit_date)}
                           </div>
                         </td>
 
                         {/* 4. Amount */}
-                        <td className="px-5 py-4.5 font-black text-teal-950 text-base">
+                        <td className="px-5 py-4 font-black text-teal-950 text-base whitespace-nowrap">
                           {expense.amount}
                         </td>
 
-                        {/* 5. Action (receipt, status, category, approve, reject options) */}
-                        <td className="px-5 py-4.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {/* Receipt */}
-                            {expense.receipt_url ? (
-                              <button
-                                onClick={() => setZoomReceiptUrl(expense.receipt_url)}
-                                className="px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 transition font-black text-[10px] flex items-center gap-1 cursor-pointer active:scale-95 shadow-3xs"
+                        {/* 5. Action (Properly organized badges and action buttons) */}
+                        <td className="px-5 py-4">
+                          <div className="flex flex-col gap-2 min-w-[230px]">
+                            {/* Top row: Status & Category badge */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${
+                                  String(expense.status).toLowerCase().includes('approv')
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                    : String(expense.status).toLowerCase().includes('reject')
+                                    ? 'bg-rose-50 text-rose-700 border-rose-300'
+                                    : 'bg-amber-50 text-amber-800 border-amber-300'
+                                }`}
                               >
-                                <FileText size={12} /> Receipt
-                              </button>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-slate-100 text-slate-400 border border-slate-200">
-                                No Receipt
+                                {expense.status}
                               </span>
-                            )}
 
-                            {/* Status */}
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
-                                String(expense.status).toLowerCase().includes('approv')
-                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                  : String(expense.status).toLowerCase().includes('reject')
-                                  ? 'bg-rose-100 text-rose-800 border-rose-300'
-                                  : 'bg-amber-100 text-amber-800 border-amber-300'
-                              }`}
-                            >
-                              {expense.status}
-                            </span>
+                              <span className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 truncate max-w-[150px]">
+                                {expense.category}
+                              </span>
+                            </div>
 
-                            {/* Category */}
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                              {expense.category}
-                            </span>
+                            {/* Bottom row: Action Buttons */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {expense.receipt_url ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setZoomReceiptUrl(expense.receipt_url)}
+                                  className="px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 transition font-bold text-[11px] flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
+                                >
+                                  <FileText size={12} /> Receipt
+                                </button>
+                              ) : (
+                                <span className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-slate-50 text-slate-400 border border-slate-200">
+                                  No Receipt
+                                </span>
+                              )}
 
-                            {/* Approve option */}
-                            {!String(expense.status).toLowerCase().includes('approv') && (
-                              <button
-                                onClick={() => handleQuickAction(expense, 'APPROVE')}
-                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] transition active:scale-95 shadow-3xs cursor-pointer flex items-center gap-1"
-                              >
-                                <CheckCircle2 size={11} /> Approve
-                              </button>
-                            )}
+                              {!String(expense.status).toLowerCase().includes('approv') && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickAction(expense, 'APPROVE')}
+                                  className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] transition active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1"
+                                >
+                                  <CheckCircle2 size={12} /> Approve
+                                </button>
+                              )}
 
-                            {/* Reject option */}
-                            {!String(expense.status).toLowerCase().includes('reject') && (
-                              <button
-                                onClick={() => handleQuickAction(expense, 'REJECT')}
-                                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] transition active:scale-95 shadow-3xs cursor-pointer flex items-center gap-1"
-                              >
-                                <XCircle size={11} /> Reject
-                              </button>
-                            )}
+                              {!String(expense.status).toLowerCase().includes('reject') && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickAction(expense, 'REJECT')}
+                                  className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] transition active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1"
+                                >
+                                  <XCircle size={12} /> Reject
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </td>
 

@@ -12,66 +12,66 @@ import {
   Check,
 } from "lucide-react";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
-
-const DEFAULT_NOTIFICATIONS = [
-  { id: "1", title: "🔥 New Lead Assigned", message: "ABC Hospital assigned by Sales Manager (Hot Lead).", time: "5 mins ago", status: "Unread", read: false, type: "Lead" },
-  { id: "2", title: "Visit Reminder", message: "Visit XYZ Builders at 2:00 PM today.", time: "30 mins ago", status: "Unread", read: false, type: "Visit" },
-  { id: "3", title: "Expense Approved", message: "Fuel expense approved successfully.", time: "Yesterday", status: "Read", read: true, type: "Expense" },
-  { id: "4", title: "Follow-up Reminder", message: "Call Tech Solutions today.", time: "Yesterday", status: "Read", read: true, type: "Follow-up" },
-  { id: "5", title: "Monthly Sales Target", message: "Q3 Sales target updated for Chennai zone.", time: "2 days ago", status: "Read", read: true, type: "General" },
-];
+import { notificationAPI } from "../../services/api.js";
 
 export default function Notifications() {
   const currentUser = useCurrentUser();
   const userEmail = (currentUser.email || "").toLowerCase().trim();
   const userId = currentUser.id || currentUser.user_id || "";
 
-  const [items, setItems] = useState(() => {
-    try {
-      const savedStr = localStorage.getItem("tc_app_notifications");
-      if (savedStr) {
-        const parsed = JSON.parse(savedStr);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const myNotifs = parsed.filter(
-            (n) =>
-              (userEmail && n.recipientEmail && n.recipientEmail.toLowerCase() === userEmail) ||
-              (userId && n.user_id && String(n.user_id).toLowerCase() === userId.toLowerCase()) ||
-              (n.recipientRole || "").toLowerCase() === "sales"
-          );
-          if (myNotifs.length > 0) {
-            return myNotifs.map((n) => ({
-              ...n,
-              status: n.read ? "Read" : "Unread",
-              type: n.type || "General",
-            }));
-          }
-        }
-      }
-    } catch (e) {}
-    return [];
-  });
-
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
 
-  // Sync to localStorage
-  useEffect(() => {
+  const loadNotifications = async () => {
+    setLoading(true);
     try {
-      localStorage.setItem("tc_app_notifications", JSON.stringify(items));
-    } catch (e) {}
-  }, [items]);
-
-  const handleMarkAllRead = () => {
-    setItems((prev) => prev.map((n) => ({ ...n, status: "Read", read: true })));
+      const res = await notificationAPI.getNotifications();
+      const raw = Array.isArray(res) ? res : res?.data || [];
+      setItems(
+        raw.map((n) => ({
+          ...n,
+          status: n.is_read || n.read ? "Read" : "Unread",
+          read: n.is_read || n.read || false,
+          type: n.category || n.type || "General",
+          time: n.created_at ? new Date(n.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "Recently",
+        }))
+      );
+    } catch (e) {
+      console.error("Failed to load notifications", e);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handleMarkRead = (id) => {
-    setItems((prev) =>
-      prev.map((n) => (n.id === id ? { ...n, status: "Read", read: true } : n))
-    );
+  useEffect(() => {
+    loadNotifications();
+  }, []);
+
+  const handleMarkAllRead = async () => {
+    try {
+      const unreadList = items.filter((n) => !n.read);
+      await Promise.allSettled(unreadList.map((n) => notificationAPI.markRead(n.id)));
+      loadNotifications();
+    } catch (e) {
+      console.error("Failed to mark all read", e);
+    }
+  };
+
+  const handleMarkRead = async (id) => {
+    try {
+      await notificationAPI.markRead(id);
+      setItems((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, status: "Read", read: true } : n))
+      );
+    } catch (e) {
+      console.error("Failed to mark notification as read", e);
+    }
   };
 
   const handleDelete = (id) => {
+    // Dismiss/hide locally since backend has no delete endpoint
     setItems((prev) => prev.filter((n) => n.id !== id));
   };
 

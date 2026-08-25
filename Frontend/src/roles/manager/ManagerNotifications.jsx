@@ -12,66 +12,16 @@ import {
   Filter,
   Search,
   X,
+  MailOpen,
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
 import { formatDate } from '../../utils/dateUtils.js'
-
-const NOTIFICATIONS_LIST = [
-  {
-    id: 1,
-    title: '🎉 New Deal Converted!',
-    message: 'Ashwini E won and converted Zenith Logistics (₹8,90,000).',
-    time: '10 mins ago',
-    date: '2026-08-05',
-    read: false,
-    type: 'success',
-  },
-  {
-    id: 2,
-    title: 'Field Visit Completed',
-    message: 'Suresh Raina completed site meeting at ABC Hospital.',
-    time: '45 mins ago',
-    date: '2026-08-05',
-    read: false,
-    type: 'info',
-  },
-  {
-    id: 3,
-    title: 'Expense Claim Submitted',
-    message: 'Ashwini E submitted ₹3,500 travel reimbursement claim for approval.',
-    time: '1 hour ago',
-    date: '2026-08-05',
-    read: false,
-    type: 'alert',
-  },
-  {
-    id: 4,
-    title: 'Attendance Check-In Alert',
-    message: 'Karthik Raja checked in at 09:35 AM at Adyar IT Corridor.',
-    time: '2 hours ago',
-    date: '2026-08-04',
-    read: true,
-    type: 'info',
-  },
-]
+import { notificationAPI } from '../../services/api.js'
 
 export default function ManagerNotifications() {
   const { showToast } = useToast()
-  const [list, setList] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tc_app_notifications')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const managerAlerts = parsed.filter((n) => !n.recipientRole || n.recipientRole === 'manager')
-          if (managerAlerts.length > 0) {
-            return managerAlerts
-          }
-        }
-      }
-    } catch (e) {}
-    return NOTIFICATIONS_LIST
-  })
+  const [list, setList] = useState([])
+  const [loading, setLoading] = useState(true)
 
   // Date Wise Filter State
   const [dateFilter, setDateFilter] = useState('All') // 'All' | 'Today' | 'Yesterday' | 'This Week' | 'This Month' | 'Custom Date'
@@ -79,16 +29,52 @@ export default function ManagerNotifications() {
   const [typeFilter, setTypeFilter] = useState('All')
   const [search, setSearch] = useState('')
 
-  // Sync state changes to localStorage
-  useEffect(() => {
+  const fetchNotifications = async () => {
+    setLoading(true)
     try {
-      localStorage.setItem('tc_app_notifications', JSON.stringify(list))
-    } catch (e) {}
-  }, [list])
+      const res = await notificationAPI.getNotifications()
+      const raw = Array.isArray(res) ? res : res?.data || []
+      setList(
+        raw.map((n) => ({
+          ...n,
+          read: n.is_read || n.read || false,
+          type: n.category || n.type || 'info',
+          time: n.created_at ? new Date(n.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Recently',
+          date: n.created_at ? n.created_at.slice(0, 10) : '2026-08-05',
+        }))
+      )
+    } catch (e) {
+      console.error("Failed to load notifications:", e)
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  const markAllRead = () => {
-    setList((prev) => prev.map((item) => ({ ...item, read: true })))
-    showToast('All notifications marked as read!', 'success')
+  useEffect(() => {
+    fetchNotifications()
+  }, [])
+
+  const markAllRead = async () => {
+    try {
+      const unreadList = list.filter((n) => !n.read)
+      await Promise.allSettled(unreadList.map((n) => notificationAPI.markRead(n.id)))
+      showToast('All notifications marked as read!', 'success')
+      fetchNotifications()
+    } catch (e) {
+      showToast('Failed to mark notifications as read', 'error')
+    }
+  }
+
+  const markSingleRead = async (id) => {
+    try {
+      await notificationAPI.markRead(id)
+      setList((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+      )
+      showToast('Notification marked as read', 'success')
+    } catch (e) {
+      showToast('Failed to update notification', 'error')
+    }
   }
 
   const todayStr = formatDate(new Date())
@@ -233,7 +219,14 @@ export default function ManagerNotifications() {
               </div>
 
               {!item.read && (
-                <span className="w-3 h-3 rounded-full bg-[#ca8a04] shrink-0 mt-1 shadow-2xs" title="Unread Alert" />
+                <button
+                  type="button"
+                  onClick={() => markSingleRead(item.id)}
+                  className="p-1.5 rounded-xl bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition active:scale-95 cursor-pointer shrink-0 mt-0.5 flex items-center justify-center"
+                  title="Mark as Read"
+                >
+                  <MailOpen className="w-3.5 h-3.5" />
+                </button>
               )}
             </div>
           ))

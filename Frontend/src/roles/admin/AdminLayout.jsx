@@ -54,48 +54,6 @@ const navItems = [
   { label: 'Settings', icon: Settings, path: '/admin/settings' },
 ]
 
-const initialNotifications = [
-  {
-    id: 'n1',
-    title: 'New Account Creation',
-    message: 'New Sales Executive account created for Arun Kumar.',
-    time: '10 mins ago',
-    type: 'user',
-    read: false,
-    icon: UserPlus,
-    color: 'text-blue-600 bg-blue-50 border-blue-200',
-  },
-  {
-    id: 'n2',
-    title: 'Field Representative Check-In',
-    message: 'John Doe logged check-in at Client Site - Guindy, Chennai.',
-    time: '25 mins ago',
-    type: 'visit',
-    read: false,
-    icon: MapPin,
-    color: 'text-emerald-600 bg-emerald-50 border-emerald-200',
-  },
-  {
-    id: 'n3',
-    title: 'System Security Audit Log',
-    message: 'Role permissions matrix updated for Sales Manager role.',
-    time: '2 hours ago',
-    type: 'security',
-    read: false,
-    icon: ShieldAlert,
-    color: 'text-purple-600 bg-purple-50 border-purple-200',
-  },
-  {
-    id: 'n4',
-    title: 'Leave Request Pending',
-    message: 'Mary Jane submitted Casual Leave request for 10 May 2026.',
-    time: '1 day ago',
-    type: 'hrms',
-    read: true,
-    icon: Clock,
-    color: 'text-amber-600 bg-amber-50 border-amber-200',
-  },
-]
 
 const PROFILE_DEFAULTS = {
   fullName: "",

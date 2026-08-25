@@ -44,7 +44,6 @@ import { formatDate } from '../../utils/dateUtils.js'
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'My Dashboard', icon: LayoutDashboard },
-  { key: 'team_leave', label: 'Team Leave Approval', icon: UserCheck },
   { key: 'leave', label: 'My Leave', icon: CalendarOff },
   { key: 'calendar', label: 'Holiday Calendar', icon: CalendarDays },
   { key: 'handbook', label: 'Manager Handbook', icon: BookOpen },
@@ -765,122 +764,7 @@ export default function ManagerHrms() {
         </div>
       )}
 
-      {/* 3. TEAM LEAVE APPROVAL */}
-      {activeSection === 'team_leave' && (
-        <div className="max-w-4xl space-y-5">
-          <div>
-            <h2 className="text-2xl font-black text-slate-900">Team Leave Approval</h2>
-            <p className="text-slate-500 text-sm mt-0.5 font-semibold">
-              Review and approve or reject leave requests from your Sales Executives.
-            </p>
-          </div>
 
-          {/* Summary */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: 'Pending', count: teamLeaveRequests.filter(r => r.status === 'Pending').length, color: 'amber' },
-              { label: 'Approved', count: teamLeaveRequests.filter(r => r.status === 'Approved').length, color: 'emerald' },
-              { label: 'Rejected', count: teamLeaveRequests.filter(r => r.status === 'Rejected').length, color: 'rose' },
-            ].map(({ label, count, color }) => (
-              <div key={label} className={`bg-${color}-50 border border-${color}-200 rounded-2xl p-4 text-center`}>
-                <h2 className={`text-3xl font-black text-${color}-700`}>{count}</h2>
-                <p className={`text-xs font-extrabold text-${color}-600 mt-0.5`}>{label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Leave Cards */}
-          <div className="space-y-4">
-            {teamLeaveRequests.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-400 font-semibold text-xs">
-                No team leave requests found.
-              </div>
-            ) : (
-              teamLeaveRequests.map((req) => (
-                <div key={req.id} className={`bg-white border rounded-2xl p-5 shadow-xs space-y-3 ${req.status === 'Pending' ? 'border-amber-300' :
-                    req.status === 'Approved' ? 'border-emerald-300' : 'border-rose-300'
-                  }`}>
-                  {/* Header */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono font-black text-[#b45309] bg-amber-50 px-2 py-0.5 rounded border border-amber-300">
-                          [{req.employeeCode}]
-                        </span>
-                        <h3 className="font-black text-slate-900 text-sm">{req.executive}</h3>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5">Applied: {req.appliedOn}</p>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-black border ${req.status === 'Approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                        req.status === 'Rejected' ? 'bg-rose-100 text-rose-800 border-rose-300' :
-                          'bg-amber-100 text-amber-800 border-amber-300'
-                      }`}>{req.status}</span>
-                  </div>
-
-                  {/* Details */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                    <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Leave Type</span>
-                      <span className="font-black text-slate-900">{req.leaveType}</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">From</span>
-                      <span className="font-black text-slate-900">{req.fromDate}</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">To</span>
-                      <span className="font-black text-slate-900">{req.toDate}</span>
-                    </div>
-                    <div className="p-2 bg-amber-50 rounded-xl border border-amber-200">
-                      <span className="text-[10px] font-bold text-amber-700 uppercase block">Days</span>
-                      <span className="font-black text-amber-900">{req.days} Day(s)</span>
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs">
-                    <span className="text-[10px] font-extrabold text-slate-400 uppercase block">Reason</span>
-                    <p className="text-slate-700 font-medium mt-0.5">{req.reason}</p>
-                  </div>
-
-                  {req.managerRemark && (
-                    <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-xs">
-                      <span className="text-[10px] font-extrabold text-emerald-700 uppercase block">Manager Remark</span>
-                      <p className="text-emerald-800 font-medium mt-0.5 italic">"{req.managerRemark}"</p>
-                    </div>
-                  )}
-
-                  {/* Approve / Reject Actions */}
-                  {req.status === 'Pending' && (
-                    <div className="space-y-2 pt-2 border-t border-slate-100">
-                      <input
-                        type="text"
-                        value={leaveRemarkInputs[req.id] || ''}
-                        onChange={(e) => setLeaveRemarkInputs({ ...leaveRemarkInputs, [req.id]: e.target.value })}
-                        placeholder="Add remark (optional) before approving or rejecting..."
-                        className="w-full h-9 border border-slate-200 rounded-xl px-3 text-xs font-medium text-slate-800 focus:outline-none focus:border-[#b45309] bg-slate-50"
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleLeaveDecision(req.id, 'Approved')}
-                          className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition"
-                        >
-                          <CheckCircle size={14} /> Approve Leave
-                        </button>
-                        <button
-                          onClick={() => handleLeaveDecision(req.id, 'Rejected')}
-                          className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition"
-                        >
-                          <XCircle size={14} /> Reject Leave
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
 
       {/* 4. MY DOCUMENTS */}
       {activeSection === 'documents' && (
