@@ -40,6 +40,7 @@ import { normalizePhoneNumber } from '../../utils/formatUtils.js'
 import { FaceLivenessEngine, LIVENESS_CHALLENGES } from '../sales/FaceLivenessEngine.js'
 
 const EmployeeProfileModal = ({ employee, onClose }) => {
+  const [previewDoc, setPreviewDoc] = useState(null);
   if (!employee) return null;
   const parsedDocs = (() => {
     if (!employee.documents) return [];
@@ -155,28 +156,92 @@ const EmployeeProfileModal = ({ employee, onClose }) => {
               {parsedDocs.length === 0 ? (
                 <p className="text-slate-400 text-xs italic">No documents uploaded yet.</p>
               ) : (
-                parsedDocs.map((doc, idx) => (
-                  <div key={doc.id || idx} className="flex items-center justify-between border-b border-slate-100 pb-1 last:border-b-0">
-                    <div>
-                      <p className="font-bold text-slate-800">{doc.name}</p>
-                      <p className="text-[10px] text-emerald-600 font-medium">✅ {doc.fileName || 'Uploaded'}</p>
+                parsedDocs.map((doc, idx) => {
+                  const docUrl = doc.fileUrl || doc.url || doc.file_url || doc.file || doc.preview || doc.data || null;
+                  return (
+                    <div key={doc.id || idx} className="flex items-center justify-between border-b border-slate-100 pb-1.5 last:border-b-0">
+                      <div className="min-w-0 pr-2">
+                        <p className="font-bold text-slate-800 truncate">{doc.name}</p>
+                        <p className="text-[10px] text-emerald-600 font-medium truncate">✅ {doc.fileName || 'Uploaded'}</p>
+                      </div>
+                      {docUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDoc({ ...doc, fileUrl: docUrl })}
+                          className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-700 font-extrabold text-[11px] rounded-lg transition cursor-pointer flex-shrink-0 shadow-2xs"
+                        >
+                          View File
+                        </button>
+                      )}
                     </div>
-                    {doc.fileUrl && (
-                      <a
-                        href={doc.fileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2 py-0.5 bg-teal-50 border border-teal-200 text-teal-700 font-bold text-[10px] rounded-md hover:bg-teal-100 transition"
-                      >
-                        View File
-                      </a>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </Section>
         </div>
+
+        {/* In-App Document Preview Modal */}
+        {previewDoc && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] animate-in fade-in duration-150">
+            <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
+                <div className="min-w-0 pr-4">
+                  <h3 className="font-black text-slate-900 text-sm truncate">{previewDoc.name}</h3>
+                  <p className="text-[11px] text-slate-400 font-semibold truncate">{previewDoc.fileName || "Document File"}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {previewDoc.fileUrl && (
+                    <a
+                      href={previewDoc.fileUrl}
+                      download={previewDoc.fileName || `${previewDoc.name}.png`}
+                      className="p-2 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-xl transition cursor-pointer"
+                      title="Download File"
+                    >
+                      <Download size={18} />
+                    </a>
+                  )}
+                  <button
+                    onClick={() => setPreviewDoc(null)}
+                    className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-auto flex items-center justify-center bg-slate-50 rounded-2xl p-3 min-h-[320px] border border-slate-100">
+                {previewDoc.fileUrl?.startsWith('data:image') || previewDoc.fileUrl?.match(/\.(jpeg|jpg|gif|png|webp|svg)($|\?)/i) || previewDoc.fileName?.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) ? (
+                  <img
+                    src={previewDoc.fileUrl}
+                    alt={previewDoc.name}
+                    className="max-w-full max-h-[62vh] object-contain rounded-xl shadow-xs border border-slate-200"
+                  />
+                ) : previewDoc.fileUrl?.startsWith('data:application/pdf') || previewDoc.fileUrl?.match(/\.pdf($|\?)/i) || previewDoc.fileName?.match(/\.pdf$/i) ? (
+                  <iframe
+                    src={previewDoc.fileUrl}
+                    title={previewDoc.name}
+                    className="w-full h-[62vh] rounded-xl border border-slate-200"
+                  />
+                ) : (
+                  <div className="text-center py-12 space-y-3">
+                    <FileText size={48} className="mx-auto text-slate-400" />
+                    <p className="text-xs font-bold text-slate-600">Preview not supported for this file format.</p>
+                    {previewDoc.fileUrl && (
+                      <a
+                        href={previewDoc.fileUrl}
+                        download={previewDoc.fileName || 'document'}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-extrabold shadow-sm transition"
+                      >
+                        <Download size={14} /> Download File
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

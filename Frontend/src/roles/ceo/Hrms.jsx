@@ -28,6 +28,7 @@ import { hrmsAPI, attendanceAPI, userAPI } from '../../services/api.js'
 import { exportToCSV } from '../../utils/exportUtils.js'
 
 const EmployeeProfileModal = ({ employee, onClose }) => {
+  const [previewDoc, setPreviewDoc] = useState(null);
   if (!employee) return null;
   const parsedDocs = (() => {
     if (!employee.documents) return [];
@@ -143,28 +144,92 @@ const EmployeeProfileModal = ({ employee, onClose }) => {
               {parsedDocs.length === 0 ? (
                 <p className="text-slate-400 text-xs italic">No documents uploaded yet.</p>
               ) : (
-                parsedDocs.map((doc, idx) => (
-                  <div key={doc.id || idx} className="flex items-center justify-between border-b border-slate-100 pb-1 last:border-b-0">
-                    <div>
-                      <p className="font-bold text-slate-800">{doc.name}</p>
-                      <p className="text-[10px] text-emerald-600 font-medium">✅ {doc.fileName || 'Uploaded'}</p>
+                parsedDocs.map((doc, idx) => {
+                  const docUrl = doc.fileUrl || doc.url || doc.file_url || doc.file || doc.preview || doc.data || null;
+                  return (
+                    <div key={doc.id || idx} className="flex items-center justify-between border-b border-slate-100 pb-1.5 last:border-b-0">
+                      <div className="min-w-0 pr-2">
+                        <p className="font-bold text-slate-800 truncate">{doc.name}</p>
+                        <p className="text-[10px] text-emerald-600 font-medium truncate">✅ {doc.fileName || 'Uploaded'}</p>
+                      </div>
+                      {docUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDoc({ ...doc, fileUrl: docUrl })}
+                          className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-700 font-extrabold text-[11px] rounded-lg transition cursor-pointer flex-shrink-0 shadow-2xs"
+                        >
+                          View File
+                        </button>
+                      )}
                     </div>
-                    {doc.fileUrl && (
-                      <a
-                        href={doc.fileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2 py-0.5 bg-teal-50 border border-teal-200 text-teal-700 font-bold text-[10px] rounded-md hover:bg-teal-100 transition"
-                      >
-                        View File
-                      </a>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </Section>
         </div>
+
+        {/* In-App Document Preview Modal */}
+        {previewDoc && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] animate-in fade-in duration-150">
+            <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
+                <div className="min-w-0 pr-4">
+                  <h3 className="font-black text-slate-900 text-sm truncate">{previewDoc.name}</h3>
+                  <p className="text-[11px] text-slate-400 font-semibold truncate">{previewDoc.fileName || "Document File"}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {previewDoc.fileUrl && (
+                    <a
+                      href={previewDoc.fileUrl}
+                      download={previewDoc.fileName || `${previewDoc.name}.png`}
+                      className="p-2 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-xl transition cursor-pointer"
+                      title="Download File"
+                    >
+                      <Download size={18} />
+                    </a>
+                  )}
+                  <button
+                    onClick={() => setPreviewDoc(null)}
+                    className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-auto flex items-center justify-center bg-slate-50 rounded-2xl p-3 min-h-[320px] border border-slate-100">
+                {previewDoc.fileUrl?.startsWith('data:image') || previewDoc.fileUrl?.match(/\.(jpeg|jpg|gif|png|webp|svg)($|\?)/i) || previewDoc.fileName?.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) ? (
+                  <img
+                    src={previewDoc.fileUrl}
+                    alt={previewDoc.name}
+                    className="max-w-full max-h-[62vh] object-contain rounded-xl shadow-xs border border-slate-200"
+                  />
+                ) : previewDoc.fileUrl?.startsWith('data:application/pdf') || previewDoc.fileUrl?.match(/\.pdf($|\?)/i) || previewDoc.fileName?.match(/\.pdf$/i) ? (
+                  <iframe
+                    src={previewDoc.fileUrl}
+                    title={previewDoc.name}
+                    className="w-full h-[62vh] rounded-xl border border-slate-200"
+                  />
+                ) : (
+                  <div className="text-center py-12 space-y-3">
+                    <FileText size={48} className="mx-auto text-slate-400" />
+                    <p className="text-xs font-bold text-slate-600">Preview not supported for this file format.</p>
+                    {previewDoc.fileUrl && (
+                      <a
+                        href={previewDoc.fileUrl}
+                        download={previewDoc.fileName || 'document'}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-extrabold shadow-sm transition"
+                      >
+                        <Download size={14} /> Download File
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -301,28 +366,90 @@ function CeoHrms({ initialTab = 'employees' }) {
   const [reviewRemarks, setReviewRemarks] = useState('')
   const [reviewAction, setReviewAction] = useState('Approved')
 
+  // Helper to format checkin time cleanly
+  const formatTimeOnly = (raw) => {
+    if (!raw || raw === '—' || raw === '--') return '—'
+    try {
+      const s = String(raw).trim()
+      if (s.match(/^\d{1,2}:\d{2}\s*(AM|PM)$/i)) return s
+      if (s.includes('T') || s.includes('-')) {
+        const d = new Date(s)
+        if (!isNaN(d.getTime())) {
+          return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
+        }
+      }
+      const match = s.match(/(\d{1,2}):(\d{2})/)
+      if (match) {
+        let h = parseInt(match[1], 10)
+        const m = match[2]
+        const ampm = h >= 12 ? 'PM' : 'AM'
+        h = h % 12 || 12
+        return `${String(h).padStart(2, '0')}:${m} ${ampm}`
+      }
+      return s
+    } catch {
+      return raw
+    }
+  }
+
   // Load real data from backend
   useEffect(() => {
     async function fetchHrmsData() {
       setLoading(true)
       try {
-        const empRes = await hrmsAPI.getEmployees().catch(() => null)
+        const [empRes, leaveRes, attRes] = await Promise.all([
+          hrmsAPI.getEmployees().catch(() => null),
+          attendanceAPI.getLeaveRequests().catch(() => null),
+          attendanceAPI.getLogs().catch(() => null),
+        ])
+
+        const rawLogs = (attRes && attRes.data && Array.isArray(attRes.data)) ? attRes.data : []
+        const todayStr = new Date().toISOString().slice(0, 10)
+
+        // Filter today's attendance logs
+        const todayLogs = rawLogs.filter(l => {
+          const lDate = l.date || (l.check_in_time ? String(l.check_in_time).slice(0, 10) : '') || (l.created_at ? String(l.created_at).slice(0, 10) : '')
+          return lDate === todayStr || l.is_today === true
+        })
+
         if (empRes && empRes.data && empRes.data.length > 0) {
           setEmployees(
-            empRes.data.map((e, idx) => ({
-              ...e,
-              id: e.id || `EMP-${100 + idx}`,
-              name: e.name || e.full_name || 'Staff Member',
-              email: e.email || 'employee@tconnect.com',
-              role: e.role || (idx === 0 ? 'Admin' : idx < 3 ? 'Sales Manager' : 'Sales Executive'),
-              department: e.department || 'Sales',
-              status: e.status || 'Active',
-              checkin: '09:00 AM',
-            }))
+            empRes.data.map((e, idx) => {
+              const empCode = e.employee_code || e.employee_id || e.id || ''
+              const empEmail = (e.email || '').toLowerCase().trim()
+              const empName = (e.name || e.full_name || '').toLowerCase().trim()
+
+              // Find today's checkin log for this specific employee
+              const empLog = todayLogs.find(l => 
+                (l.employee_id && (l.employee_id === e.id || l.employee_id === empCode)) ||
+                (l.user_id && (l.user_id === e.id || l.user_id === empCode)) ||
+                (l.employee_code && l.employee_code === empCode) ||
+                (l.email && l.email.toLowerCase().trim() === empEmail) ||
+                (l.employee_name && l.employee_name.toLowerCase().trim() === empName) ||
+                (l.name && l.name.toLowerCase().trim() === empName)
+              )
+
+              const hasCheckedIn = Boolean(empLog && (empLog.check_in_time || empLog.clockIn || empLog.login_time))
+              const checkinTime = hasCheckedIn 
+                ? formatTimeOnly(empLog.check_in_time || empLog.clockIn || empLog.login_time)
+                : '—'
+              const isAbsent = !hasCheckedIn
+
+              return {
+                ...e,
+                id: e.id || `EMP-${100 + idx}`,
+                name: e.name || e.full_name || 'Staff Member',
+                email: e.email || 'employee@tconnect.com',
+                role: e.role || (idx === 0 ? 'Admin' : idx < 3 ? 'Sales Manager' : 'Sales Executive'),
+                department: e.department || 'Sales',
+                status: isAbsent ? 'Absent' : 'Present',
+                checkin: checkinTime,
+                hasCheckedIn,
+              }
+            })
           )
         }
 
-        const leaveRes = await attendanceAPI.getLeaveRequests().catch(() => null)
         if (leaveRes && leaveRes.data && leaveRes.data.length > 0) {
           const rawList = leaveRes.data.map((l, idx) => ({
             id: l.id || l.leave_id || `LV-${500 + idx}`,
@@ -342,8 +469,8 @@ function CeoHrms({ initialTab = 'employees' }) {
           }))
 
           const ceoExecutiveRequests = rawList.filter((r) => {
-            const roleLower = (r.role || '').toLowerCase();
-            return roleLower.includes('manager') || roleLower.includes('admin');
+            const roleLower = (r.role || '').toLowerCase()
+            return roleLower.includes('manager') || roleLower.includes('admin')
           })
 
           const leavesOnly = ceoExecutiveRequests.filter(
@@ -362,21 +489,19 @@ function CeoHrms({ initialTab = 'employees' }) {
           setPermissionRequests(permissionsOnly)
         }
 
-        const attRes = await attendanceAPI.getLogs().catch(() => null)
-        if (attRes && attRes.data && attRes.data.length > 0) {
-          const logs = attRes.data
-          const loggedInCount = logs.filter(l => l.status === 'Logged in' || !l.clockOut || l.clockOut === '—').length
-          const loggedOffCount = logs.filter(l => l.status === 'Logged off' || (l.clockOut && l.clockOut !== '—')).length
+        if (rawLogs.length > 0) {
+          const loggedInCount = rawLogs.filter(l => l.status === 'Logged in' || !l.clockOut || l.clockOut === '—').length
+          const loggedOffCount = rawLogs.filter(l => l.status === 'Logged off' || (l.clockOut && l.clockOut !== '—')).length
 
           setAttendanceSummary(prev => ({
             ...prev,
-            presentToday: logs.length,
-            dailyLogs: logs.map((l, idx) => ({
+            presentToday: todayLogs.length,
+            dailyLogs: rawLogs.map((l, idx) => ({
               id: l.id || `ATT-${idx + 1}`,
               name: l.name || l.employee_name || 'Staff Member',
               date: l.date || '—',
-              clockIn: l.clockIn || l.check_in_time || '09:00 AM',
-              clockOut: l.clockOut || l.check_out_time || '—',
+              clockIn: formatTimeOnly(l.clockIn || l.check_in_time),
+              clockOut: formatTimeOnly(l.clockOut || l.check_out_time),
               workHours: l.workHours || l.total_working_hours || (l.clockOut && l.clockOut !== '—' ? '8.5 hrs' : 'In Progress'),
               mode: l.mode || 'Biometric',
               status: l.status || (l.clockOut && l.clockOut !== '—' ? 'Logged off' : 'Logged in'),
@@ -633,9 +758,21 @@ function CeoHrms({ initialTab = 'employees' }) {
                       </span>
                     </td>
                     <td className="py-3 text-slate-700">{emp.department}</td>
-                    <td className="py-3 text-slate-600 font-bold">{emp.checkin}</td>
+                    <td className="py-3 font-extrabold text-xs">
+                      {emp.checkin && emp.checkin !== '—' ? (
+                        <span className="text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
+                          {emp.checkin}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-semibold italic">—</span>
+                      )}
+                    </td>
                     <td className="py-3">
-                      <span className="inline-flex rounded-full bg-emerald-50 px-2.5 py-0.5 text-[10px] font-black text-emerald-700 border border-emerald-200">
+                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black border ${
+                        emp.status === 'Present'
+                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : 'bg-rose-50 text-rose-700 border-rose-200'
+                      }`}>
                         {emp.status}
                       </span>
                     </td>
