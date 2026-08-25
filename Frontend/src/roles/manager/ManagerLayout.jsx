@@ -562,14 +562,15 @@ export default function ManagerLayout() {
         </div>
 
         {/* Top-Right Area */}
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5 sm:gap-3">
 
-          {/* MY PROFILE BUTTON */}
+          {/* MY PROFILE BUTTON (Responsive on all screen sizes) */}
           <button
             onClick={() => { setMyProfileOpen(true); setProfileOpen(false); setEditMode(false) }}
-            className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0c4160] hover:bg-[#082d43] text-white text-xs font-black shadow-md transition cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-[#0c4160] hover:bg-[#082d43] text-white text-xs font-black shadow-md transition cursor-pointer"
           >
-            <UserCircle size={15} /> My Profile
+            <UserCircle size={15} />
+            <span className="hidden xs:inline sm:inline">My Profile</span>
           </button>
 
           {/* Avatar + Dropdown */}
@@ -620,6 +621,17 @@ export default function ManagerLayout() {
                   </div>
 
                   <div className="space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileOpen(false)
+                        setMyProfileOpen(true)
+                        setEditMode(false)
+                      }}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-[#fffdf5] hover:text-amber-900 text-slate-700 font-bold text-xs transition cursor-pointer"
+                    >
+                      <UserCircle size={15} className="text-[#0c4160]" /> My Profile
+                    </button>
                     <Link
                       to="/manager/settings"
                       onClick={() => setProfileOpen(false)}

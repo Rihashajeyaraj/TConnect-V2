@@ -3394,7 +3394,7 @@ export default function Leads() {
         onClose={() => setIsLocationPickerOpen(false)}
         initialLat={addForm.latitude || 13.0067}
         initialLng={addForm.longitude || 80.2570}
-        initialAddress={addForm.full_address || ''}
+        initialAddress={addForm.full_address || addForm.address || addForm.location || addForm.city || ''}
         title="Pick Lead Location"
         onConfirm={(lat, lng, address) => {
           setAddForm(prev => ({
@@ -3402,6 +3402,9 @@ export default function Leads() {
             latitude: lat,
             longitude: lng,
             full_address: address,
+            address: address,
+            location: address,
+            city: address.split(',')[0]?.trim() || prev.city,
           }));
           setIsLocationPickerOpen(false);
         }}

@@ -842,22 +842,23 @@ export default function SalesLayout() {
         </div>
 
         {/* Right Header Navigation */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* MY PROFILE BUTTON */}
+        <div className="flex items-center gap-1.5 sm:gap-3">
+          {/* MY PROFILE BUTTON (Responsive on all screen sizes) */}
           <button
             onClick={() => {
               setMyProfileOpen(true);
               setShowUserMenu(false);
               setEditMode(false);
             }}
-            className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer"
           >
-            <UserCircle size={15} /> My Profile
+            <UserCircle size={15} />
+            <span className="hidden xs:inline sm:inline">My Profile</span>
           </button>
 
           <button
             onClick={() => navigate("/sales/notifications")}
-            className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 relative transition cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-xl text-slate-500 hover:bg-slate-100 relative transition cursor-pointer"
           >
             <Bell size={19} />
             {notifCount > 0 && (
@@ -902,6 +903,18 @@ export default function SalesLayout() {
                     <p className="text-xs font-black text-slate-900 truncate">{seName}</p>
                     <p className="text-[11px] text-slate-500 truncate">{seEmail}</p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowUserMenu(false);
+                      setMyProfileOpen(true);
+                      setEditMode(false);
+                    }}
+                    className="w-full flex items-center gap-2 p-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <UserCircle size={15} className="text-teal-600" /> My Profile
+                  </button>
                   <button
                     type="button"
                     onClick={(e) => {
