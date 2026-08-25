@@ -603,12 +603,17 @@ async def get_manager_team_locations(
             accuracy = None
             last_seen_at = att.get("check_in_time")
         
+        # A tracking session is ONLY valid if it was started TODAY and status is active
+        sess_start = str(sess.get("start_time") or "") if sess else ""
+        sess_is_today = sess_start.startswith(today_str) if sess_start else False
+        has_active_session = bool(sess and sess.get("status") == "active" and sess_is_today)
+        
         has_checkin = bool(att.get("check_in_time")) if att else False
         has_checkout = bool(att.get("check_out_time")) if att else False
-        has_active_session = sess and sess.get("status") == "active"
         
+        # Strictly ONLINE ONLY IF checked in today, not checked out, and GPS seen within 5 minutes
         is_online = False
-        if has_active_session or (has_checkin and not has_checkout):
+        if has_checkin and not has_checkout:
             is_online = True
             if last_seen_at:
                 try:
@@ -620,6 +625,10 @@ async def get_manager_team_locations(
                         is_online = False
                 except Exception as ex_dt:
                     logger.debug(f"Error parsing last_seen_at for {e_id}: {ex_dt}")
+            else:
+                is_online = False
+        else:
+            is_online = False
                 
         client_id = None
         client_name = None
@@ -628,7 +637,7 @@ async def get_manager_team_locations(
         client_latitude = None
         client_longitude = None
         
-        if has_active_session:
+        if has_active_session and is_online:
             client_id = sess.get("client_id")
             client_name = sess.get("client_name")
             company_name = sess.get("company_name")
@@ -1609,8 +1618,9 @@ async def get_location_history(
         if caller_emp_id != employee_id and not _is_subordinate_of(sp, caller_emp_id, employee_id):
             raise HTTPException(status_code=403, detail="Not your assigned executive.")
 
-    # Get active or latest session
+    # Get active or latest session (only today's session if not explicitly requesting historic session_id)
     session = None
+    today_str = datetime.date.today().isoformat()
     try:
         q = sp.schema("hrms").table("tracking_sessions").select("*").or_(f"employee_id.eq.{employee_id},employee_id.eq.{caller_emp_id}")
         if session_id:
@@ -1618,7 +1628,12 @@ async def get_location_history(
         else:
             q = q.order("start_time", desc=True).limit(1)
         sess_res = q.execute()
-        session = sess_res.data[0] if sess_res.data else None
+        raw_sess = sess_res.data[0] if sess_res.data else None
+        
+        if raw_sess:
+            start_t = str(raw_sess.get("start_time") or "")
+            if session_id or start_t.startswith(today_str):
+                session = raw_sess
         
         # Enrich session with client details (phone and product) if client_id exists
         if session and session.get("client_id"):
