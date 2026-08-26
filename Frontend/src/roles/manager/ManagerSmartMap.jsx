@@ -107,10 +107,10 @@ function initializeHTMLMapMarker() {
         })
       }
 
-      window.google.maps.event.addDomListener(div, 'mousedown', (e) => {
+      div.addEventListener('mousedown', (e) => {
         e.stopPropagation()
       })
-      window.google.maps.event.addDomListener(div, 'contextmenu', (e) => {
+      div.addEventListener('contextmenu', (e) => {
         e.stopPropagation()
       })
 

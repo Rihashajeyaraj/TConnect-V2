@@ -227,7 +227,6 @@ class UserRepository:
             if str(auth_u["id"]) not in merged_ids and str(auth_u["email"]).lower() not in merged_emails:
                 all_combined.append(auth_u)
                 
-        global _USERS_CACHE, _USERS_CACHE_TIMESTAMP
         _USERS_CACHE = all_combined
         _USERS_CACHE_TIMESTAMP = time.time()
         return all_combined

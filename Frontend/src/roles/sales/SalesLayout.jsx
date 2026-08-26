@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { NavLink, Outlet, useNavigate, Link } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
@@ -196,6 +196,8 @@ export default function SalesLayout() {
   const [showProfileConfirm, setShowProfileConfirm] = useState(false);
   const [previewDoc, setPreviewDoc] = useState(null);
   const navigate = useNavigate();
+  const location = useLocation();
+  const isMapPage = location.pathname === "/sales/map";
 
   const user = (() => {
     try {
@@ -1063,7 +1065,11 @@ export default function SalesLayout() {
         </aside>
 
         {/* Page Content Container */}
-        <main className="flex-1 p-3 sm:p-5 lg:p-6 overflow-y-auto min-w-0 pb-20 lg:pb-6">
+        <main className={`flex-1 min-w-0 ${
+          isMapPage 
+            ? "p-0 pb-14 overflow-hidden h-[calc(100vh-64px)] lg:h-auto lg:p-6 lg:overflow-y-auto lg:pb-6" 
+            : "p-3 sm:p-5 lg:p-6 overflow-y-auto pb-20 lg:pb-6"
+        }`}>
           <Outlet />
         </main>
 

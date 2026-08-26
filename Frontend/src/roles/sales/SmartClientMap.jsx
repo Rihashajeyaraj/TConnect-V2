@@ -150,10 +150,10 @@ function initializeHTMLMapMarker() {
         })
       }
 
-      window.google.maps.event.addDomListener(div, 'mousedown', (e) => {
+      div.addEventListener('mousedown', (e) => {
         e.stopPropagation()
       })
-      window.google.maps.event.addDomListener(div, 'contextmenu', (e) => {
+      div.addEventListener('contextmenu', (e) => {
         e.stopPropagation()
       })
 
@@ -241,6 +241,13 @@ export default function SmartClientMap() {
   const [showAddModal,  setShowAddModal]  = useState(false)
   const [activeTab,     setActiveTab]     = useState('leads')
   const [selectedEntity, setSelectedEntity] = useState(null)
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768)
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
 
   // ── Route ─────────────────────────────────────────────────────────────────
   // Load config dynamically on mount
@@ -726,10 +733,8 @@ export default function SmartClientMap() {
         client.alertType === 'previous'  ? '🔄 Previous Client Nearby' :
         client.alertType === 'scheduled' ? '📅 Scheduled Visit Nearby' : '📍 Nearby Client'
 
-      showToast(
-        `${typeLabel}: ${client.title} — ${client.distToRouteM}m from route`,
-        'info'
-      )
+      // Event is tracked and aggregated in the combined FAB drawer.
+      // Individual toast notifications are disabled to prevent map crowding.
 
       auditAPI.logEvent({
         action: 'NEARBY_CLIENT_DETECTED',
@@ -761,7 +766,7 @@ export default function SmartClientMap() {
 
   const handleSelectAsDestination = useCallback((client) => {
     handleSelectStop(client)
-    setSelectedEntity(client)
+    setSelectedEntity(null)
   }, [handleSelectStop])
 
   const handleDismissAlert = useCallback((clientId) => {
@@ -961,7 +966,7 @@ export default function SmartClientMap() {
   const visibleAlerts = onRouteClients.filter(c => !dismissedAlerts.current.has(c.id))
 
   return (
-    <div className="relative w-full h-[100dvh] md:h-[88vh] rounded-none md:rounded-3xl overflow-hidden border-0 md:border border-slate-200 shadow-xl bg-slate-50 font-sans">
+    <div className="relative w-full h-[calc(100vh-120px)] md:h-[88vh] rounded-none md:rounded-3xl overflow-hidden border-0 md:border border-slate-200 shadow-xl bg-slate-50 font-sans">
 
       {/* ══ MAP CANVAS ══ */}
       <div ref={mapContainerRef} className="w-full h-full z-10" />
@@ -986,7 +991,7 @@ export default function SmartClientMap() {
       }`}>
         {/* Low accuracy banner */}
         {gpsStatus === 'active' && gpsAccuracy && gpsAccuracyThreshold && gpsAccuracy > gpsAccuracyThreshold && (
-          <div className="bg-rose-600/95 text-white text-[10px] font-black px-3 py-1.5 rounded-xl shadow-lg mb-1.5 flex items-center gap-1.5 animate-pulse">
+          <div className="hidden md:flex bg-rose-600/95 text-white text-[10px] font-black px-3 py-1.5 rounded-xl shadow-lg mb-1.5 items-center gap-1.5 animate-pulse">
             <AlertTriangle size={11} className="flex-shrink-0" />
             GPS accuracy low — move outdoors.
           </div>
@@ -1068,7 +1073,7 @@ export default function SmartClientMap() {
       </div>
 
       {/* ══ DESKTOP: ROUTE PANEL (top-left below search) ══ */}
-      {selectedStop && (
+      {!isMobile && selectedStop && (
         <div className="hidden md:block absolute z-[1000] left-6 w-[400px]"
           style={{ top: gpsStatus !== 'active' && gpsStatus !== 'loading' ? '10.5rem' : '8.5rem' }}>
           <div className="bg-slate-900 text-white rounded-2xl shadow-2xl border border-slate-700/80 p-3.5 space-y-3 animate-slideDown">
@@ -1104,7 +1109,7 @@ export default function SmartClientMap() {
       )}
 
       {/* ══ DESKTOP: NAV STATUS (top-right) ══ */}
-      {navMode && (
+      {!isMobile && navMode && (
         <div className="hidden md:block absolute top-4 right-4 z-[1000] space-y-2">
           <div className="bg-blue-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2">
             <Activity size={13} className="animate-pulse" />
@@ -1126,19 +1131,19 @@ export default function SmartClientMap() {
       )}
 
       {/* ══ MOBILE: CENTERED TOP BANNERS (nav/off-route) ══ */}
-      {navMode && offRoute && (
+      {isMobile && navMode && offRoute && (
         <div className="md:hidden absolute top-2 left-1/2 -translate-x-1/2 z-[1050] bg-rose-600 text-white rounded-xl shadow-xl px-3 py-1.5 flex items-center gap-1.5 animate-pulse whitespace-nowrap">
           <AlertTriangle size={12} /><span className="text-xs font-black">Off route — Recalculating</span>
         </div>
       )}
-      {navMode && nearDestination && !offRoute && (
+      {isMobile && navMode && nearDestination && !offRoute && (
         <div className="md:hidden absolute top-2 left-1/2 -translate-x-1/2 z-[1050] bg-emerald-600 text-white rounded-xl shadow-xl px-3 py-1.5 flex items-center gap-1.5 whitespace-nowrap">
           <Target size={12} /><span className="text-xs font-black">Near destination!</span>
         </div>
       )}
 
       {/* ══ DESKTOP: ALERT PANEL (bottom-right) ══ */}
-      {visibleAlerts.length > 0 && (
+      {!isMobile && visibleAlerts.length > 0 && (
         <div className="hidden md:block absolute bottom-4 right-4 z-[1000] w-80 space-y-1.5">
           <div className="bg-white/95 backdrop-blur-sm rounded-xl border border-slate-200 shadow-lg px-3 py-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
@@ -1177,7 +1182,7 @@ export default function SmartClientMap() {
 
       {/* ══ MOBILE: ALERT BADGE FAB (floating action button) ══
            Shows a pulsing badge with count. Tap to open bottom drawer. */}
-      {visibleAlerts.length > 0 && (
+      {isMobile && visibleAlerts.length > 0 && (
         <button
           onClick={() => setShowAlertSheet(true)}
           className="md:hidden absolute right-3 z-[1000] bg-blue-600 text-white rounded-2xl shadow-2xl px-3 py-2.5 flex items-center gap-2 active:scale-95 transition"
@@ -1193,7 +1198,7 @@ export default function SmartClientMap() {
       )}
 
       {/* ══ MOBILE: ALERT BOTTOM SHEET ══ */}
-      {showAlertSheet && visibleAlerts.length > 0 && (
+      {isMobile && showAlertSheet && visibleAlerts.length > 0 && (
         <div className="md:hidden fixed inset-0 z-[2000] flex flex-col justify-end">
           {/* backdrop */}
           <div className="absolute inset-0 bg-black/40 backdrop-blur-[2px]" onClick={() => setShowAlertSheet(false)} />
@@ -1244,7 +1249,7 @@ export default function SmartClientMap() {
       )}
 
       {/* ══ MOBILE: DESTINATION SLIM BAR (bottom) ══ */}
-      {selectedStop && (
+      {isMobile && selectedStop && (
         <div className="md:hidden absolute bottom-0 left-0 right-0 z-[1010] bg-slate-900/97 backdrop-blur-xl border-t border-slate-700/60">
           <div className="flex items-center gap-3 px-4 py-3">
             <div className="min-w-0 flex-1">
