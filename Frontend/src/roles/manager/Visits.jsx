@@ -408,19 +408,16 @@ export default function ManagerVisits() {
   return (
     <div className="space-y-6 text-slate-900 font-sans pb-12">
       {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-2">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-            <MapPin className="w-7 h-7 text-[#b45309]" /> Field Visit & Audit
+          <h1 className="text-2xl font-black text-slate-900">
+            Field Visit & Audit
           </h1>
-          <p className="text-xs text-slate-500 font-semibold mt-1">
-            Real-time telemetry, GPS check-ins, and visit completion audit reports for all Sales Executives under your management.
-          </p>
         </div>
 
         <button
           onClick={fetchTeamAuditData}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-amber-50 hover:bg-amber-100 text-[#b45309] font-extrabold text-xs border border-amber-300 shadow-2xs transition"
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-md transition cursor-pointer"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh Visit Audit
         </button>

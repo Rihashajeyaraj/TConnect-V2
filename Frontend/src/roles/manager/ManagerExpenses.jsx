@@ -537,40 +537,47 @@ export default function ManagerExpenses() {
 
   return (
     <div className="space-y-6 text-slate-900 font-sans pb-12">
-
+      {/* ── HEADER ───────────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-2">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900">
+            Expense Claims
+          </h1>
+        </div>
+      </div>
 
       {/* ── SINGLE EXPENSE CARD ──────────────────────────────────────────────── */}
       <div className="max-w-md">
-        <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-md text-white flex flex-col gap-4 hover:scale-[1.01] transition duration-200">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-slate-800 flex flex-col gap-4 hover:scale-[1.01] transition duration-200">
           <div className="flex items-center gap-3.5">
-            <div className="p-3 bg-teal-500/10 text-teal-400 rounded-xl border border-teal-500/20">
+            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-200">
               <Receipt className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-lg font-black tracking-wide text-slate-100">Expense</h2>
-              <p className="text-xs text-slate-400 font-bold">Manage team expense approvals</p>
+              <h2 className="text-lg font-black tracking-wide text-slate-900">Expense</h2>
+              <p className="text-xs text-slate-500 font-bold">Manage team expense approvals</p>
             </div>
           </div>
 
           {/* Quick Metrics grid */}
-          <div className="grid grid-cols-2 gap-3 border-t border-white/5 pt-4 text-xs font-bold text-slate-400">
+          <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-xs font-bold text-slate-600">
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Pending</div>
-              <div className="text-base font-black text-amber-400">{summary.pending_approval} Claims</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Pending</div>
+              <div className="text-base font-black text-amber-600">{summary.pending_approval} Claims</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Approved Today</div>
-              <div className="text-base font-black text-emerald-400">{summary.approved_today} Claims</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Approved Today</div>
+              <div className="text-base font-black text-emerald-600">{summary.approved_today} Claims</div>
             </div>
-            <div className="col-span-2 border-t border-white/5 pt-2 flex justify-between items-center text-[11px] font-black text-slate-300">
+            <div className="col-span-2 border-t border-slate-100 pt-2 flex justify-between items-center text-[11px] font-black text-slate-600">
               <span>Total Claims Volume</span>
-              <span className="text-teal-400 text-sm font-black">{summary.today_claim_amount}</span>
+              <span className="text-blue-600 text-sm font-black">{summary.today_claim_amount}</span>
             </div>
           </div>
 
           <button
             onClick={() => setPopupOpen(true)}
-            className="w-full mt-2 py-3 bg-teal-600 hover:bg-teal-500 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full mt-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
           >
             <Eye size={14} /> Open Expense Claims Ledger
           </button>
