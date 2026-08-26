@@ -571,18 +571,21 @@ export default function Attendance() {
     let finalLng = gpsCoords?.lng;
     let finalAddress = currentLocation;
 
-    try {
-      const freshGps = await getFreshExactPosition();
-      if (freshGps.lat != null && freshGps.lng != null) {
-        finalLat = freshGps.lat;
-        finalLng = freshGps.lng;
-        finalAddress = freshGps.address;
-        setGpsCoords({ lat: finalLat, lng: finalLng });
-        setCurrentLocation(finalAddress);
-        setGpsAccuracy(freshGps.accuracy);
+    // Only fetch fresh position if we don't have coordinates loaded yet
+    if (finalLat == null || finalLng == null) {
+      try {
+        const freshGps = await getFreshExactPosition();
+        if (freshGps.lat != null && freshGps.lng != null) {
+          finalLat = freshGps.lat;
+          finalLng = freshGps.lng;
+          finalAddress = freshGps.address;
+          setGpsCoords({ lat: finalLat, lng: finalLng });
+          setCurrentLocation(finalAddress);
+          setGpsAccuracy(freshGps.accuracy);
+        }
+      } catch (e) {
+        console.warn("Could not get instantaneous GPS update:", e);
       }
-    } catch (e) {
-      console.warn("Could not get instantaneous GPS update:", e);
     }
 
     let currentToken = verificationToken;
@@ -731,18 +734,21 @@ export default function Attendance() {
     let finalLng = gpsCoords?.lng;
     let finalAddress = currentLocation;
 
-    try {
-      const freshGps = await getFreshExactPosition();
-      if (freshGps.lat != null && freshGps.lng != null) {
-        finalLat = freshGps.lat;
-        finalLng = freshGps.lng;
-        finalAddress = freshGps.address;
-        setGpsCoords({ lat: finalLat, lng: finalLng });
-        setCurrentLocation(finalAddress);
-        setGpsAccuracy(freshGps.accuracy);
+    // Only fetch fresh position if we don't have coordinates loaded yet
+    if (finalLat == null || finalLng == null) {
+      try {
+        const freshGps = await getFreshExactPosition();
+        if (freshGps.lat != null && freshGps.lng != null) {
+          finalLat = freshGps.lat;
+          finalLng = freshGps.lng;
+          finalAddress = freshGps.address;
+          setGpsCoords({ lat: finalLat, lng: finalLng });
+          setCurrentLocation(finalAddress);
+          setGpsAccuracy(freshGps.accuracy);
+        }
+      } catch (e) {
+        console.warn("Could not get instantaneous GPS update:", e);
       }
-    } catch (e) {
-      console.warn("Could not get instantaneous GPS update:", e);
     }
 
     let currentToken = verificationToken;

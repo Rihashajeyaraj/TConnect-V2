@@ -220,6 +220,7 @@ export default function SalesLayout() {
   const activeSessionRef = useRef(null);
   const lastPushedPosRef = useRef(null);
   const gpsRetryQueue = useRef([]);
+  const wakeLockRef = useRef(null);
 
   if (SUPA_URL && SUPA_ANON && !supabaseRef.current) {
     try {
@@ -348,6 +349,20 @@ export default function SalesLayout() {
     activeSessionRef.current = resolvedSessionId;
     setGpsActive(true);
 
+    // Acquire Wake Lock if supported to prevent background sleep/tab suspension
+    try {
+      if ('wakeLock' in navigator) {
+        navigator.wakeLock.request('screen').then(lock => {
+          wakeLockRef.current = lock;
+          console.log("[GPS TRACKING] Screen Wake Lock acquired successfully.");
+        }).catch(err => {
+          console.warn("[GPS TRACKING] Wake Lock request rejected:", err);
+        });
+      }
+    } catch (e) {
+      console.warn("[GPS TRACKING] Wake Lock API error:", e);
+    }
+
     // Initialize Supabase Broadcast channels
     _initBroadcastChannels(empId, empCode, resolvedSessionId);
 
@@ -386,6 +401,17 @@ export default function SalesLayout() {
       gpsWatchRef.current = null;
     }
     window.removeEventListener('online', _flushRetryQueue);
+
+    // Release Screen Wake Lock
+    if (wakeLockRef.current !== null) {
+      try {
+        wakeLockRef.current.release();
+        console.log("[GPS TRACKING] Screen Wake Lock released.");
+      } catch (err) {
+        console.warn("[GPS TRACKING] Failed to release Wake Lock:", err);
+      }
+      wakeLockRef.current = null;
+    }
     
     activeChannelsRef.current.forEach(ch => {
       try { ch.unsubscribe(); } catch {}
@@ -940,13 +966,13 @@ export default function SalesLayout() {
         {open && (
           <div
             onClick={() => setOpen(false)}
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 lg:hidden transition-opacity"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[4000] lg:hidden transition-opacity"
           />
         )}
 
         {/* ── Sidebar ─────────────────────────────────────────────────── */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 shrink-0 flex flex-col ${
+          className={`fixed inset-y-0 left-0 z-[4010] lg:z-40 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 shrink-0 flex flex-col ${
             open ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -1042,7 +1068,7 @@ export default function SalesLayout() {
         </main>
 
         {/* ── Mobile Bottom Navigation Dock ────────────────────────── */}
-        <div className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 px-2 py-1.5 flex items-center justify-around shadow-lg">
+        <div className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-[1020] px-2 py-1.5 flex items-center justify-around shadow-lg">
           <NavLink to="/sales/dashboard" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-teal-600' : 'text-slate-500'}`}>
             <LayoutDashboard size={18} />
             <span>Home</span>

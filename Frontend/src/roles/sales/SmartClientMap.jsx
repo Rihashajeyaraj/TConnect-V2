@@ -243,6 +243,32 @@ export default function SmartClientMap() {
   const [selectedEntity, setSelectedEntity] = useState(null)
 
   // ── Route ─────────────────────────────────────────────────────────────────
+  // Load config dynamically on mount
+  useEffect(() => {
+    if (window.google?.maps) {
+      initializeHTMLMapMarker()
+      setMapLoaded(true)
+      return
+    }
+
+    settingsAPI.getConfig()
+      .then(res => {
+        const threshold = res?.data?.gps_accuracy_threshold
+        if (threshold != null && !isNaN(threshold)) {
+          setGpsAccuracyThreshold(Number(threshold))
+        }
+        const key = res?.data?.google_maps_api_key
+        if (!key) return
+        setGoogleMapsApiKey(key)
+        return loadGoogleMaps(key)
+      })
+      .then(maps => {
+        if (!maps) return
+        initializeHTMLMapMarker()
+        setMapLoaded(true)
+      })
+      .catch(err => console.error('Failed to load Google Maps SDK:', err))
+  }, [])
   const [selectedStop,  setSelectedStop]  = useState(null)     // current destination
   const [routePath,     setRoutePath]     = useState([])       // [[lat,lng],…]
   const [routeDetails,  setRouteDetails]  = useState(null)     // {distanceKm, durationMins}
@@ -258,30 +284,6 @@ export default function SmartClientMap() {
   const [onRouteClients, setOnRouteClients] = useState([])     // [{...entity, alertType, distToRoute}]
   const [showRouteAlerts, setShowRouteAlerts] = useState(true) // desktop toggle
   const [showAlertSheet,  setShowAlertSheet]  = useState(false) // mobile bottom drawer
-
-  // Load config dynamically on mount
-  useEffect(() => {
-    settingsAPI.getConfig()
-      .then(res => {
-        const threshold = res?.data?.gps_accuracy_threshold
-        if (threshold != null && !isNaN(threshold)) {
-          setGpsAccuracyThreshold(Number(threshold))
-        }
-        const key = res?.data?.google_maps_api_key
-        if (key) {
-          setGoogleMapsApiKey(key)
-          loadGoogleMaps(key)
-            .then(() => {
-              initializeHTMLMapMarker()
-              setMapLoaded(true)
-            })
-            .catch(err => console.error('Failed to load Google Maps SDK:', err))
-        }
-      })
-      .catch(err => {
-        console.warn('Failed to load map configuration:', err)
-      })
-  }, [])
 
   // ─── 2. GPS watchPosition ───────────────────────────────────────────────
   useEffect(() => {
@@ -850,25 +852,7 @@ export default function SmartClientMap() {
     activePolylinesRef.current.forEach(p => p.setMap(null))
     activePolylinesRef.current = []
 
-    if (accuracyCircleRef.current) {
-      accuracyCircleRef.current.setMap(null)
-      accuracyCircleRef.current = null
-    }
-
     const map = googleMapRef.current
-
-    if (gpsAccuracy && gpsStatus === 'active') {
-      accuracyCircleRef.current = new window.google.maps.Circle({
-        strokeColor: '#06b6d4',
-        strokeOpacity: 0.8,
-        strokeWeight: 1,
-        fillColor: '#06b6d4',
-        fillOpacity: 0.12,
-        map: map,
-        center: { lat: executivePos.lat, lng: executivePos.lng },
-        radius: gpsAccuracy,
-      })
-    }
 
     if (selectedStop?.has_exact_coords) {
       const destLatLng = new window.google.maps.LatLng(selectedStop.latitude, selectedStop.longitude)
@@ -941,7 +925,37 @@ export default function SmartClientMap() {
         activePolylinesRef.current.push(offRoutePolyline)
       }
     }
-  }, [selectedStop, onRouteClients, routePath, offRoute, handleViewRouteClient, executivePos, gpsAccuracy, gpsStatus, mapLoaded])
+  }, [selectedStop, onRouteClients, routePath, offRoute, handleViewRouteClient, mapLoaded])
+
+  // ─── 15. Dynamic location accuracy circle update ───────────────────────────
+  useEffect(() => {
+    if (!googleMapRef.current || !window.google) return
+    const map = googleMapRef.current
+
+    if (gpsAccuracy && gpsStatus === 'active' && executivePos?.lat != null && executivePos?.lng != null) {
+      const center = { lat: executivePos.lat, lng: executivePos.lng }
+      if (accuracyCircleRef.current) {
+        accuracyCircleRef.current.setCenter(center)
+        accuracyCircleRef.current.setRadius(gpsAccuracy)
+      } else {
+        accuracyCircleRef.current = new window.google.maps.Circle({
+          strokeColor: '#06b6d4',
+          strokeOpacity: 0.8,
+          strokeWeight: 1,
+          fillColor: '#06b6d4',
+          fillOpacity: 0.12,
+          map: map,
+          center: center,
+          radius: gpsAccuracy,
+        })
+      }
+    } else {
+      if (accuracyCircleRef.current) {
+        accuracyCircleRef.current.setMap(null)
+        accuracyCircleRef.current = null
+      }
+    }
+  }, [executivePos, gpsAccuracy, gpsStatus, mapLoaded])
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   const visibleAlerts = onRouteClients.filter(c => !dismissedAlerts.current.has(c.id))

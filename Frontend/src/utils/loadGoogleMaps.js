@@ -28,7 +28,7 @@ export function loadGoogleMaps(apiKey) {
 
       const script = document.createElement('script');
       // Request libraries parameter for geometry tools needed for distance calculations
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=geometry,places&loading=async&callback=${callbackName}`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=geometry&loading=async&callback=${callbackName}`;
       script.async = true;
       script.defer = true;
       script.onerror = (err) => {

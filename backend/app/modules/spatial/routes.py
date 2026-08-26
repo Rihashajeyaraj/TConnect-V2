@@ -1423,7 +1423,7 @@ async def push_live_location(
 
     if lat == 0 and lng == 0:
         return {"success": False, "skipped": True, "reason": "zero_coords"}
-    if accuracy > 100:
+    if accuracy > 300:
         return {"success": False, "skipped": True, "reason": "poor_accuracy", "accuracy": accuracy}
 
     now_iso = datetime.datetime.utcnow().isoformat()
