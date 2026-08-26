@@ -2009,25 +2009,28 @@ export default function ManagerSmartMap() {
               })()}
 
               {/* Client Destination */}
-              {destClient && (
-                <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 space-y-1.5">
-                  <div className="text-[10px] font-bold text-violet-400 uppercase tracking-wider">Client Visit</div>
-                  <div className="font-black text-slate-900 text-sm">{destClient.company_name || destClient.title}</div>
-                  {destClient.address && <div className="text-[11px] text-slate-500 font-semibold">{destClient.address}</div>}
-                  {destRouteMeta && (
-                    <div className="flex gap-3 mt-1.5 text-[11px] font-bold">
-                      <span className="text-violet-700">🕒 {destRouteMeta.etaMins} min</span>
-                      <span className="text-slate-500">📍 {destRouteMeta.distanceKm.toFixed(1)} km</span>
-                    </div>
-                  )}
-                  {clientContactInfo?.contact_person && (
-                    <div className="text-[11px] text-slate-600 font-semibold">👤 {clientContactInfo.contact_person}</div>
-                  )}
-                  {clientContactInfo?.phone && (
-                    <a href={`tel:${clientContactInfo.phone}`} className="text-[11px] text-blue-600 font-bold">📞 {clientContactInfo.phone}</a>
-                  )}
-                </div>
-              )}
+              {destClient && (() => {
+                const clientContactInfo = candidatesRef.current?.find(c => String(c.id) === String(destClient.id)) || destClient;
+                return (
+                  <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 space-y-1.5">
+                    <div className="text-[10px] font-bold text-violet-400 uppercase tracking-wider">Client Visit</div>
+                    <div className="font-black text-slate-900 text-sm">{destClient.company_name || destClient.title}</div>
+                    {destClient.address && <div className="text-[11px] text-slate-500 font-semibold">{destClient.address}</div>}
+                    {destRouteMeta && (
+                      <div className="flex gap-3 mt-1.5 text-[11px] font-bold">
+                        <span className="text-violet-700">🕒 {destRouteMeta.etaMins} min</span>
+                        <span className="text-slate-500">📍 {destRouteMeta.distanceKm.toFixed(1)} km</span>
+                      </div>
+                    )}
+                    {clientContactInfo?.contact_person && (
+                      <div className="text-[11px] text-slate-600 font-semibold">👤 {clientContactInfo.contact_person}</div>
+                    )}
+                    {clientContactInfo?.phone && (
+                      <a href={`tel:${clientContactInfo.phone}`} className="text-[11px] text-blue-600 font-bold">📞 {clientContactInfo.phone}</a>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* Breadcrumb count */}
               {trackBreadcrumbs.length > 0 && (

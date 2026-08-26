@@ -1,12 +1,22 @@
 from typing import List, Optional, Dict, Any
 import uuid
 import datetime
+import time
 from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
 from app.core.logger import logger
 
 _in_memory_employees: List[Dict[str, Any]] = []
+
+_EMPLOYEES_CACHE = None
+_EMPLOYEES_CACHE_TIMESTAMP = 0.0
+CACHE_TTL_SECONDS = 15.0  # 15 seconds TTL cache
+
+def _clear_employees_cache():
+    global _EMPLOYEES_CACHE, _EMPLOYEES_CACHE_TIMESTAMP
+    _EMPLOYEES_CACHE = None
+    _EMPLOYEES_CACHE_TIMESTAMP = 0.0
 
 
 class HRMSRepository:
@@ -85,6 +95,12 @@ class HRMSRepository:
 
     # ── Read all employees ────────────────────────────────────────────────────
     def get_all_employees(self) -> List[Dict[str, Any]]:
+        global _EMPLOYEES_CACHE, _EMPLOYEES_CACHE_TIMESTAMP
+        now = time.time()
+        if _EMPLOYEES_CACHE is not None and (now - _EMPLOYEES_CACHE_TIMESTAMP) < CACHE_TTL_SECONDS:
+            logger.info("Returning cached employees list")
+            return _EMPLOYEES_CACHE
+
         all_employees: List[Dict[str, Any]] = []
         seen_emails: set = set()
         seen_ids: set = set()
@@ -248,13 +264,18 @@ class HRMSRepository:
                         emp["reporting_manager_email"] = email_found
 
         if all_employees:
+            _EMPLOYEES_CACHE = all_employees
+            _EMPLOYEES_CACHE_TIMESTAMP = time.time()
             return all_employees
 
+        _EMPLOYEES_CACHE = _in_memory_employees
+        _EMPLOYEES_CACHE_TIMESTAMP = time.time()
         logger.warning("No employees found from any source -- returning in-memory fallback")
         return _in_memory_employees
 
     # ── Create employee (called directly via HRMS routes) ─────────────────────
     def create_employee(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        _clear_employees_cache()
         email = data.get("email", "").strip()
         temp_password = data.get("password") or f"TC@Emp{len(_in_memory_employees)+1001}"
         company_id = data.get("company_id", "TC-001")
@@ -359,6 +380,7 @@ class HRMSRepository:
 
     # ── Sync employee created via Admin User Management ───────────────────────
     def sync_employee_from_user(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        _clear_employees_cache()
         """
         Called by UserRepository AFTER creating a Supabase Auth user.
         Inserts the employee record into hrms.employees using:
@@ -432,6 +454,7 @@ class HRMSRepository:
         return emp_record
 
     def update_employee(self, emp_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        _clear_employees_cache()
         clean_updates = {k: v for k, v in updates.items() if v is not None}
         is_uuid = lambda x: x and "-" in str(x)
 
@@ -502,6 +525,7 @@ class HRMSRepository:
 
     # ── Delete employee ───────────────────────────────────────────────────────
     def delete_employee(self, emp_id: str) -> bool:
+        _clear_employees_cache()
         """Delete employee from hrms.employees, public.employees, Supabase Auth, and memory."""
         global _in_memory_employees
         _in_memory_employees = [

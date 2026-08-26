@@ -242,6 +242,7 @@ export default function SmartClientMap() {
   const [activeTab,     setActiveTab]     = useState('leads')
   const [selectedEntity, setSelectedEntity] = useState(null)
   const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+  const [searchExpanded, setSearchExpanded] = useState(false)
 
   useEffect(() => {
     const handleResize = () => setIsMobile(window.innerWidth < 768)
@@ -986,91 +987,126 @@ export default function SmartClientMap() {
       )}
 
       {/* ══ TOP SEARCH BAR ══ */}
-      <div className={`absolute left-2 right-2 sm:left-4 sm:right-4 md:left-6 md:right-auto md:w-[400px] z-[1000] ${
-        gpsStatus !== 'active' && gpsStatus !== 'loading' ? 'top-11' : 'top-2 sm:top-3'
-      }`}>
-        {/* Low accuracy banner */}
-        {gpsStatus === 'active' && gpsAccuracy && gpsAccuracyThreshold && gpsAccuracy > gpsAccuracyThreshold && (
-          <div className="hidden md:flex bg-rose-600/95 text-white text-[10px] font-black px-3 py-1.5 rounded-xl shadow-lg mb-1.5 items-center gap-1.5 animate-pulse">
-            <AlertTriangle size={11} className="flex-shrink-0" />
-            GPS accuracy low — move outdoors.
-          </div>
-        )}
-
-        <div className="bg-white/96 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-200/90 overflow-hidden">
-          {/* Main search row */}
-          <div className="flex items-center gap-2 px-2.5 py-2">
-            <div className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ${
-              gpsStatus === 'active' ? 'bg-cyan-50' : gpsStatus === 'loading' ? 'bg-slate-50' : 'bg-rose-50'
-            }`}>
-              {gpsStatus === 'loading'
-                ? <Loader2 size={13} className="text-slate-400 animate-spin" />
-                : gpsStatus === 'active'
-                ? <Radio size={13} className="text-cyan-500" />
-                : <AlertCircle size={13} className="text-rose-500" />}
+      {isMobile && !searchExpanded ? (
+        <div className="absolute top-2.5 left-2.5 z-[1000] flex gap-2">
+          {/* Collapsed Round Search Button */}
+          <button
+            onClick={() => setSearchExpanded(true)}
+            className="w-9 h-9 bg-white border border-slate-200 shadow-xl rounded-full flex items-center justify-center text-slate-600 active:scale-95 transition cursor-pointer"
+            title="Search Leads/Customers"
+          >
+            <Search size={16} />
+          </button>
+          
+          {/* Collapsed Round List Button */}
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="w-9 h-9 bg-blue-600 hover:bg-blue-700 text-white shadow-xl rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer"
+            title="Select Destination"
+          >
+            <List size={16} />
+          </button>
+        </div>
+      ) : (
+        <div className={`absolute left-2 right-2 sm:left-4 sm:right-4 md:left-6 md:right-auto md:w-[400px] z-[1000] ${
+          gpsStatus !== 'active' && gpsStatus !== 'loading' ? 'top-11' : 'top-2 sm:top-3'
+        }`}>
+          {/* Low accuracy banner */}
+          {gpsStatus === 'active' && gpsAccuracy && gpsAccuracyThreshold && gpsAccuracy > gpsAccuracyThreshold && (
+            <div className="hidden md:flex bg-rose-600/95 text-white text-[10px] font-black px-3 py-1.5 rounded-xl shadow-lg mb-1.5 items-center gap-1.5 animate-pulse">
+              <AlertTriangle size={11} className="flex-shrink-0" />
+              GPS accuracy low — move outdoors.
             </div>
-            <div className="relative flex-1">
-              <Search size={12} className="text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text" value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                onKeyDown={e => e.key === 'Escape' && setSearchQuery('')}
-                placeholder="Search lead or customer…"
-                className="w-full h-8 bg-slate-50 border border-slate-100 rounded-xl pl-8 pr-3 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:bg-white transition placeholder:text-slate-300"
-              />
-              {searchQuery && (
-                <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500">
-                  <X size={11} />
+          )}
+
+          <div className="bg-white/96 backdrop-blur-xl rounded-2xl shadow-2xl border border-slate-200/90 overflow-hidden">
+            {/* Main search row */}
+            <div className="flex items-center gap-2 px-2.5 py-2">
+              {isMobile && (
+                <button
+                  onClick={() => { setSearchExpanded(false); setSearchQuery('') }}
+                  className="p-1 hover:bg-slate-100 rounded-xl text-slate-500 shrink-0"
+                >
+                  <ArrowLeft size={16} />
+                </button>
+              )}
+
+              <div className={`w-7 h-7 rounded-xl flex items-center justify-center flex-shrink-0 ${
+                gpsStatus === 'active' ? 'bg-cyan-50' : gpsStatus === 'loading' ? 'bg-slate-50' : 'bg-rose-50'
+              }`}>
+                {gpsStatus === 'loading'
+                  ? <Loader2 size={13} className="text-slate-400 animate-spin" />
+                  : gpsStatus === 'active'
+                  ? <Radio size={13} className="text-cyan-500" />
+                  : <AlertCircle size={13} className="text-rose-500" />}
+              </div>
+              <div className="relative flex-1">
+                <Search size={12} className="text-slate-300 absolute left-3 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text" value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  onKeyDown={e => e.key === 'Escape' && setSearchQuery('')}
+                  placeholder="Search lead or customer…"
+                  className="w-full h-8 bg-slate-50 border border-slate-100 rounded-xl pl-8 pr-3 text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/30 focus:bg-white transition placeholder:text-slate-300"
+                />
+                {searchQuery && (
+                  <button onClick={() => setSearchQuery('')} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500">
+                    <X size={11} />
+                  </button>
+                )}
+              </div>
+              
+              {/* Only show list button here if not on mobile (on mobile it's in the collapsed buttons) */}
+              {!isMobile && (
+                <button
+                  onClick={() => setShowAddModal(true)}
+                  className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 transition flex-shrink-0 cursor-pointer"
+                >
+                  <List size={14} />
                 </button>
               )}
             </div>
-            <button
-              onClick={() => setShowAddModal(true)}
-              className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 transition flex-shrink-0 cursor-pointer"
-            >
-              <List size={14} />
-            </button>
-          </div>
 
-          {/* GPS accuracy sub-row */}
-          {gpsStatus === 'active' && gpsAccuracy && (
-            <div className="px-3 pb-1.5 flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold border-t border-slate-50">
-              <Compass size={9} />
-              <span>GPS {Math.round(gpsAccuracy)}m</span>
-              <span className={`ml-auto px-1.5 py-0.5 rounded text-[9px] font-black ${
-                gpsAccuracy <= gpsAccuracyThreshold ? 'text-emerald-600 bg-emerald-50' : 'text-rose-500 bg-rose-50'
-              }`}>
-                {gpsAccuracy <= gpsAccuracyThreshold ? 'Precise' : '⚠️ Poor'}
-              </span>
-              {navMode && <span className="ml-1 text-blue-500 font-black flex items-center gap-1"><Activity size={9} className="animate-pulse" />Nav</span>}
-            </div>
-          )}
+            {/* GPS accuracy sub-row */}
+            {gpsStatus === 'active' && gpsAccuracy && (
+              <div className="px-3 pb-1.5 flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold border-t border-slate-50">
+                <Compass size={9} />
+                <span>GPS {Math.round(gpsAccuracy)}m</span>
+                <span className={`ml-auto px-1.5 py-0.5 rounded text-[9px] font-black ${
+                  gpsAccuracy <= gpsAccuracyThreshold ? 'text-emerald-600 bg-emerald-50' : 'text-rose-500 bg-rose-50'
+                }`}>
+                  {gpsAccuracy <= gpsAccuracyThreshold ? 'Precise' : '⚠️ Poor'}
+                </span>
+                {navMode && <span className="ml-1 text-blue-500 font-black flex items-center gap-1"><Activity size={9} className="animate-pulse" />Nav</span>}
+              </div>
+            )}
 
-          {/* Suggestions */}
-          {searchSuggestions.length > 0 && searchQuery && (
-            <div className="border-t border-slate-100 max-h-52 overflow-y-auto divide-y divide-slate-50">
-              {searchSuggestions.map(item => (
-                <div key={item.id} onClick={() => handleSelectStop(item)}
-                  className="px-3 py-2.5 hover:bg-blue-50 cursor-pointer flex items-center justify-between gap-2">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5">
-                      <span className={`text-[8px] font-black border px-1 py-0.5 rounded uppercase flex-shrink-0 ${categoryColor(item.category)}`}>{item.category}</span>
-                      <h4 className="text-xs font-bold text-slate-900 truncate">{item.title}</h4>
+            {/* Suggestions */}
+            {searchSuggestions.length > 0 && searchQuery && (
+              <div className="border-t border-slate-100 max-h-52 overflow-y-auto divide-y divide-slate-50">
+                {searchSuggestions.map(item => (
+                  <div key={item.id} onClick={() => { handleSelectStop(item); if (isMobile) setSearchExpanded(false); }}
+                    className="px-3 py-2.5 hover:bg-blue-50 cursor-pointer flex items-center justify-between gap-2">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5">
+                        <span className={`text-[8px] font-black border px-1 py-0.5 rounded uppercase flex-shrink-0 ${categoryColor(item.category)}`}>{item.category}</span>
+                        <h4 className="text-xs font-bold text-slate-900 truncate">{item.title}</h4>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-0.5 truncate">{item.address}</p>
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-0.5 truncate">{item.address}</p>
+                    {item.has_exact_coords
+                      ? <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded flex-shrink-0">{item.distanceKm}km</span>
+                      : <span className="text-[9px] font-black text-rose-400 bg-rose-50 px-1.5 py-0.5 rounded flex-shrink-0">No loc</span>}
                   </div>
-                  {item.has_exact_coords
-                    ? <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded flex-shrink-0">{item.distanceKm}km</span>
-                    : <span className="text-[9px] font-black text-rose-400 bg-rose-50 px-1.5 py-0.5 rounded flex-shrink-0">No loc</span>}
-                </div>
-              ))}
-            </div>
-          )}
-          {searchQuery && !dataLoading && searchSuggestions.length === 0 && (
-            <p className="px-3 py-2 text-[11px] text-slate-400 font-semibold border-t border-slate-50">No results for "{searchQuery}"</p>
-          )}
+                ))}
+              </div>
+            )}
+            {searchQuery && !dataLoading && searchSuggestions.length === 0 && (
+              <p className="px-3 py-2 text-[11px] text-slate-400 font-semibold border-t border-slate-50">No results for "{searchQuery}"</p>
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* ══ DESKTOP: ROUTE PANEL (top-left below search) ══ */}
       {!isMobile && selectedStop && (

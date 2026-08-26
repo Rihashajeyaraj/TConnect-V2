@@ -334,27 +334,18 @@ export default function ManagerCustomers() {
   }
 
   return (
-    <div className="space-y-6 font-sans text-slate-900 bg-slate-50 min-h-screen pb-12">
+    <div className="space-y-6 font-sans text-slate-900 bg-slate-50 min-h-screen px-4 md:px-6 pt-6 pb-12">
       {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      <div className="bg-gradient-to-r from-teal-500/10 via-white to-amber-500/5 border-2 border-amber-500 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-2">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="bg-amber-600 text-white font-black text-[10px] uppercase px-2.5 py-0.5 rounded-full shadow-xs">
-              CUSTOMER MANAGEMENT
-            </span>
-            <span className="text-slate-500 text-xs font-black">Sales Manager Portal</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2.5 mt-1">
-            <Building2 className="w-7 h-7 text-[#b45309]" /> Customer Directory & Accounts
+          <h1 className="text-2xl font-black text-slate-900">
+            Customer Directory & Accounts
           </h1>
-          <p className="text-xs text-slate-500 font-semibold mt-1">
-            Overview and details of all customer accounts managed by Sales Executives under your direct team.
-          </p>
         </div>
 
         <button
           onClick={() => setShowAddModal(true)}
-          className="px-4 py-2.5 rounded-xl bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs shadow-md shadow-yellow-600/20 flex items-center gap-1.5 cursor-pointer transition"
+          className="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-md shadow-blue-500/20 flex items-center gap-1.5 cursor-pointer transition"
         >
           <Plus size={16} /> Onboard Customer Account
         </button>
@@ -362,36 +353,36 @@ export default function ManagerCustomers() {
 
       {/* ── SINGLE CUSTOMER CARD ────────────────────────────────────────────── */}
       <div className="max-w-md">
-        <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-md text-white flex flex-col gap-4 hover:scale-[1.01] transition duration-200">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-slate-800 flex flex-col gap-4 hover:scale-[1.01] transition duration-200">
           <div className="flex items-center gap-3.5">
-            <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20">
+            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-200">
               <Building2 className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-lg font-black tracking-wide text-slate-100">Customer</h2>
-              <p className="text-xs text-slate-400 font-bold">Manage team customer accounts</p>
+              <h2 className="text-lg font-black tracking-wide text-slate-900">Customer</h2>
+              <p className="text-xs text-slate-500 font-bold">Manage team customer accounts</p>
             </div>
           </div>
 
           {/* Quick Metrics grid */}
-          <div className="grid grid-cols-2 gap-3 border-t border-white/5 pt-4 text-xs font-bold text-slate-400">
+          <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-xs font-bold text-slate-600">
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Total Accounts</div>
-              <div className="text-base font-black text-amber-400">{totalCustomers} Clients</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Total Accounts</div>
+              <div className="text-base font-black text-blue-600">{totalCustomers} Clients</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Active Status</div>
-              <div className="text-base font-black text-emerald-400">{activeCount} Accounts</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Active Status</div>
+              <div className="text-base font-black text-emerald-600">{activeCount} Accounts</div>
             </div>
-            <div className="col-span-2 border-t border-white/5 pt-2 flex justify-between items-center text-[11px] font-black text-slate-300">
+            <div className="col-span-2 border-t border-slate-100 pt-2 flex justify-between items-center text-[11px] font-black text-slate-600">
               <span>Total Team Revenue</span>
-              <span className="text-teal-400 text-sm font-black">{formattedTotalRevenue}</span>
+              <span className="text-teal-600 text-sm font-black">{formattedTotalRevenue}</span>
             </div>
           </div>
 
           <button
             onClick={() => setPopupOpen(true)}
-            className="w-full mt-2 py-3 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+            className="w-full mt-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
           >
             <Eye size={14} /> Open Customer Ledger
           </button>
@@ -407,7 +398,7 @@ export default function ManagerCustomers() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
               <div>
                 <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <Building2 className="w-6 h-6 text-amber-600" /> Customer Accounts Ledger
+                  <Building2 className="w-6 h-6 text-blue-600" /> Customer Accounts Ledger
                 </h3>
                 <p className="text-xs text-slate-500 font-bold mt-0.5">
                   Filter by sales executive and date range to inspect team account conversions
@@ -449,7 +440,7 @@ export default function ManagerCustomers() {
                     onClick={() => setDateFilterTab(tab)}
                     className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
                       dateFilterTab === tab
-                        ? 'bg-amber-600 text-white shadow-xs'
+                        ? 'bg-blue-600 text-white shadow-xs'
                         : 'text-slate-600 hover:bg-slate-100'
                     }`}
                   >
@@ -486,7 +477,7 @@ export default function ManagerCustomers() {
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search customer, person, city..."
-                  className="w-full h-8 bg-white border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 font-semibold"
+                  className="w-full h-8 bg-white border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-blue-500 font-semibold"
                 />
               </div>
 

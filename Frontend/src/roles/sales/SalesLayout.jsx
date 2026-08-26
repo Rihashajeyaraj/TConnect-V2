@@ -1102,7 +1102,7 @@ export default function SalesLayout() {
           EXECUTIVE MY PROFILE SLIDE-OVER PANEL
       ══════════════════════════════════════════════════════════════════════ */}
       {myProfileOpen && (
-        <div className="fixed inset-0 z-50 flex">
+        <div className="fixed inset-0 z-[5000] flex">
           <div
             className="flex-1 bg-slate-900/60 backdrop-blur-xs"
             onClick={() => {
@@ -1414,7 +1414,7 @@ export default function SalesLayout() {
 
       {/* Preview Modal */}
       {previewDoc && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-[60]">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-[5010]">
           <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
@@ -1438,7 +1438,7 @@ export default function SalesLayout() {
 
       {/* Profile Changes Confirmation Modal */}
       {showProfileConfirm && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[5020] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4">
             <h3 className="text-lg font-black text-slate-900">Profile Changes</h3>
             <p className="text-sm text-slate-600 font-semibold">What would you like to do?</p>

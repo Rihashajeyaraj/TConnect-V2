@@ -547,7 +547,7 @@ export default function ManagerLayout() {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
 
       {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
-      <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
+      <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -561,25 +561,47 @@ export default function ManagerLayout() {
           </Link>
         </div>
 
+        {/* Center: Sleek Metallic Shimmer Indicator (Larger & Centered Absolutely) */}
+        <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
+          <div className="flex items-center gap-2.5 bg-slate-50/80 border border-slate-200/80 rounded-full px-4.5 py-1.5 shadow-xs pointer-events-auto">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span 
+              className="text-xs uppercase tracking-[0.25em] font-black"
+              style={{
+                background: 'linear-gradient(to right, #475569 20%, #2563eb 40%, #60a5fa 60%, #475569 80%)',
+                backgroundSize: '200% auto',
+                color: 'transparent',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                animation: 'tc-shimmer 3s linear infinite',
+                display: 'inline-block'
+              }}
+            >
+              Sales Manager
+            </span>
+            <style>{`
+              @keyframes tc-shimmer {
+                to {
+                  background-position: -200% center;
+                }
+              }
+            `}</style>
+          </div>
+        </div>
+
         {/* Top-Right Area */}
         <div className="flex items-center gap-1.5 sm:gap-3">
-
-          {/* MY PROFILE BUTTON (Responsive on all screen sizes) */}
-          <button
-            onClick={() => { setMyProfileOpen(true); setProfileOpen(false); setEditMode(false) }}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 sm:px-3.5 sm:py-2 rounded-xl bg-[#0c4160] hover:bg-[#082d43] text-white text-xs font-black shadow-md transition cursor-pointer"
-          >
-            <UserCircle size={15} />
-            <span className="hidden xs:inline sm:inline">My Profile</span>
-          </button>
 
           {/* Avatar + Dropdown */}
           <div className="relative">
             <button
               onClick={() => setProfileOpen(!profileOpen)}
-              className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-amber-50 transition cursor-pointer"
+              className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-blue-50 transition cursor-pointer"
             >
-              <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-amber-600 to-amber-700 flex items-center justify-center text-white font-black text-sm shadow-xs ring-2 ring-amber-500/20 shrink-0">
+              <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center text-white font-black text-sm shadow-xs ring-2 ring-blue-500/20 shrink-0">
                 {profilePhoto
                   ? <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
                   : displayInitials
@@ -589,7 +611,7 @@ export default function ManagerLayout() {
                 <span className="font-extrabold text-xs text-slate-800 leading-tight flex items-center gap-1">
                   {displayName} <ChevronDown size={13} className="text-slate-400" />
                 </span>
-                <span className="text-[10px] text-amber-800 font-extrabold leading-tight truncate max-w-[140px]">{managerRole}</span>
+                <span className="text-[10px] text-blue-700 font-extrabold leading-tight truncate max-w-[140px]">{managerRole}</span>
               </div>
             </button>
 
@@ -606,8 +628,8 @@ export default function ManagerLayout() {
 
                 <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 p-2 overflow-hidden">
                   {/* Header */}
-                  <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-amber-600 to-amber-700 rounded-xl text-white mb-2 shadow-sm">
-                    <div className="w-11 h-11 rounded-full overflow-hidden bg-white text-amber-800 flex items-center justify-center text-base font-black shadow-md border-2 border-white/40 shrink-0">
+                  <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-blue-900 to-blue-700 rounded-xl text-white mb-2 shadow-sm">
+                    <div className="w-11 h-11 rounded-full overflow-hidden bg-white text-blue-700 flex items-center justify-center text-base font-black shadow-md border-2 border-white/40 shrink-0">
                       {profilePhoto
                         ? <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
                         : displayInitials
@@ -628,16 +650,16 @@ export default function ManagerLayout() {
                         setMyProfileOpen(true)
                         setEditMode(false)
                       }}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-[#fffdf5] hover:text-amber-900 text-slate-700 font-bold text-xs transition cursor-pointer"
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50/40 hover:text-blue-900 text-slate-700 font-bold text-xs transition cursor-pointer"
                     >
                       <UserCircle size={15} className="text-[#0c4160]" /> My Profile
                     </button>
                     <Link
                       to="/manager/settings"
                       onClick={() => setProfileOpen(false)}
-                      className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-[#fffdf5] hover:text-amber-900 text-slate-700 font-bold text-xs transition"
+                      className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50/40 hover:text-blue-900 text-slate-700 font-bold text-xs transition"
                     >
-                      <Settings size={15} className="text-[#b45309]" /> Account & Security Settings
+                      <Settings size={15} className="text-blue-600" /> Account & Security Settings
                     </Link>
                   </div>
 
@@ -781,7 +803,7 @@ export default function ManagerLayout() {
             {/* PANEL HEADER */}
             <div className="bg-white border-b border-slate-200 px-5 py-4 flex items-center justify-between sticky top-0 z-10">
               <div className="flex items-center gap-2">
-                <UserCircle size={20} className="text-amber-600" />
+                <UserCircle size={20} className="text-blue-600" />
                 <h2 className="text-base font-black text-slate-900">My Profile</h2>
               </div>
               <div className="flex items-center gap-2">
@@ -804,7 +826,7 @@ export default function ManagerLayout() {
                       type="button"
                       disabled={saving}
                       onClick={() => setShowProfileConfirm(true)} 
-                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-600 text-white cursor-pointer hover:bg-amber-700 transition flex items-center gap-1"
+                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-blue-600 text-white cursor-pointer hover:bg-blue-700 transition flex items-center gap-1"
                       title="Click or press Enter to choose save action"
                     >
                       <Save size={13} /> {saving ? 'Saving...' : 'Done'}
@@ -814,7 +836,7 @@ export default function ManagerLayout() {
                   <button 
                     type="button"
                     onClick={() => setEditMode(true)} 
-                    className="px-3 py-1.5 rounded-xl text-xs font-black bg-[#ca8a04] hover:bg-[#a16207] text-white cursor-pointer transition flex items-center gap-1 shadow-md shadow-yellow-600/20"
+                    className="px-3 py-1.5 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-700 text-white cursor-pointer transition flex items-center gap-1 shadow-md shadow-blue-500/20"
                   >
                     <Pencil size={13} /> Edit Profile
                   </button>
@@ -834,7 +856,7 @@ export default function ManagerLayout() {
 
               {/* Avatar with Camera Upload Overlay */}
               <div className="relative shrink-0 group">
-                <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white font-black text-3xl shadow-xl ring-4 ring-amber-400/20">
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center text-white font-black text-3xl shadow-xl ring-4 ring-blue-500/20">
                   {profilePhoto
                     ? <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
                     : displayInitials
@@ -884,7 +906,7 @@ export default function ManagerLayout() {
                 <div className="pt-0.5">
                   <label
                     htmlFor="manager_profile_photo"
-                    className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-lg cursor-pointer transition"
+                    className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-300 px-2.5 py-1 rounded-lg cursor-pointer transition"
                   >
                     <Camera size={11} /> {profilePhoto ? 'Change Photo' : 'Upload Profile Photo'}
                   </label>
@@ -967,7 +989,7 @@ export default function ManagerLayout() {
               {/* ── MY DOCUMENTS ─────────────────────────────────────────── */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                  <FileUp size={16} className="text-amber-600" />
+                  <FileUp size={16} className="text-blue-600" />
                   <h3 className="font-black text-slate-900 text-sm">My Documents</h3>
                 </div>
 
@@ -991,7 +1013,7 @@ export default function ManagerLayout() {
                             )
                           } else if (doc.status === 'uploaded') {
                             return (
-                              <p className="text-[11px] font-semibold mt-0.5 text-amber-600 font-bold">
+                              <p className="text-[11px] font-semibold mt-0.5 text-blue-600 font-bold">
                                 ⏳ Pending Approval — {doc.fileName}
                               </p>
                             )
@@ -1023,7 +1045,7 @@ export default function ManagerLayout() {
                           }}
                         />
                         {(doc.status === 'uploaded' || doc.status === 'approved') && (
-                          <button onClick={() => setPreviewDoc(doc)} className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 cursor-pointer flex items-center gap-1 hover:bg-amber-100 transition">
+                          <button onClick={() => setPreviewDoc(doc)} className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-300 cursor-pointer flex items-center gap-1 hover:bg-blue-100 transition">
                             <Eye size={12} /> View
                           </button>
                         )}
@@ -1057,9 +1079,9 @@ export default function ManagerLayout() {
                 />
                 <div
                   onClick={() => document.getElementById('profile_doc_custom')?.click()}
-                  className="border-2 border-dashed border-amber-300 hover:border-amber-500 bg-amber-50/30 hover:bg-amber-50/60 rounded-2xl p-6 text-center transition cursor-pointer group"
+                  className="border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/30 hover:bg-blue-50/60 rounded-2xl p-6 text-center transition cursor-pointer group"
                 >
-                  <FileUp size={28} className="text-amber-600 group-hover:scale-110 transition mx-auto mb-2" />
+                  <FileUp size={28} className="text-blue-600 group-hover:scale-110 transition mx-auto mb-2" />
                   <p className="text-sm font-black text-slate-900">Click to upload additional document</p>
                   <p className="text-[11px] font-bold text-slate-500 mt-1">PDF, JPG, PNG, Word, Excel supported</p>
                 </div>
@@ -1107,7 +1129,7 @@ export default function ManagerLayout() {
                   setShowProfileConfirm(false);
                 }}
                 className={`w-full py-2.5 px-4 rounded-xl text-sm font-extrabold text-white transition shadow-sm ${
-                  saving ? 'bg-teal-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 cursor-pointer'
+                  saving ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
                 }`}
               >
                 {saving ? 'Saving...' : 'Continue Editing'}
@@ -1150,7 +1172,7 @@ export default function ManagerLayout() {
 // If defined inside the component function, React creates a new component
 // type on every render, causing inputs to unmount/remount and lose focus.
 
-const Section = ({ icon: Icon, title, color = 'amber', children }) => (
+const Section = ({ icon: Icon, title, color = 'blue', children }) => (
   <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
     <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
       <Icon size={16} className={`text-${color}-600`} />
@@ -1172,7 +1194,7 @@ const Field = ({ label, value, editMode, onChange, readOnly = false }) => {
           onChange={(e) => onChange(e.target.value)}
           disabled={readOnly}
           readOnly={readOnly}
-          className={`text-sm font-semibold text-slate-900 border-b border-amber-400 focus:outline-none bg-transparent w-full ${
+          className={`text-sm font-semibold text-slate-900 border-b border-blue-400 focus:outline-none bg-transparent w-full ${
             readOnly ? 'opacity-60 cursor-not-allowed border-dashed border-slate-300' : ''
           }`}
         />
