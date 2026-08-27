@@ -330,7 +330,7 @@ export default function LocationPickerModal({
         {/* ── Header ── */}
         <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-100 flex-shrink-0 bg-slate-50/50">
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-sm text-white">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-blue-600 to-mgr-secondary-700 flex items-center justify-center shadow-sm text-white">
               <MapPin size={16} />
             </div>
             <div>

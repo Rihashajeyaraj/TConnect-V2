@@ -51,7 +51,7 @@ function ForgotPasswordForm() {
           Your request has been sent to your <span className="font-semibold text-violet-300">Admin</span>.
           They will contact you directly with a temporary password.
         </p>
-        <div className="max-w-sm rounded-xl border border-amber-400/30 bg-amber-500/10 px-4 py-3 text-sm text-amber-300">
+        <div className="max-w-sm rounded-xl border border-mgr-primary-400/30 bg-mgr-primary-500/10 px-4 py-3 text-sm text-mgr-primary-300">
           ⚠️ Do <strong>not</strong> share your temporary password with anyone.
         </div>
         <Link

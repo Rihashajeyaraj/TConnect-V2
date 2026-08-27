@@ -27,7 +27,11 @@ ALTER TABLE hrms.employees ADD COLUMN IF NOT EXISTS account_number TEXT;
 ALTER TABLE hrms.employees ADD COLUMN IF NOT EXISTS ifsc TEXT;
 ALTER TABLE hrms.employees ADD COLUMN IF NOT EXISTS branch TEXT;
 ALTER TABLE hrms.employees ADD COLUMN IF NOT EXISTS profile_photo TEXT;
-
+ALTER TABLE hrms.employees ADD COLUMN IF NOT EXISTS documents TEXT;
+ALTER TABLE hrms.employees ADD COLUMN IF NOT EXISTS city TEXT;
+ALTER TABLE hrms.employees ADD COLUMN IF NOT EXISTS state TEXT;
+ALTER TABLE hrms.employees ADD COLUMN IF NOT EXISTS country TEXT;
+ALTER TABLE hrms.employees ADD COLUMN IF NOT EXISTS postal_code TEXT;
 -- 2. Drop and Recreate the public.employees view so it inherits all new columns
 DROP VIEW IF EXISTS public.employees;
 CREATE OR REPLACE VIEW public.employees AS 

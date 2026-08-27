@@ -312,8 +312,19 @@ class CRMRepository:
         )
 
     def update_lead(self, lead_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
+        # 1. Fetch existing lead record first to merge notes/remarks
+        target_lead = None
+        try:
+            existing_leads = self.get_all_leads()
+            for l in existing_leads:
+                if str(l.get("lead_id")) == str(lead_id) or str(l.get("id")) == str(lead_id):
+                    target_lead = l
+                    break
+        except Exception:
+            pass
+
         # Helper to sanitize and map input payload fields to actual db columns
-        def sanitize_lead_payload(data: Dict[str, Any]) -> Dict[str, Any]:
+        def sanitize_lead_payload(data: Dict[str, Any], existing: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
             p = dict(data)
 
             # Map fields
@@ -359,8 +370,9 @@ class CRMRepository:
             priority = p.pop("priority", None)
             product = p.pop("product", None) or p.pop("product_name", None)
 
-            # Update notes/remarks if status, category, priority, or product changes
-            notes_str = str(p.get("notes") or p.get("remarks") or "")
+            # Use existing notes as fallback baseline to prevent notes erasure
+            existing_notes = str(existing.get("notes") or existing.get("remarks") or "") if existing else ""
+            notes_str = str(p.get("notes") or p.get("remarks") or existing_notes)
             parts = [part.strip() for part in notes_str.split("|")] if notes_str else []
 
             new_parts = []
@@ -411,16 +423,10 @@ class CRMRepository:
             }
             return {k: v for k, v in p.items() if k in allowed_keys}
 
-        sanitized = sanitize_lead_payload(updates)
+        sanitized = sanitize_lead_payload(updates, target_lead)
 
         # Upsert client contact profile
         try:
-            existing_leads = self.get_all_leads()
-            target_lead = None
-            for l in existing_leads:
-                if str(l.get("lead_id")) == str(lead_id) or str(l.get("id")) == str(lead_id):
-                    target_lead = l
-                    break
             if target_lead:
                 merged = {**target_lead, **sanitized}
                 self.upsert_contact_record({

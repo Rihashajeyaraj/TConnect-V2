@@ -67,7 +67,7 @@ export default function ManagerSettings() {
               placeholder="••••••••"
               value={oldPassword}
               onChange={(e) => setOldPassword(e.target.value)}
-              className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-teal-500 font-medium"
+              className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-teal-500 font-medium"
             />
           </div>
 
@@ -79,7 +79,7 @@ export default function ManagerSettings() {
                 placeholder="••••••••"
                 value={newPassword}
                 onChange={(e) => setNewPassword(e.target.value)}
-                className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-teal-500 font-medium"
+                className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-teal-500 font-medium"
               />
             </div>
             <div>
@@ -89,7 +89,7 @@ export default function ManagerSettings() {
                 placeholder="••••••••"
                 value={confirmPassword}
                 onChange={(e) => setConfirmPassword(e.target.value)}
-                className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-teal-500 font-medium"
+                className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-teal-500 font-medium"
               />
             </div>
           </div>
@@ -114,7 +114,7 @@ export default function ManagerSettings() {
 
         <button
           onClick={handleLogout}
-          className="px-4 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer"
+          className="mgr-card px-4 py-2 bg-rose-50 text-rose-600 hover:bg-rose-100 border border-rose-200 rounded-xl text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer"
         >
           <LogOut size={15} /> Log Out
         </button>

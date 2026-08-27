@@ -447,13 +447,13 @@ export default function ManagerHrms() {
               onDragOver={(e) => handleTabDragOver(e, index)}
               onDrop={(e) => handleTabDrop(e, index)}
               onDragEnd={handleTabDragEnd}
-              className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
+              className={`mgr-card flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
                 draggedTabKey === index ? 'opacity-40' : ''
               }`}
             >
               <button
                 onClick={() => setActiveSection(key)}
-                className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-pointer whitespace-nowrap ${activeSection === key ? 'bg-[#ca8a04] text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-amber-50 hover:text-amber-900'
+                className={`mgr-card px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-pointer whitespace-nowrap ${activeSection === key ? 'bg-mgr-primary-700 text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-mgr-primary-50 hover:text-mgr-primary-900'
                   }`}
               >
                 <Icon size={14} />
@@ -464,7 +464,7 @@ export default function ManagerHrms() {
           <button
             type="button"
             onClick={resetHrmsTabs}
-            className="ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
+            className="mgr-card ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
           >
             Reset Order
           </button>
@@ -488,7 +488,7 @@ export default function ManagerHrms() {
             {/* Leave Type Breakdown */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
               {LEAVE_BALANCE.map((lb) => (
-                <div key={lb.type} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+                <div key={lb.type} className="p-3 rounded-xl bg-slate-50 border-slate-200 text-xs space-y-1">
                   <span className="text-[10px] font-black text-slate-500 uppercase block">{lb.type}</span>
                   <div className="flex items-end justify-between">
                     <span className="text-xl font-black text-slate-900">{lb.remaining}</span>
@@ -514,7 +514,7 @@ export default function ManagerHrms() {
               <button
                 type="button"
                 onClick={() => window.location.href = "/manager/attendance"}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                className="mgr-card px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
               >
                 📹 Mark Attendance Now
               </button>
@@ -528,7 +528,7 @@ export default function ManagerHrms() {
                     key={mode}
                     type="button"
                     onClick={() => setReportFilterMode(mode)}
-                    className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${reportFilterMode === mode ? "bg-[#0b3c5d] text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
+                    className={`mgr-card px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${reportFilterMode === mode ? "bg-[#0b3c5d] text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
                       }`}
                   >
                     {mode === "CUSTOM" ? "CUSTOM DATE" : mode}
@@ -544,7 +544,7 @@ export default function ManagerHrms() {
                     type="date"
                     value={customDateFilter}
                     onChange={(e) => setCustomDateFilter(e.target.value)}
-                    className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
+                    className="mgr-card text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
                   />
                 </div>
               )}
@@ -578,7 +578,7 @@ export default function ManagerHrms() {
 
                 if (filteredLogs.length === 0) {
                   return (
-                    <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-500 space-y-2">
+                    <div className="p-8 text-center bg-slate-50 border-slate-200 rounded-2xl text-xs font-semibold text-slate-500 space-y-2">
                       <p className="font-extrabold text-slate-700 text-sm">No attendance history logged for this filter mode ({reportFilterMode}).</p>
                       <p>Switch filter to <b>THIS MONTH</b> or mark a new check-in with camera!</p>
                     </div>
@@ -653,7 +653,7 @@ export default function ManagerHrms() {
               <CheckCircle2 size={40} className="text-emerald-600 mx-auto" />
               <h2 className="text-xl font-black text-emerald-900">Leave Request Submitted!</h2>
               <p className="text-emerald-700 font-semibold text-sm">Your leave has been forwarded to CEO for approval.</p>
-              <button onClick={() => setLeaveSubmitted(false)} className="mt-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer">
+              <button onClick={() => setLeaveSubmitted(false)} className="mgr-card mt-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer">
                 Apply Another Leave
               </button>
             </div>
@@ -732,7 +732,7 @@ export default function ManagerHrms() {
                 />
               </div>
 
-              <button type="submit" className="w-full py-3 rounded-xl bg-[#b45309] hover:bg-amber-700 text-white font-black text-sm flex items-center justify-center gap-2 transition cursor-pointer">
+              <button type="submit" className="mgr-card w-full py-3 rounded-xl bg-[#b45309] hover:bg-mgr-primary-700 text-white font-black text-sm flex items-center justify-center gap-2 transition cursor-pointer">
                 <Send size={16} /> Submit Leave Request to CEO
               </button>
             </form>
@@ -754,7 +754,7 @@ export default function ManagerHrms() {
                     </div>
                     <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border whitespace-nowrap ${r.status === 'Approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
                         r.status === 'Rejected' ? 'bg-rose-100 text-rose-800 border-rose-300' :
-                          'bg-amber-100 text-amber-800 border-amber-300'
+                          'bg-mgr-primary-100 text-mgr-primary-800 border-mgr-primary-300'
                       }`}>{r.status}</span>
                   </div>
                 ))}
@@ -797,15 +797,15 @@ export default function ManagerHrms() {
                   />
                   {doc.status === 'uploaded' ? (
                     <div className="flex items-center gap-1.5">
-                      <button onClick={() => setPreviewDoc(doc)} className="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-amber-50 text-[#b45309] border border-amber-300 cursor-pointer flex items-center gap-1">
+                      <button onClick={() => setPreviewDoc(doc)} className="mgr-card text-xs font-extrabold px-3 py-1.5 rounded-xl bg-mgr-primary-50 text-[#b45309] border border-mgr-primary-300 cursor-pointer flex items-center gap-1">
                         <Eye size={13} /> View
                       </button>
-                      <button onClick={() => document.getElementById(`file_m_${doc.id}`)?.click()} className="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 cursor-pointer flex items-center gap-1">
+                      <button onClick={() => document.getElementById(`file_m_${doc.id}`)?.click()} className="mgr-card text-xs font-extrabold px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 cursor-pointer flex items-center gap-1">
                         <Upload size={13} /> Re-upload
                       </button>
                     </div>
                   ) : (
-                    <button onClick={() => document.getElementById(`file_m_${doc.id}`)?.click()} className="text-xs font-extrabold px-4 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1">
+                    <button onClick={() => document.getElementById(`file_m_${doc.id}`)?.click()} className="mgr-card text-xs font-extrabold px-4 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1">
                       <Upload size={13} /> Upload
                     </button>
                   )}
@@ -836,7 +836,7 @@ export default function ManagerHrms() {
               }}
             />
             <div onClick={() => document.getElementById('file_manager_custom')?.click()}
-              className="border-2 border-dashed border-[#b45309]/40 hover:border-[#b45309] bg-amber-50/30 hover:bg-amber-50/60 rounded-2xl p-8 text-center transition cursor-pointer group"
+              className="mgr-card border-2 border-dashed border-[#b45309]/40 hover:border-[#b45309] bg-mgr-primary-50/30 hover:bg-mgr-primary-50/60 rounded-2xl p-8 text-center transition cursor-pointer group"
             >
               <FileUp size={32} className="text-[#b45309] group-hover:scale-110 transition mx-auto mb-2" />
               <p className="text-sm font-black text-slate-900">Click to upload any document</p>
@@ -898,18 +898,18 @@ export default function ManagerHrms() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {eodReviewed.map((r, idx) => (
-                      <tr key={r.id || idx} className="hover:bg-amber-50/20">
+                      <tr key={r.id || idx} className="hover:bg-mgr-primary-50/20">
                         <td className="px-4 py-3 font-mono font-bold text-slate-700">{r.date}</td>
                         <td className="px-4 py-3">
-                          <span className="bg-amber-50 text-amber-950 border border-amber-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-black">
+                          <span className="bg-mgr-primary-50 text-mgr-primary-950 border border-mgr-primary-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-black">
                             [{r.employee_code || 'EMP000012'}]
                           </span>
                         </td>
                         <td className="px-4 py-3 font-extrabold text-slate-900">{r.executive}</td>
                         <td className="px-4 py-3 font-black text-slate-800">{r.callsMade}</td>
                         <td className="px-4 py-3 font-black text-emerald-700">{r.visitsCompleted}</td>
-                        <td className="px-4 py-3 font-black text-indigo-700">{r.leadsGenerated}</td>
-                        <td className="px-4 py-3 font-black text-amber-900">{r.dealsClosed}</td>
+                        <td className="px-4 py-3 font-black text-mgr-secondary-700">{r.leadsGenerated}</td>
+                        <td className="px-4 py-3 font-black text-mgr-primary-900">{r.dealsClosed}</td>
                         <td className="px-4 py-3 italic text-slate-500 max-w-[200px]">
                           <p className="line-clamp-1">"{r.managerComment || 'Acknowledged'}"</p>
                         </td>
@@ -935,7 +935,7 @@ export default function ManagerHrms() {
                   <p className="text-xs text-slate-400 font-mono mt-0.5">{h.date}</p>
                 </div>
                 <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${h.type === 'National' ? 'bg-blue-50 text-blue-800 border-blue-200' :
-                    h.type === 'Festival' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                    h.type === 'Festival' ? 'bg-mgr-primary-50 text-mgr-primary-800 border-mgr-primary-200' :
                       'bg-emerald-50 text-emerald-800 border-emerald-200'
                   }`}>{h.type}</span>
               </div>

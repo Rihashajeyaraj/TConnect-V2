@@ -40,10 +40,10 @@ export function ToastProvider({ children }) {
               text = 'text-rose-900'
               break
             case 'warning':
-              bg = 'bg-amber-50/95 backdrop-blur-md'
-              border = 'border-amber-200'
-              icon = <AlertTriangle className="size-5 text-amber-600 shrink-0" />
-              text = 'text-amber-900'
+              bg = 'bg-mgr-primary-50/95 backdrop-blur-md'
+              border = 'border-mgr-primary-200'
+              icon = <AlertTriangle className="size-5 text-mgr-primary-600 shrink-0" />
+              text = 'text-mgr-primary-900'
               break
             default: // info
               bg = 'bg-blue-50/95 backdrop-blur-md'

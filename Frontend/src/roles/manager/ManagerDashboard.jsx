@@ -581,7 +581,8 @@ export default function ManagerDashboard() {
       title: 'View My Executives',
       desc: `${assignedExecutives.length} assigned members`,
       icon: Users,
-      color: 'bg-blue-50 text-blue-600 border-blue-200 hover:bg-blue-100',
+      color: 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 hover:border-blue-400',
+      iconBg: 'bg-blue-200 text-blue-700',
       action: () => {
         setActiveSection('executives')
         setTimeout(() => {
@@ -594,14 +595,16 @@ export default function ManagerDashboard() {
       title: 'Attendance',
       desc: 'Live biometric & field check-ins',
       icon: Clock,
-      color: 'bg-emerald-50 text-emerald-600 border-emerald-200 hover:bg-emerald-100',
+      color: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-400',
+      iconBg: 'bg-emerald-200 text-emerald-700',
       action: () => navigate('/manager/attendance'),
     },
     {
       title: 'Add Sales Target',
       desc: 'Set revenue quota in Supabase',
       icon: Target,
-      color: 'bg-amber-50 text-amber-700 border-amber-200 hover:bg-amber-100',
+      color: 'bg-mgr-primary-50 text-mgr-primary-700 border-mgr-primary-200 hover:bg-mgr-primary-100 hover:border-mgr-primary-400',
+      iconBg: 'bg-mgr-primary-200 text-mgr-primary-700',
       action: () => {
         setActiveSection('targets')
         setShowAddTargetModal(true)
@@ -611,7 +614,8 @@ export default function ManagerDashboard() {
       title: 'View Reports',
       desc: 'Analytics & EOD reports',
       icon: FileText,
-      color: 'bg-indigo-50 text-indigo-600 border-indigo-200 hover:bg-indigo-100',
+      color: 'bg-mgr-secondary-50 text-mgr-secondary-700 border-mgr-secondary-200 hover:bg-mgr-secondary-100 hover:border-mgr-secondary-400',
+      iconBg: 'bg-mgr-secondary-200 text-mgr-secondary-700',
       action: () => navigate('/manager/reports'),
     },
   ]
@@ -652,10 +656,10 @@ export default function ManagerDashboard() {
           <button
             type="button"
             onClick={handleRefresh}
-            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition cursor-pointer"
+            className="mgr-card p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition cursor-pointer"
             title="Refresh Live Data"
           >
-            <RefreshCw size={14} className={refreshing ? 'animate-spin text-amber-600' : ''} />
+            <RefreshCw size={14} className={refreshing ? 'animate-spin text-mgr-primary-600' : ''} />
           </button>
         </div>
       </div>
@@ -665,20 +669,20 @@ export default function ManagerDashboard() {
         {/* Card 1: Total Revenue — Clickable Drill-down */}
         <div
           onClick={() => { setShowRevenueBreakdownModal(true); fetchRevenueBreakdown() }}
-          className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 hover:border-amber-400 hover:shadow-md transition cursor-pointer group"
+          className="mgr-card bg-emerald-50 border border-emerald-200 p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 hover:bg-emerald-100 hover:border-emerald-400 hover:shadow-sm transition cursor-pointer group"
           title="Click to view My Team Revenue breakdown"
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider group-hover:text-amber-700 transition">Team Revenue (total revenue generated)</span>
-            <div className="w-6 h-6 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold group-hover:bg-amber-100 group-hover:text-amber-700 transition">
+            <span className="text-[11px] font-black text-emerald-700 uppercase tracking-wider">Team Revenue (total revenue generated)</span>
+            <div className="w-6 h-6 rounded-lg bg-emerald-200 text-emerald-700 flex items-center justify-center font-bold">
               <IndianRupee size={13} />
             </div>
           </div>
           <div>
-            <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+            <div className="text-base sm:text-lg font-black text-emerald-900 tracking-tight">
               ₹{totalTeamRevenue.toLocaleString('en-IN')}
             </div>
-            <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5 mt-0.5 group-hover:text-amber-700 transition">
+            <span className="text-[10px] font-bold text-emerald-600 flex items-center gap-0.5 mt-0.5">
               <TrendingUp size={11} /> Click for Team Drill-down 📊
             </span>
           </div>
@@ -687,19 +691,20 @@ export default function ManagerDashboard() {
         {/* Card 2: Total Leads */}
         <div
           onClick={() => setActiveSection(activeSection === 'leads' ? null : 'leads')}
-          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${activeSection === 'leads'
-              ? 'bg-violet-50/70 border-violet-500 ring-2 ring-violet-500/20'
-              : 'bg-white border-slate-200 hover:border-violet-400'
-            }`}
+          className={`mgr-card p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${
+            activeSection === 'leads'
+              ? 'bg-violet-100 border-violet-500 ring-2 ring-violet-400/30'
+              : 'bg-violet-50 border-violet-200 hover:bg-violet-100 hover:border-violet-400 hover:shadow-sm'
+          }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Total Leads</span>
-            <div className="w-6 h-6 rounded-lg bg-violet-50 text-violet-600 flex items-center justify-center font-bold animate-pulse">
+            <span className="text-[11px] font-black text-violet-700 uppercase tracking-wider">Total Leads</span>
+            <div className="w-6 h-6 rounded-lg bg-violet-200 text-violet-700 flex items-center justify-center font-bold">
               <Layers size={13} />
             </div>
           </div>
           <div>
-            <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+            <div className="text-base sm:text-lg font-black text-violet-900 tracking-tight">
               {deduplicatedTeamLeads.length}
             </div>
             <span className="text-[10px] font-bold text-violet-600 mt-0.5 block">
@@ -709,15 +714,15 @@ export default function ManagerDashboard() {
         </div>
 
         {/* Card 3: Total Customers */}
-        <div className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 hover:border-teal-400 transition">
+        <div className="mgr-card bg-teal-50 border border-teal-200 p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 hover:bg-teal-100 hover:border-teal-400 hover:shadow-sm transition">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Customers</span>
-            <div className="w-6 h-6 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center font-bold">
+            <span className="text-[11px] font-black text-teal-700 uppercase tracking-wider">Customers</span>
+            <div className="w-6 h-6 rounded-lg bg-teal-200 text-teal-700 flex items-center justify-center font-bold">
               <Building2 size={13} />
             </div>
           </div>
           <div>
-            <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+            <div className="text-base sm:text-lg font-black text-teal-900 tracking-tight">
               {filteredTeamCustomers.length}
             </div>
             <span className="text-[10px] font-bold text-teal-600 mt-0.5 block">
@@ -729,19 +734,20 @@ export default function ManagerDashboard() {
         {/* Card 4: Visits */}
         <div
           onClick={() => setActiveSection(activeSection === 'visits' ? null : 'visits')}
-          className={`p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${activeSection === 'visits'
-              ? 'bg-rose-50/70 border-rose-500 ring-2 ring-rose-500/20'
-              : 'bg-white border-slate-200 hover:border-rose-400'
-            }`}
+          className={`mgr-card p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 transition cursor-pointer border ${
+            activeSection === 'visits'
+              ? 'bg-rose-100 border-rose-500 ring-2 ring-rose-400/30'
+              : 'bg-rose-50 border-rose-200 hover:bg-rose-100 hover:border-rose-400 hover:shadow-sm'
+          }`}
         >
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Field Visits</span>
-            <div className="w-6 h-6 rounded-lg bg-rose-50 text-rose-600 flex items-center justify-center font-bold">
+            <span className="text-[11px] font-black text-rose-700 uppercase tracking-wider">Field Visits</span>
+            <div className="w-6 h-6 rounded-lg bg-rose-200 text-rose-700 flex items-center justify-center font-bold">
               <MapPin size={13} />
             </div>
           </div>
           <div>
-            <div className="text-base sm:text-lg font-black text-slate-900 tracking-tight">
+            <div className="text-base sm:text-lg font-black text-rose-900 tracking-tight">
               {filteredTeamVisits.length}
             </div>
             <span className="text-[10px] font-bold text-rose-600 mt-0.5 block">
@@ -757,7 +763,7 @@ export default function ManagerDashboard() {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-black text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
-            <Activity size={13} className="text-amber-600" /> Quick Actions
+            <Activity size={13} className="text-mgr-primary-600" /> Quick Actions
           </h2>
         </div>
 
@@ -769,14 +775,14 @@ export default function ManagerDashboard() {
                 key={qa.title}
                 type="button"
                 onClick={qa.action}
-                className={`p-3 rounded-2xl border transition text-left flex flex-col justify-between gap-2 cursor-pointer shadow-2xs ${qa.color}`}
+                className={`mgr-card p-3 rounded-2xl border transition text-left flex flex-col justify-between gap-2 cursor-pointer shadow-2xs hover:shadow-sm hover:scale-[1.02] ${qa.color}`}
               >
-                <div className="w-8 h-8 rounded-xl bg-white shadow-2xs flex items-center justify-center shrink-0">
+                <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 ${qa.iconBg}`}>
                   <Icon size={16} />
                 </div>
                 <div>
-                  <div className="text-xs font-black leading-tight text-slate-900">{qa.title}</div>
-                  <div className="text-[10px] font-semibold text-slate-500 mt-0.5 truncate">{qa.desc}</div>
+                  <div className="text-xs font-black leading-tight">{qa.title}</div>
+                  <div className="text-[10px] font-semibold opacity-70 mt-0.5 truncate">{qa.desc}</div>
                 </div>
               </button>
             )
@@ -789,7 +795,7 @@ export default function ManagerDashboard() {
         <div className="bg-white border border-slate-200 p-4 sm:p-5 rounded-2xl shadow-2xs space-y-3 animate-in fade-in duration-200">
           <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
             <div className="flex items-center gap-2">
-              <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-2xs">
+              <div className="w-8 h-8 rounded-xl bg-mgr-primary-500 text-white flex items-center justify-center font-bold shadow-2xs">
                 <Target size={16} />
               </div>
               <div>
@@ -809,14 +815,14 @@ export default function ManagerDashboard() {
               <button
                 type="button"
                 onClick={() => setShowAddTargetModal(true)}
-                className="px-3 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
+                className="mgr-card px-3 py-1.5 rounded-xl bg-mgr-primary-600 hover:bg-mgr-primary-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-2xs transition cursor-pointer"
               >
                 <Plus size={13} /> Add Sales Target
               </button>
               <button
                 type="button"
                 onClick={() => setActiveSection(null)}
-                className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
+                className="mgr-card p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
                 title="Close section"
               >
                 <X size={15} />
@@ -840,9 +846,9 @@ export default function ManagerDashboard() {
               </span>
             </div>
 
-            <div className="p-3 bg-amber-50/60 rounded-xl border border-amber-200">
-              <span className="text-[10px] font-black text-amber-800 uppercase tracking-wider block">Remaining Quota</span>
-              <span className="text-sm sm:text-base font-black text-amber-950 mt-0.5 block">
+            <div className="p-3 bg-mgr-primary-50/60 rounded-xl border border-mgr-primary-200">
+              <span className="text-[10px] font-black text-mgr-primary-800 uppercase tracking-wider block">Remaining Quota</span>
+              <span className="text-sm sm:text-base font-black text-mgr-primary-950 mt-0.5 block">
                 ₹{teamTargetsSummary.remaining.toLocaleString('en-IN')}
               </span>
             </div>
@@ -859,7 +865,7 @@ export default function ManagerDashboard() {
           <div className="space-y-1 pt-1">
             <div className="w-full bg-slate-100 rounded-full h-2.5 overflow-hidden border border-slate-200">
               <div
-                className="bg-gradient-to-r from-amber-500 to-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                className="bg-gradient-to-r from-mgr-primary-500 to-emerald-500 h-2.5 rounded-full transition-all duration-500"
                 style={{ width: `${Math.min(100, teamTargetsSummary.achievementPct)}%` }}
               />
             </div>
@@ -895,7 +901,7 @@ export default function ManagerDashboard() {
                     key={t.name}
                     type="button"
                     onClick={() => setLeadTab(t.name)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${active ? t.color : 'text-slate-500 hover:text-slate-800'
+                    className={`mgr-card px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${active ? t.color : 'text-slate-500 hover:text-slate-800'
                       }`}
                   >
                     {t.name} ({
@@ -910,7 +916,7 @@ export default function ManagerDashboard() {
             <button
               type="button"
               onClick={() => setActiveSection(null)}
-              className="absolute right-0 p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
+              className="mgr-card absolute right-0 p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
               title="Close section"
             >
               <X size={15} />
@@ -1005,7 +1011,7 @@ export default function ManagerDashboard() {
               <button
                 type="button"
                 onClick={() => setVisitTodayOnly(!visitTodayOnly)}
-                className={`h-9 px-4 rounded-xl text-xs font-black transition cursor-pointer border flex items-center gap-1.5 ${visitTodayOnly
+                className={`mgr-card h-9 px-4 rounded-xl text-xs font-black transition cursor-pointer border flex items-center gap-1.5 ${visitTodayOnly
                     ? 'bg-rose-600 text-white border-rose-600 shadow-2xs'
                     : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
                   }`}
@@ -1019,7 +1025,7 @@ export default function ManagerDashboard() {
             <button
               type="button"
               onClick={() => setActiveSection(null)}
-              className="absolute right-0 top-0 p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
+              className="mgr-card absolute right-0 top-0 p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
               title="Close section"
             >
               <X size={15} />
@@ -1104,13 +1110,13 @@ export default function ManagerDashboard() {
                   placeholder="Search executive, code, dept..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
+                  className="w-full h-9 pl-9 pr-3 text-xs bg-slate-50 border-slate-200 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500"
                 />
               </div>
               <button
                 type="button"
                 onClick={() => setActiveSection(null)}
-                className="p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
+                className="mgr-card p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer border border-transparent"
                 title="Close section"
               >
                 <X size={15} />
@@ -1205,7 +1211,7 @@ export default function ManagerDashboard() {
                         <button
                           type="button"
                           onClick={() => setSelectedExecutiveDetail(exec)}
-                          className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-extrabold text-[11px] inline-flex items-center gap-1 border border-slate-200 transition cursor-pointer"
+                          className="mgr-card px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 font-extrabold text-[11px] inline-flex items-center gap-1 border border-slate-200 transition cursor-pointer"
                         >
                           <Eye size={12} /> View Details
                         </button>
@@ -1225,7 +1231,7 @@ export default function ManagerDashboard() {
           <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in-95 duration-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-xs">
+                <div className="w-8 h-8 rounded-xl bg-mgr-primary-500 text-white flex items-center justify-center font-bold shadow-xs">
                   <Target size={16} />
                 </div>
                 <div>
@@ -1236,7 +1242,7 @@ export default function ManagerDashboard() {
               <button
                 type="button"
                 onClick={() => setShowAddTargetModal(false)}
-                className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+                className="mgr-card p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -1251,7 +1257,7 @@ export default function ManagerDashboard() {
                 <select
                   value={targetForm.executive_id}
                   onChange={(e) => setTargetForm({ ...targetForm, executive_id: e.target.value })}
-                  className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                  className="w-full h-10 px-3 bg-slate-50 border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-mgr-primary-500"
                   required
                 >
                   <option value="">-- Choose Assigned Executive --</option>
@@ -1274,7 +1280,7 @@ export default function ManagerDashboard() {
                   step="5000"
                   value={targetForm.target_amount}
                   onChange={(e) => setTargetForm({ ...targetForm, target_amount: e.target.value })}
-                  className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                  className="w-full h-10 px-3 bg-slate-50 border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-mgr-primary-500"
                   required
                 />
               </div>
@@ -1286,7 +1292,7 @@ export default function ManagerDashboard() {
                   <select
                     value={targetForm.period}
                     onChange={(e) => setTargetForm({ ...targetForm, period: e.target.value })}
-                    className="w-full h-9 px-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                    className="w-full h-9 px-2 bg-slate-50 border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-mgr-primary-500"
                   >
                     <option value="Monthly">Monthly</option>
                     <option value="Quarterly">Quarterly</option>
@@ -1300,7 +1306,7 @@ export default function ManagerDashboard() {
                     type="date"
                     value={targetForm.start_date}
                     onChange={(e) => setTargetForm({ ...targetForm, start_date: e.target.value })}
-                    className="w-full h-9 px-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                    className="w-full h-9 px-2 bg-slate-50 border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-mgr-primary-500"
                   />
                 </div>
 
@@ -1310,7 +1316,7 @@ export default function ManagerDashboard() {
                     type="date"
                     value={targetForm.end_date}
                     onChange={(e) => setTargetForm({ ...targetForm, end_date: e.target.value })}
-                    className="w-full h-9 px-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-amber-500"
+                    className="w-full h-9 px-2 bg-slate-50 border-slate-200 rounded-xl text-xs font-bold text-slate-900 focus:outline-none focus:border-mgr-primary-500"
                   />
                 </div>
               </div>
@@ -1323,7 +1329,7 @@ export default function ManagerDashboard() {
                   placeholder="e.g. Focus on enterprise CRM conversion and GPS fleet onboarding..."
                   value={targetForm.notes}
                   onChange={(e) => setTargetForm({ ...targetForm, notes: e.target.value })}
-                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-amber-500 resize-none"
+                  className="w-full p-2.5 bg-slate-50 border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-mgr-primary-500 resize-none"
                 />
               </div>
 
@@ -1331,13 +1337,13 @@ export default function ManagerDashboard() {
                 <button
                   type="button"
                   onClick={() => setShowAddTargetModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs transition cursor-pointer"
+                  className="mgr-card px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
+                  className="mgr-card px-4 py-2 rounded-xl bg-mgr-primary-600 hover:bg-mgr-primary-700 text-white font-extrabold text-xs shadow-xs flex items-center gap-1.5 transition cursor-pointer"
                 >
                   <Target size={14} /> Save Target in Supabase
                 </button>
@@ -1361,7 +1367,7 @@ export default function ManagerDashboard() {
               <button
                 type="button"
                 onClick={() => setSelectedExecutiveDetail(null)}
-                className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+                className="mgr-card p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -1410,7 +1416,7 @@ export default function ManagerDashboard() {
               <button
                 type="button"
                 onClick={() => setSelectedExecutiveDetail(null)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs shadow-xs hover:bg-slate-800 transition cursor-pointer"
+                className="mgr-card px-4 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs shadow-xs hover:bg-slate-800 transition cursor-pointer"
               >
                 Close Audit
               </button>
@@ -1440,7 +1446,7 @@ export default function ManagerDashboard() {
               <button
                 type="button"
                 onClick={() => setShowRevenueBreakdownModal(false)}
-                className="p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition cursor-pointer shrink-0"
+                className="mgr-card p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-400 hover:text-rose-600 transition cursor-pointer shrink-0"
               >
                 <X size={18} />
               </button>
@@ -1454,7 +1460,7 @@ export default function ManagerDashboard() {
                     key={m}
                     type="button"
                     onClick={() => { setModalDateMode(m); if (m !== 'Custom') setModalCustomStart(''); if (m !== 'Custom') setModalCustomEnd('') }}
-                    className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer border ${
+                    className={`mgr-card px-3 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer border ${
                       modalDateMode === m
                         ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
                         : 'bg-white text-slate-600 border-slate-200 hover:border-emerald-400 hover:text-emerald-700'
@@ -1472,7 +1478,7 @@ export default function ManagerDashboard() {
                       type="date"
                       value={modalCustomStart}
                       onChange={(e) => setModalCustomStart(e.target.value)}
-                      className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition cursor-pointer"
+                      className="mgr-card px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition cursor-pointer"
                     />
                   </div>
                   <div className="flex items-center gap-1.5">
@@ -1481,14 +1487,14 @@ export default function ManagerDashboard() {
                       type="date"
                       value={modalCustomEnd}
                       onChange={(e) => setModalCustomEnd(e.target.value)}
-                      className="px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition cursor-pointer"
+                      className="mgr-card px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-emerald-400 focus:border-emerald-400 transition cursor-pointer"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={fetchRevenueBreakdown}
                     disabled={!modalCustomStart || !modalCustomEnd}
-                    className="px-3 py-1.5 rounded-xl text-[11px] font-black bg-slate-900 text-white border border-slate-900 hover:bg-slate-800 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="mgr-card px-3 py-1.5 rounded-xl text-[11px] font-black bg-slate-900 text-white border border-slate-900 hover:bg-slate-800 transition cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed"
                   >
                     Apply
                   </button>
@@ -1496,7 +1502,7 @@ export default function ManagerDashboard() {
               )}
               {revenueBreakdownData?.period?.start_date && (
                 <p className="text-[11px] text-slate-400 font-semibold flex items-center gap-1">
-                  <Calendar size={11} className="text-amber-500" />
+                  <Calendar size={11} className="text-mgr-primary-500" />
                   Showing: <strong className="text-slate-600 ml-0.5">{revenueBreakdownData.period.start_date}</strong>
                   <span className="text-slate-300">→</span>
                   <strong className="text-slate-600">{revenueBreakdownData.period.end_date}</strong>
@@ -1519,10 +1525,10 @@ export default function ManagerDashboard() {
                     <p className="text-2xl font-black text-emerald-950 mt-1">₹{(revenueBreakdownData?.total_revenue || 0).toLocaleString('en-IN')}</p>
                     <span className="text-[11px] text-emerald-700 block mt-0.5">Sum of all assigned executive revenues</span>
                   </div>
-                  <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50 to-purple-50 border border-indigo-200">
-                    <span className="text-[10px] font-black text-indigo-900 uppercase tracking-wider block">Total Executive Incentive (5%)</span>
-                    <p className="text-2xl font-black text-indigo-950 mt-1">₹{(revenueBreakdownData?.total_incentive || 0).toLocaleString('en-IN')}</p>
-                    <span className="text-[11px] text-indigo-700 block mt-0.5">Standard 5% commission on generated sales</span>
+                  <div className="p-4 rounded-2xl bg-gradient-to-br from-mgr-secondary-50 to-purple-50 border border-mgr-secondary-200">
+                    <span className="text-[10px] font-black text-mgr-secondary-900 uppercase tracking-wider block">Total Executive Incentive (5%)</span>
+                    <p className="text-2xl font-black text-mgr-secondary-950 mt-1">₹{(revenueBreakdownData?.total_incentive || 0).toLocaleString('en-IN')}</p>
+                    <span className="text-[11px] text-mgr-secondary-700 block mt-0.5">Standard 5% commission on generated sales</span>
                   </div>
                 </div>
 
@@ -1581,7 +1587,7 @@ export default function ManagerDashboard() {
               <button
                 type="button"
                 onClick={() => setShowRevenueBreakdownModal(false)}
-                className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition cursor-pointer"
+                className="mgr-card px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs transition cursor-pointer"
               >
                 Close Revenue View
               </button>

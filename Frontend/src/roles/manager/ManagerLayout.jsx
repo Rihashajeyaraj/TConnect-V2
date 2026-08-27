@@ -551,7 +551,7 @@ export default function ManagerLayout() {
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
+            className="mgr-card lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
             aria-label="Toggle Navigation Sidebar"
           >
             {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -599,7 +599,7 @@ export default function ManagerLayout() {
           <div className="relative">
             <button
               onClick={() => setProfileOpen(!profileOpen)}
-              className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-blue-50 transition cursor-pointer"
+              className="mgr-card flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-blue-50 transition cursor-pointer"
             >
               <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center text-white font-black text-sm shadow-xs ring-2 ring-blue-500/20 shrink-0">
                 {profilePhoto
@@ -650,7 +650,7 @@ export default function ManagerLayout() {
                         setMyProfileOpen(true)
                         setEditMode(false)
                       }}
-                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50/40 hover:text-blue-900 text-slate-700 font-bold text-xs transition cursor-pointer"
+                      className="mgr-card w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50/40 hover:text-blue-900 text-slate-700 font-bold text-xs transition cursor-pointer"
                     >
                       <UserCircle size={15} className="text-[#0c4160]" /> My Profile
                     </button>
@@ -673,7 +673,7 @@ export default function ManagerLayout() {
                       setProfileOpen(false)
                       handleLogout()
                     }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-xs transition cursor-pointer"
+                    className="mgr-card w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-xs transition cursor-pointer"
                   >
                     <LogOut size={16} /> Log Out
                   </button>
@@ -732,14 +732,14 @@ export default function ManagerLayout() {
                   <button
                     type="button"
                     onClick={saveCustomization}
-                    className="w-full py-2 px-3 bg-[#0b3c5d] hover:bg-[#072438] text-white rounded-xl text-xs font-black transition cursor-pointer"
+                    className="mgr-card w-full py-2 px-3 bg-[#0b3c5d] hover:bg-[#072438] text-white rounded-xl text-xs font-black transition cursor-pointer"
                   >
                     Save Order
                   </button>
                   <button
                     type="button"
                     onClick={resetCustomization}
-                    className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black transition cursor-pointer"
+                    className="mgr-card w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black transition cursor-pointer"
                   >
                     Reset Default
                   </button>
@@ -748,7 +748,7 @@ export default function ManagerLayout() {
                 <button
                   type="button"
                   onClick={() => setIsCustomizing(true)}
-                  className="w-full py-2 px-3 border border-dashed border-slate-200 hover:border-[#f5ab27] text-slate-500 hover:text-[#0b3c5d] rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                  className="mgr-card w-full py-2 px-3 border border-dashed border-slate-200 hover:border-[#f5ab27] text-slate-500 hover:text-[#0b3c5d] rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <span>⚙️ Customize Sidebar</span>
                 </button>
@@ -818,7 +818,7 @@ export default function ManagerLayout() {
                         }
                         setEditMode(false)
                       }} 
-                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+                      className="mgr-card px-3 py-1.5 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -826,7 +826,7 @@ export default function ManagerLayout() {
                       type="button"
                       disabled={saving}
                       onClick={() => setShowProfileConfirm(true)} 
-                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-blue-600 text-white cursor-pointer hover:bg-blue-700 transition flex items-center gap-1"
+                      className="mgr-card px-3 py-1.5 rounded-xl text-xs font-extrabold bg-blue-600 text-white cursor-pointer hover:bg-blue-700 transition flex items-center gap-1"
                       title="Click or press Enter to choose save action"
                     >
                       <Save size={13} /> {saving ? 'Saving...' : 'Done'}
@@ -836,7 +836,7 @@ export default function ManagerLayout() {
                   <button 
                     type="button"
                     onClick={() => setEditMode(true)} 
-                    className="px-3 py-1.5 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-700 text-white cursor-pointer transition flex items-center gap-1 shadow-md shadow-blue-500/20"
+                    className="mgr-card px-3 py-1.5 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-700 text-white cursor-pointer transition flex items-center gap-1 shadow-md shadow-blue-500/20"
                   >
                     <Pencil size={13} /> Edit Profile
                   </button>
@@ -844,7 +844,7 @@ export default function ManagerLayout() {
                 <button 
                   type="button"
                   onClick={closeProfilePanel} 
-                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className="mgr-card p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   <X size={20} />
                 </button>
@@ -866,7 +866,7 @@ export default function ManagerLayout() {
                 {/* Camera Overlay Button */}
                 <label
                   htmlFor="manager_profile_photo"
-                  className="absolute inset-0 rounded-full flex items-center justify-center bg-slate-900/50 opacity-0 group-hover:opacity-100 transition cursor-pointer"
+                  className="mgr-card absolute inset-0 rounded-full flex items-center justify-center bg-slate-900/50 opacity-0 group-hover:opacity-100 transition cursor-pointer"
                   title="Upload profile photo"
                 >
                   <div className="flex flex-col items-center gap-0.5">
@@ -886,7 +886,7 @@ export default function ManagerLayout() {
                 {profilePhoto && (
                   <button
                     onClick={removePhoto}
-                    className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-md cursor-pointer transition"
+                    className="mgr-card absolute -top-1 -right-1 w-6 h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-md cursor-pointer transition"
                     title="Remove photo"
                   >
                     <X size={12} />
@@ -906,7 +906,7 @@ export default function ManagerLayout() {
                 <div className="pt-0.5">
                   <label
                     htmlFor="manager_profile_photo"
-                    className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-300 px-2.5 py-1 rounded-lg cursor-pointer transition"
+                    className="mgr-card inline-flex items-center gap-1.5 text-[10px] font-extrabold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-300 px-2.5 py-1 rounded-lg cursor-pointer transition"
                   >
                     <Camera size={11} /> {profilePhoto ? 'Change Photo' : 'Upload Profile Photo'}
                   </label>
@@ -1045,14 +1045,14 @@ export default function ManagerLayout() {
                           }}
                         />
                         {(doc.status === 'uploaded' || doc.status === 'approved') && (
-                          <button onClick={() => setPreviewDoc(doc)} className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-300 cursor-pointer flex items-center gap-1 hover:bg-blue-100 transition">
+                          <button onClick={() => setPreviewDoc(doc)} className="mgr-card text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-300 cursor-pointer flex items-center gap-1 hover:bg-blue-100 transition">
                             <Eye size={12} /> View
                           </button>
                         )}
                         {doc.status !== 'approved' && (
                           <button
                             onClick={() => document.getElementById(`profile_doc_${doc.id}`)?.click()}
-                            className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1 hover:bg-slate-700 transition"
+                            className="mgr-card text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1 hover:bg-slate-700 transition"
                           >
                             <Upload size={12} /> {doc.status === 'uploaded' ? 'Re-upload' : 'Upload'}
                           </button>
@@ -1079,7 +1079,7 @@ export default function ManagerLayout() {
                 />
                 <div
                   onClick={() => document.getElementById('profile_doc_custom')?.click()}
-                  className="border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/30 hover:bg-blue-50/60 rounded-2xl p-6 text-center transition cursor-pointer group"
+                  className="mgr-card border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/30 hover:bg-blue-50/60 rounded-2xl p-6 text-center transition cursor-pointer group"
                 >
                   <FileUp size={28} className="text-blue-600 group-hover:scale-110 transition mx-auto mb-2" />
                   <p className="text-sm font-black text-slate-900">Click to upload additional document</p>
@@ -1101,7 +1101,7 @@ export default function ManagerLayout() {
                 <h3 className="font-black text-slate-900">{previewDoc.name}</h3>
                 <p className="text-xs text-slate-400">{previewDoc.fileName}</p>
               </div>
-              <button onClick={() => setPreviewDoc(null)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer"><X size={20} /></button>
+              <button onClick={() => setPreviewDoc(null)} className="mgr-card p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer"><X size={20} /></button>
             </div>
             {previewDoc.fileUrl?.startsWith('data:image') ? (
               <img src={previewDoc.fileUrl} alt={previewDoc.name} className="w-full max-h-96 object-contain rounded-xl border border-slate-200" />
@@ -1128,7 +1128,7 @@ export default function ManagerLayout() {
                   await saveProfile(true);
                   setShowProfileConfirm(false);
                 }}
-                className={`w-full py-2.5 px-4 rounded-xl text-sm font-extrabold text-white transition shadow-sm ${
+                className={`mgr-card w-full py-2.5 px-4 rounded-xl text-sm font-extrabold text-white transition shadow-sm ${
                   saving ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
                 }`}
               >
@@ -1141,7 +1141,7 @@ export default function ManagerLayout() {
                   await saveProfile(false);
                   setShowProfileConfirm(false);
                 }}
-                className={`w-full py-2.5 px-4 rounded-xl text-sm font-extrabold text-white transition shadow-sm ${
+                className={`mgr-card w-full py-2.5 px-4 rounded-xl text-sm font-extrabold text-white transition shadow-sm ${
                   saving ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
                 }`}
               >
@@ -1151,7 +1151,7 @@ export default function ManagerLayout() {
                 type="button"
                 disabled={saving}
                 onClick={() => setShowProfileConfirm(false)}
-                className="w-full py-2.5 px-4 rounded-xl text-sm font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+                className="mgr-card w-full py-2.5 px-4 rounded-xl text-sm font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
               >
                 Cancel
               </button>

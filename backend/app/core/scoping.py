@@ -13,7 +13,7 @@ def normalize_user_role(role_str: str) -> str:
         return "ceo"
     if "admin" in r:
         return "admin"
-    if "manager" in r:
+    if any(k in r for k in ["manager", "team lead", "tl", "lead"]):
         return "sales_manager"
     return "sales_executive"
 
@@ -60,32 +60,45 @@ def get_allowed_user_identifiers(user_payload: Dict[str, Any] = None) -> Optiona
             repo = UserRepository()
             all_users = repo.get_all_users()
 
-            for u in all_users:
-                r_id = str(u.get("reporting_manager_id") or u.get("reporting_manager") or "").strip()
-                r_email = str(u.get("reporting_manager_email") or "").lower().strip()
-
-                is_assigned = (
-                    (user_id and r_id == user_id)
-                    or (user_emp_code and r_id == user_emp_code)
-                    or (user_email and r_email == user_email)
-                )
-
-                if is_assigned:
+            def collect_subordinates(manager_ids: Set[str], manager_emails: Set[str], manager_codes: Set[str]) -> bool:
+                found_new = False
+                for u in all_users:
                     exec_email = str(u.get("email") or "").lower().strip()
                     exec_code = str(u.get("employee_code") or u.get("employee_id") or "").strip()
                     exec_id = str(u.get("id") or u.get("auth_user_id") or u.get("user_id") or "").strip()
-                    exec_name = str(u.get("name") or u.get("full_name") or "").lower().strip()
 
-                    if exec_email:
-                        allowed_emails.add(exec_email)
-                    if exec_code:
-                        allowed_codes.add(exec_code)
-                    if exec_id:
-                        allowed_ids.add(exec_id)
-                    if exec_name:
-                        allowed_names.add(exec_name)
+                    # Skip if already in the allowed sets
+                    if (exec_id and exec_id in manager_ids) or (exec_email and exec_email in manager_emails) or (exec_code and exec_code in manager_codes):
+                        continue
+
+                    r_id = str(u.get("reporting_manager_id") or u.get("reporting_manager") or "").strip()
+                    r_email = str(u.get("reporting_manager_email") or "").lower().strip()
+
+                    is_assigned = (
+                        (r_id and r_id in manager_ids)
+                        or (r_email and r_email in manager_emails)
+                        or (r_id and r_id in manager_codes)
+                    )
+
+                    if is_assigned:
+                        exec_name = str(u.get("name") or u.get("full_name") or "").lower().strip()
+                        if exec_email:
+                            manager_emails.add(exec_email)
+                        if exec_code:
+                            manager_codes.add(exec_code)
+                        if exec_id:
+                            manager_ids.add(exec_id)
+                        if exec_name:
+                            allowed_names.add(exec_name)
+                        found_new = True
+                return found_new
+
+            # Keep collecting down the hierarchy tree until no more subordinates are found
+            while collect_subordinates(allowed_ids, allowed_emails, allowed_codes):
+                pass
+
         except Exception as e:
-            logger.warning(f"Error resolving manager assigned team: {e}")
+            logger.warning(f"Error resolving manager assigned team recursively: {e}")
 
     return {
         "emails": allowed_emails,

@@ -22,14 +22,14 @@ const DEFAULT_FOLLOWUPS = []
 
 const STATUS_COLORS = {
   Completed: 'bg-emerald-100 text-emerald-800 border-emerald-300',
-  Pending: 'bg-amber-100 text-amber-800 border-amber-300',
+  Pending: 'bg-mgr-primary-100 text-mgr-primary-800 border-mgr-primary-300',
   Overdue: 'bg-rose-100 text-rose-800 border-rose-300',
   Rescheduled: 'bg-sky-100 text-sky-800 border-sky-300',
 }
 
 const PRIORITY_COLORS = {
   High: 'text-rose-700',
-  Medium: 'text-amber-700',
+  Medium: 'text-mgr-primary-700',
   Low: 'text-emerald-700',
 }
 
@@ -108,7 +108,7 @@ export default function ManagerFollowups() {
           <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button
               onClick={() => setViewMode('cards')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
+              className={`mgr-card px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
                 viewMode === 'cards' ? 'bg-white text-teal-700 shadow-2xs border border-slate-200' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
@@ -116,7 +116,7 @@ export default function ManagerFollowups() {
             </button>
             <button
               onClick={() => setViewMode('table')}
-              className={`px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
+              className={`mgr-card px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
                 viewMode === 'table' ? 'bg-white text-teal-700 shadow-2xs border border-slate-200' : 'text-slate-500 hover:text-slate-800'
               }`}
             >
@@ -130,7 +130,7 @@ export default function ManagerFollowups() {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <div className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-xs space-y-1">
           <span className="text-[10px] font-black uppercase text-slate-500">Pending Follow-ups</span>
-          <h2 className="text-2xl font-black text-amber-600">{totalPending}</h2>
+          <h2 className="text-2xl font-black text-mgr-primary-600">{totalPending}</h2>
         </div>
         <div className="bg-white border border-slate-200 p-3.5 rounded-2xl shadow-xs space-y-1">
           <span className="text-[10px] font-black uppercase text-emerald-700">Completed Today</span>
@@ -155,16 +155,16 @@ export default function ManagerFollowups() {
             placeholder="Search customer, executive, employee code, notes..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs font-semibold text-slate-900 focus:outline-none focus:border-teal-500"
+            className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl pl-9 pr-4 text-xs font-semibold text-slate-900 focus:outline-none focus:border-teal-500"
           />
         </div>
 
-        <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold">
+        <div className="flex items-center gap-1.5 bg-slate-50 border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold">
           <span className="text-slate-500">Status:</span>
           <select
             value={statusFilter}
             onChange={(e) => setStatusFilter(e.target.value)}
-            className="bg-transparent text-slate-800 font-bold focus:outline-none cursor-pointer"
+            className="mgr-card bg-transparent text-slate-800 font-bold focus:outline-none cursor-pointer"
           >
             <option value="All">All Statuses</option>
             <option value="Pending">Pending</option>
@@ -258,7 +258,7 @@ export default function ManagerFollowups() {
                   </tr>
                 ) : (
                   filteredFollowups.map((item, idx) => (
-                    <tr key={item.id} className="hover:bg-teal-50/30 transition cursor-pointer" onClick={() => setSelectedItem(item)}>
+                    <tr key={item.id} className="mgr-card hover:bg-teal-50/30 transition cursor-pointer" onClick={() => setSelectedItem(item)}>
                       <td className="px-3.5 py-3 font-mono text-slate-500">{idx + 1}</td>
                       <td className="px-3.5 py-3 font-extrabold text-slate-900">{item.customer}</td>
                       <td className="px-3.5 py-3 text-slate-600">{item.contactPerson}</td>
@@ -281,7 +281,7 @@ export default function ManagerFollowups() {
                       <td className="px-3.5 py-3 text-right">
                         <button
                           onClick={(e) => { e.stopPropagation(); setSelectedItem(item) }}
-                          className="px-2.5 py-1 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition flex items-center gap-1 ml-auto"
+                          className="mgr-card px-2.5 py-1 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition flex items-center gap-1 ml-auto"
                         >
                           <Eye size={11} /> View
                         </button>
@@ -314,7 +314,7 @@ export default function ManagerFollowups() {
             </div>
 
             <div className="grid grid-cols-2 gap-2 text-xs">
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-0.5">
+              <div className="p-2.5 rounded-xl bg-slate-50 border-slate-200 space-y-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">Follow-up Type</span>
                 <span className="font-extrabold text-slate-900">{selectedItem.type}</span>
               </div>
@@ -322,23 +322,23 @@ export default function ManagerFollowups() {
                 <span className="text-[10px] font-bold text-teal-600 uppercase block">Scheduled Time</span>
                 <span className="font-extrabold text-teal-900">{selectedItem.scheduledTime}</span>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-0.5">
+              <div className="p-2.5 rounded-xl bg-slate-50 border-slate-200 space-y-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">Priority</span>
                 <span className={`font-extrabold ${PRIORITY_COLORS[selectedItem.priority] || 'text-slate-700'}`}>{selectedItem.priority}</span>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 space-y-0.5">
+              <div className="p-2.5 rounded-xl bg-slate-50 border-slate-200 space-y-0.5">
                 <span className="text-[10px] font-bold text-slate-400 uppercase block">Status</span>
                 <span className={`font-extrabold text-xs ${STATUS_COLORS[selectedItem.status] || 'text-slate-700'}`}>{selectedItem.status}</span>
               </div>
             </div>
 
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 text-xs space-y-1">
+            <div className="p-3 rounded-2xl bg-slate-50 border-slate-200 text-xs space-y-1">
               <span className="text-[10px] font-extrabold text-slate-400 uppercase block">Follow-up Notes & Instructions</span>
               <p className="text-slate-800 font-medium">{selectedItem.notes}</p>
             </div>
 
             <div className="flex justify-end">
-              <button onClick={() => setSelectedItem(null)} className="px-4 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs cursor-pointer">Close</button>
+              <button onClick={() => setSelectedItem(null)} className="mgr-card px-4 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs cursor-pointer">Close</button>
             </div>
           </div>
         </div>

@@ -547,42 +547,44 @@ export default function ManagerExpenses() {
       </div>
 
       {/* ── SINGLE EXPENSE CARD ──────────────────────────────────────────────── */}
-      <div className="max-w-md">
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-slate-800 flex flex-col gap-4 hover:scale-[1.01] transition duration-200">
-          <div className="flex items-center gap-3.5">
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-200">
-              <Receipt className="w-6 h-6" />
+      <div className="max-w-sm">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm text-slate-800 flex flex-col gap-4">
+          {/* Header */}
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-teal-50 text-teal-600 rounded-xl">
+              <Receipt className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-black tracking-wide text-slate-900">Expense</h2>
-              <p className="text-xs text-slate-500 font-bold">Manage team expense approvals</p>
+              <h2 className="text-base font-bold text-slate-900">Expense</h2>
+              <p className="text-xs text-slate-400">Manage team expense approvals</p>
             </div>
           </div>
 
-          {/* Quick Metrics grid */}
-          <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-xs font-bold text-slate-600">
+          {/* Metrics */}
+          <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Pending</div>
-              <div className="text-base font-black text-amber-600">{summary.pending_approval} Claims</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-0.5">Pending</div>
+              <div className="text-sm font-bold text-mgr-primary-600">{summary.pending_approval} Claims</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Approved Today</div>
-              <div className="text-base font-black text-emerald-600">{summary.approved_today} Claims</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-0.5">Approved Today</div>
+              <div className="text-sm font-bold text-emerald-600">{summary.approved_today} Claims</div>
             </div>
-            <div className="col-span-2 border-t border-slate-100 pt-2 flex justify-between items-center text-[11px] font-black text-slate-600">
+            <div className="col-span-2 border-t border-slate-100 pt-2 flex justify-between items-center text-xs text-slate-500">
               <span>Total Claims Volume</span>
-              <span className="text-blue-600 text-sm font-black">{summary.today_claim_amount}</span>
+              <span className="text-slate-700 font-bold">{summary.today_claim_amount}</span>
             </div>
           </div>
 
           <button
             onClick={() => setPopupOpen(true)}
-            className="w-full mt-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+            className="mgr-card w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
           >
-            <Eye size={14} /> Open Expense Claims Ledger
+            <Eye size={13} /> Open Expense Claims Ledger
           </button>
         </div>
       </div>
+
 
       {/* ── EXPENSE CLAIMS POPUP LEDGER MODAL ───────────────────────────────── */}
       {popupOpen && (
@@ -618,7 +620,7 @@ export default function ManagerExpenses() {
                       setSelectedToggle(toggle)
                       setPage(1)
                     }}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                    className={`mgr-card px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
                       selectedToggle === toggle
                         ? 'bg-teal-600 text-white shadow-xs'
                         : 'text-slate-600 hover:bg-slate-300/40 hover:text-slate-900'
@@ -651,7 +653,7 @@ export default function ManagerExpenses() {
                     setSearch('')
                     setPage(1)
                   }}
-                  className="text-xs font-black text-rose-600 hover:underline cursor-pointer"
+                  className="mgr-card text-xs font-black text-rose-600 hover:underline cursor-pointer"
                 >
                   Clear Search
                 </button>
@@ -709,7 +711,7 @@ export default function ManagerExpenses() {
                             <MapPin size={11} className="text-teal-700 shrink-0" />
                             <span className="truncate">{expense.visit_location || 'Guindy, Chennai'}</span>
                           </div>
-                          <div className="text-[11px] text-amber-800 font-bold mt-1">
+                          <div className="text-[11px] text-mgr-primary-800 font-bold mt-1">
                             Visit Date: {formatDateDDMMYYYY(expense.visit_date)}
                           </div>
                         </td>
@@ -730,7 +732,7 @@ export default function ManagerExpenses() {
                                     ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
                                     : String(expense.status).toLowerCase().includes('reject')
                                     ? 'bg-rose-50 text-rose-700 border-rose-300'
-                                    : 'bg-amber-50 text-amber-800 border-amber-300'
+                                    : 'bg-mgr-primary-50 text-mgr-primary-800 border-mgr-primary-300'
                                 }`}
                               >
                                 {expense.status}
@@ -747,7 +749,7 @@ export default function ManagerExpenses() {
                                 <button
                                   type="button"
                                   onClick={() => setZoomReceiptUrl(expense.receipt_url)}
-                                  className="px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 transition font-bold text-[11px] flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
+                                  className="mgr-card px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 transition font-bold text-[11px] flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
                                 >
                                   <FileText size={12} /> Receipt
                                 </button>
@@ -761,7 +763,7 @@ export default function ManagerExpenses() {
                                 <button
                                   type="button"
                                   onClick={() => handleQuickAction(expense, 'APPROVE')}
-                                  className="px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] transition active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1"
+                                  className="mgr-card px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] transition active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1"
                                 >
                                   <CheckCircle2 size={12} /> Approve
                                 </button>
@@ -771,7 +773,7 @@ export default function ManagerExpenses() {
                                 <button
                                   type="button"
                                   onClick={() => handleQuickAction(expense, 'REJECT')}
-                                  className="px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] transition active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1"
+                                  className="mgr-card px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] transition active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1"
                                 >
                                   <XCircle size={12} /> Reject
                                 </button>
@@ -797,7 +799,7 @@ export default function ManagerExpenses() {
                 <button
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="p-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                  className="mgr-card p-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
                 >
                   <ChevronLeft size={14} />
                 </button>
@@ -807,7 +809,7 @@ export default function ManagerExpenses() {
                 <button
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  className="p-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                  className="mgr-card p-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
                 >
                   <ChevronRight size={14} />
                 </button>
@@ -864,7 +866,7 @@ export default function ManagerExpenses() {
             </div>
 
             {/* 2. Visit Information */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+            <div className="p-3.5 rounded-2xl bg-slate-50 border-slate-200 space-y-2 text-xs">
               <span className="text-[10px] font-extrabold uppercase text-slate-400">Associated Field Visit Details</span>
               <div className="grid grid-cols-2 gap-2 font-semibold">
                 <div>
@@ -888,7 +890,7 @@ export default function ManagerExpenses() {
 
             {/* 3. Expense Information */}
             <div className="grid grid-cols-3 gap-2 text-xs">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="p-3 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Expense Category</span>
                 <p className="font-black text-slate-900 mt-0.5">{selectedExpenseModal.category}</p>
               </div>
@@ -896,19 +898,19 @@ export default function ManagerExpenses() {
                 <span className="text-[10px] font-bold text-teal-800">Claim Amount</span>
                 <p className="font-black text-teal-950 text-base mt-0.5">{selectedExpenseModal.amount}</p>
               </div>
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="p-3 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Submitted Date</span>
                 <p className="font-mono font-bold text-slate-800 mt-0.5">{selectedExpenseModal.submitted_date}</p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1 text-xs">
+            <div className="p-3.5 rounded-2xl bg-slate-50 border-slate-200 space-y-1 text-xs">
               <span className="text-[10px] font-extrabold uppercase text-slate-400">Expense Description & Justification</span>
               <p className="text-slate-800 font-medium leading-relaxed">{selectedExpenseModal.description}</p>
             </div>
 
             {/* 4. Receipt Voucher Preview & Download */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="p-4 rounded-2xl bg-slate-50 border-slate-200 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-extrabold uppercase text-slate-500">Uploaded Receipt Voucher</span>
                 {selectedExpenseModal.receipt_url && (
@@ -964,7 +966,7 @@ export default function ManagerExpenses() {
                 <button
                   disabled={actionLoading}
                   onClick={() => handleManagerAction('RETURN')}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-xs cursor-pointer transition flex items-center gap-1"
+                  className="mgr-card px-4 py-2 bg-mgr-primary-500 hover:bg-mgr-primary-600 text-slate-950 font-black text-xs rounded-xl shadow-xs cursor-pointer transition flex items-center gap-1"
                 >
                   <RotateCcw size={14} /> Return for Correction
                 </button>
@@ -972,7 +974,7 @@ export default function ManagerExpenses() {
                 <button
                   disabled={actionLoading}
                   onClick={() => handleManagerAction('REJECT')}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer transition flex items-center gap-1"
+                  className="mgr-card px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer transition flex items-center gap-1"
                 >
                   <XCircle size={14} /> Reject Claim
                 </button>
@@ -980,7 +982,7 @@ export default function ManagerExpenses() {
                 <button
                   disabled={actionLoading}
                   onClick={() => handleManagerAction('APPROVE')}
-                  className="px-5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-md cursor-pointer transition flex items-center gap-1"
+                  className="mgr-card px-5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-md cursor-pointer transition flex items-center gap-1"
                 >
                   <CheckCircle2 size={14} /> Approve Claim
                 </button>

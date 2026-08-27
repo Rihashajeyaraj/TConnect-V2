@@ -3,17 +3,17 @@ import salesGuyImg from '../assets/sales-guy-checking-routes.png'
 
 function BrandPanel() {
   return (
-    <section className="relative hidden lg:flex flex-col justify-between p-7 lg:p-9 bg-gradient-to-br from-blue-50/90 via-slate-50 to-indigo-50/80 rounded-[2.5rem] border border-blue-100/90 shadow-inner overflow-hidden">
+    <section className="relative hidden lg:flex flex-col justify-between p-7 lg:p-9 bg-gradient-to-br from-blue-50/90 via-slate-50 to-mgr-secondary-50/80 rounded-[2.5rem] border border-blue-100/90 shadow-inner overflow-hidden">
       {/* Top Headline & Subtitle */}
       <div className="space-y-3.5 max-w-xl relative z-10">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100/90 border border-amber-200 text-amber-800 font-bold text-[11px] shadow-sm">
-          <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-mgr-primary-100/90 border border-mgr-primary-200 text-mgr-primary-800 font-bold text-[11px] shadow-sm">
+          <Sparkles className="w-3.5 h-3.5 text-mgr-primary-600 animate-pulse" />
           <span>AI-Powered Sales Tracking Platform</span>
         </div>
 
         <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight">
           From Lead to Closure —{' '}
-          <span className="text-amber-700">
+          <span className="text-mgr-primary-700">
             Manage Every Sales Interaction
           </span>{' '}
           with TwiteConnect.
@@ -30,7 +30,7 @@ function BrandPanel() {
         <div className="absolute left-0 top-2 bottom-4 flex flex-col justify-between z-20">
           {[
             { label: 'Connect', icon: Users, color: 'bg-emerald-500 text-white' },
-            { label: 'Track', icon: MapPin, color: 'bg-amber-500 text-white' },
+            { label: 'Track', icon: MapPin, color: 'bg-mgr-primary-500 text-white' },
             { label: 'Follow Up', icon: MessageSquare, color: 'bg-blue-600 text-white' },
             { label: 'Close Deals', icon: Handshake, color: 'bg-purple-600 text-white' },
           ].map((node) => {
@@ -104,7 +104,7 @@ function BrandPanel() {
               <p className="text-[9px] font-bold text-slate-700">Visit Status</p>
               <p className="text-xs font-black text-blue-600">126 Total</p>
               <div className="flex items-center gap-1 mt-1 text-[8px]">
-                <span className="text-emerald-600 font-bold">65 Completed</span> • <span className="text-amber-600 font-bold">40 Pending</span>
+                <span className="text-emerald-600 font-bold">65 Completed</span> • <span className="text-mgr-primary-600 font-bold">40 Pending</span>
               </div>
             </div>
           </div>
@@ -130,7 +130,7 @@ function BrandPanel() {
             📅 October 14 • 11:30 AM
           </div>
 
-          <button className="w-full py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-[10px] shadow-sm flex items-center justify-center gap-1">
+          <button className="w-full py-1.5 bg-mgr-primary-600 hover:bg-mgr-primary-700 text-white font-bold rounded-xl text-[10px] shadow-sm flex items-center justify-center gap-1">
             View Full Details <ChevronRight className="w-3 h-3" />
           </button>
         </div>

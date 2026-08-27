@@ -191,7 +191,7 @@ function TeamManagement() {
   // Counts
   const totalStaff = team.length
   const totalAdmins = team.filter((m) => m.role === 'Admin' || m.role === 'Super Admin' || m.role === 'System Admin').length
-  const totalManagers = team.filter((m) => m.role === 'Sales Manager').length
+  const totalManagers = team.filter((m) => m.role === 'Sales Manager' || m.role === 'Team Lead').length
   const totalExecutives = team.filter((m) => m.role === 'Sales Executive').length
 
   const handleOpenAdd = () => {
@@ -371,7 +371,7 @@ function TeamManagement() {
   }
 
   // Managers with their respective executives for hierarchy tree
-  const managers = team.filter((m) => m.role === 'Sales Manager')
+  const managers = team.filter((m) => m.role === 'Sales Manager' || m.role === 'Team Lead')
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 pb-12">
@@ -745,6 +745,7 @@ function TeamManagement() {
                   >
                     <option value="Admin">Admin</option>
                     <option value="Sales Manager">Sales Manager</option>
+                    <option value="Team Lead">Team Lead</option>
                     <option value="Sales Executive">Sales Executive</option>
                   </select>
                 </div>

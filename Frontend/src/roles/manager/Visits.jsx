@@ -417,7 +417,7 @@ export default function ManagerVisits() {
 
         <button
           onClick={fetchTeamAuditData}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-md transition cursor-pointer"
+          className="mgr-card flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-md transition cursor-pointer"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh Visit Audit
         </button>
@@ -426,8 +426,8 @@ export default function ManagerVisits() {
       {/* ── TOP FIELD VISIT SUMMARY CARDS ──────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {/* 1. Today's Scheduled Visits */}
-        <div className="bg-gradient-to-b from-[#fffbeb] to-white border border-amber-300 p-3.5 rounded-2xl shadow-xs space-y-1">
-          <span className="text-[10px] font-black uppercase tracking-wider text-amber-900">Today's Scheduled</span>
+        <div className="bg-gradient-to-b from-[#fffbeb] to-white border border-mgr-primary-300 p-3.5 rounded-2xl shadow-xs space-y-1">
+          <span className="text-[10px] font-black uppercase tracking-wider text-mgr-primary-900">Today's Scheduled</span>
           <h2 className="text-2xl font-black text-slate-900">{summary.scheduled_today}</h2>
           <p className="text-[10px] text-slate-500 font-semibold">Scheduled Appointments</p>
         </div>
@@ -440,24 +440,24 @@ export default function ManagerVisits() {
         </div>
 
         {/* 3. Pending Visits */}
-        <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-2xl shadow-xs space-y-1">
-          <span className="text-[10px] font-black uppercase tracking-wider text-amber-900">Pending Visits</span>
-          <h2 className="text-2xl font-black text-amber-950">{summary.pending_visits}</h2>
-          <p className="text-[10px] text-amber-800 font-semibold">Checked-In / Live</p>
+        <div className="bg-mgr-primary-50 border border-mgr-primary-200 p-3.5 rounded-2xl shadow-xs space-y-1">
+          <span className="text-[10px] font-black uppercase tracking-wider text-mgr-primary-900">Pending Visits</span>
+          <h2 className="text-2xl font-black text-mgr-primary-950">{summary.pending_visits}</h2>
+          <p className="text-[10px] text-mgr-primary-800 font-semibold">Checked-In / Live</p>
         </div>
 
         {/* 4. Missed Visits */}
-        <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-2xl shadow-xs space-y-1">
+        <div className="bg-slate-50 border-slate-200 p-3.5 rounded-2xl shadow-xs space-y-1">
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-600">Missed Visits</span>
           <h2 className="text-2xl font-black text-slate-800">{summary.missed_visits}</h2>
           <p className="text-[10px] text-slate-500 font-semibold">Unattended Schedule</p>
         </div>
 
         {/* 5. Follow Ups Required */}
-        <div className="bg-indigo-50 border border-indigo-200 p-3.5 rounded-2xl shadow-xs space-y-1">
-          <span className="text-[10px] font-black uppercase tracking-wider text-indigo-800">Follow Ups Required</span>
-          <h2 className="text-2xl font-black text-indigo-950">{summary.followups}</h2>
-          <p className="text-[10px] text-indigo-700 font-semibold">Next Stage Action</p>
+        <div className="bg-mgr-secondary-50 border border-mgr-secondary-200 p-3.5 rounded-2xl shadow-xs space-y-1">
+          <span className="text-[10px] font-black uppercase tracking-wider text-mgr-secondary-800">Follow Ups Required</span>
+          <h2 className="text-2xl font-black text-mgr-secondary-950">{summary.followups}</h2>
+          <p className="text-[10px] text-mgr-secondary-700 font-semibold">Next Stage Action</p>
         </div>
       </div>
 
@@ -465,7 +465,7 @@ export default function ManagerVisits() {
       <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Sales Executive Filter (Left Side with 'Other' Manual Search Option) */}
-          <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold shrink-0">
+          <div className="flex flex-wrap items-center gap-2 bg-slate-50 border-slate-200 rounded-xl px-3 py-2 text-xs font-bold shrink-0">
             <span className="text-slate-500">Sales Executive:</span>
             <select
               value={selectedSE}
@@ -474,7 +474,7 @@ export default function ManagerVisits() {
                 if (e.target.value !== 'Other') setCustomSEInput('')
                 setPage(1)
               }}
-              className="bg-transparent text-amber-950 focus:outline-none cursor-pointer font-black max-w-[240px] truncate"
+              className="mgr-card bg-transparent text-mgr-primary-950 focus:outline-none cursor-pointer font-black max-w-[240px] truncate"
             >
               <option value="All">All Executives (Team Audit)</option>
               {executives.map((ex) => (
@@ -494,7 +494,7 @@ export default function ManagerVisits() {
                   setPage(1)
                 }}
                 placeholder="Type SE Name, Email, Code..."
-                className="bg-white border border-amber-400 rounded-lg px-2.5 py-1 text-xs font-bold text-amber-950 focus:outline-none focus:border-amber-600 w-[200px] shadow-2xs"
+                className="bg-white border border-mgr-primary-400 rounded-lg px-2.5 py-1 text-xs font-bold text-mgr-primary-950 focus:outline-none focus:border-mgr-primary-600 w-[200px] shadow-2xs"
                 autoFocus
               />
             )}
@@ -511,7 +511,7 @@ export default function ManagerVisits() {
                 setPage(1)
               }}
               placeholder="Search Customer, Company, Visit ID, Lead ID, SE Name, EMP Code..."
-              className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 font-semibold"
+              className="w-full h-10 bg-slate-50 border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-mgr-primary-500 font-semibold"
             />
           </div>
         </div>
@@ -519,7 +519,7 @@ export default function ManagerVisits() {
         {/* Linear Date Quick-Filter Strip */}
         <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
           {/* Visit Status */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 font-bold">
+          <div className="flex items-center gap-1.5 bg-slate-50 border-slate-200 rounded-xl px-3 py-1.5 font-bold">
             <span className="text-slate-500">Visit Status:</span>
             <select
               value={selectedVisitStatus}
@@ -527,7 +527,7 @@ export default function ManagerVisits() {
                 setSelectedVisitStatus(e.target.value)
                 setPage(1)
               }}
-              className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold"
+              className="mgr-card bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold"
             >
               <option value="All">All Visit Statuses</option>
               <option value="SCHEDULED">Scheduled</option>
@@ -537,17 +537,17 @@ export default function ManagerVisits() {
             </select>
           </div>
 
-          <div className="flex items-center gap-1.5 bg-amber-50/70 p-1 rounded-xl border border-amber-300">
-            <span className="text-[11px] font-black text-amber-950 px-2">Date Filter:</span>
+          <div className="flex items-center gap-1.5 bg-mgr-primary-50/70 p-1 rounded-xl border border-mgr-primary-300">
+            <span className="text-[11px] font-black text-mgr-primary-950 px-2">Date Filter:</span>
             {['All', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
               <button
                 key={tab}
                 type="button"
                 onClick={() => handleLinearDateFilter(tab)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                className={`mgr-card px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
                   dateFilterTab === tab
-                    ? 'bg-[#ca8a04] text-white shadow-2xs'
-                    : 'text-amber-950 hover:bg-amber-100'
+                    ? 'bg-mgr-primary-700 text-white shadow-2xs'
+                    : 'text-mgr-primary-950 hover:bg-mgr-primary-100'
                 }`}
               >
                 {tab === 'All' ? 'All Time' : tab}
@@ -557,20 +557,20 @@ export default function ManagerVisits() {
 
           {/* Custom Date Range Picker Inputs (Only visible when Custom is selected) */}
           {dateFilterTab === 'Custom' && (
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5 font-bold">
-              <span className="text-amber-900 font-extrabold">From:</span>
+            <div className="flex items-center gap-2 bg-mgr-primary-50 border border-mgr-primary-300 rounded-xl px-3 py-1.5 font-bold">
+              <span className="text-mgr-primary-900 font-extrabold">From:</span>
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
+                className="mgr-card bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
               />
-              <span className="text-amber-900 font-extrabold ml-1">To:</span>
+              <span className="text-mgr-primary-900 font-extrabold ml-1">To:</span>
               <input
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
+                className="mgr-card bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
               />
             </div>
           )}
@@ -588,7 +588,7 @@ export default function ManagerVisits() {
                 setToDate('')
                 setPage(1)
               }}
-              className="text-[11px] font-extrabold text-rose-700 hover:underline cursor-pointer ml-auto"
+              className="mgr-card text-[11px] font-extrabold text-rose-700 hover:underline cursor-pointer ml-auto"
             >
               Reset All Filters
             </button>
@@ -615,7 +615,7 @@ export default function ManagerVisits() {
               {loading ? (
                 <tr>
                   <td colSpan="7" className="text-center py-16 text-slate-400">
-                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-600 mb-3" />
+                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-mgr-primary-600 mb-3" />
                     <span className="text-sm font-bold">Loading Field Visit & Audit reports from Supabase...</span>
                   </td>
                 </tr>
@@ -627,7 +627,7 @@ export default function ManagerVisits() {
                 </tr>
               ) : (
                 paginatedVisits.map((visit, idx) => (
-                  <tr key={visit.id || visit.visit_id || idx} className="hover:bg-amber-50/50 transition-colors">
+                  <tr key={visit.id || visit.visit_id || idx} className="hover:bg-mgr-primary-50/50 transition-colors">
                     {/* 1. Company Name */}
                     <td className="px-5 py-4.5 font-black text-slate-900 text-sm sm:text-base">
                       {visit.company || visit.customer_name || 'Enterprise Ltd'}
@@ -641,7 +641,7 @@ export default function ManagerVisits() {
                     {/* 3. Combined Visit Date & Time */}
                     <td className="px-5 py-4.5 font-mono text-xs sm:text-sm font-bold text-slate-800">
                       <span className="text-slate-900">{visit.visit_date || visit.date || '2026-08-05'}</span>
-                      <span className="text-amber-800 font-black ml-1.5">• {visit.visit_time || visit.time || '10:30 AM'}</span>
+                      <span className="text-mgr-primary-800 font-black ml-1.5">• {visit.visit_time || visit.time || '10:30 AM'}</span>
                     </td>
 
                     {/* 4. Visit Status */}
@@ -651,7 +651,7 @@ export default function ManagerVisits() {
                           String(visit.visit_status || visit.status || '').toLowerCase().includes('complete')
                             ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
                             : String(visit.visit_status || visit.status || '').toLowerCase().includes('schedule')
-                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                            ? 'bg-mgr-primary-100 text-mgr-primary-900 border border-mgr-primary-300'
                             : 'bg-sky-100 text-sky-800 border border-sky-300'
                         }`}
                       >
@@ -673,7 +673,7 @@ export default function ManagerVisits() {
                           String(visit.lead_priority || visit.priority || '').toLowerCase().includes('hot')
                             ? 'bg-rose-100 text-rose-800 border border-rose-300'
                             : String(visit.lead_priority || visit.priority || '').toLowerCase().includes('warm')
-                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                            ? 'bg-mgr-primary-100 text-mgr-primary-900 border border-mgr-primary-300'
                             : 'bg-sky-100 text-sky-800 border border-sky-300'
                         }`}
                       >
@@ -685,7 +685,7 @@ export default function ManagerVisits() {
                     <td className="px-5 py-4.5 text-right">
                       <button
                         onClick={() => setSelectedAuditModal(visit)}
-                        className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto active:scale-95"
+                        className="mgr-card px-3.5 py-2 rounded-xl bg-mgr-primary-600 hover:bg-mgr-primary-700 text-white font-black text-xs shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto active:scale-95"
                       >
                         <Eye size={14} /> View Full Audit
                       </button>
@@ -732,10 +732,10 @@ export default function ManagerVisits() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black uppercase text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                  <span className="text-[10px] font-black uppercase text-mgr-primary-800 bg-mgr-primary-50 px-2.5 py-0.5 rounded-full border border-mgr-primary-200">
                     {selectedAuditModal.visit_status || selectedAuditModal.status || 'COMPLETED'} Audit Log
                   </span>
-                  <span className="text-[10px] font-mono font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                  <span className="text-[10px] font-mono font-black text-mgr-primary-900 bg-mgr-primary-100 px-2 py-0.5 rounded border border-mgr-primary-300">
                     #{selectedAuditModal.visit_id || selectedAuditModal.id}
                   </span>
                 </div>
@@ -750,18 +750,18 @@ export default function ManagerVisits() {
 
             {/* SE & Customer Information */}
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200/80 space-y-1">
+              <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1">
                 <span className="text-[10px] font-extrabold uppercase text-slate-400">Sales Executive Information</span>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-[10px] bg-amber-100 text-amber-950 border border-amber-300 px-1 py-0.2 rounded font-mono font-black">
+                  <span className="text-[10px] bg-mgr-primary-100 text-mgr-primary-950 border border-mgr-primary-300 px-1 py-0.2 rounded font-mono font-black">
                     [{selectedAuditModal.employee_code || 'EMP-101'}]
                   </span>
-                  <p className="font-black text-amber-900 text-sm">{selectedAuditModal.assigned_to || selectedAuditModal.executive || 'Sales Executive'}</p>
+                  <p className="font-black text-mgr-primary-900 text-sm">{selectedAuditModal.assigned_to || selectedAuditModal.executive || 'Sales Executive'}</p>
                 </div>
                 <p className="text-slate-500 font-mono text-[11px]">{selectedAuditModal.assigned_to_email || 'executive@tconnect.com'}</p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200/80 space-y-1">
+              <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1">
                 <span className="text-[10px] font-extrabold uppercase text-slate-400">Customer POC Details</span>
                 <p className="font-black text-slate-900 text-sm">{selectedAuditModal.poc_name || 'Point of Contact'}</p>
                 <p className="text-slate-700 font-semibold">{selectedAuditModal.poc_mobile || '+91 98765 43210'}</p>
@@ -771,28 +771,28 @@ export default function ManagerVisits() {
 
             {/* Schedule, Check-in & GPS Location */}
             <div className="grid grid-cols-3 gap-2 text-xs">
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="p-2.5 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Scheduled Date & Time</span>
                 <p className="font-mono font-bold text-slate-800 mt-0.5">{selectedAuditModal.visit_date || '2026-08-05'} ({selectedAuditModal.visit_time || '10:30 AM'})</p>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="p-2.5 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Check-In / Out Duration</span>
                 <p className="font-mono font-bold text-slate-800 mt-0.5">{selectedAuditModal.check_in_time || '10:30 AM'} - {selectedAuditModal.check_out_time || '11:15 AM'}</p>
               </div>
-              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
-                <span className="text-[10px] font-bold text-amber-800">GPS Location Telemetry</span>
-                <p className="font-mono font-bold text-amber-950 mt-0.5 truncate">{selectedAuditModal.gps_location || 'Chennai - Anna Salai'}</p>
+              <div className="p-2.5 rounded-xl bg-mgr-primary-50 border border-mgr-primary-200">
+                <span className="text-[10px] font-bold text-mgr-primary-800">GPS Location Telemetry</span>
+                <p className="font-mono font-bold text-mgr-primary-950 mt-0.5 truncate">{selectedAuditModal.gps_location || 'Chennai - Anna Salai'}</p>
               </div>
             </div>
 
             {/* Discussion & Product Info */}
-            <div className="p-3 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-1 text-xs">
-              <span className="text-[10px] font-extrabold uppercase text-amber-900">Products Discussed & Customer Requirements</span>
-              <p className="font-extrabold text-amber-950">{selectedAuditModal.products_discussed || 'TwiteConnect Field CRM Suite'}</p>
+            <div className="p-3 rounded-2xl bg-mgr-primary-50/60 border border-mgr-primary-200 space-y-1 text-xs">
+              <span className="text-[10px] font-extrabold uppercase text-mgr-primary-900">Products Discussed & Customer Requirements</span>
+              <p className="font-extrabold text-mgr-primary-950">{selectedAuditModal.products_discussed || 'TwiteConnect Field CRM Suite'}</p>
               <p className="text-slate-700 font-medium text-[11px] mt-1">{selectedAuditModal.customer_requirements || 'Requires multi-device licenses and daily automated EOD report workflows.'}</p>
             </div>
 
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1 text-xs">
+            <div className="p-3 rounded-2xl bg-slate-50 border-slate-200 space-y-1 text-xs">
               <span className="text-[10px] font-extrabold uppercase text-slate-400">Discussion Summary & Remarks</span>
               <p className="font-medium text-slate-700 leading-relaxed italic">
                 "{selectedAuditModal.discussion_summary || selectedAuditModal.remarks || 'Meeting completed with client decision makers.'}"
@@ -801,7 +801,7 @@ export default function ManagerVisits() {
 
             {/* ── COMPLETE AUDIT TIMELINE (REQUIRED BUSINESS FLOW) ──────────── */}
             <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3">
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">Complete Field Visit Audit Timeline</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-mgr-primary-400">Complete Field Visit Audit Timeline</span>
               <div className="flex items-center justify-between text-[11px] font-bold relative">
                 <div className="flex flex-col items-center space-y-1 text-center">
                   <div className="w-6 h-6 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-black text-xs">✓</div>
@@ -816,8 +816,8 @@ export default function ManagerVisits() {
                   <span className="text-slate-300">Meeting Completed</span>
                 </div>
                 <div className="flex flex-col items-center space-y-1 text-center">
-                  <div className="w-6 h-6 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center font-black text-xs">✓</div>
-                  <span className="text-amber-300 font-extrabold">Form Submitted</span>
+                  <div className="w-6 h-6 rounded-full bg-mgr-primary-400 text-slate-950 flex items-center justify-center font-black text-xs">✓</div>
+                  <span className="text-mgr-primary-300 font-extrabold">Form Submitted</span>
                 </div>
                 <div className="flex flex-col items-center space-y-1 text-center">
                   <div className="w-6 h-6 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-black text-xs">★</div>

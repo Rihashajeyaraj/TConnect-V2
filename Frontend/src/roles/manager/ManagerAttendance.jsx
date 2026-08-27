@@ -22,7 +22,7 @@ import DateRangeFilter from '../../common/DateRangeFilter.jsx'
 
 const STATUS_COLORS = {
   Present: 'bg-emerald-50 text-emerald-700 border-emerald-200',
-  Late: 'bg-amber-50 text-amber-700 border-amber-200',
+  Late: 'bg-mgr-primary-50 text-mgr-primary-700 border-mgr-primary-200',
   Absent: 'bg-rose-50 text-rose-700 border-rose-200',
   'Half Day': 'bg-sky-50 text-sky-700 border-sky-200',
   'On Leave': 'bg-slate-100 text-slate-600 border-slate-200',
@@ -219,7 +219,7 @@ export default function ManagerAttendance() {
           <button
             type="button"
             onClick={loadData}
-            className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition cursor-pointer"
+            className="mgr-card p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 transition cursor-pointer"
             title="Refresh Attendance"
           >
             <RefreshCw size={14} className={loading ? 'animate-spin text-emerald-600' : ''} />
@@ -237,7 +237,7 @@ export default function ManagerAttendance() {
                 key={st}
                 type="button"
                 onClick={() => setStatusFilter(st)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                className={`mgr-card px-2.5 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
                   statusFilter === st
                     ? 'bg-white text-slate-900 shadow-2xs'
                     : 'text-slate-500 hover:text-slate-900'
@@ -256,7 +256,7 @@ export default function ManagerAttendance() {
               placeholder="Search executive, code..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full h-8 pl-8 pr-2 text-xs bg-slate-50 border border-slate-200 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500"
+              className="w-full h-8 pl-8 pr-2 text-xs bg-slate-50 border-slate-200 rounded-xl font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-emerald-500"
             />
           </div>
         </div>
@@ -266,7 +266,7 @@ export default function ManagerAttendance() {
           <button
             type="button"
             onClick={() => setViewMode('table')}
-            className={`p-1.5 rounded-xl border transition cursor-pointer ${
+            className={`mgr-card p-1.5 rounded-xl border transition cursor-pointer ${
               viewMode === 'table' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'text-slate-400 border-slate-200 hover:bg-slate-50'
             }`}
             title="Table View"
@@ -276,7 +276,7 @@ export default function ManagerAttendance() {
           <button
             type="button"
             onClick={() => setViewMode('grid')}
-            className={`p-1.5 rounded-xl border transition cursor-pointer ${
+            className={`mgr-card p-1.5 rounded-xl border transition cursor-pointer ${
               viewMode === 'grid' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'text-slate-400 border-slate-200 hover:bg-slate-50'
             }`}
             title="Card View"
@@ -350,7 +350,7 @@ export default function ManagerAttendance() {
                       <button
                         type="button"
                         onClick={() => setSelectedItem(log)}
-                        className="p-1.5 rounded-lg text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 transition cursor-pointer"
+                        className="mgr-card p-1.5 rounded-lg text-slate-500 hover:text-emerald-700 hover:bg-emerald-50 transition cursor-pointer"
                         title="View Biometric Audit"
                       >
                         <Eye size={14} />
@@ -412,7 +412,7 @@ export default function ManagerAttendance() {
               <button
                 type="button"
                 onClick={() => setSelectedItem(null)}
-                className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+                className="mgr-card p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -465,7 +465,7 @@ export default function ManagerAttendance() {
               <button
                 type="button"
                 onClick={() => setSelectedItem(null)}
-                className="px-4 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs shadow-xs hover:bg-slate-800 transition cursor-pointer"
+                className="mgr-card px-4 py-2 rounded-xl bg-slate-900 text-white font-extrabold text-xs shadow-xs hover:bg-slate-800 transition cursor-pointer"
               >
                 Close Audit
               </button>

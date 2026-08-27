@@ -642,7 +642,7 @@ export default function ManagerSmartMap() {
       return { label: 'Live Connection', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', dot: 'bg-emerald-500 animate-pulse' };
     }
     if (age <= 30000) {
-      return { label: 'Connection Unstable', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20', dot: 'bg-amber-550' };
+      return { label: 'Connection Unstable', color: 'text-mgr-primary-400 bg-mgr-primary-500/10 border-mgr-primary-500/20', dot: 'bg-mgr-primary-550' };
     }
     if (age <= 60000) {
       return { label: 'GPS Stale', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20', dot: 'bg-orange-500' };
@@ -714,7 +714,7 @@ export default function ManagerSmartMap() {
                 ` : ''}
               ` : `
                 <span style="font-weight:700;color:#64748b;">Status:</span>
-                <span style="font-weight:700;color:#475569;">${ex.check_in_mode === 'Client Visit' ? '🏍️ Travelling to Client' : '🏢 In Office'}</span>
+                <span style="font-weight:700;color:#475569;">${!ex.check_in_mode ? '○ Not Checked In' : (ex.check_in_mode === 'Client Visit' ? '🏍️ Travelling to Client' : '🏢 In Office')}</span>
                 ${ex.check_in_address ? `
                   <span style="font-weight:700;color:#64748b;">Location:</span>
                   <span style="font-weight:600;color:#475569;">${ex.check_in_address.replace('CLIENT_VISIT_DESTINATION:::', '')}</span>
@@ -1042,7 +1042,7 @@ export default function ManagerSmartMap() {
             ` : ''}
           ` : `
             <span style="font-weight:700;color:#64748b;">Status:</span>
-            <span style="font-weight:800;color:#475569;">${executive?.check_in_mode === 'Office' ? '🏢 In Office' : (isLive ? 'Online (Idle)' : '○ Offline / Not Logged In')}</span>
+            <span style="font-weight:800;color:#475569;">${!executive?.check_in_mode ? '○ Not Checked In' : (executive?.check_in_mode === 'Office' ? '🏢 In Office' : (isLive ? 'Online (Idle)' : '○ Offline / Not Logged In'))}</span>
             <span style="font-weight:700;color:#64748b;">Client:</span>
             <span style="font-weight:600;color:#64748b;">No active client visit</span>
           `}
@@ -1845,13 +1845,13 @@ export default function ManagerSmartMap() {
             {/* Stats Row */}
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Total', value: executives.length, color: 'bg-blue-50 text-blue-700 border-blue-100' },
-                { label: 'Online', value: executives.filter(e => e.is_online).length, color: 'bg-emerald-50 text-emerald-700 border-emerald-100' },
-                { label: 'Offline', value: executives.filter(e => !e.is_online).length, color: 'bg-slate-50 text-slate-500 border-slate-100' },
+                { label: 'Total', value: executives.length, color: 'bg-mgr-accent-50 text-mgr-accent-700 border-mgr-accent-200', numColor: 'text-mgr-accent-700' },
+                { label: 'Online', value: executives.filter(e => e.is_online).length, color: 'bg-emerald-50 text-emerald-700 border-emerald-200', numColor: 'text-emerald-600' },
+                { label: 'Offline', value: executives.filter(e => !e.is_online).length, color: 'bg-slate-100 text-slate-500 border-slate-200', numColor: 'text-slate-600' },
               ].map(s => (
-                <div key={s.label} className={`rounded-xl border p-3 text-center ${s.color}`}>
-                  <div className="text-2xl font-black">{s.value}</div>
-                  <div className="text-[10px] font-bold uppercase tracking-wider mt-0.5">{s.label}</div>
+                <div key={s.label} className={`mgr-card rounded-xl border p-3 text-center shadow-2xs hover:shadow-sm transition ${s.color}`}>
+                  <div className={`text-2xl font-black ${s.numColor}`}>{s.value}</div>
+                  <div className="text-[10px] font-black uppercase tracking-wider mt-0.5 opacity-70">{s.label}</div>
                 </div>
               ))}
             </div>
@@ -1882,11 +1882,19 @@ export default function ManagerSmartMap() {
                   const isCV = ex.check_in_mode === 'Client Visit'
                   const statusColor = !ex.is_online ? '#94a3b8' : isCV ? '#8b5cf6' : '#10b981'
                   const statusLabel = !ex.is_online ? 'Offline' : isCV ? 'Client Visit' : 'Field Active'
+
+                  // Card background based on status
+                  const cardBg = !ex.is_online
+                    ? 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                    : isCV
+                    ? 'bg-violet-50 border-violet-200 hover:bg-violet-100 hover:border-violet-400'
+                    : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-400'
+
                   return (
                     <button
                       key={ex.employee_id || ex.id}
                       onClick={() => handleSelectExecutive(ex)}
-                      className="text-left bg-white border border-slate-200 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-blue-300 active:scale-[0.98] transition-all duration-150 group"
+                      className={`mgr-card text-left rounded-2xl p-4 shadow-2xs hover:shadow-md active:scale-[0.98] transition-all duration-150 group border ${cardBg}`}
                     >
                       <div className="flex items-start gap-3">
                         <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-black flex-shrink-0" style={{ background: statusColor }}>
@@ -1902,13 +1910,13 @@ export default function ManagerSmartMap() {
                         </div>
                       </div>
                       {ex.is_online && (
-                        <div className="mt-3 pt-3 border-t border-slate-100 flex justify-between items-center text-[10px] text-slate-400 font-semibold">
+                        <div className="mt-3 pt-3 border-t border-white/60 flex justify-between items-center text-[10px] text-slate-500 font-semibold">
                           <span>In: {ex.check_in_time || '—'}</span>
-                          <span className="text-blue-600 font-black group-hover:underline">Track live ➔</span>
+                          <span className="text-emerald-700 font-black group-hover:underline">Track live ➔</span>
                         </div>
                       )}
                       {!ex.is_online && (
-                        <div className="mt-3 pt-3 border-t border-slate-100 text-[10px] text-slate-400 font-semibold italic">
+                        <div className="mt-3 pt-3 border-t border-white/60 text-[10px] text-slate-400 font-semibold italic">
                           Last seen: {ex.last_seen_at ? formatLastSeen(ex.last_seen_at) : 'Never'}
                         </div>
                       )}

@@ -87,16 +87,16 @@ export default function ManagerOpportunities() {
             placeholder="Search opportunity, company, executive..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs font-semibold text-slate-900 focus:outline-none focus:border-teal-500"
+            className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl pl-9 pr-4 text-xs font-semibold text-slate-900 focus:outline-none focus:border-teal-500"
           />
         </div>
 
-        <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold">
+        <div className="flex items-center gap-1.5 bg-slate-50 border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold">
           <span className="text-slate-500">Pipeline Stage:</span>
           <select
             value={stageFilter}
             onChange={(e) => setStageFilter(e.target.value)}
-            className="bg-transparent text-slate-800 font-bold focus:outline-none cursor-pointer"
+            className="mgr-card bg-transparent text-slate-800 font-bold focus:outline-none cursor-pointer"
           >
             <option value="All">All Stages</option>
             <option value="Lead">Lead</option>
@@ -160,7 +160,7 @@ export default function ManagerOpportunities() {
                     <select
                       value={opp.stage || 'Lead'}
                       onChange={(e) => handleStageChange(oppId, e.target.value)}
-                      className="text-xs font-bold bg-slate-100 border border-slate-300 rounded-lg px-2 py-1 text-slate-700 cursor-pointer"
+                      className="mgr-card text-xs font-bold bg-slate-100 border border-slate-300 rounded-lg px-2 py-1 text-slate-700 cursor-pointer"
                     >
                       <option value="Lead">Lead</option>
                       <option value="Qualified">Qualified</option>

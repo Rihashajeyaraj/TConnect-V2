@@ -403,6 +403,22 @@ class CustomerConversionService:
             except Exception:
                 pass
 
+        # Resolve product from contact / lead
+        product_val = contact.get("product") or contact.get("product_name") or contact.get("package_tier") or contact.get("packageTier")
+        if not product_val and lead_id:
+            try:
+                from app.modules.crm.repository import CRMRepository
+                lead_info = CRMRepository().get_lead_by_id(lead_id)
+                if lead_info:
+                    product_val = lead_info.get("product_name") or lead_info.get("product")
+            except Exception:
+                pass
+        if not product_val:
+            product_val = "Software License"
+
+        notes_raw = contact.get("notes") or contact.get("reachOutReason") or f"Customer account for {company}"
+        full_notes = f"{notes_raw} | Product: {product_val}"
+
         full_payload = {
             "id": customer_uuid,
             "customer_id": customer_uuid,
@@ -421,7 +437,7 @@ class CustomerConversionService:
             "sales_manager": sales_mgr if sales_mgr else None,
             "contract_value": contract_value,
             "status": contact.get("status") or "Active Customer",
-            "notes": contact.get("notes") or contact.get("reachOutReason") or f"Customer account for {company}",
+            "notes": full_notes,
         }
 
         logger.info(

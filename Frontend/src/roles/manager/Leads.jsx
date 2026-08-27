@@ -514,7 +514,7 @@ export default function ManagerLeads() {
 
         <button
           onClick={fetchTeamLeadReports}
-          className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#0c4160] hover:bg-[#082d43] text-white font-extrabold text-xs shadow-2xs transition cursor-pointer"
+          className="mgr-card flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#0c4160] hover:bg-[#082d43] text-white font-extrabold text-xs shadow-2xs transition cursor-pointer"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh DB Data
         </button>
@@ -529,7 +529,7 @@ export default function ManagerLeads() {
             setActiveTableModal('leads')
             setPage(1)
           }}
-          className="p-4 rounded-2xl border bg-white text-slate-800 border-slate-200 hover:border-amber-400 hover:bg-amber-50/20 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+          className="mgr-card p-4 rounded-2xl border bg-white text-slate-800 border-slate-200 hover:border-mgr-primary-400 hover:bg-mgr-primary-50/20 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
         >
           <div className="space-y-0.5">
             <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
@@ -540,39 +540,18 @@ export default function ManagerLeads() {
               Click to view active leads pipeline
             </p>
           </div>
-          <div className="p-2.5 rounded-xl bg-amber-50 text-amber-600 border border-amber-200">
+          <div className="p-2.5 rounded-xl bg-mgr-primary-50 text-mgr-primary-600 border border-mgr-primary-200">
             <Target className="w-5 h-5" />
           </div>
         </div>
 
-        {/* Card 2: Customers */}
-        <div
-          onClick={() => {
-            setSelectedLeadTab('customer')
-            setActiveTableModal('customer')
-            setPage(1)
-          }}
-          className="p-4 rounded-2xl border bg-white text-slate-800 border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/20 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
-        >
-          <div className="space-y-0.5">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-              Converted Accounts
-            </p>
-            <h3 className="text-xl font-black text-slate-900">{tabCounts.customer} Customers</h3>
-            <p className="text-[10px] font-semibold text-slate-400">
-              Click to view converted clients list
-            </p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-emerald-50 text-emerald-600 border border-emerald-200">
-            <Building2 className="w-5 h-5" />
-          </div>
-        </div>
       </div>
+
 
       {/* ── TABLE DETAILS MODAL POPUP ─────────────────────────────────────────── */}
       {activeTableModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
-          <div className="bg-slate-50 border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh] overflow-y-auto relative animate-in fade-in zoom-in duration-150">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh] overflow-y-auto relative animate-in fade-in zoom-in duration-150">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div>
@@ -583,7 +562,7 @@ export default function ManagerLeads() {
                     </>
                   ) : (
                     <>
-                      <Target className="w-5 h-5 text-amber-600" /> Active Team Leads Pipeline
+                      <Target className="w-5 h-5 text-mgr-primary-600" /> Active Team Leads Pipeline
                     </>
                   )}
                 </h2>
@@ -595,127 +574,97 @@ export default function ManagerLeads() {
               </div>
               <button
                 onClick={() => setActiveTableModal(null)}
-                className="p-1.5 rounded-xl hover:bg-slate-200 text-slate-500 transition cursor-pointer"
+                className="mgr-card p-1.5 rounded-xl hover:bg-slate-200 text-slate-500 transition cursor-pointer"
               >
                 <X size={20} />
               </button>
             </div>
 
-            {/* ── FILTERS & SEARCH CONTROL BAR ────────────────────────────────── */}
-            <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                {/* Sales Executive Filter */}
-                <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm font-bold shrink-0">
-                  <span className="text-slate-600 font-bold">Sales Executive:</span>
-                  <select
-                    value={selectedSE}
-                    onChange={(e) => {
-                      setSelectedSE(e.target.value)
-                      if (e.target.value !== 'Other') setCustomSEInput('')
-                      setPage(1)
-                    }}
-                    className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-extrabold max-w-[260px] truncate text-sm"
-                  >
-                    <option value="All">All Executives (Combined Sum)</option>
-                    {executives.map((ex) => (
-                      <option key={ex.email || ex.id} value={ex.email || ex.name}>
-                        {ex.name} ({ex.employee_code || 'EMP'})
-                      </option>
-                    ))}
-                    <option value="Other">Custom Search...</option>
-                  </select>
-                  {selectedSE === 'Other' && (
-                    <input
-                      type="text"
-                      value={customSEInput}
-                      onChange={(e) => {
-                        setCustomSEInput(e.target.value)
-                        setPage(1)
-                      }}
-                      placeholder="SE Name / Code..."
-                      className="ml-2 w-32 h-6 px-2 bg-white border border-slate-200 rounded focus:outline-none font-bold text-xs"
-                    />
-                  )}
-                </div>
-
-                {/* Search bar */}
-                <div className="relative flex-1 min-w-[280px]">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            {/* ── FILTERS & SEARCH CONTROL BAR ── clean flat strip ──────────── */}
+            <div className="flex flex-wrap items-center gap-3 pb-3 border-b border-slate-100">
+              {/* Sales Executive Filter — inline, no box */}
+              <div className="flex items-center gap-2 text-sm shrink-0">
+                <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Executive:</span>
+                <select
+                  value={selectedSE}
+                  onChange={(e) => {
+                    setSelectedSE(e.target.value)
+                    if (e.target.value !== 'Other') setCustomSEInput('')
+                    setPage(1)
+                  }}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition"
+                >
+                  <option value="All">All Executives</option>
+                  {executives.map((ex) => (
+                    <option key={ex.email || ex.id} value={ex.email || ex.name}>
+                      {ex.name} ({ex.employee_code || 'EMP'})
+                    </option>
+                  ))}
+                  <option value="Other">Custom Search...</option>
+                </select>
+                {selectedSE === 'Other' && (
                   <input
                     type="text"
-                    value={search}
-                    onChange={(e) => {
-                      setSearch(e.target.value)
-                      setPage(1)
-                    }}
-                    placeholder="Search Client, Lead ID, Employee Code, POC, Phone, Email..."
-                    className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-sm text-slate-900 focus:outline-none focus:border-amber-500 font-semibold"
+                    value={customSEInput}
+                    onChange={(e) => { setCustomSEInput(e.target.value); setPage(1) }}
+                    placeholder="SE Name / Code..."
+                    className="w-32 h-7 px-2 bg-slate-100 rounded-lg focus:outline-none font-bold text-xs"
                   />
-                </div>
-              </div>
-
-              {/* Linear Date Quick-Filter Strip */}
-              <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-sm">
-                <div className="flex flex-wrap items-center gap-3">
-                  {/* Date Filters */}
-                  <div className="flex items-center gap-1.5 bg-amber-50/60 p-1 rounded-xl border border-amber-300">
-                    <span className="text-xs font-black text-amber-950 px-2">Date Filter:</span>
-                    {['Today', 'This Month', 'Custom'].map((tab) => (
-                      <button
-                        key={tab}
-                        type="button"
-                        onClick={() => handleLinearDateFilter(tab)}
-                        className={`px-3 py-1.5 rounded-lg text-sm font-black transition cursor-pointer ${
-                          dateFilterTab === tab
-                            ? 'bg-[#0c4160] text-white shadow-2xs'
-                            : 'text-amber-950 hover:bg-amber-100'
-                        }`}
-                      >
-                        {tab}
-                      </button>
-                    ))}
-                  </div>
-
-                  {/* Custom Date Range picker inputs */}
-                  {dateFilterTab === 'Custom' && (
-                    <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5 font-bold">
-                      <span className="text-amber-900 font-extrabold text-sm">From:</span>
-                      <input
-                        type="date"
-                        value={fromDate}
-                        onChange={(e) => setFromDate(e.target.value)}
-                        className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-sm"
-                      />
-                      <span className="text-amber-900 font-extrabold ml-1 text-sm">To:</span>
-                      <input
-                        type="date"
-                        value={toDate}
-                        onChange={(e) => setToDate(e.target.value)}
-                        className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-sm"
-                      />
-                    </div>
-                  )}
-                </div>
-
-                {/* Reset Filters Button */}
-                {(selectedSE !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || search || fromDate || toDate || selectedLeadTab !== 'Leads') && (
-                  <button
-                    onClick={() => {
-                      setSelectedSE('All')
-                      setSelectedStatus('All')
-                      setSelectedPriority('All')
-                      setSearch('')
-                      setFromDate('')
-                      setToDate('')
-                      setSelectedLeadTab('Leads')
-                      setPage(1)
-                    }}
-                    className="text-sm font-extrabold text-rose-700 hover:underline cursor-pointer bg-rose-50 px-2.5 py-1 rounded-lg border border-rose-200"
-                  >
-                    Reset All Filters
-                  </button>
                 )}
               </div>
+
+              {/* Date filter pills — inline */}
+              <div className="flex items-center gap-1 shrink-0">
+                <span className="text-xs font-black text-slate-400 uppercase tracking-wider mr-1">Date:</span>
+                {['Today', 'This Month', 'Custom'].map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    onClick={() => handleLinearDateFilter(tab)}
+                    className={`mgr-card px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                      dateFilterTab === tab
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+                {dateFilterTab === 'Custom' && (
+                  <div className="flex items-center gap-1.5 ml-1">
+                    <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
+                      className="bg-slate-100 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none cursor-pointer" />
+                    <span className="text-slate-400 font-bold text-xs">→</span>
+                    <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
+                      className="bg-slate-100 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none cursor-pointer" />
+                  </div>
+                )}
+              </div>
+
+              {/* Search — right side */}
+              <div className="relative flex-1 min-w-[220px]">
+                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => { setSearch(e.target.value); setPage(1) }}
+                  placeholder="Search client, lead ID, SE name..."
+                  className="w-full h-8 bg-slate-100 rounded-lg pl-8 pr-3 text-xs text-slate-900 focus:outline-none font-semibold placeholder-slate-400"
+                />
+              </div>
+
+              {/* Reset — only when filters active */}
+              {(selectedSE !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || search || fromDate || toDate || selectedLeadTab !== 'Leads') && (
+                <button
+                  onClick={() => {
+                    setSelectedSE('All'); setSelectedStatus('All'); setSelectedPriority('All')
+                    setSearch(''); setFromDate(''); setToDate(''); setSelectedLeadTab('Leads'); setPage(1)
+                  }}
+                  className="mgr-card text-xs font-black text-rose-600 hover:text-rose-800 cursor-pointer transition shrink-0"
+                >
+                  ✕ Reset
+                </button>
+              )}
             </div>
 
             {/* ── TEAM LEAD REPORTS TABLE ─────────────────────── */}
@@ -780,7 +729,7 @@ export default function ManagerLeads() {
                             <td className="px-5 py-4.5 text-right">
                               <button
                                 onClick={() => setSelectedLeadModal(lead)}
-                                className="px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto active:scale-95"
+                                className="mgr-card px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-black text-xs shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto active:scale-95"
                               >
                                 <Eye size={14} /> View Details
                               </button>
@@ -807,7 +756,7 @@ export default function ManagerLeads() {
                       {loading ? (
                         <tr>
                           <td colSpan="6" className="text-center py-16 text-slate-400">
-                            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-600 mb-3" />
+                            <RefreshCw className="w-8 h-8 animate-spin mx-auto text-mgr-primary-600 mb-3" />
                             <span className="text-sm font-black text-slate-700">Loading Leads from Supabase...</span>
                           </td>
                         </tr>
@@ -819,7 +768,7 @@ export default function ManagerLeads() {
                         </tr>
                       ) : (
                         paginatedLeads.map((lead, idx) => (
-                          <tr key={lead.id || lead.lead_id || idx} className="hover:bg-amber-50/40 transition-colors">
+                          <tr key={lead.id || lead.lead_id || idx} className="hover:bg-mgr-primary-50/40 transition-colors">
                             <td className="px-5 py-4.5 font-bold text-slate-900 text-sm">
                               {formatDate(lead.created_at || lead.date) || '—'}
                             </td>
@@ -839,7 +788,7 @@ export default function ManagerLeads() {
                               </div>
                             </td>
                             <td className="px-5 py-4.5">
-                              <span className="inline-block bg-amber-50 text-amber-950 border border-amber-200 px-3 py-1 rounded-xl text-xs font-black">
+                              <span className="inline-block bg-mgr-primary-50 text-mgr-primary-950 border border-mgr-primary-200 px-3 py-1 rounded-xl text-xs font-black">
                                 {lead.product || lead.product_name || 'TwiteConnect CRM'}
                               </span>
                             </td>
@@ -859,7 +808,7 @@ export default function ManagerLeads() {
                             <td className="px-5 py-4.5 text-right">
                               <button
                                 onClick={() => setSelectedLeadModal(lead)}
-                                className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto active:scale-95"
+                                className="mgr-card px-3.5 py-2 rounded-xl bg-mgr-primary-600 hover:bg-mgr-primary-700 text-white font-black text-xs shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto active:scale-95"
                               >
                                 <Eye size={14} /> View Full Report
                               </button>
@@ -912,10 +861,10 @@ export default function ManagerLeads() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black uppercase text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                  <span className="text-[10px] font-black uppercase text-mgr-primary-800 bg-mgr-primary-50 px-2.5 py-0.5 rounded-full border border-mgr-primary-200">
                     {selectedLeadModal.priority || selectedLeadModal.category} Lead Report
                   </span>
-                  <span className="text-[10px] font-mono font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                  <span className="text-[10px] font-mono font-black text-mgr-primary-900 bg-mgr-primary-100 px-2 py-0.5 rounded border border-mgr-primary-300">
                     #{selectedLeadModal.lead_code || selectedLeadModal.lead_number || selectedLeadModal.id}
                   </span>
                 </div>
@@ -929,20 +878,20 @@ export default function ManagerLeads() {
             </div>
 
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200/80 space-y-1">
+              <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1">
                 <span className="text-[10px] font-extrabold uppercase text-slate-400">POC Details</span>
                 <p className="font-black text-slate-900 text-sm">{selectedLeadModal.contact_person || selectedLeadModal.person || '—'}</p>
                 <p className="text-slate-700 font-semibold">{selectedLeadModal.mobile || selectedLeadModal.phone || '—'}</p>
                 <p className="text-slate-500 font-mono text-[11px]">{selectedLeadModal.email || '—'}</p>
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200/80 space-y-1">
+              <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1">
                 <span className="text-[10px] font-extrabold uppercase text-slate-400">Assigned Sales Executive</span>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-[10px] bg-amber-100 text-amber-950 border border-amber-300 px-1 py-0.2 rounded font-mono font-black">
+                  <span className="text-[10px] bg-mgr-primary-100 text-mgr-primary-950 border border-mgr-primary-300 px-1 py-0.2 rounded font-mono font-black">
                     [{selectedLeadModal.employee_code || 'EMP-101'}]
                   </span>
-                  <p className="font-black text-amber-900 text-sm">{selectedLeadModal.assigned_to || selectedLeadModal.assignedTo || 'Sales Executive'}</p>
+                  <p className="font-black text-mgr-primary-900 text-sm">{selectedLeadModal.assigned_to || selectedLeadModal.assignedTo || 'Sales Executive'}</p>
                 </div>
                 <p className="text-slate-500 font-mono text-[11px]">{selectedLeadModal.assigned_to_email || selectedLeadModal.assignedToEmail || '—'}</p>
                 <p className="text-emerald-700 font-black mt-1">Est. Revenue: {selectedLeadModal.expected_value || selectedLeadModal.value || '₹4,50,000'}</p>
@@ -950,26 +899,26 @@ export default function ManagerLeads() {
             </div>
 
             <div className="grid grid-cols-3 gap-2 text-xs">
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="p-2.5 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Created Date</span>
                 <p className="font-mono font-bold text-slate-800 mt-0.5">{formatDate(selectedLeadModal.created_at) || '—'}</p>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="p-2.5 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Last Follow-up</span>
                 <p className="font-mono font-bold text-slate-800 mt-0.5">{selectedLeadModal.last_followup || '2026-08-04'}</p>
               </div>
-              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
-                <span className="text-[10px] font-bold text-amber-800">Next Follow-up</span>
-                <p className="font-mono font-bold text-amber-950 mt-0.5">{selectedLeadModal.next_followup || '2026-08-08'}</p>
+              <div className="p-2.5 rounded-xl bg-mgr-primary-50 border border-mgr-primary-200">
+                <span className="text-[10px] font-bold text-mgr-primary-800">Next Follow-up</span>
+                <p className="font-mono font-bold text-mgr-primary-950 mt-0.5">{selectedLeadModal.next_followup || '2026-08-08'}</p>
               </div>
             </div>
 
-            <div className="p-3 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-1 text-xs">
-              <span className="text-[10px] font-extrabold uppercase text-amber-900">Product / Purpose Mentioned</span>
-              <p className="font-extrabold text-amber-950">{selectedLeadModal.product || 'TwiteConnect Field CRM Suite'}</p>
+            <div className="p-3 rounded-2xl bg-mgr-primary-50/60 border border-mgr-primary-200 space-y-1 text-xs">
+              <span className="text-[10px] font-extrabold uppercase text-mgr-primary-900">Product / Purpose Mentioned</span>
+              <p className="font-extrabold text-mgr-primary-950">{selectedLeadModal.product || 'TwiteConnect Field CRM Suite'}</p>
             </div>
 
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1 text-xs">
+            <div className="p-3 rounded-2xl bg-slate-50 border-slate-200 space-y-1 text-xs">
               <span className="text-[10px] font-extrabold uppercase text-slate-400">SE Remarks & Complete Activity Notes</span>
               <p className="font-medium text-slate-700 leading-relaxed italic">
                 "{selectedLeadModal.remarks || selectedLeadModal.notes || 'Detailed client requirements and follow-up history logged by Sales Executive.'}"

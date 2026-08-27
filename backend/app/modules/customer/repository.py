@@ -141,6 +141,11 @@ class CustomerRepository:
                 sm_email = ""
                 sm_name = ""
                 product_val = "Software License"
+                cust_notes = str(row.get("notes") or "")
+                if "|" in cust_notes:
+                    for part in cust_notes.split("|"):
+                        if "Product:" in part:
+                            product_val = part.split("Product:")[-1].strip()
                 
                 # Customer table own columns are the primary source of truth!
                 se_name = row.get("sales_executive") or ""
@@ -338,8 +343,15 @@ class CustomerRepository:
         # Generate a NEW unique customer id
         customer_uuid = str(uuid.uuid4())
 
+        # Resolve product from data / lead_info
+        product_val = data.get("product") or data.get("product_name") or data.get("package_tier") or data.get("packageTier")
+        if not product_val and lead_info:
+            product_val = lead_info.get("product_name") or lead_info.get("product")
+        if not product_val:
+            product_val = "Software License"
+
         notes_raw = str(data.get("notes") or data.get("reachOutReason") or data.get("onboardingRemarks") or f"Customer account for {comp_name}")
-        full_notes = f"{notes_raw} | AssignedTo: {assigned_to}"
+        full_notes = f"{notes_raw} | AssignedTo: {assigned_to} | Product: {product_val}"
 
         # Standard payload matching Supabase crm.customers
         payload = {

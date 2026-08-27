@@ -251,6 +251,7 @@ const ROLE_BADGE_CLASSES = {
   'Super Admin': 'bg-rose-50 text-rose-700 border-rose-200',
   'CEO / Founder': 'bg-purple-50 text-purple-700 border-purple-200',
   'Sales Manager': 'bg-blue-50 text-blue-700 border-blue-200',
+  'Team Lead': 'bg-indigo-50 text-indigo-700 border-indigo-200',
   'Sales Executive': 'bg-emerald-50 text-emerald-700 border-emerald-200',
 }
 
@@ -532,31 +533,34 @@ function UserManagement() {
   const salesManagers = useMemo(() => {
     return users.filter((u) => {
       const r = (u.role || '').toLowerCase()
-      return r.includes('manager') || r.includes('admin') || r.includes('ceo')
+      return r.includes('manager') || r.includes('admin') || r.includes('ceo') || r.includes('team lead') || r.includes('tl')
     })
   }, [users])
 
   const salesExecutives = useMemo(() => {
     return users.filter((u) => {
       const r = (u.role || '').toLowerCase()
-      const isManagerOrAdmin = r.includes('manager') || r.includes('admin') || r.includes('ceo')
+      const isManagerOrAdmin = r.includes('manager') || r.includes('admin') || r.includes('ceo') || r.includes('team lead') || r.includes('tl')
       return !isManagerOrAdmin
     })
   }, [users])
 
   const hierarchyManagers = useMemo(() => {
-    return users.filter((u) => (u.role || '').toLowerCase().trim() === 'sales manager')
+    return users.filter((u) => {
+      const r = (u.role || '').toLowerCase().trim()
+      return r === 'sales manager' || r === 'team lead' || r === 'tl'
+    })
   }, [users])
 
   const hierarchyExecutives = useMemo(() => {
     return users.filter((u) => (u.role || '').toLowerCase().trim() === 'sales executive')
   }, [users])
 
-  // Potential Reporting Managers (CEO, Admin, and Managers)
+  // Potential Reporting Managers (CEO, Admin, Managers, and Team Leads)
   const potentialReportingManagers = useMemo(() => {
     return users.filter((u) => {
       const r = (u.role || '').toLowerCase()
-      return r.includes('manager') || r.includes('admin') || r.includes('ceo') || r.includes('founder')
+      return r.includes('manager') || r.includes('admin') || r.includes('ceo') || r.includes('founder') || r.includes('team lead') || r.includes('tl')
     })
   }, [users])
 
@@ -868,10 +872,10 @@ function UserManagement() {
     setShowEditModal(true)
   }
 
-  // Set default reporting manager when role is changed to Sales Manager in Add form
+  // Set default reporting manager when role is changed to Sales Manager / Team Lead in Add form
   const handleAddRoleChange = (selectedRole) => {
     let extra = {}
-    if (selectedRole === 'Sales Manager') {
+    if (selectedRole === 'Sales Manager' || selectedRole === 'Team Lead') {
       const ceo = users.find(u => {
         const emailLower = (u.email || '').toLowerCase()
         const roleLower = (u.role || '').toLowerCase()
@@ -900,10 +904,10 @@ function UserManagement() {
     setNewUser({ ...newUser, role: selectedRole, ...extra })
   }
 
-  // Set default reporting manager when role is changed to Sales Manager in Edit form
+  // Set default reporting manager when role is changed to Sales Manager / Team Lead in Edit form
   const handleEditRoleChange = (selectedRole) => {
     let extra = {}
-    if (selectedRole === 'Sales Manager') {
+    if (selectedRole === 'Sales Manager' || selectedRole === 'Team Lead') {
       const ceo = users.find(u => {
         const emailLower = (u.email || '').toLowerCase()
         const roleLower = (u.role || '').toLowerCase()
@@ -1129,7 +1133,7 @@ function UserManagement() {
   // Role Statistics
   const activeCount = users.filter((u) => u.status === 'Active').length
   const inactiveCount = users.filter((u) => u.status === 'Inactive').length
-  const salesManagersCount = users.filter((u) => u.role === 'Sales Manager').length
+  const salesManagersCount = users.filter((u) => u.role === 'Sales Manager' || u.role === 'Team Lead').length
   const executivesCount = users.filter((u) => u.role === 'Sales Executive').length
 
   return (
@@ -1796,6 +1800,7 @@ function UserManagement() {
                     className="w-full h-10 border border-slate-350 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 font-bold bg-white focus:ring-1 focus:ring-blue-100"
                   >
                     <option value="Sales Manager">Sales Manager</option>
+                    <option value="Team Lead">Team Lead</option>
                     <option value="Sales Executive">Sales Executive</option>
                     <option value="System Admin">System Admin</option>
                   </select>
@@ -2113,6 +2118,7 @@ function UserManagement() {
                     className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-blue-600"
                   >
                     <option value="Sales Manager">Sales Manager</option>
+                    <option value="Team Lead">Team Lead</option>
                     <option value="Sales Executive">Sales Executive</option>
                     <option value="System Admin">System Admin</option>
                   </select>

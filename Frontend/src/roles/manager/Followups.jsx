@@ -61,7 +61,7 @@ export default function ManagerFollowups() {
                 <td className="px-6 py-4 text-slate-300 max-w-xs truncate">{item.notes}</td>
                 <td className="px-6 py-4">
                   <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold ${
-                    item.status === 'Completed' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-amber-950 text-amber-300 border border-amber-800'
+                    item.status === 'Completed' ? 'bg-emerald-950 text-emerald-300 border border-emerald-800' : 'bg-mgr-primary-950 text-mgr-primary-300 border border-mgr-primary-800'
                   }`}>
                     {item.status}
                   </span>
