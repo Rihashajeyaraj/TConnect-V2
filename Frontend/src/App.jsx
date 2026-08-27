@@ -2,6 +2,7 @@ import React, { lazy, Suspense } from 'react'
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import Login from './common/Login.jsx'
 import ForgotPassword from './common/ForgotPassword.jsx'
+import ChangePassword from './common/ChangePassword.jsx'
 import Signup from './common/Signup.jsx'
 import ProtectedRoute from './common/ProtectedRoute.jsx'
 import { ToastProvider } from './common/ToastContext.jsx'
@@ -86,6 +87,7 @@ function App() {
             {/* ── Public Auth Routes ─────────────────────────── */}
             <Route path="/" element={<Login />} />
             <Route path="/forgot-password" element={<ForgotPassword />} />
+            <Route path="/change-password" element={<ChangePassword />} />
             <Route path="/signup" element={<Signup />} />
 
             {/* ── CEO Portal ─────────────────────────────────── */}

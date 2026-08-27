@@ -44,16 +44,10 @@ class ReportsRepository:
             if key in self._geocoded_cache:
                 return self._geocoded_cache[key]
                 
-            import requests
-            url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat_f}&lon={lng_f}&zoom=18"
-            headers = {"User-Agent": "TConnect-Backend/1.0"}
-            res = requests.get(url, headers=headers, timeout=2)
-            if res.status_code == 200:
-                data = res.json()
-                display_name = data.get("display_name")
-                if display_name:
-                    self._geocoded_cache[key] = display_name
-                    return display_name
+            # Instant fallback to avoid blocking HTTP requests in lists and loops
+            coords_str = f"Location ({lat_f:.4f}, {lng_f:.4f})"
+            self._geocoded_cache[key] = coords_str
+            return coords_str
         except Exception as e:
             logger.warning(f"Reverse geocode failed for {lat}, {lng}: {e}")
         return None
@@ -1308,27 +1302,29 @@ class ReportsRepository:
             if login_time == "—": 
                 login_time = None
 
-            c_in_lat = matched_log.get("check_in_latitude") or matched_log.get("latitude")
-            c_in_lng = matched_log.get("check_in_longitude") or matched_log.get("longitude")
-            if c_in_lat is not None and c_in_lng is not None:
-                login_location = self._reverse_geocode_coords(c_in_lat, c_in_lng)
-            if not login_location:
-                stored_in_addr = matched_log.get("check_in_address") or matched_log.get("work_location") or matched_log.get("location_name")
-                if stored_in_addr and stored_in_addr != "Adyar IT Corridor, Chennai" and stored_in_addr != "—" and stored_in_addr.strip() != "":
-                    login_location = stored_in_addr
+            # Try database check-in address first
+            stored_in_addr = matched_log.get("check_in_address") or matched_log.get("work_location") or matched_log.get("location_name")
+            if stored_in_addr and stored_in_addr != "Adyar IT Corridor, Chennai" and stored_in_addr != "—" and stored_in_addr.strip() != "":
+                login_location = stored_in_addr
+            else:
+                c_in_lat = matched_log.get("check_in_latitude") or matched_log.get("latitude")
+                c_in_lng = matched_log.get("check_in_longitude") or matched_log.get("longitude")
+                if c_in_lat is not None and c_in_lng is not None:
+                    login_location = self._reverse_geocode_coords(c_in_lat, c_in_lng)
 
-            logout_time = matched_log.get("check_out_time") or matched_log.get("punch_out_time") or matched_log.get("clockOut")
+            logout_time = matched_log.get("check_out_time") or matched_log.get("punch_out_time") or matched_log.get("clockIn")
             if logout_time == "—": 
                 logout_time = None
 
-            c_out_lat = matched_log.get("check_out_latitude")
-            c_out_lng = matched_log.get("check_out_longitude")
-            if c_out_lat is not None and c_out_lng is not None:
-                logout_location = self._reverse_geocode_coords(c_out_lat, c_out_lng)
-            if not logout_location:
-                stored_out_addr = matched_log.get("check_out_address")
-                if stored_out_addr and stored_out_addr != "Adyar IT Corridor, Chennai" and stored_out_addr != "—" and stored_out_addr.strip() != "":
-                    logout_location = stored_out_addr
+            # Try database check-out address first
+            stored_out_addr = matched_log.get("check_out_address")
+            if stored_out_addr and stored_out_addr != "Adyar IT Corridor, Chennai" and stored_out_addr != "—" and stored_out_addr.strip() != "":
+                logout_location = stored_out_addr
+            else:
+                c_out_lat = matched_log.get("check_out_latitude")
+                c_out_lng = matched_log.get("check_out_longitude")
+                if c_out_lat is not None and c_out_lng is not None:
+                    logout_location = self._reverse_geocode_coords(c_out_lat, c_out_lng)
 
         if not login_time or login_time == "—": login_time = "N/A"
         if not login_location or login_location == "—": login_location = "N/A"

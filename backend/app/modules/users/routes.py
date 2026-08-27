@@ -4,12 +4,15 @@ from app.core.dependencies import get_current_user_payload
 from app.core.scoping import get_allowed_user_identifiers, is_record_accessible, normalize_user_role
 from app.modules.users.schemas import UserCreate, UserUpdate, UserResponse, AssignManagerRequest
 from app.modules.users.service import UserService
+from app.modules.auth.schemas import ApproveResetRequest
+from app.modules.auth.service import AuthService
 from app.modules.settings.permissions import CanManageSettings
 from app.exceptions.base import ForbiddenException
 from app.modules.audit.service import create_audit_log
 from app.core.logger import logger
 
 router = APIRouter(prefix="/users", tags=["User Account Management"])
+
 
 
 def get_service() -> UserService:
@@ -206,3 +209,55 @@ async def delete_user(
         data={"id": user_id},
         message="Employee user account deleted successfully"
     )
+
+
+# ── Password Reset Request Routes (Admin Only) ──────────────────────────────
+
+def get_auth_service() -> AuthService:
+    return AuthService()
+
+
+@router.get("/password-reset-requests", response_model=StandardResponse)
+async def list_password_reset_requests(
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: AuthService = Depends(get_auth_service),
+):
+    """Admin: List all pending employee password reset requests."""
+    requests = service.get_all_reset_requests()
+    return StandardResponse.success_response(
+        data=requests,
+        message=f"{len(requests)} pending password reset request(s) found."
+    )
+
+
+@router.post("/password-reset-requests/{email}/approve", response_model=StandardResponse)
+async def approve_password_reset(
+    email: str,
+    payload: ApproveResetRequest,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: AuthService = Depends(get_auth_service),
+):
+    """Admin: Approve a password reset request — sets new password in Supabase and notifies employee."""
+    result = service.approve_reset_request(email, payload.new_password, user_payload)
+    return StandardResponse.success_response(
+        data=result,
+        message=result.get("message", "Password reset approved.")
+    )
+
+
+@router.post("/password-reset-requests/{email}/reject", response_model=StandardResponse)
+async def reject_password_reset(
+    email: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: AuthService = Depends(get_auth_service),
+):
+    """Admin: Reject a password reset request."""
+    result = service.reject_reset_request(email, user_payload)
+    return StandardResponse.success_response(
+        data=result,
+        message=result.get("message", "Password reset request rejected.")
+    )
+

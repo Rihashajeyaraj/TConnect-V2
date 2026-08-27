@@ -1227,13 +1227,33 @@ function UserManagement() {
           >
             <Network className="w-4 h-4" /> Manager & Executive Team Hierarchy ({hierarchyManagers.length} Managers)
           </button>
+          <button
+            onClick={() => setActiveTab('password-resets')}
+            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer relative ${
+              activeTab === 'password-resets'
+                ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+            }`}
+          >
+            <Key className="w-4 h-4" /> Password Requests
+          </button>
         </div>
       </div>
+
+      {/* ======================================================== */}
+      {/* VIEW 3: PASSWORD RESET REQUESTS                          */}
+      {/* ======================================================== */}
+      {activeTab === 'password-resets' && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+          <PasswordResetRequestsPanel />
+        </div>
+      )}
 
       {/* ======================================================== */}
       {/* VIEW 1: MANAGER & EXECUTIVE HIERARCHY                    */}
       {/* ======================================================== */}
       {activeTab === 'hierarchy' && (
+
         <div className="space-y-6">
           {/* Header Info Note */}
           <div className="bg-white border border-[#DCE3EF] p-5 rounded-2xl flex items-center justify-between gap-4">
@@ -2748,3 +2768,179 @@ function UserManagement() {
 }
 
 export default UserManagement
+
+// ── Password Reset Requests Panel (Admin Only) ──────────────────────────────
+
+export function PasswordResetRequestsPanel() {
+  const { showToast } = useToast()
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [approveModal, setApproveModal] = useState(null) // { email, name }
+  const [tempPassword, setTempPassword] = useState('')
+  const [approving, setApproving] = useState(false)
+  const [showTempPwd, setShowTempPwd] = useState(false)
+
+  async function fetchRequests() {
+    setLoading(true)
+    try {
+      const res = await userAPI.getPasswordResetRequests()
+      setRequests(res?.data || [])
+    } catch {
+      showToast('Failed to load password reset requests.', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchRequests() }, [])
+
+  async function handleApprove(e) {
+    e.preventDefault()
+    if (!tempPassword || tempPassword.length < 8) {
+      showToast('Password must be at least 8 characters.', 'error')
+      return
+    }
+    setApproving(true)
+    try {
+      await userAPI.approvePasswordReset(approveModal.email, tempPassword)
+      showToast(`Password reset approved for ${approveModal.name}. Inform them via phone/chat.`, 'success')
+      setApproveModal(null)
+      setTempPassword('')
+      fetchRequests()
+    } catch (err) {
+      showToast(err?.detail || err?.message || 'Failed to approve reset.', 'error')
+    } finally {
+      setApproving(false)
+    }
+  }
+
+  async function handleReject(email, name) {
+    if (!window.confirm(`Reject password reset request from ${name}?`)) return
+    try {
+      await userAPI.rejectPasswordReset(email)
+      showToast(`Reset request from ${name} rejected.`, 'success')
+      fetchRequests()
+    } catch (err) {
+      showToast(err?.detail || err?.message || 'Failed to reject.', 'error')
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+            <Key size={16} className="text-amber-500" />
+            Password Reset Requests
+            {requests.length > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-black">
+                {requests.length}
+              </span>
+            )}
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">Employees who have submitted forgot-password requests. Review and set a temporary password.</p>
+        </div>
+        <button onClick={fetchRequests} disabled={loading}
+          className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer disabled:opacity-50">
+          {loading ? 'Loading...' : '↻ Refresh'}
+        </button>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div className="flex justify-center py-10 text-slate-400 text-sm">Loading requests...</div>
+      ) : requests.length === 0 ? (
+        <div className="text-center py-12 rounded-2xl border border-dashed border-slate-200 bg-slate-50">
+          <CheckCircle2 size={28} className="mx-auto text-emerald-400 mb-2" />
+          <p className="text-sm font-bold text-slate-600">No pending password reset requests</p>
+          <p className="text-xs text-slate-400 mt-1">Employees who forget their password will appear here.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {requests.map((req) => (
+            <div key={req.email} className="flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-extrabold text-slate-900">{req.employee_name}</span>
+                  {req.employee_code && (
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">{req.employee_code}</span>
+                  )}
+                  <span className="text-[10px] font-bold text-amber-600 bg-amber-100 rounded px-1.5 py-0.5">⏳ Pending</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">{req.email}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Role: {req.role} · Requested: {req.requested_at ? new Date(req.requested_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setApproveModal({ email: req.email, name: req.employee_name })}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow"
+                >
+                  <CheckCircle2 size={13} /> Approve
+                </button>
+                <button
+                  onClick={() => handleReject(req.email, req.employee_name)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  <UserX size={13} /> Reject
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Approve Modal */}
+      {approveModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-200">
+            <h3 className="text-lg font-extrabold text-slate-900 mb-1">Set Temporary Password</h3>
+            <p className="text-xs text-slate-500 mb-5">
+              Set a temporary password for <strong>{approveModal.name}</strong> ({approveModal.email}).
+              Communicate this password to the employee directly via phone or chat.
+            </p>
+
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-700 mb-5">
+              ⚠️ The employee will be forced to change this password on their next login.
+            </div>
+
+            <form onSubmit={handleApprove} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">Temporary Password</label>
+                <div className="relative">
+                  <Lock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-500 pointer-events-none" />
+                  <input
+                    type={showTempPwd ? 'text' : 'password'}
+                    value={tempPassword}
+                    onChange={(e) => setTempPassword(e.target.value)}
+                    placeholder="Min. 8 characters"
+                    className="w-full h-11 bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-10 text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10 transition"
+                    required
+                    minLength={8}
+                  />
+                  <button type="button" tabIndex={-1} onClick={() => setShowTempPwd(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
+                    {showTempPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => { setApproveModal(null); setTempPassword('') }}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer">
+                  Cancel
+                </button>
+                <button type="submit" disabled={approving}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1">
+                  {approving ? 'Saving...' : <><CheckCircle2 size={13} /> Approve & Set Password</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

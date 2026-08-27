@@ -83,6 +83,11 @@ export const authAPI = {
   signup: (userData) => request('/auth/signup', { method: 'POST', body: JSON.stringify(userData) }),
   devToken: (payload) => request('/auth/dev-token', { method: 'POST', body: JSON.stringify(payload) }),
   me: () => request('/auth/me'),
+  forgotPassword: (email) => request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  changePassword: (currentPassword, newPassword) => request('/auth/change-password', {
+    method: 'POST',
+    body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+  }),
 }
 
 export const crmAPI = {
@@ -288,7 +293,17 @@ export const userAPI = {
   deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
   assignManager: (data) => request('/users/assign-manager', { method: 'POST', body: JSON.stringify(data) }),
   getManagerTeam: (managerId) => request(`/users/manager-team/${managerId}`),
+  // Password reset requests (Admin only)
+  getPasswordResetRequests: () => request('/users/password-reset-requests'),
+  approvePasswordReset: (email, newPassword) => request(`/users/password-reset-requests/${encodeURIComponent(email)}/approve`, {
+    method: 'POST',
+    body: JSON.stringify({ new_password: newPassword }),
+  }),
+  rejectPasswordReset: (email) => request(`/users/password-reset-requests/${encodeURIComponent(email)}/reject`, {
+    method: 'POST',
+  }),
 }
+
 
 export const settingsAPI = {
   getSettings: () => request('/settings/business'),
