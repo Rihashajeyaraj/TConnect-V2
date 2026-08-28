@@ -3,7 +3,7 @@ import salesGuyImg from '../assets/sales-guy-checking-routes.png'
 
 function BrandPanel() {
   return (
-    <section className="relative hidden lg:flex flex-col justify-between p-7 lg:p-9 bg-gradient-to-br from-blue-50/90 via-slate-50 to-mgr-secondary-50/80 rounded-[2.5rem] border border-blue-100/90 shadow-inner overflow-hidden">
+    <section className="relative hidden lg:flex flex-col justify-between p-7 lg:p-9 brand-map-bg rounded-[2.5rem] border border-blue-100/90 shadow-inner overflow-hidden">
       {/* CSS Animations style tag */}
       <style dangerouslySetInnerHTML={{__html: `
         @keyframes travelRoad {
@@ -30,6 +30,14 @@ function BrandPanel() {
         }
         .bike-bounce {
           animation: bodyBounce 0.15s infinite ease-in-out;
+        }
+        .brand-map-bg {
+          background-color: #f8fafc;
+          background-image: 
+            radial-gradient(circle at 80% 20%, rgba(56, 189, 248, 0.2) 0%, transparent 60%),
+            radial-gradient(circle at 20% 80%, rgba(99, 102, 241, 0.15) 0%, transparent 60%),
+            url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'%3E%3Cg fill='none' stroke='%233b82f6' stroke-opacity='0.12' stroke-width='1'%3E%3Ccircle cx='80' cy='80' r='75' stroke-dasharray='4,4'/%3E%3Ccircle cx='80' cy='80' r='50'/%3E%3Ccircle cx='80' cy='80' r='25' stroke-dasharray='2,2'/%3E%3Cpath d='M0,80 h160 M80,0 v160 M20,20 l120,120 M20,140 l120,-120'/%3E%3C/g%3E%3Cg stroke='%236366f1' stroke-opacity='0.1' stroke-width='1.5' fill='none'%3E%3Cpath d='M-20,40 Q40,30 80,70 T180,90 M40,-20 Q70,60 100,100 T120,180'/%3E%3C/g%3E%3Ccircle cx='80' cy='70' r='4' fill='%233b82f6' fill-opacity='0.25'/%3E%3Ccircle cx='110' cy='110' r='3' fill='%236366f1' fill-opacity='0.25'/%3E%3C/svg%3E");
+          background-size: cover, cover, 160px 160px;
         }
       `}} />
 

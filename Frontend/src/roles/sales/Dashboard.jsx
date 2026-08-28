@@ -36,7 +36,7 @@ import {
   ExternalLink,
   Briefcase
 } from "lucide-react";
-import { salesDashboardAPI, todoAPI, notificationAPI, crmAPI, hrmsAPI, salesAPI, attendanceAPI } from "../../services/api.js";
+import { salesDashboardAPI, todoAPI, notificationAPI, crmAPI, hrmsAPI, salesAPI, attendanceAPI, customerAPI, visitAPI, expenseAPI } from "../../services/api.js";
 import { exportToPDF, exportToExcel, exportToCSV, getFormattedTodayDate } from "../../utils/exportUtils.js";
 import { calculateWorkHours } from "./Attendance.jsx";
 import { useToast } from "../../common/ToastContext.jsx";
@@ -238,13 +238,121 @@ export default function Dashboard() {
   // ── Fetch & Compute Live Data (Strictly Isolated Per Executive) ───────────────
   const fetchAll = useCallback(async () => {
     try {
-      const leads = JSON.parse(localStorage.getItem("tc_sm_leads") || "[]");
-      const customers = JSON.parse(localStorage.getItem("tc_customer_accounts") || "[]");
-      const visits = JSON.parse(localStorage.getItem("tc_sales_visits") || "[]");
-      const followups = JSON.parse(localStorage.getItem("tc_sales_followups") || "[]");
-      const expenses = JSON.parse(localStorage.getItem("tc_sales_expenses") || "[]");
+      // Fetch live data from backend APIs in parallel for instant display
+      const [leadsRes, customersRes, visitsRes, followupsRes, expensesRes] = await Promise.allSettled([
+        crmAPI.getLeads(),
+        customerAPI.getCustomers(),
+        visitAPI.getVisits(),
+        crmAPI.getFollowups(),
+        expenseAPI.getExpenses(),
+      ]);
+
+      let leads = [];
+      if (leadsRes.status === 'fulfilled') {
+        const raw = Array.isArray(leadsRes.value) ? leadsRes.value : (leadsRes.value?.data || []);
+        if (raw.length > 0) {
+          leads = raw.map((l) => {
+            const rawStatus = (l.status || "NEW").toUpperCase();
+            const statusMap = {
+              "NEW": "New",
+              "FOLLOW_UP": "Moved to Follow-ups",
+              "VISIT_SCHEDULED": "Visit Scheduled",
+              "CONVERTED": "Converted to Customer",
+              "LOST": "Not Converted / Lost",
+            };
+            return {
+              id: l.lead_id || l.id,
+              leadNumber: l.lead_number || `LD-${String(l.lead_id || l.id || "").slice(-8).toUpperCase()}`,
+              company: l.company_name || l.company || "Prospect Lead",
+              person: l.contact_person || l.contact_name || "Point of Contact",
+              phone: l.mobile || l.contact_phone || "",
+              email: l.email || l.contact_email || "",
+              city: l.city || "Chennai",
+              product: l.product_name || l.product || "TwiteConnect CRM",
+              product_name: l.product_name || l.product || "TwiteConnect CRM",
+              category: l.category || "Warm",
+              priority: l.priority || "Medium",
+              status: statusMap[rawStatus] || l.status || "New",
+              value: l.expected_value ? `₹${Number(l.expected_value).toLocaleString("en-IN")}` : "₹0",
+              assignedTo: l.assigned_to || userName,
+              assignedToEmail: l.assigned_to_email || userEmail,
+              notes: l.notes || l.remarks || "",
+              customerId: l.customer_id || null,
+              source: l.source || "Supabase",
+              latitude: l.latitude || null,
+              longitude: l.longitude || null,
+              full_address: l.address || null,
+              createdAt: l.created_at ? formatDate(l.created_at) : formatDate(new Date()),
+            };
+          });
+          localStorage.setItem("tc_sm_leads", JSON.stringify(leads));
+        }
+      }
+      if (leads.length === 0) {
+        leads = JSON.parse(localStorage.getItem("tc_sm_leads") || "[]");
+      }
+
+      let customers = [];
+      if (customersRes.status === 'fulfilled') {
+        const raw = Array.isArray(customersRes.value) ? customersRes.value : (customersRes.value?.data || []);
+        if (raw.length > 0) {
+          customers = raw;
+          localStorage.setItem("tc_customer_accounts", JSON.stringify(customers));
+        }
+      }
+      if (customers.length === 0) {
+        customers = JSON.parse(localStorage.getItem("tc_customer_accounts") || "[]");
+      }
+
+      let visits = [];
+      if (visitsRes.status === 'fulfilled') {
+        const raw = Array.isArray(visitsRes.value) ? visitsRes.value : (visitsRes.value?.data || []);
+        if (raw.length > 0) {
+          visits = raw.map((v) => ({
+            id: v.visit_id || v.id,
+            customer: v.title || v.customer_name || "Client Account",
+            client: v.title || v.customer_name || "Client Account",
+            person: v.contact_person || v.contactPerson || "Point of Contact",
+            phone: v.phone || "",
+            location: v.location || v.address || "Chennai",
+            date: v.scheduled_time ? formatDate(v.scheduled_time) : formatDate(new Date()),
+            time: "10:00 AM",
+            status: v.status === "COMPLETED" ? "Completed" : "Scheduled",
+            purpose: v.purpose || "Site Visit & Demo",
+            notes: v.remarks || v.notes || ""
+          }));
+          localStorage.setItem("tc_sales_visits", JSON.stringify(visits));
+        }
+      }
+      if (visits.length === 0) {
+        visits = JSON.parse(localStorage.getItem("tc_sales_visits") || "[]");
+      }
+
+      let followups = [];
+      if (followupsRes.status === 'fulfilled') {
+        const raw = Array.isArray(followupsRes.value) ? followupsRes.value : (followupsRes.value?.data || []);
+        if (raw.length > 0) {
+          followups = raw;
+          localStorage.setItem("tc_sales_followups", JSON.stringify(followups));
+        }
+      }
+      if (followups.length === 0) {
+        followups = JSON.parse(localStorage.getItem("tc_sales_followups") || "[]");
+      }
+
+      let expenses = [];
+      if (expensesRes.status === 'fulfilled') {
+        const raw = Array.isArray(expensesRes.value) ? expensesRes.value : (expensesRes.value?.data || []);
+        if (raw.length > 0) {
+          expenses = raw;
+          localStorage.setItem("tc_sales_expenses", JSON.stringify(expenses));
+        }
+      }
+      if (expenses.length === 0) {
+        expenses = JSON.parse(localStorage.getItem("tc_sales_expenses") || "[]");
+      }
+
       const localTodos = JSON.parse(localStorage.getItem("tc_3d_todos") || "[]");
-      // attendance is now fetched separately via fetchTodayAttendance
 
       // Calculate Date Scope based on selectedMonth / date filter
       const now = new Date();
@@ -664,7 +772,7 @@ export default function Dashboard() {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-blue-900 text-[10px] sm:text-xs font-black uppercase tracking-wider">My Leads</p>
-                <h2 className="text-2xl sm:text-3xl font-black text-blue-950 mt-1">{k.my_leads || k.assigned_leads}</h2>
+                <h2 className="text-2xl sm:text-3xl font-black text-blue-950 mt-1">{k.my_leads ?? k.assigned_leads ?? 0}</h2>
               </div>
               <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-md shrink-0">
                 <Users size={20} />

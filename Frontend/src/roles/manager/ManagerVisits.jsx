@@ -26,8 +26,9 @@ import {
   ChevronRight,
   TrendingUp,
 } from 'lucide-react'
-import { visitAPI, hrmsAPI } from '../../services/api.js'
+import { visitAPI, hrmsAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
+import { formatDate, parseDateInput } from '../../utils/dateUtils.js'
 
 export default function ManagerVisits() {
   const { showToast } = useToast()
@@ -35,6 +36,8 @@ export default function ManagerVisits() {
   // API State
   const [loading, setLoading] = useState(true)
   const [visits, setVisits] = useState([])
+  const [attendanceLogs, setAttendanceLogs] = useState([])
+  const [attendanceLoaded, setAttendanceLoaded] = useState(false)
   const [summary, setSummary] = useState({
     scheduled_today: 0,
     completed_today: 0,
@@ -171,6 +174,18 @@ export default function ManagerVisits() {
       .catch(() => fallbackLoadExecutives())
   }, [])
 
+  useEffect(() => {
+    attendanceAPI.getLogs()
+      .then((res) => {
+        const raw = Array.isArray(res) ? res : (res?.data || [])
+        setAttendanceLogs(raw)
+        setAttendanceLoaded(true)
+      })
+      .catch(() => {
+        setAttendanceLoaded(true)
+      })
+  }, [])
+
   const fallbackLoadExecutives = () => {
     try {
       const savedUsersStr = localStorage.getItem('tc_app_users')
@@ -233,6 +248,50 @@ export default function ManagerVisits() {
     }
 
     return 'EMP000012'
+  }
+
+  const isSEAbsentOnDate = (seEmailOrName, visitDate) => {
+    if (!attendanceLoaded || !visitDate) return false
+    
+    const targetDateStr = formatDate(visitDate)
+    const identifier = String(seEmailOrName || '').toLowerCase().trim()
+    if (!identifier) return false
+
+    // Filter logs for this executive on this particular day
+    const execLogs = attendanceLogs.filter((log) => {
+      const logEmpCode = String(log.employee_id || log.employee_code || log.emp_code || log.user_id || '').toLowerCase().trim()
+      const logEmail = String(log.email || log.user_email || '').toLowerCase().trim()
+      const logName = String(log.name || log.employee_name || '').toLowerCase().trim()
+      
+      const emailMatch = logEmail && (identifier === logEmail || logEmail.includes(identifier) || identifier.includes(logEmail))
+      const nameMatch = logName && (identifier === logName || logName.includes(identifier) || identifier.includes(logName))
+
+      if (!(emailMatch || nameMatch)) return false
+
+      // Match the date
+      const logDateStr = formatDate(log.attendance_date || log.date || log.created_at || log.check_in_time)
+      return logDateStr === targetDateStr
+    })
+
+    if (execLogs.length === 0) {
+      // Past or today date with no logs means absent
+      const visitD = parseDateInput(visitDate)
+      if (visitD) {
+        const today = new Date()
+        today.setHours(23, 59, 59, 999)
+        if (visitD.getTime() > today.getTime()) {
+          return false
+        }
+      }
+      return true
+    }
+
+    const hasPresent = execLogs.some((l) => {
+      const status = String(l.status || '').toLowerCase().trim()
+      return status === 'present' || status === 'late' || status === 'half day' || status === 'half-day'
+    })
+
+    return !hasPresent
   }
 
   const normalizeVisit = (v, idx = 0) => {
@@ -653,14 +712,22 @@ export default function ManagerVisits() {
                     </div>
 
                     {/* SE Info */}
-                    <div className="flex items-center gap-2 bg-slate-50 border-slate-200 rounded-xl px-3 py-2">
-                      <div className="w-6 h-6 rounded-full bg-mgr-primary-200 text-mgr-primary-900 flex items-center justify-center font-black text-[10px] shrink-0">
-                        {(visit.assigned_to || 'S').charAt(0).toUpperCase()}
+                    <div className="flex items-center justify-between gap-2 bg-slate-50 border-slate-200 rounded-xl px-3 py-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-6 h-6 rounded-full bg-mgr-primary-200 text-mgr-primary-900 flex items-center justify-center font-black text-[10px] shrink-0">
+                          {(visit.assigned_to || 'S').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-slate-800 truncate">{visit.assigned_to || 'Sales Executive'}</p>
+                          <p className="text-[10px] font-mono text-mgr-primary-700">{visit.employee_code || ''}</p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="text-xs font-black text-slate-800 truncate">{visit.assigned_to || 'Sales Executive'}</p>
-                        <p className="text-[10px] font-mono text-mgr-primary-700">{visit.employee_code || ''}</p>
-                      </div>
+                      {(String(visit.visit_status || '').toLowerCase().includes('miss') || String(visit.visit_status || '').toLowerCase().includes('cancel') || activeCard === 'missed') &&
+                       isSEAbsentOnDate(visit.assigned_to_email || visit.assigned_to, visit.visit_date) && (
+                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-200 shrink-0">
+                          Absent
+                        </span>
+                      )}
                     </div>
 
                     {/* Time + Location Row */}
@@ -723,7 +790,7 @@ export default function ManagerVisits() {
 
             {/* SE & Customer Information */}
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1">
+              <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1 relative">
                 <span className="text-[10px] font-extrabold uppercase text-slate-400">Sales Executive Information</span>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="text-[10px] bg-mgr-primary-100 text-mgr-primary-950 border border-mgr-primary-300 px-1 py-0.2 rounded font-mono font-black">
@@ -732,6 +799,12 @@ export default function ManagerVisits() {
                   <p className="font-black text-mgr-primary-900 text-sm">{selectedAuditModal.assigned_to || selectedAuditModal.executive || 'Sales Executive'}</p>
                 </div>
                 <p className="text-slate-500 font-mono text-[11px]">{selectedAuditModal.assigned_to_email || 'executive@tconnect.com'}</p>
+                {(String(selectedAuditModal.visit_status || '').toLowerCase().includes('miss') || String(selectedAuditModal.visit_status || '').toLowerCase().includes('cancel')) &&
+                 isSEAbsentOnDate(selectedAuditModal.assigned_to_email || selectedAuditModal.assigned_to, selectedAuditModal.visit_date) && (
+                  <span className="absolute top-2 right-2 text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-200 shadow-2xs">
+                    Absent on Visit Date
+                  </span>
+                )}
               </div>
 
               <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1">
