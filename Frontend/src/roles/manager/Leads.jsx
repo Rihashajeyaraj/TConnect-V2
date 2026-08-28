@@ -32,24 +32,60 @@ import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { formatDate } from '../../utils/dateUtils.js'
 
+const getStoredUser = () => {
+  try {
+    const u = localStorage.getItem('user') || localStorage.getItem('tc_user')
+    return u ? JSON.parse(u) : {}
+  } catch (e) { return {} }
+}
+
 export default function ManagerLeads() {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
 
-  // API State
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(null)
-  const [leads, setLeads] = useState([])
-  const [summary, setSummary] = useState({
-    total_leads: 0,
-    hot_leads: 0,
-    warm_leads: 0,
-    cold_leads: 0,
-    converted_leads: 0,
-    lost_leads: 0,
-    today_leads: 0,
-    month_leads: 0,
+  const mgrUser = getStoredUser()
+  const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
+
+  // API State with Cache
+  const [leads, setLeads] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_leads_list_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
   })
+  const [summary, setSummary] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_leads_summary_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : {
+        total_leads: 0,
+        hot_leads: 0,
+        warm_leads: 0,
+        cold_leads: 0,
+        converted_leads: 0,
+        lost_leads: 0,
+        today_leads: 0,
+        month_leads: 0,
+      }
+    } catch {
+      return {
+        total_leads: 0,
+        hot_leads: 0,
+        warm_leads: 0,
+        cold_leads: 0,
+        converted_leads: 0,
+        lost_leads: 0,
+        today_leads: 0,
+        month_leads: 0,
+      }
+    }
+  })
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_leads_list_${mgrEmail}`)
+      return !cached
+    } catch { return true }
+  })
+  const [error, setError] = useState(null)
 
   // Executive List State
   const [executives, setExecutives] = useState([])
@@ -255,21 +291,34 @@ export default function ManagerLeads() {
       const res = await crmAPI.getTeamLeads(params)
       const data = res?.data || res || {}
 
+      let finalLeads = []
+      let finalSummary = null
+
       if (data.leads && Array.isArray(data.leads)) {
-        const enriched = enrichLeads(data.leads)
-        setLeads(enriched)
+        finalLeads = enrichLeads(data.leads)
+        setLeads(finalLeads)
         if (data.summary) {
+          finalSummary = data.summary
           setSummary(data.summary)
         } else {
-          calculateLocalSummary(enriched)
+          calculateLocalSummary(finalLeads)
         }
       } else {
         // Fallback fetch all leads from crmAPI.getLeads
         const fallbackRes = await crmAPI.getLeads()
         const rawLeads = Array.isArray(fallbackRes) ? fallbackRes : fallbackRes?.data || []
-        const enriched = enrichLeads(rawLeads)
-        setLeads(enriched)
-        calculateLocalSummary(enriched)
+        finalLeads = enrichLeads(rawLeads)
+        setLeads(finalLeads)
+        calculateLocalSummary(finalLeads)
+      }
+
+      if (finalLeads.length > 0) {
+        try {
+          localStorage.setItem(`tc_cached_leads_list_${mgrEmail}`, JSON.stringify(finalLeads))
+          if (finalSummary) {
+            localStorage.setItem(`tc_cached_leads_summary_${mgrEmail}`, JSON.stringify(finalSummary))
+          }
+        } catch (e) {}
       }
     } catch (err) {
       // Fall back smoothly to dynamic local store
@@ -287,7 +336,7 @@ export default function ManagerLeads() {
     const converted = leadArr.filter((x) => String(x.status || '').toLowerCase().includes('convert')).length
     const lost = leadArr.filter((x) => String(x.status || '').toLowerCase().includes('lost')).length
 
-    setSummary({
+    const calculated = {
       total_leads: total,
       hot_leads: hot,
       warm_leads: warm,
@@ -296,7 +345,12 @@ export default function ManagerLeads() {
       lost_leads: lost,
       today_leads: Math.ceil(total * 0.3) || 12,
       month_leads: total,
-    })
+    }
+
+    setSummary(calculated)
+    try {
+      localStorage.setItem(`tc_cached_leads_summary_${mgrEmail}`, JSON.stringify(calculated))
+    } catch (e) {}
   }
 
   const fetchFromLocalStorage = () => {

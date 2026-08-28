@@ -28,21 +28,57 @@ import {
 import { expenseAPI, hrmsAPI, notificationAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 
+const getStoredUser = () => {
+  try {
+    const u = localStorage.getItem('user') || localStorage.getItem('tc_user')
+    return u ? JSON.parse(u) : {}
+  } catch (e) { return {} }
+}
+
 export default function ManagerExpenses() {
   const { showToast } = useToast()
 
-  // API State
-  const [loading, setLoading] = useState(true)
-  const [expenses, setExpenses] = useState([])
-  const [summary, setSummary] = useState({
-    pending_approval: 0,
-    approved_today: 0,
-    rejected_today: 0,
-    total_claims: 0,
-    today_claim_amount: '₹0.00',
-    approved_amount: '₹0.00',
-    rejected_amount: '₹0.00',
-    pending_amount: '₹0.00',
+  const mgrUser = getStoredUser()
+  const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
+
+  // API State with Cache
+  const [expenses, setExpenses] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_expenses_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [summary, setSummary] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_expenses_summary_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : {
+        pending_approval: 0,
+        approved_today: 0,
+        rejected_today: 0,
+        total_claims: 0,
+        today_claim_amount: '₹0.00',
+        approved_amount: '₹0.00',
+        rejected_amount: '₹0.00',
+        pending_amount: '₹0.00',
+      }
+    } catch {
+      return {
+        pending_approval: 0,
+        approved_today: 0,
+        rejected_today: 0,
+        total_claims: 0,
+        today_claim_amount: '₹0.00',
+        approved_amount: '₹0.00',
+        rejected_amount: '₹0.00',
+        pending_amount: '₹0.00',
+      }
+    }
+  })
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_expenses_${mgrEmail}`)
+      return !cached
+    } catch { return true }
   })
 
   // Executive List State
@@ -73,12 +109,7 @@ export default function ManagerExpenses() {
   const [popupOpen, setPopupOpen] = useState(false)
   const [selectedToggle, setSelectedToggle] = useState('Pending')
 
-  const getStoredUser = () => {
-    try {
-      const u = localStorage.getItem('user') || localStorage.getItem('tc_user')
-      return u ? JSON.parse(u) : {}
-    } catch (e) { return {} }
-  }
+
 
   const formatDateDDMMYYYY = (val) => {
     if (!val || val === '—' || val === 'N/A') return '—'
@@ -322,9 +353,16 @@ export default function ManagerExpenses() {
       
       if (data.summary) {
         setSummary(data.summary)
+        try {
+          localStorage.setItem(`tc_cached_expenses_summary_${mgrEmail}`, JSON.stringify(data.summary))
+        } catch (e) {}
       } else {
         calculateMetrics(apiExpenses)
       }
+
+      try {
+        localStorage.setItem(`tc_cached_expenses_${mgrEmail}`, JSON.stringify(apiExpenses))
+      } catch (e) {}
     } catch (err) {
       console.error("Failed fetching manager expenses:", err)
       showToast("Failed to retrieve expense requests.", "error")
@@ -346,7 +384,7 @@ export default function ManagerExpenses() {
     const rejectedAmt = rejectedList.reduce((acc, curr) => acc + parseVal(curr.amount), 0)
     const totalAmt = list.reduce((acc, curr) => acc + parseVal(curr.amount), 0)
 
-    setSummary({
+    const calculated = {
       pending_approval: pendingList.length,
       approved_today: approvedList.length,
       rejected_today: rejectedList.length,
@@ -355,7 +393,12 @@ export default function ManagerExpenses() {
       approved_amount: `₹${approvedAmt.toLocaleString('en-IN')}`,
       rejected_amount: `₹${rejectedAmt.toLocaleString('en-IN')}`,
       pending_amount: `₹${pendingAmt.toLocaleString('en-IN')}`,
-    })
+    }
+
+    setSummary(calculated)
+    try {
+      localStorage.setItem(`tc_cached_expenses_summary_${mgrEmail}`, JSON.stringify(calculated))
+    } catch (e) {}
   }
 
   useEffect(() => {

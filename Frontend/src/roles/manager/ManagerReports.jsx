@@ -52,11 +52,41 @@ export default function ManagerReports() {
   const [ackComments, setAckComments] = useState({})
   const [selectedReportModal, setSelectedReportModal] = useState(null)
 
-  // EOD Reports List
-  const [reports, setReports] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [attendanceLogs, setAttendanceLogs] = useState([])
-  const [executives, setExecutives] = useState([])
+  const getStoredUser = () => {
+    try {
+      const u = localStorage.getItem('user') || localStorage.getItem('tc_user')
+      return u ? JSON.parse(u) : {}
+    } catch (e) { return {} }
+  }
+
+  const mgrUser = getStoredUser()
+  const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
+
+  // EOD Reports List with Cache
+  const [reports, setReports] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_rep_reports_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_rep_reports_${mgrEmail}`)
+      return !cached
+    } catch { return true }
+  })
+  const [attendanceLogs, setAttendanceLogs] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_rep_attendance_logs_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [executives, setExecutives] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_rep_executives_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
 
   const resolveEmployeeCode = (seName, seEmail, rawCode) => {
     if (rawCode && String(rawCode).trim() !== '' && String(rawCode).trim() !== 'EMP000012') {
@@ -326,6 +356,9 @@ export default function ManagerReports() {
       const attRes = await attendanceAPI.getLogs()
       attLogs = Array.isArray(attRes) ? attRes : (attRes?.data || [])
       setAttendanceLogs(attLogs)
+      try {
+        localStorage.setItem(`tc_cached_rep_attendance_logs_${mgrEmail}`, JSON.stringify(attLogs))
+      } catch (e) {}
     } catch (e) {
       console.error("Error fetching attendance logs", e)
     }
@@ -352,18 +385,16 @@ export default function ManagerReports() {
     const finalArr = Array.from(map.values())
     setReports(finalArr)
     setLoading(false)
+    try {
+      localStorage.setItem(`tc_cached_rep_reports_${mgrEmail}`, JSON.stringify(finalArr))
+    } catch (e) {}
   }
 
   useEffect(() => {
     fetchReports()
   }, [])
 
-  const getStoredUser = () => {
-    try {
-      const u = localStorage.getItem('user') || localStorage.getItem('tc_user')
-      return u ? JSON.parse(u) : {}
-    } catch (e) { return {} }
-  }
+
 
   const getAssignedExecutivesList = (rawEmployees) => {
     const mgrUser = getStoredUser()
@@ -410,20 +441,22 @@ export default function ManagerReports() {
       if (raw && raw.length > 0) {
         const execsOnly = getAssignedExecutivesList(raw)
         if (execsOnly.length > 0) {
-          setExecutives(
-            execsOnly.map((e, idx) => ({
-              id: e.id || e.employee_id || `se_${idx}`,
-              name: e.name || e.full_name || 'Sales Executive',
-              email: e.email || '',
-              employee_code: e.employee_code || e.employee_id || e.emp_code || 'EMP000012',
-            }))
-          )
+          const mapped = execsOnly.map((e, idx) => ({
+            id: e.id || e.employee_id || `se_${idx}`,
+            name: e.name || e.full_name || 'Sales Executive',
+            email: e.email || '',
+            employee_code: e.employee_code || e.employee_id || e.emp_code || 'EMP000012',
+          }))
+          setExecutives(mapped)
+          try {
+            localStorage.setItem(`tc_cached_rep_executives_${mgrEmail}`, JSON.stringify(mapped))
+          } catch (e) {}
           return
         }
       }
       fallbackLoadExecs()
     }).catch(() => fallbackLoadExecs())
-  }, [])
+  }, [mgrEmail])
 
   const fallbackLoadExecs = () => {
     try {
@@ -432,14 +465,16 @@ export default function ManagerReports() {
         const parsed = JSON.parse(savedUsersStr)
         const execsOnly = getAssignedExecutivesList(parsed)
         if (execsOnly.length > 0) {
-          setExecutives(
-            execsOnly.map((u, idx) => ({
-              id: u.id || `se_${idx}`,
-              name: u.name || u.full_name || 'Sales Executive',
-              email: u.email || '',
-              employee_code: u.employee_code || u.employee_id || u.emp_code || 'EMP000012',
-            }))
-          )
+          const mapped = execsOnly.map((u, idx) => ({
+            id: u.id || `se_${idx}`,
+            name: u.name || u.full_name || 'Sales Executive',
+            email: u.email || '',
+            employee_code: u.employee_code || u.employee_id || u.emp_code || 'EMP000012',
+          }))
+          setExecutives(mapped)
+          try {
+            localStorage.setItem(`tc_cached_rep_executives_${mgrEmail}`, JSON.stringify(mapped))
+          } catch (e) {}
           return
         }
       }

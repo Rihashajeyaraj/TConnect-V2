@@ -55,14 +55,49 @@ export default function ManagerDashboard() {
     return getDateFilterRange(dateFilterMode, customStartDate, customEndDate)
   }, [dateFilterMode, customStartDate, customEndDate])
 
-  // ── Core Raw Data States ────────────────────────────────────────────────────
-  const [allEmployees, setAllEmployees] = useState([])
-  const [allLeads, setAllLeads] = useState([])
-  const [allCustomers, setAllCustomers] = useState([])
-  const [allVisits, setAllVisits] = useState([])
-  const [allTargets, setAllTargets] = useState([])
-  const [allAttendance, setAllAttendance] = useState([])
-  const [loading, setLoading] = useState(true)
+  // ── Core Raw Data States with Stale-While-Revalidate Caching ────────────────
+  const [allEmployees, setAllEmployees] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_employees_${managerEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [allLeads, setAllLeads] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_leads_${managerEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [allCustomers, setAllCustomers] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_customers_${managerEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [allVisits, setAllVisits] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_visits_${managerEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [allTargets, setAllTargets] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_targets_${managerEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [allAttendance, setAllAttendance] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_attendance_${managerEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_employees_${managerEmail}`)
+      return !cached
+    } catch { return true }
+  })
   const [refreshing, setRefreshing] = useState(false)
 
   // ── UI Modal & Filter States ────────────────────────────────────────────────
@@ -154,6 +189,17 @@ export default function ManagerDashboard() {
       setAllVisits(visits)
       setAllTargets(targets)
       setAllAttendance(atts)
+
+      try {
+        localStorage.setItem(`tc_cached_employees_${managerEmail}`, JSON.stringify(emps))
+        localStorage.setItem(`tc_cached_leads_${managerEmail}`, JSON.stringify(leads))
+        localStorage.setItem(`tc_cached_customers_${managerEmail}`, JSON.stringify(custs))
+        localStorage.setItem(`tc_cached_visits_${managerEmail}`, JSON.stringify(visits))
+        localStorage.setItem(`tc_cached_targets_${managerEmail}`, JSON.stringify(targets))
+        localStorage.setItem(`tc_cached_attendance_${managerEmail}`, JSON.stringify(atts))
+      } catch (e) {
+        console.warn('Dashboard data caching notice:', e)
+      }
     } catch (err) {
       console.warn('Dashboard data fetch notice:', err)
     } finally {

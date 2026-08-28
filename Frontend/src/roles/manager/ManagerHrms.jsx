@@ -253,6 +253,11 @@ export default function ManagerHrms() {
             appliedOn: formatDate(l.created_at) || 'Recent',
           }))
           setMyLeaveRequests(mine)
+
+          try {
+            localStorage.setItem(`tc_cached_team_leaves_${managerEmail}`, JSON.stringify(executiveRequests))
+            localStorage.setItem(`tc_cached_my_leaves_${managerEmail}`, JSON.stringify(mine))
+          } catch (e) {}
         }
       })
       .catch(() => null);
@@ -279,8 +284,13 @@ export default function ManagerHrms() {
   // ── Helpers ───────────────────────────────────────────────────────────────
   const getArr = (key) => { try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] } }
 
-  // ── Team Leave Approval State ──────────────────────────────────────────────
-  const [teamLeaveRequests, setTeamLeaveRequests] = useState([])
+  // ── Team Leave Approval State with Cache ───────────────────────────────────
+  const [teamLeaveRequests, setTeamLeaveRequests] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_team_leaves_${managerEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
   const [leaveRemarkInputs, setLeaveRemarkInputs] = useState({})
 
   // ── Manager's Own Leave State ──────────────────────────────────────────────
@@ -293,7 +303,12 @@ export default function ManagerHrms() {
     endTime: '11:30',
     reason: '',
   })
-  const [myLeaveRequests, setMyLeaveRequests] = useState([])
+  const [myLeaveRequests, setMyLeaveRequests] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_my_leaves_${managerEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
   const [leaveSubmitted, setLeaveSubmitted] = useState(false)
 
   // ── Documents State ────────────────────────────────────────────────────────

@@ -37,6 +37,13 @@ import { useToast } from '../../common/ToastContext.jsx'
 
 const DEFAULT_EOD_REPORTS = []
 
+const getStoredUser = () => {
+  try {
+    const u = localStorage.getItem('user') || localStorage.getItem('tc_user')
+    return u ? JSON.parse(u) : {}
+  } catch (e) { return {} }
+}
+
 export default function ManagerTeam() {
   const { showToast } = useToast()
 
@@ -55,15 +62,43 @@ export default function ManagerTeam() {
   const [ackComments, setAckComments] = useState({})
   const [selectedReportModal, setSelectedReportModal] = useState(null)
 
-  // EOD Reports List & Executives
-  const [reports, setReports] = useState([])
-  const [executives, setExecutives] = useState([])
-  const [loading, setLoading] = useState(true)
+  const mgrUser = getStoredUser()
+  const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
+
+  // EOD Reports List & Executives with Local Caching
+  const [reports, setReports] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_reports_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [executives, setExecutives] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_team_executives_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_reports_${mgrEmail}`)
+      return !cached
+    } catch { return true }
+  })
 
   // Team Leave & Permission Requests State
-  const [teamLeaveRequests, setTeamLeaveRequests] = useState([])
+  const [teamLeaveRequests, setTeamLeaveRequests] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_team_leaves_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
   const [activeTab, setActiveTab] = useState(null) // 'attendance' | 'permissions' | null
-  const [attendanceLogs, setAttendanceLogs] = useState([])
+  const [attendanceLogs, setAttendanceLogs] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_team_attendance_logs_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
 
   // Filter leave requests to only include assigned executives and exclude manager/admin/ceo requests
   const filteredLeaveRequests = React.useMemo(() => {
@@ -97,10 +132,15 @@ export default function ManagerTeam() {
     attendanceAPI.getLeaveRequests()
       .then((res) => {
         const raw = Array.isArray(res) ? res : (res?.data || [])
-        if (Array.isArray(raw)) setTeamLeaveRequests(raw)
+        if (Array.isArray(raw)) {
+          setTeamLeaveRequests(raw)
+          try {
+            localStorage.setItem(`tc_cached_team_leaves_${mgrEmail}`, JSON.stringify(raw))
+          } catch (e) {}
+        }
       })
       .catch(() => null)
-  }, [])
+  }, [mgrEmail])
 
   const handleUpdateLeaveStatus = async (reqId, newStatus) => {
     const comment = ackComments[reqId] || `Leave request ${newStatus.toLowerCase()} by Sales Manager.`
@@ -114,12 +154,7 @@ export default function ManagerTeam() {
     }
   }
 
-  const getStoredUser = () => {
-    try {
-      const u = localStorage.getItem('user') || localStorage.getItem('tc_user')
-      return u ? JSON.parse(u) : {}
-    } catch (e) { return {} }
-  }
+
 
   // Helper to filter ONLY assigned executives under current manager
   const getAssignedExecutivesList = (rawEmployees) => {
@@ -167,20 +202,22 @@ export default function ManagerTeam() {
       if (raw && raw.length > 0) {
         const execsOnly = getAssignedExecutivesList(raw)
         if (execsOnly.length > 0) {
-          setExecutives(
-            execsOnly.map((e, idx) => ({
-              id: e.id || e.employee_id || `se_${idx}`,
-              name: e.name || e.full_name || 'Sales Executive',
-              email: e.email || '',
-              employee_code: e.employee_code || e.employee_id || e.emp_code || 'EMP000012',
-            }))
-          )
+          const mapped = execsOnly.map((e, idx) => ({
+            id: e.id || e.employee_id || `se_${idx}`,
+            name: e.name || e.full_name || 'Sales Executive',
+            email: e.email || '',
+            employee_code: e.employee_code || e.employee_id || e.emp_code || 'EMP000012',
+          }))
+          setExecutives(mapped)
+          try {
+            localStorage.setItem(`tc_cached_team_executives_${mgrEmail}`, JSON.stringify(mapped))
+          } catch (e) {}
           return
         }
       }
       fallbackLoadExecs()
     }).catch(() => fallbackLoadExecs())
-  }, [])
+  }, [mgrEmail])
 
   const fallbackLoadExecs = () => {
     try {
@@ -189,14 +226,16 @@ export default function ManagerTeam() {
         const parsed = JSON.parse(savedUsersStr)
         const execsOnly = getAssignedExecutivesList(parsed)
         if (execsOnly.length > 0) {
-          setExecutives(
-            execsOnly.map((u, idx) => ({
-              id: u.id || `se_${idx}`,
-              name: u.name || u.full_name || 'Sales Executive',
-              email: u.email || '',
-              employee_code: u.employee_code || u.employee_id || u.emp_code || 'EMP000012',
-            }))
-          )
+          const mapped = execsOnly.map((u, idx) => ({
+            id: u.id || `se_${idx}`,
+            name: u.name || u.full_name || 'Sales Executive',
+            email: u.email || '',
+            employee_code: u.employee_code || u.employee_id || u.emp_code || 'EMP000012',
+          }))
+          setExecutives(mapped)
+          try {
+            localStorage.setItem(`tc_cached_team_executives_${mgrEmail}`, JSON.stringify(mapped))
+          } catch (e) {}
           return
         }
       }
@@ -439,6 +478,9 @@ export default function ManagerTeam() {
       const attRes = await attendanceAPI.getLogs()
       attLogs = Array.isArray(attRes) ? attRes : (attRes?.data || [])
       setAttendanceLogs(attLogs)
+      try {
+        localStorage.setItem(`tc_cached_team_attendance_logs_${mgrEmail}`, JSON.stringify(attLogs))
+      } catch (e) {}
     } catch (e) {
       console.error("Error fetching attendance logs", e)
     }
@@ -465,11 +507,14 @@ export default function ManagerTeam() {
     const finalArr = Array.from(map.values())
     setReports(finalArr)
     setLoading(false)
+    try {
+      localStorage.setItem(`tc_cached_reports_${mgrEmail}`, JSON.stringify(finalArr))
+    } catch (e) {}
   }
 
   useEffect(() => {
     fetchReports()
-  }, [])
+  }, [mgrEmail])
 
   const toggleExpandCard = (id) => {
     setExpandedCards((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -564,63 +609,63 @@ export default function ManagerTeam() {
     <div className="space-y-6 text-slate-900 font-sans pb-12">
       {/* ── THREE COMPACT KPI CARDS: EOD, LEAVE, ATTENDANCE ── */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl">
-        {/* CARD 1: Attendance */}
+        {/* CARD 1: Attendance - YELLOW */}
         <div
           onClick={() => setActiveTab('attendance')}
-          className="mgr-card p-4 rounded-2xl border bg-white text-slate-800 border-slate-200 hover:border-mgr-primary-400 hover:bg-mgr-primary-50/20 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+          className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-amber-50 to-orange-50/50 text-amber-950 border-amber-200 hover:border-amber-400 hover:bg-amber-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
         >
           <div className="space-y-0.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800/80">
               EOD Attendance Reports
             </p>
-            <h3 className="text-xl font-bold text-slate-900">{filteredReports.length} Reports</h3>
-            <p className="text-[10px] font-normal text-slate-400">
+            <h3 className="text-xl font-bold text-amber-950">{filteredReports.length} Reports</h3>
+            <p className="text-[10px] font-normal text-amber-600/90">
               Click to view EOD attendance logs
             </p>
           </div>
-          <div className="p-2.5 rounded-xl bg-mgr-primary-50 text-mgr-primary-600 border border-mgr-primary-200">
+          <div className="p-2.5 rounded-xl bg-amber-100 text-amber-700 border border-amber-300/60">
             <FileText className="w-5 h-5" />
           </div>
         </div>
 
-        {/* CARD 2: Permissions */}
+        {/* CARD 2: Permissions - BLUE */}
         <div
           onClick={() => setActiveTab('permissions')}
-          className="mgr-card p-4 rounded-2xl border bg-white text-slate-800 border-slate-200 hover:border-mgr-primary-500 hover:bg-mgr-primary-50/20 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+          className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-blue-50 to-indigo-50/50 text-blue-950 border-blue-200 hover:border-blue-400 hover:bg-blue-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
         >
           <div className="space-y-0.5">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+            <p className="text-[10px] font-black uppercase tracking-wider text-blue-800/85">
               Leave & Permissions
             </p>
-            <h3 className="text-xl font-black text-slate-900">
+            <h3 className="text-xl font-black text-blue-950">
               {filteredLeaveRequests.filter(r => r.status === 'Pending').length} Pending
             </h3>
-            <p className="text-[10px] font-semibold text-slate-400">
+            <p className="text-[10px] font-semibold text-blue-600/90">
               Click to view team leave requests
             </p>
           </div>
-          <div className="p-2.5 rounded-xl bg-mgr-primary-50 text-mgr-primary-600 border border-mgr-primary-200">
+          <div className="p-2.5 rounded-xl bg-blue-100 text-blue-700 border border-blue-300/60">
             <Calendar className="w-5 h-5" />
           </div>
         </div>
 
-        {/* CARD 3: Team Attendance */}
+        {/* CARD 3: Team Attendance - PURPLE */}
         <div
           onClick={() => setActiveTab('team_attendance')}
-          className="mgr-card p-4 rounded-2xl border bg-white text-slate-800 border-slate-200 hover:border-mgr-secondary-400 hover:bg-mgr-secondary-50/20 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+          className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-purple-50 to-fuchsia-50/50 text-purple-950 border-purple-200 hover:border-purple-400 hover:bg-purple-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
         >
           <div className="space-y-0.5">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
+            <p className="text-[10px] font-black uppercase tracking-wider text-purple-800/85">
               Team Attendance
             </p>
-            <h3 className="text-xl font-black text-slate-900">
+            <h3 className="text-xl font-black text-purple-950">
               {executives.length} Executives
             </h3>
-            <p className="text-[10px] font-semibold text-slate-400">
+            <p className="text-[10px] font-semibold text-purple-600/90">
               Click to view login/logout history
             </p>
           </div>
-          <div className="p-2.5 rounded-xl bg-mgr-secondary-50 text-mgr-secondary-600 border border-mgr-secondary-200">
+          <div className="p-2.5 rounded-xl bg-purple-100 text-purple-700 border border-purple-300/60">
             <Users className="w-5 h-5" />
           </div>
         </div>
