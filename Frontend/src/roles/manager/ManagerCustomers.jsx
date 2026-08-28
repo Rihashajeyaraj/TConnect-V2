@@ -342,14 +342,8 @@ export default function ManagerCustomers() {
             Customer Directory & Accounts
           </h1>
         </div>
-
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="mgr-card px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-md shadow-blue-500/20 flex items-center gap-1.5 cursor-pointer transition"
-        >
-          <Plus size={16} /> Onboard Customer Account
-        </button>
       </div>
+
 
       {/* ── SINGLE CUSTOMER CARD ────────────────────────────────────────────── */}
       <div className="max-w-md">
@@ -392,7 +386,7 @@ export default function ManagerCustomers() {
       {/* ── CUSTOMER POPUP LEDGER MODAL ─────────────────────────────────────── */}
       {popupOpen && (
         <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh]">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh]">
             
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
@@ -413,7 +407,7 @@ export default function ManagerCustomers() {
             </div>
 
             {/* Filter Control Options — clean flat strip */}
-            <div className="flex flex-wrap items-center gap-3 pb-3 border-b border-slate-100 flex-shrink-0">
+            <div className="flex flex-col md:flex-row md:items-center gap-3 pb-3 border-b border-slate-100 flex-shrink-0">
               {/* Executive Filter */}
               <div className="flex items-center gap-2 text-xs shrink-0">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Executive:</span>
@@ -432,13 +426,13 @@ export default function ManagerCustomers() {
               </div>
 
               {/* Date Pills */}
-              <div className="flex items-center gap-1 shrink-0">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Date:</span>
+              <div className="flex items-center gap-1 overflow-x-auto max-w-full shrink-0 pb-1 sm:pb-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1 shrink-0">Date:</span>
                 {['All Time', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setDateFilterTab(tab)}
-                    className={`mgr-card px-3 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+                    className={`mgr-card px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition cursor-pointer shrink-0 ${
                       dateFilterTab === tab
                         ? 'bg-slate-900 text-white'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -448,7 +442,7 @@ export default function ManagerCustomers() {
                   </button>
                 ))}
                 {dateFilterTab === 'Custom' && (
-                  <div className="flex items-center gap-1.5 ml-1">
+                  <div className="flex items-center gap-1.5 ml-1 shrink-0">
                     <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
                       className="bg-slate-100 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none cursor-pointer" />
                     <span className="text-slate-400 text-xs">→</span>
@@ -482,7 +476,7 @@ export default function ManagerCustomers() {
             </div>
 
             {/* Popup Table Container */}
-            <div className="overflow-y-auto flex-1 min-h-[300px] border border-slate-200 rounded-2xl shadow-2xs">
+            <div className="overflow-y-auto overflow-x-auto flex-1 min-h-[150px] border border-slate-200 rounded-2xl shadow-2xs">
               <table className="w-full text-left text-sm text-slate-800 min-w-[800px]">
                 <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-700 z-10">
                   <tr>

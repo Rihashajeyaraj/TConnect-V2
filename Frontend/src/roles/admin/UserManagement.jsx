@@ -1380,22 +1380,22 @@ function UserManagement() {
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-1">
                           {assigned.map((exec) => (
-                            <div
+                             <div
                               key={exec.id}
-                              className="bg-[#F7F9FC]/40 border border-[#DCE3EF] rounded-xl p-3 flex items-center justify-between gap-3 hover:border-slate-350 transition"
+                              className="bg-[#F7F9FC]/40 border border-[#DCE3EF] rounded-xl p-3 flex flex-col xs:flex-row xs:items-center justify-between gap-3 hover:border-slate-350 transition"
                             >
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#123A8C] font-extrabold text-xs flex items-center justify-center border border-blue-100 shrink-0">
                                   {(exec.name || '').split(' ').map((n) => n[0]).join('')}
                                 </div>
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1">
                                   <p className="font-extrabold text-xs text-slate-900 truncate flex items-center gap-1.5">
                                     {exec.name}
                                   </p>
                                   <p className="text-[10px] text-[#64748B] truncate mt-0.5">{exec.email}</p>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2 shrink-0">
+                              <div className="flex items-center gap-2 flex-wrap xs:flex-nowrap justify-start xs:justify-end shrink-0">
                                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border transition ${
                                   exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
                                 }`}>

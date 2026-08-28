@@ -589,7 +589,7 @@ export default function ManagerExpenses() {
       {/* ── EXPENSE CLAIMS POPUP LEDGER MODAL ───────────────────────────────── */}
       {popupOpen && (
         <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
             
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
@@ -610,9 +610,9 @@ export default function ManagerExpenses() {
             </div>
 
             {/* Toggle Status Buttons & Filters */}
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 flex-shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 flex-shrink-0">
               {/* Toggles */}
-              <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-xl">
+              <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-xl overflow-x-auto max-w-full shrink-0">
                 {['Pending', 'Approved', 'Rejected', 'Total'].map((toggle) => (
                   <button
                     key={toggle}
@@ -620,7 +620,7 @@ export default function ManagerExpenses() {
                       setSelectedToggle(toggle)
                       setPage(1)
                     }}
-                    className={`mgr-card px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                    className={`mgr-card px-2.5 sm:px-4 py-1.5 rounded-lg text-[10px] sm:text-xs font-black transition cursor-pointer shrink-0 ${
                       selectedToggle === toggle
                         ? 'bg-teal-600 text-white shadow-xs'
                         : 'text-slate-600 hover:bg-slate-300/40 hover:text-slate-900'
@@ -661,7 +661,7 @@ export default function ManagerExpenses() {
             </div>
 
             {/* Table Container */}
-            <div className="overflow-y-auto flex-1 min-h-[300px] border border-slate-200 rounded-2xl shadow-2xs">
+            <div className="overflow-y-auto overflow-x-auto flex-1 min-h-[150px] border border-slate-200 rounded-2xl shadow-2xs">
               <table className="w-full text-left text-sm text-slate-800 min-w-[1000px]">
                 <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-700 z-10">
                   <tr>

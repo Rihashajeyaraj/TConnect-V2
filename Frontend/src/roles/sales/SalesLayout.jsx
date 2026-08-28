@@ -855,7 +855,7 @@ export default function SalesLayout() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
       {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
-      <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
+      <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setOpen(!open)}
@@ -867,6 +867,37 @@ export default function SalesLayout() {
           <Link to="/sales/dashboard" className="flex items-center gap-2.5">
             <TwiteConnectLogo className="w-9 h-9" />
           </Link>
+        </div>
+
+        {/* Center: Role Indicator Tag */}
+        <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
+          <div className="flex items-center gap-2.5 bg-slate-50/80 border border-slate-200/80 rounded-full px-4.5 py-1.5 shadow-xs pointer-events-auto">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span
+              className="text-xs uppercase tracking-[0.25em] font-black"
+              style={{
+                background: 'linear-gradient(to right, #475569 20%, #0d9488 40%, #5eead4 60%, #475569 80%)',
+                backgroundSize: '200% auto',
+                color: 'transparent',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                animation: 'tc-shimmer-se 3s linear infinite',
+                display: 'inline-block'
+              }}
+            >
+              {seRole || 'Sales Executive'}
+            </span>
+            <style>{`
+              @keyframes tc-shimmer-se {
+                to {
+                  background-position: -200% center;
+                }
+              }
+            `}</style>
+          </div>
         </div>
 
         {/* Right Header Navigation */}
@@ -974,11 +1005,24 @@ export default function SalesLayout() {
 
         {/* ── Sidebar ─────────────────────────────────────────────────── */}
         <aside
-          className={`fixed inset-y-0 left-0 z-[4010] lg:z-40 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 shrink-0 flex flex-col ${
+          className={`fixed inset-y-0 left-0 z-[4010] lg:z-40 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 shrink-0 flex flex-col ${
             open ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          {/* Note: Sidebar header logo row is completely removed to match Manager layout */}
+          {/* Mobile-only Sidebar Close Header */}
+          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-teal-100 bg-gradient-to-r from-teal-700 to-teal-600 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center text-white text-[10px] font-black">TC</span>
+              <span className="text-xs font-black text-white uppercase tracking-widest">Sales Portal</span>
+            </div>
+            <button
+              onClick={() => setOpen(false)}
+              className="p-1.5 rounded-xl text-teal-100 hover:bg-white/10 hover:text-white transition cursor-pointer"
+              aria-label="Close sidebar"
+            >
+              <X size={18} />
+            </button>
+          </div>
 
           <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
             {sidebarItems.map((m, index) => (

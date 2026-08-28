@@ -457,7 +457,7 @@ function CeoLayout() {
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col overflow-hidden h-screen">
         {/* Top Header */}
-        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 shrink-0 z-20 shadow-xs">
+        <header className="relative flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 shrink-0 z-20 shadow-xs">
           <div className="flex items-center gap-3 sm:gap-4 flex-1">
             {/* Mobile Menu Toggle */}
             <button
@@ -511,6 +511,37 @@ function CeoLayout() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+
+          {/* Center: CEO Role Indicator Tag */}
+          <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
+            <div className="flex items-center gap-2.5 bg-slate-50/80 border border-slate-200/80 rounded-full px-4.5 py-1.5 shadow-xs pointer-events-auto">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span
+                className="text-xs uppercase tracking-[0.25em] font-black"
+                style={{
+                  background: 'linear-gradient(to right, #475569 20%, #832D51 40%, #EA6993 60%, #475569 80%)',
+                  backgroundSize: '200% auto',
+                  color: 'transparent',
+                  WebkitBackgroundClip: 'text',
+                  backgroundClip: 'text',
+                  animation: 'tc-shimmer-ceo 3s linear infinite',
+                  display: 'inline-block'
+                }}
+              >
+                {currentUser?.role || 'Chief Executive Officer'}
+              </span>
+              <style>{`
+                @keyframes tc-shimmer-ceo {
+                  to {
+                    background-position: -200% center;
+                  }
+                }
+              `}</style>
             </div>
           </div>
 

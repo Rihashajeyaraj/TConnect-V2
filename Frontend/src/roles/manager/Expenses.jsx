@@ -845,7 +845,7 @@ export default function ManagerExpenses() {
             {/* 1. SE Information */}
             <div className="p-3.5 rounded-2xl bg-teal-50/60 border border-teal-200 space-y-1 text-xs">
               <span className="text-[10px] font-extrabold uppercase text-teal-900">Sales Executive Information</span>
-              <div className="flex items-center justify-between">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] bg-teal-200 text-teal-950 border border-teal-300 px-1.5 py-0.5 rounded font-mono font-black">
                     [{selectedExpenseModal.employee_code || 'EMP000012'}]
@@ -854,13 +854,13 @@ export default function ManagerExpenses() {
                 </div>
                 <p className="text-slate-600 font-semibold">{selectedExpenseModal.department}</p>
               </div>
-              <p className="text-slate-500 font-mono text-[11px]">Email: {selectedExpenseModal.assigned_to_email} | Manager: {selectedExpenseModal.manager_name}</p>
+              <p className="text-slate-500 font-mono text-[11px] break-all">Email: {selectedExpenseModal.assigned_to_email} | Manager: {selectedExpenseModal.manager_name}</p>
             </div>
 
             {/* 2. Visit Information */}
             <div className="p-3.5 rounded-2xl bg-slate-50 border-slate-200 space-y-2 text-xs">
               <span className="text-[10px] font-extrabold uppercase text-slate-400">Associated Field Visit Details</span>
-              <div className="grid grid-cols-2 gap-2 font-semibold">
+              <div className="grid grid-cols-1 xs:grid-cols-2 gap-2.5 font-semibold">
                 <div>
                   <span className="text-slate-400 text-[10px]">Client / Company:</span>
                   <p className="text-slate-900 font-black">{selectedExpenseModal.customer_name} ({selectedExpenseModal.company})</p>
@@ -881,8 +881,8 @@ export default function ManagerExpenses() {
             </div>
 
             {/* 3. Expense Information */}
-            <div className="grid grid-cols-3 gap-2 text-xs">
-              <div className="p-3 rounded-xl bg-slate-50 border-slate-200">
+            <div className="grid grid-cols-1 xs:grid-cols-3 gap-2.5 text-xs">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Expense Category</span>
                 <p className="font-black text-slate-900 mt-0.5">{selectedExpenseModal.category}</p>
               </div>
@@ -890,7 +890,7 @@ export default function ManagerExpenses() {
                 <span className="text-[10px] font-bold text-teal-800">Claim Amount</span>
                 <p className="font-black text-teal-950 text-base mt-0.5">{selectedExpenseModal.amount}</p>
               </div>
-              <div className="p-3 rounded-xl bg-slate-50 border-slate-200">
+              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Submitted Date</span>
                 <p className="font-mono font-bold text-slate-800 mt-0.5">{selectedExpenseModal.submitted_date}</p>
               </div>

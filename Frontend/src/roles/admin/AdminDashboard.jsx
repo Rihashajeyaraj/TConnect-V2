@@ -699,7 +699,7 @@ export default function AdminDashboard() {
                   No pending document approval requests.
                 </div>
               ) : (
-                <div className="border border-slate-200 rounded-2xl overflow-hidden">
+                <div className="border border-slate-200 rounded-2xl overflow-x-auto">
                   <table className="w-full text-left border-collapse text-xs font-semibold text-slate-700">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
@@ -813,7 +813,7 @@ export default function AdminDashboard() {
                   No registered users match this category.
                 </div>
               ) : (
-                <div className="border border-[#DCE3EF] rounded-2xl overflow-hidden shadow-xs">
+                <div className="border border-[#DCE3EF] rounded-2xl overflow-x-auto shadow-xs">
                   <table className="w-full text-left border-collapse text-xs font-semibold text-[#071A45]">
                     <thead>
                       <tr className="bg-slate-50 border-b border-[#DCE3EF] text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
@@ -957,7 +957,7 @@ export default function AdminDashboard() {
                 };
 
                 return (
-                  <div className="border border-[#DCE3EF] rounded-2xl overflow-hidden shadow-xs bg-white">
+                  <div className="border border-[#DCE3EF] rounded-2xl overflow-x-auto shadow-xs bg-white">
                     <table className="w-full text-left border-collapse text-xs font-semibold text-[#071A45]">
                       <thead>
                         <tr className="bg-slate-50 border-b border-[#DCE3EF] text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">

@@ -110,13 +110,12 @@ const DEFAULT_TEAM_LEAVE_REQUESTS = [
   },
 ]
 
-const LEAVE_TYPES = ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Emergency Leave', 'Work From Home', 'Half-Day Permission', 'Short Permission (2 Hours)']
+const LEAVE_TYPES = ['Casual Leave', 'Sick Leave', 'Other Leave', 'Work From Home', 'Half-Day Permission', 'Short Permission (2 Hours)']
 
 const LEAVE_BALANCE = [
-  { type: 'Casual Leave', total: 12, used: 3, remaining: 9 },
-  { type: 'Sick Leave', total: 10, used: 1, remaining: 9 },
-  { type: 'Earned Leave', total: 20, used: 5, remaining: 15 },
-  { type: 'Emergency Leave', total: 5, used: 0, remaining: 5 },
+  { type: 'Casual Leave',   total: 12, used: 3, remaining: 9,  color: 'bg-gradient-to-br from-blue-50 to-indigo-50/50 border-blue-200/60 shadow-xs',    bar: 'bg-blue-600',    icon: '🏖️' },
+  { type: 'Sick Leave',     total: 10, used: 1, remaining: 9,  color: 'bg-gradient-to-br from-rose-50 to-pink-50/50 border-rose-200/60 shadow-xs',    bar: 'bg-rose-600',    icon: '🤒' },
+  { type: 'Other Leave',   total: 10, used: 0, remaining: 10, color: 'bg-gradient-to-br from-violet-50 to-fuchsia-50/50 border-violet-200/60 shadow-xs', bar: 'bg-violet-600',  icon: '📋' },
 ]
 
 export default function ManagerHrms() {
@@ -421,54 +420,72 @@ export default function ManagerHrms() {
   return (
     <div className="space-y-4 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-4 pb-12">
 
-      {/* ── TOP HEADER ───────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <ShieldCheck className="w-7 h-7 text-[#b45309]" /> TwiteHRMS Manager Portal
+      {/* ── TOP HEADER ── Premium Dark Accent ─────────────────────────────── */}
+      <div className="bg-gradient-to-br from-slate-950 to-[#0b3c5d] text-white rounded-3xl p-5 border border-slate-800 shadow-md space-y-4 relative overflow-hidden">
+        {/* Soft glow background */}
+        <div className="absolute right-0 top-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+        
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+          <div className="space-y-1.5">
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 text-white">
+              <ShieldCheck className="w-6.5 h-6.5 text-[#F2C76E]" /> TwiteHRMS Manager Portal
             </h1>
-            <p className="text-slate-500 text-xs sm:text-sm font-semibold mt-0.5">
-              {managerName} · Employee Code: <strong className="text-slate-800">{empCode}</strong> · Sales Manager &nbsp;✅ Active
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-0.5">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Department</span>
-            <span className="text-xs font-black text-[#b45309]">Sales & Business Development</span>
-          </div>
-        </div>
-
-        <div className="flex items-center flex-nowrap whitespace-nowrap gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-3 scrollbar-thin">
-          {hrmsTabs.map(({ key, label, icon: Icon }, index) => (
-            <div
-              key={key}
-              draggable="true"
-              onDragStart={(e) => handleTabDragStart(e, index)}
-              onDragOver={(e) => handleTabDragOver(e, index)}
-              onDrop={(e) => handleTabDrop(e, index)}
-              onDragEnd={handleTabDragEnd}
-              className={`mgr-card flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
-                draggedTabKey === index ? 'opacity-40' : ''
-              }`}
-            >
-              <button
-                onClick={() => setActiveSection(key)}
-                className={`mgr-card px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-pointer whitespace-nowrap ${activeSection === key ? 'bg-mgr-primary-700 text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-mgr-primary-50 hover:text-mgr-primary-900'
-                  }`}
-              >
-                <Icon size={14} />
-                {label}
-              </button>
+            <div className="flex flex-wrap items-center gap-2 text-slate-300 text-xs font-semibold">
+              <span>{managerName}</span>
+              <span className="text-slate-600">•</span>
+              <span>Code: <strong className="text-white font-mono">{empCode}</strong></span>
+              <span className="text-slate-600">•</span>
+              <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                Active
+              </span>
             </div>
-          ))}
-          <button
-            type="button"
-            onClick={resetHrmsTabs}
-            className="mgr-card ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
-          >
-            Reset Order
-          </button>
+          </div>
+          <div className="flex flex-col sm:items-end gap-0.5 bg-white/5 border border-white/10 p-2.5 rounded-2xl sm:text-right shrink-0">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Department</span>
+            <span className="text-xs font-black text-[#F2C76E]">Sales & Business Development</span>
+          </div>
         </div>
+      </div>
+
+      {/* ── TABS NAVIGATION BAR ── Horizontal Swiping ─────────────────────── */}
+      <div className="bg-white border border-slate-200 p-2.5 rounded-2xl shadow-2xs flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full shrink-0">
+        <div className="flex items-center flex-nowrap gap-1.5">
+          {hrmsTabs.map(({ key, label, icon: Icon }, index) => {
+            const active = activeSection === key
+            return (
+              <div
+                key={key}
+                draggable="true"
+                onDragStart={(e) => handleTabDragStart(e, index)}
+                onDragOver={(e) => handleTabDragOver(e, index)}
+                onDrop={(e) => handleTabDrop(e, index)}
+                onDragEnd={handleTabDragEnd}
+                className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
+                  draggedTabKey === index ? 'opacity-40' : ''
+                }`}
+              >
+                <button
+                  onClick={() => setActiveSection(key)}
+                  className={`mgr-card px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition shrink-0 cursor-pointer whitespace-nowrap border ${
+                    active 
+                      ? 'bg-[#0b3c5d] text-white border-[#0b3c5d] shadow-sm' 
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-950'
+                  }`}
+                >
+                  <Icon size={14} />
+                  {label}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={resetHrmsTabs}
+          className="mgr-card ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
+        >
+          Reset Order
+        </button>
       </div>
 
       {/* ── MAIN CONTENT AREA ────────────────────────────────────────────── */}
@@ -478,33 +495,34 @@ export default function ManagerHrms() {
         <div className="space-y-6 max-w-5xl">
 
           {/* ── 1. LEAVE SUMMARY CARDS (ALLOWED, USED, REMAINING) ── */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-xs space-y-4">
             <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
               <CalendarOff className="w-5 h-5 text-[#b45309]" /> My Leave Summary (2026)
             </h3>
 
-
-
-            {/* Leave Type Breakdown */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+            {/* Leave Type Breakdown — 3 Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
               {LEAVE_BALANCE.map((lb) => (
-                <div key={lb.type} className="p-3 rounded-xl bg-slate-50 border-slate-200 text-xs space-y-1">
-                  <span className="text-[10px] font-black text-slate-500 uppercase block">{lb.type}</span>
+                <div key={lb.type} className={`p-5 rounded-3xl border shadow-2xs hover:shadow-sm transition ${lb.color} space-y-3`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black text-slate-600 uppercase tracking-wider">{lb.type}</span>
+                    <span className="text-lg">{lb.icon}</span>
+                  </div>
                   <div className="flex items-end justify-between">
-                    <span className="text-xl font-black text-slate-900">{lb.remaining}</span>
-                    <span className="text-[10px] text-slate-400 font-semibold">/ {lb.total} left</span>
+                    <span className="text-3xl font-black text-slate-900">{lb.remaining}</span>
+                    <span className="text-[11px] text-slate-400 font-semibold pb-1">/ {lb.total} left</span>
                   </div>
-                  <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                    <div className="h-full rounded-full bg-[#b45309]" style={{ width: `${Math.round((lb.remaining / lb.total) * 100)}%` }} />
+                  <div className="w-full bg-white/80 rounded-full h-2 overflow-hidden shadow-inner">
+                    <div className={`h-full rounded-full ${lb.bar} transition-all duration-500`} style={{ width: `${Math.round((lb.remaining / lb.total) * 100)}%` }} />
                   </div>
-                  <span className="text-[10px] text-slate-400">{lb.used} days used</span>
+                  <span className="text-[11px] text-slate-500 font-semibold">{lb.used} day{lb.used !== 1 ? 's' : ''} used</span>
                 </div>
               ))}
             </div>
           </div>
 
           {/* ── 2. ATTENDANCE HISTORY TABLE WITH TODAY | TOMORROW | THIS MONTH | CUSTOM TOGGLES ── */}
-          <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-xs space-y-5">
+          <div className="bg-white rounded-3xl p-5 sm:p-7 border border-slate-200 shadow-xs space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-lg font-black text-slate-900">Attendance History</h3>
@@ -514,7 +532,7 @@ export default function ManagerHrms() {
               <button
                 type="button"
                 onClick={() => window.location.href = "/manager/attendance"}
-                className="mgr-card px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                className="mgr-card px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
               >
                 📹 Mark Attendance Now
               </button>
@@ -522,14 +540,17 @@ export default function ManagerHrms() {
 
             {/* Filter Toggle Controls: TODAY | YESTERDAY | THIS MONTH | CUSTOM */}
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-0.5 bg-slate-100/80 p-0.5 rounded-lg border border-slate-200/80 flex-wrap">
+              <div className="flex items-center gap-1 bg-slate-100/85 p-1 rounded-xl overflow-x-auto max-w-full shrink-0 flex-nowrap border border-slate-200/60 no-scrollbar">
                 {["TODAY", "YESTERDAY", "THIS MONTH", "CUSTOM"].map((mode) => (
                   <button
                     key={mode}
                     type="button"
                     onClick={() => setReportFilterMode(mode)}
-                    className={`mgr-card px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${reportFilterMode === mode ? "bg-[#0b3c5d] text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
-                      }`}
+                    className={`mgr-card px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-extrabold tracking-wide transition cursor-pointer shrink-0 whitespace-nowrap ${
+                      reportFilterMode === mode 
+                        ? "bg-[#0b3c5d] text-white shadow-xs" 
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-200/50"
+                    }`}
                   >
                     {mode === "CUSTOM" ? "CUSTOM DATE" : mode}
                   </button>
@@ -538,7 +559,7 @@ export default function ManagerHrms() {
 
               {/* Custom Date Input */}
               {reportFilterMode === "CUSTOM" && (
-                <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-1 bg-white text-xs font-bold text-slate-700">
+                <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-1 bg-white text-xs font-bold text-slate-700 shadow-2xs shrink-0">
                   <span className="text-slate-400 font-medium">Select Target Date:</span>
                   <input
                     type="date"

@@ -451,7 +451,7 @@ export default function ManagerSmartMap() {
 
   useEffect(() => {
     if (!autoRefresh) return
-    const t = setInterval(() => fetchData(true), 2000)
+    const t = setInterval(() => fetchData(true), 15000) // 15 seconds fallback polling (Supabase Realtime handles instant updates)
     return () => clearInterval(t)
   }, [autoRefresh, fetchData])
 
@@ -1275,6 +1275,11 @@ export default function ManagerSmartMap() {
       setTrackBreadcrumbs(crumbs)
       setTrackStatus(status)
 
+      // Re-validate map after async call — it may have been unmounted
+      if (!googleMapRef.current) {
+        console.warn('[SmartMap] Map was destroyed while loading history, aborting.')
+        return
+      }
       const map = googleMapRef.current
 
       // Parse Client Destination (prefer DB columns, fallback to executive coordinates, fallback to encoded check_in_address)
@@ -1554,38 +1559,42 @@ export default function ManagerSmartMap() {
 
       // Fit bounds to route + destination
       try {
-        const allPts = []
-        crumbs.forEach(c => {
-          const la = Number(c.latitude)
-          const ln = Number(c.longitude)
-          if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
-        })
-        if (session && session.start_latitude != null && session.start_longitude != null) {
-          const la = Number(session.start_latitude)
-          const ln = Number(session.start_longitude)
-          if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
-        }
-        if (latestLat != null && latestLng != null && !isNaN(latestLat) && !isNaN(latestLng) && latestLat !== 0 && latestLng !== 0) {
-          allPts.push([latestLat, latestLng])
-        }
-        if (clientDest && clientDest.latitude != null && clientDest.longitude != null) {
-          const la = Number(clientDest.latitude)
-          const ln = Number(clientDest.longitude)
-          if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
-        }
-
-        const validPts = allPts.filter(pt => pt && !isNaN(pt[0]) && !isNaN(pt[1]) && pt[0] !== 0 && pt[1] !== 0)
-        if (validPts.length > 0) {
-          const gBounds = new window.google.maps.LatLngBounds()
-          validPts.forEach(pt => gBounds.extend({ lat: pt[0], lng: pt[1] }))
-          map.fitBounds(gBounds, 60)
-          
-          const listener = map.addListener('idle', () => {
-            if (map.getZoom() > 17) {
-              map.setZoom(17)
-            }
-            window.google.maps.event.removeListener(listener)
+        if (!map || !googleMapRef.current) {
+          console.warn('[SmartMap] Map not ready for fitBounds, skipping.')
+        } else {
+          const allPts = []
+          crumbs.forEach(c => {
+            const la = Number(c.latitude)
+            const ln = Number(c.longitude)
+            if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
           })
+          if (session && session.start_latitude != null && session.start_longitude != null) {
+            const la = Number(session.start_latitude)
+            const ln = Number(session.start_longitude)
+            if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
+          }
+          if (latestLat != null && latestLng != null && !isNaN(latestLat) && !isNaN(latestLng) && latestLat !== 0 && latestLng !== 0) {
+            allPts.push([latestLat, latestLng])
+          }
+          if (clientDest && clientDest.latitude != null && clientDest.longitude != null) {
+            const la = Number(clientDest.latitude)
+            const ln = Number(clientDest.longitude)
+            if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
+          }
+
+          const validPts = allPts.filter(pt => pt && !isNaN(pt[0]) && !isNaN(pt[1]) && pt[0] !== 0 && pt[1] !== 0)
+          if (validPts.length > 0) {
+            const gBounds = new window.google.maps.LatLngBounds()
+            validPts.forEach(pt => gBounds.extend({ lat: pt[0], lng: pt[1] }))
+            map.fitBounds(gBounds, 60)
+
+            const listener = map.addListener('idle', () => {
+              if (map.getZoom() > 17) {
+                map.setZoom(17)
+              }
+              window.google.maps.event.removeListener(listener)
+            })
+          }
         }
       } catch (boundsErr) {
         console.error("[SmartMap] Error fitting map bounds:", boundsErr)
@@ -1742,7 +1751,7 @@ export default function ManagerSmartMap() {
       } catch (err) {
         console.warn("Polling error:", err)
       }
-    }, 2500)
+    }, 10000) // 10 seconds fallback polling (Realtime channel provides immediate updates)
   }, [_applyNewCrumb, _handleSessionEnded, fetchData])
 
   // Stale detection timer: re-evaluate badge every 30s
@@ -1837,7 +1846,7 @@ export default function ManagerSmartMap() {
                 <h1 className="text-xl font-black text-slate-900">Smart Radar Map</h1>
                 <p className="text-xs text-slate-500 font-semibold mt-0.5">Click a card to track live location</p>
               </div>
-              <button onClick={() => { setExecutives([]); loadCandidates && loadCandidates() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 border border-slate-200 bg-white rounded-lg px-3 py-2 hover:border-blue-300 transition">
+              <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 border border-slate-200 bg-white rounded-lg px-3 py-2 hover:border-blue-300 transition">
                 <RefreshCw className="w-3.5 h-3.5" /> Refresh
               </button>
             </div>
@@ -1845,13 +1854,47 @@ export default function ManagerSmartMap() {
             {/* Stats Row */}
             <div className="grid grid-cols-3 gap-3">
               {[
-                { label: 'Total', value: executives.length, color: 'bg-mgr-accent-50 text-mgr-accent-700 border-mgr-accent-200', numColor: 'text-mgr-accent-700' },
-                { label: 'Online', value: executives.filter(e => e.is_online).length, color: 'bg-emerald-50 text-emerald-700 border-emerald-200', numColor: 'text-emerald-600' },
-                { label: 'Offline', value: executives.filter(e => !e.is_online).length, color: 'bg-slate-100 text-slate-500 border-slate-200', numColor: 'text-slate-600' },
+                {
+                  label: 'Total',
+                  value: executives.length,
+                  bg: 'bg-gradient-to-br from-[#0b3c5d] to-[#1a5a8a]',
+                  border: 'border-[#0b3c5d]/40',
+                  numColor: 'text-white',
+                  labelColor: 'text-blue-200',
+                  icon: <Users className="w-5 h-5 mx-auto text-blue-200" />,
+                },
+                {
+                  label: 'Online',
+                  value: executives.filter(e => e.is_online).length,
+                  bg: 'bg-gradient-to-br from-emerald-700 to-emerald-500',
+                  border: 'border-emerald-600/40',
+                  numColor: 'text-white',
+                  labelColor: 'text-emerald-100',
+                  icon: (
+                    <span className="relative flex h-3 w-3 mx-auto">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
+                    </span>
+                  ),
+                },
+                {
+                  label: 'Offline',
+                  value: executives.filter(e => !e.is_online).length,
+                  bg: 'bg-gradient-to-br from-slate-600 to-slate-500',
+                  border: 'border-slate-500/40',
+                  numColor: 'text-white',
+                  labelColor: 'text-slate-200',
+                  icon: (
+                    <span className="relative flex h-3 w-3 mx-auto">
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-slate-350"></span>
+                    </span>
+                  ),
+                },
               ].map(s => (
-                <div key={s.label} className={`mgr-card rounded-xl border p-3 text-center shadow-2xs hover:shadow-sm transition ${s.color}`}>
-                  <div className={`text-2xl font-black ${s.numColor}`}>{s.value}</div>
-                  <div className="text-[10px] font-black uppercase tracking-wider mt-0.5 opacity-70">{s.label}</div>
+                <div key={s.label} className={`mgr-card rounded-2xl border ${s.bg} ${s.border} p-4 text-center shadow-md hover:shadow-lg hover:scale-[1.02] transition-all duration-200 flex flex-col justify-between items-center min-h-[110px]`}>
+                  <div className="h-6 flex items-center justify-center">{s.icon}</div>
+                  <div className={`text-3xl font-black ${s.numColor} my-1`}>{s.value}</div>
+                  <div className={`text-[10px] font-black uppercase tracking-widest ${s.labelColor}`}>{s.label}</div>
                 </div>
               ))}
             </div>

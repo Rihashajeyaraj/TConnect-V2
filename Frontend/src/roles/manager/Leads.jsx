@@ -551,7 +551,7 @@ export default function ManagerLeads() {
       {/* ── TABLE DETAILS MODAL POPUP ─────────────────────────────────────────── */}
       {activeTableModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh] overflow-y-auto relative animate-in fade-in zoom-in duration-150">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh] overflow-y-auto relative animate-in fade-in zoom-in duration-150">
             {/* Modal Header */}
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div>
@@ -581,7 +581,7 @@ export default function ManagerLeads() {
             </div>
 
             {/* ── FILTERS & SEARCH CONTROL BAR ── clean flat strip ──────────── */}
-            <div className="flex flex-wrap items-center gap-3 pb-3 border-b border-slate-100">
+            <div className="flex flex-col md:flex-row md:items-center gap-3 pb-3 border-b border-slate-100">
               {/* Sales Executive Filter — inline, no box */}
               <div className="flex items-center gap-2 text-sm shrink-0">
                 <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Executive:</span>
@@ -614,14 +614,14 @@ export default function ManagerLeads() {
               </div>
 
               {/* Date filter pills — inline */}
-              <div className="flex items-center gap-1 shrink-0">
-                <span className="text-xs font-black text-slate-400 uppercase tracking-wider mr-1">Date:</span>
+              <div className="flex items-center gap-1 overflow-x-auto max-w-full shrink-0 pb-1 sm:pb-0">
+                <span className="text-xs font-black text-slate-400 uppercase tracking-wider mr-1 shrink-0">Date:</span>
                 {['Today', 'This Month', 'Custom'].map((tab) => (
                   <button
                     key={tab}
                     type="button"
                     onClick={() => handleLinearDateFilter(tab)}
-                    className={`mgr-card px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                    className={`mgr-card px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-black transition cursor-pointer shrink-0 ${
                       dateFilterTab === tab
                         ? 'bg-slate-900 text-white'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
@@ -631,7 +631,7 @@ export default function ManagerLeads() {
                   </button>
                 ))}
                 {dateFilterTab === 'Custom' && (
-                  <div className="flex items-center gap-1.5 ml-1">
+                  <div className="flex items-center gap-1.5 ml-1 shrink-0">
                     <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
                       className="bg-slate-100 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none cursor-pointer" />
                     <span className="text-slate-400 font-bold text-xs">→</span>

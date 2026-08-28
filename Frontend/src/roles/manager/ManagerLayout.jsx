@@ -563,13 +563,13 @@ export default function ManagerLayout() {
 
         {/* Center: Sleek Metallic Shimmer Indicator (Larger & Centered Absolutely) */}
         <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
-          <div className="flex items-center gap-2.5 bg-slate-50/80 border border-slate-200/80 rounded-full px-4.5 py-1.5 shadow-xs pointer-events-auto">
-            <span className="relative flex h-2 w-2">
+          <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-full px-6 py-2.5 shadow-sm pointer-events-auto">
+            <span className="relative flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
             </span>
-            <span 
-              className="text-xs uppercase tracking-[0.25em] font-black"
+            <span
+              className="text-sm uppercase tracking-[0.3em] font-black"
               style={{
                 background: 'linear-gradient(to right, #475569 20%, #2563eb 40%, #60a5fa 60%, #475569 80%)',
                 backgroundSize: '200% auto',
@@ -690,8 +690,22 @@ export default function ManagerLayout() {
           <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 lg:hidden transition-opacity" />
         )}
 
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 shrink-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-          <div className="p-4 space-y-2 overflow-y-auto max-h-[calc(100vh-4rem)]">
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-[#0b3c5d] border-r border-[#0b3c5d]/80 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 shrink-0 flex flex-col shadow-xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          {/* Mobile-only Sidebar Close Header */}
+          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#072438] shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-[#f5ab27] flex items-center justify-center text-[#0b3c5d] text-[10px] font-black">TC</span>
+              <span className="text-xs font-black text-white uppercase tracking-widest">Sales Manager</span>
+            </div>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="p-1.5 rounded-xl text-slate-300 hover:bg-white/10 hover:text-white transition cursor-pointer"
+              aria-label="Close sidebar"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <div className="flex-1 p-4 space-y-1.5 overflow-y-auto pt-4 lg:pt-5">
             {sidebarItems.map((item, index) => {
               const Icon = item.icon
               const isActive = location.pathname === item.path
@@ -715,12 +729,12 @@ export default function ManagerLayout() {
                       setSidebarOpen(false);
                     }}
                     className={`flex items-center gap-3.5 px-4 py-3 rounded-2xl font-semibold text-sm transition ${!isCustomizing && isActive
-                        ? 'bg-[#0b3c5d] text-white shadow-md shadow-blue-900/25 border-l-4 border-[#f5ab27]'
-                        : 'text-slate-700 hover:bg-slate-100 hover:text-[#0b3c5d]'
+                        ? 'bg-white/15 text-white shadow-md border-l-4 border-[#f5ab27]'
+                        : 'text-slate-300 hover:bg-white/10 hover:text-white'
                       }`}
                   >
                     {isCustomizing && <GripVertical size={15} className="text-slate-400 shrink-0" />}
-                    <Icon className={`w-5 h-5 shrink-0 ${!isCustomizing && isActive ? 'text-[#f5ab27]' : 'text-[#0b3c5d]'}`} />
+                    <Icon className={`w-5 h-5 shrink-0 ${!isCustomizing && isActive ? 'text-[#f5ab27]' : 'text-slate-400'}`} />
                     <span className="truncate tracking-tight">{item.label}</span>
                   </Link>
                 </div>
@@ -728,7 +742,7 @@ export default function ManagerLayout() {
             })}
             <div className="pt-2">
               {isCustomizing ? (
-                <div className="pt-2 border-t border-slate-100 space-y-1.5 px-1">
+                <div className="pt-2 border-t border-white/10 space-y-1.5 px-1">
                   <button
                     type="button"
                     onClick={saveCustomization}
@@ -748,7 +762,7 @@ export default function ManagerLayout() {
                 <button
                   type="button"
                   onClick={() => setIsCustomizing(true)}
-                  className="mgr-card w-full py-2 px-3 border border-dashed border-slate-200 hover:border-[#f5ab27] text-slate-500 hover:text-[#0b3c5d] rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                  className="mgr-card w-full py-2 px-3 border border-dashed border-white/20 hover:border-[#f5ab27] text-slate-400 hover:text-white rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <span>⚙️ Customize Sidebar</span>
                 </button>
@@ -757,29 +771,29 @@ export default function ManagerLayout() {
           </div>
         </aside>
 
-        <main className="flex-1 p-4 lg:p-6 min-w-0 overflow-y-auto w-full pb-20 lg:pb-6">
+        <main className="flex-1 p-4 lg:p-6 min-w-0 overflow-y-auto w-full pb-20 lg:pb-6 bg-[#F0F4F8]">
           <Outlet />
         </main>
 
         {/* ── Mobile Bottom Navigation Dock ────────────────────────── */}
-        <div className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 px-2 py-1.5 flex items-center justify-around shadow-lg">
-          <NavLink to="/manager/dashboard" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+        <div className="lg:hidden fixed bottom-0 inset-x-0 bg-[#0b3c5d] border-t border-white/10 z-40 px-2 py-1.5 flex items-center justify-around shadow-lg">
+          <NavLink to="/manager/dashboard" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
             <LayoutDashboard size={18} />
             <span>Home</span>
           </NavLink>
-          <NavLink to="/manager/map" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+          <NavLink to="/manager/map" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
             <MapPin size={18} />
             <span>Map</span>
           </NavLink>
-          <NavLink to="/manager/attendance" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+          <NavLink to="/manager/attendance" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
             <UserCheck size={18} />
             <span>Attendance</span>
           </NavLink>
-          <NavLink to="/manager/leads" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+          <NavLink to="/manager/leads" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
             <Users size={18} />
             <span>Leads</span>
           </NavLink>
-          <NavLink to="/manager/hrms" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+          <NavLink to="/manager/hrms" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
             <ShieldCheck size={18} />
             <span>HRMS</span>
           </NavLink>

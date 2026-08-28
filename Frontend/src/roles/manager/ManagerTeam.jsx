@@ -570,12 +570,12 @@ export default function ManagerTeam() {
           className="mgr-card p-4 rounded-2xl border bg-white text-slate-800 border-slate-200 hover:border-mgr-primary-400 hover:bg-mgr-primary-50/20 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
         >
           <div className="space-y-0.5">
-            <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-              EOD Reports
+            <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">
+              EOD Attendance Reports
             </p>
-            <h3 className="text-xl font-black text-slate-900">{filteredReports.length} Reports</h3>
-            <p className="text-[10px] font-semibold text-slate-400">
-              Click to view EOD work logs
+            <h3 className="text-xl font-bold text-slate-900">{filteredReports.length} Reports</h3>
+            <p className="text-[10px] font-normal text-slate-400">
+              Click to view EOD attendance logs
             </p>
           </div>
           <div className="p-2.5 rounded-xl bg-mgr-primary-50 text-mgr-primary-600 border border-mgr-primary-200">
@@ -648,35 +648,7 @@ export default function ManagerTeam() {
               </button>
             </div>
 
-            {/* Header controls (Cards/Table view selector) */}
-            <div className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
-              <div>
-                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <Users className="w-6 h-6 text-mgr-primary-700" /> EOD Daily Work Reports
-                </h1>
-              </div>
 
-              <div className="flex items-center gap-3">
-                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                  <button
-                    onClick={() => setViewMode('cards')}
-                    className={`mgr-card px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
-                      viewMode === 'cards' ? 'bg-mgr-primary-700 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    <LayoutGrid size={14} /> Cards View
-                  </button>
-                  <button
-                    onClick={() => setViewMode('table')}
-                    className={`mgr-card px-3 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
-                      viewMode === 'table' ? 'bg-mgr-primary-700 text-white shadow-2xs' : 'text-slate-500 hover:text-slate-800'
-                    }`}
-                  >
-                    <Table size={14} /> Table View
-                  </button>
-                </div>
-              </div>
-            </div>
 
             {/* Filter Panel */}
             <div className="bg-white border border-slate-200 rounded-3xl p-4 space-y-4 shadow-xs">
@@ -775,253 +747,68 @@ export default function ManagerTeam() {
             </div>
 
             {/* List/Table View Rendering */}
-            {viewMode === 'cards' ? (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-                {loading ? (
-                  <div className="col-span-full py-16 text-center text-slate-400">
-                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-mgr-primary-700 mb-3" />
-                    <span className="text-sm font-black text-slate-700">Fetching team EOD daily work reports...</span>
-                  </div>
-                ) : filteredReports.length === 0 ? (
-                  <div className="col-span-full py-16 text-center text-slate-500 font-bold text-sm bg-white border border-slate-200 rounded-3xl">
-                    No EOD daily work reports match your selected criteria.
-                  </div>
-                ) : (
-                  filteredReports.map((report) => {
-                    const isExpanded = !!expandedCards[report.id]
-                    return (
-                      <div
-                        key={report.id}
-                        className={`bg-white border rounded-3xl p-5 space-y-4 transition hover:shadow-md ${
-                          isExpanded ? 'border-mgr-primary-500/80 shadow-md ring-1 ring-mgr-primary-500/10' : 'border-slate-200'
-                        }`}
-                      >
-                        <div className="flex items-start justify-between border-b border-slate-100 pb-3">
-                          <div className="space-y-0.5">
-                            <span className="bg-mgr-primary-100 text-mgr-primary-955 border border-mgr-primary-300 px-1.5 py-0.5 rounded font-mono font-black text-[9px] uppercase tracking-wider">
-                              {report.employee_code || 'EMP-112'}
-                            </span>
-                            <h4 className="font-black text-slate-900 text-sm mt-1">{report.executive}</h4>
-                            <p className="text-[10px] font-semibold text-slate-400">{report.designation || 'Sales Executive'}</p>
-                          </div>
-                          <span
-                            className={`px-2 py-0.5 rounded-full text-[9px] font-black ${
-                              report.managerAck
-                                ? 'bg-emerald-100 text-emerald-955 border border-emerald-300'
-                                : 'bg-mgr-primary-100 text-mgr-primary-900 border border-mgr-primary-300'
-                            }`}
-                          >
-                            {report.managerAck ? 'Acknowledged' : 'Submitted'}
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-3 gap-2.5 text-center text-xs">
-                          <div className="bg-slate-50 p-2 rounded-xl border border-slate-200">
-                            <span className="text-[9px] font-bold text-slate-400 block">Calls</span>
-                            <span className="font-black text-slate-800 text-sm">{report.callsMade}</span>
-                          </div>
-                          <div className="bg-emerald-50/60 p-2 rounded-xl border border-emerald-200">
-                            <span className="text-[9px] font-bold text-emerald-80 block">Visits</span>
-                            <span className="font-black text-emerald-955 text-sm">{report.visitsCompleted}</span>
-                          </div>
-                          <div className="bg-mgr-secondary-50/60 p-2 rounded-xl border border-mgr-secondary-200">
-                            <span className="text-[9px] font-bold text-mgr-secondary-800 block">Leads</span>
-                            <span className="font-black text-mgr-secondary-950 text-sm">{report.leadsGenerated}</span>
-                          </div>
-                        </div>
-
-                        <div className="space-y-1.5 bg-slate-50/60 p-3 rounded-2xl border border-slate-200 text-[10px] font-semibold text-slate-700">
-                          <p className="flex items-center gap-1.5 truncate">
-                            <span className="text-emerald-700 font-bold shrink-0">In:</span> {report.loginLocation}
-                          </p>
-                          <p className="flex items-center gap-1.5 truncate">
-                            <span className="text-rose-700 font-bold shrink-0">Out:</span> {report.logoutLocation}
-                          </p>
-                        </div>
-
-                        <button
-                          onClick={() => toggleExpandCard(report.id)}
-                          className="w-full py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-[10px] font-black text-slate-600 transition flex items-center justify-center gap-1"
-                        >
-                          {isExpanded ? (
-                            <>
-                              Collapse Report <ChevronUp size={12} />
-                            </>
-                          ) : (
-                            <>
-                              Expand Full EOD Report <ChevronDown size={12} />
-                            </>
-                          )}
-                        </button>
-
-                        {isExpanded && (
-                          <div className="space-y-4 pt-3 border-t border-slate-100 text-xs animate-in slide-in-from-top-2 duration-200">
-                            <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                              <div className="bg-mgr-primary-50 p-2 rounded-xl border border-mgr-primary-200">
-                                <span className="text-[9px] font-bold text-mgr-primary-955 block">Interested</span>
-                                <span className="font-black text-sm">{report.clientsInterested}</span>
-                              </div>
-                              <div className="bg-mgr-accent-50 p-2 rounded-xl border border-mgr-accent-200">
-                                <span className="text-[9px] font-bold text-mgr-accent-800 block">Follow-ups</span>
-                                <span className="font-black text-sm">{report.followupsScheduled}</span>
-                              </div>
-                              <div className="bg-yellow-555 text-white p-2 rounded-xl shadow-xs">
-                                <span className="text-[9px] font-bold text-mgr-primary-100 block">Won</span>
-                                <span className="font-black text-sm">{report.dealsClosed}</span>
-                              </div>
-                            </div>
-
-                            <div className="p-3.5 rounded-2xl bg-mgr-secondary-50/60 border border-mgr-secondary-200 space-y-2 text-xs">
-                              <span className="text-[10px] font-extrabold uppercase text-mgr-secondary-800 block">ATTENDANCE & LOGIN SESSIONS</span>
-                              {report.sessions && report.sessions.length > 0 ? (
-                                <div className="space-y-2">
-                                  {report.sessions.map((sess, idx) => {
-                                     const sIn = sess.check_in_time || sess.punch_in_time || sess.clockIn || sess.loginTime || sess.login_time;
-                                     const sOut = sess.check_out_time || sess.punch_out_time || sess.clockOut || sess.logoutTime || sess.logout_time;
-                                     const inFmt = formatTelemetryTime(sIn);
-                                     const outFmt = formatTelemetryTime(sOut) || (sIn ? 'In Progress (Active)' : '—');
-                                     const locIn = sess.check_in_address || sess.loginLocation || sess.location || 'Office / Field Site';
-                                     const locOut = sess.check_out_address || sess.logoutLocation || sess.location || (sIn ? 'Active / Field Site' : '—');
-                                     const dur = calculateDuration(sIn, sOut);
-                                     return (
-                                        <div key={sess.id || idx} className="bg-white border border-mgr-secondary-100 shadow-sm rounded-xl p-2.5 flex flex-col md:flex-row justify-between md:items-center gap-2">
-                                           <div className="space-y-1">
-                                              <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1.5">
-                                                 🟢 In: <span className="font-black text-mgr-secondary-950">{inFmt}</span> <span className="text-slate-400 font-normal italic truncate max-w-[200px]">({String(locIn).replace('CLIENT_VISIT_DESTINATION:::', '').substring(0,35)}...)</span>
-                                              </div>
-                                              <div className="text-[11px] font-bold text-slate-600 flex items-center gap-1.5">
-                                                 🔴 Out: <span className="font-black text-rose-950">{outFmt}</span> <span className="text-slate-400 font-normal italic truncate max-w-[200px]">({String(locOut).replace('CLIENT_VISIT_DESTINATION:::', '').substring(0,35)}...)</span>
-                                              </div>
-                                           </div>
-                                           <div className="bg-mgr-secondary-100 text-mgr-secondary-900 border border-mgr-secondary-200 font-black px-3 py-1.5 rounded-lg shrink-0 text-center text-[10px]">
-                                              ⏱️ {dur}
-                                           </div>
-                                        </div>
-                                     )
-                                  })}
-                                </div>
-                              ) : (
-                                <div className="text-slate-500 font-semibold italic text-[11px] p-2">No attendance sessions logged for this day.</div>
-                              )}
-                            </div>
-
-                            <div className="space-y-1 bg-mgr-accent-50/50 p-3 rounded-2xl border border-mgr-accent-200 text-xs">
-                              <span className="text-[10px] font-black text-mgr-accent-800 uppercase">Remarks / Notes</span>
-                              <p className="font-medium text-slate-700 italic">"{report.seRemarks}"</p>
-                            </div>
-
-                            <div className="space-y-2">
-                              <div className="p-3 bg-slate-50 border-slate-200 rounded-xl">
-                                <span className="text-[9px] font-extrabold uppercase text-slate-500 block">Highlights</span>
-                                <p className="text-slate-800 font-semibold leading-relaxed mt-0.5">{report.highlights}</p>
-                              </div>
-                              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl">
-                                <span className="text-[9px] font-extrabold uppercase text-rose-900 block">Blockers</span>
-                                <p className="text-rose-955 font-semibold leading-relaxed mt-0.5">{report.blockers}</p>
-                              </div>
-                              <div className="p-3 bg-mgr-primary-50 border border-mgr-primary-200 rounded-xl">
-                                <span className="text-[9px] font-extrabold uppercase text-mgr-primary-900 block">Tomorrow Plan</span>
-                                <p className="text-mgr-primary-955 font-semibold leading-relaxed mt-0.5">{report.nextDayPlan}</p>
-                              </div>
-                            </div>
-
-                            <div className="p-4 bg-slate-900 text-white rounded-2xl space-y-3">
-                              <div className="flex items-center justify-between text-[10px] font-extrabold text-mgr-primary-400 uppercase tracking-wider">
-                                <span>Manager Comments & Ack</span>
-                                {report.managerAck && <span className="text-emerald-400">✓ Acknowledged</span>}
-                              </div>
-                              {report.managerAck && report.managerComment && (
-                                <p className="text-[11px] text-mgr-primary-200 italic font-semibold">"{report.managerComment}"</p>
-                              )}
-                              {!report.managerAck && (
-                                <div className="space-y-2.5">
-                                  <input
-                                    type="text"
-                                    value={ackComments[report.id] || ''}
-                                    onChange={(e) => setAckComments({ ...ackComments, [report.id]: e.target.value })}
-                                    placeholder="Enter comments..."
-                                    className="w-full bg-slate-850 border border-slate-750 rounded-xl p-2.5 text-[11px] text-white focus:outline-none focus:border-mgr-primary-400 font-semibold"
-                                  />
-                                  <button
-                                    onClick={() => handleAcknowledgeReport(report.id)}
-                                    className="w-full py-2 bg-mgr-primary-700 hover:bg-mgr-primary-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition"
-                                  >
-                                    Acknowledge Report
-                                  </button>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    )
-                  })
-                )}
-              </div>
-            ) : (
-              <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-slate-700">
-                    <thead className="bg-slate-50 text-slate-500 uppercase font-bold border-b border-slate-200">
+            <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-700">
+                  <thead className="bg-slate-50 text-slate-500 uppercase font-bold border-b border-slate-200">
+                    <tr>
+                      <th className="px-5 py-3.5">Date</th>
+                      <th className="px-5 py-3.5">Emp Id</th>
+                      <th className="px-5 py-3.5">Emp Name</th>
+                      <th className="px-5 py-3.5">Attendance</th>
+                      <th className="px-5 py-3.5 text-right">View Report</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {loading ? (
                       <tr>
-                        <th className="px-5 py-3.5">Date</th>
-                        <th className="px-5 py-3.5">Emp Id</th>
-                        <th className="px-5 py-3.5">Emp Name</th>
-                        <th className="px-5 py-3.5">Attendance</th>
-                        <th className="px-5 py-3.5 text-right">View Report</th>
+                        <td colSpan="5" className="text-center py-12 text-slate-400">
+                          <RefreshCw className="w-6 h-6 animate-spin mx-auto text-mgr-primary-600 mb-2" />
+                          Loading team attendance reports...
+                        </td>
                       </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium">
-                      {loading ? (
-                        <tr>
-                          <td colSpan="5" className="text-center py-12 text-slate-400">
-                            <RefreshCw className="w-6 h-6 animate-spin mx-auto text-mgr-primary-600 mb-2" />
-                            Loading team EOD daily work reports...
+                    ) : filteredReports.length === 0 ? (
+                      <tr>
+                        <td colSpan="5" className="text-center py-12 text-slate-400 font-semibold">
+                          No attendance reports match your selected criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredReports.map((report) => (
+                        <tr
+                          key={report.id}
+                          onClick={() => setSelectedReportModal(report)}
+                          className="mgr-card hover:bg-mgr-primary-50/40 transition cursor-pointer"
+                        >
+                          <td className="px-5 py-3 font-mono font-bold text-slate-800">{report.date}</td>
+                          <td className="px-5 py-3 font-mono font-black text-mgr-primary-955">
+                            <span className="bg-mgr-primary-100 text-mgr-primary-955 border border-mgr-primary-300 px-1.5 py-0.5 rounded text-[10px]">
+                              [{report.employee_code || 'EMP000012'}]
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 font-extrabold text-slate-900">{report.executive}</td>
+                          <td className="px-5 py-3 text-[11px] font-bold text-slate-700">
+                            <div>🟢 {report.loginTime}</div>
+                            <div className="text-slate-500">🔴 {report.logoutTime}</div>
+                          </td>
+                          <td className="px-5 py-3 text-right">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation()
+                                setSelectedReportModal(report)
+                              }}
+                              className="mgr-card px-3 py-1.5 rounded-xl bg-mgr-primary-600 hover:bg-mgr-primary-700 text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto"
+                            >
+                              <Eye size={12} /> View Full Report
+                            </button>
                           </td>
                         </tr>
-                      ) : filteredReports.length === 0 ? (
-                        <tr>
-                          <td colSpan="5" className="text-center py-12 text-slate-400 font-semibold">
-                            No EOD daily work reports match your selected criteria.
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredReports.map((report) => (
-                          <tr
-                            key={report.id}
-                            onClick={() => setSelectedReportModal(report)}
-                            className="mgr-card hover:bg-mgr-primary-50/40 transition cursor-pointer"
-                          >
-                            <td className="px-5 py-3 font-mono font-bold text-slate-800">{report.date}</td>
-                            <td className="px-5 py-3 font-mono font-black text-mgr-primary-955">
-                              <span className="bg-mgr-primary-100 text-mgr-primary-955 border border-mgr-primary-300 px-1.5 py-0.5 rounded text-[10px]">
-                                [{report.employee_code || 'EMP000012'}]
-                              </span>
-                            </td>
-                            <td className="px-5 py-3 font-extrabold text-slate-900">{report.executive}</td>
-                            <td className="px-5 py-3 text-[11px] font-bold text-slate-700">
-                              <div>🟢 {report.loginTime}</div>
-                              <div className="text-slate-500">🔴 {report.logoutTime}</div>
-                            </td>
-                            <td className="px-5 py-3 text-right">
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation()
-                                  setSelectedReportModal(report)
-                                }}
-                                className="mgr-card px-3 py-1.5 rounded-xl bg-mgr-primary-600 hover:bg-mgr-primary-700 text-white font-extrabold text-[10px] shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto"
-                              >
-                                <Eye size={12} /> View Full Report
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
+                      ))
+                    )}
+                  </tbody>
+                </table>
               </div>
-            )}
+            </div>
           </div>
         </div>
       )}

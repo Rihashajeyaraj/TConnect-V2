@@ -539,7 +539,7 @@ function AdminLayout() {
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-[#071A45] flex flex-col font-sans admin-portal-root">
       {/* Top Header */}
-      <header className="h-16 bg-white border-b border-[#DCE3EF] flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
+      <header className="relative h-16 bg-white border-b border-[#DCE3EF] flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -551,6 +551,37 @@ function AdminLayout() {
             <span className="bg-[#061A4D] text-white px-2.5 py-1 rounded-xl text-sm shadow-md shadow-[#061A4D]/30">TC</span>
             <span className="text-[#071A45] tracking-tight">TConnect Admin</span>
           </Link>
+        </div>
+
+        {/* Center: Admin Role Indicator Tag */}
+        <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
+          <div className="flex items-center gap-2.5 bg-slate-50/80 border border-slate-200/80 rounded-full px-4.5 py-1.5 shadow-xs pointer-events-auto">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span
+              className="text-xs uppercase tracking-[0.25em] font-black"
+              style={{
+                background: 'linear-gradient(to right, #475569 20%, #061A4D 40%, #2563eb 60%, #475569 80%)',
+                backgroundSize: '200% auto',
+                color: 'transparent',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                animation: 'tc-shimmer-admin 3s linear infinite',
+                display: 'inline-block'
+              }}
+            >
+              {currentUser?.role || 'System Administrator'}
+            </span>
+            <style>{`
+              @keyframes tc-shimmer-admin {
+                to {
+                  background-position: -200% center;
+                }
+              }
+            `}</style>
+          </div>
         </div>
 
         <div className="flex items-center gap-3">
@@ -699,14 +730,28 @@ function AdminLayout() {
         )}
         {/* Sidebar Navigation */}
         <aside
-          className={`fixed inset-y-0 left-0 z-20 w-64 bg-[#061A4D] border-r border-[#123A8C]/20 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 ${
+          className={`fixed inset-y-0 left-0 z-20 w-64 bg-[#061A4D] border-r border-[#123A8C]/20 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 flex flex-col ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
+          {/* Mobile-only Sidebar Close Header */}
+          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-[#123A8C]/40 bg-[#061A4D] shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="bg-[#D9A441] text-white px-2 py-0.5 rounded-lg text-xs font-black shadow-sm">TC</span>
+              <span className="text-xs font-black text-white uppercase tracking-widest">Admin Portal</span>
+            </div>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="p-1.5 rounded-xl text-slate-400 hover:bg-[#123A8C]/50 hover:text-white transition cursor-pointer"
+              aria-label="Close sidebar"
+            >
+              <X className="w-4.5 h-4.5" />
+            </button>
+          </div>
           <div className="p-3 border-b border-[#123A8C]/30 bg-[#061A4D] font-bold text-[11px] uppercase tracking-wider text-[#F2C76E] px-4">
             Module Navigation
           </div>
-          <div className="p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-4rem)]">
+          <div className="flex-1 p-3 space-y-1 overflow-y-auto">
             {sidebarItems.map((item, index) => {
               const Icon = item.icon
               const isActive = location.pathname.replace(/\/$/, '') === item.path.replace(/\/$/, '') || (item.path === '/admin' && (location.pathname === '/admin' || location.pathname === '/admin/'))
