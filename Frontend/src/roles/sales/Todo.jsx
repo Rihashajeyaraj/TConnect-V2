@@ -68,7 +68,8 @@ const STICKY_THEMES = {
 
 const INITIAL_TODOS = [];
 
-export default function Todo() {
+export default function Todo(props) {
+  const isModalView = props?.isModalView || false;
   const currentUser = useCurrentUser();
   const userEmail = (currentUser.email || "").toLowerCase().trim();
   const userId = currentUser.id || currentUser.user_id || "";
@@ -237,19 +238,21 @@ export default function Todo() {
       {/* 3D Header Controls & Sticky Creator */}
       <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black shadow-md shadow-amber-500/30">
-              <StickyNote className="w-5 h-5" />
+          {!isModalView && (
+            <div className="flex items-center gap-2.5">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black shadow-md shadow-amber-500/30">
+                <StickyNote className="w-5 h-5" />
+              </div>
+              <div>
+                <h1 className="text-base font-extrabold text-slate-900 leading-tight">
+                  3D Sticky Note Taskboard
+                </h1>
+                <p className="text-xs text-slate-500 font-medium">
+                  Tactile pinboard for daily field tasks & follow-ups
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-base font-extrabold text-slate-900 leading-tight">
-                3D Sticky Note Taskboard
-              </h1>
-              <p className="text-xs text-slate-500 font-medium">
-                Tactile pinboard for daily field tasks & follow-ups
-              </p>
-            </div>
-          </div>
+          )}
 
           {/* Filter Controls Bar */}
           <div className="flex items-center gap-2 flex-wrap">

@@ -36,13 +36,20 @@ import {
   ExternalLink,
   Briefcase
 } from "lucide-react";
-import { salesDashboardAPI, todoAPI, notificationAPI, crmAPI, hrmsAPI, salesAPI, attendanceAPI, customerAPI, visitAPI, expenseAPI } from "../../services/api.js";
+import { salesDashboardAPI, todoAPI, notificationAPI, crmAPI, hrmsAPI, salesAPI, attendanceAPI, customerAPI, visitAPI, expenseAPI, pipelineAPI, settingsAPI } from "../../services/api.js";
 import { exportToPDF, exportToExcel, exportToCSV, getFormattedTodayDate } from "../../utils/exportUtils.js";
 import { calculateWorkHours } from "./Attendance.jsx";
 import { useToast } from "../../common/ToastContext.jsx";
 import { formatDate } from "../../utils/dateUtils.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { isItemOwnedByUser, filterUserItems } from "../../utils/userScope.js";
+import { normalizePhoneNumber } from "../../utils/formatUtils.js";
+import LocationPickerModal from "../../common/LocationPickerModal.jsx";
+import Attendance from "./Attendance.jsx";
+import Leads from "./Leads.jsx";
+import Expenses from "./Expenses.jsx";
+import ClientLog from "./ClientLog.jsx";
+import Todo from "./Todo.jsx";
 
 // ── Mock Data Fallbacks ────────────────────────────────────────────────────────
 
@@ -69,35 +76,7 @@ const MOCK_KPIS = {
   today_schedule: [],
 };
 
-// ── Circular Gauge Component ───────────────────────────────────────────────────
 
-function CircularChart({ pct, color, label, sublabel, size = 100, stroke = 9 }) {
-  const r = (size - stroke) / 2;
-  const circ = 2 * Math.PI * r;
-  const offset = circ - (pct / 100) * circ;
-
-  return (
-    <div className="flex flex-col items-center gap-1.5">
-      <div className="relative" style={{ width: size, height: size }}>
-        <svg width={size} height={size} className="rotate-[-90deg]">
-          <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#e2e8f0" strokeWidth={stroke} />
-          <circle
-            cx={size / 2} cy={size / 2} r={r} fill="none"
-            stroke={color} strokeWidth={stroke}
-            strokeDasharray={circ} strokeDashoffset={offset}
-            strokeLinecap="round"
-            style={{ transition: "stroke-dashoffset 1.2s ease" }}
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center rotate-0">
-          <span className="text-xl font-extrabold text-slate-800">{Math.round(pct)}%</span>
-        </div>
-      </div>
-      <p className="font-semibold text-slate-700 text-sm text-center">{label}</p>
-      <p className="text-xs text-slate-400 text-center">{sublabel}</p>
-    </div>
-  );
-}
 
 // ── Skeleton Loader ────────────────────────────────────────────────────────────
 
@@ -153,16 +132,35 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const { showToast } = useToast();
 
+  const currentUser = useCurrentUser();
+  const userEmail = (currentUser.email || "").toLowerCase().trim();
+  const userName = currentUser.name || currentUser.full_name || userEmail.split("@")[0] || "Sales Executive";
+  const userEmpCode = currentUser.employee_code || currentUser.employee_id || "";
+  const userId = currentUser.id || currentUser.user_id || "";
+
+  // ── Helper to read cache ──────────────────────────────────────────────────────
+  const getCachedValue = (key, fallback) => {
+    if (!userEmail) return fallback;
+    try {
+      const cached = localStorage.getItem(`tc_se_dashboard_cache_${userEmail}`);
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        return parsed[key] !== undefined ? parsed[key] : fallback;
+      }
+    } catch (e) {}
+    return fallback;
+  };
+
   // ── State ────────────────────────────────────────────────────────────────────
-  const [kpis, setKpis] = useState(null);
+  const [kpis, setKpis] = useState(() => getCachedValue("kpis", null));
   const [todos, setTodos] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !getCachedValue("kpis", null));
   const [todoLoading, setTodoLoading] = useState(false);
   const [newTodo, setNewTodo] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(() => localStorage.getItem("tc_dashboard_date_filter") || "Today");
   const [customDateVal, setCustomDateVal] = useState(() => localStorage.getItem("tc_dashboard_custom_date") || new Date().toISOString().slice(0, 10));
-  const [managerTarget, setManagerTarget] = useState({ revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' });
+  const [managerTarget, setManagerTarget] = useState(() => getCachedValue("managerTarget", { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' }));
   const [refreshing, setRefreshing] = useState(false);
   const [todayAttRecord, setTodayAttRecord] = useState(null); // null = not yet fetched
 
@@ -178,9 +176,9 @@ export default function Dashboard() {
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showLeadsModal, setShowLeadsModal] = useState(false);
   const [leadsModalTab, setLeadsModalTab] = useState("Hot");
-  const [allLeadsList, setAllLeadsList] = useState([]);
-  const [myCustomersList, setMyCustomersList] = useState([]);
-  const [todayFollowupsListState, setTodayFollowupsListState] = useState([]);
+  const [allLeadsList, setAllLeadsList] = useState(() => getCachedValue("allLeadsList", []));
+  const [myCustomersList, setMyCustomersList] = useState(() => getCachedValue("myCustomersList", []));
+  const [todayFollowupsListState, setTodayFollowupsListState] = useState(() => getCachedValue("todayFollowupsListState", []));
 
   // Modals state: Reminder of the Day (Today Followups) & Revenue Incentive Modal
   const [showTodayFollowupsModal, setShowTodayFollowupsModal] = useState(false);
@@ -189,33 +187,68 @@ export default function Dashboard() {
 
   // Quick Action Modal State (Direct Add Lead Modal on Dashboard!)
   const [isAddLeadModalOpen, setIsAddLeadModalOpen] = useState(false);
+  const [isAttendanceModalOpen, setIsAttendanceModalOpen] = useState(false);
+  const [isFollowUpsModalOpen, setIsFollowUpsModalOpen] = useState(false);
+  const [isScheduleVisitModalOpen, setIsScheduleVisitModalOpen] = useState(false);
+  const [isOpportunitiesModalOpen, setIsOpportunitiesModalOpen] = useState(false);
+  const [isSubmitExpenseModalOpen, setIsSubmitExpenseModalOpen] = useState(false);
+  const [isClientLogModalOpen, setIsClientLogModalOpen] = useState(false);
+  const [isTodoModalOpen, setIsTodoModalOpen] = useState(false);
+  const [isMyLeadsModalOpen, setIsMyLeadsModalOpen] = useState(false);
   const [addLeadForm, setAddLeadForm] = useState({
     company: "",
+    product: "",
+    customProduct: "",
     person: "",
     phone: "",
     email: "",
     city: "",
     category: "Hot",
-    value: "",
+    priority: "High",
+    value: "₹0",
+    source: "Field Research (SE)",
+    targetList: "Leads", // "Leads" | "Opportunities"
     notes: "",
+    latitude: null,
+    longitude: null,
+    landmark: "",
+    full_address: "",
   });
 
-  const currentUser = useCurrentUser();
-  const userEmail = (currentUser.email || "").toLowerCase().trim();
-  const userName = currentUser.name || currentUser.full_name || userEmail.split("@")[0] || "Sales Executive";
-  const userEmpCode = currentUser.employee_code || currentUser.employee_id || "";
-  const userId = currentUser.id || currentUser.user_id || "";
+  const [productsList, setProductsList] = useState([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
+  const productOptions = productsList;
+
+  useEffect(() => {
+    async function fetchProducts() {
+      try {
+        const res = await settingsAPI.getProducts();
+        if (res?.data?.products) {
+          const activeProds = res.data.products
+            .filter((p) => p.status === 'Active' || p.status === undefined)
+            .map((p) => p.name || p.product_name || p.productName);
+          if (activeProds.length > 0) {
+            setProductsList(activeProds);
+          }
+        }
+      } catch (err) {
+        console.warn("Failed to load company products inside Dashboard:", err);
+      }
+    }
+    fetchProducts();
+  }, []);
 
   // ── Quick Actions Setup ──────────────────────────────────────────────────────
   const QUICK_ACTIONS = [
-    { label: "Mark Attendance 📹", icon: UserCheck, color: "text-emerald-600", bg: "bg-emerald-50", path: "/sales/attendance" },
-    { label: "Add Lead 🪪", icon: UserPlus, color: "text-teal-600", bg: "bg-teal-50", isDirectModal: true },
-    { label: "Follow-Ups 📅", icon: Clock3, color: "text-purple-600", bg: "bg-purple-50", path: "/sales/leads", activeTab: "followups" },
-    { label: "Schedule Visit 📍", icon: Calendar, color: "text-blue-600", bg: "bg-blue-50", path: "/sales/client-log" },
-    { label: "Opportunities 🎯", icon: Target, color: "text-orange-600", bg: "bg-orange-50", path: "/sales/leads", activeTab: "opportunities" },
-    { label: "Submit Expense 💰", icon: DollarSign, color: "text-amber-600", bg: "bg-amber-50", path: "/sales/expenses" },
-    { label: "Client Log 📑", icon: FileText, color: "text-teal-600", bg: "bg-teal-50", path: "/sales/client-log" },
-    { label: "My Leads 👥", icon: Users, color: "text-indigo-600", bg: "bg-indigo-50", path: "/sales/leads" },
+    { label: "Mark Attendance 📹", icon: UserCheck, color: "text-emerald-600", bg: "bg-emerald-50", actionId: "attendance" },
+    { label: "Add Lead 🪪", icon: UserPlus, color: "text-teal-600", bg: "bg-teal-50", actionId: "add_lead" },
+    { label: "Follow-Ups 📅", icon: Clock3, color: "text-purple-600", bg: "bg-purple-50", actionId: "followups" },
+    { label: "Schedule Visit 📍", icon: Calendar, color: "text-blue-600", bg: "bg-blue-50", actionId: "schedule_visit" },
+    { label: "Opportunities 🎯", icon: Target, color: "text-orange-600", bg: "bg-orange-50", actionId: "opportunities" },
+    { label: "Submit Expense 💰", icon: DollarSign, color: "text-amber-600", bg: "bg-amber-50", actionId: "submit_expense" },
+    { label: "Client Log 📑", icon: FileText, color: "text-teal-600", bg: "bg-teal-50", actionId: "client_log" },
+    { label: "My Leads 👥", icon: Users, color: "text-indigo-600", bg: "bg-indigo-50", actionId: "my_leads" },
   ];
 
   // ── Fetch Today Attendance from Supabase (Source of Truth) ───────────────────
@@ -497,6 +530,21 @@ export default function Dashboard() {
       const localNotifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
       setNotifications(localNotifs.filter((n) => !n.recipientRole || n.recipientRole === "executive"));
 
+      // Cache current stats to localStorage for instant load on render
+      if (userEmail) {
+        try {
+          const cacheData = {
+            kpis: dynamicKpis,
+            allLeadsList: dateFilteredLeads,
+            myCustomersList: dateFilteredCustomers,
+            todayFollowupsListState: todayFollowupsList
+          };
+          localStorage.setItem(`tc_se_dashboard_cache_${userEmail}`, JSON.stringify(cacheData));
+        } catch (e) {
+          console.warn("Failed to cache dashboard stats:", e);
+        }
+      }
+
     } catch (e) {
       console.error("Dashboard fetchAll error:", e);
       setTodos([]);
@@ -508,11 +556,20 @@ export default function Dashboard() {
       const targets = Array.isArray(targetRes) ? targetRes : (targetRes?.data || []);
       const myTarget = targets.find(t => String(t.executive_id) === String(userId) || String(t.executive_email) === String(userEmail)) || targets[0];
       if (myTarget) {
-        setManagerTarget({
+        const newTarget = {
           revenueTarget: myTarget.target_amount || 500000,
           dealsTarget: 10,
           setBy: myTarget.manager_name || 'Sales Manager'
-        });
+        };
+        setManagerTarget(newTarget);
+        if (userEmail) {
+          try {
+            const cached = localStorage.getItem(`tc_se_dashboard_cache_${userEmail}`);
+            const parsed = cached ? JSON.parse(cached) : {};
+            parsed.managerTarget = newTarget;
+            localStorage.setItem(`tc_se_dashboard_cache_${userEmail}`, JSON.stringify(parsed));
+          } catch (err) {}
+        }
       }
     } catch (err) {
       console.warn("Could not fetch sales targets:", err);
@@ -555,41 +612,174 @@ export default function Dashboard() {
   }, []);
 
   // ── Dashboard Direct Add Lead Submit Handler ─────────────────────────────────
-  const handleAddLeadSubmit = (e) => {
+  const handleAddLeadSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!addLeadForm.company.trim() || !addLeadForm.person.trim() || !addLeadForm.phone.trim()) {
       showToast("Please fill in Lead Name, Contact Person, and Phone Number!", "error");
       return;
     }
 
-    const newLead = {
-      id: `lead_${Date.now()}`,
+    setIsSubmitting(true);
+
+    const selectedProd = addLeadForm.product === "custom" 
+      ? (addLeadForm.customProduct?.trim() || "Custom Product/Service") 
+      : (addLeadForm.product?.trim() || "TwiteConnect CRM");
+
+    const lat = (addLeadForm.latitude != null && !isNaN(Number(addLeadForm.latitude))) ? Number(addLeadForm.latitude) : null;
+    const lng = (addLeadForm.longitude != null && !isNaN(Number(addLeadForm.longitude))) ? Number(addLeadForm.longitude) : null;
+
+    const payload = {
+      company_name: addLeadForm.company.trim(),
       company: addLeadForm.company.trim(),
+      contact_person: addLeadForm.person.trim(),
       person: addLeadForm.person.trim(),
+      mobile: addLeadForm.phone.trim(),
       phone: addLeadForm.phone.trim(),
       email: addLeadForm.email.trim() || `${addLeadForm.company.toLowerCase().replace(/\s+/g, '')}@example.com`,
       city: addLeadForm.city.trim() || "Chennai",
+      product_name: selectedProd,
+      product: selectedProd,
+      category: addLeadForm.category,
+      priority: addLeadForm.priority || "High",
+      value: addLeadForm.value || "₹0",
+      source: addLeadForm.source || "Field Research (SE)",
+      notes: addLeadForm.notes.trim() || "New lead added via Dashboard Quick Action.",
+      assigned_to: userName,
+      assigned_to_email: userEmail,
+      employee_code: userEmpCode,
+      latitude: lat,
+      longitude: lng,
+    };
+
+    let serverLeadId = `lead_${Date.now()}`;
+    let serverLeadNum = `LD-${Date.now().toString().slice(-8)}`;
+
+    try {
+      const apiRes = await crmAPI.createLead(payload);
+      const leadData = apiRes?.data || apiRes;
+      if (!leadData || (!leadData.lead_id && !leadData.id)) {
+        throw new Error(apiRes?.message || "Failed to persist Lead record on the backend database.");
+      }
+      serverLeadId = leadData.lead_id || leadData.id;
+      serverLeadNum = leadData.lead_number || serverLeadNum;
+    } catch (apiErr) {
+      console.error("Backend API error when creating lead:", apiErr);
+      const errorDetail = apiErr?.detail || apiErr?.message || "Connection error or internal server failure.";
+      showToast(`❌ Lead creation failed: ${errorDetail}`, "error");
+      setIsSubmitting(false);
+      return;
+    }
+
+    const newLeadObj = {
+      id: serverLeadId,
+      lead_id: serverLeadId,
+      leadNumber: serverLeadNum,
+      company: addLeadForm.company.trim(),
+      person: addLeadForm.person.trim(),
+      phone: addLeadForm.phone.trim(),
+      email: payload.email,
+      city: payload.city,
+      product: selectedProd,
+      product_name: selectedProd,
       assignedTo: userName,
       assignedToEmail: userEmail,
       category: addLeadForm.category,
-      priority: "High",
-      value: addLeadForm.value || "",
+      priority: addLeadForm.priority || "High",
+      value: addLeadForm.value || "₹0",
       status: "New",
-      source: "Quick Action Sourced",
-      notes: addLeadForm.notes.trim() || "Quick Action lead created from Dashboard.",
+      source: addLeadForm.source || "Field Research (SE)",
+      notes: payload.notes,
+      latitude: lat,
+      longitude: lng,
+      full_address: addLeadForm.full_address || null,
+      customerId: null,
+      createdAt: formatDate(new Date()),
       executiveRemarks: [
-        { note: `Lead created via Dashboard Quick Action by ${userName}.`, date: "Just now", author: userName }
+        { note: `Lead created by ${userName} via Dashboard Quick Action. Requirement: ${selectedProd}`, date: "Just now", author: userName }
       ],
     };
 
-    try {
-      const saved = JSON.parse(localStorage.getItem("tc_sm_leads") || "[]");
-      localStorage.setItem("tc_sm_leads", JSON.stringify([newLead, ...saved]));
-    } catch (e) { }
+    // If "Opportunity List" is selected, save directly to Opportunities in Client Log!
+    if (addLeadForm.targetList === "Opportunities") {
+      const newOppObj = {
+        id: `opp_${Date.now()}`,
+        leadId: serverLeadId,
+        leadNumber: serverLeadNum,
+        customerId: null,
+        customer: addLeadForm.company.trim(),
+        contactPerson: addLeadForm.person.trim(),
+        phone: addLeadForm.phone.trim(),
+        address: addLeadForm.city.trim() || "Chennai Site",
+        source: addLeadForm.source || "Field Research (SE)",
+        value: addLeadForm.value || "₹0",
+        probability: addLeadForm.category === "Hot" ? "85%" : addLeadForm.category === "Warm" ? "60%" : "30%",
+        stage: "SE Research / Prospecting",
+        closing: formatDate(new Date(Date.now() + 15 * 86400000)),
+        status: addLeadForm.category,
+        outcome: "In Negotiation",
+        remarks: addLeadForm.notes.trim() || "Researched client detail logged by Sales Executive.",
+        date: formatDate(new Date()),
+      };
+
+      try {
+        const savedOpps = JSON.parse(localStorage.getItem("tc_sales_opportunities") || "[]");
+        localStorage.setItem("tc_sales_opportunities", JSON.stringify([newOppObj, ...savedOpps]));
+      } catch (err) { }
+
+      // Persist directly to Supabase crm.opportunities
+      pipelineAPI.createOpportunity({
+        id: newOppObj.id,
+        opportunity_id: newOppObj.id,
+        title: `Opportunity - ${addLeadForm.company.trim()}`,
+        company: addLeadForm.company.trim(),
+        customer_name: addLeadForm.company.trim(),
+        contact_person: addLeadForm.person.trim(),
+        phone: addLeadForm.phone.trim(),
+        value: parseFloat(String(addLeadForm.value || "450000").replace(/[^0-9.]/g, "")) || 450000,
+        expected_revenue: parseFloat(String(addLeadForm.value || "450000").replace(/[^0-9.]/g, "")) || 450000,
+        stage: "Lead",
+        probability: addLeadForm.category === "Hot" ? 85 : addLeadForm.category === "Warm" ? 60 : 30,
+        rep: userName,
+        assigned_to: userName,
+        notes: addLeadForm.notes.trim() || "Researched client detail logged by Sales Executive.",
+      }).catch((err) => {
+        console.warn("Opportunity Supabase persistence notice:", err);
+      });
+
+      showToast(`🎯 Opportunity "${addLeadForm.company}" saved to Supabase & Opportunity List!`, "success");
+    } else {
+      try {
+        const savedLeads = JSON.parse(localStorage.getItem("tc_sm_leads") || "[]");
+        localStorage.setItem("tc_sm_leads", JSON.stringify([newLeadObj, ...savedLeads]));
+      } catch (err) { }
+      showToast(`✨ New Lead "${addLeadForm.company}" saved to Supabase & Lead Pipeline!`, "success");
+    }
 
     setIsAddLeadModalOpen(false);
-    setAddLeadForm({ company: "", person: "", phone: "", email: "", city: "", category: "Hot", value: "", notes: "" });
-    showToast(`🎉 New Lead "${newLead.company}" created successfully!`, "success");
+    setIsSubmitting(false);
+
+    // Reset Form
+    setAddLeadForm({
+      company: "",
+      product: "",
+      customProduct: "",
+      person: "",
+      phone: "",
+      email: "",
+      city: "",
+      category: "Hot",
+      priority: "High",
+      value: "₹0",
+      source: "Field Research (SE)",
+      targetList: "Leads",
+      notes: "",
+      latitude: null,
+      longitude: null,
+      landmark: "",
+      full_address: "",
+    });
+
     setTimeout(() => fetchAll(), 100);
   };
 
@@ -757,25 +947,24 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* ── Top Distinct Vivid Colored KPI Cards (3 Cards - Hot Lead Card Removed as requested!) ── */}
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-4">
-          {Array(3).fill(0).map((_, i) => <SkeletonCard key={i} />)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4 mb-4">
+          {Array(7).fill(0).map((_, i) => <SkeletonCard key={i} />)}
         </div>
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
           {/* Card 1: My Leads (Vivid Blue Gradient) */}
           <div
             onClick={() => setShowLeadsModal(true)}
-            className="bg-gradient-to-br from-blue-100/90 via-blue-50 to-indigo-50/80 rounded-2xl p-4.5 shadow-sm border-2 border-blue-200 hover:shadow-md hover:border-blue-400 transition cursor-pointer"
+            className="bg-gradient-to-br from-blue-100/90 via-blue-50 to-indigo-50/80 rounded-xl p-2.5 sm:p-3 shadow-2xs border border-blue-200 hover:border-blue-400 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer"
           >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-blue-900 text-[10px] sm:text-xs font-black uppercase tracking-wider">My Leads</p>
-                <h2 className="text-2xl sm:text-3xl font-black text-blue-950 mt-1">{k.my_leads ?? k.assigned_leads ?? 0}</h2>
+                <p className="text-blue-900 text-[9px] sm:text-[10px] font-black uppercase tracking-wider">My Leads</p>
+                <h2 className="text-lg sm:text-xl font-black text-blue-955 mt-0.5">{k.my_leads ?? k.assigned_leads ?? 0}</h2>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-blue-600 text-white flex items-center justify-center font-bold shadow-md shrink-0">
-                <Users size={20} />
+              <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center font-bold shadow-sm shrink-0">
+                <Users size={14} />
               </div>
             </div>
           </div>
@@ -783,15 +972,15 @@ export default function Dashboard() {
           {/* Card 2: Converted Clients (Vivid Emerald Gradient) */}
           <div
             onClick={() => navigate("/sales/customers")}
-            className="bg-gradient-to-br from-emerald-100/90 via-emerald-50 to-teal-50/80 rounded-2xl p-4.5 shadow-sm border-2 border-emerald-200 hover:shadow-md hover:border-emerald-400 transition cursor-pointer"
+            className="bg-gradient-to-br from-emerald-100/90 via-emerald-50 to-teal-50/80 rounded-xl p-2.5 sm:p-3 shadow-2xs border border-emerald-200 hover:border-emerald-400 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer"
           >
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-emerald-900 text-[10px] sm:text-xs font-black uppercase tracking-wider">Converted Clients</p>
-                <h2 className="text-2xl sm:text-3xl font-black text-emerald-950 mt-1">{k.converted_customers}</h2>
+                <p className="text-emerald-900 text-[9px] sm:text-[10px] font-black uppercase tracking-wider">Converted Clients</p>
+                <h2 className="text-lg sm:text-xl font-black text-emerald-950 mt-0.5">{k.converted_customers}</h2>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-emerald-600 text-white flex items-center justify-center font-bold shadow-md shrink-0">
-                <UserCheck size={20} />
+              <div className="w-8 h-8 rounded-lg bg-emerald-600 text-white flex items-center justify-center font-bold shadow-sm shrink-0">
+                <UserCheck size={14} />
               </div>
             </div>
           </div>
@@ -799,41 +988,35 @@ export default function Dashboard() {
           {/* Card 3: Today's Follow-Ups (REMINDER OF THE DAY MODAL TRIGGER!) */}
           <div
             onClick={() => setShowTodayFollowupsModal(true)}
-            className="bg-gradient-to-br from-amber-100/90 via-amber-50 to-orange-50/80 rounded-2xl p-4.5 shadow-sm border-2 border-amber-200 hover:shadow-md hover:border-amber-400 transition cursor-pointer group"
+            className="bg-gradient-to-br from-amber-100/90 via-amber-50 to-orange-50/80 rounded-xl p-2.5 sm:p-3 shadow-2xs border border-amber-200 hover:border-amber-400 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer group"
           >
             <div className="flex items-center justify-between">
               <div>
-                <div className="flex items-center gap-1.5">
-                  <p className="text-amber-950 text-[10px] sm:text-xs font-black uppercase tracking-wider">Total Follow Ups (Today's Reminder)</p>
-                  <span className="text-[9px] font-extrabold bg-amber-200/90 text-amber-900 px-1.5 py-0.5 rounded-full">Reminder</span>
+                <div className="flex items-center gap-1">
+                  <p className="text-amber-950 text-[9px] sm:text-[10px] font-black uppercase tracking-wider">Follow Ups Today</p>
+                  <span className="text-[7px] font-extrabold bg-amber-200/90 text-amber-900 px-1.5 py-0.5 rounded-full">Reminder</span>
                 </div>
-                <h2 className="text-2xl sm:text-3xl font-black text-amber-950 mt-1">{todayFollowupsListState.length}</h2>
-                <p className="text-[10px] font-bold text-amber-800 mt-0.5 group-hover:underline">Click to view today's scheduled call reminders ↗</p>
+                <h2 className="text-lg sm:text-xl font-black text-amber-950 mt-0.5">{todayFollowupsListState.length}</h2>
+                <p className="text-[8px] font-bold text-amber-800 mt-0.5 group-hover:underline">View call reminders ↗</p>
               </div>
-              <div className="w-11 h-11 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-bold shadow-md shrink-0">
-                <Clock3 size={20} />
+              <div className="w-8 h-8 rounded-lg bg-amber-500 text-white flex items-center justify-center font-bold shadow-md shrink-0">
+                <Clock3 size={14} />
               </div>
             </div>
           </div>
-        </div>
-      )}
-
-      {/* ── Status Row Cards (4 Distinct Tinted Cards) ───────────────────────── */}
-      {!loading && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
           {/* Today's Visits (Cyan Theme) */}
           <div
             onClick={() => navigate("/sales/client-log")}
-            className="bg-gradient-to-br from-sky-100/80 to-blue-50/60 rounded-2xl p-5 shadow-xs border-2 border-sky-200 flex flex-col justify-between cursor-pointer"
+            className="bg-gradient-to-br from-sky-100/80 to-blue-50/60 rounded-xl p-3 shadow-2xs border border-sky-200 flex flex-col justify-between cursor-pointer hover:border-sky-400 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
           >
             <div>
-              <p className="text-sky-900 text-xs uppercase tracking-wider font-extrabold mb-1">Today's Visits</p>
-              <h2 className="text-3xl font-black text-slate-900">{k.today_visits}</h2>
-              <p className="text-slate-600 text-xs font-semibold mt-1">Target: {k.today_visits_target} Visits</p>
+              <p className="text-sky-900 text-[11px] uppercase tracking-wider font-black mb-0.5">Today's Visits</p>
+              <h2 className="text-lg sm:text-xl font-black text-slate-900">{k.today_visits}</h2>
+              <p className="text-slate-600 text-[9px] sm:text-[10px] font-bold mt-0.5">Target: {k.today_visits_target} Visits</p>
             </div>
-            <div className="mt-4 w-full bg-sky-200/80 rounded-full h-2">
+            <div className="mt-2.5 w-full bg-sky-200/80 rounded-full h-1">
               <div
-                className="bg-gradient-to-r from-sky-500 to-blue-600 h-2 rounded-full transition-all duration-700"
+                className="bg-gradient-to-r from-sky-500 to-blue-600 h-1 rounded-full transition-all duration-700"
                 style={{ width: `${Math.min((k.today_visits / k.today_visits_target) * 100, 100)}%` }}
               />
             </div>
@@ -841,15 +1024,15 @@ export default function Dashboard() {
 
           <div
             onClick={() => navigate("/sales/attendance")}
-            className={`rounded-2xl p-5 shadow-xs border-2 flex flex-col justify-between cursor-pointer transition ${
+            className={`rounded-xl p-3 shadow-2xs border flex flex-col justify-between cursor-pointer hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 ${
               k.attendance_status === "Present"
                 ? "bg-gradient-to-br from-emerald-100/80 to-teal-50/60 border-emerald-200 hover:border-emerald-400"
                 : "bg-gradient-to-br from-rose-50/80 to-red-50/60 border-rose-200 hover:border-rose-400"
             }`}
           >
             <div>
-              <p className={`text-xs uppercase tracking-wider font-extrabold mb-1 ${k.attendance_status === 'Present' ? 'text-emerald-900' : 'text-rose-900'}`}>Attendance</p>
-              <h2 className={`text-2xl font-black ${
+              <p className={`text-[11px] uppercase tracking-wider font-black mb-0.5 ${k.attendance_status === 'Present' ? 'text-emerald-900' : 'text-rose-900'}`}>Attendance</p>
+              <h2 className={`text-base sm:text-lg font-black ${
                 k.attendance_status === "Present" ? "text-emerald-700" :
                 k.attendance_status === "Not Marked" ? "text-rose-600" : "text-amber-700"
               }`}>
@@ -858,13 +1041,13 @@ export default function Dashboard() {
                  k.attendance_status}
               </h2>
               {k.attendance_status === "Present" && k.check_in_time && (
-                <p className="text-slate-600 text-xs font-semibold mt-1 flex items-center gap-1">
-                  <Clock3 size={13} className="text-emerald-700" /> Checked In {k.check_in_time}
+                <p className="text-slate-600 text-[9px] sm:text-[10px] font-bold mt-0.5 flex items-center gap-1">
+                  <Clock3 size={11} className="text-emerald-700" /> In: {k.check_in_time}
                 </p>
               )}
               {k.attendance_status === "Not Marked" && (
-                <p className="text-rose-700 text-xs font-bold mt-1 flex items-center gap-1">
-                  <AlertCircle size={13} /> Tap to mark attendance
+                <p className="text-rose-700 text-[9px] sm:text-[10px] font-bold mt-0.5 flex items-center gap-1">
+                  <AlertCircle size={11} /> Tap to mark
                 </p>
               )}
             </div>
@@ -873,19 +1056,18 @@ export default function Dashboard() {
           {/* My Revenue Generated (REVENUE & INCENTIVE BREAKDOWN MODAL TRIGGER!) */}
           <div
             onClick={() => setShowRevenueIncentiveModal(true)}
-            className="bg-gradient-to-br from-purple-100/80 to-fuchsia-50/60 rounded-2xl p-5 shadow-xs border-2 border-purple-200 flex flex-col justify-between cursor-pointer hover:border-purple-400 transition group"
+            className="bg-gradient-to-br from-purple-100/80 to-fuchsia-50/60 rounded-xl p-3 shadow-2xs border border-purple-200 flex flex-col justify-between cursor-pointer hover:border-purple-400 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 group"
           >
             <div>
               <div className="flex items-center justify-between">
-                <p className="text-purple-900 text-xs uppercase tracking-wider font-extrabold mb-1">My Revenue Generated</p>
-                <Award size={16} className="text-purple-600" />
+                <p className="text-purple-900 text-[11px] uppercase tracking-wider font-black mb-0.5">My Revenue</p>
+                <Award size={13} className="text-purple-600" />
               </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-purple-950 mt-1">{formatINR(revAchievedVal)}</h2>
-              <div className="mt-1.5 flex items-center justify-between">
-                <span className="text-[11px] font-black text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md border border-purple-200">
-                  Earned Incentive: {formatINR(totalIncentiveEarned)}
+              <h2 className="text-lg sm:text-xl font-black text-purple-955 mt-0.5">{formatINR(revAchievedVal)}</h2>
+              <div className="mt-1 flex items-center justify-between flex-wrap gap-1">
+                <span className="text-[9px] font-black text-purple-700 bg-purple-100 px-1.5 py-0.5 rounded-md border border-purple-200">
+                  Incentive: {formatINR(totalIncentiveEarned)}
                 </span>
-                <span className="text-[10px] font-extrabold text-purple-800 group-hover:underline">Click list ↗</span>
               </div>
             </div>
           </div>
@@ -893,12 +1075,12 @@ export default function Dashboard() {
           {/* Reimbursements */}
           <div
             onClick={() => navigate("/sales/expenses")}
-            className="bg-gradient-to-br from-rose-100/80 to-pink-50/60 rounded-2xl p-5 shadow-xs border-2 border-rose-200 flex flex-col justify-between cursor-pointer"
+            className="bg-gradient-to-br from-rose-100/80 to-pink-50/60 rounded-xl p-3 shadow-2xs border border-rose-200 flex flex-col justify-between cursor-pointer hover:border-rose-400 hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200"
           >
             <div>
-              <p className="text-rose-900 text-xs uppercase tracking-wider font-extrabold mb-1">Reimbursements</p>
-              <h2 className="text-2xl font-black text-rose-700">{formatINR(k.expenses_pending_amount)}</h2>
-              <p className="text-slate-600 text-xs font-semibold mt-1">Pending claim approvals</p>
+              <p className="text-rose-900 text-[11px] uppercase tracking-wider font-black mb-0.5">Reimbursements</p>
+              <h2 className="text-lg sm:text-xl font-black text-rose-700">{formatINR(k.expenses_pending_amount)}</h2>
+              <p className="text-slate-600 text-[9px] sm:text-[10px] font-bold mt-0.5">Pending approvals</p>
             </div>
           </div>
         </div>
@@ -906,11 +1088,11 @@ export default function Dashboard() {
 
       {/* ── Quick Actions + Sales Target Overview ──────────────────────────── */}
       {!loading && (
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-start">
 
           {/* Quick Actions */}
-          <div className="bg-gradient-to-br from-teal-50/90 via-emerald-50/40 to-slate-50 rounded-3xl p-5 sm:p-6 shadow-sm border-2 border-teal-200/90 flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-gradient-to-br from-teal-50/90 via-emerald-50/40 to-slate-50 rounded-3xl p-4.5 sm:p-5 shadow-sm border-2 border-teal-200/90 flex flex-col gap-4">
+            <div className="flex items-center justify-between mb-2">
               <h2 className="font-black text-teal-950 text-base flex items-center gap-2">
                 <Sparkles className="w-5 h-5 text-teal-600" /> Quick Actions
               </h2>
@@ -922,10 +1104,33 @@ export default function Dashboard() {
                   <button
                     key={action.label}
                     onClick={() => {
-                      if (action.isDirectModal) {
-                        setIsAddLeadModalOpen(true);
-                      } else {
-                        navigate(action.path, { state: { activeTab: action.activeTab } });
+                      switch (action.actionId) {
+                        case "attendance":
+                          setIsAttendanceModalOpen(true);
+                          break;
+                        case "add_lead":
+                          setIsAddLeadModalOpen(true);
+                          break;
+                        case "followups":
+                          setIsFollowUpsModalOpen(true);
+                          break;
+                        case "schedule_visit":
+                          setIsScheduleVisitModalOpen(true);
+                          break;
+                        case "opportunities":
+                          setIsOpportunitiesModalOpen(true);
+                          break;
+                        case "submit_expense":
+                          setIsSubmitExpenseModalOpen(true);
+                          break;
+                        case "client_log":
+                          setIsClientLogModalOpen(true);
+                          break;
+                        case "my_leads":
+                          setIsMyLeadsModalOpen(true);
+                          break;
+                        default:
+                          break;
                       }
                     }}
                     className="flex flex-col items-center justify-center p-3.5 rounded-2xl bg-white border-2 border-teal-200/80 hover:border-teal-500 hover:shadow-md hover:-translate-y-0.5 transition cursor-pointer group shadow-2xs"
@@ -941,8 +1146,8 @@ export default function Dashboard() {
           </div>
 
           {/* Sales Target Overview */}
-          <div className="bg-gradient-to-br from-indigo-50/90 via-blue-50/40 to-slate-50 rounded-3xl p-5 sm:p-6 shadow-sm border-2 border-indigo-200/90 flex flex-col justify-between">
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+          <div className="bg-gradient-to-br from-indigo-50/90 via-blue-50/40 to-slate-50 rounded-3xl p-4.5 sm:p-5 shadow-sm border-2 border-indigo-200/90 flex flex-col gap-4">
+            <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
               <h2 className="font-black text-indigo-950 text-base flex items-center gap-2">
                 <Target size={20} className="text-indigo-600" /> Sales Target Overview
               </h2>
@@ -951,114 +1156,98 @@ export default function Dashboard() {
               </span>
             </div>
 
-            <div className="flex justify-around items-center py-2 flex-wrap gap-4">
-              <CircularChart
-                pct={revAchievementPct}
-                color="#6366f1"
-                label="Revenue"
-                sublabel={`${formatINR(revAchievedVal)} / ${formatINR(revTargetVal)}`}
-              />
-              <CircularChart
-                pct={k.visits_pct || 0}
-                color="#14b8a6"
-                label="Visits"
-                sublabel={`${k.visits_done ?? 0} / ${k.visits_target ?? 8}`}
-              />
-              <CircularChart
-                pct={k.lead_conversion_pct || 0}
-                color="#f59e0b"
-                label="Lead Conversion"
-                sublabel={`${k.converted_leads ?? 0} / ${managerTarget.dealsTarget || 10}`}
-              />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-2">
+              {/* Target 1: Revenue Card */}
+              <div className="p-3.5 bg-indigo-50/70 hover:bg-indigo-100/60 rounded-2xl border border-indigo-200/90 flex flex-col justify-between space-y-2 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 hover:shadow-md cursor-pointer hover:border-indigo-400">
+                <div className="flex items-center justify-between text-xs font-black text-indigo-950">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-6 h-6 rounded-lg bg-indigo-100 border border-indigo-200 flex items-center justify-center text-indigo-700">
+                      <IndianRupee size={12} className="stroke-[3]" />
+                    </div>
+                    <span>Revenue Target</span>
+                  </div>
+                  <span className="text-indigo-700 bg-indigo-100 font-extrabold px-1.5 py-0.5 rounded-md text-[10px]">{Math.round(revAchievementPct)}%</span>
+                </div>
+                <div className="w-full bg-slate-200/70 rounded-full h-1.5">
+                  <div
+                    className="bg-indigo-650 h-1.5 rounded-full transition-all duration-700"
+                    style={{ width: `${Math.min(revAchievementPct, 100)}%` }}
+                  />
+                </div>
+                <div className="flex flex-col text-[10px] text-slate-500 font-bold space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>Achieved:</span>
+                    <span className="text-indigo-950 font-extrabold">{formatINR(revAchievedVal)}</span>
+                  </div>
+                  <div className="flex justify-between border-t border-indigo-150 pt-0.5">
+                    <span>Target:</span>
+                    <span className="text-slate-600">{formatINR(revTargetVal)}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Target 2: Visits Card */}
+              <div className="p-3.5 bg-teal-50/70 hover:bg-teal-100/60 rounded-2xl border border-teal-200/90 flex flex-col justify-between space-y-2 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 hover:shadow-md cursor-pointer hover:border-teal-400">
+                <div className="flex items-center justify-between text-xs font-black text-teal-950">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-6 h-6 rounded-lg bg-teal-100 border border-teal-200 flex items-center justify-center text-teal-700">
+                      <MapPin size={12} className="stroke-[3]" />
+                    </div>
+                    <span>Visits Target</span>
+                  </div>
+                  <span className="text-teal-800 bg-teal-100 font-extrabold px-1.5 py-0.5 rounded-md text-[10px]">{Math.round(k.visits_pct || 0)}%</span>
+                </div>
+                <div className="w-full bg-slate-200/70 rounded-full h-1.5">
+                  <div
+                    className="bg-teal-500 h-1.5 rounded-full transition-all duration-700"
+                    style={{ width: `${Math.min(k.visits_pct || 0, 100)}%` }}
+                  />
+                </div>
+                <div className="flex flex-col text-[10px] text-slate-500 font-bold space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>Completed:</span>
+                    <span className="text-teal-950 font-extrabold">{k.visits_done ?? 0} Visits</span>
+                  </div>
+                  <div className="flex justify-between border-t border-teal-150 pt-0.5">
+                    <span>Target:</span>
+                    <span className="text-slate-600">{k.visits_target ?? 8} Visits</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Target 3: Lead Conversion Card */}
+              <div className="p-3.5 bg-amber-50/70 hover:bg-amber-100/60 rounded-2xl border border-amber-200/90 flex flex-col justify-between space-y-2 hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 hover:shadow-md cursor-pointer hover:border-amber-400">
+                <div className="flex items-center justify-between text-xs font-black text-amber-955">
+                  <div className="flex items-center gap-1.5">
+                    <div className="w-6 h-6 rounded-lg bg-amber-100 border border-amber-200 flex items-center justify-center text-amber-700">
+                      <UserCheck size={12} className="stroke-[3]" />
+                    </div>
+                    <span>Conversion Target</span>
+                  </div>
+                  <span className="text-amber-800 bg-amber-100 font-extrabold px-1.5 py-0.5 rounded-md text-[10px]">{Math.round(k.lead_conversion_pct || 0)}%</span>
+                </div>
+                <div className="w-full bg-slate-200/70 rounded-full h-1.5">
+                  <div
+                    className="bg-amber-500 h-1.5 rounded-full transition-all duration-700"
+                    style={{ width: `${Math.min(k.lead_conversion_pct || 0, 100)}%` }}
+                  />
+                </div>
+                <div className="flex flex-col text-[10px] text-slate-500 font-bold space-y-0.5">
+                  <div className="flex justify-between">
+                    <span>Converted:</span>
+                    <span className="text-amber-950 font-extrabold">{k.converted_leads ?? 0} Leads</span>
+                  </div>
+                  <div className="flex justify-between border-t border-amber-150 pt-0.5">
+                    <span>Target:</span>
+                    <span className="text-slate-600">{managerTarget.dealsTarget || 10} Leads</span>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Perfectly Aligned Grid with Vivid Colorful Cards ── */}
-      {!loading && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          {/* Today's Schedule */}
-          <div className="bg-gradient-to-br from-emerald-50/90 via-teal-50/40 to-slate-50 rounded-3xl p-5 sm:p-6 shadow-sm border-2 border-emerald-200/90 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-black text-emerald-950 text-base flex items-center gap-2">
-                <Calendar className="w-5 h-5 text-emerald-600" /> Today's Schedule
-              </h2>
-              <button onClick={() => navigate("/sales/visits")} className="text-xs text-emerald-700 font-extrabold hover:underline flex items-center gap-1">
-                View Calendar <ChevronRight size={14} />
-              </button>
-            </div>
-            <div className="space-y-2.5">
-              {(k.today_schedule || MOCK_KPIS.today_schedule).map((s, i) => (
-                <div key={i} className="flex items-center justify-between p-3 rounded-2xl bg-white border border-emerald-100 shadow-2xs">
-                  <div>
-                    <p className="font-black text-slate-900 text-xs sm:text-sm">{s.customer}</p>
-                    <p className="text-xs text-slate-500 font-semibold">{s.type}</p>
-                  </div>
-                  <div className="flex flex-col items-end gap-1">
-                    <span className="text-xs text-slate-700 font-black">{s.time}</span>
-                    <StatusBadge status={s.status} />
-                  </div>
-                </div>
-              ))}
-            </div>
-            <button
-              onClick={() => navigate("/sales/visits")}
-              className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
-            >
-              <Plus size={14} /> Add New Visit
-            </button>
-          </div>
-
-          {/* My To Do Tasks */}
-          <div className="bg-gradient-to-br from-amber-50/90 via-orange-50/40 to-slate-50 rounded-3xl p-5 sm:p-6 shadow-sm border-2 border-amber-200/90 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-black text-amber-950 text-base flex items-center gap-2">
-                <CheckSquare className="w-5 h-5 text-amber-600" /> My To Do Tasks
-              </h2>
-              <button onClick={() => navigate("/sales/todo")} className="text-xs text-amber-800 font-extrabold hover:underline">
-                View All
-              </button>
-            </div>
-
-            {/* Add Todo Input */}
-            <div className="flex gap-2">
-              <input
-                value={newTodo}
-                onChange={e => setNewTodo(e.target.value)}
-                onKeyDown={e => e.key === "Enter" && addTodo()}
-                placeholder="Add new task..."
-                className="flex-1 text-xs sm:text-sm border border-amber-200 rounded-xl px-3 py-2 bg-white focus:outline-none focus:border-amber-500 font-semibold text-slate-900"
-              />
-              <button
-                onClick={addTodo}
-                disabled={todoLoading}
-                className="px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-white rounded-xl transition font-extrabold text-xs disabled:opacity-50 cursor-pointer shadow-xs"
-              >
-                {todoLoading ? <Loader2 size={16} className="animate-spin" /> : <Plus size={16} />}
-              </button>
-            </div>
-
-            <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
-              {todos.slice(0, 4).map((todo) => (
-                <div
-                  key={todo.id}
-                  className="flex items-center gap-3 p-2.5 rounded-2xl bg-white border border-amber-100 shadow-2xs hover:bg-amber-50/50 transition cursor-pointer group"
-                  onClick={() => toggleTodo(todo.id, todo.is_completed)}
-                >
-                  <div className={`w-5 h-5 rounded-lg flex items-center justify-center flex-shrink-0 border-2 transition ${todo.is_completed ? "bg-amber-500 border-amber-500" : "border-slate-300 group-hover:border-amber-500"}`}>
-                    {todo.is_completed && <CheckSquare size={12} className="text-white" />}
-                  </div>
-                  <span className={`flex-1 text-xs sm:text-sm font-bold ${todo.is_completed ? "line-through text-slate-400" : "text-slate-900"}`}>
-                    {todo.title}
-                  </span>
-                  <PriorityBadge p={todo.is_completed ? "Completed" : (todo.priority || "Medium")} />
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* ── MODAL 1: REMINDER OF THE DAY (TODAY'S SCHEDULED FOLLOW-UPS LIST) ── */}
       {showTodayFollowupsModal && (
@@ -1237,33 +1426,78 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ── DIRECT ADD LEAD MODAL FROM QUICK ACTIONS ── */}
+      {/* ── SPACIOUS ADD NEW LEAD MODAL (SE Sourced Lead Entry via Quick Actions) ── */}
       {isAddLeadModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-2xl w-full p-6 sm:p-8 space-y-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 sm:p-8 space-y-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto animate-fadeIn">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  onClick={() => setIsAddLeadModalOpen(false)}
-                  className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs flex items-center gap-1.5 transition cursor-pointer"
-                >
-                  <ArrowLeft size={16} /> Back
-                </button>
-                <div>
-                  <h3 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
-                    <Building2 className="w-5 h-5 text-teal-600" /> Create / Add New Prospect Lead
-                  </h3>
-                  <p className="text-xs font-semibold text-teal-600">Quick Action • Sourced by {userName}</p>
-                </div>
+              <div>
+                <h3 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Building2 className="w-6 h-6 text-teal-600" /> Create / Add New Prospect Lead
+                </h3>
+                <p className="text-xs sm:text-sm font-semibold text-teal-600 mt-0.5">Sourced by {userName}</p>
               </div>
+
+              <button
+                type="button"
+                onClick={() => setIsAddLeadModalOpen(false)}
+                className="p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+                aria-label="Close modal"
+              >
+                <X size={20} />
+              </button>
             </div>
 
-            {/* Form Content */}
             <form onSubmit={handleAddLeadSubmit} className="space-y-5 text-xs sm:text-sm font-semibold">
+              {/* Optional: Pick Researched Opportunity to Auto-fill */}
+              <div className="p-4 rounded-2xl bg-indigo-50/80 border border-indigo-200 space-y-2">
+                <label className="text-indigo-950 font-black text-xs uppercase tracking-wider flex items-center justify-between">
+                  <span>🎯 Select Researched Opportunity Prospect (Auto-Fill Details)</span>
+                  <span className="text-[10px] font-bold text-indigo-700">Optional</span>
+                </label>
+                <select
+                  onChange={(e) => {
+                    const oppId = e.target.value;
+                    if (!oppId) return;
+                    try {
+                      const opps = JSON.parse(localStorage.getItem("tc_sales_opportunities") || "[]");
+                      const found = opps.find((o) => o.id === oppId || o.leadId === oppId);
+                      if (found) {
+                        setAddLeadForm((prev) => ({
+                          ...prev,
+                          company: found.customer || found.company || prev.company,
+                          product: found.productRequirement || prev.product,
+                          person: found.contactPerson || found.person || prev.person,
+                          phone: found.phone || prev.phone,
+                          city: found.address || found.location || found.city || prev.city,
+                          source: found.source || prev.source,
+                          notes: found.remarks || found.notes || prev.notes,
+                        }));
+                        showToast(`✨ Auto-filled details from "${found.customer}"!`, "success");
+                      }
+                    } catch (err) { }
+                  }}
+                  className="w-full h-10 border border-indigo-300 rounded-xl px-3 bg-white text-slate-900 font-extrabold text-xs focus:outline-none focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="">-- Choose Opportunity Prospect from Research List --</option>
+                  {(() => {
+                    try {
+                      const opps = JSON.parse(localStorage.getItem("tc_sales_opportunities") || "[]");
+                      return opps.map((o) => (
+                        <option key={o.id} value={o.id}>
+                          🏢 {o.customer} ({o.location || o.address || 'Site'}) - Sourced: {o.source || 'SE Research'}
+                        </option>
+                      ));
+                    } catch (e) {
+                      return null;
+                    }
+                  })()}
+                </select>
+              </div>
+
+              {/* Company Name & Product Requirement Bar */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
+                <div className="relative">
                   <label className="text-slate-800 font-extrabold block mb-1.5">Company / Lead Name (*Required)</label>
                   <input
                     type="text"
@@ -1276,6 +1510,33 @@ export default function Dashboard() {
                 </div>
 
                 <div>
+                  <label className="text-slate-800 font-extrabold block mb-1.5">Product / Service Needed (*Why reached out)</label>
+                  <select
+                    value={addLeadForm.product}
+                    onChange={(e) => setAddLeadForm({ ...addLeadForm, product: e.target.value })}
+                    className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition cursor-pointer"
+                  >
+                    <option value="">-- Select Product / Service --</option>
+                    {productOptions.map((prod) => (
+                      <option key={prod} value={prod}>{prod}</option>
+                    ))}
+                    <option value="custom">✍️ Custom Product / Service</option>
+                  </select>
+                  {addLeadForm.product === "custom" && (
+                    <input
+                      type="text"
+                      placeholder="Enter custom product name"
+                      value={addLeadForm.customProduct || ""}
+                      onChange={(e) => setAddLeadForm({ ...addLeadForm, customProduct: e.target.value })}
+                      className="w-full mt-2 border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Point of Contact & Phone */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
                   <label className="text-slate-800 font-extrabold block mb-1.5">Point of Contact Person (*Required)</label>
                   <input
                     type="text"
@@ -1286,21 +1547,23 @@ export default function Dashboard() {
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
                   />
                 </div>
-              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-slate-800 font-extrabold block mb-1.5">Phone Number (*Required)</label>
                   <input
-                    type="text"
+                    type="tel"
                     required
-                    placeholder="+91 9876543210"
+                    placeholder="10-digit number e.g. 9876543210"
                     value={addLeadForm.phone}
-                    onChange={(e) => setAddLeadForm({ ...addLeadForm, phone: e.target.value })}
+                    maxLength={10}
+                    onChange={(e) => setAddLeadForm({ ...addLeadForm, phone: normalizePhoneNumber(e.target.value) })}
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
                   />
                 </div>
+              </div>
 
+              {/* Email & City Details */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="text-slate-800 font-extrabold block mb-1.5">Email Address</label>
                   <input
@@ -1311,21 +1574,70 @@ export default function Dashboard() {
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
                   />
                 </div>
+
+                <div>
+                  <label className="text-slate-800 font-extrabold block mb-1.5">Address / City Details</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Guindy Industrial Estate, Chennai"
+                    value={addLeadForm.city}
+                    onChange={(e) => setAddLeadForm({ ...addLeadForm, city: e.target.value })}
+                    className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
+                  />
+                </div>
+              </div>
+
+              {/* ── 📍 LOCATION PICKER WIDGET ── */}
+              <div className="bg-blue-50/80 border-2 border-blue-200 rounded-3xl p-4 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-blue-600" />
+                    <label className="text-xs font-black text-blue-955 uppercase tracking-wider">
+                      Exact Client Location (for Smart Map)
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsLocationPickerOpen(true)}
+                    className="px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                  >
+                    <MapPin size={13} /> Pick Location on Map
+                  </button>
+                </div>
+
+                {addLeadForm.latitude && addLeadForm.longitude ? (
+                  <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-2xl p-3">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 size={16} className="text-emerald-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-emerald-700 uppercase tracking-wide">Location Confirmed</p>
+                      {addLeadForm.full_address && (
+                        <p className="text-[11px] font-semibold text-slate-700 truncate mt-0.5">{addLeadForm.full_address}</p>
+                      )}
+                      <p className="text-[10px] font-bold text-slate-500 mt-0.5 font-mono">
+                        {Number(addLeadForm.latitude).toFixed(6)}, {Number(addLeadForm.longitude).toFixed(6)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setAddLeadForm({ ...addLeadForm, latitude: null, longitude: null, full_address: '' })}
+                      className="ml-auto p-1 text-slate-300 hover:text-rose-500 transition flex-shrink-0"
+                      title="Clear location"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold px-1">
+                    <AlertCircle size={13} className="text-amber-400" />
+                    No location selected. Click "Pick Location on Map" to set exact coordinates.
+                  </div>
+                )}
               </div>
 
               <div>
-                <label className="text-slate-800 font-extrabold block mb-1.5">Address / City Details</label>
-                <input
-                  type="text"
-                  placeholder="e.g. Guindy Industrial Estate, Chennai"
-                  value={addLeadForm.city}
-                  onChange={(e) => setAddLeadForm({ ...addLeadForm, city: e.target.value })}
-                  className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
-                />
-              </div>
-
-              <div>
-                <label className="text-slate-800 font-extrabold block mb-1.5">Remarks</label>
+                <label className="text-slate-800 font-extrabold block mb-1.5">Remarks / SE Research Notes</label>
                 <textarea
                   rows="3"
                   required
@@ -1347,6 +1659,7 @@ export default function Dashboard() {
                     <option value="Hot">🔥 HOT Lead</option>
                     <option value="Warm">⚡ WARM Lead</option>
                     <option value="Cold">❄️ COLD Lead</option>
+                    <option value="Other">🌐 Other Category</option>
                   </select>
                 </div>
 
@@ -1354,7 +1667,7 @@ export default function Dashboard() {
                   <label className="text-slate-800 font-extrabold block mb-1.5">Deal Value (INR)</label>
                   <input
                     type="text"
-                    placeholder="Enter Deal Value"
+                    placeholder="₹0"
                     value={addLeadForm.value}
                     onChange={(e) => setAddLeadForm({ ...addLeadForm, value: e.target.value })}
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-extrabold text-sm transition"
@@ -1365,12 +1678,160 @@ export default function Dashboard() {
               <div className="flex items-center justify-end pt-4 border-t border-slate-100">
                 <button
                   type="submit"
-                  className="w-full sm:w-auto px-6 py-3 bg-teal-600 hover:bg-teal-700 text-white rounded-2xl font-extrabold text-xs sm:text-sm shadow-md shadow-teal-600/30 transition cursor-pointer"
+                  disabled={isSubmitting}
+                  className={`w-full sm:w-auto px-6 py-3 rounded-2xl font-extrabold text-xs sm:text-sm shadow-md transition ${
+                    isSubmitting
+                      ? 'bg-teal-400 text-white cursor-not-allowed shadow-none'
+                      : 'bg-teal-600 hover:bg-teal-700 text-white shadow-teal-600/30 cursor-pointer'
+                  }`}
                 >
-                  Create & Save Lead 🎉
+                  {isSubmitting ? '⏳ Saving Lead...' : 'Create & Save Lead 🎉'}
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal for Mark Attendance ── */}
+      {isAttendanceModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-4xl w-full p-4 sm:p-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto relative">
+            <button
+              onClick={() => setIsAttendanceModalOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer z-50"
+              aria-label="Close modal"
+            >
+              <X size={20} />
+            </button>
+            <div className="pt-2">
+              <Attendance isModalView={true} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal for Follow-Ups ── */}
+      {isFollowUpsModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto relative">
+            <button
+              onClick={() => setIsFollowUpsModalOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer z-50"
+              aria-label="Close modal"
+            >
+              <X size={20} />
+            </button>
+            <div className="pt-2">
+              <Leads isModalView={true} defaultTab="followups" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal for Schedule Visit ── */}
+      {isScheduleVisitModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto relative">
+            <button
+              onClick={() => setIsScheduleVisitModalOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer z-50"
+              aria-label="Close modal"
+            >
+              <X size={20} />
+            </button>
+            <div className="pt-2">
+              <ClientLog isModalView={true} defaultTab="visits" defaultOpenAddVisit={true} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal for Opportunities ── */}
+      {isOpportunitiesModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto relative">
+            <button
+              onClick={() => setIsOpportunitiesModalOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer z-50"
+              aria-label="Close modal"
+            >
+              <X size={20} />
+            </button>
+            <div className="pt-2">
+              <Leads isModalView={true} defaultTab="opportunities" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal for Submit Expense ── */}
+      {isSubmitExpenseModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-5xl w-full p-4 sm:p-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto relative">
+            <button
+              onClick={() => setIsSubmitExpenseModalOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer z-50"
+              aria-label="Close modal"
+            >
+              <X size={20} />
+            </button>
+            <div className="pt-2">
+              <Expenses isModalView={true} defaultOpenSubmit={true} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal for Client Log ── */}
+      {isClientLogModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto relative">
+            <button
+              onClick={() => setIsClientLogModalOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer z-50"
+              aria-label="Close modal"
+            >
+              <X size={20} />
+            </button>
+            <div className="pt-2">
+              <ClientLog isModalView={true} defaultTab="visits" />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Modal for My Leads ── */}
+      {isMyLeadsModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto relative">
+            <button
+              onClick={() => setIsMyLeadsModalOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer z-50"
+              aria-label="Close modal"
+            >
+              <X size={20} />
+            </button>
+            <div className="pt-2">
+              <Leads isModalView={true} defaultTab="leads" />
+            </div>
+          </div>
+        </div>
+      )}
+      {/* ── Modal for Todo Tasks ── */}
+      {isTodoModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-5xl w-full p-4 sm:p-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto relative">
+            <button
+              onClick={() => setIsTodoModalOpen(false)}
+              className="absolute top-4 right-4 p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer z-50"
+              aria-label="Close modal"
+            >
+              <X size={20} />
+            </button>
+            <div className="pt-2">
+              <Todo isModalView={true} />
+            </div>
           </div>
         </div>
       )}
@@ -1497,6 +1958,27 @@ export default function Dashboard() {
           </div>
         </div>
       )}
+      {/* ── Location Picker Modal ── */}
+      <LocationPickerModal
+        isOpen={isLocationPickerOpen}
+        onClose={() => setIsLocationPickerOpen(false)}
+        initialLat={addLeadForm.latitude || 13.0067}
+        initialLng={addLeadForm.longitude || 80.2570}
+        initialAddress={addLeadForm.full_address || addLeadForm.address || addLeadForm.location || addLeadForm.city || ''}
+        title="Pick Lead Location"
+        onConfirm={(lat, lng, address) => {
+          setAddLeadForm(prev => ({
+            ...prev,
+            latitude: lat,
+            longitude: lng,
+            full_address: address,
+            address: address,
+            location: address,
+            city: address.split(',')[0]?.trim() || prev.city,
+          }));
+          setIsLocationPickerOpen(false);
+        }}
+      />
     </div>
   );
 }

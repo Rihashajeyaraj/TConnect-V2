@@ -83,22 +83,21 @@ function LoginForm() {
   }
 
   return (
-    <div className="w-full max-w-md mx-auto space-y-6">
+    <div className="w-full max-w-md mx-auto space-y-4">
       {/* Brand Header */}
       <div className="space-y-2">
-        <TwiteConnectLogo className="w-11 h-11" textClassName="text-slate-900 font-extrabold text-2xl tracking-tight" />
-        <h2 className="text-3xl font-extrabold text-slate-900 tracking-tight pt-2">Welcome back!</h2>
-        <p className="text-sm text-slate-500 font-medium">Sign in with your authorized portal credentials provided by your Administrator.</p>
+        <TwiteConnectLogo className="w-12 h-12" textClassName="text-slate-950 font-black text-3xl tracking-tight" />
+        <h2 className="text-2xl sm:text-3xl font-black text-slate-950 tracking-tight pt-1">Welcome back!</h2>
       </div>
 
       {/* Form Inputs */}
       <form onSubmit={handleSubmit} className="space-y-4 pt-1">
         <div>
-          <label className="block text-xs font-bold text-slate-700 mb-1.5" htmlFor="email">
+          <label className="block text-xs font-black text-slate-900 mb-1.5" htmlFor="email">
             Access Email Address
           </label>
           <div className="relative">
-            <Mail className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+            <Mail className="w-4.5 h-4.5 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2 z-20" />
             <input
               id="email"
               type="email"
@@ -106,7 +105,7 @@ function LoginForm() {
               value={email}
               onChange={(e) => { setEmail(e.target.value); setErrorMsg('') }}
               placeholder="e.g. user@tconnect.com"
-              className="w-full h-14 bg-slate-50 border border-slate-300/90 rounded-xl pl-11 pr-4 text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-600/10 shadow-xs transition-all"
+              className="w-full h-12 bg-white border-2 border-slate-300 rounded-xl pl-11 pr-4 text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-600/10 shadow-sm transition-all relative z-10"
               required
               disabled={loading}
             />
@@ -115,15 +114,15 @@ function LoginForm() {
 
         <div>
           <div className="flex items-center justify-between mb-1.5">
-            <label className="block text-xs font-bold text-slate-700" htmlFor="password">
+            <label className="block text-xs font-black text-slate-900" htmlFor="password">
               Portal Access Password
             </label>
-            <Link to="/forgot-password" className="text-xs font-bold text-blue-600 hover:text-blue-700">
+            <Link to="/forgot-password" className="text-xs font-extrabold text-blue-700 hover:text-blue-800">
               Forgot password?
             </Link>
           </div>
           <div className="relative">
-            <Lock className="w-5 h-5 text-slate-400 absolute left-4 top-1/2 -translate-y-1/2" />
+            <Lock className="w-4.5 h-4.5 text-slate-500 absolute left-4 top-1/2 -translate-y-1/2 z-20" />
             <input
               id="password"
               type={showPassword ? 'text' : 'password'}
@@ -131,7 +130,7 @@ function LoginForm() {
               value={password}
               onChange={(e) => { setPassword(e.target.value); setErrorMsg('') }}
               placeholder="Enter portal password"
-              className="w-full h-14 bg-slate-50 border border-slate-300/90 rounded-xl pl-11 pr-11 text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-600/10 shadow-xs transition-all"
+              className="w-full h-12 bg-white border-2 border-slate-300 rounded-xl pl-11 pr-11 text-sm font-bold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-600 focus:bg-white focus:ring-4 focus:ring-blue-600/10 shadow-sm transition-all relative z-10"
               required
               disabled={loading}
             />
@@ -139,9 +138,9 @@ function LoginForm() {
               type="button"
               tabIndex={-1}
               onClick={() => setShowPassword(!showPassword)}
-              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer z-20"
             >
-              {showPassword ? <EyeOff className="w-5 h-5" /> : <Eye className="w-5 h-5" />}
+              {showPassword ? <EyeOff className="w-4.5 h-4.5" /> : <Eye className="w-4.5 h-4.5" />}
             </button>
           </div>
         </div>
@@ -158,11 +157,11 @@ function LoginForm() {
         <button
           type="submit"
           disabled={loading}
-          className="w-full h-14 py-3.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-base shadow-lg shadow-blue-600/30 hover:shadow-xl hover:shadow-blue-600/40 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
+          className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-sm shadow-md shadow-blue-600/20 hover:shadow-lg transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-60 disabled:cursor-not-allowed"
         >
           {loading ? (
             <>
-              <svg className="size-5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <svg className="size-4 animate-spin" fill="none" viewBox="0 0 24 24">
                 <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                 <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
               </svg>
@@ -171,7 +170,7 @@ function LoginForm() {
           ) : (
             <>
               Sign in to Portal
-              <ArrowRight className="w-5 h-5" />
+              <ArrowRight className="w-4 h-4" />
             </>
           )}
         </button>

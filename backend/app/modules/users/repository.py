@@ -9,9 +9,11 @@ from app.core.logger import logger
 
 _in_memory_users: List[Dict[str, Any]] = []
 
+import threading
+_users_cache_lock = threading.Lock()
 _USERS_CACHE = None
 _USERS_CACHE_TIMESTAMP = 0.0
-CACHE_TTL_SECONDS = 15.0 # Cache users for 15 seconds
+CACHE_TTL_SECONDS = 300.0 # Cache users for 5 minutes
 
 def _clear_users_cache():
     global _USERS_CACHE, _USERS_CACHE_TIMESTAMP
@@ -37,6 +39,16 @@ class UserRepository:
         now = time.time()
         if _USERS_CACHE is not None and (now - _USERS_CACHE_TIMESTAMP) < CACHE_TTL_SECONDS:
             return _USERS_CACHE
+
+        with _users_cache_lock:
+            now = time.time()
+            if _USERS_CACHE is not None and (now - _USERS_CACHE_TIMESTAMP) < CACHE_TTL_SECONDS:
+                return _USERS_CACHE
+            return self._get_all_users_impl()
+
+    def _get_all_users_impl(self) -> List[Dict[str, Any]]:
+        global _USERS_CACHE, _USERS_CACHE_TIMESTAMP
+        import time
 
         # 1. Fetch raw employees from hrms.employees table
         db_employees = []

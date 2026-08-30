@@ -52,7 +52,7 @@ import LocationPickerModal from "../../common/LocationPickerModal.jsx";
 const INITIAL_LEADS = []; // Active list of leads
 const INITIAL_FOLLOWUPS = [];
 
-export default function Leads() {
+export default function Leads(props) {
   const navigate = useNavigate();
   const location = useLocation();
   const { showToast } = useToast();
@@ -77,9 +77,16 @@ export default function Leads() {
   }, []);
 
   const productOptions = productsList;
+  const isModalView = props?.isModalView || false;
 
   // Active view tab: "leads" | "followups" | "visits" | "opportunities"
-  const [activeTab, setActiveTab] = useState("leads");
+  const [activeTab, setActiveTab] = useState(props?.defaultTab || "leads");
+
+  useEffect(() => {
+    if (props?.defaultTab) {
+      setActiveTab(props.defaultTab);
+    }
+  }, [props?.defaultTab]);
 
   // Opportunities Pipeline state
   const [opportunities, setOpportunities] = useState(() => {
@@ -1414,18 +1421,20 @@ export default function Leads() {
     <div className="space-y-6 font-sans text-slate-900 min-w-0 w-full">
 
       {/* Top Header Row */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-          Leads & Follow-Up Workspace
-        </h1>
+      {!isModalView && (
+        <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
+          <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            Leads & Follow-Up Workspace
+          </h1>
 
-        <button
-          onClick={() => setIsAddModalOpen(true)}
-          className="px-5 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-teal-600/30 flex items-center gap-2 cursor-pointer transition transform hover:-translate-y-0.5"
-        >
-          <Plus size={18} /> Add New Lead
-        </button>
-      </div>
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="px-5 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs sm:text-sm shadow-md shadow-teal-600/30 flex items-center gap-2 cursor-pointer transition transform hover:-translate-y-0.5"
+          >
+            <Plus size={18} /> Add New Lead
+          </button>
+        </div>
+      )}
 
       {/* Sleek & Interactive Metric Cards Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">

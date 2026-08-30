@@ -622,56 +622,6 @@ export default function SalesHRMS() {
         {activeSection === "dashboard" && !isUserAdmin && (
           <div className="space-y-4 max-w-5xl">
 
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">
-                {isUserAdmin ? "Today's Operations Summary" : "Today's Performance"}
-              </p>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-                {(isUserAdmin ? [
-                  { label: "Users Managed", value: String(adminKPIs?.total_users?.value || employeesCount || 0), icon: Users, bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
-                  { label: "System Audits", value: String(adminKPIs?.security_audits?.value || 0), icon: ShieldCheck, bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
-                  { label: "Pending Requests", value: String(myLeaveRequests.filter(r => r.status === "Pending").length), icon: Clock3, bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700" },
-                  { label: "System Status", value: (adminKPIs?.database_engine?.status === 'Active' ? 'Active' : 'Inactive'), icon: Activity, bg: "bg-rose-50 border-rose-200", text: "text-rose-700" },
-                ] : [
-                  { label: "Calls Made", value: String(allFollowups.length), icon: Phone, bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
-                  { label: "Visits Done", value: String(allVisits.length), icon: MapPin, bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
-                  { label: "Clients Said OK", value: String(convertedClients), icon: UserCheck, bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700" },
-                  { label: "Hot Leads Active", value: String(hotLeads), icon: Target, bg: "bg-rose-50 border-rose-200", text: "text-rose-700" },
-                ]).map(({ label, value, icon: Icon, bg, text }) => (
-                  <div key={label} className={`bg-white rounded-xl p-2.5 sm:p-3 border shadow-2xs ${bg}`}>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className={`text-[9px] font-black uppercase tracking-wider ${text}`}>{label}</p>
-                        <h2 className={`text-xl sm:text-2xl font-black mt-0.5 ${text}`}>{value}</h2>
-                      </div>
-                      <div className={`w-7 h-7 rounded-lg ${bg.split(" ")[0]} ${text} flex items-center justify-center shrink-0`}>
-                        <Icon size={15} />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {!isUserAdmin && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {[
-                  { label: "Total My Leads", value: allLeads.length, icon: Users, color: "sky" },
-                  { label: "Active Customers", value: allCustomers.length, icon: UserCheck, color: "emerald" },
-                  { label: "Conversion Rate", value: `${convRate}%`, icon: TrendingUp, color: "violet" },
-                ].map(({ label, value, icon: Icon, color }) => (
-                  <div key={label} className={`bg-white rounded-xl p-2.5 sm:p-3 border border-${color}-200 shadow-2xs flex items-center gap-3`}>
-                    <div className={`w-8 h-8 rounded-lg bg-${color}-50 text-${color}-700 flex items-center justify-center shrink-0`}>
-                      <Icon size={16} />
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{label}</p>
-                      <h2 className={`text-lg sm:text-xl font-black text-${color}-700`}>{value}</h2>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
 
             {/* ── 1. ATTENDANCE SUMMARY CARDS (COMPACT INLINE CARDS) ── */}
             <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-2xs space-y-2.5">

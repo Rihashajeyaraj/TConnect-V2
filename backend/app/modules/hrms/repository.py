@@ -9,9 +9,11 @@ from app.core.logger import logger
 
 _in_memory_employees: List[Dict[str, Any]] = []
 
+import threading
+_employees_cache_lock = threading.Lock()
 _EMPLOYEES_CACHE = None
 _EMPLOYEES_CACHE_TIMESTAMP = 0.0
-CACHE_TTL_SECONDS = 15.0  # 15 seconds TTL cache
+CACHE_TTL_SECONDS = 300.0  # 5 minutes TTL cache
 
 def _clear_employees_cache():
     global _EMPLOYEES_CACHE, _EMPLOYEES_CACHE_TIMESTAMP
@@ -100,6 +102,16 @@ class HRMSRepository:
         if _EMPLOYEES_CACHE is not None and (now - _EMPLOYEES_CACHE_TIMESTAMP) < CACHE_TTL_SECONDS:
             logger.info("Returning cached employees list")
             return _EMPLOYEES_CACHE
+
+        with _employees_cache_lock:
+            now = time.time()
+            if _EMPLOYEES_CACHE is not None and (now - _EMPLOYEES_CACHE_TIMESTAMP) < CACHE_TTL_SECONDS:
+                logger.info("Returning cached employees list")
+                return _EMPLOYEES_CACHE
+            return self._get_all_employees_impl()
+
+    def _get_all_employees_impl(self) -> List[Dict[str, Any]]:
+        global _EMPLOYEES_CACHE, _EMPLOYEES_CACHE_TIMESTAMP
 
         all_employees: List[Dict[str, Any]] = []
         seen_emails: set = set()

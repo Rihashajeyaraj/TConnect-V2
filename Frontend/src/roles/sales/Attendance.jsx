@@ -63,8 +63,9 @@ export const calculateWorkHours = (loginTime, logoutTime) => {
   return `${h}h ${m}m`;
 };
 
-export default function Attendance() {
+export default function Attendance(props) {
   const navigate = useNavigate();
+  const isModalView = props?.isModalView || false;
   const { showToast } = useToast();
   const currentUser = useCurrentUser();
 
@@ -868,18 +869,20 @@ export default function Attendance() {
   }, [selectedLogForMap, googleMapsLoaded]);
 
   return (
-    <div className="min-h-screen w-full bg-slate-50 text-slate-800 font-sans p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className={isModalView ? "w-full text-slate-800 font-sans space-y-4" : "min-h-screen w-full bg-slate-50 text-slate-800 font-sans p-4 sm:p-6 lg:p-8 space-y-6"}>
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Header Navigation */}
       <div className="flex flex-wrap items-center justify-between bg-white px-6 py-4 rounded-2xl border border-slate-200/80 shadow-xs gap-3">
         <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate(-1)}
-            className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-650 flex items-center justify-center transition cursor-pointer"
-          >
-            <ChevronLeft size={18} />
-          </button>
+          {!isModalView && (
+            <button
+              onClick={() => navigate(-1)}
+              className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-650 flex items-center justify-center transition cursor-pointer"
+            >
+              <ChevronLeft size={18} />
+            </button>
+          )}
           <div>
             <h1 className="text-base font-black text-slate-900 flex items-center gap-2">
               <ShieldCheck className="text-emerald-600 w-5 h-5" /> Attendance Portal
