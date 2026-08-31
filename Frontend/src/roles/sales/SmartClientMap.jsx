@@ -126,6 +126,9 @@ let HTMLMapMarker = null
 
 function initializeHTMLMapMarker() {
   if (HTMLMapMarker) return
+  if (!window.google || !window.google.maps || !window.google.maps.OverlayView) {
+    return
+  }
   HTMLMapMarker = class extends window.google.maps.OverlayView {
     constructor(latlng, map, html, onClick, anchor = 'center') {
       super()
@@ -823,6 +826,8 @@ export default function SmartClientMap() {
   // ─── 13. Update exec marker smoothly ────────────────────────────────────
   useEffect(() => {
     if (!googleMapRef.current || !window.google) return
+    initializeHTMLMapMarker()
+    if (!HTMLMapMarker) return
     const latlng = new window.google.maps.LatLng(executivePos.lat, executivePos.lng)
     
     if (!execMarkerRef.current) {
@@ -855,6 +860,8 @@ export default function SmartClientMap() {
   // ─── 14. Redraw destination + on-route markers + polyline ───────────────
   useEffect(() => {
     if (!googleMapRef.current || !window.google) return
+    initializeHTMLMapMarker()
+    if (!HTMLMapMarker) return
 
     activeMarkersRef.current.forEach(m => m.setMap(null))
     activeMarkersRef.current = []
