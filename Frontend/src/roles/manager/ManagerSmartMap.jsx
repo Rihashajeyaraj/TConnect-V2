@@ -66,7 +66,7 @@ try {
 } catch { /* Realtime unavailable; fall back to polling */ }
 
 // ── Stale thresholds ───────────────────────────────────────────────────────────
-const STALE_MS  = 5  * 60 * 1000  // 5 min → stale
+const STALE_MS  = 1  * 60 * 1000  // 1 min → stale
 const GONE_MS   = 10 * 60 * 1000  // 10 min → offline
 
 function getTrackingBadge(status, lastUpdatedMs) {
