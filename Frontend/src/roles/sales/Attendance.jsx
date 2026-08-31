@@ -934,37 +934,6 @@ export default function Attendance(props) {
             </div>
           )}
 
-          {/* Work Mode / Duty Selection */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block">
-              Duty Type / Work Mode
-            </label>
-            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
-              <button
-                type="button"
-                onClick={() => setWorkMode("office")}
-                className={`py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                  workMode === "office"
-                    ? "bg-[#0B2545] text-white shadow-sm"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/50"
-                }`}
-              >
-                🏢 Office Duty
-              </button>
-              <button
-                type="button"
-                onClick={() => setWorkMode("client")}
-                className={`py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
-                  workMode === "client"
-                    ? "bg-[#0B2545] text-white shadow-sm"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/50"
-                }`}
-              >
-                🚗 Client Visit
-              </button>
-            </div>
-          </div>
-
           {/* Camera or Success verification green card */}
           {matchStatus === "MATCHED" ? (
             <div className="flex flex-col items-center justify-center py-7 px-5 text-center space-y-4 rounded-3xl bg-[#133020] text-white transition-all duration-300">
