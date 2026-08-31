@@ -111,6 +111,18 @@ export default function ManagerAttendance() {
 
           const isAssigned = execEmails.has(aEmail) || execCodes.has(aCode) || execNames.has(aName)
           if (isAssigned || myExecs.length === 0) {
+            // Decode CLIENT_VISIT_DESTINATION::: encoded address
+            let rawCheckInAddr = a.check_in_address || a.location || 'Office Check-In'
+            let isClientVisit = false
+            if (rawCheckInAddr.startsWith('CLIENT_VISIT_DESTINATION:::')) {
+              isClientVisit = true
+              try {
+                const parsed = JSON.parse(rawCheckInAddr.replace('CLIENT_VISIT_DESTINATION:::', ''))
+                rawCheckInAddr = `Client Visit: ${parsed.title || parsed.company_name || 'Client'} (${parsed.company_name || ''}) at ${parsed.address || '—'}`
+              } catch {
+                rawCheckInAddr = 'Client Visit Site'
+              }
+            }
             combinedLogs.push({
               id: a.id || `att_${Math.random()}`,
               name: a.employee_name || a.name || 'Sales Executive',
@@ -120,10 +132,11 @@ export default function ManagerAttendance() {
               checkInTime: a.check_in_time || a.checkInTime || '09:00 AM',
               checkOutTime: a.check_out_time || a.checkOutTime || '—',
               workingHours: a.total_working_hours || a.workHours || a.workingHours || 'In Progress',
-              loginLocation: a.check_in_address || a.location || 'Office Check-In',
+              loginLocation: rawCheckInAddr,
               logoutLocation: a.check_out_address || '—',
               remarks: a.remarks || a.notes || '—',
-              gpsLocation: a.check_in_address || a.location || 'Field Location, Chennai',
+              gpsLocation: rawCheckInAddr,
+              isClientVisit,
               selfieUploaded: true,
               date: a.date ? formatDate(a.date) : formatDate(new Date()),
             })
@@ -407,7 +420,19 @@ export default function ManagerAttendance() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-base font-black text-slate-900">{selectedItem.name}</h3>
-                <p className="text-xs text-blue-600 font-bold">{selectedItem.code} · Biometric Field Audit</p>
+                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                  <p className="text-xs text-blue-600 font-bold">{selectedItem.code} · Biometric Field Audit</p>
+                  {selectedItem.isClientVisit && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800">
+                      🏢 Client Visit Mode
+                    </span>
+                  )}
+                  {String(selectedItem.remarks || '').includes('[Client Visit Mode]') && !selectedItem.isClientVisit && (
+                    <span className="inline-flex items-center gap-1 text-[10px] font-black px-2 py-0.5 rounded-full bg-teal-50 border border-teal-200 text-teal-800">
+                      🏢 Client Visit Mode
+                    </span>
+                  )}
+                </div>
               </div>
               <button
                 type="button"

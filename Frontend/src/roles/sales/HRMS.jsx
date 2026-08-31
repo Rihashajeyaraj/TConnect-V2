@@ -179,6 +179,24 @@ export default function SalesHRMS() {
     }
   });
 
+  // Re-read from localStorage whenever Attendance.jsx fires a sync event
+  useEffect(() => {
+    const reloadFromStorage = () => {
+      try {
+        const saved = JSON.parse(localStorage.getItem("tc_attendance_logs") || "[]");
+        const filtered = Array.isArray(saved) ? filterUserItems(saved, currentUser) : [];
+        setRealAttendanceLogs(filtered);
+      } catch { /* non-critical */ }
+    };
+
+    window.addEventListener("tc:attendance-sync", reloadFromStorage);
+    window.addEventListener("tc:attendance-marked", reloadFromStorage);
+    return () => {
+      window.removeEventListener("tc:attendance-sync", reloadFromStorage);
+      window.removeEventListener("tc:attendance-marked", reloadFromStorage);
+    };
+  }, [currentUser]);
+
   const [profile, setProfile] = useState(() => {
     try {
       return JSON.parse(localStorage.getItem("tc_se_profile") || "{}");

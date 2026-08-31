@@ -269,18 +269,46 @@ export default function Attendance(props) {
           }
           return {
             date: pDate,
+            attendance_date: pDate,
             loginTime: p.check_in_time || p.punch_in_time || p.loginTime || "09:20 AM",
+            check_in_time: p.check_in_time || p.punch_in_time || p.loginTime || "09:20 AM",
             logoutTime: p.check_out_time || p.punch_out_time || p.logoutTime || "—",
+            check_out_time: p.check_out_time || p.punch_out_time || p.logoutTime || "—",
             loginLocation: rawLoc,
+            check_in_address: rawLoc,
             logoutLocation: p.check_out_address || p.logoutLocation || "—",
+            check_out_address: p.check_out_address || p.logoutLocation || "—",
             workHours: p.total_working_hours || p.workHours || "—",
+            total_working_hours: p.total_working_hours || p.workHours || "—",
             status: p.attendance_status || p.status || "Present",
             latitude: p.check_in_latitude || 13.0067,
             longitude: p.check_in_longitude || 80.2570,
-            remarks: p.remarks || p.notes || "Normal Punch"
+            remarks: p.remarks || p.notes || "Normal Punch",
+            notes: p.remarks || p.notes || "Normal Punch",
+            employee_id: p.employee_id || p.user_id || userEmpCode,
+            employee_name: p.employee_name || p.name || userName,
+            email: p.email || p.user_email || userEmail,
           };
         });
         setAttendanceLogs(myLogs);
+        // ── Sync to localStorage so HRMS attendance record table stays up-to-date ──
+        try {
+          // Merge with any existing records not in today's API response
+          const existing = JSON.parse(localStorage.getItem("tc_attendance_logs") || "[]");
+          const merged = [...myLogs];
+          existing.forEach(ex => {
+            const exDate = ex.date || ex.attendance_date;
+            const exIn = ex.loginTime || ex.check_in_time;
+            const alreadyPresent = merged.some(m =>
+              (m.date === exDate || m.attendance_date === exDate) &&
+              (m.loginTime === exIn || m.check_in_time === exIn)
+            );
+            if (!alreadyPresent) merged.push(ex);
+          });
+          localStorage.setItem("tc_attendance_logs", JSON.stringify(merged));
+          // Fire event so HRMS can react immediately
+          window.dispatchEvent(new CustomEvent("tc:attendance-sync"));
+        } catch { /* non-critical */ }
         setLoading(false);
       })
       .catch(() => {
@@ -664,6 +692,49 @@ export default function Attendance(props) {
       setCheckedInSuccessfully(true);
       stopCamera();
 
+      // ── Immediately persist to localStorage so HRMS report shows it right away ──
+      const todayDateISO = new Date().toISOString().slice(0, 10);
+      let readableLoginAddr = encodedAddress;
+      if (readableLoginAddr.startsWith("CLIENT_VISIT_DESTINATION:::")) {
+        try {
+          const parsed = JSON.parse(readableLoginAddr.replace("CLIENT_VISIT_DESTINATION:::", ""));
+          readableLoginAddr = `Client Visit: ${parsed.title} (${parsed.company_name}) at ${parsed.address}`;
+        } catch { readableLoginAddr = "Client Visit Site"; }
+      }
+      const newLogEntry = {
+        date: todayDateISO,
+        attendance_date: todayDateISO,
+        loginTime: nowStr,
+        check_in_time: nowStr,
+        logoutTime: "—",
+        check_out_time: "—",
+        loginLocation: readableLoginAddr,
+        check_in_address: readableLoginAddr,
+        logoutLocation: "—",
+        check_out_address: "—",
+        workHours: "—",
+        total_working_hours: "—",
+        status: "Present",
+        latitude: finalLat || 13.0067,
+        longitude: finalLng || 80.2570,
+        remarks: finalRemarks,
+        notes: finalRemarks,
+        employee_id: resolvedEmployeeId,
+        employee_name: matchedEmployeeName || userName,
+        email: userEmail,
+      };
+      try {
+        const existing = JSON.parse(localStorage.getItem("tc_attendance_logs") || "[]");
+        // Remove any same-day login entry to avoid duplicates
+        const filtered = existing.filter(e => {
+          const eDate = e.date || e.attendance_date || "";
+          return !eDate.startsWith(todayDateISO);
+        });
+        localStorage.setItem("tc_attendance_logs", JSON.stringify([newLogEntry, ...filtered]));
+        window.dispatchEvent(new CustomEvent("tc:attendance-sync"));
+      } catch { /* non-critical */ }
+
+      // Async refresh from backend (non-blocking)
       loadAttendanceLogs();
       window.dispatchEvent(new CustomEvent("tc:attendance-marked"));
 
@@ -808,6 +879,58 @@ export default function Attendance(props) {
       await attendanceAPI.clockOut(payload);
       showToast("Logged Out Successfully ✓", "info");
       setCheckedOutSuccessfully(true);
+
+      // ── Immediately update localStorage so HRMS report shows logout time right away ──
+      const todayDateISO = new Date().toISOString().slice(0, 10);
+      try {
+        const existing = JSON.parse(localStorage.getItem("tc_attendance_logs") || "[]");
+        const updated = existing.map(e => {
+          const eDate = e.date || e.attendance_date || "";
+          if (eDate.startsWith(todayDateISO)) {
+            return {
+              ...e,
+              logoutTime: nowStr,
+              check_out_time: nowStr,
+              logoutLocation: finalAddress || e.logoutLocation || "—",
+              check_out_address: finalAddress || e.check_out_address || "—",
+              workHours: calcHours,
+              total_working_hours: calcHours,
+              remarks: `Checked out: ${finalRemarks}`,
+            };
+          }
+          return e;
+        });
+        // If no today entry existed, add a new one
+        const hasTodayEntry = existing.some(e => (e.date || e.attendance_date || "").startsWith(todayDateISO));
+        if (!hasTodayEntry) {
+          updated.unshift({
+            date: todayDateISO,
+            attendance_date: todayDateISO,
+            loginTime: checkInTime,
+            check_in_time: checkInTime,
+            logoutTime: nowStr,
+            check_out_time: nowStr,
+            loginLocation: currentLocation,
+            check_in_address: currentLocation,
+            logoutLocation: finalAddress || "—",
+            check_out_address: finalAddress || "—",
+            workHours: calcHours,
+            total_working_hours: calcHours,
+            status: "Present",
+            latitude: finalLat || 13.0067,
+            longitude: finalLng || 80.2570,
+            remarks: `Checked out: ${finalRemarks}`,
+            notes: `Checked out: ${finalRemarks}`,
+            employee_id: resolvedEmployeeId,
+            employee_name: userName,
+            email: userEmail,
+          });
+        }
+        localStorage.setItem("tc_attendance_logs", JSON.stringify(updated));
+        window.dispatchEvent(new CustomEvent("tc:attendance-sync"));
+      } catch { /* non-critical */ }
+
+      // Async refresh from backend
       loadAttendanceLogs();
       // Stop GPS tracking after successful clock-out
       await _stopGpsTrackingDelegate(finalLat, finalLng);
@@ -915,77 +1038,216 @@ export default function Attendance(props) {
       )}
 
       {activeTab === "punch" ? (
-        <div className="max-w-md mx-auto bg-white rounded-3xl border border-slate-250/80 p-5 shadow-lg space-y-5 text-left">
-          {/* Header section (Title & Location) */}
-          <div className="border-b border-slate-100 pb-3">
-            <h2 className="text-lg font-black text-slate-800 tracking-tight">My Attendance</h2>
-            <p className="text-xs text-slate-500 font-semibold mt-0.5">Mark login and logout for Employees.</p>
+        <div className="max-w-sm mx-auto bg-white rounded-3xl shadow-xl overflow-hidden" style={{fontFamily: "'Inter', 'Segoe UI', sans-serif"}}>
+
+          {/* ── Title + Location header ── */}
+          <div className="pt-6 pb-3 px-6 text-center border-b border-slate-100">
+            <h2 className="text-base font-black text-slate-900 tracking-tight">My Attendance</h2>
+            <div className="flex items-start justify-center gap-1 mt-1">
+              <MapPin size={12} className="text-rose-500 mt-0.5 shrink-0" />
+              <p className="text-[11px] text-rose-500 font-semibold leading-snug text-left max-w-[260px] truncate" title={currentLocation}>
+                {loadingLocation ? "Detecting location..." : currentLocation}
+              </p>
+            </div>
           </div>
 
           {!isEnrolled && (
-            <div className="bg-amber-50 border border-amber-250 p-4 rounded-2xl text-[11px] font-bold text-amber-900 space-y-1.5 select-none">
-              <div className="flex items-center gap-2 text-amber-700">
-                <AlertCircle size={16} />
-                <span>Biometric Face Profile Missing</span>
-              </div>
-              <p className="font-semibold text-amber-800 leading-relaxed">
-                Your face biometrics are not registered yet. Please contact your System Administrator to enroll your face in the Admin Portal. Face recognition is required for Login and Logout.
-              </p>
+            <div className="mx-5 mt-4 bg-amber-50 border border-amber-200 p-3 rounded-2xl text-[11px] font-semibold text-amber-800 flex items-start gap-2">
+              <AlertCircle size={15} className="text-amber-500 mt-0.5 shrink-0" />
+              <span>Biometric face profile missing. Contact admin to enroll.</span>
             </div>
           )}
 
-          {/* Camera or Success verification green card */}
-          {matchStatus === "MATCHED" ? (
-            <div className="flex flex-col items-center justify-center py-7 px-5 text-center space-y-4 rounded-3xl bg-[#133020] text-white transition-all duration-300">
-              <div className="w-14 h-14 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
-                <svg className="w-7 h-7 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-                </svg>
-              </div>
-              <div>
-                <h3 className="text-base font-extrabold text-white tracking-tight">Login Successful</h3>
-                <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 border border-white/10 rounded-full text-xs font-bold text-white">
-                  <span>👤</span>
-                  <span>{userName}</span>
+          {/* ── Camera / Face Verified panel ── */}
+          <div className="px-5 pt-4">
+            {matchStatus === "MATCHED" ? (
+              <div className="w-full aspect-[4/3] rounded-3xl bg-[#133020] flex flex-col items-center justify-center text-white gap-3">
+                <div className="w-14 h-14 rounded-full bg-emerald-500 flex items-center justify-center shadow-lg">
+                  <svg className="w-7 h-7 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                  </svg>
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-black">Face Verified</p>
+                  <p className="text-[11px] text-white/70 font-semibold mt-0.5">{userName}</p>
                 </div>
               </div>
-              <p className="text-[10px] text-white/70 font-bold">Face verified successfully</p>
-            </div>
-          ) : (
-            <div className="relative w-full aspect-[4/3] rounded-3xl bg-slate-950 overflow-hidden shadow-inner border border-slate-200 flex items-center justify-center">
-              {isCameraActive ? (
-                <>
-                  <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
-                  
-                  {/* Face Guide oval frame */}
-                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                    <div className={`w-[130px] h-[170px] sm:w-[200px] sm:h-[260px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
-                      isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
-                    }`} />
-                  </div>
-                </>
-              ) : (
-                <div className="flex flex-col items-center gap-2 text-slate-500 font-semibold text-[11px] py-10">
-                  <VideoOff size={28} />
-                  <span>{isEnrolled ? "Camera is Off" : "🔒 Biometrics Required"}</span>
+            ) : (
+              <div
+                className="relative w-full rounded-3xl overflow-hidden border border-slate-800"
+                style={{ paddingBottom: "75%", backgroundColor: "#020617" }}
+              >
+                <div className="absolute inset-0">
+                  {isCameraActive ? (
+                    <>
+                      <video
+                        ref={videoRef}
+                        autoPlay
+                        playsInline
+                        muted
+                        style={{
+                          position: "absolute",
+                          inset: 0,
+                          width: "100%",
+                          height: "100%",
+                          objectFit: "cover",
+                          transform: "scaleX(-1)",
+                        }}
+                      />
+                      {/* Oval face guide + blink liveness overlay */}
+                      <div style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", pointerEvents: "none" }}>
+                        <div
+                          style={{
+                            position: "relative",
+                            width: "54%",
+                            height: "76%",
+                            borderRadius: "50%",
+                            border: livenessStatus === "PASSED" ? "4px solid #22c55e" : blinkCount > 0 ? "4px solid #f59e0b" : "4px solid #22c55e",
+                            boxShadow: "0 0 0 9999px rgba(0,0,0,0.48)",
+                            transition: "border-color 0.3s",
+                          }}
+                        >
+                          {/* Blink dots progress — shown at bottom of oval */}
+                          {livenessStatus !== "PASSED" && isFaceAligned && (
+                            <div style={{
+                              position: "absolute",
+                              bottom: "14%",
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              display: "flex",
+                              alignItems: "center",
+                              gap: "8px",
+                              background: "rgba(0,0,0,0.55)",
+                              borderRadius: "20px",
+                              padding: "4px 14px",
+                            }}>
+                              {/* Eye icon */}
+                              <span style={{ fontSize: "13px" }}>👁️</span>
+                              {/* Dot 1 */}
+                              <div style={{
+                                width: "10px", height: "10px", borderRadius: "50%",
+                                background: blinkCount >= 1 ? "#22c55e" : "rgba(255,255,255,0.35)",
+                                boxShadow: blinkCount >= 1 ? "0 0 6px #22c55e" : "none",
+                                transition: "background 0.4s, box-shadow 0.4s",
+                              }} />
+                              {/* Dot 2 */}
+                              <div style={{
+                                width: "10px", height: "10px", borderRadius: "50%",
+                                background: blinkCount >= 2 ? "#22c55e" : "rgba(255,255,255,0.35)",
+                                boxShadow: blinkCount >= 2 ? "0 0 6px #22c55e" : "none",
+                                transition: "background 0.4s, box-shadow 0.4s",
+                              }} />
+                            </div>
+                          )}
+                          {/* Verified badge inside oval */}
+                          {livenessStatus === "PASSED" && (
+                            <div style={{
+                              position: "absolute",
+                              bottom: "10%",
+                              left: "50%",
+                              transform: "translateX(-50%)",
+                              background: "#22c55e",
+                              color: "#fff",
+                              borderRadius: "20px",
+                              padding: "3px 12px",
+                              fontSize: "11px",
+                              fontWeight: "900",
+                              whiteSpace: "nowrap",
+                              letterSpacing: "0.02em",
+                            }}>✓ Blink Verified</div>
+                          )}
+                        </div>
+                      </div>
+                      {/* Blink instruction banner — top of camera */}
+                      {isCameraActive && livenessStatus !== "PASSED" && (
+                        <div style={{
+                          position: "absolute",
+                          top: "8px",
+                          left: "50%",
+                          transform: "translateX(-50%)",
+                          background: "rgba(0,0,0,0.62)",
+                          color: "#fff",
+                          borderRadius: "20px",
+                          padding: "5px 16px",
+                          fontSize: "11px",
+                          fontWeight: "700",
+                          whiteSpace: "nowrap",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "6px",
+                          pointerEvents: "none",
+                        }}>
+                          <span style={{ animation: "pulse 1s infinite" }}>👁️</span>
+                          {blinkCount === 0 ? "Blink once to verify" : blinkCount === 1 ? "Blink again to confirm" : "Processing..."}
+                        </div>
+                      )}
+                    </>
+                  ) : (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 text-slate-500">
+                      <VideoOff size={32} />
+                      <span className="text-xs font-semibold">{isEnrolled ? "Camera is Off" : "🔒 Biometrics Required"}</span>
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
-          )}
+              </div>
+            )}
+          </div>
 
-          {/* Destination Dropdown for Client Visit */}
+          {/* ── Face alignment / blink hint ── */}
+          <p className={`text-center text-[11px] font-semibold mt-3 px-5 transition-colors duration-300 ${
+            livenessStatus === "PASSED" ? "text-emerald-600" :
+            matchStatus === "DETECTING" ? "text-blue-500" :
+            matchStatus === "FAILED" ? "text-rose-500" :
+            "text-slate-600"
+          }`}>
+            {matchStatus === "DETECTING" ? "🔍 Matching face..." :
+             matchStatus === "FAILED" ? "❌ Face not recognized — try again" :
+             matchStatus === "FALLBACK" ? "⚠️ Biometric offline — identity fallback" :
+             livenessStatus === "PASSED" ? "✅ Liveness confirmed — matching identity..." :
+             isFaceAligned && blinkCount === 0 ? "👁️ Blink once to start liveness check" :
+             isFaceAligned && blinkCount === 1 ? "👁️ Blink once more to verify" :
+             faceAlignmentFeedback}
+          </p>
+
+          {/* ── WHERE ARE YOU WORKING TODAY? ── */}
+          <div className="px-5 mt-4">
+            <p className="text-center text-[10px] font-black text-slate-400 tracking-widest uppercase mb-2">
+              Where are you working today?
+            </p>
+            <div className="flex gap-2">
+              <button
+                onClick={() => setWorkMode("office")}
+                className={`flex-1 py-2.5 rounded-full text-[12px] font-bold border-2 transition-all duration-200 ${
+                  workMode === "office"
+                    ? "border-emerald-500 text-emerald-600 bg-white shadow-sm"
+                    : "border-slate-200 text-slate-500 bg-white hover:border-slate-300"
+                }`}
+              >
+                Office
+              </button>
+              <button
+                onClick={() => setWorkMode("client")}
+                className={`flex-1 py-2.5 rounded-full text-[12px] font-bold border-2 transition-all duration-200 ${
+                  workMode === "client"
+                    ? "border-emerald-500 text-emerald-600 bg-white shadow-sm"
+                    : "border-slate-200 text-slate-500 bg-white hover:border-slate-300"
+                }`}
+              >
+                Client Visit
+              </button>
+            </div>
+          </div>
+
+          {/* ── Client destination dropdown (Client Visit mode) ── */}
           {workMode === "client" && !isAdmin && (
-            <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
-              <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                Target Client Destination (Required)
-              </label>
+            <div className="px-5 mt-3 space-y-1.5">
               {loadingClients ? (
-                <div className="text-xs text-slate-500 font-bold p-2 bg-slate-100 rounded-xl text-center">
+                <div className="text-xs text-slate-500 font-semibold p-2 bg-slate-100 rounded-xl text-center">
                   Loading assigned clients...
                 </div>
               ) : assignedClients.length === 0 ? (
-                <div className="text-xs text-rose-600 font-bold p-3 bg-rose-50 border border-rose-100 rounded-xl text-center">
-                  No Leads or Customers are assigned to you.
+                <div className="text-xs text-rose-600 font-semibold p-3 bg-rose-50 border border-rose-100 rounded-xl text-center">
+                  No Leads or Customers assigned to you.
                 </div>
               ) : (
                 <>
@@ -1006,12 +1268,12 @@ export default function Attendance(props) {
                               } else if (client.category === 'Customer') {
                                 await customerAPI.updateCustomer(client.id, { latitude: coords.latitude, longitude: coords.longitude });
                               }
-                              showToast("📍 Client coordinates updated and saved successfully!", "success");
+                              showToast("📍 Client coordinates updated!", "success");
                             } catch (dbErr) {
-                              console.warn("Failed to persist coordinates to database:", dbErr);
+                              console.warn("Failed to persist coordinates:", dbErr);
                             }
                           } else {
-                            showToast("⚠️ Could not resolve client address to coordinates.", "warning");
+                            showToast("⚠️ Could not resolve address to coordinates.", "warning");
                           }
                         }
                         setSelectedClient({ ...client });
@@ -1021,7 +1283,7 @@ export default function Attendance(props) {
                     }}
                     className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-500 focus:bg-white transition text-slate-900 cursor-pointer"
                   >
-                    <option value="">-- Select Client (Lead or Customer) --</option>
+                    <option value="">-- Select Client Destination --</option>
                     {assignedClients.map((c) => (
                       <option key={c.id} value={c.id}>
                         [{c.category}] {c.title} {c.company_name !== c.title ? `(${c.company_name})` : ''}
@@ -1029,38 +1291,19 @@ export default function Attendance(props) {
                     ))}
                   </select>
                   {selectedClient && (
-                    <div className="text-[10px] font-bold px-1 select-none">
-                      {selectedClient.latitude && selectedClient.longitude ? (
-                        <span className="text-emerald-600">
-                          📍 Destination Set: {selectedClient.latitude.toFixed(4)}, {selectedClient.longitude.toFixed(4)}
-                        </span>
-                      ) : (
-                        <span className="text-amber-600 flex items-center gap-1">
-                          ⚠️ Stored GPS coordinates missing. Reverse-geocoding/address fallback will be used on map.
-                        </span>
-                      )}
-                    </div>
+                    <p className="text-[10px] font-semibold px-1 text-emerald-600">
+                      📍 {selectedClient.latitude && selectedClient.longitude
+                        ? `Destination: ${selectedClient.latitude.toFixed(4)}, ${selectedClient.longitude.toFixed(4)}`
+                        : "⚠️ GPS coords missing — address fallback will be used."}
+                    </p>
                   )}
                 </>
               )}
             </div>
           )}
 
-          {/* Remarks Field (Show for non-Admins or if client visit is active) */}
-          {!isAdmin && (
-            <div className="space-y-1">
-              <input
-                type="text"
-                value={punchRemarks}
-                onChange={(e) => setPunchRemarks(e.target.value)}
-                placeholder={workMode === "office" ? "Add a remark (optional)" : "Enter visit remarks / notes"}
-                className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-500 focus:bg-white transition text-slate-900"
-              />
-            </div>
-          )}
-
-          {/* Pill Action Buttons Row */}
-          <div className="grid grid-cols-3 gap-2.5 pt-1">
+          {/* ── Start Camera button ── */}
+          <div className="px-5 mt-3">
             <button
               type="button"
               onClick={() => {
@@ -1072,59 +1315,56 @@ export default function Attendance(props) {
                 }, 100);
               }}
               disabled={!isEnrolled}
-              className="py-2.5 px-3 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-[10px] font-extrabold text-slate-700 transition cursor-pointer flex items-center justify-center text-center shadow-xs disabled:opacity-50"
+              className="w-full py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-[12px] font-semibold text-slate-700 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              START CAMERA
-            </button>
-            <button
-              onClick={handleClockInSubmit}
-              disabled={!isEnrolled || isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
-              className={`py-2.5 px-3 rounded-full text-[10px] font-extrabold text-white transition cursor-pointer text-center ${
-                (matchStatus === "MATCHED" || matchStatus === "FALLBACK") && !isSaving
-                  ? "bg-emerald-600 hover:bg-emerald-700 shadow-md"
-                  : "bg-slate-200 text-slate-400 cursor-not-allowed"
-              }`}
-            >
-              {isSaving ? "SAVING..." : "LOGIN"}
-            </button>
-            <button
-              onClick={handleClockOutSubmit}
-              disabled={!isEnrolled || isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
-              className={`py-2.5 px-3 rounded-full text-[10px] font-extrabold text-white transition cursor-pointer text-center ${
-                (matchStatus === "MATCHED" || matchStatus === "FALLBACK") && !isSaving
-                  ? "bg-rose-600 hover:bg-rose-700 shadow-md"
-                  : "bg-slate-200 text-slate-400 cursor-not-allowed"
-              }`}
-            >
-              {isSaving ? "SAVING..." : "LOGOUT"}
+              <span>🎥</span> Start Camera
             </button>
           </div>
 
-          {/* Success marked feedback banners */}
-          {(checkedInSuccessfully || checkedOutSuccessfully) && (
-            <div className="py-3 px-4 bg-emerald-50 border border-emerald-150 text-emerald-700 rounded-xl text-center text-xs font-black animate-pulse transition-all">
-              {checkedInSuccessfully ? "Login Marked Successfully!" : "Logout Marked Successfully!"}
+          {/* ── Remark input ── */}
+          {!isAdmin && (
+            <div className="px-5 mt-3">
+              <input
+                type="text"
+                value={punchRemarks}
+                onChange={(e) => setPunchRemarks(e.target.value)}
+                placeholder={workMode === "office" ? "Add a remark (optional)" : "Enter visit remarks / notes"}
+                className="w-full text-[12px] font-medium px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-400 focus:bg-white transition text-slate-800 placeholder-slate-400"
+              />
             </div>
           )}
 
-          {/* Face Status Info Card */}
-          <div className="bg-slate-50/50 border border-slate-200 p-4 rounded-2xl space-y-1">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">
-              Face Status
-            </span>
-            <div className="text-xs font-extrabold text-slate-700">
-              {matchStatus === "MATCHED" ? "Login Successful" : matchStatus === "FALLBACK" ? "Using identity fallback" : matchStatus === "FAILED" ? "Face not recognized. Retry." : "Ready to scan face"}
-            </div>
+          {/* ── LOGIN / LOGOUT buttons ── */}
+          <div className="px-5 mt-4 pb-1 grid grid-cols-2 gap-3">
+            <button
+              id="attendance-login-btn"
+              onClick={handleClockInSubmit}
+              disabled={isSaving}
+              className="py-3.5 rounded-full text-[13px] font-black tracking-widest uppercase text-white transition-all duration-200 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 shadow-md active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isSaving ? "..." : "LOGIN"}
+            </button>
+            <button
+              id="attendance-logout-btn"
+              onClick={handleClockOutSubmit}
+              disabled={isSaving}
+              className="py-3.5 rounded-full text-[13px] font-black tracking-widest uppercase text-white transition-all duration-200 bg-gradient-to-r from-pink-400 to-rose-500 hover:from-pink-500 hover:to-rose-600 shadow-md active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
+            >
+              {isSaving ? "..." : "LOGOUT"}
+            </button>
           </div>
 
-          {/* Current Location Info Card */}
-          <div className="bg-[#f0faf5] border border-[#dcf5e7] p-4 rounded-2xl space-y-1">
-            <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider block">
-              Current Location
-            </span>
-            <div className="text-xs font-extrabold text-slate-755 leading-relaxed">
-              {currentLocation}
-            </div>
+          {/* ── Status line ── */}
+          <div className="px-5 pb-6 mt-3 text-center">
+            {(checkedInSuccessfully || checkedOutSuccessfully) ? (
+              <p className="text-[12px] font-bold text-emerald-600">
+                ✓ {checkedInSuccessfully ? "Login marked successfully!" : "Logout marked successfully!"}
+              </p>
+            ) : (
+              <p className="text-[12px] font-semibold text-slate-500">
+                Status: {matchStatus === "MATCHED" ? "Face verified — ready to mark" : matchStatus === "FALLBACK" ? "Identity fallback — ready to mark" : matchStatus === "FAILED" ? "Face not recognized. Retry." : "Ready to mark attendance"}
+              </p>
+            )}
           </div>
         </div>
       ) : (
