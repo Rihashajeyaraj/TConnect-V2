@@ -88,7 +88,7 @@ export default function Attendance(props) {
   const [loadingClients, setLoadingClients] = useState(false);
 
   // Biometric & Camera States
-  const [matchStatus, setMatchStatus] = useState("FALLBACK"); // PENDING, DETECTING, MATCHED, FAILED, SPOOF
+  const [matchStatus, setMatchStatus] = useState("PENDING"); // PENDING, DETECTING, MATCHED, FAILED, SPOOF
   const [verificationToken, setVerificationToken] = useState(null);
   const [challengeSalt, setChallengeSalt] = useState("");
   const [matchedEmployeeName, setMatchedEmployeeName] = useState("");
@@ -396,7 +396,12 @@ export default function Attendance(props) {
 
   // Automatically start Camera
   useEffect(() => {
-    setIsCameraActive(false);
+    if (!loading && isEnrolled) {
+      setIsCameraActive(true);
+      startLivenessScan();
+    } else {
+      stopCamera();
+    }
     return () => stopCamera();
   }, [loading, isEnrolled]);
 
@@ -917,19 +922,31 @@ export default function Attendance(props) {
             <p className="text-xs text-slate-500 font-semibold mt-0.5">Mark login and logout for Employees.</p>
           </div>
 
+          {!isEnrolled && (
+            <div className="bg-amber-50 border border-amber-250 p-4 rounded-2xl text-[11px] font-bold text-amber-900 space-y-1.5 select-none">
+              <div className="flex items-center gap-2 text-amber-700">
+                <AlertCircle size={16} />
+                <span>Biometric Face Profile Missing</span>
+              </div>
+              <p className="font-semibold text-amber-800 leading-relaxed">
+                Your face biometrics are not registered yet. Please contact your System Administrator to enroll your face in the Admin Portal. Face recognition is required for Login and Logout.
+              </p>
+            </div>
+          )}
+
           {/* Work Mode / Duty Selection */}
-          <div className="space-y-2">
+          <div className="space-y-1.5">
             <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block">
               Duty Type / Work Mode
             </label>
-            <div className="grid grid-cols-2 gap-2.5 bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
+            <div className="grid grid-cols-2 gap-2 bg-slate-50 p-1.5 rounded-2xl border border-slate-200">
               <button
                 type="button"
                 onClick={() => setWorkMode("office")}
-                className={`py-2.5 rounded-xl text-xs font-black transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
+                className={`py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
                   workMode === "office"
-                    ? "bg-[#0B2545] text-white shadow-md shadow-[#0b2545]/15"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    ? "bg-[#0B2545] text-white shadow-sm"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/50"
                 }`}
               >
                 🏢 Office Duty
@@ -937,10 +954,10 @@ export default function Attendance(props) {
               <button
                 type="button"
                 onClick={() => setWorkMode("client")}
-                className={`py-2.5 rounded-xl text-xs font-black transition-all duration-200 flex items-center justify-center gap-2 cursor-pointer ${
+                className={`py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
                   workMode === "client"
-                    ? "bg-[#0b2545] text-white shadow-md shadow-[#0b2545]/15"
-                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100"
+                    ? "bg-[#0B2545] text-white shadow-sm"
+                    : "text-slate-600 hover:text-slate-900 hover:bg-slate-100/50"
                 }`}
               >
                 🚗 Client Visit
@@ -948,25 +965,44 @@ export default function Attendance(props) {
             </div>
           </div>
 
-          {/* Current Location Box */}
-          <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl space-y-2">
-            <span className="text-[9px] font-black text-slate-450 uppercase tracking-wider block">
-              Current Location Status
-            </span>
-            <div className="flex items-start gap-2.5">
-              <span className="text-emerald-600 text-sm mt-0.5">📍</span>
-              <div className="space-y-1 min-w-0">
-                <p className="text-xs font-extrabold text-slate-800 leading-relaxed break-words">
-                  {currentLocation}
-                </p>
-                {gpsCoords.lat && gpsCoords.lng && (
-                  <p className="text-[10px] text-slate-500 font-bold font-mono">
-                    Coords: {gpsCoords.lat.toFixed(5)}, {gpsCoords.lng.toFixed(5)} {gpsAccuracy ? `(±${gpsAccuracy}m)` : ''}
-                  </p>
-                )}
+          {/* Camera or Success verification green card */}
+          {matchStatus === "MATCHED" ? (
+            <div className="flex flex-col items-center justify-center py-7 px-5 text-center space-y-4 rounded-3xl bg-[#133020] text-white transition-all duration-300">
+              <div className="w-14 h-14 rounded-full bg-emerald-500 flex items-center justify-center text-white shadow-lg shadow-emerald-500/20">
+                <svg className="w-7 h-7 stroke-current" fill="none" viewBox="0 0 24 24" strokeWidth="3">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+                </svg>
               </div>
+              <div>
+                <h3 className="text-base font-extrabold text-white tracking-tight">Login Successful</h3>
+                <div className="mt-2.5 inline-flex items-center gap-1.5 px-3 py-1.5 bg-white/10 border border-white/10 rounded-full text-xs font-bold text-white">
+                  <span>👤</span>
+                  <span>{userName}</span>
+                </div>
+              </div>
+              <p className="text-[10px] text-white/70 font-bold">Face verified successfully</p>
             </div>
-          </div>
+          ) : (
+            <div className="relative w-full aspect-[4/3] rounded-3xl bg-slate-950 overflow-hidden shadow-inner border border-slate-200 flex items-center justify-center">
+              {isCameraActive ? (
+                <>
+                  <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
+                  
+                  {/* Face Guide oval frame */}
+                  <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                    <div className={`w-[130px] h-[170px] sm:w-[200px] sm:h-[260px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
+                      isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
+                    }`} />
+                  </div>
+                </>
+              ) : (
+                <div className="flex flex-col items-center gap-2 text-slate-500 font-semibold text-[11px] py-10">
+                  <VideoOff size={28} />
+                  <span>{isEnrolled ? "Camera is Off" : "🔒 Biometrics Required"}</span>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Destination Dropdown for Client Visit */}
           {workMode === "client" && !isAdmin && (
@@ -1054,26 +1090,41 @@ export default function Attendance(props) {
             </div>
           )}
 
-          {/* Action Buttons Row */}
-          <div className="grid grid-cols-2 gap-3 pt-1">
+          {/* Pill Action Buttons Row */}
+          <div className="grid grid-cols-3 gap-2.5 pt-1">
+            <button
+              type="button"
+              onClick={() => {
+                setIsCameraActive(false);
+                setMatchStatus("PENDING");
+                setTimeout(() => {
+                  setIsCameraActive(true);
+                  startLivenessScan();
+                }, 100);
+              }}
+              disabled={!isEnrolled}
+              className="py-2.5 px-3 rounded-full border border-slate-200 bg-white hover:bg-slate-50 text-[10px] font-extrabold text-slate-700 transition cursor-pointer flex items-center justify-center text-center shadow-xs disabled:opacity-50"
+            >
+              START CAMERA
+            </button>
             <button
               onClick={handleClockInSubmit}
-              disabled={isSaving}
-              className={`py-3 rounded-xl text-xs font-black text-white transition-all cursor-pointer text-center ${
-                isSaving
-                  ? "bg-slate-350 cursor-not-allowed"
-                  : "bg-emerald-600 hover:bg-emerald-700 shadow-md shadow-emerald-500/10"
+              disabled={!isEnrolled || isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
+              className={`py-2.5 px-3 rounded-full text-[10px] font-extrabold text-white transition cursor-pointer text-center ${
+                (matchStatus === "MATCHED" || matchStatus === "FALLBACK") && !isSaving
+                  ? "bg-emerald-600 hover:bg-emerald-700 shadow-md"
+                  : "bg-slate-200 text-slate-400 cursor-not-allowed"
               }`}
             >
               {isSaving ? "SAVING..." : "LOGIN"}
             </button>
             <button
               onClick={handleClockOutSubmit}
-              disabled={isSaving}
-              className={`py-3 rounded-xl text-xs font-black text-white transition-all cursor-pointer text-center ${
-                isSaving
-                  ? "bg-slate-350 cursor-not-allowed"
-                  : "bg-rose-600 hover:bg-rose-700 shadow-md shadow-rose-500/10"
+              disabled={!isEnrolled || isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
+              className={`py-2.5 px-3 rounded-full text-[10px] font-extrabold text-white transition cursor-pointer text-center ${
+                (matchStatus === "MATCHED" || matchStatus === "FALLBACK") && !isSaving
+                  ? "bg-rose-600 hover:bg-rose-700 shadow-md"
+                  : "bg-slate-200 text-slate-400 cursor-not-allowed"
               }`}
             >
               {isSaving ? "SAVING..." : "LOGOUT"}
@@ -1086,6 +1137,26 @@ export default function Attendance(props) {
               {checkedInSuccessfully ? "Login Marked Successfully!" : "Logout Marked Successfully!"}
             </div>
           )}
+
+          {/* Face Status Info Card */}
+          <div className="bg-slate-50/50 border border-slate-200 p-4 rounded-2xl space-y-1">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider block">
+              Face Status
+            </span>
+            <div className="text-xs font-extrabold text-slate-700">
+              {matchStatus === "MATCHED" ? "Login Successful" : matchStatus === "FALLBACK" ? "Using identity fallback" : matchStatus === "FAILED" ? "Face not recognized. Retry." : "Ready to scan face"}
+            </div>
+          </div>
+
+          {/* Current Location Info Card */}
+          <div className="bg-[#f0faf5] border border-[#dcf5e7] p-4 rounded-2xl space-y-1">
+            <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider block">
+              Current Location
+            </span>
+            <div className="text-xs font-extrabold text-slate-755 leading-relaxed">
+              {currentLocation}
+            </div>
+          </div>
         </div>
       ) : (
         /* History logs list view */
