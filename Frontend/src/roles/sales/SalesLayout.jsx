@@ -47,14 +47,14 @@ import TwiteConnectLogo from "../../common/TwiteConnectLogo.jsx";
 import { useToast } from "../../common/ToastContext.jsx";
 
 const PROFILE_DEFAULTS = {
-  fullName: "Abi Hastro",
-  employeeId: "EMP000012",
-  officialEmail: "abi@tconnect.com",
-  phone: "+91 98765 00012",
+  fullName: "",
+  employeeId: "",
+  officialEmail: "",
+  phone: "",
   role: "Sales Executive",
   team: "Sales & Business Development",
   designation: "Field Sales Executive",
-  gender: "Female",
+  gender: "",
   employmentType: "Full-time",
   employmentStatus: "Active",
   joinDate: "2025-06-01",
@@ -207,9 +207,9 @@ export default function SalesLayout() {
     }
   })();
 
-  const seName = user.name || user.full_name || "Abi Hastro";
-  const seEmail = user.email || "abi@tconnect.com";
-  const empCode = user.employee_code || user.employee_id || "EMP000012";
+  const seName = user.name || user.full_name || "Sales Executive";
+  const seEmail = user.email || "";
+  const empCode = user.employee_code || user.employee_id || "";
   const seRole = user.role || "Sales Executive";
   const seInitials = (seName.split(" ").map((w) => w[0]).join("").slice(0, 2) || "SE").toUpperCase();
 
@@ -572,9 +572,11 @@ export default function SalesLayout() {
           };
           setProfile(mapped);
           localStorage.setItem("tc_se_profile", JSON.stringify(mapped));
+          setProfilePhoto(emp.profile_photo || null);
           if (emp.profile_photo) {
-            setProfilePhoto(emp.profile_photo);
             localStorage.setItem("tc_se_photo", emp.profile_photo);
+          } else {
+            localStorage.removeItem("tc_se_photo");
           }
           if (emp.documents) {
             try {
@@ -612,9 +614,7 @@ export default function SalesLayout() {
           dbPayload[key] = null;
         }
       }
-      if (profilePhoto) {
-        dbPayload.profile_photo = profilePhoto;
-      }
+      dbPayload.profile_photo = profilePhoto || null;
       dbPayload.documents = JSON.stringify(documentsList);
       
       const res = await hrmsAPI.updateEmployee("self", dbPayload);
@@ -634,9 +634,11 @@ export default function SalesLayout() {
       setProfile(normalizedProfile);
       localStorage.setItem("tc_se_profile", JSON.stringify(normalizedProfile));
       
+      setProfilePhoto(freshEmployee.profile_photo || null);
       if (freshEmployee.profile_photo) {
-        setProfilePhoto(freshEmployee.profile_photo);
         localStorage.setItem("tc_se_photo", freshEmployee.profile_photo);
+      } else {
+        localStorage.removeItem("tc_se_photo");
       }
       if (freshEmployee.documents) {
         try {
@@ -654,9 +656,14 @@ export default function SalesLayout() {
       }
     } catch (err) {
       console.error(err);
-      const errMsg = err.detail
-        ? (typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail))
-        : (err.message || "Failed to save profile");
+      let errMsg = "Failed to save profile";
+      if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+        errMsg = err.errors.map(e => `${e.field || "field"}: ${e.message}`).join(", ");
+      } else if (err.detail) {
+        errMsg = typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail);
+      } else if (err.message) {
+        errMsg = err.message;
+      }
       showToast(`Error: ${errMsg}`, "error");
     }
   };

@@ -176,3 +176,47 @@ async def get_ceo_customer_directory(
         data=data,
         message="CEO Customer Directory retrieved successfully"
     )
+
+
+@router.post("/sales-reports", response_model=StandardResponse)
+async def save_sales_report(
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    service: ReportsService = Depends(get_service)
+):
+    """Save as draft or submit Weekly/Monthly Sales Report."""
+    res = service.save_sales_report(data, user_payload)
+    return StandardResponse.success_response(
+        data=res,
+        message="Sales report saved/submitted successfully"
+    )
+
+
+@router.get("/sales-reports", response_model=StandardResponse)
+async def get_sales_reports(
+    user_payload: dict = Depends(get_current_user_payload),
+    service: ReportsService = Depends(get_service)
+):
+    """Retrieve all accessible Weekly/Monthly Sales Reports."""
+    res = service.get_sales_reports(user_payload)
+    return StandardResponse.success_response(
+        data=res,
+        message="Sales reports retrieved successfully"
+    )
+
+
+@router.put("/sales-reports/{report_id}/review", response_model=StandardResponse)
+async def review_sales_report(
+    report_id: str,
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    service: ReportsService = Depends(get_service)
+):
+    """Submit review feedback / comments on a manager's report by the CEO."""
+    status = data.get("status") or "Reviewed"
+    remarks = data.get("ceo_remarks") or data.get("remarks") or ""
+    res = service.review_sales_report(report_id, status, remarks, user_payload)
+    return StandardResponse.success_response(
+        data=res,
+        message="Sales report reviewed successfully"
+    )

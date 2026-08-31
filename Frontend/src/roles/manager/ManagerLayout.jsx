@@ -137,9 +137,9 @@ const navItems = [
 
 const PROFILE_DEFAULTS = {
   fullName: '',
-  employeeId: 'MGR-001',
+  employeeId: '',
   officialEmail: '',
-  phone: '+91 98765 00099',
+  phone: '',
   role: 'Sales Manager',
   team: 'Sales & Business Development',
   designation: 'Senior Sales Manager',
@@ -310,11 +310,11 @@ export default function ManagerLayout() {
     showToast("Sidebar layout reset to default.", "info");
   };
 
-  const managerName = currentUser.name || 'Sales Manager'
+  const managerName = currentUser.name || currentUser.full_name || 'Sales Manager'
   const managerRole = currentUser.role || 'Sales Manager'
-  const managerEmail = currentUser.email || 'manager@tconnect.com'
+  const managerEmail = currentUser.email || ''
   const managerInitials = currentUser.initials || (managerName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()) || 'SM'
-  const empCode = currentUser.employee_code || currentUser.employee_id || 'MGR-001'
+  const empCode = currentUser.employee_code || currentUser.employee_id || ''
 
   // ── Profile State ──────────────────────────────────────────────────────────
   const [profile, setProfile] = useState(() => {
@@ -337,7 +337,7 @@ export default function ManagerLayout() {
   useEffect(() => {
     if (!myProfileOpen) return
 
-    const code = currentUser.employee_id || currentUser.auth_user_id || currentUser.id || empCode || 'MGR-001'
+    const code = 'self'
     hrmsAPI.getEmployeeById(code)
       .then((res) => {
         if (res && res.data) {
@@ -350,9 +350,11 @@ export default function ManagerLayout() {
           setProfile(mapped)
           originalProfileRef.current = { ...mapped }
           localStorage.setItem('tc_manager_profile', JSON.stringify(mapped))
+          setProfilePhoto(emp.profile_photo || null)
           if (emp.profile_photo) {
-            setProfilePhoto(emp.profile_photo)
             localStorage.setItem('tc_manager_photo', emp.profile_photo)
+          } else {
+            localStorage.removeItem('tc_manager_photo')
           }
           if (emp.documents) {
             try {
@@ -393,7 +395,7 @@ export default function ManagerLayout() {
     if (saving) return;
     setSaving(true)
     try {
-      const code = currentUser.employee_id || currentUser.auth_user_id || currentUser.id || empCode
+      const code = 'self'
       if (!code) throw new Error("No employee identifier found.")
 
       // ── Build change diff ─────────────────────────────────────────────────
@@ -454,9 +456,12 @@ export default function ManagerLayout() {
 
       // Always include documents and profile_photo in payload
       dbPayload.documents = JSON.stringify(documentsList)
-      if (profilePhoto) dbPayload.profile_photo = profilePhoto
+      dbPayload.profile_photo = profilePhoto || null
 
-      if (changedLabels.length === 0) {
+      const isPhotoChanged = profilePhoto !== localStorage.getItem('tc_manager_photo')
+      const isDocsChanged = JSON.stringify(documentsList) !== localStorage.getItem('tc_manager_documents')
+
+      if (changedLabels.length === 0 && !isPhotoChanged && !isDocsChanged) {
         showToast('No changes to save.', 'info')
         setShowProfileConfirm(false)
         if (!keepEditing) setEditMode(false)
@@ -479,9 +484,11 @@ export default function ManagerLayout() {
       originalProfileRef.current = { ...freshProfile }
       localStorage.setItem('tc_manager_profile', JSON.stringify(freshProfile))
 
+      setProfilePhoto(freshEmployee.profile_photo || null)
       if (freshEmployee.profile_photo) {
-        setProfilePhoto(freshEmployee.profile_photo)
         localStorage.setItem('tc_manager_photo', freshEmployee.profile_photo)
+      } else {
+        localStorage.removeItem('tc_manager_photo')
       }
       if (freshEmployee.documents) {
         try {
@@ -498,9 +505,14 @@ export default function ManagerLayout() {
       if (!keepEditing) setEditMode(false)
     } catch (err) {
       console.error(err)
-      const errMsg = err.detail
-        ? (typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail))
-        : (err.message || "Failed to save profile")
+      let errMsg = "Failed to save profile"
+      if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+        errMsg = err.errors.map(e => `${e.field || "field"}: ${e.message}`).join(", ")
+      } else if (err.detail) {
+        errMsg = typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail)
+      } else if (err.message) {
+        errMsg = err.message
+      }
       showToast(`Error: ${errMsg}`, 'error')
     } finally {
       setSaving(false)

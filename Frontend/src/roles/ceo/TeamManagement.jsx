@@ -211,8 +211,19 @@ function TeamManagement() {
     setShowModal(true)
   }
 
-  const handleOpenEdit = (emp) => {
+  const handleOpenEdit = async (emp) => {
     setEditingEmp(emp)
+    
+    let salaryVal = 35000;
+    try {
+      const salRes = await hrmsAPI.getSalaryByEmployeeId(emp.employee_id || emp.id);
+      if (salRes && salRes.data) {
+        salaryVal = salRes.data.monthly_salary || 0;
+      }
+    } catch (e) {
+      console.warn("Failed to load salary details:", e);
+    }
+
     setFormData({
       name: emp.name,
       email: emp.email,
@@ -224,6 +235,12 @@ function TeamManagement() {
       reporting_manager_name: emp.reporting_manager_name || '',
       reporting_manager_email: emp.reporting_manager_email || '',
       status: emp.status,
+      monthlySalary: salaryVal,
+      annualLeaves: emp.annual_leaves ?? emp.annualLeaves ?? 12,
+      sickLeaves: emp.sick_leaves ?? emp.sickLeaves ?? 10,
+      otherLeaves: emp.other_leaves ?? emp.otherLeaves ?? 10,
+      halfDayPermissions: emp.half_day_permissions ?? emp.halfDayPermissions ?? 6,
+      shortPermissions: emp.short_permissions ?? emp.shortPermissions ?? 2,
     })
     setShowModal(true)
   }
@@ -274,6 +291,23 @@ function TeamManagement() {
           reporting_manager_name: mName,
           reporting_manager_email: mEmail,
         })
+
+        // Save leaves direct to hrms
+        await hrmsAPI.updateEmployee(editingEmp.employee_id || editingEmp.id, {
+          annual_leaves: Number(formData.annualLeaves || 12),
+          sick_leaves: Number(formData.sickLeaves || 10),
+          other_leaves: Number(formData.otherLeaves || 10),
+          half_day_permissions: Number(formData.halfDayPermissions || 6),
+          short_permissions: Number(formData.shortPermissions || 2),
+        })
+
+        // Save salary direct to hrms.salaries
+        if (formData.monthlySalary !== undefined) {
+          await hrmsAPI.updateSalary(editingEmp.employee_id || editingEmp.id, {
+            monthly_salary: Number(formData.monthlySalary || 0)
+          })
+        }
+
         showToast(`Employee "${formData.name}" details updated successfully!`, 'success')
       } catch (err) {
         showToast('Updated employee details locally', 'info')
@@ -792,6 +826,79 @@ function TeamManagement() {
                   </select>
                 </div>
               </div>
+
+              {editingEmp && (
+                <>
+                  <div className="border-t border-slate-100 my-4" />
+                  <div className="space-y-3">
+                    <h4 className="font-black text-slate-800 text-xs uppercase tracking-wider text-left">Leave & Salary Allocation</h4>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs text-left">
+                      <div>
+                        <label className="block text-slate-600 font-bold mb-1">Annual Leaves</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={formData.annualLeaves || 0}
+                          onChange={(e) => setFormData({ ...formData, annualLeaves: Number(e.target.value) })}
+                          className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-800 outline-none bg-slate-50 focus:border-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 font-bold mb-1">Sick Leaves</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={formData.sickLeaves || 0}
+                          onChange={(e) => setFormData({ ...formData, sickLeaves: Number(e.target.value) })}
+                          className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-800 outline-none bg-slate-50 focus:border-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 font-bold mb-1">Other Leaves</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={formData.otherLeaves || 0}
+                          onChange={(e) => setFormData({ ...formData, otherLeaves: Number(e.target.value) })}
+                          className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-800 outline-none bg-slate-50 focus:border-blue-600"
+                        />
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs mt-2 text-left">
+                      <div>
+                        <label className="block text-slate-600 font-bold mb-1">Half-Day Slots</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={formData.halfDayPermissions || 0}
+                          onChange={(e) => setFormData({ ...formData, halfDayPermissions: Number(e.target.value) })}
+                          className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-800 outline-none bg-slate-50 focus:border-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 font-bold mb-1">Short Perm (Hrs)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={formData.shortPermissions || 0}
+                          onChange={(e) => setFormData({ ...formData, shortPermissions: Number(e.target.value) })}
+                          className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-800 outline-none bg-slate-50 focus:border-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-slate-600 font-bold mb-1">Monthly Salary (₹)</label>
+                        <input
+                          type="number"
+                          min={0}
+                          value={formData.monthlySalary || 0}
+                          onChange={(e) => setFormData({ ...formData, monthlySalary: Number(e.target.value) })}
+                          className="w-full rounded-xl border border-slate-200 p-2.5 font-bold text-slate-850 outline-none bg-amber-50/55 focus:border-blue-600"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
 
               <div className="flex justify-end gap-2 pt-4 border-t border-slate-100">
                 <button

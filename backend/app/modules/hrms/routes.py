@@ -14,10 +14,44 @@ def get_service() -> HRMSService:
     return HRMSService()
 
 
-# ── Helper: resolve the best lookup identifier for the current user ────────────
-# When the JWT sub / user_id is a nil UUID (00000000-...) the DB lookup fails.
-# We prefer employee_code (always stored in user_metadata), then the user_id,
-# and finally the email — which is always present and reliably unique.
+
+import logging
+logger = logging.getLogger("hrms_routes")
+
+def _resolve_and_link_self(user_payload: dict, service) -> str:
+    sub = user_payload.get("sub")
+    email = (user_payload.get("email") or user_payload.get("user_metadata", {}).get("email") or "").lower().strip()
+    
+    # Try finding by UUID
+    if sub:
+        try:
+            emp = service.repo.get_employee_by_id(sub)
+            if emp:
+                return sub
+        except Exception:
+            pass
+            
+    # Try finding by email
+    if email:
+        try:
+            emp = service.repo.get_employee_by_id(email)
+            if emp:
+                emp_uuid = emp.get("employee_id") or emp.get("user_id") or emp.get("auth_user_id")
+                if sub and emp_uuid != sub:
+                    logger.info(f"Auto-linking employee {email} to auth UUID {sub}")
+                    service.repo.update_employee(email, {
+                        "employee_id": sub,
+                        "user_id": sub,
+                        "auth_user_id": sub
+                    })
+                return sub or email
+        except Exception as e:
+            logger.warning(f"Error during self resolution auto-linking: {e}")
+            
+    # Fallback to normal resolution
+    return _best_self_identifier(user_payload)
+
+
 def _best_self_identifier(user_payload: dict) -> str:
     meta = user_payload.get("user_metadata") or {}
 
@@ -117,7 +151,7 @@ async def get_employee(
     ).strip()
 
     if emp_id == current_emp_code or emp_id.lower() == "self" or emp_id == current_user_id:
-        emp_id = _best_self_identifier(user_payload)
+        emp_id = _resolve_and_link_self(user_payload, service)
 
     allowed = get_allowed_user_identifiers(user_payload)
     emp = service.get_employee(emp_id)
@@ -162,7 +196,7 @@ async def update_employee(
         or emp_id.lower() == "self"
     )
     if is_self:
-        emp_id = _best_self_identifier(user_payload)
+        emp_id = _resolve_and_link_self(user_payload, service)
 
     # ── Permission guard ────────────────────────────────────────────────────
     if not is_self:
@@ -311,3 +345,74 @@ async def delete_employee(
         data={"deleted": True},
         message="Employee profile deleted successfully"
     )
+
+
+# ── Salary Management Endpoints (Admin and CEO Only) ──────────────────────────
+from app.modules.hrms.schemas import SalaryUpdate
+
+@router.get("/salaries", response_model=StandardResponse)
+async def list_salaries(
+    user_payload: dict = Depends(get_current_user_payload),
+    service: HRMSService = Depends(get_service)
+):
+    """List all employee salaries (Admin and CEO only)."""
+    user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+    if user_role not in ("admin", "super_admin", "ceo"):
+        raise HTTPException(status_code=403, detail="Not authorized to access salary data")
+    
+    salaries = service.repo.get_salaries()
+    return StandardResponse.success_response(
+        data=salaries,
+        message="Salaries list retrieved successfully"
+    )
+
+@router.get("/employees/{emp_id}/salary", response_model=StandardResponse)
+async def get_salary(
+    emp_id: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    service: HRMSService = Depends(get_service)
+):
+    """Get employee salary details (Admin and CEO only)."""
+    user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+    if user_role not in ("admin", "super_admin", "ceo"):
+        raise HTTPException(status_code=403, detail="Not authorized to access salary data")
+    
+    salary = service.repo.get_salary_by_employee_id(emp_id)
+    if not salary:
+        raise HTTPException(status_code=404, detail="Salary record not found for employee")
+    
+    return StandardResponse.success_response(
+        data=salary,
+        message="Salary details retrieved successfully"
+    )
+
+@router.put("/employees/{emp_id}/salary", response_model=StandardResponse)
+async def update_salary(
+    emp_id: str,
+    data: SalaryUpdate,
+    user_payload: dict = Depends(get_current_user_payload),
+    service: HRMSService = Depends(get_service)
+):
+    """Update employee salary details (Admin and CEO only)."""
+    user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+    if user_role not in ("admin", "super_admin", "ceo"):
+        raise HTTPException(status_code=403, detail="Not authorized to access salary data")
+    
+    try:
+        updated = service.repo.update_salary(emp_id, data.monthly_salary)
+        create_audit_log(
+            "SALARY_UPDATED", "hrms.salaries", user_payload,
+            entity_id=emp_id,
+            module="HRMS",
+            description=f"Salary updated for employee {emp_id} to {data.monthly_salary}",
+            new_value={"monthly_salary": data.monthly_salary}
+        )
+        return StandardResponse.success_response(
+            data=updated,
+            message="Salary details updated successfully"
+        )
+    except ValueError as val_err:
+        raise HTTPException(status_code=404, detail=str(val_err))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to update salary: {e}")
+

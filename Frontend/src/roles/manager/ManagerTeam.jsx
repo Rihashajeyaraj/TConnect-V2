@@ -99,6 +99,60 @@ export default function ManagerTeam() {
       return cached ? JSON.parse(cached) : []
     } catch { return [] }
   })
+  const [attendanceSearch, setAttendanceSearch] = useState('')
+  const [attendanceTypeFilter, setAttendanceTypeFilter] = useState('All')
+
+  const teamLogs = React.useMemo(() => {
+    const logs = []
+    attendanceLogs.forEach(log => {
+      // Find if this log belongs to any assigned executive
+      const exec = executives.find(ex => {
+        const targetEmpCode = String(ex.employee_code || ex.employee_id || '').toLowerCase().trim();
+        const targetEmail = String(ex.email || '').toLowerCase().trim();
+        const targetName = String(ex.name || '').toLowerCase().trim();
+
+        const logEmpCode = String(log.employee_id || log.employee_code || log.emp_code || log.user_id || '').toLowerCase().trim();
+        const logEmail = String(log.email || log.user_email || '').toLowerCase().trim();
+        const logName = String(log.name || log.employee_name || '').toLowerCase().trim();
+
+        if (targetEmpCode && logEmpCode && targetEmpCode === logEmpCode) return true;
+        if (targetEmail && logEmail && targetEmail === logEmail) return true;
+        if (targetName && logName && (logName.includes(targetName) || targetName.includes(logName))) return true;
+
+        const targetFirstName = targetName.split(/\s+/)[0];
+        const logFirstName = logName.split(/\s+/)[0];
+        if (targetFirstName && logFirstName && targetFirstName.length > 2 && targetFirstName === logFirstName) return true;
+
+        return false;
+      });
+
+      if (exec) {
+        const checkInAddr = log.check_in_address || log.loginLocation || log.location || '';
+        const isClientVisit = checkInAddr.startsWith("CLIENT_VISIT_DESTINATION:::");
+        
+        logs.push({
+          ...log,
+          employeeName: exec.name,
+          employeeCode: exec.employee_code,
+          attendanceType: isClientVisit ? "Client Visit" : "Office",
+          isClientVisit,
+        });
+      }
+    });
+    return logs;
+  }, [attendanceLogs, executives]);
+
+  const filteredTeamLogs = React.useMemo(() => {
+    return teamLogs.filter(log => {
+      const matchesType = attendanceTypeFilter === 'All' || log.attendanceType === attendanceTypeFilter;
+      const matchesSearch = attendanceSearch ? (
+        log.employeeName.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
+        log.employeeCode.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
+        (log.check_in_address || log.loginLocation || '').toLowerCase().includes(attendanceSearch.toLowerCase())
+      ) : true;
+      return matchesType && matchesSearch;
+    });
+  }, [teamLogs, attendanceTypeFilter, attendanceSearch]);
 
   // Filter leave requests to only include assigned executives and exclude manager/admin/ceo requests
   const filteredLeaveRequests = React.useMemo(() => {
@@ -1170,118 +1224,102 @@ export default function ManagerTeam() {
               </button>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto pr-2 pb-4">
-              {executives.length === 0 ? (
-                 <div className="col-span-full py-16 text-center text-slate-500 font-bold text-sm bg-white border border-slate-200 rounded-3xl">
-                   No executives assigned to you.
-                 </div>
+            {/* Toggle Filter and Search */}
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs text-xs">
+              <div className="flex bg-slate-200/60 p-1 rounded-xl">
+                {['All', 'Office', 'Client Visit'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setAttendanceTypeFilter(tab)}
+                    className={`px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                      attendanceTypeFilter === tab ? 'bg-[#0b3c5d] text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                    }`}
+                  >
+                    {tab === 'All' ? '🌐 All logs' : tab === 'Office' ? '🏢 Office' : '📍 Client Visit'}
+                  </button>
+                ))}
+              </div>
+
+              <div className="relative flex-1 max-w-sm">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  value={attendanceSearch}
+                  onChange={(e) => setAttendanceSearch(e.target.value)}
+                  placeholder="Search by Employee, Code, Location..."
+                  className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#0b3c5d]"
+                />
+              </div>
+            </div>
+
+            {/* Attendance Table */}
+            <div className="flex-1 overflow-y-auto bg-white border border-slate-200 rounded-3xl p-4 shadow-xs">
+              {filteredTeamLogs.length === 0 ? (
+                <div className="py-16 text-center text-slate-500 font-bold text-xs italic">
+                  No attendance records found matching filters.
+                </div>
               ) : (
-                executives.map((exec, idx) => {
-                  const execKey = exec.id || `exec_${idx}`;
-                  const isExpanded = !!expandedCards[execKey];
-                  
-                  // Filter logs for this executive
-                  const targetEmpCode = String(exec.employee_code || exec.employee_id || '').toLowerCase().trim();
-                  const targetEmail = String(exec.email || '').toLowerCase().trim();
-                  const targetName = String(exec.name || '').toLowerCase().trim();
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs font-semibold text-slate-700 border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-200 text-slate-400 font-black uppercase text-[10px] tracking-wider">
+                        <th className="pb-3 pl-2">Employee</th>
+                        <th className="pb-3">Attendance Type</th>
+                        <th className="pb-3">Date</th>
+                        <th className="pb-3">Check In</th>
+                        <th className="pb-3">Check Out</th>
+                        <th className="pb-3">Status</th>
+                        <th className="pb-3">Location / Visit Destination</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 text-slate-800 font-medium">
+                      {filteredTeamLogs.map((log, idx) => {
+                        const dateStr = log.attendance_date || log.date || (log.check_in_time ? String(log.check_in_time).substring(0, 10) : '—');
+                        const checkInTime = formatTelemetryTime(log.check_in_time || log.punch_in_time || log.loginTime);
+                        const checkOutTime = formatTelemetryTime(log.check_out_time || log.punch_out_time || log.logoutTime) || '—';
+                        
+                        let locationDisplay = log.check_in_address || log.loginLocation || 'Office / Field Site';
+                        if (log.isClientVisit) {
+                          try {
+                            const parsed = JSON.parse(locationDisplay.replace('CLIENT_VISIT_DESTINATION:::', ''));
+                            locationDisplay = `Client: ${parsed.title} (${parsed.company_name}) at ${parsed.address}`;
+                          } catch {
+                            locationDisplay = locationDisplay.replace('CLIENT_VISIT_DESTINATION:::', 'Client Visit Destination');
+                          }
+                        }
 
-                  const execLogs = attendanceLogs.filter((log) => {
-                    const logEmpCode = String(log.employee_id || log.employee_code || log.emp_code || log.user_id || '').toLowerCase().trim();
-                    const logEmail = String(log.email || log.user_email || '').toLowerCase().trim();
-                    const logName = String(log.name || log.employee_name || '').toLowerCase().trim();
-
-                    if (targetEmpCode && logEmpCode && targetEmpCode === logEmpCode) return true;
-                    if (targetEmail && logEmail && targetEmail === logEmail) return true;
-                    if (targetName && logName && (logName.includes(targetName) || targetName.includes(logName))) return true;
-
-                    const targetFirstName = targetName.split(/\s+/)[0];
-                    const logFirstName = logName.split(/\s+/)[0];
-                    if (targetFirstName && logFirstName && targetFirstName.length > 2 && targetFirstName === logFirstName) return true;
-
-                    return false;
-                  });
-
-                  // Group by date
-                  const logsByDate = {};
-                  execLogs.forEach(log => {
-                    const logDate = formatDateToYYYYMMDD(log.attendance_date || log.date || log.created_at || log.check_in_time) || 'Unknown Date';
-                    if (!logsByDate[logDate]) logsByDate[logDate] = [];
-                    logsByDate[logDate].push(log);
-                  });
-
-                  const dates = Object.keys(logsByDate).sort((a,b) => new Date(b) - new Date(a));
-
-                  return (
-                    <div key={execKey} className={`bg-white border rounded-3xl p-5 space-y-4 transition hover:shadow-md ${isExpanded ? 'border-mgr-secondary-400 ring-1 ring-mgr-secondary-500/10 col-span-full' : 'border-slate-200'}`}>
-                      <div className="flex items-center justify-between">
-                         <div className="space-y-0.5">
-                            <span className="bg-slate-100 text-slate-800 border border-slate-300 px-1.5 py-0.5 rounded font-mono font-black text-[9px] uppercase tracking-wider">
-                              {exec.employee_code || 'EMP-112'}
-                            </span>
-                            <h4 className="font-black text-slate-900 text-sm mt-1">{exec.name || 'Sales Executive'}</h4>
-                            <p className="text-[10px] font-semibold text-slate-400">{exec.email || 'No email'}</p>
-                         </div>
-                         <div className="bg-mgr-secondary-50 border border-mgr-secondary-100 p-2 rounded-xl text-center min-w-[70px]">
-                            <span className="block text-[9px] font-bold text-mgr-secondary-700 uppercase">Sessions</span>
-                            <span className="block font-black text-mgr-secondary-950 text-sm">{execLogs.length}</span>
-                         </div>
-                      </div>
-
-                      <button
-                        onClick={() => toggleExpandCard(execKey)}
-                        className="w-full py-2 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-[10px] font-black text-slate-600 transition flex items-center justify-center gap-1"
-                      >
-                        {isExpanded ? (
-                          <>Collapse Attendance <ChevronUp size={12} /></>
-                        ) : (
-                          <>View Login Sessions <ChevronDown size={12} /></>
-                        )}
-                      </button>
-
-                      {isExpanded && (
-                        <div className="space-y-4 pt-4 border-t border-slate-100 animate-in slide-in-from-top-2 duration-200">
-                           {dates.length === 0 ? (
-                              <div className="text-slate-500 font-bold text-xs p-4 bg-slate-50 rounded-2xl text-center border border-slate-200">
-                                No attendance sessions found for this executive.
-                              </div>
-                           ) : (
-                              dates.map(dateStr => (
-                                 <div key={dateStr} className="space-y-2 bg-slate-50/50 p-4 rounded-2xl border border-slate-200">
-                                    <h5 className="font-black text-slate-700 text-xs uppercase tracking-wider border-b border-slate-200 pb-2">{dateStr}</h5>
-                                    <div className="space-y-2 pt-1">
-                                       {logsByDate[dateStr].map((sess, i) => {
-                                          const sIn = sess.check_in_time || sess.punch_in_time || sess.clockIn || sess.loginTime || sess.login_time;
-                                          const sOut = sess.check_out_time || sess.punch_out_time || sess.clockOut || sess.logoutTime || sess.logout_time;
-                                          const inFmt = formatTelemetryTime(sIn);
-                                          const outFmt = formatTelemetryTime(sOut) || (sIn ? 'In Progress (Active)' : '—');
-                                          const locIn = sess.check_in_address || sess.loginLocation || sess.location || 'Office / Field Site';
-                                          const locOut = sess.check_out_address || sess.logoutLocation || sess.location || (sIn ? 'Active / Field Site' : '—');
-                                          const dur = calculateDuration(sIn, sOut);
-                                          return (
-                                             <div key={i} className="bg-white border border-slate-200 shadow-xs rounded-xl p-3 flex flex-col md:flex-row justify-between md:items-center gap-3">
-                                                <div className="space-y-1.5 flex-1 min-w-0">
-                                                   <div className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                                                      🟢 In: <span className="font-black text-mgr-secondary-950 whitespace-nowrap">{inFmt}</span> <span className="text-slate-500 font-medium italic truncate">({String(locIn).replace('CLIENT_VISIT_DESTINATION:::', '')})</span>
-                                                   </div>
-                                                   <div className="text-xs font-bold text-slate-600 flex items-center gap-2">
-                                                      🔴 Out: <span className="font-black text-rose-950 whitespace-nowrap">{outFmt}</span> <span className="text-slate-500 font-medium italic truncate">({String(locOut).replace('CLIENT_VISIT_DESTINATION:::', '')})</span>
-                                                   </div>
-                                                </div>
-                                                <div className="bg-mgr-secondary-100 text-mgr-secondary-900 border border-mgr-secondary-200 font-black px-4 py-2 rounded-xl shrink-0 text-center text-xs">
-                                                   ⏱️ {dur}
-                                                </div>
-                                             </div>
-                                          )
-                                       })}
-                                    </div>
-                                 </div>
-                              ))
-                           )}
-                        </div>
-                      )}
-                    </div>
-                  )
-                })
+                        return (
+                          <tr key={log.id || idx} className="hover:bg-slate-50/50 transition">
+                            <td className="py-3 pl-2">
+                              <p className="font-black text-slate-900">{log.employeeName}</p>
+                              <p className="text-[10px] text-slate-400 font-mono">[{log.employeeCode}]</p>
+                            </td>
+                            <td className="py-3">
+                              <span className={`inline-flex rounded-md px-2 py-0.5 text-[9px] font-black border uppercase tracking-wider ${
+                                log.isClientVisit ? 'bg-sky-50 text-sky-700 border-sky-200' : 'bg-slate-100 text-slate-700 border-slate-200'
+                              }`}>
+                                {log.attendanceType}
+                              </span>
+                            </td>
+                            <td className="py-3">{dateStr}</td>
+                            <td className="py-3 font-bold text-slate-900">{checkInTime || '—'}</td>
+                            <td className="py-3 font-bold text-slate-900">{checkOutTime}</td>
+                            <td className="py-3">
+                              <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[9px] font-black border uppercase tracking-wider ${
+                                log.status === 'Present' || String(log.status || '').toLowerCase().includes('present') ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                              }`}>
+                                {log.status || 'Present'}
+                              </span>
+                            </td>
+                            <td className="py-3 text-slate-500 font-normal max-w-[280px] truncate" title={locationDisplay}>
+                              {locationDisplay}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </div>
           </div>

@@ -202,6 +202,9 @@ export const hrmsAPI = {
   getEmployeeById: (id) => request(`/hrms/employees/${id}`),
   updateEmployee: (id, data) => request(`/hrms/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteEmployee: (id) => request(`/hrms/employees/${id}`, { method: 'DELETE' }),
+  getSalaries: () => request('/hrms/salaries'),
+  getSalaryByEmployeeId: (empId) => request(`/hrms/employees/${empId}/salary`),
+  updateSalary: (empId, data) => request(`/hrms/employees/${empId}/salary`, { method: 'PUT', body: JSON.stringify(data) }),
 }
 
 export const attendanceAPI = {
@@ -269,6 +272,9 @@ export const reportAPI = {
     const query = new URLSearchParams(params).toString()
     return request(`/reports/ceo/sales-overview${query ? `?${query}` : ''}`)
   },
+  getSalesReports: () => request('/reports/sales-reports'),
+  submitSalesReport: (data) => request('/reports/sales-reports', { method: 'POST', body: JSON.stringify(data) }),
+  reviewSalesReport: (id, data) => request(`/reports/sales-reports/${id}/review`, { method: 'PUT', body: JSON.stringify(data) }),
 }
 
 export const dashboardAPI = {

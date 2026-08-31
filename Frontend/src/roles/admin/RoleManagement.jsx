@@ -547,10 +547,10 @@ function RoleManagement() {
   return (
     <div className="space-y-6 font-sans">
       {/* Top Title Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white border border-[#DCE3EF] rounded-2xl p-6 shadow-xs">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-white via-white to-[#D4ECFC]/25 border border-[#64B5F6]/25 rounded-3xl p-6 shadow-xs">
         <div>
-          <h1 className="text-2xl font-extrabold text-[#071A45] tracking-tight flex items-center gap-2">
-            <ShieldCheck className="w-7 h-7 text-[#123A8C]" /> Role & Permission Management (RBAC)
+          <h1 className="text-2xl font-extrabold text-[#0B2545] tracking-tight flex items-center gap-2">
+            <ShieldCheck className="w-7 h-7 text-[#1E88E5]" /> Role & Permission Management (RBAC)
           </h1>
           <p className="text-xs text-[#64748B] font-semibold mt-1">
             Control what each role can access and what actions they can perform across TwiteConnect.
@@ -558,9 +558,9 @@ function RoleManagement() {
         </div>
         <button
           onClick={() => setShowAddRoleModal(true)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-[#061A4D] hover:bg-[#123A8C] text-white text-xs font-extrabold rounded-xl shadow-md transition-all cursor-pointer"
+          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#0B2545] to-[#1E88E5] hover:from-[#1E88E5] hover:to-[#64B5F6] text-white text-xs font-extrabold rounded-xl shadow-md shadow-[#0B2545]/15 transition-all cursor-pointer"
         >
-          <Plus className="w-4 h-4 text-[#F2C76E]" /> Create Custom Role
+          <Plus className="w-4 h-4 text-white" /> Create Custom Role
         </button>
       </div>
 
@@ -574,7 +574,7 @@ function RoleManagement() {
           <div className="flex items-center gap-2 shrink-0">
             <button
               onClick={() => buildRenderPermsForRole(selectedRole)}
-              className="px-3 py-1.5 bg-white border border-slate-200 text-[#071A45] hover:bg-slate-50 text-[11px] font-extrabold rounded-lg transition"
+              className="px-3 py-1.5 bg-white border border-slate-200 text-[#0B2545] hover:bg-slate-50 text-[11px] font-extrabold rounded-lg transition"
             >
               Discard Changes
             </button>
@@ -591,8 +591,8 @@ function RoleManagement() {
       {/* Two Column Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
         {/* Left Column: Roles list */}
-        <div className="lg:col-span-4 bg-white p-5 rounded-2xl border border-[#DCE3EF] shadow-xs space-y-4 lg:sticky lg:top-6">
-          <h2 className="font-extrabold text-[#071A45] text-sm flex items-center justify-between border-b pb-2">
+        <div className="lg:col-span-4 bg-gradient-to-br from-white via-white to-[#D4ECFC]/10 p-5 rounded-3xl border border-[#64B5F6]/25 shadow-xs space-y-4 lg:sticky lg:top-6">
+          <h2 className="font-extrabold text-[#0B2545] text-sm flex items-center justify-between border-b pb-2">
             <span>System User Roles ({roles.length})</span>
           </h2>
 
@@ -603,7 +603,7 @@ function RoleManagement() {
               placeholder="Search roles..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-[#DCE3EF] rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#123A8C] font-semibold"
+              className="w-full pl-9 pr-4 py-2.5 bg-[#EEF4F8]/50 border border-[#64B5F6]/20 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#1E88E5] font-semibold"
             />
           </div>
 
@@ -614,17 +614,17 @@ function RoleManagement() {
                 <div
                   key={role.id}
                   onClick={() => handleRoleSelect(role)}
-                  className={`p-4 rounded-xl border transition cursor-pointer relative flex flex-col justify-between ${
+                  className={`p-4 rounded-2xl border transition cursor-pointer relative flex flex-col justify-between ${
                     isSelected
-                      ? 'border-[#123A8C] bg-blue-50/20 shadow-xs ring-2 ring-[#123A8C]/15'
-                      : 'border-[#DCE3EF] bg-slate-50/20 hover:bg-slate-50 hover:border-slate-350'
+                      ? 'border-[#1E88E5] bg-[#D4ECFC]/35 shadow-xs ring-2 ring-[#1E88E5]/15'
+                      : 'border-[#64B5F6]/20 bg-[#EEF4F8]/10 hover:bg-white hover:border-[#64B5F6]/50 shadow-3xs'
                   }`}
                 >
                   {isSelected && (
-                    <div className="absolute top-0 left-0 bottom-0 w-1 bg-[#D9A441] rounded-l-xl" />
+                    <div className="absolute top-0 left-0 bottom-0 w-1 bg-gradient-to-b from-[#0B2545] to-[#1E88E5] rounded-l-xl" />
                   )}
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="font-extrabold text-[#071A45] text-xs flex items-center gap-1.5 uppercase tracking-tight">
+                    <span className="font-extrabold text-[#0B2545] text-xs flex items-center gap-1.5 uppercase tracking-tight">
                       {role.name}
                       {role.isSystem && (
                         <span className="text-[9px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-black border border-slate-300">
@@ -632,8 +632,8 @@ function RoleManagement() {
                         </span>
                       )}
                     </span>
-                    <span className="text-[10px] font-bold text-[#123A8C] bg-blue-50 px-2 py-0.5 rounded border border-blue-100 flex items-center gap-1">
-                      <Users className="w-3 h-3 text-[#123A8C]" /> {role.userCount} Users
+                    <span className="text-[10px] font-bold text-[#0B2545] bg-[#D4ECFC] px-2.5 py-0.5 rounded-full border border-[#64B5F6]/25 flex items-center gap-1">
+                      <Users className="w-3 h-3 text-[#0B2545]" /> {role.userCount} Users
                     </span>
                   </div>
                   <p className="text-[11px] text-[#64748B] font-medium leading-relaxed mt-1 line-clamp-2">
@@ -647,14 +647,14 @@ function RoleManagement() {
 
         {/* Right Column: Permission Config Matrix Table */}
         {selectedRole && (
-          <div className="lg:col-span-8 bg-white p-5 rounded-2xl border border-[#DCE3EF] shadow-xs space-y-5">
+          <div className="lg:col-span-8 bg-gradient-to-br from-white via-white to-[#D4ECFC]/15 p-5 rounded-3xl border border-[#64B5F6]/25 shadow-xs space-y-5">
             {/* Header Selected Role Description info */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
               <div>
                 <div className="flex items-center gap-2">
-                  <h2 className="font-extrabold text-[#071A45] text-base">{selectedRole.name} Matrix</h2>
+                  <h2 className="font-extrabold text-[#0B2545] text-base">{selectedRole.name} Matrix</h2>
                   {selectedRole.isSystem && (
-                    <span className="text-[9px] bg-[#061A4D] text-[#F2C76E] font-black uppercase px-2 py-0.5 rounded border border-blue-900/30 shadow-2xs">
+                    <span className="text-[9px] bg-gradient-to-r from-[#0B2545] to-[#1E88E5] text-[#D4ECFC] font-black uppercase px-2 py-0.5 rounded border border-blue-900/30 shadow-sm">
                       Protected
                     </span>
                   )}
@@ -681,9 +681,9 @@ function RoleManagement() {
                 </button>
                 <button
                   onClick={handleSavePermissions}
-                  className="px-4 py-2 bg-[#061A4D] hover:bg-[#123A8C] text-white text-xs font-extrabold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  className="px-4 py-2 bg-gradient-to-r from-[#0B2545] to-[#1E88E5] hover:from-[#1E88E5] hover:to-[#64B5F6] text-white text-xs font-extrabold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#0B2545]/15"
                 >
-                  <CheckCircle2 className="w-4 h-4 text-[#F2C76E]" /> Save Changes
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Save Changes
                 </button>
               </div>
             </div>
@@ -696,7 +696,7 @@ function RoleManagement() {
                 placeholder="Search capability permissions..."
                 value={permissionSearch}
                 onChange={(e) => setPermissionSearch(e.target.value)}
-                className="w-full pl-9 pr-4 py-2.5 bg-slate-50 border border-[#DCE3EF] rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#123A8C] font-semibold"
+                className="w-full pl-9 pr-4 py-2.5 bg-[#EEF4F8]/50 border border-[#64B5F6]/20 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#1E88E5] font-semibold"
               />
             </div>
 

@@ -1,4 +1,4 @@
-from typing import Dict, Any
+from typing import Dict, Any, List
 from app.modules.reports.repository import ReportsRepository
 
 
@@ -37,3 +37,12 @@ class ReportsService:
 
     def get_ceo_customer_directory(self) -> Dict[str, Any]:
         return self.repo.get_ceo_customer_directory()
+
+    def save_sales_report(self, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        return self.repo.save_sales_report(data, user_payload)
+
+    def get_sales_reports(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        return self.repo.get_sales_reports(user_payload)
+
+    def review_sales_report(self, report_id: str, status: str, remarks: str, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        return self.repo.review_sales_report(report_id, status, remarks, user_payload)

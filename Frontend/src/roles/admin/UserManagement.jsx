@@ -259,6 +259,230 @@ const isProtectedRole = (roleName) => {
   return roleName === 'CEO / Founder' || roleName === 'Super Admin'
 }
 
+// ======================================================
+// UserDirectoryTable — simple expandable row table
+// ======================================================
+function UserDirectoryTable({
+  filteredUsers, isProtectedRole, ROLE_BADGE_CLASSES,
+  toggleUserStatus, handleOpenEditModal, handleDeleteUser,
+  handleOpenReassignModal, setSelectedEnrollUser,
+  setDuplicateErrorUser, setShowEnrollFaceModal,
+  setSelectedEmployeeProfile, setShowCredentialsModal,
+}) {
+  const [expandedId, setExpandedId] = useState(null)
+
+  if (filteredUsers.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-14 text-center">
+        <Users className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+        <p className="text-sm font-extrabold text-slate-600">No accounts found</p>
+        <p className="text-xs text-slate-400 mt-1">Try adjusting your search or filters</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+              <th className="px-4 py-3">Emp ID</th>
+              <th className="px-4 py-3">Name</th>
+              <th className="px-4 py-3">Role</th>
+              <th className="px-4 py-3">Assignment</th>
+              <th className="px-4 py-3 text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredUsers.map((user) => {
+              const isProtected = isProtectedRole(user.role)
+              const isExpanded = expandedId === user.id
+              const roleBadge = ROLE_BADGE_CLASSES[user.role] || 'bg-slate-100 text-slate-700 border-slate-200'
+              const initials = (user.name || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+              const isAssigned = !!user.reporting_manager_name
+
+              return (
+                <>
+                  {/* Main Row */}
+                  <tr
+                    key={user.id}
+                    className={`border-b border-slate-100 hover:bg-slate-50/60 transition ${
+                      isExpanded ? 'bg-slate-50/60' : ''
+                    }`}
+                  >
+                    {/* Emp ID */}
+                    <td className="px-4 py-3 font-mono text-[11px] text-slate-500 font-semibold">
+                      {user.employee_code || user.employee_id || '—'}
+                    </td>
+
+                    {/* Name */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-black text-[10px] flex items-center justify-center shrink-0">
+                          {initials}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-extrabold text-slate-900 text-xs truncate flex items-center gap-1">
+                            {user.name}
+                            {isProtected && <Lock className="w-2.5 h-2.5 text-amber-500" />}
+                          </p>
+                          <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Role */}
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[9px] font-extrabold uppercase tracking-wider ${roleBadge}`}>
+                        {user.role}
+                      </span>
+                    </td>
+
+                    {/* Assignment */}
+                    <td className="px-4 py-3">
+                      {isAssigned ? (
+                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full text-[9px] font-extrabold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Assigned
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] font-extrabold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Unassigned
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Action */}
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => setExpandedId(isExpanded ? null : user.id)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          isExpanded
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400 hover:bg-slate-50'
+                        }`}
+                      >
+                        <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                        {isExpanded ? 'Close' : 'View'}
+                      </button>
+                    </td>
+                  </tr>
+
+                  {/* Expanded Detail Panel */}
+                  {isExpanded && (
+                    <tr key={`${user.id}-expanded`} className="bg-slate-50/50">
+                      <td colSpan={5} className="px-6 py-4">
+                        <div className="border border-slate-200 rounded-xl bg-white overflow-hidden">
+
+                          {/* Panel Header */}
+                          <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-black text-[11px] flex items-center justify-center">
+                                {initials}
+                              </div>
+                              <div>
+                                <p className="font-extrabold text-slate-900 text-xs">{user.name}</p>
+                                <p className="text-[10px] text-slate-400">{user.email}</p>
+                              </div>
+                            </div>
+                            {/* Status toggle */}
+                            <button
+                              onClick={() => toggleUserStatus(user.id)}
+                              disabled={isProtected}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-extrabold transition cursor-pointer ${
+                                user.status === 'Active'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                  : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                              } ${isProtected ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${ user.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500' }`} />
+                              {user.status === 'Active' ? 'Active — click to deactivate' : 'Inactive — click to activate'}
+                            </button>
+                          </div>
+
+                          {/* Info Grid */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-y divide-slate-100">
+                            <div className="px-4 py-3">
+                              <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Department</p>
+                              <p className="text-xs font-semibold text-slate-800">{user.dept || '—'}</p>
+                            </div>
+                            <div className="px-4 py-3">
+                              <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Reporting Manager</p>
+                              <p className="text-xs font-semibold text-slate-800">{user.reporting_manager_name || 'Unassigned'}</p>
+                              {user.reporting_manager_email && (
+                                <p className="text-[10px] text-slate-400">{user.reporting_manager_email}</p>
+                              )}
+                            </div>
+                            <div className="px-4 py-3">
+                              <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Phone</p>
+                              <p className="text-xs font-semibold text-slate-800">{user.phone || '—'}</p>
+                            </div>
+                            <div className="px-4 py-3">
+                              <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Emp ID</p>
+                              <p className="text-xs font-mono font-semibold text-slate-800">{user.employee_code || user.employee_id || '—'}</p>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          {isProtected ? (
+                            <div className="px-4 py-3 border-t border-slate-100 flex items-center gap-2">
+                              <Lock className="w-3.5 h-3.5 text-amber-500" />
+                              <span className="text-xs font-bold text-slate-500">Protected account — actions restricted</span>
+                            </div>
+                          ) : (
+                            <div className="px-4 py-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                              <button
+                                onClick={() => { setDuplicateErrorUser(null); setSelectedEnrollUser(user); setShowEnrollFaceModal(true) }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              >
+                                <Camera className="w-3.5 h-3.5" /> Biometric
+                              </button>
+                              <button
+                                onClick={() => setSelectedEmployeeProfile(user)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> View Profile
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditModal(user)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" /> Edit
+                              </button>
+                              <button
+                                onClick={() => handleOpenReassignModal(user)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              >
+                                <ArrowRight className="w-3.5 h-3.5" /> Reassign
+                              </button>
+                              <button
+                                onClick={() => setShowCredentialsModal(user)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-700 text-white rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              >
+                                <Key className="w-3.5 h-3.5" /> Access Keys
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(user.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg text-[11px] font-bold transition cursor-pointer ml-auto"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function UserManagement() {
   const { showToast } = useToast()
   const location = useLocation()
@@ -854,20 +1078,35 @@ function UserManagement() {
     } catch (e) {}
   }, [users])
 
-  const handleOpenEditModal = (user) => {
+  const handleOpenEditModal = async (user) => {
     const saved = localStorage.getItem(`tc_leaves_${user.email.toLowerCase().trim()}`)
-    const leaveAllocation = saved ? JSON.parse(saved) : { annualLeaves: 12, halfDayPermissions: 6, shortPermissions: 2 }
+    const leaveAllocation = saved ? JSON.parse(saved) : { annualLeaves: 12, sickLeaves: 10, otherLeaves: 10, halfDayPermissions: 6, shortPermissions: 2 }
     
     // Load from database properties first, fallback to localStorage/defaults
     const annualLeaves = user.annual_leaves ?? user.annualLeaves ?? leaveAllocation.annualLeaves;
+    const sickLeaves = user.sick_leaves ?? user.sickLeaves ?? leaveAllocation.sickLeaves ?? 10;
+    const otherLeaves = user.other_leaves ?? user.otherLeaves ?? leaveAllocation.otherLeaves ?? 10;
     const halfDayPermissions = user.half_day_permissions ?? user.halfDayPermissions ?? leaveAllocation.halfDayPermissions;
     const shortPermissions = user.short_permissions ?? user.shortPermissions ?? leaveAllocation.shortPermissions;
+
+    let salaryVal = 35000;
+    try {
+      const salRes = await hrmsAPI.getSalaryByEmployeeId(user.employee_id || user.id);
+      if (salRes && salRes.data) {
+        salaryVal = salRes.data.monthly_salary || 0;
+      }
+    } catch (e) {
+      console.warn("Failed to load salary details:", e);
+    }
 
     setEditingUser({
       ...user,
       annualLeaves,
+      sickLeaves,
+      otherLeaves,
       halfDayPermissions,
-      shortPermissions
+      shortPermissions,
+      monthlySalary: salaryVal
     })
     setShowEditModal(true)
   }
@@ -964,6 +1203,23 @@ function UserManagement() {
         half_day_permissions: Number(editingUser.halfDayPermissions || 6),
         short_permissions: Number(editingUser.shortPermissions || 2),
       })
+
+      // Update leaves directly in hrms.employees
+      await hrmsAPI.updateEmployee(editingUser.employee_id || editingUser.id, {
+        annual_leaves: Number(editingUser.annualLeaves || 12),
+        sick_leaves: Number(editingUser.sickLeaves || 10),
+        other_leaves: Number(editingUser.otherLeaves || 10),
+        half_day_permissions: Number(editingUser.halfDayPermissions || 6),
+        short_permissions: Number(editingUser.shortPermissions || 2),
+      })
+
+      // Update salary directly in hrms.salaries
+      if (editingUser.monthlySalary !== undefined) {
+        await hrmsAPI.updateSalary(editingUser.employee_id || editingUser.id, {
+          monthly_salary: Number(editingUser.monthlySalary || 0)
+        })
+      }
+
       showToast(`User profile and access credentials updated!`, 'success')
     } catch (err) {
       showToast(`User profile updated locally`, 'info')
@@ -1145,9 +1401,7 @@ function UserManagement() {
           <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
             <Users className="w-7 h-7 text-blue-600" /> Employee & User Account Management
           </h1>
-          <p className="text-xs font-semibold text-slate-500 mt-1">
-            Create portal access emails and passwords for Sales Managers and Executives and manage hierarchy assignments.
-          </p>
+
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
@@ -1497,229 +1751,65 @@ function UserManagement() {
         </div>
       )}
 
-
       {/* ======================================================== */}
-      {/* VIEW 2: ALL USERS DIRECTORY TABLE                        */}
+      {/* VIEW 2: ALL USERS DIRECTORY — CARD GRID               */}
+      {/* ======================================================== */}
+      {/* VIEW 2: ALL USERS DIRECTORY — TABLE                    */}
       {/* ======================================================== */}
       {activeTab === 'table' && (
         <div className="space-y-4">
-          {/* Filter and Search Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row gap-3 justify-between items-center">
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+          {/* Search + Filter Bar */}
+          <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-2 items-center justify-between">
+            <div className="relative w-full sm:w-72">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
               <input
                 ref={searchInputRef}
                 type="text"
-                placeholder="Search by name, email, department..."
+                placeholder="Search name, email, department..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-semibold"
+                className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
               />
             </div>
-
-            <div className="flex flex-wrap gap-2 w-full md:w-auto">
-              {/* Role Filter */}
+            <div className="flex gap-2 flex-wrap">
               <select
                 value={selectedRole}
                 onChange={(e) => setSelectedRole(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600"
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
               >
                 <option value="ALL">All Roles</option>
                 <option value="Super Admin">Super Admin</option>
                 <option value="Sales Manager">Sales Manager</option>
                 <option value="Sales Executive">Sales Executive</option>
               </select>
-
-              {/* Status Filter */}
               <select
                 value={selectedStatus}
                 onChange={(e) => setSelectedStatus(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600"
+                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
               >
                 <option value="ALL">All Statuses</option>
-                <option value="Active">Active Users</option>
-                <option value="Inactive">Inactive Users</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
               </select>
+              <span className="self-center text-[11px] text-slate-400 font-bold">{filteredUsers.length} records</span>
             </div>
           </div>
 
-          {/* Users Data Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700 border-collapse">
-                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <th className="p-4">User Details</th>
-                    <th className="p-4">Access Email</th>
-                    <th className="p-4">Role</th>
-                    <th className="p-4">Reporting Manager</th>
-                    <th className="p-4">Department</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4 text-center">Portal Access</th>
-                    <th className="p-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-semibold">
-                  {filteredUsers.map((user) => {
-                    const isProtected = isProtectedRole(user.role)
-                    return (
-                      <tr key={user.id} className="hover:bg-slate-50/70 transition">
-                        {/* User Details */}
-                        <td className="p-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-extrabold text-xs flex items-center justify-center shadow-xs shrink-0">
-                              {user.name.split(' ').map((n) => n[0]).join('')}
-                            </div>
-                            <div>
-                              <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
-                                {user.name}
-                                {isProtected && (
-                                  <span title="Protected Account" className="text-amber-500">
-                                    <Lock className="w-3 h-3" />
-                                  </span>
-                                )}
-                              </p>
-                              <p className="text-[11px] text-slate-400 font-medium">{user.phone}</p>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Access Email */}
-                        <td className="p-4">
-                          <span className="inline-flex items-center gap-1.5 text-slate-800 font-bold">
-                            <Mail className="w-3.5 h-3.5 text-blue-600" />
-                            {user.email}
-                          </span>
-                        </td>
-
-                        {/* Role */}
-                        <td className="p-4">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-extrabold ${ROLE_BADGE_CLASSES[user.role] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                            {user.role}
-                          </span>
-                        </td>
-
-                        {/* Reporting Manager */}
-                        <td className="p-4 text-slate-700 font-bold text-xs">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {user.reporting_manager_name ? (
-                              <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
-                                👤 {user.reporting_manager_name}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-md text-[10px]">
-                                Unassigned
-                              </span>
-                            )}
-                            {!isProtected && (
-                              <button
-                                onClick={() => handleOpenReassignModal(user)}
-                                className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-md text-[10px] font-extrabold cursor-pointer transition flex items-center gap-1"
-                                title="Reassign Reporting Manager"
-                              >
-                                🔄 Reassign
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Department */}
-                        <td className="p-4 text-slate-600 font-medium">
-                          {user.dept}
-                        </td>
-
-                        {/* Status */}
-                        <td className="p-4">
-                          <button
-                            onClick={() => toggleUserStatus(user.id)}
-                            disabled={isProtected}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-extrabold transition cursor-pointer ${
-                              user.status === 'Active'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                            } ${isProtected ? 'opacity-80 cursor-not-allowed' : ''}`}
-                          >
-                            {user.status === 'Active' ? (
-                              <>
-                                <UserCheck className="w-3 h-3" /> Active
-                              </>
-                            ) : (
-                              <>
-                                <UserX className="w-3 h-3" /> Inactive
-                              </>
-                            )}
-                          </button>
-                        </td>
-
-                        {/* Portal Access Passwords */}
-                        <td className="p-4 text-center">
-                          <button
-                            onClick={() => setShowCredentialsModal(user)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
-                            title="View Portal Credentials"
-                          >
-                            <Key className="w-3 h-3 text-blue-600" /> Access Keys
-                          </button>
-                        </td>
-
-                        {/* Actions */}
-                        <td className="p-4 text-right">
-                          {isProtected ? (
-                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">
-                              🔒 Protected
-                            </span>
-                          ) : (
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => {
-                                  setDuplicateErrorUser(null)
-                                  setSelectedEnrollUser(user)
-                                  setShowEnrollFaceModal(true)
-                                }}
-                                className="p-1.5 text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition cursor-pointer active:scale-95 flex items-center justify-center"
-                                title="Enroll Biometric Face"
-                              >
-                                <Camera className="w-4.5 h-4.5" />
-                              </button>
-                              <button
-                                onClick={() => setSelectedEmployeeProfile(user)}
-                                className="p-1.5 text-teal-700 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition cursor-pointer active:scale-95 flex items-center justify-center"
-                                title="View Employee Profile"
-                              >
-                                <Eye className="w-4.5 h-4.5" />
-                              </button>
-                              <button
-                                onClick={() => handleOpenEditModal(user)}
-                                className="p-1.5 text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition cursor-pointer active:scale-95 flex items-center justify-center"
-                                title="Edit User Account"
-                              >
-                                <Edit3 className="w-4.5 h-4.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteUser(user.id)}
-                                className="p-1.5 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition cursor-pointer active:scale-95 flex items-center justify-center"
-                                title="Delete Account"
-                              >
-                                <Trash2 className="w-4.5 h-4.5" />
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-
-                  {filteredUsers.length === 0 && (
-                    <tr>
-                      <td colSpan="8" className="p-8 text-center text-slate-400 font-semibold">
-                        No employee accounts found matching the search or role criteria.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+          {/* Table */}
+          <UserDirectoryTable
+            filteredUsers={filteredUsers}
+            isProtectedRole={isProtectedRole}
+            ROLE_BADGE_CLASSES={ROLE_BADGE_CLASSES}
+            toggleUserStatus={toggleUserStatus}
+            handleOpenEditModal={handleOpenEditModal}
+            handleDeleteUser={handleDeleteUser}
+            handleOpenReassignModal={handleOpenReassignModal}
+            setSelectedEnrollUser={setSelectedEnrollUser}
+            setDuplicateErrorUser={setDuplicateErrorUser}
+            setShowEnrollFaceModal={setShowEnrollFaceModal}
+            setSelectedEmployeeProfile={setSelectedEmployeeProfile}
+            setShowCredentialsModal={setShowCredentialsModal}
+          />
         </div>
       )}
 
@@ -2194,6 +2284,28 @@ function UserManagement() {
                     />
                   </div>
                   <div>
+                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Sick Leaves</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editingUser.sickLeaves || 10}
+                      onChange={(e) => setEditingUser({ ...editingUser, sickLeaves: Number(e.target.value) })}
+                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Other Leaves</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editingUser.otherLeaves || 10}
+                      onChange={(e) => setEditingUser({ ...editingUser, otherLeaves: Number(e.target.value) })}
+                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mt-2">
+                  <div>
                     <label className="block text-slate-600 font-bold mb-1 text-[10px]">Half-Day Slots</label>
                     <input
                       type="number"
@@ -2211,6 +2323,16 @@ function UserManagement() {
                       value={editingUser.shortPermissions || 2}
                       onChange={(e) => setEditingUser({ ...editingUser, shortPermissions: Number(e.target.value) })}
                       className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Monthly Salary (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editingUser.monthlySalary || 0}
+                      onChange={(e) => setEditingUser({ ...editingUser, monthlySalary: Number(e.target.value) })}
+                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-amber-50/55"
                     />
                   </div>
                 </div>

@@ -2402,3 +2402,93 @@ class ReportsRepository:
             }
         }
 
+    def save_sales_report(self, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        report_id = data.get("id")
+        now_iso = datetime.utcnow().isoformat()
+        
+        manager_name = str(data.get("manager_name") or (user_payload or {}).get("name") or "Sales Manager")
+        manager_email = str(data.get("manager_email") or (user_payload or {}).get("email") or "").lower().strip()
+        manager_id = str(data.get("manager_id") or (user_payload or {}).get("employee_code") or (user_payload or {}).get("employee_id") or "MGR-001")
+        
+        report_obj = {
+            "employee_id": manager_id,
+            "employee_name": manager_name,
+            "manager_name": manager_name,
+            "report_date": datetime.utcnow().date().isoformat(),
+            "report_type": data.get("report_type"),
+            "report_period": data.get("report_period"),
+            "metrics": data.get("metrics", {}),
+            "status": data.get("status", "Draft"),
+            "ceo_remarks": data.get("ceo_remarks", ""),
+            "updated_at": now_iso
+        }
+        
+        if report_obj["status"] == "Submitted":
+            report_obj["submitted_at"] = now_iso
+            
+        try:
+            if report_id:
+                # Update existing
+                res = self.supabase.schema("system").table("reports_eod").update(report_obj).eq("id", report_id).execute()
+                if not res.data:
+                    res = self.supabase.table("reports_eod").update(report_obj).eq("id", report_id).execute()
+            else:
+                # Generate unique EOD report ID
+                import uuid
+                report_obj["id"] = f"EOD-SR-{uuid.uuid4().hex[:8]}"
+                res = self.supabase.schema("system").table("reports_eod").insert(report_obj).execute()
+                if not res.data:
+                    res = self.supabase.table("reports_eod").insert(report_obj).execute()
+                    
+            if res.data and len(res.data) > 0:
+                return res.data[0]
+        except Exception as e:
+            logger.error(f"Failed to save sales report to reports_eod: {e}")
+            raise e
+        return {}
+
+    def get_sales_reports(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        from app.core.scoping import normalize_user_role
+        role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+        manager_id = str((user_payload or {}).get("employee_code") or (user_payload or {}).get("employee_id") or "")
+        
+        try:
+            query = self.supabase.schema("system").table("reports_eod").select("*").in_("report_type", ["weekly", "monthly"])
+            if role not in ("super_admin", "ceo", "admin", "ceo / founder") and manager_id:
+                query = query.eq("employee_id", manager_id)
+            res = query.order("created_at", desc=True).execute()
+        except Exception:
+            try:
+                query = self.supabase.table("reports_eod").select("*").in_("report_type", ["weekly", "monthly"])
+                if role not in ("super_admin", "ceo", "admin", "ceo / founder") and manager_id:
+                    query = query.eq("employee_id", manager_id)
+                res = query.order("created_at", desc=True).execute()
+            except Exception as e:
+                logger.error(f"Failed to fetch sales reports from reports_eod: {e}")
+                return []
+                
+        return res.data if res and res.data else []
+
+    def review_sales_report(self, report_id: str, status: str, remarks: str, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        now_iso = datetime.utcnow().isoformat()
+        ceo_name = str((user_payload or {}).get("name") or "CEO")
+        update_obj = {
+            "status": status,
+            "ceo_remarks": remarks,
+            "acknowledged": True,
+            "acknowledged_by": ceo_name,
+            "updated_at": now_iso
+        }
+        
+        try:
+            res = self.supabase.schema("system").table("reports_eod").update(update_obj).eq("id", report_id).execute()
+            if not res.data:
+                res = self.supabase.table("reports_eod").update(update_obj).eq("id", report_id).execute()
+                
+            if res.data and len(res.data) > 0:
+                return res.data[0]
+        except Exception as e:
+            logger.error(f"Failed to review sales report {report_id} in reports_eod: {e}")
+            raise e
+        return {}
+
