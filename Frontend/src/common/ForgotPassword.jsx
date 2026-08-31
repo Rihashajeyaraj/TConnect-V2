@@ -50,7 +50,7 @@ function ForgotPasswordPage() {
             Forgot <span className="text-fuchsia-400">Password?</span>
           </h1>
           <p className="mb-0 mt-3 text-center text-base leading-7 text-slate-400">
-            Enter your email and we&apos;ll send you a reset link.
+            Enter your work email. Your <span className="font-semibold text-violet-300">Admin</span> will be notified and contact you with a temporary password.
           </p>
 
           <ForgotPasswordForm />

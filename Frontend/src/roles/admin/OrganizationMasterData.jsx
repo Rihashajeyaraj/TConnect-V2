@@ -335,7 +335,7 @@ function OrganizationMasterData() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full border-collapse text-left">
+            <table className="w-full min-w-[700px] border-collapse text-left whitespace-nowrap">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
                   <th className="px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">ID</th>
@@ -396,15 +396,17 @@ function OrganizationMasterData() {
                     <td className="px-6 py-4 text-xs text-right space-x-2">
                       <button
                         onClick={() => handleOpenEdit(item)}
-                        className="p-1.5 border border-slate-200 rounded-lg hover:border-blue-300 text-slate-500 hover:text-blue-600 transition bg-white cursor-pointer inline-flex"
+                        className="p-1.5 text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg transition cursor-pointer inline-flex"
+                        title="Edit"
                       >
-                        <Edit2 className="w-3.5 h-3.5" />
+                        <Edit2 className="w-4.5 h-4.5" />
                       </button>
                       <button
                         onClick={() => handleDeleteItem(item.id)}
-                        className="p-1.5 border border-slate-200 rounded-lg hover:border-rose-300 text-slate-500 hover:text-rose-600 transition bg-white cursor-pointer inline-flex"
+                        className="p-1.5 text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-lg transition cursor-pointer inline-flex"
+                        title="Delete"
                       >
-                        <Trash2 className="w-3.5 h-3.5" />
+                        <Trash2 className="w-4.5 h-4.5" />
                       </button>
                     </td>
                   </tr>

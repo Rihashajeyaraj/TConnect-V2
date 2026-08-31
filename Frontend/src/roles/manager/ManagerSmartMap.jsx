@@ -3,7 +3,7 @@ import {
   MapPin, Radio, Users, Activity, Clock, RefreshCw,
   Search, Shield, Map, Eye, Compass, Navigation,
   AlertCircle, ChevronRight, Phone, Mail, Award, CheckCircle2, X,
-  Route, Milestone, Minimize2, Maximize2
+  Route, Milestone, Minimize2, Maximize2, ArrowLeft
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 import { spatialAPI, authAPI, settingsAPI, crmAPI, customerAPI, visitAPI, auditAPI } from '../../services/api.js'
@@ -66,7 +66,7 @@ try {
 } catch { /* Realtime unavailable; fall back to polling */ }
 
 // ── Stale thresholds ───────────────────────────────────────────────────────────
-const STALE_MS  = 5  * 60 * 1000  // 5 min → stale
+const STALE_MS  = 1  * 60 * 1000  // 1 min → stale
 const GONE_MS   = 10 * 60 * 1000  // 10 min → offline
 
 function getTrackingBadge(status, lastUpdatedMs) {
@@ -107,10 +107,10 @@ function initializeHTMLMapMarker() {
         })
       }
 
-      window.google.maps.event.addDomListener(div, 'mousedown', (e) => {
+      div.addEventListener('mousedown', (e) => {
         e.stopPropagation()
       })
-      window.google.maps.event.addDomListener(div, 'contextmenu', (e) => {
+      div.addEventListener('contextmenu', (e) => {
         e.stopPropagation()
       })
 
@@ -212,7 +212,7 @@ export default function ManagerSmartMap() {
   // Map & Google Maps Refs
   const mapContainerRef = useRef(null)
   const googleMapRef    = useRef(null)
-  const activeTeamMarkersRef = useRef([])
+  const teamMarkersMapRef = useRef(new globalThis.Map())
   const infoWindowRef   = useRef(null)
 
   // Tracking-layer refs (one set per selected executive)
@@ -424,29 +424,34 @@ export default function ManagerSmartMap() {
 
   // ─── 1. Load Google Maps CDN ──────────────────────────────────────────────
   useEffect(() => {
+    // If already loaded (e.g. hot reload), skip the network round-trip entirely
+    if (window.google?.maps) {
+      initializeHTMLMapMarker()
+      setMapLoaded(true)
+      return
+    }
+
     settingsAPI.getConfig()
       .then(res => {
         const key = res?.data?.google_maps_api_key
-        if (key) {
-          setGoogleMapsApiKey(key)
-          loadGoogleMaps(key)
-            .then(() => {
-              initializeHTMLMapMarker()
-              setMapLoaded(true)
-            })
-            .catch(err => console.error('Failed to load Google Maps SDK:', err))
-        }
+        if (!key) return
+        setGoogleMapsApiKey(key)
+        return loadGoogleMaps(key)
       })
-      .catch(err => {
-        console.warn('Failed to load map configuration:', err)
+      .then(maps => {
+        if (!maps) return
+        initializeHTMLMapMarker()
+        setMapLoaded(true)
       })
+      .catch(err => console.error('Failed to load Google Maps:', err))
   }, [])
+
 
   useEffect(() => { fetchData() }, [fetchData])
 
   useEffect(() => {
     if (!autoRefresh) return
-    const t = setInterval(() => fetchData(true), 10000)
+    const t = setInterval(() => fetchData(true), 15000) // 15 seconds fallback polling (Supabase Realtime handles instant updates)
     return () => clearInterval(t)
   }, [autoRefresh, fetchData])
 
@@ -504,6 +509,49 @@ export default function ManagerSmartMap() {
     loadCandidates()
   }, [])
 
+  // ─── Supabase Realtime for entire team locations ───
+  useEffect(() => {
+    if (!supabase) return
+    
+    const channel = supabase
+      .channel('team_locations_realtime')
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'hrms',
+        table: 'employee_locations'
+      }, (payload) => {
+        const updatedLoc = payload.new
+        if (!updatedLoc) return
+        
+        setExecutives(prev => {
+          return prev.map(ex => {
+            if (ex.employee_id === updatedLoc.employee_id) {
+              return {
+                ...ex,
+                latitude: updatedLoc.latitude,
+                longitude: updatedLoc.longitude,
+                accuracy: updatedLoc.accuracy,
+                is_online: updatedLoc.is_online,
+                last_seen_at: updatedLoc.last_seen_at
+              }
+            }
+            return ex
+          })
+        })
+      })
+      .subscribe()
+      
+    return () => {
+      if (supabase && channel) {
+        try {
+          supabase.removeChannel(channel)
+        } catch (e) {
+          console.warn("Error removing team locations realtime channel:", e)
+        }
+      }
+    }
+  }, [supabase])
+
   // ─── 3. Google Maps init ──────────────────────────────────────────────────
   useEffect(() => {
     if (!mapLoaded || !mapContainerRef.current || googleMapRef.current) return
@@ -523,8 +571,8 @@ export default function ManagerSmartMap() {
 
     return () => {
       _clearTrackingLayer()
-      activeTeamMarkersRef.current.forEach(m => m.setMap(null))
-      activeTeamMarkersRef.current = []
+      teamMarkersMapRef.current.forEach(m => m.setMap(null))
+      teamMarkersMapRef.current.clear()
       googleMapRef.current = null
     }
   }, [mapLoaded])
@@ -561,7 +609,10 @@ export default function ManagerSmartMap() {
 
   const getProximityStatus = () => {
     if (trackStatus === 'ended') return 'Session Ended';
-    if (!latestExecPos || !destClient) return 'Travelling';
+    if (trackStatus === 'loading') return 'Loading...';
+    if (!latestExecPos) return 'No GPS Data';
+    if (!destClient) return 'No Destination';
+
 
     const distM = haversineDistance(latestExecPos.lat, latestExecPos.lng, Number(destClient.latitude), Number(destClient.longitude)) * 1000;
     
@@ -573,9 +624,9 @@ export default function ManagerSmartMap() {
       return 'Near Location';
     }
 
-    // Check if Idle (no movement >= 10m for > 3 minutes)
+    // Check if Idle (no movement >= 10m for > 1 minute)
     const timeSinceLastMove = Date.now() - lastMovedTimeRef.current;
-    if (timeSinceLastMove > 3 * 60 * 1000) {
+    if (timeSinceLastMove > 1 * 60 * 1000) {
       return 'Idle';
     }
 
@@ -591,7 +642,7 @@ export default function ManagerSmartMap() {
       return { label: 'Live Connection', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', dot: 'bg-emerald-500 animate-pulse' };
     }
     if (age <= 30000) {
-      return { label: 'Connection Unstable', color: 'text-amber-400 bg-amber-500/10 border-amber-500/20', dot: 'bg-amber-550' };
+      return { label: 'Connection Unstable', color: 'text-mgr-primary-400 bg-mgr-primary-500/10 border-mgr-primary-500/20', dot: 'bg-mgr-primary-550' };
     }
     if (age <= 60000) {
       return { label: 'GPS Stale', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20', dot: 'bg-orange-500' };
@@ -603,10 +654,8 @@ export default function ManagerSmartMap() {
   useEffect(() => {
     if (!googleMapRef.current || !window.google) return
     
-    activeTeamMarkersRef.current.forEach(m => m.setMap(null))
-    activeTeamMarkersRef.current = []
-
     const bounds = []
+    const currentOnlineIds = new Set()
 
     if (viewMode === 'team' || viewMode === 'both') {
       executives.forEach(ex => {
@@ -617,6 +666,9 @@ export default function ManagerSmartMap() {
         
         // Hide selected executive's static team marker to prevent duplication with tracking layer
         if (selectedExecutive && selectedExecutive.employee_id === ex.employee_id) return
+
+        const empId = ex.employee_id
+        currentOnlineIds.add(empId)
 
         const isCV = ex.check_in_mode === 'Client Visit'
         const displayName = resolveRealName(ex)
@@ -630,61 +682,77 @@ export default function ManagerSmartMap() {
         </div>`
 
         const latlng = new window.google.maps.LatLng(ex.latitude, ex.longitude)
-        const marker = new HTMLMapMarker(
-          latlng,
-          googleMapRef.current,
-          html,
-          () => {
-            showInfoWindow(latlng, `
-              <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:230px;">
-                <div style="font-weight:900;font-size:13px;color:#6366f1;border-bottom:1.5px solid #e2e8f0;padding-bottom:5px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
-                  <span>👤 ${displayName}</span>
-                  <span style="font-size:9px;font-weight:800;background:${ex.is_online ? '#dcfce7' : '#f1f5f9'};color:${ex.is_online ? '#15803d' : '#64748b'};padding:2px 6px;border-radius:12px;">
-                    ${ex.is_online ? '● ONLINE' : '○ OFFLINE'}
-                  </span>
-                </div>
-                <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;">
-                  <span style="font-weight:700;color:#64748b;">Role:</span>
-                  <span style="font-weight:800;color:#0f172a;">${ex.role || 'Sales Executive'}</span>
-
-                  ${ex.client_name || ex.company_name ? `
-                    <span style="font-weight:700;color:#64748b;">Client:</span>
-                    <span style="font-weight:800;color:#2563eb;">${ex.client_name || ex.company_name}</span>
-
-                    <span style="font-weight:700;color:#64748b;">Company:</span>
-                    <span style="font-weight:800;color:#0f172a;">${ex.company_name || ex.client_name}</span>
-
-                    ${ex.client_phone ? `
-                      <span style="font-weight:700;color:#64748b;">Phone:</span>
-                      <span style="font-weight:800;color:#0f172a;font-family:monospace;">${ex.client_phone}</span>
-                    ` : ''}
-
-                    ${ex.client_address ? `
-                      <span style="font-weight:700;color:#64748b;">Address:</span>
-                      <span style="font-weight:600;color:#475569;line-height:1.3;">${ex.client_address}</span>
-                    ` : ''}
-                  ` : `
-                    <span style="font-weight:700;color:#64748b;">Status:</span>
-                    <span style="font-weight:700;color:#475569;">${ex.check_in_mode === 'Client Visit' ? '🏍️ Travelling to Client' : '🏢 In Office'}</span>
-                    ${ex.check_in_address ? `
-                      <span style="font-weight:700;color:#64748b;">Location:</span>
-                      <span style="font-weight:600;color:#475569;">${ex.check_in_address.replace('CLIENT_VISIT_DESTINATION:::', '')}</span>
-                    ` : ''}
-                  `}
-
-                  <span style="font-weight:700;color:#64748b;">Last Seen:</span>
-                  <span style="font-weight:700;color:#0f172a;">${formatLastSeen(ex.last_seen_at)}</span>
-                </div>
-              </div>
-            `)
-          },
-          'center'
-        )
-
-        activeTeamMarkersRef.current.push(marker)
         bounds.push([ex.latitude, ex.longitude])
+
+        const infoWindowHtml = `
+          <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:230px;">
+            <div style="font-weight:900;font-size:13px;color:#6366f1;border-bottom:1.5px solid #e2e8f0;padding-bottom:5px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;">
+              <span>👤 ${displayName}</span>
+              <span style="font-size:9px;font-weight:800;background:${ex.is_online ? '#dcfce7' : '#f1f5f9'};color:${ex.is_online ? '#15803d' : '#64748b'};padding:2px 6px;border-radius:12px;">
+                ${ex.is_online ? '● ONLINE' : '○ OFFLINE'}
+              </span>
+            </div>
+            <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;">
+              <span style="font-weight:700;color:#64748b;">Role:</span>
+              <span style="font-weight:800;color:#0f172a;">${ex.role || 'Sales Executive'}</span>
+
+              ${ex.client_name || ex.company_name ? `
+                <span style="font-weight:700;color:#64748b;">Client:</span>
+                <span style="font-weight:800;color:#2563eb;">${ex.client_name || ex.company_name}</span>
+
+                <span style="font-weight:700;color:#64748b;">Company:</span>
+                <span style="font-weight:800;color:#0f172a;">${ex.company_name || ex.client_name}</span>
+
+                ${ex.client_phone ? `
+                  <span style="font-weight:700;color:#64748b;">Phone:</span>
+                  <span style="font-weight:800;color:#0f172a;font-family:monospace;">${ex.client_phone}</span>
+                ` : ''}
+
+                ${ex.client_address ? `
+                  <span style="font-weight:700;color:#64748b;">Address:</span>
+                  <span style="font-weight:600;color:#475569;line-height:1.3;">${ex.client_address}</span>
+                ` : ''}
+              ` : `
+                <span style="font-weight:700;color:#64748b;">Status:</span>
+                <span style="font-weight:700;color:#475569;">${!ex.check_in_mode ? '○ Not Checked In' : (ex.check_in_mode === 'Client Visit' ? '🏍️ Travelling to Client' : '🏢 In Office')}</span>
+                ${ex.check_in_address ? `
+                  <span style="font-weight:700;color:#64748b;">Location:</span>
+                  <span style="font-weight:600;color:#475569;">${ex.check_in_address.replace('CLIENT_VISIT_DESTINATION:::', '')}</span>
+                ` : ''}
+              `}
+
+              <span style="font-weight:700;color:#64748b;">Last Seen:</span>
+              <span style="font-weight:700;color:#0f172a;">${formatLastSeen(ex.last_seen_at)}</span>
+            </div>
+          </div>
+        `
+
+        let existingMarker = teamMarkersMapRef.current.get(empId)
+        if (existingMarker) {
+          existingMarker.setLatLng(latlng)
+          if (existingMarker.div) {
+            existingMarker.div.innerHTML = html
+          }
+          existingMarker.onClick = () => showInfoWindow(latlng, infoWindowHtml)
+        } else {
+          const marker = new HTMLMapMarker(
+            latlng,
+            googleMapRef.current,
+            html,
+            () => showInfoWindow(latlng, infoWindowHtml),
+            'center'
+          )
+          teamMarkersMapRef.current.set(empId, marker)
+        }
       })
     }
+
+    teamMarkersMapRef.current.forEach((marker, empId) => {
+      if (!currentOnlineIds.has(empId)) {
+        marker.setMap(null)
+        teamMarkersMapRef.current.delete(empId)
+      }
+    })
 
     if (bounds.length > 0 && !initialFitDone && !selectedExecutive) {
       const gBounds = new window.google.maps.LatLngBounds()
@@ -974,7 +1042,7 @@ export default function ManagerSmartMap() {
             ` : ''}
           ` : `
             <span style="font-weight:700;color:#64748b;">Status:</span>
-            <span style="font-weight:800;color:#475569;">${executive?.check_in_mode === 'Office' ? '🏢 In Office' : (isLive ? 'Online (Idle)' : '○ Offline / Not Logged In')}</span>
+            <span style="font-weight:800;color:#475569;">${!executive?.check_in_mode ? '○ Not Checked In' : (executive?.check_in_mode === 'Office' ? '🏢 In Office' : (isLive ? 'Online (Idle)' : '○ Offline / Not Logged In'))}</span>
             <span style="font-weight:700;color:#64748b;">Client:</span>
             <span style="font-weight:600;color:#64748b;">No active client visit</span>
           `}
@@ -1112,12 +1180,11 @@ export default function ManagerSmartMap() {
 
       if (pts.length >= 1 && googleMapRef.current && window.google) {
         const lineSymbol = {
-          path: window.google.maps.SymbolPath.CIRCLE,
-          fillOpacity: 1,
-          scale: 4,
+          path: 'M 0,-2 0,2',
+          strokeOpacity: 1,
+          scale: 2,
           strokeColor: '#9333ea',
-          fillColor: '#a855f7',
-          strokeWeight: 1.5
+          strokeWeight: 3
         }
         const gPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
         if (trackRouteRef.current) {
@@ -1129,7 +1196,7 @@ export default function ManagerSmartMap() {
             icons: [{
               icon: lineSymbol,
               offset: '0%',
-              repeat: '12px'
+              repeat: '16px'
             }],
             map: googleMapRef.current,
             zIndex: 15
@@ -1208,6 +1275,11 @@ export default function ManagerSmartMap() {
       setTrackBreadcrumbs(crumbs)
       setTrackStatus(status)
 
+      // Re-validate map after async call — it may have been unmounted
+      if (!googleMapRef.current) {
+        console.warn('[SmartMap] Map was destroyed while loading history, aborting.')
+        return
+      }
       const map = googleMapRef.current
 
       // Parse Client Destination (prefer DB columns, fallback to executive coordinates, fallback to encoded check_in_address)
@@ -1426,12 +1498,11 @@ export default function ManagerSmartMap() {
 
         if (pathCoords.length > 1) {
           const lineSymbol = {
-            path: window.google.maps.SymbolPath.CIRCLE,
-            fillOpacity: 1,
-            scale: 4,
+            path: 'M 0,-2 0,2',
+            strokeOpacity: 1,
+            scale: 2,
             strokeColor: '#9333ea',
-            fillColor: '#a855f7',
-            strokeWeight: 1.5
+            strokeWeight: 3
           }
           trackRouteRef.current = new window.google.maps.Polyline({
             path: pathCoords,
@@ -1439,7 +1510,7 @@ export default function ManagerSmartMap() {
             icons: [{
               icon: lineSymbol,
               offset: '0%',
-              repeat: '12px'
+              repeat: '16px'
             }],
             map: map,
             zIndex: 15
@@ -1488,38 +1559,42 @@ export default function ManagerSmartMap() {
 
       // Fit bounds to route + destination
       try {
-        const allPts = []
-        crumbs.forEach(c => {
-          const la = Number(c.latitude)
-          const ln = Number(c.longitude)
-          if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
-        })
-        if (session && session.start_latitude != null && session.start_longitude != null) {
-          const la = Number(session.start_latitude)
-          const ln = Number(session.start_longitude)
-          if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
-        }
-        if (latestLat != null && latestLng != null && !isNaN(latestLat) && !isNaN(latestLng) && latestLat !== 0 && latestLng !== 0) {
-          allPts.push([latestLat, latestLng])
-        }
-        if (clientDest && clientDest.latitude != null && clientDest.longitude != null) {
-          const la = Number(clientDest.latitude)
-          const ln = Number(clientDest.longitude)
-          if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
-        }
-
-        const validPts = allPts.filter(pt => pt && !isNaN(pt[0]) && !isNaN(pt[1]) && pt[0] !== 0 && pt[1] !== 0)
-        if (validPts.length > 0) {
-          const gBounds = new window.google.maps.LatLngBounds()
-          validPts.forEach(pt => gBounds.extend({ lat: pt[0], lng: pt[1] }))
-          map.fitBounds(gBounds, 60)
-          
-          const listener = map.addListener('idle', () => {
-            if (map.getZoom() > 17) {
-              map.setZoom(17)
-            }
-            window.google.maps.event.removeListener(listener)
+        if (!map || !googleMapRef.current) {
+          console.warn('[SmartMap] Map not ready for fitBounds, skipping.')
+        } else {
+          const allPts = []
+          crumbs.forEach(c => {
+            const la = Number(c.latitude)
+            const ln = Number(c.longitude)
+            if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
           })
+          if (session && session.start_latitude != null && session.start_longitude != null) {
+            const la = Number(session.start_latitude)
+            const ln = Number(session.start_longitude)
+            if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
+          }
+          if (latestLat != null && latestLng != null && !isNaN(latestLat) && !isNaN(latestLng) && latestLat !== 0 && latestLng !== 0) {
+            allPts.push([latestLat, latestLng])
+          }
+          if (clientDest && clientDest.latitude != null && clientDest.longitude != null) {
+            const la = Number(clientDest.latitude)
+            const ln = Number(clientDest.longitude)
+            if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
+          }
+
+          const validPts = allPts.filter(pt => pt && !isNaN(pt[0]) && !isNaN(pt[1]) && pt[0] !== 0 && pt[1] !== 0)
+          if (validPts.length > 0) {
+            const gBounds = new window.google.maps.LatLngBounds()
+            validPts.forEach(pt => gBounds.extend({ lat: pt[0], lng: pt[1] }))
+            map.fitBounds(gBounds, 60)
+
+            const listener = map.addListener('idle', () => {
+              if (map.getZoom() > 17) {
+                map.setZoom(17)
+              }
+              window.google.maps.event.removeListener(listener)
+            })
+          }
         }
       } catch (boundsErr) {
         console.error("[SmartMap] Error fitting map bounds:", boundsErr)
@@ -1676,7 +1751,7 @@ export default function ManagerSmartMap() {
       } catch (err) {
         console.warn("Polling error:", err)
       }
-    }, 2500)
+    }, 10000) // 10 seconds fallback polling (Realtime channel provides immediate updates)
   }, [_applyNewCrumb, _handleSessionEnded, fetchData])
 
   // Stale detection timer: re-evaluate badge every 30s
@@ -1710,6 +1785,8 @@ export default function ManagerSmartMap() {
     // Only zoom/fly to executive location if there is NO active client visit destination
     const isClientVisit = ex.check_in_mode === 'Client Visit' || ex.client_latitude != null
     if (!isClientVisit && ex.latitude && ex.longitude && googleMapRef.current) {
+      // Trigger resize so map tiles load after dashboard overlay unmounts
+      window.google?.maps?.event?.trigger(googleMapRef.current, 'resize')
       googleMapRef.current.panTo({ lat: ex.latitude, lng: ex.longitude })
       googleMapRef.current.setZoom(16)
     } else if (!ex.latitude || !ex.longitude) {
@@ -1725,10 +1802,6 @@ export default function ManagerSmartMap() {
       _loadTrackingHistory(selectedExecutive)
     }
   }, [mapLoaded])
-
-  const filteredExecutives = executives.filter(ex =>
-    resolveRealName(ex).toLowerCase().includes(searchQuery.toLowerCase())
-  )
 
   const getStatusInfo = (ex) => {
     if (!ex.is_online) {
@@ -1752,489 +1825,283 @@ export default function ManagerSmartMap() {
   const hb = getHeartbeatStatus()
 
   // ─── 8. Render ────────────────────────────────────────────────────────────
+  const filteredExecutives = executives.filter(ex =>
+    resolveRealName(ex).toLowerCase().includes(searchQuery.toLowerCase())
+  )
+
   return (
-    <div className="relative w-full h-[calc(100vh-4rem)] flex overflow-hidden bg-slate-950 text-white font-sans">
-      {panelOpen && (
-        <div onClick={() => setPanelOpen(false)} className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-20 lg:hidden transition-opacity" />
-      )}
+    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-slate-900 font-sans">
 
-      {/* ─── Sidebar Panel ─────────────────────────────────────────────── */}
-      <div className={`fixed lg:static inset-y-0 left-0 z-30 w-[20rem] sm:w-[24rem] lg:w-[24rem] h-full flex flex-col border-r border-white/10 bg-slate-900/98 backdrop-blur-md shrink-0 transition-transform duration-200 ${
-        panelOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0 lg:w-0 lg:overflow-hidden lg:border-r-0'
-      }`}>
+      {/* Map container — always in DOM, pre-initialized */}
+      <div ref={mapContainerRef} className="w-full h-full absolute inset-0 z-0" />
 
-        {/* Header & Search */}
-        <div className="p-5 border-b border-white/10 space-y-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-xl bg-violet-600/20 text-violet-400">
-                <Radio className="w-5 h-5 animate-pulse" />
-              </div>
-              <div>
-                <h1 className="text-base font-bold text-slate-100">Live Team Radar</h1>
-                <p className="text-[10px] font-bold text-slate-400">TwiteConnect Smart Map</p>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <button onClick={fetchData} disabled={loading}
-                className="p-2 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 active:scale-95 transition disabled:opacity-50">
-                <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-              </button>
-              <button onClick={() => setPanelOpen(false)} className="p-2 rounded-lg border border-white/10 text-slate-300 hover:bg-white/5 lg:hidden">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-          <div className="relative">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input type="text" placeholder="Search executive..." value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-11 pl-10 pr-4 text-xs font-bold text-slate-100 bg-slate-950/70 border border-white/10 rounded-xl outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/10 placeholder:text-slate-500" />
-          </div>
-        </div>
+      {/* ── Card Grid Dashboard (covers map when no executive selected) ── */}
+      {!selectedExecutive && (
+        <div className="absolute inset-0 z-30 bg-[#f1f5f9] overflow-y-auto">
+          <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
-        {/* Live tracking info panel in sidebar (visible only when active executive selected) */}
-        {selectedExecutive && selectedExecutive.is_online && trackStatus !== 'idle' && (
-          <div className="mx-4 mt-4 p-4 rounded-xl border border-white/10 bg-slate-950/60 space-y-3">
+            {/* Header */}
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Live Tracking</span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-[11px] font-black px-2 py-0.5 rounded-full" style={{ background: badge.color + '22', color: badge.color }}>
-                  {badge.dot} {badge.label}
-                </span>
-                <button onClick={() => {
-                  _clearTrackingLayer()
-                  setSelectedExecutive(null)
-                  setInitialFitDone(false)
-                }} className="p-1 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition active:scale-95">
-                  <X className="w-3.5 h-3.5" />
-                </button>
+              <div>
+                <h1 className="text-xl font-black text-slate-900">Smart Radar Map</h1>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">Click a card to track live location</p>
               </div>
+              <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 border border-slate-200 bg-white rounded-lg px-3 py-2 hover:border-blue-300 transition">
+                <RefreshCw className="w-3.5 h-3.5" /> Refresh
+              </button>
             </div>
-            
-            {trackStatus === 'loading' ? (
-              <div className="text-[10px] text-slate-400 flex items-center gap-2"><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Loading route...</div>
+
+            {/* Stats Row */}
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                {
+                  label: 'Total',
+                  value: executives.length,
+                  bg: 'bg-gradient-to-br from-[#0b3c5d] to-[#1a5a8a]',
+                  border: 'border-[#0b3c5d]/40',
+                  numColor: 'text-white',
+                  labelColor: 'text-blue-200',
+                  icon: <Users className="w-5 h-5 mx-auto text-blue-200" />,
+                },
+                {
+                  label: 'Online',
+                  value: executives.filter(e => e.is_online).length,
+                  bg: 'bg-gradient-to-br from-emerald-700 to-emerald-500',
+                  border: 'border-emerald-600/40',
+                  numColor: 'text-white',
+                  labelColor: 'text-emerald-100',
+                  icon: (
+                    <span className="relative flex h-3 w-3 mx-auto">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-400"></span>
+                    </span>
+                  ),
+                },
+                {
+                  label: 'Offline',
+                  value: executives.filter(e => !e.is_online).length,
+                  bg: 'bg-gradient-to-br from-slate-600 to-slate-500',
+                  border: 'border-slate-500/40',
+                  numColor: 'text-white',
+                  labelColor: 'text-slate-200',
+                  icon: (
+                    <span className="relative flex h-3 w-3 mx-auto">
+                      <span className="relative inline-flex rounded-full h-3 w-3 bg-slate-350"></span>
+                    </span>
+                  ),
+                },
+              ].map(s => (
+                <div key={s.label} className={`mgr-card rounded-2xl border ${s.bg} ${s.border} p-4 text-center shadow-md hover:shadow-lg hover:scale-[1.02] transition-all duration-200 flex flex-col justify-between items-center min-h-[110px]`}>
+                  <div className="h-6 flex items-center justify-center">{s.icon}</div>
+                  <div className={`text-3xl font-black ${s.numColor} my-1`}>{s.value}</div>
+                  <div className={`text-[10px] font-black uppercase tracking-widest ${s.labelColor}`}>{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Search */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                value={searchQuery}
+                onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search team member..."
+                className="w-full pl-9 pr-4 py-2.5 text-sm font-semibold bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
+              />
+            </div>
+
+            {/* Executive Cards */}
+            {loading ? (
+              <div className="flex justify-center py-12">
+                <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : filteredExecutives.length === 0 ? (
+              <div className="text-center py-12 text-slate-400 text-sm font-semibold">No executives found.</div>
             ) : (
-              <div className="space-y-2.5">
-                <div className="flex items-center gap-2 bg-slate-900/60 p-2.5 rounded-xl border border-white/5">
-                  <div className="w-8 h-8 rounded-full bg-violet-600/10 text-violet-400 font-extrabold text-[11px] flex items-center justify-center">
-                    {resolveRealName(selectedExecutive).split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()}
-                  </div>
-                  <div>
-                    <div className="text-xs font-black text-slate-200">{resolveRealName(selectedExecutive)}</div>
-                    <div className="text-[9px] font-bold text-slate-500">{selectedExecutive.role}</div>
-                  </div>
-                </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                {filteredExecutives.map(ex => {
+                  const name = resolveRealName(ex)
+                  const initials = name.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+                  const isCV = ex.check_in_mode === 'Client Visit'
+                  const statusColor = !ex.is_online ? '#94a3b8' : isCV ? '#8b5cf6' : '#10b981'
+                  const statusLabel = !ex.is_online ? 'Offline' : isCV ? 'Client Visit' : 'Field Active'
 
-                {destClient ? (
-                  <div className="bg-slate-900/40 rounded-xl p-2.5 border border-white/5 space-y-1.5">
-                    <div className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">🏍️ Moving to Client</div>
-                    <div className="text-xs font-black text-slate-200 truncate">📍 {destClient.title}</div>
-                    <div className="text-[10px] text-slate-500 font-semibold truncate">{destClient.address}</div>
-                    <div className="text-[9px] text-slate-400 font-mono mt-1">
-                      Coordinates: {destClient.latitude.toFixed(5)}, {destClient.longitude.toFixed(5)}
-                    </div>
-                  </div>
-                ) : (
-                  <div className="bg-slate-900/20 rounded-xl p-2.5 border border-dashed border-white/5 text-[10px] font-bold text-slate-500">
-                    🏢 Checked in at Office / No Active Client Destination
-                  </div>
-                )}
+                  // Card background based on status
+                  const cardBg = !ex.is_online
+                    ? 'bg-slate-50 border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                    : isCV
+                    ? 'bg-violet-50 border-violet-200 hover:bg-violet-100 hover:border-violet-400'
+                    : 'bg-emerald-50 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-400'
 
-                <div className="grid grid-cols-2 gap-1.5 text-[10px]">
-                  <div className="bg-slate-900/60 rounded-lg p-2">
-                    <div className="text-slate-500 font-bold">Last Update</div>
-                    <div className="text-slate-200 font-black mt-0.5">
-                      {lastPingMs ? formatLastSeen(new Date(lastPingMs).toISOString()) : '—'}
-                    </div>
-                  </div>
-                  <div className="bg-slate-900/60 rounded-lg p-2">
-                    <div className="text-slate-500 font-bold">Duration</div>
-                    <div className="text-slate-200 font-black mt-0.5">
-                      {trackSession?.start_time ? formatDuration(trackSession.start_time) : '—'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Route Corridor Nearby / Previous Client Alerts */}
-                {onRouteClients.length > 0 && (
-                  <div className="border-t border-white/5 pt-3 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-amber-400 flex items-center gap-1.5">
-                        <span>🔔</span> Clients on Route ({onRouteClients.length})
-                      </span>
-                      <span className="text-[9px] text-slate-500 font-semibold">500m corridor</span>
-                    </div>
-                    <div className="max-h-44 overflow-y-auto space-y-1.5 pr-1 font-sans">
-                      {onRouteClients.map(client => {
-                        const isPrev = client.alertType === 'previous';
-                        const isSched = client.alertType === 'scheduled';
-                        return (
-                          <div key={client.id}
-                            onClick={() => {
-                              if (googleMapRef.current && client.latitude && client.longitude) {
-                                googleMapRef.current.panTo({ lat: client.latitude, lng: client.longitude });
-                                googleMapRef.current.setZoom(16);
-                              }
-                            }}
-                            className="p-2 rounded-xl bg-slate-900/60 hover:bg-slate-800/80 border border-white/5 cursor-pointer transition flex items-center justify-between gap-2">
-                            <div className="min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${
-                                  isPrev ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
-                                  isSched ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
-                                  'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                                }`}>
-                                  {isPrev ? '🔄 Previous Client' : (isSched ? '📅 Scheduled' : '📍 Nearby ' + client.category)}
-                                </span>
-                                <span className="text-[9px] font-mono font-bold text-slate-400">{client.distToRouteM}m</span>
-                              </div>
-                              <div className="text-xs font-black text-slate-200 truncate mt-1">{client.title}</div>
-                              {client.address && <div className="text-[9px] text-slate-500 truncate">{client.address}</div>}
-                            </div>
-                            <span className="text-[10px] text-violet-400 font-extrabold shrink-0">View ➔</span>
+                  return (
+                    <button
+                      key={ex.employee_id || ex.id}
+                      onClick={() => handleSelectExecutive(ex)}
+                      className={`mgr-card text-left rounded-2xl p-4 shadow-2xs hover:shadow-md active:scale-[0.98] transition-all duration-150 group border ${cardBg}`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-black flex-shrink-0" style={{ background: statusColor }}>
+                          {initials}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className="font-black text-slate-900 text-sm truncate">{name}</div>
+                          <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{ex.designation || ex.role || 'Sales Executive'}</div>
+                          <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border" style={{ background: statusColor + '15', color: statusColor, borderColor: statusColor + '40' }}>
+                            <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor }} />
+                            {statusLabel}
                           </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                )}
-
-                {/* Live Activity Feed */}
-                <div className="border-t border-white/5 pt-3 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Live Activity Feed</span>
-                    <span className="text-[9px] text-slate-500 font-semibold">{trackEvents.length} events</span>
-                  </div>
-                  <div className="max-h-48 overflow-y-auto space-y-2 pr-1 font-sans">
-                    {trackEvents.length === 0 ? (
-                      <div className="text-[10px] text-slate-500 italic py-1">No activities logged yet.</div>
-                    ) : (
-                      trackEvents.map(evt => {
-                        let icon = 'ℹ️'
-                        let color = 'text-slate-400'
-                        if (evt.event_type === 'CLIENT_REACHED' || evt.event_type === 'VISIT_COMPLETED') {
-                          icon = '🟢'
-                          color = 'text-emerald-400'
-                        } else if (evt.event_type === 'CLIENT_LEFT') {
-                          icon = '🔵'
-                          color = 'text-blue-400'
-                        } else if (evt.event_type === 'ROUTE_DEVIATION') {
-                          icon = '⚠️'
-                          color = 'text-amber-500'
-                        } else if (evt.event_type.startsWith('STATIONARY')) {
-                          icon = '🟠'
-                          color = 'text-orange-400'
-                        } else if (evt.event_type === 'VISIT_STARTED') {
-                          icon = '🚩'
-                          color = 'text-violet-400'
-                        }
-
-                        const timeStr = new Date(evt.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                        
-                        return (
-                          <div key={evt.id} className="flex gap-2 text-[10px] bg-slate-900/40 p-2 rounded-lg border border-white/5 items-start">
-                            <span className="shrink-0">{icon}</span>
-                            <div className="flex-1 min-w-0">
-                              <div className={`font-black truncate ${color}`}>{evt.title || evt.event_type.replace(/_/g, ' ')}</div>
-                              {evt.message && <div className="text-slate-400 text-[9px] font-medium leading-snug mt-0.5">{evt.message}</div>}
-                              <div className="text-slate-500 text-[8px] font-bold mt-1">{timeStr}</div>
-                            </div>
-                          </div>
-                        )
-                      })
-                    )}
-                  </div>
-                </div>
-
-                {!realtimeOk && supabase && (
-                  <div className="text-[9px] text-amber-400 font-bold flex items-center gap-1">
-                    <AlertCircle className="w-3 h-3" /> Connecting to Supabase Realtime...
-                  </div>
-                )}
+                        </div>
+                      </div>
+                      {ex.is_online && (
+                        <div className="mt-3 pt-3 border-t border-white/60 flex justify-between items-center text-[10px] text-slate-500 font-semibold">
+                          <span>In: {ex.check_in_time || '—'}</span>
+                          <span className="text-emerald-700 font-black group-hover:underline">Track live ➔</span>
+                        </div>
+                      )}
+                      {!ex.is_online && (
+                        <div className="mt-3 pt-3 border-t border-white/60 text-[10px] text-slate-400 font-semibold italic">
+                          Last seen: {ex.last_seen_at ? formatLastSeen(ex.last_seen_at) : 'Never'}
+                        </div>
+                      )}
+                    </button>
+                  )
+                })}
               </div>
             )}
           </div>
-        )}
-
-        {/* Executive List */}
-        <div className="flex-1 overflow-y-auto p-4 space-y-2.5">
-          <h2 className="text-[10px] font-black uppercase tracking-wider text-slate-500 px-1">Team List</h2>
-          {filteredExecutives.length === 0 ? (
-            <div className="p-8 text-center text-xs font-bold text-slate-500">No Sales Executives found.</div>
-          ) : (
-            filteredExecutives.map(ex => {
-              const hasLoc   = ex.latitude != null
-              const isSelected = selectedExecutive?.employee_id === ex.employee_id
-              const statusInfo = getStatusInfo(ex)
-              const exDisplayName = resolveRealName(ex)
-              const initials = exDisplayName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
-              
-              return (
-                <div key={ex.employee_id} onClick={() => handleSelectExecutive(ex)}
-                  className={`p-3.5 rounded-xl border cursor-pointer transition active:scale-[0.99] flex flex-col gap-2.5 ${
-                    isSelected ? 'bg-violet-600/15 border-violet-500/40' : 'bg-slate-950/45 border-white/5 hover:border-white/10'
-                  }`}>
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-full bg-slate-800 border border-white/10 font-extrabold text-[11px] text-slate-300 flex items-center justify-center">
-                        {initials}
-                      </div>
-                      <div>
-                        <div className="text-xs font-black text-slate-200">{exDisplayName}</div>
-                        <div className="text-[10px] font-bold text-slate-500">{ex.role}</div>
-                      </div>
-                    </div>
-                    <span className="text-[9px] font-black px-2 py-0.5 rounded-full shrink-0 flex items-center gap-1" style={{ background: statusInfo.bg, color: statusInfo.color }}>
-                      <span>{statusInfo.dot}</span> {statusInfo.label}
-                    </span>
-                  </div>
-
-                  {ex.is_online ? (
-                    <div className="text-[10px] space-y-1 bg-slate-900/40 p-2 rounded-lg border border-white/5">
-                      {ex.check_in_mode === 'Client Visit' ? (
-                        <>
-                          <div className="font-bold text-slate-300 flex items-center gap-1">
-                            <span>🏍️</span> Moving to Client
-                          </div>
-                          {ex.client_name && (
-                            <div className="text-slate-400 font-semibold truncate">
-                              📍 {ex.client_name}
-                            </div>
-                          )}
-                        </>
-                      ) : (
-                        <div className="font-bold text-slate-300 flex items-center gap-1">
-                          <span>🏢</span> Checked in at Office
-                        </div>
-                      )}
-                      <div className="text-[9px] text-slate-500 font-bold">
-                        🕐 Updated {formatLastSeen(ex.last_seen_at)}
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="text-[10px] font-bold text-slate-500 bg-slate-900/20 p-2 rounded-lg border border-dashed border-white/5">
-                      {ex.check_out_time ? (
-                        <div>⚫ Clocked out at {ex.check_out_time}</div>
-                      ) : (
-                        <div>⚫ Last seen: {formatLastSeen(ex.last_seen_at)}</div>
-                      )}
-                    </div>
-                  )}
-
-                  <div className="flex justify-between items-center text-[10px] font-bold text-slate-500 border-t border-white/5 pt-2">
-                    <div className="flex items-center gap-1">
-                      <Clock className="w-3 h-3 text-slate-400" />
-                      <span>{ex.check_in_time ? `Clock in: ${ex.check_in_time}` : 'Not clocked in'}</span>
-                    </div>
-                    {hasLoc ? (
-                      <div className="flex items-center gap-1 text-emerald-400">
-                        <Compass className="w-3 h-3" />
-                        <span>{ex.accuracy ? `${ex.accuracy.toFixed(0)}m acc` : 'GPS Connected'}</span>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-1 text-slate-500">
-                        <AlertCircle className="w-3 h-3" /><span>No GPS</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )
-            })
-          )}
         </div>
+      )}
 
-        {/* Footer */}
-        <div className="p-4 border-t border-white/10 bg-slate-950/20 text-[11px] font-bold text-slate-400 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <input type="checkbox" id="auto-refresh" checked={autoRefresh} onChange={(e) => setAutoRefresh(e.target.checked)}
-              className="rounded border-white/20 bg-slate-900 text-violet-600 focus:ring-0 w-3.5 h-3.5" />
-            <label htmlFor="auto-refresh" className="cursor-pointer select-none">Auto Update (10s)</label>
-          </div>
-          <div className="flex items-center gap-1 text-slate-500">
-            <span>Last sync:</span>
-            <span className="font-mono text-slate-300">{lastUpdated || 'Never'}</span>
-          </div>
-        </div>
-      </div>
-
-      {/* ─── Main Map Area ──────────────────────────────────────────────── */}
-      <div className="flex-1 h-full relative">
-        <div ref={mapContainerRef} className="w-full h-full z-0" />
-
-        {/* Compact Zomato/Swiggy-style Floating Live Tracking Card (Only shown when active online) */}
-        {selectedExecutive && selectedExecutive.is_online && trackStatus !== 'idle' && trackStatus !== 'loading' && destClient && (
-          isTrackingMinimized ? (
-            /* Minimized state: slim pill at the top of the map */
-            <div className="absolute top-4 left-4 right-4 lg:right-auto lg:w-85 z-20 bg-slate-950/96 border border-white/10 rounded-xl p-3 shadow-2xl backdrop-blur-md text-white pointer-events-auto flex items-center justify-between gap-3 animate-in slide-in-from-top duration-200">
+      {/* ── Map Tracking Overlay (when executive is selected) ── */}
+      {selectedExecutive && (
+        <>
+          {isTrackingMinimized ? (
+            <div className="absolute top-5 left-5 z-20 w-80 bg-white/95 border border-slate-200 rounded-xl p-3 shadow-xl backdrop-blur-md text-slate-800 pointer-events-auto flex items-center justify-between gap-3">
               <div className="flex items-center gap-2.5 min-w-0">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
                 <div className="min-w-0">
-                  <div className="text-xs font-black truncate">{resolveRealName(selectedExecutive)}</div>
-                  <div className="text-[9px] text-slate-400 font-bold">
-                    {destRouteMeta ? `${destRouteMeta.etaMins} mins remaining (${destRouteMeta.distanceKm.toFixed(1)} km)` : 'Live tracking'}
+                  <div className="text-xs font-black truncate text-slate-900">{resolveRealName(selectedExecutive)}</div>
+                  <div className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider">
+                    {destClient && destRouteMeta ? `${destRouteMeta.etaMins} mins remaining (${destRouteMeta.distanceKm.toFixed(1)} km)` : 'Live GPS Active'}
                   </div>
                 </div>
               </div>
-              <div className="flex items-center gap-1.5 flex-shrink-0">
-                <button onClick={() => setIsTrackingMinimized(false)}
-                  title="Expand live tracking info"
-                  className="p-1.5 rounded-lg hover:bg-white/5 text-slate-300 hover:text-white transition active:scale-95">
-                  <Maximize2 className="w-3.5 h-3.5" />
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button onClick={() => setIsTrackingMinimized(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition">
+                  <Maximize2 className="w-4 h-4" />
                 </button>
-                <button onClick={() => {
-                  _clearTrackingLayer()
-                  setSelectedExecutive(null)
-                  setInitialFitDone(false)
-                  setIsTrackingMinimized(false)
-                }} className="p-1.5 rounded-lg hover:bg-white/5 text-rose-400 hover:text-rose-300 transition active:scale-95">
-                  <X className="w-3.5 h-3.5" />
+                <button onClick={() => { _clearTrackingLayer(); setSelectedExecutive(null); setIsTrackingMinimized(false) }} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition">
+                  <X className="w-4 h-4" />
                 </button>
               </div>
             </div>
           ) : (
-            /* Full layout: floating card on desktop, bottom sheet style card on mobile */
-            <div className="absolute bottom-2 left-2 right-2 top-auto lg:bottom-auto lg:top-5 lg:left-5 lg:right-auto lg:w-80 z-20 bg-slate-950/96 border border-white/10 rounded-2xl p-4 shadow-2xl backdrop-blur-md text-white pointer-events-auto flex flex-col gap-3 max-h-[45vh] lg:max-h-none overflow-y-auto lg:overflow-visible animate-in slide-in-from-bottom lg:slide-in-from-top duration-200">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-slate-400"></span> TRACKING SESSION
-                </span>
-                <div className="flex items-center gap-1.5">
-                  {/* Heartbeat Badge */}
-                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border flex items-center gap-1 ${hb.color}`}>
-                    <span className={`w-1.5 h-1.5 rounded-full ${hb.dot}`} />
-                    {hb.label}
-                  </span>
-                  <button onClick={() => setIsTrackingMinimized(true)}
-                    title="Minimize tracking info"
-                    className="p-1 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition active:scale-95">
+            <div className="absolute bottom-4 left-4 right-4 top-auto lg:bottom-auto lg:top-5 lg:left-5 lg:right-auto lg:w-84 z-20 bg-white/98 border border-slate-200 rounded-2xl p-5 shadow-2xl text-slate-800 pointer-events-auto flex flex-col gap-4 max-h-[55vh] lg:max-h-[calc(100vh-7rem)] overflow-y-auto animate-in slide-in-from-bottom lg:slide-in-from-top duration-200 font-sans">
+              {/* Header */}
+              <div className="flex items-start justify-between pb-3 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <button onClick={() => { _clearTrackingLayer(); setSelectedExecutive(null); setIsTrackingMinimized(false) }} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition flex-shrink-0">
+                    <ArrowLeft className="w-4 h-4" />
+                  </button>
+                  <div>
+                    <div className="font-black text-slate-900 text-sm">{resolveRealName(selectedExecutive)}</div>
+                    <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{selectedExecutive.designation || selectedExecutive.role || 'Sales Executive'}</div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1">
+                  <button onClick={() => setIsTrackingMinimized(true)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
                     <Minimize2 className="w-4 h-4" />
                   </button>
-                  <button onClick={() => {
-                    _clearTrackingLayer()
-                    setSelectedExecutive(null)
-                    setInitialFitDone(false)
-                    setIsTrackingMinimized(false)
-                  }} className="p-1 rounded-lg hover:bg-white/5 text-slate-400 hover:text-white transition active:scale-95">
+                  <button onClick={() => { _clearTrackingLayer(); setSelectedExecutive(null); setIsTrackingMinimized(false) }} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-              
-              <div>
-                <h3 className="text-sm font-black text-slate-100">{resolveRealName(selectedExecutive)}</h3>
-                <p className="text-[10px] font-bold text-slate-400">{selectedExecutive.role}</p>
-              </div>
-              
-              <div className="border-t border-white/5 pt-3 space-y-2">
-                <div className="flex items-start gap-2.5">
-                  <div className="mt-0.5 p-1.5 rounded-lg bg-violet-500/10 text-violet-400">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">
-                      Status: <span className={`font-black uppercase ${
-                        proxStatus === 'Arrived' ? 'text-green-400' :
-                        proxStatus === 'Near Location' ? 'text-amber-400' :
-                        proxStatus === 'Idle' ? 'text-orange-400 animate-pulse' : 'text-blue-400'
-                      }`}>{proxStatus}</span>
+
+              {/* Heartbeat & Signal */}
+              <div className="flex items-center gap-2">
+                {(() => {
+                  const hb = getHeartbeatStatus()
+                  return (
+                    <div className={`flex items-center gap-1.5 text-[10px] font-bold px-2 py-1 rounded-full border ${hb.color}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${hb.dot}`} />
+                      {hb.label}
                     </div>
-                    <div className="text-xs font-black text-slate-200 truncate">{destClient.title}</div>
-                    <div className="text-[10px] text-slate-400 font-semibold truncate">{destClient.address}</div>
-                    <div className="text-[9px] text-slate-500 font-mono mt-1">
-                      Coordinates: {destClient.latitude.toFixed(5)}, {destClient.longitude.toFixed(5)}
-                    </div>
-                  </div>
-                </div>
+                  )
+                })()}
+                {lastPingMs && (
+                  <span className="text-[10px] text-slate-400 font-semibold">
+                    Last ping {Math.round((Date.now() - lastPingMs) / 1000)}s ago
+                  </span>
+                )}
               </div>
 
-              {trackStatus === 'ended' ? (
-                <div className="text-center py-2.5 text-[10px] text-slate-400 font-extrabold border-t border-white/5 bg-slate-950/20 rounded-xl">
-                  ⚫ Trip completed / Session ended
-                </div>
-              ) : destRouteMeta ? (
-                <div className="grid grid-cols-2 gap-3 pt-3 border-t border-white/5">
-                  <div className="bg-slate-950/40 border border-white/5 rounded-xl p-2.5">
-                    <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Remaining Distance</div>
-                    <div className="text-sm font-black text-violet-400 mt-0.5">{destRouteMeta.distanceKm.toFixed(1)} km</div>
+              {/* Proximity Status */}
+              {(() => {
+                const badge = getTrackingBadge(trackStatus === 'ended' ? 'ended' : trackStatus, lastPingMs)
+                const prox = getProximityStatus()
+                return (
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      <span>Track Status</span>
+                      <span className={`px-2 py-0.5 rounded-full ${
+                        prox === 'Arrived' ? 'bg-emerald-100 text-emerald-700' :
+                        prox === 'Near Location' ? 'bg-blue-100 text-blue-700' :
+                        prox === 'Idle' ? 'bg-orange-100 text-orange-700 animate-pulse' :
+                        prox === 'Travelling' ? 'bg-violet-100 text-violet-700' :
+                        'bg-slate-100 text-slate-400'
+                      }`}>{prox}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs font-bold" style={{ color: badge.color }}>
+                      <span>{badge.dot}</span> {badge.label}
+                    </div>
                   </div>
-                  <div className="bg-slate-950/40 border border-white/5 rounded-xl p-2.5">
-                    <div className="text-[9px] text-slate-500 font-bold uppercase tracking-wider">Est. Time of Arrival</div>
-                    <div className="text-sm font-black text-violet-400 mt-0.5">{destRouteMeta.etaMins} mins</div>
+                )
+              })()}
+
+              {/* Client Destination */}
+              {destClient && (() => {
+                const clientContactInfo = candidatesRef.current?.find(c => String(c.id) === String(destClient.id)) || destClient;
+                return (
+                  <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 space-y-1.5">
+                    <div className="text-[10px] font-bold text-violet-400 uppercase tracking-wider">Client Visit</div>
+                    <div className="font-black text-slate-900 text-sm">{destClient.company_name || destClient.title}</div>
+                    {destClient.address && <div className="text-[11px] text-slate-500 font-semibold">{destClient.address}</div>}
+                    {destRouteMeta && (
+                      <div className="flex gap-3 mt-1.5 text-[11px] font-bold">
+                        <span className="text-violet-700">🕒 {destRouteMeta.etaMins} min</span>
+                        <span className="text-slate-500">📍 {destRouteMeta.distanceKm.toFixed(1)} km</span>
+                      </div>
+                    )}
+                    {clientContactInfo?.contact_person && (
+                      <div className="text-[11px] text-slate-600 font-semibold">👤 {clientContactInfo.contact_person}</div>
+                    )}
+                    {clientContactInfo?.phone && (
+                      <a href={`tel:${clientContactInfo.phone}`} className="text-[11px] text-blue-600 font-bold">📞 {clientContactInfo.phone}</a>
+                    )}
                   </div>
-                </div>
-              ) : (
-                <div className="text-center py-2 text-[10px] text-rose-500 font-black border-t border-white/5">
-                  ⚠️ Route unavailable (Road network path not resolved)
+                )
+              })()}
+
+              {/* Breadcrumb count */}
+              {trackBreadcrumbs.length > 0 && (
+                <div className="text-[10px] text-slate-400 font-semibold">
+                  {trackBreadcrumbs.length} location points recorded today
                 </div>
               )}
-              
-              {/* Route Path Legend (Traveled shortcut/trail vs Planned Route) */}
-              <div className="flex items-center justify-between text-[9px] font-bold text-slate-400 border-t border-white/5 pt-2">
-                <div className="flex items-center gap-1.5">
-                  <span className="w-2.5 h-2.5 rounded-full border border-purple-400 bg-purple-500/30"></span>
-                  <span className="text-purple-300">Dotted: Actual Path / Shortcut</span>
-                </div>
-                <div className="flex items-center gap-1.5">
-                  <span className="w-3.5 h-1 bg-blue-500 rounded-full"></span>
-                  <span className="text-blue-300">Solid: Planned Route</span>
-                </div>
-              </div>
-
-              <div className="flex items-center justify-between text-[10px] text-slate-500 pt-1 font-bold">
-                <span>Last updated: {lastPingMs ? formatLastSeen(new Date(lastPingMs).toISOString()) : 'Just now'}</span>
-                <span>{trackSession?.total_distance ? `${(trackSession.total_distance / 1000).toFixed(2)} km total` : ''}</span>
-              </div>
             </div>
-          )
-        )}
+          )}
 
-        {/* Top Floating Controls */}
-        <div className="absolute top-5 left-5 right-5 flex flex-wrap gap-4 items-center justify-end z-10 pointer-events-none">
-          <div className="bg-slate-900/90 border border-white/10 rounded-xl shadow-xl backdrop-blur-md p-2 px-4 flex items-center gap-5 pointer-events-auto">
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] font-black uppercase text-slate-500">Total</span>
-              <span className="text-sm font-black text-slate-100">{stats.total}</span>
+          {trackStatus !== 'idle' && trackStatus !== 'loading' && (
+            <div className="absolute bottom-5 right-5 z-20 bg-slate-900/90 border border-white/10 rounded-xl p-3 text-[10px] font-bold space-y-1.5 backdrop-blur-md text-white">
+              <div className="flex items-center gap-2"><div className="w-6 h-1.5 bg-blue-500 rounded flex-shrink-0" /> Driving Route</div>
+              <div className="flex items-center gap-2"><div className="w-6 h-0.5 border-t-2 border-dashed border-purple-400 flex-shrink-0" /> Traveled Route</div>
+              <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded-full bg-red-500 flex-shrink-0 flex items-center justify-center text-white font-extrabold border border-white"><svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></span> Client destination</div>
             </div>
-            <div className="w-px h-5 bg-white/10" />
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500" />
-              <span className="text-[10px] font-black uppercase text-slate-500">Online</span>
-              <span className="text-sm font-black text-emerald-400">{stats.online}</span>
-            </div>
-            <div className="w-px h-5 bg-white/10" />
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-slate-500" />
-              <span className="text-[10px] font-black uppercase text-slate-500">Offline</span>
-              <span className="text-sm font-black text-slate-400">{stats.offline}</span>
-            </div>
-          </div>
-        </div>
-
-        {loading && (
-          <div className="absolute inset-0 bg-slate-950/20 backdrop-blur-xs flex items-center justify-center z-20 pointer-events-none">
-            <div className="bg-slate-900/90 border border-white/10 p-4 rounded-xl shadow-2xl flex items-center gap-3">
-              <RefreshCw className="w-5 h-5 text-violet-400 animate-spin" />
-              <span className="text-xs font-black text-slate-200">Updating live locations...</span>
-            </div>
-          </div>
-        )}
-
-        {!panelOpen && (
-          <button type="button" onClick={() => setPanelOpen(true)}
-            className="absolute bottom-5 left-5 z-20 h-10 px-4 rounded-xl bg-slate-900/95 border border-white/15 text-slate-200 hover:text-white flex items-center gap-2 pointer-events-auto backdrop-blur-md shadow-xl transition active:scale-95 lg:hidden animate-in fade-in duration-200">
-            <Users size={16} className="text-violet-400" />
-            <span className="text-xs font-black">Show Team</span>
-          </button>
-        )}
-
-        {selectedExecutive && trackStatus !== 'idle' && trackStatus !== 'loading' && (
-          <div className="absolute bottom-5 right-5 z-20 bg-slate-900/90 border border-white/10 rounded-xl p-3 text-[10px] font-bold space-y-1.5 backdrop-blur-md">
-            <div className="flex items-center gap-2"><div className="w-6 h-1.5 bg-blue-500 rounded flex-shrink-0 border-t border-dashed border-white" style={{ borderStyle: 'dashed' }} /> Driving Route</div>
-            <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded-full bg-red-500 flex-shrink-0 flex items-center justify-center text-white font-extrabold border border-white"><svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></span> Client destination</div>
-          </div>
-        )}
-      </div>
+          )}
+        </>
+      )}
     </div>
   )
 }
+

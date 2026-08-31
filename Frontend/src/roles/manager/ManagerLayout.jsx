@@ -137,9 +137,9 @@ const navItems = [
 
 const PROFILE_DEFAULTS = {
   fullName: '',
-  employeeId: 'MGR-001',
+  employeeId: '',
   officialEmail: '',
-  phone: '+91 98765 00099',
+  phone: '',
   role: 'Sales Manager',
   team: 'Sales & Business Development',
   designation: 'Senior Sales Manager',
@@ -310,11 +310,11 @@ export default function ManagerLayout() {
     showToast("Sidebar layout reset to default.", "info");
   };
 
-  const managerName = currentUser.name || 'Sales Manager'
+  const managerName = currentUser.name || currentUser.full_name || 'Sales Manager'
   const managerRole = currentUser.role || 'Sales Manager'
-  const managerEmail = currentUser.email || 'manager@tconnect.com'
+  const managerEmail = currentUser.email || ''
   const managerInitials = currentUser.initials || (managerName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()) || 'SM'
-  const empCode = currentUser.employee_code || currentUser.employee_id || 'MGR-001'
+  const empCode = currentUser.employee_code || currentUser.employee_id || ''
 
   // ── Profile State ──────────────────────────────────────────────────────────
   const [profile, setProfile] = useState(() => {
@@ -337,7 +337,7 @@ export default function ManagerLayout() {
   useEffect(() => {
     if (!myProfileOpen) return
 
-    const code = currentUser.employee_id || currentUser.auth_user_id || currentUser.id || empCode || 'MGR-001'
+    const code = 'self'
     hrmsAPI.getEmployeeById(code)
       .then((res) => {
         if (res && res.data) {
@@ -350,9 +350,11 @@ export default function ManagerLayout() {
           setProfile(mapped)
           originalProfileRef.current = { ...mapped }
           localStorage.setItem('tc_manager_profile', JSON.stringify(mapped))
+          setProfilePhoto(emp.profile_photo || null)
           if (emp.profile_photo) {
-            setProfilePhoto(emp.profile_photo)
             localStorage.setItem('tc_manager_photo', emp.profile_photo)
+          } else {
+            localStorage.removeItem('tc_manager_photo')
           }
           if (emp.documents) {
             try {
@@ -393,7 +395,7 @@ export default function ManagerLayout() {
     if (saving) return;
     setSaving(true)
     try {
-      const code = currentUser.employee_id || currentUser.auth_user_id || currentUser.id || empCode
+      const code = 'self'
       if (!code) throw new Error("No employee identifier found.")
 
       // ── Build change diff ─────────────────────────────────────────────────
@@ -454,9 +456,12 @@ export default function ManagerLayout() {
 
       // Always include documents and profile_photo in payload
       dbPayload.documents = JSON.stringify(documentsList)
-      if (profilePhoto) dbPayload.profile_photo = profilePhoto
+      dbPayload.profile_photo = profilePhoto || null
 
-      if (changedLabels.length === 0) {
+      const isPhotoChanged = profilePhoto !== localStorage.getItem('tc_manager_photo')
+      const isDocsChanged = JSON.stringify(documentsList) !== localStorage.getItem('tc_manager_documents')
+
+      if (changedLabels.length === 0 && !isPhotoChanged && !isDocsChanged) {
         showToast('No changes to save.', 'info')
         setShowProfileConfirm(false)
         if (!keepEditing) setEditMode(false)
@@ -479,9 +484,11 @@ export default function ManagerLayout() {
       originalProfileRef.current = { ...freshProfile }
       localStorage.setItem('tc_manager_profile', JSON.stringify(freshProfile))
 
+      setProfilePhoto(freshEmployee.profile_photo || null)
       if (freshEmployee.profile_photo) {
-        setProfilePhoto(freshEmployee.profile_photo)
         localStorage.setItem('tc_manager_photo', freshEmployee.profile_photo)
+      } else {
+        localStorage.removeItem('tc_manager_photo')
       }
       if (freshEmployee.documents) {
         try {
@@ -498,9 +505,14 @@ export default function ManagerLayout() {
       if (!keepEditing) setEditMode(false)
     } catch (err) {
       console.error(err)
-      const errMsg = err.detail
-        ? (typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail))
-        : (err.message || "Failed to save profile")
+      let errMsg = "Failed to save profile"
+      if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+        errMsg = err.errors.map(e => `${e.field || "field"}: ${e.message}`).join(", ")
+      } else if (err.detail) {
+        errMsg = typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail)
+      } else if (err.message) {
+        errMsg = err.message
+      }
       showToast(`Error: ${errMsg}`, 'error')
     } finally {
       setSaving(false)
@@ -547,11 +559,11 @@ export default function ManagerLayout() {
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
 
       {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
-      <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
+      <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
+            className="mgr-card lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
             aria-label="Toggle Navigation Sidebar"
           >
             {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
@@ -561,24 +573,47 @@ export default function ManagerLayout() {
           </Link>
         </div>
 
-        {/* Top-Right Area */}
-        <div className="flex items-center gap-3">
+        {/* Center: Sleek Metallic Shimmer Indicator (Larger & Centered Absolutely) */}
+        <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
+          <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-full px-6 py-2.5 shadow-sm pointer-events-auto">
+            <span className="relative flex h-3 w-3">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+            </span>
+            <span
+              className="text-sm uppercase tracking-[0.3em] font-black"
+              style={{
+                background: 'linear-gradient(to right, #475569 20%, #2563eb 40%, #60a5fa 60%, #475569 80%)',
+                backgroundSize: '200% auto',
+                color: 'transparent',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                animation: 'tc-shimmer 3s linear infinite',
+                display: 'inline-block'
+              }}
+            >
+              Sales Manager
+            </span>
+            <style>{`
+              @keyframes tc-shimmer {
+                to {
+                  background-position: -200% center;
+                }
+              }
+            `}</style>
+          </div>
+        </div>
 
-          {/* MY PROFILE BUTTON */}
-          <button
-            onClick={() => { setMyProfileOpen(true); setProfileOpen(false); setEditMode(false) }}
-            className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-[#0c4160] hover:bg-[#082d43] text-white text-xs font-black shadow-md transition cursor-pointer"
-          >
-            <UserCircle size={15} /> My Profile
-          </button>
+        {/* Top-Right Area */}
+        <div className="flex items-center gap-1.5 sm:gap-3">
 
           {/* Avatar + Dropdown */}
           <div className="relative">
             <button
               onClick={() => setProfileOpen(!profileOpen)}
-              className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-amber-50 transition cursor-pointer"
+              className="mgr-card flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-blue-50 transition cursor-pointer"
             >
-              <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-amber-600 to-amber-700 flex items-center justify-center text-white font-black text-sm shadow-xs ring-2 ring-amber-500/20 shrink-0">
+              <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center text-white font-black text-sm shadow-xs ring-2 ring-blue-500/20 shrink-0">
                 {profilePhoto
                   ? <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
                   : displayInitials
@@ -588,7 +623,7 @@ export default function ManagerLayout() {
                 <span className="font-extrabold text-xs text-slate-800 leading-tight flex items-center gap-1">
                   {displayName} <ChevronDown size={13} className="text-slate-400" />
                 </span>
-                <span className="text-[10px] text-amber-800 font-extrabold leading-tight truncate max-w-[140px]">{managerRole}</span>
+                <span className="text-[10px] text-blue-700 font-extrabold leading-tight truncate max-w-[140px]">{managerRole}</span>
               </div>
             </button>
 
@@ -605,8 +640,8 @@ export default function ManagerLayout() {
 
                 <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 p-2 overflow-hidden">
                   {/* Header */}
-                  <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-amber-600 to-amber-700 rounded-xl text-white mb-2 shadow-sm">
-                    <div className="w-11 h-11 rounded-full overflow-hidden bg-white text-amber-800 flex items-center justify-center text-base font-black shadow-md border-2 border-white/40 shrink-0">
+                  <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-blue-900 to-blue-700 rounded-xl text-white mb-2 shadow-sm">
+                    <div className="w-11 h-11 rounded-full overflow-hidden bg-white text-blue-700 flex items-center justify-center text-base font-black shadow-md border-2 border-white/40 shrink-0">
                       {profilePhoto
                         ? <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
                         : displayInitials
@@ -620,12 +655,23 @@ export default function ManagerLayout() {
                   </div>
 
                   <div className="space-y-0.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setProfileOpen(false)
+                        setMyProfileOpen(true)
+                        setEditMode(false)
+                      }}
+                      className="mgr-card w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50/40 hover:text-blue-900 text-slate-700 font-bold text-xs transition cursor-pointer"
+                    >
+                      <UserCircle size={15} className="text-[#0c4160]" /> My Profile
+                    </button>
                     <Link
                       to="/manager/settings"
                       onClick={() => setProfileOpen(false)}
-                      className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-[#fffdf5] hover:text-amber-900 text-slate-700 font-bold text-xs transition"
+                      className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50/40 hover:text-blue-900 text-slate-700 font-bold text-xs transition"
                     >
-                      <Settings size={15} className="text-[#b45309]" /> Account & Security Settings
+                      <Settings size={15} className="text-blue-600" /> Account & Security Settings
                     </Link>
                   </div>
 
@@ -639,7 +685,7 @@ export default function ManagerLayout() {
                       setProfileOpen(false)
                       handleLogout()
                     }}
-                    className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-xs transition cursor-pointer"
+                    className="mgr-card w-full flex items-center gap-3 px-3 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-extrabold text-xs transition cursor-pointer"
                   >
                     <LogOut size={16} /> Log Out
                   </button>
@@ -656,8 +702,22 @@ export default function ManagerLayout() {
           <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 lg:hidden transition-opacity" />
         )}
 
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 shrink-0 ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-          <div className="p-4 space-y-2 overflow-y-auto max-h-[calc(100vh-4rem)]">
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-[#0b3c5d] border-r border-[#0b3c5d]/80 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 shrink-0 flex flex-col shadow-xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          {/* Mobile-only Sidebar Close Header */}
+          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#072438] shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-[#f5ab27] flex items-center justify-center text-[#0b3c5d] text-[10px] font-black">TC</span>
+              <span className="text-xs font-black text-white uppercase tracking-widest">Sales Manager</span>
+            </div>
+            <button
+              onClick={() => setSidebarOpen(false)}
+              className="p-1.5 rounded-xl text-slate-300 hover:bg-white/10 hover:text-white transition cursor-pointer"
+              aria-label="Close sidebar"
+            >
+              <X size={18} />
+            </button>
+          </div>
+          <div className="flex-1 p-4 space-y-1.5 overflow-y-auto pt-4 lg:pt-5">
             {sidebarItems.map((item, index) => {
               const Icon = item.icon
               const isActive = location.pathname === item.path
@@ -681,12 +741,12 @@ export default function ManagerLayout() {
                       setSidebarOpen(false);
                     }}
                     className={`flex items-center gap-3.5 px-4 py-3 rounded-2xl font-semibold text-sm transition ${!isCustomizing && isActive
-                        ? 'bg-[#0b3c5d] text-white shadow-md shadow-blue-900/25 border-l-4 border-[#f5ab27]'
-                        : 'text-slate-700 hover:bg-slate-100 hover:text-[#0b3c5d]'
+                        ? 'bg-white/15 text-white shadow-md border-l-4 border-[#f5ab27]'
+                        : 'text-slate-300 hover:bg-white/10 hover:text-white'
                       }`}
                   >
                     {isCustomizing && <GripVertical size={15} className="text-slate-400 shrink-0" />}
-                    <Icon className={`w-5 h-5 shrink-0 ${!isCustomizing && isActive ? 'text-[#f5ab27]' : 'text-[#0b3c5d]'}`} />
+                    <Icon className={`w-5 h-5 shrink-0 ${!isCustomizing && isActive ? 'text-[#f5ab27]' : 'text-slate-400'}`} />
                     <span className="truncate tracking-tight">{item.label}</span>
                   </Link>
                 </div>
@@ -694,18 +754,18 @@ export default function ManagerLayout() {
             })}
             <div className="pt-2">
               {isCustomizing ? (
-                <div className="pt-2 border-t border-slate-100 space-y-1.5 px-1">
+                <div className="pt-2 border-t border-white/10 space-y-1.5 px-1">
                   <button
                     type="button"
                     onClick={saveCustomization}
-                    className="w-full py-2 px-3 bg-[#0b3c5d] hover:bg-[#072438] text-white rounded-xl text-xs font-black transition cursor-pointer"
+                    className="mgr-card w-full py-2 px-3 bg-[#0b3c5d] hover:bg-[#072438] text-white rounded-xl text-xs font-black transition cursor-pointer"
                   >
                     Save Order
                   </button>
                   <button
                     type="button"
                     onClick={resetCustomization}
-                    className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black transition cursor-pointer"
+                    className="mgr-card w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black transition cursor-pointer"
                   >
                     Reset Default
                   </button>
@@ -714,7 +774,7 @@ export default function ManagerLayout() {
                 <button
                   type="button"
                   onClick={() => setIsCustomizing(true)}
-                  className="w-full py-2 px-3 border border-dashed border-slate-200 hover:border-[#f5ab27] text-slate-500 hover:text-[#0b3c5d] rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                  className="mgr-card w-full py-2 px-3 border border-dashed border-white/20 hover:border-[#f5ab27] text-slate-400 hover:text-white rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <span>⚙️ Customize Sidebar</span>
                 </button>
@@ -723,29 +783,29 @@ export default function ManagerLayout() {
           </div>
         </aside>
 
-        <main className="flex-1 p-4 lg:p-6 min-w-0 overflow-y-auto w-full pb-20 lg:pb-6">
+        <main className="flex-1 p-4 lg:p-6 min-w-0 overflow-y-auto w-full pb-20 lg:pb-6 bg-[#F0F4F8]">
           <Outlet />
         </main>
 
         {/* ── Mobile Bottom Navigation Dock ────────────────────────── */}
-        <div className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 px-2 py-1.5 flex items-center justify-around shadow-lg">
-          <NavLink to="/manager/dashboard" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+        <div className="lg:hidden fixed bottom-0 inset-x-0 bg-[#0b3c5d] border-t border-white/10 z-40 px-2 py-1.5 flex items-center justify-around shadow-lg">
+          <NavLink to="/manager/dashboard" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
             <LayoutDashboard size={18} />
             <span>Home</span>
           </NavLink>
-          <NavLink to="/manager/map" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+          <NavLink to="/manager/map" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
             <MapPin size={18} />
             <span>Map</span>
           </NavLink>
-          <NavLink to="/manager/attendance" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+          <NavLink to="/manager/attendance" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
             <UserCheck size={18} />
             <span>Attendance</span>
           </NavLink>
-          <NavLink to="/manager/leads" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+          <NavLink to="/manager/leads" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
             <Users size={18} />
             <span>Leads</span>
           </NavLink>
-          <NavLink to="/manager/hrms" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#0b3c5d]' : 'text-slate-500'}`}>
+          <NavLink to="/manager/hrms" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
             <ShieldCheck size={18} />
             <span>HRMS</span>
           </NavLink>
@@ -769,7 +829,7 @@ export default function ManagerLayout() {
             {/* PANEL HEADER */}
             <div className="bg-white border-b border-slate-200 px-5 py-4 flex items-center justify-between sticky top-0 z-10">
               <div className="flex items-center gap-2">
-                <UserCircle size={20} className="text-amber-600" />
+                <UserCircle size={20} className="text-blue-600" />
                 <h2 className="text-base font-black text-slate-900">My Profile</h2>
               </div>
               <div className="flex items-center gap-2">
@@ -784,7 +844,7 @@ export default function ManagerLayout() {
                         }
                         setEditMode(false)
                       }} 
-                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+                      className="mgr-card px-3 py-1.5 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -792,7 +852,7 @@ export default function ManagerLayout() {
                       type="button"
                       disabled={saving}
                       onClick={() => setShowProfileConfirm(true)} 
-                      className="px-3 py-1.5 rounded-xl text-xs font-extrabold bg-amber-600 text-white cursor-pointer hover:bg-amber-700 transition flex items-center gap-1"
+                      className="mgr-card px-3 py-1.5 rounded-xl text-xs font-extrabold bg-blue-600 text-white cursor-pointer hover:bg-blue-700 transition flex items-center gap-1"
                       title="Click or press Enter to choose save action"
                     >
                       <Save size={13} /> {saving ? 'Saving...' : 'Done'}
@@ -802,7 +862,7 @@ export default function ManagerLayout() {
                   <button 
                     type="button"
                     onClick={() => setEditMode(true)} 
-                    className="px-3 py-1.5 rounded-xl text-xs font-black bg-[#ca8a04] hover:bg-[#a16207] text-white cursor-pointer transition flex items-center gap-1 shadow-md shadow-yellow-600/20"
+                    className="mgr-card px-3 py-1.5 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-700 text-white cursor-pointer transition flex items-center gap-1 shadow-md shadow-blue-500/20"
                   >
                     <Pencil size={13} /> Edit Profile
                   </button>
@@ -810,7 +870,7 @@ export default function ManagerLayout() {
                 <button 
                   type="button"
                   onClick={closeProfilePanel} 
-                  className="p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className="mgr-card p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
                 >
                   <X size={20} />
                 </button>
@@ -822,7 +882,7 @@ export default function ManagerLayout() {
 
               {/* Avatar with Camera Upload Overlay */}
               <div className="relative shrink-0 group">
-                <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-amber-500 to-amber-700 flex items-center justify-center text-white font-black text-3xl shadow-xl ring-4 ring-amber-400/20">
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center text-white font-black text-3xl shadow-xl ring-4 ring-blue-500/20">
                   {profilePhoto
                     ? <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
                     : displayInitials
@@ -832,7 +892,7 @@ export default function ManagerLayout() {
                 {/* Camera Overlay Button */}
                 <label
                   htmlFor="manager_profile_photo"
-                  className="absolute inset-0 rounded-full flex items-center justify-center bg-slate-900/50 opacity-0 group-hover:opacity-100 transition cursor-pointer"
+                  className="mgr-card absolute inset-0 rounded-full flex items-center justify-center bg-slate-900/50 opacity-0 group-hover:opacity-100 transition cursor-pointer"
                   title="Upload profile photo"
                 >
                   <div className="flex flex-col items-center gap-0.5">
@@ -852,7 +912,7 @@ export default function ManagerLayout() {
                 {profilePhoto && (
                   <button
                     onClick={removePhoto}
-                    className="absolute -top-1 -right-1 w-6 h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-md cursor-pointer transition"
+                    className="mgr-card absolute -top-1 -right-1 w-6 h-6 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-md cursor-pointer transition"
                     title="Remove photo"
                   >
                     <X size={12} />
@@ -872,7 +932,7 @@ export default function ManagerLayout() {
                 <div className="pt-0.5">
                   <label
                     htmlFor="manager_profile_photo"
-                    className="inline-flex items-center gap-1.5 text-[10px] font-extrabold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-300 px-2.5 py-1 rounded-lg cursor-pointer transition"
+                    className="mgr-card inline-flex items-center gap-1.5 text-[10px] font-extrabold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-300 px-2.5 py-1 rounded-lg cursor-pointer transition"
                   >
                     <Camera size={11} /> {profilePhoto ? 'Change Photo' : 'Upload Profile Photo'}
                   </label>
@@ -955,7 +1015,7 @@ export default function ManagerLayout() {
               {/* ── MY DOCUMENTS ─────────────────────────────────────────── */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-                  <FileUp size={16} className="text-amber-600" />
+                  <FileUp size={16} className="text-blue-600" />
                   <h3 className="font-black text-slate-900 text-sm">My Documents</h3>
                 </div>
 
@@ -979,7 +1039,7 @@ export default function ManagerLayout() {
                             )
                           } else if (doc.status === 'uploaded') {
                             return (
-                              <p className="text-[11px] font-semibold mt-0.5 text-amber-600 font-bold">
+                              <p className="text-[11px] font-semibold mt-0.5 text-blue-600 font-bold">
                                 ⏳ Pending Approval — {doc.fileName}
                               </p>
                             )
@@ -1011,14 +1071,14 @@ export default function ManagerLayout() {
                           }}
                         />
                         {(doc.status === 'uploaded' || doc.status === 'approved') && (
-                          <button onClick={() => setPreviewDoc(doc)} className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-amber-50 text-amber-800 border border-amber-300 cursor-pointer flex items-center gap-1 hover:bg-amber-100 transition">
+                          <button onClick={() => setPreviewDoc(doc)} className="mgr-card text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-blue-50 text-blue-800 border border-blue-300 cursor-pointer flex items-center gap-1 hover:bg-blue-100 transition">
                             <Eye size={12} /> View
                           </button>
                         )}
                         {doc.status !== 'approved' && (
                           <button
                             onClick={() => document.getElementById(`profile_doc_${doc.id}`)?.click()}
-                            className="text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1 hover:bg-slate-700 transition"
+                            className="mgr-card text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1 hover:bg-slate-700 transition"
                           >
                             <Upload size={12} /> {doc.status === 'uploaded' ? 'Re-upload' : 'Upload'}
                           </button>
@@ -1045,9 +1105,9 @@ export default function ManagerLayout() {
                 />
                 <div
                   onClick={() => document.getElementById('profile_doc_custom')?.click()}
-                  className="border-2 border-dashed border-amber-300 hover:border-amber-500 bg-amber-50/30 hover:bg-amber-50/60 rounded-2xl p-6 text-center transition cursor-pointer group"
+                  className="mgr-card border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/30 hover:bg-blue-50/60 rounded-2xl p-6 text-center transition cursor-pointer group"
                 >
-                  <FileUp size={28} className="text-amber-600 group-hover:scale-110 transition mx-auto mb-2" />
+                  <FileUp size={28} className="text-blue-600 group-hover:scale-110 transition mx-auto mb-2" />
                   <p className="text-sm font-black text-slate-900">Click to upload additional document</p>
                   <p className="text-[11px] font-bold text-slate-500 mt-1">PDF, JPG, PNG, Word, Excel supported</p>
                 </div>
@@ -1067,7 +1127,7 @@ export default function ManagerLayout() {
                 <h3 className="font-black text-slate-900">{previewDoc.name}</h3>
                 <p className="text-xs text-slate-400">{previewDoc.fileName}</p>
               </div>
-              <button onClick={() => setPreviewDoc(null)} className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer"><X size={20} /></button>
+              <button onClick={() => setPreviewDoc(null)} className="mgr-card p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer"><X size={20} /></button>
             </div>
             {previewDoc.fileUrl?.startsWith('data:image') ? (
               <img src={previewDoc.fileUrl} alt={previewDoc.name} className="w-full max-h-96 object-contain rounded-xl border border-slate-200" />
@@ -1094,8 +1154,8 @@ export default function ManagerLayout() {
                   await saveProfile(true);
                   setShowProfileConfirm(false);
                 }}
-                className={`w-full py-2.5 px-4 rounded-xl text-sm font-extrabold text-white transition shadow-sm ${
-                  saving ? 'bg-teal-400 cursor-not-allowed' : 'bg-teal-600 hover:bg-teal-700 cursor-pointer'
+                className={`mgr-card w-full py-2.5 px-4 rounded-xl text-sm font-extrabold text-white transition shadow-sm ${
+                  saving ? 'bg-blue-400 cursor-not-allowed' : 'bg-blue-600 hover:bg-blue-700 cursor-pointer'
                 }`}
               >
                 {saving ? 'Saving...' : 'Continue Editing'}
@@ -1107,7 +1167,7 @@ export default function ManagerLayout() {
                   await saveProfile(false);
                   setShowProfileConfirm(false);
                 }}
-                className={`w-full py-2.5 px-4 rounded-xl text-sm font-extrabold text-white transition shadow-sm ${
+                className={`mgr-card w-full py-2.5 px-4 rounded-xl text-sm font-extrabold text-white transition shadow-sm ${
                   saving ? 'bg-emerald-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 cursor-pointer'
                 }`}
               >
@@ -1117,7 +1177,7 @@ export default function ManagerLayout() {
                 type="button"
                 disabled={saving}
                 onClick={() => setShowProfileConfirm(false)}
-                className="w-full py-2.5 px-4 rounded-xl text-sm font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+                className="mgr-card w-full py-2.5 px-4 rounded-xl text-sm font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
               >
                 Cancel
               </button>
@@ -1138,7 +1198,7 @@ export default function ManagerLayout() {
 // If defined inside the component function, React creates a new component
 // type on every render, causing inputs to unmount/remount and lose focus.
 
-const Section = ({ icon: Icon, title, color = 'amber', children }) => (
+const Section = ({ icon: Icon, title, color = 'blue', children }) => (
   <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
     <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
       <Icon size={16} className={`text-${color}-600`} />
@@ -1160,7 +1220,7 @@ const Field = ({ label, value, editMode, onChange, readOnly = false }) => {
           onChange={(e) => onChange(e.target.value)}
           disabled={readOnly}
           readOnly={readOnly}
-          className={`text-sm font-semibold text-slate-900 border-b border-amber-400 focus:outline-none bg-transparent w-full ${
+          className={`text-sm font-semibold text-slate-900 border-b border-blue-400 focus:outline-none bg-transparent w-full ${
             readOnly ? 'opacity-60 cursor-not-allowed border-dashed border-slate-300' : ''
           }`}
         />

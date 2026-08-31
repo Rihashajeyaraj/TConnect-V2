@@ -1,4 +1,46 @@
+@import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,200..800;1,200..800&display=swap');
 @import "tailwindcss";
+
+@theme {
+  --color-mgr-primary: #FFDE85;
+  --color-mgr-primary-50: #fff9e6;
+  --color-mgr-primary-100: #fff0b3;
+  --color-mgr-primary-200: #ffe580;
+  --color-mgr-primary-300: #FFDE85;
+  --color-mgr-primary-400: #ffd14d;
+  --color-mgr-primary-500: #ffc41a;
+  --color-mgr-primary-600: #e6ab00;
+  --color-mgr-primary-700: #b38500;
+  --color-mgr-primary-800: #805f00;
+  --color-mgr-primary-900: #4d3900;
+  --color-mgr-primary-955: #332600;
+  
+  --color-mgr-secondary: #DFB1FB;
+  --color-mgr-secondary-50: #fbf5fe;
+  --color-mgr-secondary-100: #f3e0fc;
+  --color-mgr-secondary-200: #eacbfa;
+  --color-mgr-secondary-300: #DFB1FB;
+  --color-mgr-secondary-400: #cc90f2;
+  --color-mgr-secondary-500: #b870e8;
+  --color-mgr-secondary-600: #9f52cf;
+  --color-mgr-secondary-700: #8537b3;
+  --color-mgr-secondary-800: #7d4ba8;
+  --color-mgr-secondary-900: #573475;
+  --color-mgr-secondary-955: #38214d;
+
+  --color-mgr-accent: #9FC2F8;
+  --color-mgr-accent-50: #f2f7ff;
+  --color-mgr-accent-100: #dce8fd;
+  --color-mgr-accent-200: #bed6fa;
+  --color-mgr-accent-300: #9FC2F8;
+  --color-mgr-accent-400: #7aacf2;
+  --color-mgr-accent-500: #5796ec;
+  --color-mgr-accent-600: #417acc;
+  --color-mgr-accent-700: #2f60a6;
+  --color-mgr-accent-800: #4a75ba;
+  --color-mgr-accent-900: #325185;
+  --color-mgr-accent-955: #213659;
+}
 
 :root {
   font-family: "Poppins", sans-serif;
@@ -309,3 +351,99 @@ main[class*="bg-slate-9"] {
 .custom-slider::-moz-range-thumb:hover {
   transform: scale(1.2);
 }
+
+/* ── Admin Portal Font Size Zoom / Scale ── */
+.admin-portal-root {
+  font-size: 15px !important;
+}
+.admin-portal-root .text-\[10px\],
+.admin-portal-root .text-\[9px\] {
+  font-size: 11px !important;
+}
+.admin-portal-root .text-xs,
+.admin-portal-root .text-\[11px\] {
+  font-size: 13px !important;
+}
+.admin-portal-root .text-sm {
+  font-size: 15px !important;
+}
+.admin-portal-root .text-base {
+  font-size: 17px !important;
+}
+.admin-portal-root .text-lg {
+  font-size: 19px !important;
+}
+.admin-portal-root .text-xl {
+  font-size: 22px !important;
+}
+.admin-portal-root .text-2xl {
+  font-size: 26px !important;
+}
+.admin-portal-root th,
+.admin-portal-root td {
+  font-size: 13.5px !important;
+}
+.admin-portal-root p,
+.admin-portal-root span,
+.admin-portal-root div,
+.admin-portal-root label,
+.admin-portal-root input,
+.admin-portal-root select,
+.admin-portal-root button {
+  text-rendering: optimizeLegibility;
+}
+
+/* Global Font Boldness Reduction Override */
+.font-black {
+  font-weight: 600 !important;
+}
+.font-extrabold {
+  font-weight: 600 !important;
+}
+.font-bold {
+  font-weight: 500 !important;
+}
+.font-semibold {
+  font-weight: 450 !important;
+}
+
+/* ── Plus Jakarta Sans — Global Font ───────────────────────────────────── */
+html, body, * {
+  font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif !important;
+  letter-spacing: -0.01em;
+}
+
+/* ── Manager Portal Card Press Effect ─────────────────────────────────────── */
+.mgr-card {
+  position: relative;
+  overflow: hidden;
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+
+.mgr-card:active {
+  transform: scale(0.97);
+}
+
+.mgr-card::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at center, rgba(255, 222, 133, 0.55) 0%, transparent 70%);
+  opacity: 0;
+  transition: opacity 0.08s ease;
+  pointer-events: none;
+  border-radius: inherit;
+}
+
+.mgr-card:active::after {
+  opacity: 1;
+  transition: opacity 0s;
+}
+
+.mgr-card-purple::after {
+  background: radial-gradient(circle at center, rgba(223, 177, 251, 0.6) 0%, transparent 70%);
+}
+
+.mgr-card-blue::after {
+  background: radial-gradient(circle at center, rgba(159, 194, 248, 0.6) 0%, transparent 70%);
+}

@@ -22,3 +22,16 @@ class AuthTokenResponse(BaseModel):
     refresh_token: Optional[str] = None
     token_type: str = "bearer"
     user: Optional[Dict[str, Any]] = None
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ApproveResetRequest(BaseModel):
+    new_password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str

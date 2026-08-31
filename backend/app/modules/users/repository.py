@@ -9,6 +9,17 @@ from app.core.logger import logger
 
 _in_memory_users: List[Dict[str, Any]] = []
 
+import threading
+_users_cache_lock = threading.Lock()
+_USERS_CACHE = None
+_USERS_CACHE_TIMESTAMP = 0.0
+CACHE_TTL_SECONDS = 300.0 # Cache users for 5 minutes
+
+def _clear_users_cache():
+    global _USERS_CACHE, _USERS_CACHE_TIMESTAMP
+    _USERS_CACHE = None
+    _USERS_CACHE_TIMESTAMP = 0.0
+
 
 def _generate_employee_code() -> str:
     """Generate a unique employee code using timestamp + short UUID suffix."""
@@ -23,6 +34,22 @@ class UserRepository:
         self.helper = get_schema_helper()
 
     def get_all_users(self) -> List[Dict[str, Any]]:
+        global _USERS_CACHE, _USERS_CACHE_TIMESTAMP
+        import time
+        now = time.time()
+        if _USERS_CACHE is not None and (now - _USERS_CACHE_TIMESTAMP) < CACHE_TTL_SECONDS:
+            return _USERS_CACHE
+
+        with _users_cache_lock:
+            now = time.time()
+            if _USERS_CACHE is not None and (now - _USERS_CACHE_TIMESTAMP) < CACHE_TTL_SECONDS:
+                return _USERS_CACHE
+            return self._get_all_users_impl()
+
+    def _get_all_users_impl(self) -> List[Dict[str, Any]]:
+        global _USERS_CACHE, _USERS_CACHE_TIMESTAMP
+        import time
+
         # 1. Fetch raw employees from hrms.employees table
         db_employees = []
         try:
@@ -212,12 +239,15 @@ class UserRepository:
             if str(auth_u["id"]) not in merged_ids and str(auth_u["email"]).lower() not in merged_emails:
                 all_combined.append(auth_u)
                 
+        _USERS_CACHE = all_combined
+        _USERS_CACHE_TIMESTAMP = time.time()
         return all_combined
 
     def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
         """
         Create a user in Supabase Auth AND sync them to the HRMS employee portal.
         """
+        _clear_users_cache()
         user_id = str(uuid.uuid4())
         first_name = user_data.get("first_name") or user_data.get("name", "User").split(" ")[0]
         last_name = user_data.get("last_name") or (
@@ -343,6 +373,7 @@ class UserRepository:
         return new_user
 
     def update_user(self, user_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        _clear_users_cache()
         target = None
         for idx, u in enumerate(_in_memory_users):
             if u["id"] == user_id or u.get("email") == updates.get("email"):
@@ -599,6 +630,7 @@ class UserRepository:
         return target
 
     def delete_user(self, user_id: str) -> bool:
+        _clear_users_cache()
         global _in_memory_users
         _in_memory_users = [u for u in _in_memory_users if u["id"] != user_id]
 
@@ -629,6 +661,7 @@ class UserRepository:
         Updates reporting_manager_id, reporting_manager_name, reporting_manager_email
         and sends real-time notifications to BOTH manager and executive.
         """
+        _clear_users_cache()
         all_users = self.get_all_users()
         manager = None
         for u in all_users:

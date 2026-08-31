@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { NavLink, Outlet, useNavigate, Link } from "react-router-dom";
+import { NavLink, Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
   Users,
@@ -47,14 +47,14 @@ import TwiteConnectLogo from "../../common/TwiteConnectLogo.jsx";
 import { useToast } from "../../common/ToastContext.jsx";
 
 const PROFILE_DEFAULTS = {
-  fullName: "Abi Hastro",
-  employeeId: "EMP000012",
-  officialEmail: "abi@tconnect.com",
-  phone: "+91 98765 00012",
+  fullName: "",
+  employeeId: "",
+  officialEmail: "",
+  phone: "",
   role: "Sales Executive",
   team: "Sales & Business Development",
   designation: "Field Sales Executive",
-  gender: "Female",
+  gender: "",
   employmentType: "Full-time",
   employmentStatus: "Active",
   joinDate: "2025-06-01",
@@ -196,6 +196,8 @@ export default function SalesLayout() {
   const [showProfileConfirm, setShowProfileConfirm] = useState(false);
   const [previewDoc, setPreviewDoc] = useState(null);
   const navigate = useNavigate();
+  const location = useLocation();
+  const isMapPage = location.pathname === "/sales/map";
 
   const user = (() => {
     try {
@@ -205,9 +207,9 @@ export default function SalesLayout() {
     }
   })();
 
-  const seName = user.name || user.full_name || "Abi Hastro";
-  const seEmail = user.email || "abi@tconnect.com";
-  const empCode = user.employee_code || user.employee_id || "EMP000012";
+  const seName = user.name || user.full_name || "Sales Executive";
+  const seEmail = user.email || "";
+  const empCode = user.employee_code || user.employee_id || "";
   const seRole = user.role || "Sales Executive";
   const seInitials = (seName.split(" ").map((w) => w[0]).join("").slice(0, 2) || "SE").toUpperCase();
 
@@ -220,6 +222,7 @@ export default function SalesLayout() {
   const activeSessionRef = useRef(null);
   const lastPushedPosRef = useRef(null);
   const gpsRetryQueue = useRef([]);
+  const wakeLockRef = useRef(null);
 
   if (SUPA_URL && SUPA_ANON && !supabaseRef.current) {
     try {
@@ -348,6 +351,20 @@ export default function SalesLayout() {
     activeSessionRef.current = resolvedSessionId;
     setGpsActive(true);
 
+    // Acquire Wake Lock if supported to prevent background sleep/tab suspension
+    try {
+      if ('wakeLock' in navigator) {
+        navigator.wakeLock.request('screen').then(lock => {
+          wakeLockRef.current = lock;
+          console.log("[GPS TRACKING] Screen Wake Lock acquired successfully.");
+        }).catch(err => {
+          console.warn("[GPS TRACKING] Wake Lock request rejected:", err);
+        });
+      }
+    } catch (e) {
+      console.warn("[GPS TRACKING] Wake Lock API error:", e);
+    }
+
     // Initialize Supabase Broadcast channels
     _initBroadcastChannels(empId, empCode, resolvedSessionId);
 
@@ -386,6 +403,17 @@ export default function SalesLayout() {
       gpsWatchRef.current = null;
     }
     window.removeEventListener('online', _flushRetryQueue);
+
+    // Release Screen Wake Lock
+    if (wakeLockRef.current !== null) {
+      try {
+        wakeLockRef.current.release();
+        console.log("[GPS TRACKING] Screen Wake Lock released.");
+      } catch (err) {
+        console.warn("[GPS TRACKING] Failed to release Wake Lock:", err);
+      }
+      wakeLockRef.current = null;
+    }
     
     activeChannelsRef.current.forEach(ch => {
       try { ch.unsubscribe(); } catch {}
@@ -544,9 +572,11 @@ export default function SalesLayout() {
           };
           setProfile(mapped);
           localStorage.setItem("tc_se_profile", JSON.stringify(mapped));
+          setProfilePhoto(emp.profile_photo || null);
           if (emp.profile_photo) {
-            setProfilePhoto(emp.profile_photo);
             localStorage.setItem("tc_se_photo", emp.profile_photo);
+          } else {
+            localStorage.removeItem("tc_se_photo");
           }
           if (emp.documents) {
             try {
@@ -584,9 +614,7 @@ export default function SalesLayout() {
           dbPayload[key] = null;
         }
       }
-      if (profilePhoto) {
-        dbPayload.profile_photo = profilePhoto;
-      }
+      dbPayload.profile_photo = profilePhoto || null;
       dbPayload.documents = JSON.stringify(documentsList);
       
       const res = await hrmsAPI.updateEmployee("self", dbPayload);
@@ -606,9 +634,11 @@ export default function SalesLayout() {
       setProfile(normalizedProfile);
       localStorage.setItem("tc_se_profile", JSON.stringify(normalizedProfile));
       
+      setProfilePhoto(freshEmployee.profile_photo || null);
       if (freshEmployee.profile_photo) {
-        setProfilePhoto(freshEmployee.profile_photo);
         localStorage.setItem("tc_se_photo", freshEmployee.profile_photo);
+      } else {
+        localStorage.removeItem("tc_se_photo");
       }
       if (freshEmployee.documents) {
         try {
@@ -626,9 +656,14 @@ export default function SalesLayout() {
       }
     } catch (err) {
       console.error(err);
-      const errMsg = err.detail
-        ? (typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail))
-        : (err.message || "Failed to save profile");
+      let errMsg = "Failed to save profile";
+      if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
+        errMsg = err.errors.map(e => `${e.field || "field"}: ${e.message}`).join(", ");
+      } else if (err.detail) {
+        errMsg = typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail);
+      } else if (err.message) {
+        errMsg = err.message;
+      }
       showToast(`Error: ${errMsg}`, "error");
     }
   };
@@ -827,7 +862,7 @@ export default function SalesLayout() {
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
       {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
-      <header className="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
+      <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setOpen(!open)}
@@ -841,23 +876,44 @@ export default function SalesLayout() {
           </Link>
         </div>
 
+        {/* Center: Role Indicator Tag */}
+        <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
+          <div className="flex items-center gap-2.5 bg-slate-50/80 border border-slate-200/80 rounded-full px-4.5 py-1.5 shadow-xs pointer-events-auto">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+            </span>
+            <span
+              className="text-xs uppercase tracking-[0.25em] font-black"
+              style={{
+                background: 'linear-gradient(to right, #475569 20%, #0d9488 40%, #5eead4 60%, #475569 80%)',
+                backgroundSize: '200% auto',
+                color: 'transparent',
+                WebkitBackgroundClip: 'text',
+                backgroundClip: 'text',
+                animation: 'tc-shimmer-se 3s linear infinite',
+                display: 'inline-block'
+              }}
+            >
+              {seRole || 'Sales Executive'}
+            </span>
+            <style>{`
+              @keyframes tc-shimmer-se {
+                to {
+                  background-position: -200% center;
+                }
+              }
+            `}</style>
+          </div>
+        </div>
+
         {/* Right Header Navigation */}
-        <div className="flex items-center gap-2 sm:gap-3">
-          {/* MY PROFILE BUTTON */}
-          <button
-            onClick={() => {
-              setMyProfileOpen(true);
-              setShowUserMenu(false);
-              setEditMode(false);
-            }}
-            className="hidden sm:flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-extrabold shadow-xs transition cursor-pointer"
-          >
-            <UserCircle size={15} /> My Profile
-          </button>
+        <div className="flex items-center gap-1.5 sm:gap-3">
+
 
           <button
             onClick={() => navigate("/sales/notifications")}
-            className="p-2 rounded-xl text-slate-500 hover:bg-slate-100 relative transition cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-xl text-slate-500 hover:bg-slate-100 relative transition cursor-pointer"
           >
             <Bell size={19} />
             {notifCount > 0 && (
@@ -906,6 +962,18 @@ export default function SalesLayout() {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
+                      setShowUserMenu(false);
+                      setMyProfileOpen(true);
+                      setEditMode(false);
+                    }}
+                    className="w-full flex items-center gap-2 p-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <UserCircle size={15} className="text-teal-600" /> My Profile
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
                       e.preventDefault();
                       setShowUserMenu(false);
                       handleLogout();
@@ -927,17 +995,30 @@ export default function SalesLayout() {
         {open && (
           <div
             onClick={() => setOpen(false)}
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 lg:hidden transition-opacity"
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-[4000] lg:hidden transition-opacity"
           />
         )}
 
         {/* ── Sidebar ─────────────────────────────────────────────────── */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static pt-16 lg:pt-0 shrink-0 flex flex-col ${
+          className={`fixed inset-y-0 left-0 z-[4010] lg:z-40 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 shrink-0 flex flex-col ${
             open ? "translate-x-0" : "-translate-x-full"
           }`}
         >
-          {/* Note: Sidebar header logo row is completely removed to match Manager layout */}
+          {/* Mobile-only Sidebar Close Header */}
+          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-teal-100 bg-gradient-to-r from-teal-700 to-teal-600 shrink-0">
+            <div className="flex items-center gap-2">
+              <span className="w-6 h-6 rounded-lg bg-white/20 flex items-center justify-center text-white text-[10px] font-black">TC</span>
+              <span className="text-xs font-black text-white uppercase tracking-widest">Sales Portal</span>
+            </div>
+            <button
+              onClick={() => setOpen(false)}
+              className="p-1.5 rounded-xl text-teal-100 hover:bg-white/10 hover:text-white transition cursor-pointer"
+              aria-label="Close sidebar"
+            >
+              <X size={18} />
+            </button>
+          </div>
 
           <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
             {sidebarItems.map((m, index) => (
@@ -1024,12 +1105,16 @@ export default function SalesLayout() {
         </aside>
 
         {/* Page Content Container */}
-        <main className="flex-1 p-3 sm:p-5 lg:p-6 overflow-y-auto min-w-0 pb-20 lg:pb-6">
+        <main className={`flex-1 min-w-0 ${
+          isMapPage 
+            ? "p-0 pb-14 overflow-hidden h-[calc(100vh-64px)] lg:h-auto lg:p-6 lg:overflow-y-auto lg:pb-6" 
+            : "p-3 sm:p-5 lg:p-6 overflow-y-auto pb-20 lg:pb-6"
+        }`}>
           <Outlet />
         </main>
 
         {/* ── Mobile Bottom Navigation Dock ────────────────────────── */}
-        <div className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-40 px-2 py-1.5 flex items-center justify-around shadow-lg">
+        <div className="lg:hidden fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 z-[1020] px-2 py-1.5 flex items-center justify-around shadow-lg">
           <NavLink to="/sales/dashboard" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-teal-600' : 'text-slate-500'}`}>
             <LayoutDashboard size={18} />
             <span>Home</span>
@@ -1057,7 +1142,7 @@ export default function SalesLayout() {
           EXECUTIVE MY PROFILE SLIDE-OVER PANEL
       ══════════════════════════════════════════════════════════════════════ */}
       {myProfileOpen && (
-        <div className="fixed inset-0 z-50 flex">
+        <div className="fixed inset-0 z-[5000] flex">
           <div
             className="flex-1 bg-slate-900/60 backdrop-blur-xs"
             onClick={() => {
@@ -1369,7 +1454,7 @@ export default function SalesLayout() {
 
       {/* Preview Modal */}
       {previewDoc && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-[60]">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-[5010]">
           <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-slate-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
@@ -1393,7 +1478,7 @@ export default function SalesLayout() {
 
       {/* Profile Changes Confirmation Modal */}
       {showProfileConfirm && (
-        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+        <div className="fixed inset-0 z-[5020] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4">
             <h3 className="text-lg font-black text-slate-900">Profile Changes</h3>
             <p className="text-sm text-slate-600 font-semibold">What would you like to do?</p>

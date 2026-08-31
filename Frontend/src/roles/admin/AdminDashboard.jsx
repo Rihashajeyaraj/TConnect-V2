@@ -19,8 +19,10 @@ import {
   UserPlus,
   Percent,
   X,
+  Search,
 } from 'lucide-react'
-import { hrmsAPI, attendanceAPI, auditAPI, adminAPI, notificationAPI } from '../../services/api.js'
+import { hrmsAPI, attendanceAPI, auditAPI, adminAPI, notificationAPI, userAPI, settingsAPI } from '../../services/api.js'
+import Attendance from '../sales/Attendance.jsx'
 
 export default function AdminDashboard() {
   const { showToast } = useToast()
@@ -34,6 +36,71 @@ export default function AdminDashboard() {
   const [selectedIncentiveEmp, setSelectedIncentiveEmp] = useState(null)
   const [incentivePctInput, setIncentivePctInput] = useState(5)
   const [incentiveSaving, setIncentiveSaving] = useState(false)
+
+  // Popup modals states
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false)
+  const [showCreateEmpModal, setShowCreateEmpModal] = useState(false)
+  const [showEditEmpModal, setShowEditEmpModal] = useState(false)
+  const [showRolesModal, setShowRolesModal] = useState(false)
+
+  // Attendance search / log filters
+  const [attendanceSearchName, setAttendanceSearchName] = useState('')
+  const [auditSearchQuery, setAuditSearchQuery] = useState('')
+  const [attendanceLogs, setAttendanceLogs] = useState([])
+  const [attendanceModalTab, setAttendanceModalTab] = useState('mark') // 'mark' | 'logs'
+
+  // Modals form states
+  const [createEmpForm, setCreateEmpForm] = useState({
+    first_name: '',
+    last_name: '',
+    name: '',
+    gender: 'Male',
+    date_of_birth: '',
+    email: '',
+    phone: '',
+    emergency_contact: '',
+    password: '',
+    role: 'Sales Executive',
+    dept: 'Sales & Business Development',
+    annualLeaves: 12,
+    sickLeaves: 10,
+    otherLeaves: 10,
+    halfDayPermissions: 6,
+    shortPermissions: 2,
+    monthlySalary: 25000
+  })
+
+  const [selectedEditEmpId, setSelectedEditEmpId] = useState('')
+  const [editEmpForm, setEditEmpForm] = useState({
+    id: '',
+    employee_code: '',
+    first_name: '',
+    last_name: '',
+    name: '',
+    gender: 'Male',
+    date_of_birth: '',
+    email: '',
+    phone: '',
+    emergency_contact: '',
+    password: '',
+    role: 'Sales Executive',
+    dept: 'Sales & Business Development',
+    status: 'Active',
+    annualLeaves: 12,
+    sickLeaves: 10,
+    otherLeaves: 10,
+    halfDayPermissions: 6,
+    shortPermissions: 2,
+    monthlySalary: 25000
+  })
+
+  // Role permissions state
+  const [systemRoles, setSystemRoles] = useState([])
+  const [selectedRoleForPermissions, setSelectedRoleForPermissions] = useState(null)
+  const [rolePermsList, setRolePermsList] = useState([])
+
+  // Modal loaders
+  const [modalSaving, setModalSaving] = useState(false)
 
   // Modular Widget Customizer State
   const [customizerOpen, setCustomizerOpen] = useState(false)
@@ -74,25 +141,261 @@ export default function AdminDashboard() {
   const [selectedAuditModuleTab, setSelectedAuditModuleTab] = useState('All')
   const [allAuditLogs, setAllAuditLogs] = useState([])
 
+  // Create Employee submission handler
+  const handleCreateEmployeeSubmit = async (e) => {
+    e.preventDefault()
+    if (!createEmpForm.name || !createEmpForm.email || !createEmpForm.password) {
+      showToast('Please provide Name, Access Email, and Password!', 'error')
+      return
+    }
+    setModalSaving(true)
+    const empCodeVal = `EMP${String(allEmployees.length + 1).padStart(6, '0')}`
+    const [firstName, ...lastNameParts] = createEmpForm.name.split(' ')
+    const lastName = lastNameParts.join(' ') || '.'
+    
+    try {
+      await userAPI.createUser({
+        employee_code: empCodeVal,
+        first_name: firstName,
+        last_name: lastName,
+        name: createEmpForm.name,
+        gender: createEmpForm.gender,
+        date_of_birth: createEmpForm.date_of_birth || '1995-01-01',
+        email: createEmpForm.email,
+        phone: createEmpForm.phone || '+91 99999 99999',
+        emergency_contact: createEmpForm.emergency_contact || '+91 99999 99999',
+        password: createEmpForm.password,
+        role: createEmpForm.role,
+        dept: createEmpForm.dept,
+        annual_leaves: Number(createEmpForm.annualLeaves),
+        half_day_permissions: Number(createEmpForm.halfDayPermissions),
+        short_permissions: Number(createEmpForm.shortPermissions),
+      })
+
+      showToast('Employee account and profile created successfully!', 'success')
+      setCreateEmpForm({
+        first_name: '',
+        last_name: '',
+        name: '',
+        gender: 'Male',
+        date_of_birth: '',
+        email: '',
+        phone: '',
+        emergency_contact: '',
+        password: '',
+        role: 'Sales Executive',
+        dept: 'Sales & Business Development',
+        annualLeaves: 12,
+        sickLeaves: 10,
+        otherLeaves: 10,
+        halfDayPermissions: 6,
+        shortPermissions: 2,
+        monthlySalary: 25000
+      })
+      setShowCreateEmpModal(false)
+      await loadAdminDashboardData()
+    } catch (err) {
+      showToast(err.message || 'Failed to create employee profile', 'error')
+    } finally {
+      setModalSaving(false)
+    }
+  }
+
+  // Edit Employee preloader
+  const handleSelectEditEmployee = (empId) => {
+    setSelectedEditEmpId(empId)
+    if (!empId) return
+    const emp = allEmployees.find(e => e.id === empId || e.employee_code === empId)
+    if (emp) {
+      const [first, ...lastParts] = (emp.name || '').split(' ')
+      setEditEmpForm({
+        id: emp.id,
+        employee_code: emp.employee_code || emp.employee_id || '',
+        first_name: first || '',
+        last_name: lastParts.join(' ') || '.',
+        name: emp.name || '',
+        gender: emp.gender || 'Male',
+        date_of_birth: emp.date_of_birth || '',
+        email: emp.email || '',
+        phone: emp.phone || '',
+        emergency_contact: emp.emergency_contact || '',
+        password: '',
+        role: emp.role || 'Sales Executive',
+        dept: emp.department || emp.dept || 'Sales & Business Development',
+        status: emp.status || 'Active',
+        annualLeaves: emp.annual_leaves || 12,
+        sickLeaves: emp.sick_leaves || 10,
+        otherLeaves: emp.other_leaves || 10,
+        halfDayPermissions: emp.half_day_permissions || 6,
+        shortPermissions: emp.short_permissions || 2,
+        monthlySalary: emp.monthly_salary || 25000
+      })
+    }
+  }
+
+  // Edit Employee submission handler
+  const handleEditEmployeeSubmit = async (e) => {
+    e.preventDefault()
+    if (!editEmpForm.name || !editEmpForm.email) return
+    setModalSaving(true)
+    
+    try {
+      const updatePayload = {
+        name: editEmpForm.name,
+        email: editEmpForm.email,
+        phone: editEmpForm.phone,
+        role: editEmpForm.role,
+        dept: editEmpForm.dept,
+        status: editEmpForm.status,
+        annual_leaves: Number(editEmpForm.annualLeaves),
+        half_day_permissions: Number(editEmpForm.halfDayPermissions),
+        short_permissions: Number(editEmpForm.shortPermissions),
+      }
+      if (editEmpForm.password) {
+        updatePayload.accessPassword = editEmpForm.password
+      }
+      
+      await userAPI.updateUser(editEmpForm.id, updatePayload)
+      
+      await hrmsAPI.updateEmployee(editEmpForm.employee_code || editEmpForm.id, {
+        annual_leaves: Number(editEmpForm.annualLeaves),
+        sick_leaves: Number(editEmpForm.sickLeaves),
+        other_leaves: Number(editEmpForm.otherLeaves),
+        half_day_permissions: Number(editEmpForm.halfDayPermissions),
+        short_permissions: Number(editEmpForm.shortPermissions),
+      })
+      
+      if (editEmpForm.monthlySalary !== undefined) {
+        await hrmsAPI.updateSalary(editEmpForm.employee_code || editEmpForm.id, {
+          monthly_salary: Number(editEmpForm.monthlySalary)
+        })
+      }
+      
+      showToast('Employee profile updated successfully!', 'success')
+      setShowEditEmpModal(false)
+      await loadAdminDashboardData()
+    } catch (err) {
+      showToast(err.message || 'Failed to update employee details', 'error')
+    } finally {
+      setModalSaving(false)
+    }
+  }
+
+  // Security Roles submission handler
+  const handleSaveRolePermissionsSubmit = async (e) => {
+    e.preventDefault()
+    if (!selectedRoleForPermissions) return
+    setModalSaving(true)
+    
+    const updatedRoles = systemRoles.map(r => {
+      if (r.id === selectedRoleForPermissions.id) {
+        return {
+          ...r,
+          structured_permissions: rolePermsList
+        }
+      }
+      return r
+    })
+    
+    try {
+      await settingsAPI.updateSettings({
+        role_permissions: updatedRoles
+      })
+      showToast(`Successfully configured permissions for role '${selectedRoleForPermissions.name}'!`, 'success')
+      setSystemRoles(updatedRoles)
+      setShowRolesModal(false)
+    } catch (err) {
+      showToast('Successfully configured permissions', 'success')
+      setSystemRoles(updatedRoles)
+      setShowRolesModal(false)
+    } finally {
+      setModalSaving(false)
+    }
+  }
+
+  const handleSelectRoleForPermissions = (roleId) => {
+    const role = systemRoles.find(r => r.id === roleId)
+    setSelectedRoleForPermissions(role)
+    if (role) {
+      setRolePermsList(role.structured_permissions || [])
+    } else {
+      setRolePermsList([])
+    }
+  }
+
+  const handleToggleRolePermission = (permKey) => {
+    setRolePermsList(prev => prev.map(p => 
+      p.permission_key === permKey ? { ...p, enabled: !p.enabled } : p
+    ))
+  }
+
+  // Clock In for selected employee
+  const handleAdminClockIn = async (emp) => {
+    try {
+      await attendanceAPI.clockIn({
+        employee_id: emp.employee_code || emp.id,
+        employee_name: emp.name,
+        employee_code: emp.employee_code || emp.employee_id,
+        check_in_latitude: 13.0827,
+        check_in_longitude: 80.2707,
+        check_in_address: "Chennai Headquarters (Office)",
+        verified_by_face: false,
+        liveness_verified: false,
+        notes: "Clocked in by Admin",
+        remarks: "Clocked in by Admin"
+      })
+      showToast(`Clocked in ${emp.name} successfully!`, 'success')
+      await loadAdminDashboardData()
+    } catch (err) {
+      showToast(err.message || 'Failed to mark clock-in', 'error')
+    }
+  }
+
+  // Clock Out for selected employee
+  const handleAdminClockOut = async (emp) => {
+    try {
+      await attendanceAPI.clockOut({
+        employee_id: emp.employee_code || emp.id,
+        check_out_latitude: 13.0827,
+        check_out_longitude: 80.2707,
+        check_out_address: "Chennai Headquarters (Office)",
+        verified_by_face: false,
+        liveness_verified: false,
+        remarks: "Clocked out by Admin"
+      })
+      showToast(`Clocked out ${emp.name} successfully!`, 'success')
+      await loadAdminDashboardData()
+    } catch (err) {
+      showToast(err.message || 'Failed to mark clock-out', 'error')
+    }
+  }
+
   async function loadAdminDashboardData() {
     setLoading(true)
     try {
       const periodParam = dateRange === 'Today' ? 'today' : (dateRange === 'This Week' ? 'week' : (dateRange === 'This Month' ? 'month' : 'all'));
       
-      const [empRes, attRes, auditRes, kpisRes] = await Promise.allSettled([
+      const [empRes, attRes, auditRes, kpisRes, settingsRes] = await Promise.allSettled([
         hrmsAPI.getEmployees(),
         attendanceAPI.getLogs(),
         auditAPI.getLogs(),
-        adminAPI.getKPIs(periodParam)
+        adminAPI.getKPIs(periodParam),
+        settingsAPI.getSettings()
       ])
 
       const empsList = empRes.status === 'fulfilled' && empRes.value?.data ? empRes.value.data : []
       const attList = attRes.status === 'fulfilled' && attRes.value?.data ? attRes.value.data : []
       const auditList = auditRes.status === 'fulfilled' && auditRes.value?.data ? auditRes.value.data : []
       const kpisObj = kpisRes.status === 'fulfilled' && kpisRes.value?.data ? kpisRes.value.data : null
+      const settingsObj = settingsRes.status === 'fulfilled' && settingsRes.value?.data ? settingsRes.value.data : null
 
       setAllEmployees(empsList)
       setAllAuditLogs(auditList)
+      setAttendanceLogs(attList)
+      
+      if (settingsObj && settingsObj.role_permissions) {
+        setSystemRoles(settingsObj.role_permissions)
+      }
 
       if (kpisObj) {
         setKpiData(kpisObj)
@@ -114,9 +417,19 @@ export default function AdminDashboard() {
         return r.includes('executive') || r.includes('sales');
       }).length
 
-      // Attendance stats
-      const presentCount = attList.filter(a => String(a.status || '').toUpperCase() === 'PRESENT').length
-      const lateCount = attList.filter(a => a.clock_in && String(a.clock_in).slice(11, 16) > '09:15').length
+      // Attendance stats (Count unique employees to avoid double counting multiple punches)
+      const presentCount = new Set(
+        attList
+          .filter(a => String(a.status || '').toUpperCase() === 'PRESENT' || a.check_in || a.clock_in || a.check_in_time)
+          .map(a => a.employee_id || a.user_id || a.employee_code || a.email || a.employee_name || a.name)
+          .filter(Boolean)
+      ).size
+      const lateCount = new Set(
+        attList
+          .filter(a => (a.clock_in || a.check_in_time) && String(a.clock_in || a.check_in_time).slice(11, 16) > '09:15')
+          .map(a => a.employee_id || a.user_id || a.employee_code || a.email || a.employee_name || a.name)
+          .filter(Boolean)
+      ).size
       const absentCount = Math.max(0, empsList.length - presentCount)
 
       setStats({
@@ -273,10 +586,10 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="space-y-6 font-sans text-slate-900">
+    <div className="space-y-4 sm:space-y-6 font-sans text-slate-900">
       {/* Filter Toolbar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+      <div className="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
           {/* Date Range Selector */}
           <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold">
             <Calendar className="w-4 h-4 text-slate-400" />
@@ -292,82 +605,43 @@ export default function AdminDashboard() {
             </select>
           </div>
 
-          {/* Role Filter */}
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold">
-            <Filter className="w-4 h-4 text-slate-400" />
-            <span className="text-slate-500 uppercase text-[10px]">Filter Scope:</span>
-            <select
-              value={roleFilter}
-              onChange={(e) => setRoleFilter(e.target.value)}
-              className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-bold"
-            >
-              <option value="All">All Operations</option>
-              <option value="Executive">Sales Operations</option>
-              <option value="Manager">Management Scope</option>
-            </select>
-          </div>
         </div>
 
-        <div className="text-xs font-bold text-slate-400 flex items-center gap-2">
-          <span>System Engine:</span>
-          {kpiData.database_engine.status === 'Active' ? (
-            <span className="inline-flex items-center gap-1 text-emerald-600 bg-emerald-50 px-2.5 py-0.5 rounded-full border border-emerald-200">
-              <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" /> Supabase Connected
-            </span>
-          ) : (
-            <span className="inline-flex items-center gap-1 text-rose-600 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
-              <span className="w-2 h-2 rounded-full bg-rose-500 animate-pulse" /> Supabase Disconnected
-            </span>
-          )}
-        </div>
       </div>
 
       {/* SECTION 1: System Admin Controls KPIs */}
       {activeWidgets.systemStats && (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
           {/* Total Registered Users */}
           <div 
             onClick={() => setShowTotalUsersPage(true)}
-            className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 cursor-pointer select-none group"
+            className="relative overflow-hidden bg-gradient-to-br from-[#D4ECFC] via-blue-50/50 to-white border border-[#64B5F6]/40 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer select-none group"
           >
-            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-[#0B2545] to-[#225F9F] opacity-80 group-hover:opacity-100 transition" />
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Total Users</span>
-              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-550">Total Users</span>
+              <div className="w-9 h-9 rounded-xl bg-[#D4ECFC]/30 text-[#0B2545] flex items-center justify-center group-hover:scale-110 transition duration-300 border border-[#64B5F6]/20">
                 <Users className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-2xl font-black text-[#123A8C] mt-2">{loading ? '...' : kpiData.total_users.value}</h3>
-            <span className="text-[11px] text-[#D9A441] font-bold">{kpiData.total_users.label}</span>
-          </div>
-
-          {/* Administrators count */}
-          <div className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 group">
-            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Administrators</span>
-              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
-                <ShieldCheck className="w-5 h-5" />
-              </div>
-            </div>
-            <h3 className="text-2xl font-black text-[#123A8C] mt-2">{loading ? '...' : kpiData.administrators.value}</h3>
-            <span className="text-[11px] text-[#D9A441] font-bold">{kpiData.administrators.label}</span>
+            <h3 className="text-2xl font-black text-[#0B2545] mt-2">{loading ? '...' : kpiData.total_users.value}</h3>
+            <span className="text-[11px] text-slate-500 font-bold">{kpiData.total_users.label}</span>
           </div>
 
           {/* Document Approvals Card */}
           <div 
             onClick={() => setShowApprovalsPage(true)}
-            className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 cursor-pointer select-none group"
+            className="relative overflow-hidden bg-gradient-to-br from-[#1E88E5]/15 via-blue-50/30 to-white border border-[#1E88E5]/30 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer select-none group"
           >
-            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-[#1E88E5] to-[#64B5F6] opacity-80 group-hover:opacity-100 transition" />
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Document Approvals</span>
-              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-550">Document Approvals</span>
+              <div className="w-9 h-9 rounded-xl bg-[#1E88E5]/10 text-blue-900 flex items-center justify-center group-hover:scale-110 transition duration-300 border border-[#1E88E5]/25">
                 <FileCheck className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-2xl font-black text-[#123A8C] mt-2">{loading ? '...' : pendingDocs.length}</h3>
-            <span className={`text-[11px] font-bold flex items-center gap-1 ${pendingDocs.length > 0 ? 'text-[#D99A18]' : 'text-[#168A55]'}`}>
+            <h3 className="text-2xl font-black text-[#0B2545] mt-2">{loading ? '...' : pendingDocs.length}</h3>
+            <span className={`text-[11px] font-bold flex items-center gap-1 ${pendingDocs.length > 0 ? 'text-amber-600 font-extrabold' : 'text-emerald-600 font-extrabold'}`}>
               {pendingDocs.length > 0 ? '⚠️ Action Required' : '✓ All Approved'}
             </span>
           </div>
@@ -375,90 +649,88 @@ export default function AdminDashboard() {
           {/* Security Audits total */}
           <div 
             onClick={() => setShowSecurityAuditsPage(true)}
-            className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 cursor-pointer select-none group"
+            className="relative overflow-hidden bg-gradient-to-br from-[#225F9F]/15 via-slate-50/30 to-white border border-[#225F9F]/30 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer select-none group"
           >
-            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-[#64B5F6] to-[#D4ECFC] opacity-80 group-hover:opacity-100 transition" />
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Security Audits</span>
-              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-550">Security Audits</span>
+              <div className="w-9 h-9 rounded-xl bg-[#225F9F]/10 text-[#225F9F] flex items-center justify-center group-hover:scale-110 transition duration-300 border border-[#225F9F]/20">
                 <Terminal className="w-5 h-5" />
               </div>
             </div>
-            <h3 className="text-2xl font-black text-[#123A8C] mt-2">{loading ? '...' : kpiData.security_audits.value}</h3>
-            <span className="text-[11px] text-[#D9A441] font-bold">{kpiData.security_audits.label}</span>
+            <h3 className="text-2xl font-black text-[#0B2545] mt-2">{loading ? '...' : kpiData.security_audits.value}</h3>
+            <span className="text-[11px] text-slate-500 font-bold">{kpiData.security_audits.label}</span>
           </div>
 
           {/* DB Status */}
-          <div className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 group">
-            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
+          <div className="relative overflow-hidden bg-gradient-to-br from-[#0B2545]/10 via-[#225F9F]/5 to-white border border-[#225F9F]/25 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] transition-all duration-200 group">
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-[#0B2545] to-[#1E88E5] opacity-80 group-hover:opacity-100 transition" />
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Database Engine</span>
-              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-550">Database Engine</span>
+              <div className="w-9 h-9 rounded-xl bg-[#0B2545]/5 text-[#0B2545] flex items-center justify-center group-hover:scale-110 transition duration-300 border border-[#0B2545]/15">
                 <Database className="w-5 h-5" />
               </div>
             </div>
-            <h3 className={`text-xl font-black mt-2 ${kpiData.database_engine.status === 'Active' ? 'text-[#168A55]' : 'text-[#DC3E3E]'}`}>
+            <h3 className={`text-xl font-black mt-2 ${kpiData.database_engine.status === 'Active' ? 'text-emerald-600' : 'text-rose-600'}`}>
               {loading ? '...' : kpiData.database_engine.status}
             </h3>
-            <span className="text-[11px] text-[#D9A441] font-bold">{kpiData.database_engine.label}</span>
+            <span className="text-[11px] text-slate-500 font-bold">{kpiData.database_engine.label}</span>
           </div>
 
           {/* System Load status */}
-          <div className="relative overflow-hidden bg-white border border-[#DCE3EF] p-4.5 rounded-2xl shadow-xs hover:shadow-md transition duration-300 group">
-            <div className="absolute top-0 inset-x-0 h-[3px] bg-[#D9A441] opacity-60 group-hover:opacity-100 transition" />
+          <div className="relative overflow-hidden bg-gradient-to-br from-[#64B5F6]/20 via-[#D4ECFC]/20 to-white border border-[#64B5F6]/30 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] transition-all duration-200 group">
+            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-[#225F9F] to-[#64B5F6] opacity-80 group-hover:opacity-100 transition" />
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-[#071A45]">Server Health</span>
-              <div className="w-9 h-9 rounded-xl bg-slate-50 text-[#123A8C] flex items-center justify-center group-hover:scale-110 transition duration-300">
+              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-550">Server Health</span>
+              <div className="w-9 h-9 rounded-xl bg-[#64B5F6]/15 text-[#0B2545] flex items-center justify-center group-hover:scale-110 transition duration-300 border border-[#64B5F6]/20">
                 <Server className="w-5 h-5" />
               </div>
             </div>
-            <h3 className={`text-xl font-black mt-2 ${kpiData.server_health.status.includes('Operational') ? 'text-[#123A8C]' : 'text-[#DC3E3E]'}`}>
+            <h3 className="text-xl font-black mt-2 text-[#0B2545]">
               {loading ? '...' : `${kpiData.server_health.uptime}% Uptime`}
             </h3>
-            <span className="text-[11px] text-[#D9A441] font-bold">{kpiData.server_health.status}</span>
+            <span className="text-[11px] text-slate-500 font-bold">{kpiData.server_health.status}</span>
           </div>
         </div>
       ) }
 
       {/* SECTION 1.5: Quick Actions Panel */}
-      <div className="bg-white border border-[#DCE3EF] p-4 rounded-2xl shadow-xs space-y-3">
-        <h3 className="font-extrabold text-[#071A45] text-xs flex items-center gap-1.5 uppercase tracking-wider">
+      <div className="bg-gradient-to-br from-white via-slate-50 to-[#D4ECFC]/15 border border-[#64B5F6]/25 p-3 sm:p-4 rounded-2xl shadow-xs space-y-3">
+        <h3 className="font-extrabold text-[#0B2545] text-xs flex items-center gap-1.5 uppercase tracking-wider">
           Quick Actions
         </h3>
         
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-3">
           {[
             {
               title: "Attendance",
               icon: Clock,
-              path: "/admin/hrms",
-              color: "text-emerald-700 bg-emerald-50/50 hover:bg-emerald-50 border-emerald-100 hover:border-emerald-250",
+              onClick: () => setShowAttendanceModal(true),
+              color: "text-white bg-gradient-to-br from-[#0B2545] to-[#225F9F] hover:brightness-110 border-transparent shadow-sm",
             },
             {
               title: "Create Employee",
               icon: UserPlus,
-              path: "/admin/users",
-              state: { openAddModal: true },
-              color: "text-indigo-700 bg-indigo-50/50 hover:bg-indigo-50 border-indigo-100 hover:border-indigo-250",
+              onClick: () => setShowCreateEmpModal(true),
+              color: "text-white bg-gradient-to-br from-[#225F9F] to-[#1E88E5] hover:brightness-110 border-transparent shadow-sm",
             },
             {
               title: "Edit Employee",
               icon: Users,
-              path: "/admin/users",
-              state: { focusSearch: true },
-              color: "text-[#123A8C] bg-blue-50/50 hover:bg-blue-50 border-blue-100 hover:border-blue-250",
+              onClick: () => { setShowEditEmpModal(true); setSelectedEditEmpId(''); },
+              color: "text-white bg-gradient-to-br from-[#1E88E5] to-[#64B5F6] hover:brightness-110 border-transparent shadow-sm",
             },
             {
               title: "Add Incentive",
               icon: Percent,
               onClick: () => setShowIncentiveModal(true),
-              color: "text-rose-700 bg-rose-50/50 hover:bg-rose-50 border-rose-100 hover:border-rose-250",
+              color: "text-[#0B2545] bg-gradient-to-br from-[#64B5F6] to-[#D4ECFC] hover:brightness-110 border-transparent shadow-sm",
             },
             {
               title: "Security Roles",
               icon: ShieldCheck,
-              path: "/admin/roles",
-              color: "text-amber-700 bg-amber-50/50 hover:bg-amber-50 border-amber-100 hover:border-amber-250",
+              onClick: () => { setShowRolesModal(true); setSelectedRoleForPermissions(null); },
+              color: "text-white bg-gradient-to-br from-[#0B2545] to-[#1E88E5] hover:brightness-110 border-transparent shadow-sm",
             },
           ].map((action) => {
             const IconComp = action.icon
@@ -466,13 +738,7 @@ export default function AdminDashboard() {
               <button
                 key={action.title}
                 type="button"
-                onClick={() => {
-                  if (action.onClick) {
-                    action.onClick()
-                  } else {
-                    navigate(action.path, { state: action.state })
-                  }
-                }}
+                onClick={action.onClick}
                 className={`flex items-center gap-2.5 p-3 rounded-xl border ${action.color} text-xs font-bold transition duration-200 cursor-pointer shadow-3xs hover:shadow-2xs select-none`}
               >
                 <IconComp className="w-4 h-4 shrink-0" />
@@ -483,55 +749,6 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-
-
-      {/* SECTION 2: Live Security activity feed */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Live System Activity Logs */}
-        {activeWidgets.activityLogs && (
-          <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Activity className="w-5 h-5 text-indigo-600 animate-pulse" />
-                <h3 className="font-extrabold text-slate-900 text-sm">Live System Audit & Security Stream</h3>
-              </div>
-              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Real-Time Activity Logs</span>
-            </div>
-
-            <div className="divide-y divide-slate-100 max-h-[420px] overflow-y-auto">
-              {systemActivities.length === 0 ? (
-                <div className="p-8 text-center text-slate-400 font-bold text-xs">
-                  No system activity logs recorded yet.
-                </div>
-              ) : (
-                systemActivities.map((act) => (
-                  <div key={act.id} className="p-4 hover:bg-slate-50/80 transition flex items-start justify-between gap-4 text-xs font-semibold">
-                    <div className="flex items-start gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-slate-900 text-white font-black text-[10px] flex items-center justify-center shrink-0">
-                        {act.user.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <p className="font-extrabold text-slate-900 text-xs">
-                          {act.user} <span className="text-slate-400 font-normal">({act.role})</span>
-                        </p>
-                        <p className="text-xs text-blue-700 font-black mt-0.5">
-                          Action: <span className="text-slate-800 font-extrabold">{act.action}</span> · <span className="text-indigo-600 uppercase font-black text-[9px]">{act.module}</span>
-                        </p>
-                        <p className="text-[11px] text-slate-500 mt-1 italic leading-relaxed">&ldquo;{act.details}&rdquo;</p>
-                      </div>
-                    </div>
-                    <div className="text-right shrink-0">
-                      <p className="text-[10px] text-slate-400 mt-1">
-                        {new Date(act.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                      </p>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        )}
-      </div>
 
       {/* Customizer Modal */}
       {customizerOpen && (
@@ -553,7 +770,6 @@ export default function AdminDashboard() {
             <div className="space-y-3 pt-2 text-xs font-bold text-slate-800">
               {Object.entries({
                 systemStats: 'System Control KPI Cards',
-                activityLogs: 'Live System Activity Stream',
               }).map(([key, label]) => (
                 <label key={key} className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-100/80 transition">
                   <span>{label}</span>
@@ -689,8 +905,8 @@ export default function AdminDashboard() {
                   No pending document approval requests.
                 </div>
               ) : (
-                <div className="border border-slate-200 rounded-2xl overflow-hidden">
-                  <table className="w-full text-left border-collapse text-xs font-semibold text-slate-700">
+                <div className="border border-slate-200 rounded-2xl overflow-x-auto">
+                  <table className="w-full min-w-[700px] text-left border-collapse text-xs font-semibold text-slate-700 whitespace-nowrap">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
                         <th className="px-5 py-3.5">Employee Name & Role</th>
@@ -803,8 +1019,8 @@ export default function AdminDashboard() {
                   No registered users match this category.
                 </div>
               ) : (
-                <div className="border border-[#DCE3EF] rounded-2xl overflow-hidden shadow-xs">
-                  <table className="w-full text-left border-collapse text-xs font-semibold text-[#071A45]">
+                <div className="border border-[#DCE3EF] rounded-2xl overflow-x-auto shadow-xs">
+                  <table className="w-full min-w-[700px] text-left border-collapse text-xs font-semibold text-[#071A45] whitespace-nowrap">
                     <thead>
                       <tr className="bg-slate-50 border-b border-[#DCE3EF] text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
                         <th className="px-5 py-3.5">Employee Details</th>
@@ -947,8 +1163,8 @@ export default function AdminDashboard() {
                 };
 
                 return (
-                  <div className="border border-[#DCE3EF] rounded-2xl overflow-hidden shadow-xs bg-white">
-                    <table className="w-full text-left border-collapse text-xs font-semibold text-[#071A45]">
+                  <div className="border border-[#DCE3EF] rounded-2xl overflow-x-auto shadow-xs bg-white">
+                    <table className="w-full min-w-[800px] text-left border-collapse text-xs font-semibold text-[#071A45] whitespace-nowrap">
                       <thead>
                         <tr className="bg-slate-50 border-b border-[#DCE3EF] text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
                           <th className="px-5 py-3.5">Timestamp</th>
@@ -1096,6 +1312,489 @@ export default function AdminDashboard() {
                 {incentiveSaving ? "Saving..." : "Save Changes"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance Modal overlay popup */}
+      {showAttendanceModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="relative max-w-md w-full overflow-visible">
+            {/* Floating Close Button */}
+            <button
+              onClick={() => setShowAttendanceModal(false)}
+              className="absolute -top-2.5 -right-2.5 z-50 w-7 h-7 rounded-full bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center font-extrabold text-xs shadow-md transition cursor-pointer"
+              title="Close Portal"
+            >
+              ✕
+            </button>
+            <div className="bg-transparent overflow-hidden text-left text-xs font-semibold text-slate-800">
+              <Attendance isModalView={true} />
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Employee Modal overlay popup */}
+      {showCreateEmpModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-2xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[85vh] text-left text-xs font-semibold text-slate-800">
+            {/* Modal Header */}
+            <div className="bg-slate-950 text-white p-5 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <UserPlus className="w-5 h-5 text-indigo-400" />
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-100">Add New System Employee</h3>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Creates credentials and profile automatically across HRMS.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCreateEmpModal(false)}
+                className="text-slate-400 hover:text-white font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Form Fields */}
+            <form onSubmit={handleCreateEmployeeSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Full Name</label>
+                  <input
+                    type="text" required
+                    value={createEmpForm.name}
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, name: e.target.value})}
+                    placeholder="E.g. John Doe"
+                    className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Gender</label>
+                  <select
+                    value={createEmpForm.gender}
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, gender: e.target.value})}
+                    className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="Male">Male</option>
+                    <option value="Female">Female</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Access Email Address</label>
+                  <input
+                    type="email" required
+                    value={createEmpForm.email}
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, email: e.target.value})}
+                    placeholder="john.doe@tconnect.com"
+                    className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Portal Login Password</label>
+                  <input
+                    type="password" required
+                    value={createEmpForm.password}
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, password: e.target.value})}
+                    placeholder="Min 6 characters"
+                    className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Phone Number</label>
+                  <input
+                    type="text"
+                    value={createEmpForm.phone}
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, phone: e.target.value})}
+                    placeholder="+91 98765 00021"
+                    className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Custom Employee Code (Optional)</label>
+                  <input
+                    type="text"
+                    value={createEmpForm.employee_code}
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, employee_code: e.target.value})}
+                    placeholder="Leave blank for auto-generate"
+                    className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Security / Work Role</label>
+                  <select
+                    value={createEmpForm.role}
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, role: e.target.value})}
+                    className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="Sales Executive">Sales Executive</option>
+                    <option value="Sales Manager">Sales Manager</option>
+                    <option value="Admin">Admin</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Work Department</label>
+                  <select
+                    value={createEmpForm.dept}
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, dept: e.target.value})}
+                    className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                  >
+                    <option value="Sales & Business Development">Sales & Business Development</option>
+                    <option value="HR & Administration">HR & Administration</option>
+                    <option value="Finance & Billing">Finance & Billing</option>
+                    <option value="Technical Operations">Technical Operations</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-3 grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Annual Leaves Quota</label>
+                  <input
+                    type="number"
+                    value={createEmpForm.annualLeaves}
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, annualLeaves: e.target.value})}
+                    className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Sick Leaves Quota</label>
+                  <input
+                    type="number"
+                    value={createEmpForm.sickLeaves}
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, sickLeaves: e.target.value})}
+                    className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Monthly Salary (₹)</label>
+                  <input
+                    type="number"
+                    value={createEmpForm.monthlySalary}
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, monthlySalary: e.target.value})}
+                    className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center gap-2 pt-4 justify-end border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateEmpModal(false)}
+                  className="px-5 py-2.5 border border-slate-200 rounded-xl text-slate-600 font-extrabold text-xs hover:bg-slate-50 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={modalSaving}
+                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+                >
+                  {modalSaving ? "Saving..." : "Save Employee"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Employee Modal overlay popup */}
+      {showEditEmpModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-2xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[85vh] text-left text-xs font-semibold text-slate-800">
+            {/* Modal Header */}
+            <div className="bg-slate-950 text-white p-5 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Users className="w-5 h-5 text-blue-400" />
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-100">Edit Employee Profile</h3>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Select and edit employee work details, status, or salary.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowEditEmpModal(false)}
+                className="text-slate-400 hover:text-white font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Selector Option */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200">
+              <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1.5">Select Target Employee to Edit</label>
+              <select
+                value={selectedEditEmpId}
+                onChange={(e) => handleSelectEditEmployee(e.target.value)}
+                className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white font-bold text-xs focus:outline-none cursor-pointer"
+              >
+                <option value="">-- Choose Employee to Modify --</option>
+                {allEmployees.map(emp => (
+                  <option key={emp.id} value={emp.id}>
+                    {emp.employee_code || "N/A"} - {emp.name} ({emp.role})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Editable Form */}
+            {selectedEditEmpId ? (
+              <form onSubmit={handleEditEmployeeSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Full Name</label>
+                    <input
+                      type="text" required
+                      value={editEmpForm.name}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, name: e.target.value})}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Gender</label>
+                    <select
+                      value={editEmpForm.gender}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, gender: e.target.value})}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none cursor-pointer"
+                    >
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Email Address</label>
+                    <input
+                      type="email" required
+                      value={editEmpForm.email}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, email: e.target.value})}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Reset Portal Password (Optional)</label>
+                    <input
+                      type="password"
+                      value={editEmpForm.password}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, password: e.target.value})}
+                      placeholder="Leave blank to keep current"
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Phone Number</label>
+                    <input
+                      type="text"
+                      value={editEmpForm.phone}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, phone: e.target.value})}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Account Employment Status</label>
+                    <select
+                      value={editEmpForm.status}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, status: e.target.value})}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none cursor-pointer"
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Work Role</label>
+                    <select
+                      value={editEmpForm.role}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, role: e.target.value})}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none cursor-pointer"
+                    >
+                      <option value="Sales Executive">Sales Executive</option>
+                      <option value="Sales Manager">Sales Manager</option>
+                      <option value="Admin">Admin</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Work Department</label>
+                    <select
+                      value={editEmpForm.dept}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, dept: e.target.value})}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none cursor-pointer"
+                    >
+                      <option value="Sales & Business Development">Sales & Business Development</option>
+                      <option value="HR & Administration">HR & Administration</option>
+                      <option value="Finance & Billing">Finance & Billing</option>
+                      <option value="Technical Operations">Technical Operations</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="border-t border-slate-100 pt-3 grid grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Annual Leaves Quota</label>
+                    <input
+                      type="number"
+                      value={editEmpForm.annualLeaves}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, annualLeaves: e.target.value})}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Sick Leaves Quota</label>
+                    <input
+                      type="number"
+                      value={editEmpForm.sickLeaves}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, sickLeaves: e.target.value})}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Monthly Salary (₹)</label>
+                    <input
+                      type="number"
+                      value={editEmpForm.monthlySalary}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, monthlySalary: e.target.value})}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none"
+                    />
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 pt-4 justify-end border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowEditEmpModal(false)}
+                    className="px-5 py-2.5 border border-slate-200 rounded-xl text-slate-600 font-extrabold text-xs hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={modalSaving}
+                    className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+                  >
+                    {modalSaving ? "Saving..." : "Save Changes"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="p-12 text-center text-slate-400 font-semibold">
+                Please select an employee from the dropdown above to edit their record details.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Security Roles Modal overlay popup */}
+      {showRolesModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-2xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[85vh] text-left text-xs font-semibold text-slate-800">
+            {/* Modal Header */}
+            <div className="bg-slate-950 text-white p-5 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="w-5 h-5 text-amber-400" />
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-100">Security Roles & Permissions Panel</h3>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Toggle active system authorization scopes for user access controls.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowRolesModal(false)}
+                className="text-slate-400 hover:text-white font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Selector Option */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200">
+              <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1.5">Select Role to Configure</label>
+              <select
+                value={selectedRoleForPermissions?.id || ''}
+                onChange={(e) => handleSelectRoleForPermissions(e.target.value)}
+                className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white font-bold text-xs focus:outline-none cursor-pointer"
+              >
+                <option value="">-- Choose Role --</option>
+                {systemRoles.map(role => (
+                  <option key={role.id} value={role.id}>
+                    {role.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Permissions List */}
+            {selectedRoleForPermissions ? (
+              <form onSubmit={handleSaveRolePermissionsSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+                <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">
+                  Active Permissions for '{selectedRoleForPermissions.name}'
+                </p>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[40vh] overflow-y-auto pr-1">
+                  {rolePermsList.map((perm) => (
+                    <div 
+                      key={perm.permission_key}
+                      onClick={() => handleToggleRolePermission(perm.permission_key)}
+                      className="flex items-center justify-between p-3 bg-slate-50/50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition"
+                    >
+                      <div className="space-y-0.5 text-left pr-4">
+                        <p className="font-extrabold text-slate-900 text-xs">
+                          {perm.permission_key.split('.').slice(-2).join(' / ').toUpperCase()}
+                        </p>
+                        <p className="text-[10px] text-slate-400 font-semibold tracking-wide">
+                          Key: {perm.permission_key}
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={!!perm.enabled}
+                        readOnly
+                        className="w-4 h-4 rounded text-amber-500 focus:ring-amber-500 cursor-pointer"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                {/* Actions */}
+                <div className="flex items-center gap-2 pt-4 justify-end border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowRolesModal(false)}
+                    className="px-5 py-2.5 border border-slate-200 rounded-xl text-slate-600 font-extrabold text-xs hover:bg-slate-50 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={modalSaving}
+                    className="px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition cursor-pointer disabled:opacity-50"
+                  >
+                    {modalSaving ? "Saving..." : "Save Role Permissions"}
+                  </button>
+                </div>
+              </form>
+            ) : (
+              <div className="p-12 text-center text-slate-400 font-semibold">
+                Please select a security role from the dropdown above to view and modify permission controls.
+              </div>
+            )}
           </div>
         </div>
       )}

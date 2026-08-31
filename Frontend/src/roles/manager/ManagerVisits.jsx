@@ -26,8 +26,9 @@ import {
   ChevronRight,
   TrendingUp,
 } from 'lucide-react'
-import { visitAPI, hrmsAPI } from '../../services/api.js'
+import { visitAPI, hrmsAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
+import { formatDate, parseDateInput } from '../../utils/dateUtils.js'
 
 export default function ManagerVisits() {
   const { showToast } = useToast()
@@ -35,6 +36,8 @@ export default function ManagerVisits() {
   // API State
   const [loading, setLoading] = useState(true)
   const [visits, setVisits] = useState([])
+  const [attendanceLogs, setAttendanceLogs] = useState([])
+  const [attendanceLoaded, setAttendanceLoaded] = useState(false)
   const [summary, setSummary] = useState({
     scheduled_today: 0,
     completed_today: 0,
@@ -99,6 +102,9 @@ export default function ManagerVisits() {
   // Pagination State
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(10)
+
+  // Active card filter state (which top card is selected)
+  const [activeCard, setActiveCard] = useState(null) // null | 'scheduled' | 'completed' | 'pending' | 'missed' | 'followups'
 
   // Full Audit Modal State
   const [selectedAuditModal, setSelectedAuditModal] = useState(null)
@@ -168,6 +174,18 @@ export default function ManagerVisits() {
       .catch(() => fallbackLoadExecutives())
   }, [])
 
+  useEffect(() => {
+    attendanceAPI.getLogs()
+      .then((res) => {
+        const raw = Array.isArray(res) ? res : (res?.data || [])
+        setAttendanceLogs(raw)
+        setAttendanceLoaded(true)
+      })
+      .catch(() => {
+        setAttendanceLoaded(true)
+      })
+  }, [])
+
   const fallbackLoadExecutives = () => {
     try {
       const savedUsersStr = localStorage.getItem('tc_app_users')
@@ -230,6 +248,50 @@ export default function ManagerVisits() {
     }
 
     return 'EMP000012'
+  }
+
+  const isSEAbsentOnDate = (seEmailOrName, visitDate) => {
+    if (!attendanceLoaded || !visitDate) return false
+    
+    const targetDateStr = formatDate(visitDate)
+    const identifier = String(seEmailOrName || '').toLowerCase().trim()
+    if (!identifier) return false
+
+    // Filter logs for this executive on this particular day
+    const execLogs = attendanceLogs.filter((log) => {
+      const logEmpCode = String(log.employee_id || log.employee_code || log.emp_code || log.user_id || '').toLowerCase().trim()
+      const logEmail = String(log.email || log.user_email || '').toLowerCase().trim()
+      const logName = String(log.name || log.employee_name || '').toLowerCase().trim()
+      
+      const emailMatch = logEmail && (identifier === logEmail || logEmail.includes(identifier) || identifier.includes(logEmail))
+      const nameMatch = logName && (identifier === logName || logName.includes(identifier) || identifier.includes(logName))
+
+      if (!(emailMatch || nameMatch)) return false
+
+      // Match the date
+      const logDateStr = formatDate(log.attendance_date || log.date || log.created_at || log.check_in_time)
+      return logDateStr === targetDateStr
+    })
+
+    if (execLogs.length === 0) {
+      // Past or today date with no logs means absent
+      const visitD = parseDateInput(visitDate)
+      if (visitD) {
+        const today = new Date()
+        today.setHours(23, 59, 59, 999)
+        if (visitD.getTime() > today.getTime()) {
+          return false
+        }
+      }
+      return true
+    }
+
+    const hasPresent = execLogs.some((l) => {
+      const status = String(l.status || '').toLowerCase().trim()
+      return status === 'present' || status === 'late' || status === 'half day' || status === 'half-day'
+    })
+
+    return !hasPresent
   }
 
   const normalizeVisit = (v, idx = 0) => {
@@ -491,19 +553,16 @@ export default function ManagerVisits() {
   return (
     <div className="space-y-6 text-slate-900 font-sans pb-12">
       {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      <div className="bg-gradient-to-r from-amber-500/10 via-white to-amber-500/5 border-2 border-amber-400 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-2">
         <div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-            <MapPin className="w-7 h-7 text-[#b45309]" /> Field Visit & Audit
+          <h1 className="text-2xl font-black text-slate-900">
+            Field Visit & Audit
           </h1>
-          <p className="text-xs text-slate-600 font-bold mt-1">
-            Real-time telemetry, GPS check-ins, and visit completion audit reports for all Sales Executives under your management.
-          </p>
         </div>
 
         <button
           onClick={fetchTeamAuditData}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-md transition cursor-pointer"
+          className="mgr-card flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs shadow-md transition cursor-pointer"
         >
           <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh Visit Audit
         </button>
@@ -512,310 +571,199 @@ export default function ManagerVisits() {
       {/* ── TOP FIELD VISIT SUMMARY CARDS ──────────────────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
         {/* 1. Today's Scheduled Visits */}
-        <div className="bg-amber-50 border border-amber-300 p-3.5 rounded-xl shadow-2xs space-y-1 hover:scale-[1.02] transition">
-          <span className="text-[10px] font-black uppercase tracking-wider text-amber-900">Today's Scheduled</span>
-          <h2 className="text-2xl font-black text-amber-950">{summary.scheduled_today}</h2>
-          <p className="text-[10px] text-amber-800 font-semibold">Scheduled Appointments</p>
+        <div
+          onClick={() => setActiveCard(activeCard === 'scheduled' ? null : 'scheduled')}
+          className={`mgr-card p-3.5 rounded-xl shadow-2xs space-y-1 cursor-pointer transition hover:scale-[1.02] active:scale-[0.98] ${activeCard === 'scheduled' ? 'bg-mgr-primary-300 border-2 border-mgr-primary-600 ring-2 ring-mgr-primary-400/40' : 'bg-mgr-primary-50 border border-mgr-primary-300'}`}
+        >
+          <span className="text-[10px] font-black uppercase tracking-wider text-mgr-primary-900">Today's Scheduled</span>
+          <h2 className="text-2xl font-black text-mgr-primary-950">{summary.scheduled_today}</h2>
+          <p className="text-[10px] text-mgr-primary-800 font-semibold">{activeCard === 'scheduled' ? '▼ Showing list' : 'Tap to view list'}</p>
         </div>
 
         {/* 2. Today's Completed Visits */}
-        <div className="bg-emerald-50 border border-emerald-200 p-3.5 rounded-xl shadow-2xs space-y-1 hover:scale-[1.02] transition">
+        <div
+          onClick={() => setActiveCard(activeCard === 'completed' ? null : 'completed')}
+          className={`mgr-card p-3.5 rounded-xl shadow-2xs space-y-1 cursor-pointer transition hover:scale-[1.02] active:scale-[0.98] ${activeCard === 'completed' ? 'bg-emerald-200 border-2 border-emerald-600 ring-2 ring-emerald-400/40' : 'bg-emerald-50 border border-emerald-200'}`}
+        >
           <span className="text-[10px] font-black uppercase tracking-wider text-emerald-800">Completed Visits</span>
           <h2 className="text-2xl font-black text-emerald-950">{summary.completed_today}</h2>
-          <p className="text-[10px] text-emerald-700 font-semibold">Form Submitted & Verified</p>
+          <p className="text-[10px] text-emerald-700 font-semibold">{activeCard === 'completed' ? '▼ Showing list' : 'Tap to view list'}</p>
         </div>
 
         {/* 3. Pending Visits */}
-        <div className="bg-sky-50 border border-sky-200 p-3.5 rounded-xl shadow-2xs space-y-1 hover:scale-[1.02] transition">
-          <span className="text-[10px] font-black uppercase tracking-wider text-sky-800">Pending Visits</span>
-          <h2 className="text-2xl font-black text-sky-950">{summary.pending_visits}</h2>
-          <p className="text-[10px] text-sky-700 font-semibold">Checked-In / Live</p>
+        <div
+          onClick={() => setActiveCard(activeCard === 'pending' ? null : 'pending')}
+          className={`mgr-card p-3.5 rounded-xl shadow-2xs space-y-1 cursor-pointer transition hover:scale-[1.02] active:scale-[0.98] ${activeCard === 'pending' ? 'bg-mgr-accent-200 border-2 border-mgr-accent-600 ring-2 ring-mgr-accent-400/40' : 'bg-mgr-accent-50 border border-mgr-accent-200'}`}
+        >
+          <span className="text-[10px] font-black uppercase tracking-wider text-mgr-accent-800">Pending Visits</span>
+          <h2 className="text-2xl font-black text-mgr-accent-950">{summary.pending_visits}</h2>
+          <p className="text-[10px] text-mgr-accent-700 font-semibold">{activeCard === 'pending' ? '▼ Showing list' : 'Tap to view list'}</p>
         </div>
 
         {/* 4. Missed Visits */}
-        <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl shadow-2xs space-y-1 hover:scale-[1.02] transition">
+        <div
+          onClick={() => setActiveCard(activeCard === 'missed' ? null : 'missed')}
+          className={`mgr-card p-3.5 rounded-xl shadow-2xs space-y-1 cursor-pointer transition hover:scale-[1.02] active:scale-[0.98] ${activeCard === 'missed' ? 'bg-rose-100 border-2 border-rose-500 ring-2 ring-rose-400/40' : 'bg-slate-50 border-slate-200'}`}
+        >
           <span className="text-[10px] font-black uppercase tracking-wider text-slate-600">Missed Visits</span>
           <h2 className="text-2xl font-black text-slate-800">{summary.missed_visits}</h2>
-          <p className="text-[10px] text-slate-500 font-semibold">Unattended Schedule</p>
+          <p className="text-[10px] text-slate-500 font-semibold">{activeCard === 'missed' ? '▼ Showing list' : 'Tap to view list'}</p>
         </div>
 
         {/* 5. Follow Ups Required */}
-        <div className="bg-indigo-50 border border-indigo-200 p-3.5 rounded-xl shadow-2xs space-y-1 hover:scale-[1.02] transition">
-          <span className="text-[10px] font-black uppercase tracking-wider text-indigo-800">Follow Ups Required</span>
-          <h2 className="text-2xl font-black text-indigo-950">{summary.followups}</h2>
-          <p className="text-[10px] text-indigo-700 font-semibold">Next Stage Action</p>
+        <div
+          onClick={() => setActiveCard(activeCard === 'followups' ? null : 'followups')}
+          className={`mgr-card p-3.5 rounded-xl shadow-2xs space-y-1 cursor-pointer transition hover:scale-[1.02] active:scale-[0.98] ${activeCard === 'followups' ? 'bg-mgr-secondary-300 border-2 border-mgr-secondary-600 ring-2 ring-mgr-secondary-400/40' : 'bg-mgr-secondary-50 border border-mgr-secondary-200'}`}
+        >
+          <span className="text-[10px] font-black uppercase tracking-wider text-mgr-secondary-800">Follow Ups Required</span>
+          <h2 className="text-2xl font-black text-mgr-secondary-950">{summary.followups}</h2>
+          <p className="text-[10px] text-mgr-secondary-700 font-semibold">{activeCard === 'followups' ? '▼ Showing list' : 'Tap to view list'}</p>
         </div>
       </div>
 
-      {/* ── FILTERS & SEARCH CONTROL BAR ────────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-2xl p-4 space-y-3 shadow-xs">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Sales Executive Filter (Left Side with 'Other' Manual Search Option) */}
-          <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold shrink-0">
-            <span className="text-slate-500">Sales Executive:</span>
-            <select
-              value={selectedSE}
-              onChange={(e) => {
-                setSelectedSE(e.target.value)
-                if (e.target.value !== 'Other') setCustomSEInput('')
-                setPage(1)
-              }}
-              className="bg-transparent text-amber-950 focus:outline-none cursor-pointer font-black max-w-[240px] truncate"
-            >
-              <option value="All">All Executives (Team Audit)</option>
-              {executives.map((ex) => (
-                <option key={ex.email || ex.id} value={ex.email || ex.name}>
-                  [{ex.employee_code || 'EMP-101'}] {ex.name || ex.full_name} ({ex.email})
-                </option>
-              ))}
-              <option value="Other">✏️ Other (Manual Type & Search...)</option>
-            </select>
+      {/* ── VISIT CARD LIST (shows when a summary card is clicked) ─────────── */}
+      {activeCard && (() => {
+        const cardConfig = {
+          scheduled: {
+            label: "Today's Scheduled Visits",
+            filter: (v) => String(v.visit_status || v.status || '').toLowerCase().includes('schedule'),
+            accent: 'mgr-primary',
+            icon: '📅',
+          },
+          completed: {
+            label: 'Completed Visits',
+            filter: (v) => String(v.visit_status || v.status || '').toLowerCase().includes('complete'),
+            accent: 'emerald',
+            icon: '✅',
+          },
+          pending: {
+            label: 'Pending / In-Progress Visits',
+            filter: (v) => String(v.visit_status || v.status || '').toLowerCase().includes('pending') || String(v.visit_status || v.status || '').toLowerCase().includes('check'),
+            accent: 'mgr-accent',
+            icon: '🔄',
+          },
+          missed: {
+            label: 'Missed / Cancelled Visits',
+            filter: (v) => String(v.visit_status || v.status || '').toLowerCase().includes('miss') || String(v.visit_status || v.status || '').toLowerCase().includes('cancel'),
+            accent: 'rose',
+            icon: '⚠️',
+          },
+          followups: {
+            label: 'Follow-Up Required',
+            filter: (v) => String(v.lead_status || '').toLowerCase().includes('follow'),
+            accent: 'mgr-secondary',
+            icon: '🔔',
+          },
+        }
+        const cfg = cardConfig[activeCard]
+        const listVisits = filteredVisits.filter(cfg.filter)
+        return (
+          <div className="space-y-3 animate-in slide-in-from-top-2 duration-200">
+            <div className="flex items-center justify-between">
+              <h2 className="text-base font-black text-slate-900 flex items-center gap-2">
+                {cfg.icon} {cfg.label}
+                <span className="ml-1 text-xs font-bold bg-slate-100 border border-slate-200 text-slate-600 px-2 py-0.5 rounded-full">{listVisits.length} visits</span>
+              </h2>
+              <button
+                onClick={() => setActiveCard(null)}
+                className="text-xs font-bold text-slate-400 hover:text-slate-700 transition flex items-center gap-1"
+              >
+                <X size={14} /> Close
+              </button>
+            </div>
 
-            {selectedSE === 'Other' && (
-              <input
-                type="text"
-                value={customSEInput}
-                onChange={(e) => {
-                  setCustomSEInput(e.target.value)
-                  setPage(1)
-                }}
-                placeholder="Type SE Name, Email, Code..."
-                className="bg-white border border-amber-400 rounded-lg px-2.5 py-1 text-xs font-bold text-amber-950 focus:outline-none focus:border-amber-600 w-[200px] shadow-2xs"
-                autoFocus
-              />
+            {loading ? (
+              <div className="py-16 text-center text-slate-400">
+                <RefreshCw className="w-8 h-8 animate-spin mx-auto text-mgr-primary-500 mb-3" />
+                <p className="text-sm font-bold">Loading visits...</p>
+              </div>
+            ) : listVisits.length === 0 ? (
+              <div className="py-16 text-center text-slate-400 bg-white border border-slate-200 rounded-3xl">
+                <p className="text-sm font-bold">No visits found in this category.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {listVisits.map((visit, idx) => (
+                  <div
+                    key={visit.id || idx}
+                    className="mgr-card bg-white border border-slate-200 rounded-3xl p-5 space-y-3 hover:shadow-md transition cursor-pointer group"
+                    onClick={() => setSelectedAuditModal(visit)}
+                  >
+                    {/* Top Row: Status badge + Date */}
+                    <div className="flex items-center justify-between">
+                      <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${
+                        String(visit.visit_status || '').toLowerCase().includes('complete')
+                          ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                          : String(visit.visit_status || '').toLowerCase().includes('schedule')
+                          ? 'bg-mgr-primary-100 text-mgr-primary-900 border-mgr-primary-300'
+                          : String(visit.visit_status || '').toLowerCase().includes('miss') || String(visit.visit_status || '').toLowerCase().includes('cancel')
+                          ? 'bg-rose-100 text-rose-900 border-rose-300'
+                          : 'bg-mgr-accent-100 text-mgr-accent-900 border-mgr-accent-300'
+                      }`}>
+                        {visit.visit_status || 'SCHEDULED'}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-400">{visit.visit_date || 'No date'}</span>
+                    </div>
+
+                    {/* Company / Client */}
+                    <div>
+                      <h4 className="font-black text-slate-900 text-sm group-hover:text-mgr-primary-700 transition">{visit.company || visit.customer_name || 'Enterprise Ltd'}</h4>
+                      <p className="text-[11px] font-semibold text-slate-500 mt-0.5">{visit.poc_name || 'Contact Person'}</p>
+                    </div>
+
+                    {/* SE Info */}
+                    <div className="flex items-center justify-between gap-2 bg-slate-50 border-slate-200 rounded-xl px-3 py-2">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <div className="w-6 h-6 rounded-full bg-mgr-primary-200 text-mgr-primary-900 flex items-center justify-center font-black text-[10px] shrink-0">
+                          {(visit.assigned_to || 'S').charAt(0).toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="text-xs font-black text-slate-800 truncate">{visit.assigned_to || 'Sales Executive'}</p>
+                          <p className="text-[10px] font-mono text-mgr-primary-700">{visit.employee_code || ''}</p>
+                        </div>
+                      </div>
+                      {(String(visit.visit_status || '').toLowerCase().includes('miss') || String(visit.visit_status || '').toLowerCase().includes('cancel') || activeCard === 'missed') &&
+                       isSEAbsentOnDate(visit.assigned_to_email || visit.assigned_to, visit.visit_date) && (
+                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-200 shrink-0">
+                          Absent
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Time + Location Row */}
+                    <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
+                      <span className="flex items-center gap-1"><Clock size={10} /> {visit.visit_time || '10:00 AM'}</span>
+                      <span className="flex items-center gap-1"><MapPin size={10} className="text-mgr-primary-600" /> {String(visit.gps_location || 'Chennai').slice(0, 20)}</span>
+                    </div>
+
+                    {/* Purpose */}
+                    <p className="text-[11px] text-slate-600 font-medium line-clamp-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 italic">
+                      {visit.products_discussed || visit.discussion_summary || 'Field Visit'}
+                    </p>
+
+                    {/* View Audit CTA */}
+                    <button className="w-full py-2 text-[11px] font-black text-mgr-primary-700 bg-mgr-primary-50 hover:bg-mgr-primary-100 border border-mgr-primary-200 rounded-xl transition flex items-center justify-center gap-1">
+                      <Eye size={12} /> View Full Audit
+                    </button>
+                  </div>
+                ))}
+              </div>
             )}
           </div>
+        )
+      })()}
 
-          {/* Search Box (Right Side) */}
-          <div className="relative flex-1 min-w-[240px]">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              value={search}
-              onChange={(e) => {
-                setSearch(e.target.value)
-                setPage(1)
-              }}
-              placeholder="Search Customer, Company, Visit ID, Lead ID, SE Name, EMP Code..."
-              className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 font-semibold"
-            />
-          </div>
+      {/* Helper spacer if no card is selected */}
+      {!activeCard && (
+        <div className="py-20 text-center text-slate-400 bg-white/60 border border-slate-200 border-dashed rounded-3xl">
+          <Calendar className="w-10 h-10 mx-auto mb-3 text-slate-300" />
+          <p className="text-sm font-black text-slate-500">Click on any card above to view the visit list</p>
+          <p className="text-xs font-semibold text-slate-400 mt-1">Scheduled, Completed, Pending, Missed, or Follow Ups</p>
         </div>
+      )}
 
-        {/* Linear Date Quick-Filter Strip */}
-        <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100 text-xs">
-          {/* Visit Status */}
-          <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 font-bold">
-            <span className="text-slate-500">Visit Status:</span>
-            <select
-              value={selectedVisitStatus}
-              onChange={(e) => {
-                setSelectedVisitStatus(e.target.value)
-                setPage(1)
-              }}
-              className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold"
-            >
-              <option value="All">All Visit Statuses</option>
-              <option value="SCHEDULED">Scheduled</option>
-              <option value="COMPLETED">Completed</option>
-              <option value="PENDING">Pending / In Progress</option>
-              <option value="MISSED">Missed / Cancelled</option>
-            </select>
-          </div>
 
-          <div className="flex items-center gap-1 bg-amber-50/70 p-1 rounded-xl border border-amber-300 flex-wrap">
-            <span className="text-[11px] font-black text-amber-950 px-2">📅 Scheduled Date:</span>
-            {['Today', 'Yesterday', 'This Week', 'This Month', 'All', 'Custom'].map((tab) => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => handleLinearDateFilter(tab)}
-                className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
-                  dateFilterTab === tab
-                    ? 'bg-[#ca8a04] text-white shadow-2xs'
-                    : 'text-amber-950 hover:bg-amber-100'
-                }`}
-              >
-                {tab === 'All' ? 'All Time' : tab}
-              </button>
-            ))}
-          </div>
 
-          {/* Custom Date Range Picker Inputs (Only visible when Custom is selected) */}
-          {dateFilterTab === 'Custom' && (
-            <div className="flex items-center gap-2 bg-amber-50 border border-amber-300 rounded-xl px-3 py-1.5 font-bold">
-              <span className="text-amber-900 font-extrabold">From:</span>
-              <input
-                type="date"
-                value={fromDate}
-                onChange={(e) => setFromDate(e.target.value)}
-                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
-              />
-              <span className="text-amber-900 font-extrabold ml-1">To:</span>
-              <input
-                type="date"
-                value={toDate}
-                onChange={(e) => setToDate(e.target.value)}
-                className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-bold text-xs"
-              />
-            </div>
-          )}
-
-          {/* Reset Filters Button */}
-          {(selectedSE !== 'All' || selectedVisitStatus !== 'All' || selectedLeadStatus !== 'All' || selectedPriority !== 'All' || search || dateFilterTab !== 'Today') && (
-            <button
-              onClick={() => {
-                setSelectedSE('All')
-                setSelectedVisitStatus('All')
-                setSelectedLeadStatus('All')
-                setSelectedPriority('All')
-                setSearch('')
-                // Reset back to Today (default)
-                const todayStr = new Date().toISOString().split('T')[0]
-                setFromDate(todayStr)
-                setToDate(todayStr)
-                setDateFilterTab('Today')
-                setPage(1)
-              }}
-              className="text-[11px] font-extrabold text-rose-700 hover:underline cursor-pointer ml-auto"
-            >
-              Reset All Filters
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* ── FIELD VISIT AUDIT TABLE ─────────────────────── */}
-      <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-800 min-w-[1000px]">
-            <thead>
-              <tr className="bg-slate-100/80 border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-700">
-                <th className="px-5 py-4.5">Company / Client</th>
-                <th className="px-5 py-4.5">Sales Executive</th>
-                <th className="px-5 py-4.5">📅 Scheduled Date &amp; Time</th>
-                <th className="px-5 py-4.5">Visit Status</th>
-                <th className="px-5 py-4.5">Product / Purpose</th>
-                <th className="px-5 py-4.5">Location</th>
-                <th className="px-5 py-4.5 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-semibold">
-              {loading ? (
-                <tr>
-                  <td colSpan="7" className="text-center py-16 text-slate-400">
-                    <RefreshCw className="w-8 h-8 animate-spin mx-auto text-amber-600 mb-3" />
-                    <span className="text-sm font-bold">Loading Field Visit & Audit reports from Supabase...</span>
-                  </td>
-                </tr>
-              ) : paginatedVisits.length === 0 ? (
-                <tr>
-                  <td colSpan="7" className="text-center py-16 text-slate-400 font-bold text-sm">
-                    No field visit audit records match your search or filter criteria.
-                  </td>
-                </tr>
-              ) : (
-                paginatedVisits.map((visit, idx) => (
-                  <tr key={visit.id || visit.visit_id || idx} className="hover:bg-amber-50/50 transition-colors">
-                    {/* 1. Company / Client Name */}
-                    <td className="px-5 py-4.5">
-                      <p className="font-black text-slate-900 text-sm">{visit.company || visit.customer_name || 'Enterprise Ltd'}</p>
-                      <p className="text-[11px] text-slate-500 font-semibold mt-0.5">{visit.poc_name || 'Contact Person'}</p>
-                    </td>
-
-                    {/* 2. SE Name + Code */}
-                    <td className="px-5 py-4.5">
-                      <p className="font-black text-slate-900 text-sm">{visit.assigned_to || visit.executive || 'Sales Executive'}</p>
-                      <p className="text-[11px] text-amber-700 font-bold">{visit.employee_code || ''}</p>
-                    </td>
-
-                    {/* 3. Scheduled Date & Time (from SE's visit form — NOT check-in time) */}
-                    <td className="px-5 py-4.5">
-                      {visit.visit_date ? (
-                        <div>
-                          <span className="font-black text-slate-900 text-sm">{visit.visit_date}</span>
-                          <span className="text-amber-800 font-black ml-1.5">• {visit.visit_time || '10:00 AM'}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-400 text-xs italic">No date scheduled</span>
-                      )}
-                    </td>
-
-                    {/* 4. Visit Status */}
-                    <td className="px-5 py-4.5">
-                      <span
-                        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-black shadow-2xs ${
-                          String(visit.visit_status || visit.status || '').toLowerCase().includes('complete')
-                            ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
-                            : String(visit.visit_status || visit.status || '').toLowerCase().includes('schedule')
-                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                            : String(visit.visit_status || visit.status || '').toLowerCase().includes('check')
-                            ? 'bg-sky-100 text-sky-800 border border-sky-300'
-                            : 'bg-slate-100 text-slate-700 border border-slate-300'
-                        }`}
-                      >
-                        {visit.visit_status || visit.status || 'SCHEDULED'}
-                      </span>
-                    </td>
-
-                    {/* 5. Product / Purpose */}
-                    <td className="px-5 py-4.5 max-w-[200px]">
-                      <p className="text-xs text-slate-700 font-semibold line-clamp-2">
-                        {visit.products_discussed || visit.discussion_summary || visit.purpose || 'TwiteConnect CRM'}
-                      </p>
-                    </td>
-
-                    {/* 6. Location */}
-                    <td className="px-5 py-4.5">
-                      <span className="text-xs font-bold text-slate-700 flex items-center gap-1">
-                        <MapPin size={11} className="text-amber-600 shrink-0" />
-                        {visit.gps_location || 'Chennai'}
-                      </span>
-                    </td>
-
-                    {/* 7. Action */}
-                    <td className="px-5 py-4.5 text-right">
-                      <button
-                        onClick={() => setSelectedAuditModal(visit)}
-                        className="px-3.5 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-black text-xs shadow-xs cursor-pointer transition flex items-center gap-1.5 ml-auto active:scale-95"
-                      >
-                        <Eye size={14} /> View Audit
-                      </button>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-
-        {/* ── PAGINATION CONTROLS ────────────────────────────────────────── */}
-        <div className="bg-slate-50 p-4 border-t border-slate-200 flex items-center justify-between text-xs font-bold text-slate-600">
-          <div>
-            Showing <span className="text-slate-900 font-black">{paginatedVisits.length}</span> of <span className="text-slate-900 font-black">{filteredVisits.length}</span> Total Visits
-          </div>
-
-          <div className="flex items-center gap-2">
-            <button
-              disabled={page <= 1}
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100"
-            >
-              <ChevronLeft size={16} />
-            </button>
-            <span>
-              Page {page} of {totalPages}
-            </span>
-            <button
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              className="p-1.5 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100"
-            >
-              <ChevronRight size={16} />
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* ── VIEW FULL AUDIT MODAL & INTERACTIVE TIMELINE ────────────────────── */}
       {selectedAuditModal && (
@@ -824,10 +772,10 @@ export default function ManagerVisits() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[10px] font-black uppercase text-amber-800 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                  <span className="text-[10px] font-black uppercase text-mgr-primary-800 bg-mgr-primary-50 px-2.5 py-0.5 rounded-full border border-mgr-primary-200">
                     {selectedAuditModal.visit_status || selectedAuditModal.status || 'COMPLETED'} Audit Log
                   </span>
-                  <span className="text-[10px] font-mono font-black text-amber-900 bg-amber-100 px-2 py-0.5 rounded border border-amber-300">
+                  <span className="text-[10px] font-mono font-black text-mgr-primary-900 bg-mgr-primary-100 px-2 py-0.5 rounded border border-mgr-primary-300">
                     #{selectedAuditModal.visit_id || selectedAuditModal.id}
                   </span>
                 </div>
@@ -842,18 +790,24 @@ export default function ManagerVisits() {
 
             {/* SE & Customer Information */}
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <div className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200/80 space-y-1">
+              <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1 relative">
                 <span className="text-[10px] font-extrabold uppercase text-slate-400">Sales Executive Information</span>
                 <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="text-[10px] bg-amber-100 text-amber-950 border border-amber-300 px-1 py-0.2 rounded font-mono font-black">
+                  <span className="text-[10px] bg-mgr-primary-100 text-mgr-primary-950 border border-mgr-primary-300 px-1 py-0.2 rounded font-mono font-black">
                     [{selectedAuditModal.employee_code || 'EMP-101'}]
                   </span>
-                  <p className="font-black text-amber-900 text-sm">{selectedAuditModal.assigned_to || selectedAuditModal.executive || 'Sales Executive'}</p>
+                  <p className="font-black text-mgr-primary-900 text-sm">{selectedAuditModal.assigned_to || selectedAuditModal.executive || 'Sales Executive'}</p>
                 </div>
                 <p className="text-slate-500 font-mono text-[11px]">{selectedAuditModal.assigned_to_email || 'executive@tconnect.com'}</p>
+                {(String(selectedAuditModal.visit_status || '').toLowerCase().includes('miss') || String(selectedAuditModal.visit_status || '').toLowerCase().includes('cancel')) &&
+                 isSEAbsentOnDate(selectedAuditModal.assigned_to_email || selectedAuditModal.assigned_to, selectedAuditModal.visit_date) && (
+                  <span className="absolute top-2 right-2 text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-200 shadow-2xs">
+                    Absent on Visit Date
+                  </span>
+                )}
               </div>
 
-              <div className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200/80 space-y-1">
+              <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1">
                 <span className="text-[10px] font-extrabold uppercase text-slate-400">Customer POC Details</span>
                 <p className="font-black text-slate-900 text-sm">{selectedAuditModal.poc_name || 'Point of Contact'}</p>
                 <p className="text-slate-700 font-semibold">{selectedAuditModal.poc_mobile || '+91 98765 43210'}</p>
@@ -863,28 +817,28 @@ export default function ManagerVisits() {
 
             {/* Schedule, Check-in & GPS Location */}
             <div className="grid grid-cols-3 gap-2 text-xs">
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="p-2.5 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Scheduled Date & Time</span>
                 <p className="font-mono font-bold text-slate-800 mt-0.5">{selectedAuditModal.visit_date || '2026-08-05'} ({selectedAuditModal.visit_time || '10:30 AM'})</p>
               </div>
-              <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="p-2.5 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Check-In / Out Duration</span>
                 <p className="font-mono font-bold text-slate-800 mt-0.5">{selectedAuditModal.check_in_time || '10:30 AM'} - {selectedAuditModal.check_out_time || '11:15 AM'}</p>
               </div>
-              <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200">
-                <span className="text-[10px] font-bold text-amber-800">GPS Location Telemetry</span>
-                <p className="font-mono font-bold text-amber-950 mt-0.5 truncate">{selectedAuditModal.gps_location || 'Chennai - Anna Salai'}</p>
+              <div className="p-2.5 rounded-xl bg-mgr-primary-50 border border-mgr-primary-200">
+                <span className="text-[10px] font-bold text-mgr-primary-800">GPS Location Telemetry</span>
+                <p className="font-mono font-bold text-mgr-primary-950 mt-0.5 truncate">{selectedAuditModal.gps_location || 'Chennai - Anna Salai'}</p>
               </div>
             </div>
 
             {/* Discussion & Product Info */}
-            <div className="p-3 rounded-2xl bg-amber-50/60 border border-amber-200 space-y-1 text-xs">
-              <span className="text-[10px] font-extrabold uppercase text-amber-900">Products Discussed & Customer Requirements</span>
-              <p className="font-extrabold text-amber-950">{selectedAuditModal.products_discussed || 'TwiteConnect Field CRM Suite'}</p>
+            <div className="p-3 rounded-2xl bg-mgr-primary-50/60 border border-mgr-primary-200 space-y-1 text-xs">
+              <span className="text-[10px] font-extrabold uppercase text-mgr-primary-900">Products Discussed & Customer Requirements</span>
+              <p className="font-extrabold text-mgr-primary-950">{selectedAuditModal.products_discussed || 'TwiteConnect Field CRM Suite'}</p>
               <p className="text-slate-700 font-medium text-[11px] mt-1">{selectedAuditModal.customer_requirements || 'Requires multi-device licenses and daily automated EOD report workflows.'}</p>
             </div>
 
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-1 text-xs">
+            <div className="p-3 rounded-2xl bg-slate-50 border-slate-200 space-y-1 text-xs">
               <span className="text-[10px] font-extrabold uppercase text-slate-400">Discussion Summary & Remarks</span>
               <p className="font-medium text-slate-700 leading-relaxed italic">
                 "{selectedAuditModal.discussion_summary || selectedAuditModal.remarks || 'Meeting completed with client decision makers.'}"
@@ -893,7 +847,7 @@ export default function ManagerVisits() {
 
             {/* ── COMPLETE AUDIT TIMELINE (REQUIRED BUSINESS FLOW) ──────────── */}
             <div className="p-4 rounded-2xl bg-slate-900 text-white space-y-3">
-              <span className="text-[10px] font-black uppercase tracking-wider text-amber-400">Complete Field Visit Audit Timeline</span>
+              <span className="text-[10px] font-black uppercase tracking-wider text-mgr-primary-400">Complete Field Visit Audit Timeline</span>
               <div className="flex items-center justify-between text-[11px] font-bold relative">
                 <div className="flex flex-col items-center space-y-1 text-center">
                   <div className="w-6 h-6 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-black text-xs">✓</div>
@@ -908,8 +862,8 @@ export default function ManagerVisits() {
                   <span className="text-slate-300">Meeting Completed</span>
                 </div>
                 <div className="flex flex-col items-center space-y-1 text-center">
-                  <div className="w-6 h-6 rounded-full bg-amber-400 text-slate-950 flex items-center justify-center font-black text-xs">✓</div>
-                  <span className="text-amber-300 font-extrabold">Form Submitted</span>
+                  <div className="w-6 h-6 rounded-full bg-mgr-primary-400 text-slate-950 flex items-center justify-center font-black text-xs">✓</div>
+                  <span className="text-mgr-primary-300 font-extrabold">Form Submitted</span>
                 </div>
                 <div className="flex flex-col items-center space-y-1 text-center">
                   <div className="w-6 h-6 rounded-full bg-emerald-500 text-slate-950 flex items-center justify-center font-black text-xs">★</div>

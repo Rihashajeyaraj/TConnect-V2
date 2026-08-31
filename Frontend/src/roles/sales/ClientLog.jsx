@@ -26,8 +26,9 @@ import { formatDate } from "../../utils/dateUtils.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 
-export default function ClientLog() {
+export default function ClientLog(props) {
   const { showToast } = useToast();
+  const isModalView = props?.isModalView || false;
   const currentUser = useCurrentUser();
   const userName = currentUser.name || currentUser.full_name || "Sales Executive";
   const userEmail = (currentUser.email || "").toLowerCase().trim();
@@ -51,8 +52,14 @@ export default function ClientLog() {
   };
 
   // Active Toggle Sub-Tab: "visits" | "opportunities" | "followups"
-  const [activeTab, setActiveTab] = useState("visits");
+  const [activeTab, setActiveTab] = useState(props?.defaultTab || "visits");
   const [search, setSearch] = useState("");
+
+  useEffect(() => {
+    if (props?.defaultTab) {
+      setActiveTab(props.defaultTab);
+    }
+  }, [props?.defaultTab]);
 
   // Date-wise filtering states
   const [filterDateMode, setFilterDateMode] = useState("All"); // "All" | "Today" | "This Month" | "Custom"
@@ -88,7 +95,14 @@ export default function ClientLog() {
   const [visitList, setVisitList] = useState([]);
 
   const [visitStatusFilter, setVisitStatusFilter] = useState("All");
-  const [isVisitModalOpen, setIsVisitModalOpen] = useState(false);
+  const [isVisitModalOpen, setIsVisitModalOpen] = useState(props?.defaultOpenAddVisit || false);
+
+  useEffect(() => {
+    if (props?.defaultOpenAddVisit) {
+      setIsVisitModalOpen(props.defaultOpenAddVisit);
+    }
+  }, [props?.defaultOpenAddVisit]);
+
   const [gpsLocation, setGpsLocation] = useState({ lat: null, lng: null, active: false });
   const [visitForm, setVisitForm] = useState({
     leadNumber: "",
@@ -458,18 +472,20 @@ export default function ClientLog() {
   });
 
   return (
-    <div className="space-y-5 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-6">
+    <div className={isModalView ? "space-y-4 font-sans text-slate-900 min-w-0 w-full" : "space-y-5 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-6"}>
       {/* ── Top Banner & Toggle Buttons Bar ───────────────────────────────── */}
       <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              Client Activity Log Workspace
-            </h1>
-            <p className="text-slate-500 text-xs sm:text-sm font-semibold mt-0.5">
-              Unified hub for Client Visits, Sales Opportunities & Follow-Up Discussions.
-            </p>
-          </div>
+          {!isModalView && (
+            <div>
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+                Client Activity Log Workspace
+              </h1>
+              <p className="text-slate-500 text-xs sm:text-sm font-semibold mt-0.5">
+                Unified hub for Client Visits, Sales Opportunities & Follow-Up Discussions.
+              </p>
+            </div>
+          )}
 
           {activeTab === "visits" && (
             <button

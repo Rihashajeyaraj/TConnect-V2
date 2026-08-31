@@ -149,7 +149,7 @@ function CeoDashboard() {
         } catch { return [] }
       })()
 
-      const rawCustomerPool = [...backendCustList, ...ceoCustList, ...ceoRawCustList, ...localCustList]
+      const rawCustomerPool = [...localCustList, ...backendCustList, ...ceoCustList, ...ceoRawCustList]
 
       const seenCustIds = new Set()
       const seenCustNames = new Set()
@@ -161,8 +161,18 @@ function CeoDashboard() {
         const custName = c.name || c.company || c.company_name || c.clientName || 'Customer Account'
         const cleanName = String(custName).toLowerCase().replace(/[^a-z0-9]/g, '').trim()
 
-        if (custId && seenCustIds.has(custId)) return
-        if (cleanName && seenCustNames.has(cleanName)) return
+        const existing = unifiedCustomersList.find((ec) =>
+          (custId && (ec.id === custId || ec.customer_id === custId)) ||
+          (cleanName && String(ec.name || ec.company || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim() === cleanName)
+        )
+
+        if (existing) {
+          const productCandidate = c.product || c.packageTier || c.tier || c.product_name
+          if (productCandidate && productCandidate !== 'Software License' && productCandidate !== 'Enterprise Plan') {
+            existing.product = productCandidate
+          }
+          return
+        }
 
         if (custId) seenCustIds.add(custId)
         if (cleanName) seenCustNames.add(cleanName)

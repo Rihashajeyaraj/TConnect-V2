@@ -167,6 +167,7 @@ export default function SalesHRMS() {
   const [leaveTimeSlot, setLeaveTimeSlot] = useState("Full Day");
   const [leaveReason, setLeaveReason] = useState("");
   const [myLeaveRequests, setMyLeaveRequests] = useState([]);
+  const [selectedLeaveDetailType, setSelectedLeaveDetailType] = useState(null);
 
   // ── Real Live Attendance Logs ────────────────────────────────────────────────
   const [realAttendanceLogs, setRealAttendanceLogs] = useState(() => {
@@ -187,10 +188,24 @@ export default function SalesHRMS() {
   });
 
   useEffect(() => {
-    hrmsAPI.getEmployeeById("self")
-      .then((res) => {
-        if (res && res.data) {
-          const emp = res.data;
+    async function loadUserProfile() {
+      try {
+        let emp = null;
+        const selfRes = await hrmsAPI.getEmployeeById("self").catch(() => null);
+        if (selfRes && selfRes.data) {
+          emp = selfRes.data;
+        } else {
+          const listRes = await hrmsAPI.getEmployees().catch(() => null);
+          const allEmps = listRes?.data || [];
+          const userEmailStr = String(currentUser.email || '').toLowerCase().trim();
+          const empCodeStr = String(empCode || currentUser.employee_code || currentUser.employee_id || '').toLowerCase().trim();
+          emp = allEmps.find(e => 
+            (e.email && String(e.email).toLowerCase().trim() === userEmailStr) ||
+            (empCodeStr && (String(e.employee_code || e.employee_id || '').toLowerCase().trim() === empCodeStr))
+          );
+        }
+
+        if (emp) {
           const mapped = {
             fullName: emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.fullName,
             employeeId: emp.employee_code || emp.employee_id,
@@ -200,12 +215,21 @@ export default function SalesHRMS() {
             designation: emp.designation,
             reportingManager: emp.reporting_manager_name || "Not Assigned",
             reportingManagerEmail: emp.reporting_manager_email || "",
+            annualLeaves: emp.annual_leaves ?? emp.annualLeaves,
+            halfDayPermissions: emp.half_day_permissions ?? emp.halfDayPermissions,
+            shortPermissions: emp.short_permissions ?? emp.shortPermissions,
+            annual_leaves: emp.annual_leaves ?? emp.annualLeaves,
+            half_day_permissions: emp.half_day_permissions ?? emp.halfDayPermissions,
+            short_permissions: emp.short_permissions ?? emp.shortPermissions,
           };
           setProfile(mapped);
           localStorage.setItem("tc_se_profile", JSON.stringify(mapped));
         }
-      })
-      .catch(() => null);
+      } catch (err) {
+        console.warn("Could not load employee profile for leaves:", err);
+      }
+    }
+    loadUserProfile();
   }, [empCode, currentUser]);
 
 
@@ -476,6 +500,18 @@ export default function SalesHRMS() {
     return new Date(temp.setDate(diff));
   };
 
+  const getLogDateKey = (log) => {
+    const raw = log.date || log.attendance_date || log.created_at || log.check_in_time || '';
+    if (!raw) return '';
+    try {
+      const d = new Date(raw);
+      if (!isNaN(d.getTime())) {
+        return d.toISOString().slice(0, 10);
+      }
+    } catch {}
+    return String(raw).trim();
+  };
+
   const filteredLogs = realAttendanceLogs.filter((log) => {
     const dStr = String(log.date || log.attendance_date || "");
     const logDate = new Date(dStr);
@@ -507,10 +543,22 @@ export default function SalesHRMS() {
     return true;
   });
 
-  const dynamicPresentCount = filteredLogs.length;
+  // Calculate UNIQUE present days / employee-days so multiple logins on the same day count as 1 Present
+  const distinctPresentKeys = new Set(
+    filteredLogs.map((l) => {
+      const dateKey = getLogDateKey(l);
+      if (isUserAdmin) {
+        const empId = l.employee_id || l.user_id || l.employee_code || l.email || l.name || 'emp';
+        return `${empId}___${dateKey}`;
+      }
+      return dateKey;
+    }).filter(Boolean)
+  );
+
+  const dynamicPresentCount = distinctPresentKeys.size;
   const dynamicAbsentCount = isUserAdmin
-    ? (reportFilterMode === "TODAY" ? Math.max(0, employeesCount - filteredLogs.length) : "—")
-    : (filteredLogs.length === 0 && (reportFilterMode === "TODAY" || reportFilterMode === "YESTERDAY") ? 1 : 0);
+    ? (reportFilterMode === "TODAY" ? Math.max(0, employeesCount - dynamicPresentCount) : "—")
+    : (dynamicPresentCount === 0 && (reportFilterMode === "TODAY" || reportFilterMode === "YESTERDAY") ? 1 : 0);
 
   return (
     <div className="space-y-6 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-6">
@@ -575,56 +623,6 @@ export default function SalesHRMS() {
         {activeSection === "dashboard" && !isUserAdmin && (
           <div className="space-y-4 max-w-5xl">
 
-            <div>
-              <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-2">
-                {isUserAdmin ? "Today's Operations Summary" : "Today's Performance"}
-              </p>
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-                {(isUserAdmin ? [
-                  { label: "Users Managed", value: String(adminKPIs?.total_users?.value || employeesCount || 0), icon: Users, bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
-                  { label: "System Audits", value: String(adminKPIs?.security_audits?.value || 0), icon: ShieldCheck, bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
-                  { label: "Pending Requests", value: String(myLeaveRequests.filter(r => r.status === "Pending").length), icon: Clock3, bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700" },
-                  { label: "System Status", value: (adminKPIs?.database_engine?.status === 'Active' ? 'Active' : 'Inactive'), icon: Activity, bg: "bg-rose-50 border-rose-200", text: "text-rose-700" },
-                ] : [
-                  { label: "Calls Made", value: String(allFollowups.length), icon: Phone, bg: "bg-blue-50 border-blue-200", text: "text-blue-700" },
-                  { label: "Visits Done", value: String(allVisits.length), icon: MapPin, bg: "bg-purple-50 border-purple-200", text: "text-purple-700" },
-                  { label: "Clients Said OK", value: String(convertedClients), icon: UserCheck, bg: "bg-emerald-50 border-emerald-200", text: "text-emerald-700" },
-                  { label: "Hot Leads Active", value: String(hotLeads), icon: Target, bg: "bg-rose-50 border-rose-200", text: "text-rose-700" },
-                ]).map(({ label, value, icon: Icon, bg, text }) => (
-                  <div key={label} className={`bg-white rounded-xl p-2.5 sm:p-3 border shadow-2xs ${bg}`}>
-                    <div className="flex items-start justify-between">
-                      <div>
-                        <p className={`text-[9px] font-black uppercase tracking-wider ${text}`}>{label}</p>
-                        <h2 className={`text-xl sm:text-2xl font-black mt-0.5 ${text}`}>{value}</h2>
-                      </div>
-                      <div className={`w-7 h-7 rounded-lg ${bg.split(" ")[0]} ${text} flex items-center justify-center shrink-0`}>
-                        <Icon size={15} />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {!isUserAdmin && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5">
-                {[
-                  { label: "Total My Leads", value: allLeads.length, icon: Users, color: "sky" },
-                  { label: "Active Customers", value: allCustomers.length, icon: UserCheck, color: "emerald" },
-                  { label: "Conversion Rate", value: `${convRate}%`, icon: TrendingUp, color: "violet" },
-                ].map(({ label, value, icon: Icon, color }) => (
-                  <div key={label} className={`bg-white rounded-xl p-2.5 sm:p-3 border border-${color}-200 shadow-2xs flex items-center gap-3`}>
-                    <div className={`w-8 h-8 rounded-lg bg-${color}-50 text-${color}-700 flex items-center justify-center shrink-0`}>
-                      <Icon size={16} />
-                    </div>
-                    <div>
-                      <p className="text-[9px] font-black text-slate-400 uppercase tracking-wider">{label}</p>
-                      <h2 className={`text-lg sm:text-xl font-black text-${color}-700`}>{value}</h2>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
 
             {/* ── 1. ATTENDANCE SUMMARY CARDS (COMPACT INLINE CARDS) ── */}
             <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-2xs space-y-2.5">
@@ -1272,30 +1270,73 @@ export default function SalesHRMS() {
 
         {/* ── LEAVE MANAGEMENT (Twite HRMS UI Match) ── */}
         {activeSection === "leave" && (() => {
-          const savedLeaves = localStorage.getItem(`tc_leaves_${userEmail.toLowerCase().trim()}`);
-          const localAllocation = savedLeaves ? JSON.parse(savedLeaves) : { annualLeaves: 12, halfDayPermissions: 6, shortPermissions: 2 };
+          const userEmailClean = String(userEmail || currentUser.email || profile.officialEmail || '').toLowerCase().trim();
+          const savedLeaves = userEmailClean ? localStorage.getItem(`tc_leaves_${userEmailClean}`) : null;
+          const localAllocation = savedLeaves ? JSON.parse(savedLeaves) : null;
 
-          const leaveAllocation = {
-            annualLeaves: profile.annual_leaves ?? profile.annualLeaves ?? localAllocation.annualLeaves,
-            halfDayPermissions: profile.half_day_permissions ?? profile.halfDayPermissions ?? localAllocation.halfDayPermissions,
-            shortPermissions: profile.short_permissions ?? profile.shortPermissions ?? localAllocation.shortPermissions,
-          };
-
-          const consumedFullLeaves = myLeaveRequests
-            .filter(r => (r.leave_type === "Full Day Leave" || r.leave_type?.includes("Full")) && r.status !== "Rejected")
-            .length;
-
-          const consumedHalfDay = myLeaveRequests
-            .filter(r => (r.leave_type === "Half-Day Permission" || r.leave_type?.includes("Half")) && r.status !== "Rejected")
-            .length;
-
-          const consumedShort = myLeaveRequests
-            .filter(r => (r.leave_type === "Short Permission" || r.leave_type?.includes("Short")) && r.status !== "Rejected")
-            .length;
-
-          const remainingFullLeaves = Math.max(0, leaveAllocation.annualLeaves - consumedFullLeaves);
-          const remainingHalfDay = Math.max(0, leaveAllocation.halfDayPermissions - consumedHalfDay);
-          const remainingShort = Math.max(0, leaveAllocation.shortPermissions - consumedShort);
+          const leaveCards = [
+            {
+              type: 'Casual Leave',
+              allowed: Number(profile.annual_leaves ?? profile.annualLeaves ?? currentUser.annual_leaves ?? currentUser.annualLeaves ?? localAllocation?.annualLeaves ?? 12),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Casual Leave' || r.leave_type === 'Full Day Leave' || String(r.leave_type || '').includes('Casual') || String(r.leave_type || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => {
+                const daysStr = String(r.duration || '1');
+                const match = daysStr.match(/(\d+)/);
+                return sum + (match ? parseFloat(match[1]) : 1.0);
+              }, 0),
+              unit: 'Days',
+              color: 'bg-emerald-50 border-emerald-200 text-emerald-950',
+              barColor: 'bg-emerald-600',
+              description: 'General full-day casual leaves'
+            },
+            {
+              type: 'Sick Leave',
+              allowed: Number(profile.sick_leaves ?? profile.sickLeaves ?? currentUser.sick_leaves ?? currentUser.sickLeaves ?? localAllocation?.sickLeaves ?? 10),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Sick Leave' || String(r.leave_type || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => {
+                const daysStr = String(r.duration || '1');
+                const match = daysStr.match(/(\d+)/);
+                return sum + (match ? parseFloat(match[1]) : 1.0);
+              }, 0),
+              unit: 'Days',
+              color: 'bg-rose-50 border-rose-200 text-rose-950',
+              barColor: 'bg-rose-600',
+              description: 'Medical rest / Sick leave balance'
+            },
+            {
+              type: 'Other Leave',
+              allowed: Number(profile.other_leaves ?? profile.otherLeaves ?? currentUser.other_leaves ?? currentUser.otherLeaves ?? localAllocation?.otherLeaves ?? 10),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Other Leave' || String(r.leave_type || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => {
+                const daysStr = String(r.duration || '1');
+                const match = daysStr.match(/(\d+)/);
+                return sum + (match ? parseFloat(match[1]) : 1.0);
+              }, 0),
+              unit: 'Days',
+              color: 'bg-violet-50 border-violet-200 text-violet-950',
+              barColor: 'bg-violet-600',
+              description: 'Special leaves / WFH / Others'
+            },
+            {
+              type: 'Half-Day Permission',
+              allowed: Number(profile.half_day_permissions ?? profile.halfDayPermissions ?? currentUser.half_day_permissions ?? currentUser.halfDayPermissions ?? localAllocation?.halfDayPermissions ?? 6),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Half-Day Permission' || String(r.leave_type || '').includes('Half')) && r.status !== 'Rejected').reduce((sum, r) => sum + 0.5, 0),
+              unit: 'Days',
+              color: 'bg-amber-50 border-amber-200 text-amber-950',
+              barColor: 'bg-amber-600',
+              description: 'Half-day permissions quota'
+            },
+            {
+              type: 'Short Permission',
+              allowed: Number(profile.short_permissions ?? profile.shortPermissions ?? currentUser.short_permissions ?? currentUser.shortPermissions ?? localAllocation?.shortPermissions ?? 2),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Short Permission' || String(r.leave_type || '').includes('Short')) && r.status !== 'Rejected').reduce((sum, r) => {
+                const durationStr = String(r.duration || '2');
+                const match = durationStr.match(/(\d+)/);
+                return sum + (match ? parseFloat(match[1]) : 2.0);
+              }, 0),
+              unit: 'Hours',
+              color: 'bg-sky-50 border-sky-200 text-sky-950',
+              barColor: 'bg-sky-600',
+              description: 'Monthly 2-hour short permission limit'
+            }
+          ];
 
           return (
             <>
@@ -1307,7 +1348,7 @@ export default function SalesHRMS() {
                   <CalendarDays size={20} className="text-teal-600" /> My Leave & Permission Management
                 </h2>
                 <p className="text-xs text-slate-500 font-semibold mt-1">
-                  Apply for Full-Day Leave, Half-Day Permission, or Short 2-Hour Permission. Requests route directly to {isUserAdmin ? "the CEO" : "your assigned Sales Manager"} for approval.
+                  Apply for Casual, Sick, Other Leave, Half-Day, or Short 2-Hour Permission. Requests route to your manager for approval. Click any card to view detailed history.
                 </p>
               </div>
 
@@ -1320,25 +1361,153 @@ export default function SalesHRMS() {
             </div>
 
             {/* 2. Leave Summary Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div className="bg-emerald-100/70 border border-emerald-200 rounded-2xl p-4 space-y-1.5">
-                <span className="text-xs font-black text-emerald-900 block uppercase tracking-wider">Full Day Leave</span>
-                <div className="text-3xl font-black text-emerald-950">{leaveAllocation.annualLeaves} Days</div>
-                <span className="text-[11px] font-extrabold text-emerald-800">{remainingFullLeaves} / {leaveAllocation.annualLeaves} Days Remaining</span>
-              </div>
-
-              <div className="bg-amber-100/70 border border-amber-200 rounded-2xl p-4 space-y-1.5">
-                <span className="text-xs font-black text-amber-900 block uppercase tracking-wider">Half-Day Permission</span>
-                <div className="text-3xl font-black text-amber-950">{leaveAllocation.halfDayPermissions} Slots</div>
-                <span className="text-[11px] font-extrabold text-amber-800">{remainingHalfDay} / {leaveAllocation.halfDayPermissions} Slots Remaining</span>
-              </div>
-
-              <div className="bg-sky-100/70 border border-sky-200 rounded-2xl p-4 space-y-1.5">
-                <span className="text-xs font-black text-sky-900 block uppercase tracking-wider">Short Permission</span>
-                <div className="text-3xl font-black text-sky-950">{leaveAllocation.shortPermissions} Hours</div>
-                <span className="text-[11px] font-extrabold text-sky-800">Max {leaveAllocation.shortPermissions} Hours / Month</span>
-              </div>
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+              {leaveCards.map((card) => {
+                const remaining = Math.max(0, card.allowed - card.consumed);
+                const pct = Math.round((remaining / card.allowed) * 100) || 0;
+                return (
+                  <div
+                    key={card.type}
+                    onClick={() => setSelectedLeaveDetailType(card.type)}
+                    className={`${card.color} rounded-2xl p-4 border shadow-xs space-y-1.5 text-xs cursor-pointer hover:scale-102 transition duration-150 active:scale-98`}
+                  >
+                    <span className="text-[10px] font-black uppercase tracking-wider block opacity-75">{card.type}</span>
+                    <div className="flex items-end gap-1">
+                      <span className="text-2xl font-black">{remaining}</span>
+                      <span className="text-[10px] font-bold opacity-60 mb-0.5">{card.unit.toLowerCase()} left</span>
+                    </div>
+                    <div className="w-full bg-slate-200/50 rounded-full h-1.5 overflow-hidden">
+                      <div className={`h-full rounded-full ${card.barColor}`} style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="text-[9px] font-semibold opacity-60 flex justify-between">
+                      <span>Quota: {card.allowed}</span>
+                      <span>Used: {card.consumed}</span>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
+
+            {/* Reusable LeaveDetailModal */}
+            {selectedLeaveDetailType && (() => {
+              const card = leaveCards.find(c => c.type === selectedLeaveDetailType);
+              const remaining = Math.max(0, card.allowed - card.consumed);
+              
+              const history = myLeaveRequests.filter(r => {
+                const rType = String(r.leave_type || r.leaveType || '').toLowerCase();
+                const cType = selectedLeaveDetailType.toLowerCase();
+                
+                if (cType.includes('casual')) {
+                  return rType.includes('casual') || rType.includes('full day');
+                }
+                if (cType.includes('sick')) {
+                  return rType.includes('sick');
+                }
+                if (cType.includes('other')) {
+                  return rType.includes('other');
+                }
+                if (cType.includes('half')) {
+                  return rType.includes('half');
+                }
+                if (cType.includes('short')) {
+                  return rType.includes('short');
+                }
+                return false;
+              });
+
+              return (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+                  <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+                    <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+                      <div>
+                        <h3 className="text-base font-black text-slate-900">{selectedLeaveDetailType} History</h3>
+                        <p className="text-[10px] text-slate-500 font-semibold mt-0.5">{card.description}</p>
+                      </div>
+                      <button
+                        onClick={() => setSelectedLeaveDetailType(null)}
+                        className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
+                      >
+                        <X size={18} />
+                      </button>
+                    </div>
+
+                    <div className="p-6 pb-2 grid grid-cols-3 gap-3 border-b border-slate-100">
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 text-center">
+                        <span className="text-[9px] font-black uppercase text-slate-400 block tracking-wider">Total Allowed</span>
+                        <span className="text-lg font-black text-slate-800">{card.allowed} {card.unit}</span>
+                      </div>
+                      <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 text-center">
+                        <span className="text-[9px] font-black uppercase text-slate-400 block tracking-wider">Total Taken</span>
+                        <span className="text-lg font-black text-slate-800">{card.consumed} {card.unit}</span>
+                      </div>
+                      <div className="p-3 bg-teal-50 rounded-xl border border-teal-200 text-center">
+                        <span className="text-[9px] font-black uppercase text-teal-700 block tracking-wider">Remaining</span>
+                        <span className="text-lg font-black text-teal-900">{remaining} {card.unit}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex-1 overflow-y-auto p-6">
+                      {history.length === 0 ? (
+                        <div className="py-12 text-center text-slate-400 font-bold text-xs italic bg-slate-50 rounded-2xl border border-slate-100">
+                          No leave requests logged for this type.
+                        </div>
+                      ) : (
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left text-xs font-semibold text-slate-700 border-collapse">
+                            <thead>
+                              <tr className="border-b border-slate-200 text-slate-400 font-black uppercase text-[9px] tracking-wider">
+                                <th className="pb-2">Date (From/To)</th>
+                                <th className="pb-2">Duration</th>
+                                <th className="pb-2">Reason</th>
+                                <th className="pb-2">Status</th>
+                                <th className="pb-2">Reviewer Comment</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
+                              {history.map((r, idx) => {
+                                const fromDateStr = r.from_date || r.fromDate || '—';
+                                const toDateStr = r.to_date || r.toDate || '—';
+                                const dateDisplay = fromDateStr === toDateStr ? fromDateStr : `${fromDateStr} to ${toDateStr}`;
+                                return (
+                                  <tr key={r.id || idx} className="hover:bg-slate-50/50">
+                                    <td className="py-2.5">{dateDisplay}</td>
+                                    <td className="py-2.5 font-bold text-slate-900">{r.duration || r.days || '1 Day'}</td>
+                                    <td className="py-2.5 text-slate-500 italic font-normal max-w-[200px] truncate" title={r.reason}>
+                                      {r.reason}
+                                    </td>
+                                    <td className="py-2.5">
+                                      <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black border uppercase tracking-wider ${
+                                        r.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                        r.status === 'Rejected' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                        'bg-amber-50 text-amber-700 border-amber-200'
+                                      }`}>
+                                        {r.status || 'Pending'}
+                                      </span>
+                                    </td>
+                                    <td className="py-2.5 text-slate-500 font-normal italic">
+                                      {r.manager_comment || r.managerRemark || r.managerComment || '—'}
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                      <button
+                        onClick={() => setSelectedLeaveDetailType(null)}
+                        className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black cursor-pointer shadow-sm"
+                      >
+                        Close
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* 3. Leave & Permission History Table */}
             <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
@@ -1486,7 +1655,9 @@ export default function SalesHRMS() {
                       </label>
                       <div className="grid grid-cols-3 gap-2">
                         {[
-                          { type: "Full Day Leave", label: "Full Day Leave" },
+                          { type: "Casual Leave", label: "Casual Leave" },
+                          { type: "Sick Leave", label: "Sick Leave" },
+                          { type: "Other Leave", label: "Other Leave" },
                           { type: "Half-Day Permission", label: "Half-Day" },
                           { type: "Short Permission (2 Hours)", label: "2-Hr Permission" },
                         ].map((item) => (
@@ -1503,7 +1674,7 @@ export default function SalesHRMS() {
                                 setLeaveTimeSlot("Full Day");
                               }
                             }}
-                            className={`py-2 px-2.5 rounded-xl text-xs font-black border transition cursor-pointer ${leaveType === item.type
+                            className={`py-2 px-2 border rounded-xl text-[10px] font-black transition cursor-pointer ${leaveType === item.type
                                 ? "bg-teal-600 text-white border-teal-600 shadow-2xs"
                                 : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                               }`}

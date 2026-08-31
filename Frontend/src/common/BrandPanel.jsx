@@ -1,147 +1,359 @@
-import { Sparkles, MapPin, Users, MessageSquare, Handshake, CheckCircle2, ChevronRight } from 'lucide-react'
+import { Sparkles, MapPin, Users, MessageSquare, Handshake, CheckCircle2, ChevronRight, Activity, Compass } from 'lucide-react'
 import salesGuyImg from '../assets/sales-guy-checking-routes.png'
+import chennaiMapBg from '../assets/chennai-map-bg.png'
+import handshakePartnersImg from '../assets/handshake-partners.png'
 
 function BrandPanel() {
   return (
-    <section className="relative hidden lg:flex flex-col justify-between p-7 lg:p-9 bg-gradient-to-br from-blue-50/90 via-slate-50 to-indigo-50/80 rounded-[2.5rem] border border-blue-100/90 shadow-inner overflow-hidden">
+    <section className="relative flex flex-col justify-between h-full p-5 lg:p-6 bg-gradient-to-br from-blue-600 via-sky-800 to-indigo-950 rounded-[1.5rem] border border-blue-500/30 shadow-inner overflow-hidden isolate order-1 lg:order-2">
+      {/* Real Chennai Map screenshot image placed to cover the entire background container */}
+      <div 
+        className="absolute inset-0 pointer-events-none opacity-[0.16] z-0 select-none mix-blend-overlay bg-cover bg-center bg-no-repeat filter invert brightness-110 contrast-125" 
+        style={{ backgroundImage: `url(${chennaiMapBg})` }}
+      />
+
+      {/* CSS Animations style tag */}
+      <style dangerouslySetInnerHTML={{__html: `
+        @keyframes travelRoad {
+          0% { offset-distance: 0%; opacity: 0; }
+          2% { opacity: 1; }
+          95% { opacity: 1; }
+          100% { offset-distance: 100%; opacity: 0; }
+        }
+        @keyframes rotateWheel {
+          0% { transform: rotate(0deg); }
+          100% { transform: rotate(360deg); }
+        }
+        @keyframes bodyBounce {
+          0%, 100% { transform: translateY(0px) rotate(0deg); }
+          50% { transform: translateY(-0.8px) rotate(0.5deg); }
+        }
+        .bike-travel {
+          offset-path: path("M 40,85 C 100,105 140,120 180,115 C 230,110 280,85 320,75 C 370,65 410,45 460,25");
+          offset-rotate: auto;
+          animation: travelRoad 7s infinite linear;
+        }
+        .wheel-spin {
+          animation: rotateWheel 0.3s infinite linear;
+        }
+        .bike-bounce {
+          animation: bodyBounce 0.15s infinite ease-in-out;
+        }
+
+        /* ── Handshake Animation Keyframes ── */
+        @keyframes walkMan {
+          0%, 10% { transform: translateX(0px) scale(1.18); }
+          25%, 75% { transform: translateX(42px) scale(1.18); }
+          90%, 100% { transform: translateX(0px) scale(1.18); }
+        }
+        @keyframes walkWoman {
+          0%, 10% { transform: translateX(0px) scale(1.18); }
+          25%, 75% { transform: translateX(-42px) scale(1.18); }
+          90%, 100% { transform: translateX(0px) scale(1.18); }
+        }
+        @keyframes rotateManArm {
+          0%, 25% { transform: rotate(0deg); }
+          32% { transform: rotate(-62deg); }
+          35%, 38%, 41%, 44%, 47%, 50%, 53%, 56%, 59%, 62%, 65% { transform: rotate(-58deg); }
+          36.5%, 39.5%, 42.5%, 45.5%, 48.5%, 51.5%, 54.5%, 57.5%, 60.5%, 63.5% { transform: rotate(-65deg); }
+          70% { transform: rotate(-62deg); }
+          78%, 100% { transform: rotate(0deg); }
+        }
+        @keyframes rotateWomanArm {
+          0%, 25% { transform: rotate(0deg); }
+          32% { transform: rotate(62deg); }
+          35%, 38%, 41%, 44%, 47%, 50%, 53%, 56%, 59%, 62%, 65% { transform: rotate(58deg); }
+          36.5%, 39.5%, 42.5%, 45.5%, 48.5%, 51.5%, 54.5%, 57.5%, 60.5%, 63.5% { transform: rotate(65deg); }
+          70% { transform: rotate(62deg); }
+          78%, 100% { transform: rotate(0deg); }
+        }
+        @keyframes swingLegLeft {
+          0% { transform: rotate(0deg); }
+          5% { transform: rotate(15deg); }
+          10% { transform: rotate(-15deg); }
+          15% { transform: rotate(15deg); }
+          20% { transform: rotate(-10deg); }
+          25%, 75% { transform: rotate(0deg); }
+          80% { transform: rotate(-15deg); }
+          85% { transform: rotate(15deg); }
+          90%, 100% { transform: rotate(0deg); }
+        }
+        @keyframes swingLegRight {
+          0% { transform: rotate(0deg); }
+          5% { transform: rotate(-15deg); }
+          10% { transform: rotate(15deg); }
+          15% { transform: rotate(-15deg); }
+          20% { transform: rotate(10deg); }
+          25%, 75% { transform: rotate(0deg); }
+          80% { transform: rotate(15deg); }
+          85% { transform: rotate(-15deg); }
+          90%, 100% { transform: rotate(0deg); }
+        }
+        @keyframes handGlow {
+          0%, 29% { transform: translate(200px, 111px) scale(0); opacity: 0; }
+          32% { transform: translate(200px, 111px) scale(1.6); opacity: 1; }
+          38%, 100% { transform: translate(200px, 111px) scale(0); opacity: 0; }
+        }
+      `}} />
+
       {/* Top Headline & Subtitle */}
-      <div className="space-y-3.5 max-w-xl relative z-10">
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-100/90 border border-amber-200 text-amber-800 font-bold text-[11px] shadow-sm">
-          <Sparkles className="w-3.5 h-3.5 text-amber-600 animate-pulse" />
-          <span>AI-Powered Sales Tracking Platform</span>
+      <div className="space-y-2 max-w-xl relative z-10">
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-white/10 border border-white/20 text-sky-200 font-bold text-[11px] shadow-sm">
+          <Sparkles className="w-3.5 h-3.5 text-sky-300 animate-pulse" />
+          <span>Twite Connect</span>
         </div>
 
-        <h1 className="text-2xl lg:text-3xl font-extrabold text-slate-900 tracking-tight leading-tight">
-          From Lead to Closure —{' '}
-          <span className="text-amber-700">
-            Manage Every Sales Interaction
-          </span>{' '}
-          with TwiteConnect.
+        <h1 className="text-2xl lg:text-3xl font-extrabold text-white tracking-tight leading-tight">
+          “Connect Better. <span className="bg-gradient-to-r from-cyan-300 via-sky-300 to-blue-300 bg-clip-text text-transparent">Move Forward.”</span>
         </h1>
-
-        <p className="text-xs lg:text-sm text-slate-600 leading-relaxed font-normal">
-          Streamline lead management, field client visits, follow-ups, and sales performance with one intelligent platform.
-        </p>
       </div>
 
-      {/* Visual Presentation Area: Journey Arc + Guy Checking GPS Routes + Dashboard UI */}
-      <div className="relative my-2 min-h-[340px] flex items-end">
-        {/* Dotted Curved Sales Journey Arc (Left Column) */}
-        <div className="absolute left-0 top-2 bottom-4 flex flex-col justify-between z-20">
-          {[
-            { label: 'Connect', icon: Users, color: 'bg-emerald-500 text-white' },
-            { label: 'Track', icon: MapPin, color: 'bg-amber-500 text-white' },
-            { label: 'Follow Up', icon: MessageSquare, color: 'bg-blue-600 text-white' },
-            { label: 'Close Deals', icon: Handshake, color: 'bg-purple-600 text-white' },
-          ].map((node) => {
-            const Icon = node.icon
-            return (
-              <div key={node.label} className="flex items-center gap-2">
-                <div className={`w-8 h-8 rounded-2xl ${node.color} flex items-center justify-center shadow-md shadow-slate-900/10`}>
-                  <Icon className="w-4 h-4" />
-                </div>
-                <span className="text-[10px] font-bold text-slate-800 bg-white px-2 py-0.5 rounded-lg border border-slate-200 shadow-sm">
-                  {node.label}
-                </span>
-              </div>
-            )
-          })}
+      {/* Visual Presentation Area: Animated Journey Arc & Handshake Illustration */}
+      <div className="relative my-2.5 space-y-4 flex-1 flex flex-col justify-between max-h-[430px]">
+        {/* Animated Curved Journey Arc (Taller h-[160px] for high visibility and labels) */}
+        <div className="relative w-full h-[160px] z-10">
+          <svg className="w-full h-full overflow-visible" viewBox="0 0 500 160" fill="none">
+            <defs>
+              <linearGradient id="lightBeam" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stopColor="#fef08a" stopOpacity="0.7" />
+                <stop offset="100%" stopColor="#fef08a" stopOpacity="0" />
+              </linearGradient>
+              <filter id="roadShadow" x="-10%" y="-10%" width="120%" height="120%">
+                <feDropShadow dx="0" dy="5" stdDeviation="4" floodColor="#0f172a" floodOpacity="0.22" />
+              </filter>
+              <filter id="glow">
+                <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                <feMerge>
+                  <feMergeNode in="coloredBlur"/>
+                  <feMergeNode in="SourceGraphic"/>
+                </feMerge>
+              </filter>
+            </defs>
+
+            {/* Curved Road Tracks (Premium Drop-Shadowed Asphalt Road style) */}
+            <path 
+              d="M 40,85 C 100,105 140,120 180,115 C 230,110 280,85 320,75 C 370,65 410,45 460,25" 
+              stroke="#0f172a" 
+              strokeWidth="12" 
+              strokeLinecap="round" 
+              fill="none" 
+              filter="url(#roadShadow)"
+            />
+            <path 
+              d="M 40,85 C 100,105 140,120 180,115 C 230,110 280,85 320,75 C 370,65 410,45 460,25" 
+              stroke="#1e293b" 
+              strokeWidth="8" 
+              strokeLinecap="round" 
+              fill="none" 
+            />
+            <path 
+              d="M 40,85 C 100,105 140,120 180,115 C 230,110 280,85 320,75 C 370,65 410,45 460,25" 
+              stroke="#ffffff" 
+              strokeWidth="1.8" 
+              strokeDasharray="5,5" 
+              strokeLinecap="round" 
+              fill="none" 
+            />
+
+            {/* PIN 1: Connect */}
+            <g transform="translate(40, 85)">
+              <circle cx="0" cy="0" r="14" fill="#2563eb" opacity="0.3" className="animate-ping" />
+              <circle cx="0" cy="0" r="5" fill="#2563eb" />
+              <path d="M 0,0 C -5,-7 -8,-15 0,-20 C 8,-15 5,-7 0,0" fill="#2563eb" stroke="#ffffff" strokeWidth="1.2" />
+              <circle cx="0" cy="-14" r="2" fill="#ffffff" />
+              <text x="0" y="24" fontSize="9px" fontWeight="900" fill="#93c5fd" textAnchor="middle" fontFamily="sans-serif">CONNECT</text>
+              <text x="0" y="35" fontSize="7.5px" fontWeight="700" fill="#cbd5e1" textAnchor="middle" fontFamily="sans-serif">Find Leads</text>
+            </g>
+
+            {/* PIN 2: Track */}
+            <g transform="translate(180, 115)">
+              <circle cx="0" cy="0" r="14" fill="#ea580c" opacity="0.3" className="animate-ping" />
+              <circle cx="0" cy="0" r="5" fill="#ea580c" />
+              <path d="M 0,0 C -5,-7 -8,-15 0,-20 C 8,-15 5,-7 0,0" fill="#ea580c" stroke="#ffffff" strokeWidth="1.2" />
+              <circle cx="0" cy="-14" r="2" fill="#ffffff" />
+              <text x="0" y="24" fontSize="9px" fontWeight="900" fill="#fdba74" textAnchor="middle" fontFamily="sans-serif">TRACK</text>
+              <text x="0" y="35" fontSize="7.5px" fontWeight="700" fill="#cbd5e1" textAnchor="middle" fontFamily="sans-serif">Track Activities</text>
+            </g>
+
+            {/* PIN 3: Perform */}
+            <g transform="translate(320, 75)">
+              <circle cx="0" cy="0" r="14" fill="#10b981" opacity="0.3" className="animate-ping" />
+              <circle cx="0" cy="0" r="5" fill="#10b981" />
+              <path d="M 0,0 C -5,-7 -8,-15 0,-20 C 8,-15 5,-7 0,0" fill="#10b981" stroke="#ffffff" strokeWidth="1.2" />
+              <circle cx="0" cy="-14" r="2" fill="#ffffff" />
+              <text x="0" y="24" fontSize="9px" fontWeight="900" fill="#6ee7b7" textAnchor="middle" fontFamily="sans-serif">PERFORM</text>
+              <text x="0" y="35" fontSize="7.5px" fontWeight="700" fill="#cbd5e1" textAnchor="middle" fontFamily="sans-serif">Close Deals</text>
+            </g>
+
+            {/* PIN 4: Success Bevel Platform & Flag */}
+            <g transform="translate(460, 25)">
+              {/* 3D Platform Disc */}
+              <path d="M -16,0 V 4 A 16,5 0 0 0 16,4 V 0 Z" fill="#0f172a" />
+              <ellipse cx="0" cy="0" rx="16" ry="5.5" fill="#1e293b" />
+              <ellipse cx="0" cy="0" rx="13" ry="4" fill="#334155" />
+              
+              {/* Flagpole */}
+              <line x1="0" y1="0" x2="0" y2="-28" stroke="#b45309" strokeWidth="2.5" strokeLinecap="round" />
+              <circle cx="0" cy="-29" r="1.8" fill="#f59e0b" />
+              
+              {/* Green Flag */}
+              <path d="M 0,-28 L 18,-23 L 0,-18 Z" fill="#10b981" />
+              <path d="M 0,-28 L 18,-23 L 0,-18 Z M 0,-23 L 10,-20 L 0,-18" fill="#047857" opacity="0.3" />
+
+              {/* Labels */}
+              <text x="0" y="24" fontSize="9px" fontWeight="900" fill="#4ade80" textAnchor="middle" fontFamily="sans-serif">SUCCESS</text>
+              <text x="0" y="35" fontSize="7.5px" fontWeight="700" fill="#cbd5e1" textAnchor="middle" fontFamily="sans-serif">Achieve More</text>
+            </g>
+
+            {/* Animated Motorcycle Element (Using static 3D PNG asset as requested) */}
+            <g className="bike-travel">
+              <g className="bike-bounce" transform="translate(0, -1.5)">
+                {/* Speed Blur Motion Trails */}
+                <path d="M -50,-20 L -80,-20 M -45,-10 L -70,-10 M -55,-30 L -75,-30" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" opacity="0.65" />
+                <path d="M -45,-20 L -70,-20" stroke="#60a5fa" strokeWidth="6" strokeLinecap="round" opacity="0.4" filter="url(#glow)" />
+
+                {/* 3D Motorcycle Rider PNG Image */}
+                <image 
+                  href="/motorcycle_rider.png" 
+                  x="-75" 
+                  y="-70" 
+                  width="130" 
+                  height="73" 
+                />
+
+                {/* Subtle Wheel Rotation overlay (Spinning spoke details) */}
+                <g className="wheel-spin" style={{ transformBox: 'fill-box', transformOrigin: 'center' }}>
+                  <circle cx="-42" cy="-4" r="10" stroke="rgba(255, 255, 255, 0.25)" strokeWidth="1" fill="none" />
+                  <line x1="-42" y1="-12" x2="-42" y2="4" stroke="rgba(255, 255, 255, 0.45)" strokeWidth="1.2" />
+                  <line x1="-50" y1="-4" x2="-34" y2="-4" stroke="rgba(255, 255, 255, 0.45)" strokeWidth="1.2" />
+                </g>
+                <g className="wheel-spin" style={{ transformBox: 'fill-box', transformOrigin: 'center' }}>
+                  <circle cx="39" cy="-4" r="10" stroke="rgba(255, 255, 255, 0.25)" strokeWidth="1" fill="none" />
+                  <line x1="39" y1="-12" x2="39" y2="4" stroke="rgba(255, 255, 255, 0.45)" strokeWidth="1.2" />
+                  <line x1="31" y1="-4" x2="47" y2="-4" stroke="rgba(255, 255, 255, 0.45)" strokeWidth="1.2" />
+                </g>
+              </g>
+            </g>
+          </svg>
         </div>
 
-        {/* Dashboard Graphic Window (Background Screen) */}
-        <div className="relative ml-24 flex-1 bg-white rounded-2xl p-3.5 border border-slate-200/90 shadow-2xl shadow-blue-900/10 space-y-3 z-10 overflow-hidden">
-          {/* Header */}
-          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-            <div className="flex items-center gap-2">
-              <div className="w-5 h-5 rounded-md bg-blue-600 text-white font-black text-[10px] flex items-center justify-center">
-                TC
-              </div>
-              <span className="font-extrabold text-xs text-slate-900">Dashboard</span>
-            </div>
-            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-              Real-Time GPS Route Sync
-            </span>
-          </div>
-
-          {/* Stat Metrics Bar */}
-          <div className="grid grid-cols-4 gap-1.5 text-center">
-            <div className="p-1.5 bg-slate-50 rounded-xl border border-slate-100">
-              <p className="text-[8px] text-slate-400 font-bold">Total Leads</p>
-              <p className="text-xs font-extrabold text-slate-900">128 <span className="text-[7px] text-emerald-600">+24%</span></p>
-            </div>
-            <div className="p-1.5 bg-slate-50 rounded-xl border border-slate-100">
-              <p className="text-[8px] text-slate-400 font-bold">Followups</p>
-              <p className="text-xs font-extrabold text-slate-900">96 <span className="text-[7px] text-emerald-600">+18%</span></p>
-            </div>
-            <div className="p-1.5 bg-slate-50 rounded-xl border border-slate-100">
-              <p className="text-[8px] text-slate-400 font-bold">Appointments</p>
-              <p className="text-xs font-extrabold text-slate-900">64 <span className="text-[7px] text-blue-600">+30%</span></p>
-            </div>
-            <div className="p-1.5 bg-emerald-50/70 rounded-xl border border-emerald-100">
-              <p className="text-[8px] text-emerald-800 font-bold">Deals Closed</p>
-              <p className="text-xs font-extrabold text-emerald-700">32 <span className="text-[7px] text-emerald-600">+25%</span></p>
-            </div>
-          </div>
-
-          {/* Interactive GPS Visit Route Map Area */}
-          <div className="relative bg-slate-50 rounded-xl p-3 border border-slate-200/80 min-h-[140px] flex items-start justify-between overflow-hidden">
-            <div className="space-y-1 z-10">
-              <div className="flex items-center gap-1 text-[11px] font-bold text-slate-800">
-                <MapPin className="w-3.5 h-3.5 text-blue-600" /> Visit Overview Map Route
-              </div>
-              <p className="text-[9px] text-slate-500">Live GPS tracking across client meeting sites</p>
+        {/* Animated Handshake Storyboard Viewport */}
+        <div className="hidden lg:flex flex-col items-center justify-center py-1.5 relative z-10 w-full flex-1">
+          <div className="relative w-full max-w-[390px] mx-auto select-none overflow-visible">
+            {/* Decorative background glow rings */}
+            <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-20">
+              <div className="w-24 h-24 rounded-full bg-blue-400/20 blur-xl animate-pulse" />
+              <div className="w-24 h-24 rounded-full bg-emerald-400/20 blur-xl animate-pulse" style={{ animationDelay: '1.5s' }} />
             </div>
 
-            {/* Dotted Route Line Graphic */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none opacity-40" viewBox="0 0 300 120" fill="none">
-              <path d="M 30 90 Q 80 20 150 70 T 270 30" stroke="#2563EB" strokeWidth="3" strokeDasharray="6 6" />
-              <circle cx="30" cy="90" r="5" fill="#10B981" />
-              <circle cx="150" cy="70" r="5" fill="#F59E0B" />
-              <circle cx="270" cy="30" r="5" fill="#8B5CF6" />
+            {/* SVG Handshake animation */}
+            <svg className="w-full h-[180px] overflow-visible" viewBox="0 0 400 180" fill="none">
+              <defs>
+                <filter id="glow">
+                  <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+                  <feMerge>
+                    <feMergeNode in="coloredBlur"/>
+                    <feMergeNode in="SourceGraphic"/>
+                  </feMerge>
+                </filter>
+              </defs>
+
+              {/* Interactive Floor Shadow */}
+              <ellipse cx="200" cy="168" rx="140" ry="5.5" fill="rgba(15, 23, 42, 0.08)" />
+
+              {/* Handshake Contact Sparkle/Glow */}
+              <g style={{ animation: 'handGlow 5s infinite ease-in-out' }}>
+                <circle cx="0" cy="0" r="12" fill="#ea580c" opacity="0.4" filter="url(#glow)" />
+                <path d="M 0,-15 L 3,-4 L 14,-4 L 6,2 L 9,13 L 0,6 L -9,13 L -6,2 L -14,-4 L -3,-4 Z" fill="#fdba74" transform="scale(0.6) translate(0, -2)" />
+              </g>
+
+              {/* MAN CHARACTER GROUP */}
+              <g style={{ transformOrigin: '110px 168px', animation: 'walkMan 5s infinite ease-in-out' }}>
+                {/* Role text label */}
+                <text x="110" y="47" fontSize="7px" fontWeight="900" fill="#93c5fd" textAnchor="middle" letterSpacing="0.4px" fontFamily="sans-serif">EXECUTIVE</text>
+
+                {/* Body & Clothes */}
+                <path d="M 97,85 L 123,85 L 126,128 L 94,128 Z" fill="#1e293b" />
+                <path d="M 108,85 L 112,85 L 110,97 Z" fill="#ffffff" />
+                <path d="M 109.5,90 L 110.5,90 L 111,102 L 110,105 L 109,102 Z" fill="#ea580c" />
+                
+                {/* Head */}
+                <circle cx="110" cy="65" r="8.5" fill="#e0a98c" />
+                <path d="M 101.5,63 C 101.5,54 118.5,54 118.5,63 C 114,59 106,59 101.5,63 Z" fill="#2d1e18" />
+
+                {/* Left Arm (holding briefcase) */}
+                <path d="M 97,85 C 91,95 91,105 94,115" stroke="#1e293b" strokeWidth="5.5" strokeLinecap="round" fill="none" />
+                <g>
+                  <path d="M 88,112 H 100 V 126 H 88 Z" fill="#0f172a" />
+                  <path d="M 91,112 V 109 H 97 V 112" stroke="#334155" strokeWidth="1.5" fill="none" />
+                </g>
+
+                {/* Legs (swinging) */}
+                <g style={{ transformOrigin: '100.5px 128px', animation: 'swingLegLeft 5s infinite ease-in-out' }}>
+                  <rect x="97" y="128" width="7" height="38" fill="#0f172a" rx="1" />
+                  <path d="M 93,166 H 104 L 102,170 H 93 Z" fill="#090d16" />
+                </g>
+                <g style={{ transformOrigin: '119.5px 128px', animation: 'swingLegRight 5s infinite ease-in-out' }}>
+                  <rect x="116" y="128" width="7" height="38" fill="#0f172a" rx="1" />
+                  <path d="M 116,166 H 127 L 125,170 H 116 Z" fill="#090d16" />
+                </g>
+
+                {/* Right Arm (Animated) */}
+                <g id="man-arm" style={{ transformOrigin: '110px 85px', animation: 'rotateManArm 5s infinite ease-in-out' }}>
+                  <line x1="110" y1="85" x2="110" y2="117" stroke="#1e293b" strokeWidth="6.5" strokeLinecap="round" />
+                  <circle cx="110" cy="120" r="4.5" fill="#e0a98c" />
+                </g>
+              </g>
+
+              {/* WOMAN CHARACTER GROUP */}
+              <g style={{ transformOrigin: '290px 168px', animation: 'walkWoman 5s infinite ease-in-out' }}>
+                {/* Role text label */}
+                <text x="290" y="47" fontSize="7px" fontWeight="900" fill="#6ee7b7" textAnchor="middle" letterSpacing="0.4px" fontFamily="sans-serif">CLIENT</text>
+
+                {/* Body & Clothes */}
+                <path d="M 277,85 L 303,85 L 306,123 L 274,123 Z" fill="#78350f" />
+                <path d="M 288,85 L 292,85 L 290,95 Z" fill="#fef3c7" />
+                <path d="M 276,123 L 304,123 L 307,150 L 273,150 Z" fill="#1f2937" />
+
+                {/* Head */}
+                <circle cx="290" cy="65" r="8" fill="#ecc6b3" />
+                <path d="M 280,63 C 280,53 300,53 300,63 L 302,73 C 302,77 298,77 296,73 Z" fill="#111827" />
+
+                {/* Left Arm (at side) */}
+                <path d="M 303,85 C 307,95 307,105 304,115" stroke="#78350f" strokeWidth="5.5" strokeLinecap="round" fill="none" />
+
+                {/* Client Folder / Clipboard (emerald green) */}
+                <g transform="translate(299, 102) rotate(4)">
+                  <rect x="0" y="0" width="11" height="15" rx="1.5" fill="#10b981" />
+                  <rect x="2.5" y="-1.5" width="6" height="2" fill="#047857" rx="0.5" />
+                  <line x1="2.5" y1="4" x2="8.5" y2="4" stroke="#ffffff" strokeWidth="1" />
+                  <line x1="2.5" y1="7" x2="8.5" y2="7" stroke="#ffffff" strokeWidth="1" />
+                  <line x1="2.5" y1="10" x2="6.5" y2="10" stroke="#ffffff" strokeWidth="1" />
+                </g>
+
+                {/* Legs (swinging) */}
+                <g style={{ transformOrigin: '282px 150px', animation: 'swingLegLeft 5s infinite ease-in-out' }}>
+                  <rect x="279" y="150" width="6" height="18" fill="#ecc6b3" rx="1" />
+                  <path d="M 275,168 H 285 L 283,170 H 275 Z" fill="#111827" />
+                </g>
+                <g style={{ transformOrigin: '298px 150px', animation: 'swingLegRight 5s infinite ease-in-out' }}>
+                  <rect x="295" y="150" width="6" height="18" fill="#ecc6b3" rx="1" />
+                  <path d="M 295,168 H 305 L 303,170 H 295 Z" fill="#111827" />
+                </g>
+
+                {/* Right Arm (Animated) */}
+                <g id="woman-arm" style={{ transformOrigin: '290px 85px', animation: 'rotateWomanArm 5s infinite ease-in-out' }}>
+                  <line x1="290" y1="85" x2="290" y2="117" stroke="#78350f" strokeWidth="6" strokeLinecap="round" />
+                  <circle cx="290" cy="120" r="4.5" fill="#ecc6b3" />
+                </g>
+              </g>
             </svg>
-
-            <div className="bg-white/90 backdrop-blur-sm p-2 rounded-xl border border-slate-200 shadow-sm text-right z-10">
-              <p className="text-[9px] font-bold text-slate-700">Visit Status</p>
-              <p className="text-xs font-black text-blue-600">126 Total</p>
-              <div className="flex items-center gap-1 mt-1 text-[8px]">
-                <span className="text-emerald-600 font-bold">65 Completed</span> • <span className="text-amber-600 font-bold">40 Pending</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* Floating Client Visit Details Card (Right Bottom) */}
-        <div className="absolute right-2 bottom-2 z-30 bg-white p-3.5 rounded-2xl border border-slate-200 shadow-2xl max-w-[220px] space-y-2">
-          <div className="flex items-center gap-2">
-            <div className="w-6 h-6 rounded-full bg-purple-600 text-white font-bold text-xs flex items-center justify-center">
-              B
-            </div>
-            <div>
-              <h4 className="font-bold text-xs text-slate-900 leading-tight">Bayfront Royal Ltd.</h4>
-              <p className="text-[9px] text-slate-500">Commercial Plaza, New Town</p>
-            </div>
           </div>
 
-          <div className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-50 text-emerald-700 font-bold text-[9px] border border-emerald-200">
-            <CheckCircle2 className="w-3 h-3 text-emerald-600" /> Visit Completed
+          <div className="text-center mt-1">
+            <span className="text-[10px] font-black text-white/95 tracking-wider uppercase block">Sales Agreement & Success</span>
+            <span className="text-[8px] font-bold text-sky-200/80 z-10 block">Verified partnerships across Twite Connect</span>
           </div>
-
-          <div className="text-[9px] text-slate-500 font-medium">
-            📅 October 14 • 11:30 AM
-          </div>
-
-          <button className="w-full py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-[10px] shadow-sm flex items-center justify-center gap-1">
-            View Full Details <ChevronRight className="w-3 h-3" />
-          </button>
-        </div>
-
-        {/* Sales Guy Turned Around Checking GPS Routes Overlay */}
-        <div className="absolute left-10 bottom-0 z-30 pointer-events-none w-44 lg:w-52 drop-shadow-2xl">
-          <img
-            src={salesGuyImg}
-            alt="Sales Executive Checking GPS Routes"
-            className="w-full h-auto object-contain max-h-[290px] opacity-95"
-          />
         </div>
       </div>
     </section>

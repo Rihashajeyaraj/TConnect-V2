@@ -1,11 +1,17 @@
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 import jose.jwt
+import secrets
 from datetime import datetime, timedelta, timezone
 from app.modules.auth.repository import AuthRepository
 from app.modules.auth.schemas import LoginRequest, SignUpRequest, DevTokenRequest
 from app.core.config import settings
-from app.exceptions.base import UnauthorizedException, BadRequestException
+from app.exceptions.base import UnauthorizedException, BadRequestException, ForbiddenException
 from app.core.logger import logger
+
+
+# ── In-memory store for password reset requests ───────────────────────────────
+# key: email (lowercase), value: request metadata dict
+_password_reset_requests: Dict[str, Dict[str, Any]] = {}
 
 
 # ── Known default system accounts: email -> (role, accepted_passwords)
@@ -323,3 +329,210 @@ class AuthService:
             return self.generate_dev_token(
                 DevTokenRequest(email=credentials.email, role="Sales Executive")
             )
+
+    # ── Password Reset Request Methods ────────────────────────────────────────
+
+    def request_password_reset(self, email: str) -> Dict[str, Any]:
+        """Employee submits a forgot-password request. Returns generic message always (security)."""
+        email = email.strip().lower()
+
+        # Look up employee across UserRepository and HRMSRepository
+        user_record = None
+        try:
+            from app.modules.users.repository import UserRepository
+            all_users = UserRepository().get_all_users()
+            for u in all_users:
+                if str(u.get("email", "")).strip().lower() == email:
+                    user_record = u
+                    break
+        except Exception as e:
+            logger.warning(f"reset request - UserRepository lookup: {e}")
+
+        if not user_record:
+            try:
+                from app.modules.hrms.repository import HRMSRepository
+                all_emps = HRMSRepository().get_all_employees()
+                for emp in all_emps:
+                    if str(emp.get("email", "")).strip().lower() == email:
+                        user_record = emp
+                        break
+            except Exception as e:
+                logger.warning(f"reset request - HRMS lookup: {e}")
+
+        # If user not found — return generic response (don't leak existence)
+        if not user_record:
+            logger.info(f"Password reset request for unknown email: {email}")
+            return {"message": "If this email is registered, your Admin will be notified."}
+
+        # Block deactivated / terminated employees
+        status_val = str(
+            user_record.get("status") or user_record.get("employmentStatus") or "Active"
+        ).strip().lower()
+        if status_val in ["disabled", "inactive", "suspended", "terminated", "deactivated"]:
+            raise ForbiddenException(
+                "Your account is deactivated or inactive. Please contact HR or your Administrator."
+            )
+
+        # Rate limit: max 3 requests per day per email
+        existing = _password_reset_requests.get(email)
+        if existing:
+            req_count = existing.get("request_count", 1)
+            last_req = existing.get("requested_at", "")
+            try:
+                last_dt = datetime.fromisoformat(last_req)
+                if (datetime.utcnow() - last_dt).total_seconds() < 86400 and req_count >= 3:
+                    raise BadRequestException(
+                        "Too many reset requests today. Please contact your Admin directly."
+                    )
+            except (ValueError, TypeError):
+                pass
+            new_count = req_count + 1 if existing else 1
+        else:
+            new_count = 1
+
+        emp_name = (
+            user_record.get("name")
+            or user_record.get("full_name")
+            or email.split("@")[0].replace(".", " ").title()
+        )
+        emp_code = user_record.get("employee_code") or user_record.get("employee_id") or ""
+        role_val = user_record.get("role") or user_record.get("designation") or "Employee"
+
+        _password_reset_requests[email] = {
+            "email": email,
+            "employee_name": emp_name,
+            "employee_code": str(emp_code),
+            "role": role_val,
+            "status": "pending",
+            "requested_at": datetime.utcnow().isoformat(),
+            "request_count": new_count,
+        }
+
+        # Notify all admins via in-app notification
+        try:
+            from app.modules.notification.repository import NotificationRepository
+            NotificationRepository().create_notification({
+                "recipient_role": "super admin",
+                "title": "🔑 Password Reset Request",
+                "message": f"{emp_name} ({email}) has requested a password reset. Please review in User Management → Password Requests.",
+                "type": "WARNING",
+            })
+        except Exception as notify_err:
+            logger.warning(f"Admin notification for reset request failed: {notify_err}")
+
+        # Audit log
+        try:
+            from app.modules.audit.service import create_audit_log
+            create_audit_log(
+                "PASSWORD_RESET_REQUESTED", "auth.users",
+                {"email": email, "role": role_val},
+                module="Authentication",
+                description=f"Password reset requested by employee: {email}",
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log for reset request failed: {audit_err}")
+
+        logger.info(f"Password reset request created for: {email}")
+        return {"message": "Your request has been submitted. Your Admin will contact you with a new temporary password."}
+
+    def get_all_reset_requests(self) -> List[Dict[str, Any]]:
+        """Admin: Get all pending password reset requests."""
+        return list(_password_reset_requests.values())
+
+    def approve_reset_request(self, email: str, new_password: str, admin_payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Admin: Approve reset request — set new password in Supabase + notify employee."""
+        email = email.strip().lower()
+
+        request_entry = _password_reset_requests.get(email)
+        if not request_entry:
+            raise BadRequestException(f"No pending reset request found for: {email}")
+
+        if len(new_password) < 8:
+            raise BadRequestException("New password must be at least 8 characters.")
+
+        # Find Supabase Auth user_id by email
+        supabase_user = self.repo.get_supabase_user_by_email(email)
+        supabase_updated = False
+
+        if supabase_user:
+            supabase_updated = self.repo.update_user_password(supabase_user["id"], new_password)
+            if supabase_updated:
+                logger.info(f"Supabase password updated for: {email}")
+            else:
+                logger.warning(f"Supabase password update failed for: {email} — falling back to DB record")
+
+        # Also update password in UserRepository / HRMS in-memory records
+        try:
+            from app.modules.users.repository import UserRepository
+            user_repo = UserRepository()
+            all_users = user_repo.get_all_users()
+            for u in all_users:
+                if str(u.get("email", "")).strip().lower() == email:
+                    user_repo.update_user(
+                        str(u.get("id") or u.get("employee_id") or ""),
+                        {"accessPassword": new_password, "password": new_password, "first_login": True}
+                    )
+                    break
+        except Exception as e:
+            logger.warning(f"In-memory password update failed: {e}")
+
+        # Mark request as approved
+        _password_reset_requests[email]["status"] = "approved"
+        _password_reset_requests[email]["approved_at"] = datetime.utcnow().isoformat()
+        _password_reset_requests[email]["approved_by"] = (
+            admin_payload.get("email") or admin_payload.get("sub") or "Admin"
+        )
+
+        # Notify employee (in-app)
+        try:
+            from app.modules.notification.repository import NotificationRepository
+            NotificationRepository().create_notification({
+                "recipient_email": email,
+                "title": "🔑 Password Reset Approved",
+                "message": "Your password has been reset by Admin. Please login and change your password immediately.",
+                "type": "SUCCESS",
+            })
+        except Exception as notify_err:
+            logger.warning(f"Employee notification for reset approval failed: {notify_err}")
+
+        # Audit log
+        try:
+            from app.modules.audit.service import create_audit_log
+            create_audit_log(
+                "PASSWORD_RESET_APPROVED", "auth.users", admin_payload,
+                entity_id=email, module="Authentication",
+                description=f"Admin approved password reset for: {email}. Supabase updated: {supabase_updated}",
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log for reset approval failed: {audit_err}")
+
+        # Remove from pending after approval
+        _password_reset_requests.pop(email, None)
+
+        return {
+            "message": f"Password reset approved for {email}. Employee must change password on next login.",
+            "supabase_updated": supabase_updated,
+        }
+
+    def reject_reset_request(self, email: str, admin_payload: Dict[str, Any]) -> Dict[str, Any]:
+        """Admin: Reject a pending password reset request."""
+        email = email.strip().lower()
+
+        request_entry = _password_reset_requests.get(email)
+        if not request_entry:
+            raise BadRequestException(f"No pending reset request found for: {email}")
+
+        _password_reset_requests.pop(email, None)
+
+        # Audit log
+        try:
+            from app.modules.audit.service import create_audit_log
+            create_audit_log(
+                "PASSWORD_RESET_REJECTED", "auth.users", admin_payload,
+                entity_id=email, module="Authentication",
+                description=f"Admin rejected password reset request for: {email}",
+            )
+        except Exception as audit_err:
+            logger.warning(f"Audit log for reset rejection failed: {audit_err}")
+
+        return {"message": f"Password reset request for {email} has been rejected."}

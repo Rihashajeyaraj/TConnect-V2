@@ -14,7 +14,7 @@ export default function ManagerLeaderboard() {
       <div className="bg-white border border-slate-200 p-5 rounded-3xl shadow-xs flex flex-wrap items-center justify-between gap-4">
         <div>
           <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
-            <Award className="w-6 h-6 text-amber-500" /> Sales Executive Team Leaderboard & Rankings
+            <Award className="w-6 h-6 text-mgr-primary-500" /> Sales Executive Team Leaderboard & Rankings
           </h1>
           <p className="text-xs text-slate-500 font-medium mt-1">
             Performance ranking of sales representatives based on deal revenue, conversion %, client visits, and customer rating.
@@ -39,7 +39,7 @@ export default function ManagerLeaderboard() {
             {LEADERBOARD_DATA.map((row) => (
               <tr key={row.rank} className="hover:bg-slate-50 transition">
                 <td className="px-5 py-4">
-                  <span className="w-7 h-7 rounded-xl bg-amber-100 text-amber-800 font-extrabold flex items-center justify-center text-xs">
+                  <span className="w-7 h-7 rounded-xl bg-mgr-primary-100 text-mgr-primary-800 font-extrabold flex items-center justify-center text-xs">
                     #{row.rank}
                   </span>
                 </td>
@@ -48,7 +48,7 @@ export default function ManagerLeaderboard() {
                 <td className="px-5 py-4 font-bold text-teal-700">{row.targetPct}</td>
                 <td className="px-5 py-4 font-bold text-slate-800">{row.conversionPct}</td>
                 <td className="px-5 py-4 font-bold text-slate-800">{row.visits} Visits</td>
-                <td className="px-5 py-4 font-bold text-amber-600">{row.rating}</td>
+                <td className="px-5 py-4 font-bold text-mgr-primary-600">{row.rating}</td>
               </tr>
             ))}
           </tbody>

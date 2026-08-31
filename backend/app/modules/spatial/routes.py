@@ -17,6 +17,10 @@ visit_repo = VisitRepository()
 # Store live executive positions in memory telemetry cache
 _live_executive_telemetry: Dict[str, Dict[str, Any]] = {}
 
+# Routing caches to prevent slow requests to OSRM / Google APIs in loops
+_routing_cache: Dict[str, Dict[str, Any]] = {}
+_polyline_cache: Dict[str, str] = {}
+
 
 def haversine_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate the great circle distance between two points in meters using Haversine formula."""
@@ -729,6 +733,9 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
         raise HTTPException(status_code=400, detail="Missing origin or destination coordinates")
 
     def get_osrm_route(o_lat, o_lng, d_lat, d_lng):
+        cache_key = f"{round(float(o_lat), 4)},{round(float(o_lng), 4)};{round(float(d_lat), 4)},{round(float(d_lng), 4)}"
+        if cache_key in _routing_cache:
+            return _routing_cache[cache_key]
         try:
             osrm_url = f"http://router.project-osrm.org/route/v1/driving/{o_lng},{o_lat};{d_lng},{d_lat}?overview=full"
             r = requests.get(osrm_url, timeout=5)
@@ -740,7 +747,7 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
                     dist_meters = route.get("distance") or 0
                     duration_sec = route.get("duration") or 0
                     polyline = route.get("geometry") or ""
-                    return {
+                    res_obj = {
                         "success": True,
                         "distance_km": round(dist_meters / 1000.0, 2),
                         "eta_minutes": max(1, math.ceil(duration_sec / 60.0)),
@@ -749,6 +756,8 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
                         "polyline": polyline,
                         "provider": "osrm"
                     }
+                    _routing_cache[cache_key] = res_obj
+                    return res_obj
         except Exception as e:
             logger.warning(f"OSRM fallback routing failed: {e}")
         return None
@@ -910,6 +919,9 @@ def distance_to_polyline_meters(lat: float, lng: float, polyline_str: str) -> fl
     return min(haversine_distance_meters(lat, lng, pt[0], pt[1]) for pt in pts)
 
 def get_osrm_route_polyline(o_lat: float, o_lng: float, d_lat: float, d_lng: float) -> str:
+    cache_key = f"{round(float(o_lat), 4)},{round(float(o_lng), 4)};{round(float(d_lat), 4)},{round(float(d_lng), 4)}"
+    if cache_key in _polyline_cache:
+        return _polyline_cache[cache_key]
     import requests
     try:
         osrm_url = f"http://router.project-osrm.org/route/v1/driving/{o_lng},{o_lat};{d_lng},{d_lat}?overview=full"
@@ -918,7 +930,9 @@ def get_osrm_route_polyline(o_lat: float, o_lng: float, d_lat: float, d_lng: flo
             res_data = r.json()
             routes = res_data.get("routes")
             if routes:
-                return routes[0].get("geometry") or ""
+                poly = routes[0].get("geometry") or ""
+                _polyline_cache[cache_key] = poly
+                return poly
     except Exception as e:
         logger.warning(f"Error fetching OSRM route: {e}")
     return ""
@@ -1423,7 +1437,7 @@ async def push_live_location(
 
     if lat == 0 and lng == 0:
         return {"success": False, "skipped": True, "reason": "zero_coords"}
-    if accuracy > 100:
+    if accuracy > 300:
         return {"success": False, "skipped": True, "reason": "poor_accuracy", "accuracy": accuracy}
 
     now_iso = datetime.datetime.utcnow().isoformat()
@@ -1687,7 +1701,7 @@ async def get_location_history(
             last_rec = breadcrumbs[-1]["recorded_at"]
             last_dt = datetime.datetime.fromisoformat(last_rec.replace("Z", "+00:00"))
             diff_sec = (datetime.datetime.now(datetime.timezone.utc) - last_dt).total_seconds()
-            if diff_sec > 300:
+            if diff_sec > 60:
                 tracking_status = "stale"
         except Exception:
             pass

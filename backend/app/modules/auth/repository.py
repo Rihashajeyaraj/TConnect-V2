@@ -30,3 +30,34 @@ class AuthRepository:
             "email": email,
             "password": password
         })
+
+    def update_user_password(self, user_id: str, new_password: str) -> bool:
+        """Update a Supabase user's password via admin client (no email confirmation needed)."""
+        if not self.admin_supabase:
+            return False
+        try:
+            self.admin_supabase.auth.admin.update_user_by_id(
+                user_id,
+                {"password": new_password}
+            )
+            return True
+        except Exception:
+            return False
+
+    def get_supabase_user_by_email(self, email: str) -> Optional[Dict[str, Any]]:
+        """Lookup a Supabase Auth user by email using admin client."""
+        if not self.admin_supabase:
+            return None
+        try:
+            # Supabase admin: list users and filter by email
+            res = self.admin_supabase.auth.admin.list_users()
+            users = res if isinstance(res, list) else getattr(res, "users", [])
+            for u in users:
+                u_email = getattr(u, "email", None) or (u.get("email") if isinstance(u, dict) else None)
+                if u_email and str(u_email).strip().lower() == email.strip().lower():
+                    u_id = getattr(u, "id", None) or (u.get("id") if isinstance(u, dict) else None)
+                    return {"id": str(u_id), "email": str(u_email)}
+        except Exception:
+            pass
+        return None
+

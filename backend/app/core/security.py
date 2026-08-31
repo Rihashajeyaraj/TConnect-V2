@@ -66,13 +66,41 @@ def verify_biometric_token(token: str) -> Dict[str, Any]:
         raise ValueError(f"Invalid or expired verification token: {str(e)}")
 
 
+import time
+
+# Cache verified Supabase JWT payloads in-memory to prevent extremely slow network round-trips to Supabase Auth API
+_verified_token_cache: Dict[str, tuple[Dict[str, Any], float]] = {}
+
+
 def verify_supabase_jwt(token: str) -> Dict[str, Any]:
     """
     Decodes and verifies JWT Bearer token issued by Supabase Auth or Dev token generator.
-    Supports HMAC verification across configured secrets, Supabase API verification, and dev fallback.
+    Supports in-memory verification caching, HMAC verification, Supabase API verification, and dev fallback.
     """
     if not token or not isinstance(token, str):
         raise UnauthorizedException("Token is empty or invalid")
+
+    # 0. Check in-memory verification cache first
+    now = time.time()
+    if token in _verified_token_cache:
+        cached_payload, expiry = _verified_token_cache[token]
+        if now < expiry:
+            return cached_payload
+        else:
+            del _verified_token_cache[token]
+
+    # Extract expiry from token to set appropriate cache lifetime
+    token_expiry = now + 300  # Default to 5 minutes if anything fails
+    try:
+        unverified_payload = jose.jwt.decode(
+            token,
+            key="",
+            options={"verify_signature": False, "verify_aud": False}
+        )
+        if unverified_payload.get("exp"):
+            token_expiry = float(unverified_payload["exp"])
+    except Exception:
+        pass
 
     # 1. Local HMAC-SHA256 JWT Verification - check all possible signing secrets
     secrets_to_try = [
@@ -90,7 +118,10 @@ def verify_supabase_jwt(token: str) -> Dict[str, Any]:
                 algorithms=[settings.ALGORITHM],
                 options={"verify_aud": False}
             )
-            return _normalize_payload(payload)
+            normalized = _normalize_payload(payload)
+            # Cache successfully verified token
+            _verified_token_cache[token] = (normalized, token_expiry)
+            return normalized
         except JWTError:
             continue
 
@@ -100,13 +131,16 @@ def verify_supabase_jwt(token: str) -> Dict[str, Any]:
         user_res = supabase.auth.get_user(token)
         if user_res and user_res.user:
             u = user_res.user
-            return _normalize_payload({
+            normalized = _normalize_payload({
                 "sub": str(u.id),
                 "email": u.email,
                 "role": u.role,
                 "user_metadata": u.user_metadata or {},
                 "app_metadata": u.app_metadata or {},
             })
+            # Cache successfully verified token
+            _verified_token_cache[token] = (normalized, token_expiry)
+            return normalized
     except Exception as e:
         logger.warning(f"Supabase Auth API token verification failed: {str(e)}")
 
@@ -119,7 +153,10 @@ def verify_supabase_jwt(token: str) -> Dict[str, Any]:
                 options={"verify_signature": False, "verify_aud": False}
             )
             logger.info("Decoded JWT payload without signature check (Development Mode).")
-            return _normalize_payload(payload)
+            normalized = _normalize_payload(payload)
+            # Cache development mode token
+            _verified_token_cache[token] = (normalized, token_expiry)
+            return normalized
         except Exception as e:
             logger.error(f"Failed unverified JWT decode: {e}")
 

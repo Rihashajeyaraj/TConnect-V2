@@ -5,6 +5,8 @@ const ROLE_ROUTE_MAP = {
   admin: '/admin',
   'sales manager': '/manager',
   manager: '/manager',
+  'team lead': '/manager',
+  tl: '/manager',
   'sales executive': '/sales',
   sales: '/sales',
   executive: '/sales',
@@ -27,7 +29,7 @@ export function isRoleAllowed(userRole, allowedRoles) {
   })
 }
 
-export const CORE_ROLES = ['CEO', 'Admin', 'Sales Manager', 'Sales Executive']
+export const CORE_ROLES = ['CEO', 'Admin', 'Sales Manager', 'Team Lead', 'Sales Executive']
 
 export function isCeoRole(role) {
   const r = normalizeRole(role).toLowerCase()

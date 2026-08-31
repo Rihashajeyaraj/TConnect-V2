@@ -2,15 +2,39 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { useToast } from './ToastContext.jsx'
 import Icon from '../components/Icon.jsx'
+import { authAPI } from '../services/api.js'
 
 function ForgotPasswordForm() {
   const { showToast } = useToast()
   const [submitted, setSubmitted] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [email, setEmail] = useState('')
+  const [errorMsg, setErrorMsg] = useState('')
 
-  function handleSubmit(event) {
+  async function handleSubmit(event) {
     event.preventDefault()
-    setSubmitted(true)
-    showToast('Password reset link sent to your email!', 'success')
+    setErrorMsg('')
+    setLoading(true)
+
+    try {
+      await authAPI.forgotPassword(email.trim().toLowerCase())
+      setSubmitted(true)
+      showToast('Request submitted! Admin will contact you.', 'success')
+    } catch (err) {
+      const status = err?.status || err?.statusCode
+      const msg = err?.detail || err?.message || ''
+
+      if (status === 403 || msg.toLowerCase().includes('deactivated') || msg.toLowerCase().includes('inactive')) {
+        setErrorMsg('Your account is deactivated or inactive. Please contact HR or your Administrator.')
+      } else if (status === 429 || msg.toLowerCase().includes('too many')) {
+        setErrorMsg('Too many requests today. Please contact your Admin directly.')
+      } else {
+        // Generic — don't reveal if email exists or not (security)
+        setSubmitted(true)
+      }
+    } finally {
+      setLoading(false)
+    }
   }
 
   if (submitted) {
@@ -22,10 +46,14 @@ function ForgotPasswordForm() {
             <path d="m9 12 2 2 4-4" />
           </svg>
         </div>
-        <h2 className="text-2xl font-bold text-white">Check your email</h2>
+        <h2 className="text-2xl font-bold text-white">Request Submitted</h2>
         <p className="max-w-sm text-slate-400">
-          If an account exists with that email, we&apos;ve sent password reset instructions.
+          Your request has been sent to your <span className="font-semibold text-violet-300">Admin</span>.
+          They will contact you directly with a temporary password.
         </p>
+        <div className="max-w-sm rounded-xl border border-mgr-primary-400/30 bg-mgr-primary-500/10 px-4 py-3 text-sm text-mgr-primary-300">
+          ⚠️ Do <strong>not</strong> share your temporary password with anyone.
+        </div>
         <Link
           className="mt-2 text-sm font-semibold text-violet-300 transition hover:text-fuchsia-300"
           to="/"
@@ -54,20 +82,45 @@ function ForgotPasswordForm() {
             type="email"
             autoComplete="email"
             placeholder="you@company.com"
+            value={email}
+            onChange={(e) => { setEmail(e.target.value); setErrorMsg('') }}
             required
+            disabled={loading}
           />
         </div>
+
+        {errorMsg && (
+          <div className="mt-3 flex items-start gap-2 rounded-xl border border-red-400/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+            <svg className="mt-0.5 size-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v4m0 4h.01M12 3a9 9 0 1 0 0 18A9 9 0 0 0 12 3Z" />
+            </svg>
+            <span>{errorMsg}</span>
+          </div>
+        )}
       </div>
 
       <button
-        className="auth-submit group flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-500 px-5 text-base font-bold text-white shadow-xl shadow-violet-950/30 transition hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-fuchsia-950/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#10152a] active:translate-y-0"
+        className="auth-submit group flex h-16 w-full items-center justify-center gap-2 rounded-2xl bg-gradient-to-r from-violet-600 via-purple-600 to-fuchsia-500 px-5 text-base font-bold text-white shadow-xl shadow-violet-950/30 transition hover:-translate-y-0.5 hover:shadow-2xl hover:shadow-fuchsia-950/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-fuchsia-400 focus-visible:ring-offset-2 focus-visible:ring-offset-[#10152a] active:translate-y-0 disabled:opacity-60 disabled:cursor-not-allowed disabled:translate-y-0"
         type="submit"
+        disabled={loading}
       >
-        Send reset link
-        <Icon
-          className="size-5 transition-transform group-hover:translate-x-1"
-          name="arrow"
-        />
+        {loading ? (
+          <>
+            <svg className="size-5 animate-spin" fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+            </svg>
+            Submitting...
+          </>
+        ) : (
+          <>
+            Send Request to Admin
+            <Icon
+              className="size-5 transition-transform group-hover:translate-x-1"
+              name="arrow"
+            />
+          </>
+        )}
       </button>
 
       <Link
@@ -81,3 +134,4 @@ function ForgotPasswordForm() {
 }
 
 export default ForgotPasswordForm
+

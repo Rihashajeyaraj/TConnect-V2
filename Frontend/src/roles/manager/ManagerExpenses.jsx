@@ -28,21 +28,57 @@ import {
 import { expenseAPI, hrmsAPI, notificationAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 
+const getStoredUser = () => {
+  try {
+    const u = localStorage.getItem('user') || localStorage.getItem('tc_user')
+    return u ? JSON.parse(u) : {}
+  } catch (e) { return {} }
+}
+
 export default function ManagerExpenses() {
   const { showToast } = useToast()
 
-  // API State
-  const [loading, setLoading] = useState(true)
-  const [expenses, setExpenses] = useState([])
-  const [summary, setSummary] = useState({
-    pending_approval: 0,
-    approved_today: 0,
-    rejected_today: 0,
-    total_claims: 0,
-    today_claim_amount: '₹0.00',
-    approved_amount: '₹0.00',
-    rejected_amount: '₹0.00',
-    pending_amount: '₹0.00',
+  const mgrUser = getStoredUser()
+  const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
+
+  // API State with Cache
+  const [expenses, setExpenses] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_expenses_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
+  const [summary, setSummary] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_expenses_summary_${mgrEmail}`)
+      return cached ? JSON.parse(cached) : {
+        pending_approval: 0,
+        approved_today: 0,
+        rejected_today: 0,
+        total_claims: 0,
+        today_claim_amount: '₹0.00',
+        approved_amount: '₹0.00',
+        rejected_amount: '₹0.00',
+        pending_amount: '₹0.00',
+      }
+    } catch {
+      return {
+        pending_approval: 0,
+        approved_today: 0,
+        rejected_today: 0,
+        total_claims: 0,
+        today_claim_amount: '₹0.00',
+        approved_amount: '₹0.00',
+        rejected_amount: '₹0.00',
+        pending_amount: '₹0.00',
+      }
+    }
+  })
+  const [loading, setLoading] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_expenses_${mgrEmail}`)
+      return !cached
+    } catch { return true }
   })
 
   // Executive List State
@@ -73,11 +109,28 @@ export default function ManagerExpenses() {
   const [popupOpen, setPopupOpen] = useState(false)
   const [selectedToggle, setSelectedToggle] = useState('Pending')
 
-  const getStoredUser = () => {
+
+
+  const formatDateDDMMYYYY = (val) => {
+    if (!val || val === '—' || val === 'N/A') return '—'
     try {
-      const u = localStorage.getItem('user') || localStorage.getItem('tc_user')
-      return u ? JSON.parse(u) : {}
-    } catch (e) { return {} }
+      const s = String(val).trim()
+      if (s.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) return s
+      const d = new Date(s)
+      if (!isNaN(d.getTime())) {
+        const day = String(d.getDate()).padStart(2, '0')
+        const month = String(d.getMonth() + 1).padStart(2, '0')
+        const year = d.getFullYear()
+        return `${day}/${month}/${year}`
+      }
+      const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+      if (match) {
+        return `${match[3]}/${match[2]}/${match[1]}`
+      }
+      return s
+    } catch {
+      return val
+    }
   }
 
   // Helper to filter ONLY assigned executives under current manager
@@ -300,9 +353,16 @@ export default function ManagerExpenses() {
       
       if (data.summary) {
         setSummary(data.summary)
+        try {
+          localStorage.setItem(`tc_cached_expenses_summary_${mgrEmail}`, JSON.stringify(data.summary))
+        } catch (e) {}
       } else {
         calculateMetrics(apiExpenses)
       }
+
+      try {
+        localStorage.setItem(`tc_cached_expenses_${mgrEmail}`, JSON.stringify(apiExpenses))
+      } catch (e) {}
     } catch (err) {
       console.error("Failed fetching manager expenses:", err)
       showToast("Failed to retrieve expense requests.", "error")
@@ -324,7 +384,7 @@ export default function ManagerExpenses() {
     const rejectedAmt = rejectedList.reduce((acc, curr) => acc + parseVal(curr.amount), 0)
     const totalAmt = list.reduce((acc, curr) => acc + parseVal(curr.amount), 0)
 
-    setSummary({
+    const calculated = {
       pending_approval: pendingList.length,
       approved_today: approvedList.length,
       rejected_today: rejectedList.length,
@@ -333,7 +393,12 @@ export default function ManagerExpenses() {
       approved_amount: `₹${approvedAmt.toLocaleString('en-IN')}`,
       rejected_amount: `₹${rejectedAmt.toLocaleString('en-IN')}`,
       pending_amount: `₹${pendingAmt.toLocaleString('en-IN')}`,
-    })
+    }
+
+    setSummary(calculated)
+    try {
+      localStorage.setItem(`tc_cached_expenses_summary_${mgrEmail}`, JSON.stringify(calculated))
+    } catch (e) {}
   }
 
   useEffect(() => {
@@ -515,50 +580,59 @@ export default function ManagerExpenses() {
 
   return (
     <div className="space-y-6 text-slate-900 font-sans pb-12">
-
+      {/* ── HEADER ───────────────────────────────────────────────────────────── */}
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-2">
+        <div>
+          <h1 className="text-2xl font-black text-slate-900">
+            Expense Claims
+          </h1>
+        </div>
+      </div>
 
       {/* ── SINGLE EXPENSE CARD ──────────────────────────────────────────────── */}
-      <div className="max-w-md">
-        <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-md text-white flex flex-col gap-4 hover:scale-[1.01] transition duration-200">
-          <div className="flex items-center gap-3.5">
-            <div className="p-3 bg-teal-500/10 text-teal-400 rounded-xl border border-teal-500/20">
-              <Receipt className="w-6 h-6" />
+      <div className="max-w-sm">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm text-slate-800 flex flex-col gap-4">
+          {/* Header */}
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 bg-teal-50 text-teal-600 rounded-xl">
+              <Receipt className="w-5 h-5" />
             </div>
             <div>
-              <h2 className="text-lg font-black tracking-wide text-slate-100">Expense</h2>
-              <p className="text-xs text-slate-400 font-bold">Manage team expense approvals</p>
+              <h2 className="text-base font-bold text-slate-900">Expense</h2>
+              <p className="text-xs text-slate-400">Manage team expense approvals</p>
             </div>
           </div>
 
-          {/* Quick Metrics grid */}
-          <div className="grid grid-cols-2 gap-3 border-t border-white/5 pt-4 text-xs font-bold text-slate-400">
+          {/* Metrics */}
+          <div className="grid grid-cols-2 gap-2 border-t border-slate-100 pt-3 text-xs text-slate-500">
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Pending</div>
-              <div className="text-base font-black text-amber-400">{summary.pending_approval} Claims</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-0.5">Pending</div>
+              <div className="text-sm font-bold text-mgr-primary-600">{summary.pending_approval} Claims</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Approved Today</div>
-              <div className="text-base font-black text-emerald-400">{summary.approved_today} Claims</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 mb-0.5">Approved Today</div>
+              <div className="text-sm font-bold text-emerald-600">{summary.approved_today} Claims</div>
             </div>
-            <div className="col-span-2 border-t border-white/5 pt-2 flex justify-between items-center text-[11px] font-black text-slate-300">
+            <div className="col-span-2 border-t border-slate-100 pt-2 flex justify-between items-center text-xs text-slate-500">
               <span>Total Claims Volume</span>
-              <span className="text-teal-400 text-sm font-black">{summary.today_claim_amount}</span>
+              <span className="text-slate-700 font-bold">{summary.today_claim_amount}</span>
             </div>
           </div>
 
           <button
             onClick={() => setPopupOpen(true)}
-            className="w-full mt-2 py-3 bg-teal-600 hover:bg-teal-500 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+            className="mgr-card w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
           >
-            <Eye size={14} /> Open Expense Claims Ledger
+            <Eye size={13} /> Open Expense Claims Ledger
           </button>
         </div>
       </div>
 
+
       {/* ── EXPENSE CLAIMS POPUP LEDGER MODAL ───────────────────────────────── */}
       {popupOpen && (
         <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
             
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
@@ -579,9 +653,9 @@ export default function ManagerExpenses() {
             </div>
 
             {/* Toggle Status Buttons & Filters */}
-            <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 flex-shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 flex-shrink-0">
               {/* Toggles */}
-              <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-xl">
+              <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-xl overflow-x-auto max-w-full shrink-0">
                 {['Pending', 'Approved', 'Rejected', 'Total'].map((toggle) => (
                   <button
                     key={toggle}
@@ -589,7 +663,7 @@ export default function ManagerExpenses() {
                       setSelectedToggle(toggle)
                       setPage(1)
                     }}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                    className={`mgr-card px-2.5 sm:px-4 py-1.5 rounded-lg text-[10px] sm:text-xs font-black transition cursor-pointer shrink-0 ${
                       selectedToggle === toggle
                         ? 'bg-teal-600 text-white shadow-xs'
                         : 'text-slate-600 hover:bg-slate-300/40 hover:text-slate-900'
@@ -622,7 +696,7 @@ export default function ManagerExpenses() {
                     setSearch('')
                     setPage(1)
                   }}
-                  className="text-xs font-black text-rose-600 hover:underline cursor-pointer"
+                  className="mgr-card text-xs font-black text-rose-600 hover:underline cursor-pointer"
                 >
                   Clear Search
                 </button>
@@ -630,7 +704,7 @@ export default function ManagerExpenses() {
             </div>
 
             {/* Table Container */}
-            <div className="overflow-y-auto flex-1 min-h-[300px] border border-slate-200 rounded-2xl shadow-2xs">
+            <div className="overflow-y-auto overflow-x-auto flex-1 min-h-[150px] border border-slate-200 rounded-2xl shadow-2xs">
               <table className="w-full text-left text-sm text-slate-800 min-w-[1000px]">
                 <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-700 z-10">
                   <tr>
@@ -660,93 +734,94 @@ export default function ManagerExpenses() {
                       <tr key={expense.id || idx} className="hover:bg-slate-50/70 transition">
                         
                         {/* 1. Date */}
-                        <td className="px-5 py-4.5 font-mono text-xs text-slate-600">
-                          {expense.submitted_date}
+                        <td className="px-5 py-4 font-bold text-xs text-slate-700 whitespace-nowrap">
+                          {formatDateDDMMYYYY(expense.submitted_date || expense.created_at || expense.date)}
                         </td>
 
-                        {/* 2. Sales Executive name */}
-                        <td className="px-5 py-4.5">
-                          <div className="font-black text-slate-900 text-sm">
-                            {expense.assigned_to || expense.executive}
-                          </div>
-                          <div className="text-[10px] text-slate-500 font-bold font-mono">
-                            Code: {expense.employee_code || 'EMP000012'}
+                        {/* 2. Sales Executive name (Name only, without code) */}
+                        <td className="px-5 py-4">
+                          <div className="font-extrabold text-slate-900 text-sm">
+                            {expense.assigned_to || expense.executive || 'Sales Executive'}
                           </div>
                         </td>
 
                         {/* 3. Customer Details */}
-                        <td className="px-5 py-4.5 max-w-[300px]">
-                          <div className="font-black text-slate-900 text-sm">
+                        <td className="px-5 py-4 max-w-[280px]">
+                          <div className="font-extrabold text-slate-900 text-sm">
                             {expense.customer_name || 'Corp Field Tech'}
                           </div>
                           <div className="text-xs text-slate-500 font-semibold flex items-center gap-1 mt-0.5">
                             <MapPin size={11} className="text-teal-700 shrink-0" />
                             <span className="truncate">{expense.visit_location || 'Guindy, Chennai'}</span>
                           </div>
-                          <div className="text-[10px] text-amber-800 font-mono font-bold mt-0.5">
-                            Visit Date: {expense.visit_date}
+                          <div className="text-[11px] text-mgr-primary-800 font-bold mt-1">
+                            Visit Date: {formatDateDDMMYYYY(expense.visit_date)}
                           </div>
                         </td>
 
                         {/* 4. Amount */}
-                        <td className="px-5 py-4.5 font-black text-teal-950 text-base">
+                        <td className="px-5 py-4 font-black text-teal-950 text-base whitespace-nowrap">
                           {expense.amount}
                         </td>
 
-                        {/* 5. Action (receipt, status, category, approve, reject options) */}
-                        <td className="px-5 py-4.5">
-                          <div className="flex flex-wrap items-center gap-2">
-                            {/* Receipt */}
-                            {expense.receipt_url ? (
-                              <button
-                                onClick={() => setZoomReceiptUrl(expense.receipt_url)}
-                                className="px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 transition font-black text-[10px] flex items-center gap-1 cursor-pointer active:scale-95 shadow-3xs"
+                        {/* 5. Action (Properly organized badges and action buttons) */}
+                        <td className="px-5 py-4">
+                          <div className="flex flex-col gap-2 min-w-[230px]">
+                            {/* Top row: Status & Category badge */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span
+                                className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border uppercase tracking-wider ${
+                                  String(expense.status).toLowerCase().includes('approv')
+                                    ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                                    : String(expense.status).toLowerCase().includes('reject')
+                                    ? 'bg-rose-50 text-rose-700 border-rose-300'
+                                    : 'bg-mgr-primary-50 text-mgr-primary-800 border-mgr-primary-300'
+                                }`}
                               >
-                                <FileText size={12} /> Receipt
-                              </button>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-md text-[9px] font-bold bg-slate-100 text-slate-400 border border-slate-200">
-                                No Receipt
+                                {expense.status}
                               </span>
-                            )}
 
-                            {/* Status */}
-                            <span
-                              className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${
-                                String(expense.status).toLowerCase().includes('approv')
-                                  ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
-                                  : String(expense.status).toLowerCase().includes('reject')
-                                  ? 'bg-rose-100 text-rose-800 border-rose-300'
-                                  : 'bg-amber-100 text-amber-800 border-amber-300'
-                              }`}
-                            >
-                              {expense.status}
-                            </span>
+                              <span className="px-2 py-0.5 rounded-lg text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 truncate max-w-[150px]">
+                                {expense.category}
+                              </span>
+                            </div>
 
-                            {/* Category */}
-                            <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                              {expense.category}
-                            </span>
+                            {/* Bottom row: Action Buttons */}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {expense.receipt_url ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setZoomReceiptUrl(expense.receipt_url)}
+                                  className="mgr-card px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 transition font-bold text-[11px] flex items-center gap-1 cursor-pointer active:scale-95 shadow-2xs"
+                                >
+                                  <FileText size={12} /> Receipt
+                                </button>
+                              ) : (
+                                <span className="px-2 py-1 rounded-lg text-[10px] font-semibold bg-slate-50 text-slate-400 border border-slate-200">
+                                  No Receipt
+                                </span>
+                              )}
 
-                            {/* Approve option */}
-                            {!String(expense.status).toLowerCase().includes('approv') && (
-                              <button
-                                onClick={() => handleQuickAction(expense, 'APPROVE')}
-                                className="px-2.5 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] transition active:scale-95 shadow-3xs cursor-pointer flex items-center gap-1"
-                              >
-                                <CheckCircle2 size={11} /> Approve
-                              </button>
-                            )}
+                              {!String(expense.status).toLowerCase().includes('approv') && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickAction(expense, 'APPROVE')}
+                                  className="mgr-card px-3 py-1 rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[11px] transition active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1"
+                                >
+                                  <CheckCircle2 size={12} /> Approve
+                                </button>
+                              )}
 
-                            {/* Reject option */}
-                            {!String(expense.status).toLowerCase().includes('reject') && (
-                              <button
-                                onClick={() => handleQuickAction(expense, 'REJECT')}
-                                className="px-2.5 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] transition active:scale-95 shadow-3xs cursor-pointer flex items-center gap-1"
-                              >
-                                <XCircle size={11} /> Reject
-                              </button>
-                            )}
+                              {!String(expense.status).toLowerCase().includes('reject') && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleQuickAction(expense, 'REJECT')}
+                                  className="mgr-card px-3 py-1 rounded-lg bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] transition active:scale-95 shadow-2xs cursor-pointer flex items-center gap-1"
+                                >
+                                  <XCircle size={12} /> Reject
+                                </button>
+                              )}
+                            </div>
                           </div>
                         </td>
 
@@ -767,7 +842,7 @@ export default function ManagerExpenses() {
                 <button
                   disabled={page <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  className="p-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                  className="mgr-card p-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
                 >
                   <ChevronLeft size={14} />
                 </button>
@@ -777,7 +852,7 @@ export default function ManagerExpenses() {
                 <button
                   disabled={page >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  className="p-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
+                  className="mgr-card p-1 rounded-lg border border-slate-200 bg-white disabled:opacity-40 hover:bg-slate-100 cursor-pointer"
                 >
                   <ChevronRight size={14} />
                 </button>
@@ -834,7 +909,7 @@ export default function ManagerExpenses() {
             </div>
 
             {/* 2. Visit Information */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs">
+            <div className="p-3.5 rounded-2xl bg-slate-50 border-slate-200 space-y-2 text-xs">
               <span className="text-[10px] font-extrabold uppercase text-slate-400">Associated Field Visit Details</span>
               <div className="grid grid-cols-2 gap-2 font-semibold">
                 <div>
@@ -858,7 +933,7 @@ export default function ManagerExpenses() {
 
             {/* 3. Expense Information */}
             <div className="grid grid-cols-3 gap-2 text-xs">
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="p-3 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Expense Category</span>
                 <p className="font-black text-slate-900 mt-0.5">{selectedExpenseModal.category}</p>
               </div>
@@ -866,19 +941,19 @@ export default function ManagerExpenses() {
                 <span className="text-[10px] font-bold text-teal-800">Claim Amount</span>
                 <p className="font-black text-teal-950 text-base mt-0.5">{selectedExpenseModal.amount}</p>
               </div>
-              <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+              <div className="p-3 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Submitted Date</span>
                 <p className="font-mono font-bold text-slate-800 mt-0.5">{selectedExpenseModal.submitted_date}</p>
               </div>
             </div>
 
-            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-1 text-xs">
+            <div className="p-3.5 rounded-2xl bg-slate-50 border-slate-200 space-y-1 text-xs">
               <span className="text-[10px] font-extrabold uppercase text-slate-400">Expense Description & Justification</span>
               <p className="text-slate-800 font-medium leading-relaxed">{selectedExpenseModal.description}</p>
             </div>
 
             {/* 4. Receipt Voucher Preview & Download */}
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="p-4 rounded-2xl bg-slate-50 border-slate-200 space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-extrabold uppercase text-slate-500">Uploaded Receipt Voucher</span>
                 {selectedExpenseModal.receipt_url && (
@@ -934,7 +1009,7 @@ export default function ManagerExpenses() {
                 <button
                   disabled={actionLoading}
                   onClick={() => handleManagerAction('RETURN')}
-                  className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl shadow-xs cursor-pointer transition flex items-center gap-1"
+                  className="mgr-card px-4 py-2 bg-mgr-primary-500 hover:bg-mgr-primary-600 text-slate-950 font-black text-xs rounded-xl shadow-xs cursor-pointer transition flex items-center gap-1"
                 >
                   <RotateCcw size={14} /> Return for Correction
                 </button>
@@ -942,7 +1017,7 @@ export default function ManagerExpenses() {
                 <button
                   disabled={actionLoading}
                   onClick={() => handleManagerAction('REJECT')}
-                  className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer transition flex items-center gap-1"
+                  className="mgr-card px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white font-black text-xs rounded-xl shadow-xs cursor-pointer transition flex items-center gap-1"
                 >
                   <XCircle size={14} /> Reject Claim
                 </button>
@@ -950,7 +1025,7 @@ export default function ManagerExpenses() {
                 <button
                   disabled={actionLoading}
                   onClick={() => handleManagerAction('APPROVE')}
-                  className="px-5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-md cursor-pointer transition flex items-center gap-1"
+                  className="mgr-card px-5 py-2 bg-teal-500 hover:bg-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-md cursor-pointer transition flex items-center gap-1"
                 >
                   <CheckCircle2 size={14} /> Approve Claim
                 </button>

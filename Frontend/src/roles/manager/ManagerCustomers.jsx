@@ -334,64 +334,49 @@ export default function ManagerCustomers() {
   }
 
   return (
-    <div className="space-y-6 font-sans text-slate-900 bg-slate-50 min-h-screen pb-12">
+    <div className="space-y-6 font-sans text-slate-900 bg-slate-50 min-h-screen px-4 md:px-6 pt-6 pb-12">
       {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      <div className="bg-gradient-to-r from-teal-500/10 via-white to-amber-500/5 border-2 border-amber-500 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-2">
         <div>
-          <div className="flex items-center gap-2">
-            <span className="bg-amber-600 text-white font-black text-[10px] uppercase px-2.5 py-0.5 rounded-full shadow-xs">
-              CUSTOMER MANAGEMENT
-            </span>
-            <span className="text-slate-500 text-xs font-black">Sales Manager Portal</span>
-          </div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2.5 mt-1">
-            <Building2 className="w-7 h-7 text-[#b45309]" /> Customer Directory & Accounts
+          <h1 className="text-2xl font-black text-slate-900">
+            Customer Directory & Accounts
           </h1>
-          <p className="text-xs text-slate-500 font-semibold mt-1">
-            Overview and details of all customer accounts managed by Sales Executives under your direct team.
-          </p>
         </div>
-
-        <button
-          onClick={() => setShowAddModal(true)}
-          className="px-4 py-2.5 rounded-xl bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs shadow-md shadow-yellow-600/20 flex items-center gap-1.5 cursor-pointer transition"
-        >
-          <Plus size={16} /> Onboard Customer Account
-        </button>
       </div>
+
 
       {/* ── SINGLE CUSTOMER CARD ────────────────────────────────────────────── */}
       <div className="max-w-md">
-        <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 shadow-2xl backdrop-blur-md text-white flex flex-col gap-4 hover:scale-[1.01] transition duration-200">
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-slate-800 flex flex-col gap-4 hover:scale-[1.01] transition duration-200">
           <div className="flex items-center gap-3.5">
-            <div className="p-3 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20">
+            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-200">
               <Building2 className="w-6 h-6" />
             </div>
             <div>
-              <h2 className="text-lg font-black tracking-wide text-slate-100">Customer</h2>
-              <p className="text-xs text-slate-400 font-bold">Manage team customer accounts</p>
+              <h2 className="text-lg font-black tracking-wide text-slate-900">Customer</h2>
+              <p className="text-xs text-slate-500 font-bold">Manage team customer accounts</p>
             </div>
           </div>
 
           {/* Quick Metrics grid */}
-          <div className="grid grid-cols-2 gap-3 border-t border-white/5 pt-4 text-xs font-bold text-slate-400">
+          <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-xs font-bold text-slate-600">
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Total Accounts</div>
-              <div className="text-base font-black text-amber-400">{totalCustomers} Clients</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Total Accounts</div>
+              <div className="text-base font-black text-blue-600">{totalCustomers} Clients</div>
             </div>
             <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-500 font-black">Active Status</div>
-              <div className="text-base font-black text-emerald-400">{activeCount} Accounts</div>
+              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Active Status</div>
+              <div className="text-base font-black text-emerald-600">{activeCount} Accounts</div>
             </div>
-            <div className="col-span-2 border-t border-white/5 pt-2 flex justify-between items-center text-[11px] font-black text-slate-300">
+            <div className="col-span-2 border-t border-slate-100 pt-2 flex justify-between items-center text-[11px] font-black text-slate-600">
               <span>Total Team Revenue</span>
-              <span className="text-teal-400 text-sm font-black">{formattedTotalRevenue}</span>
+              <span className="text-teal-600 text-sm font-black">{formattedTotalRevenue}</span>
             </div>
           </div>
 
           <button
             onClick={() => setPopupOpen(true)}
-            className="w-full mt-2 py-3 bg-amber-600 hover:bg-amber-500 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
+            className="mgr-card w-full mt-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
           >
             <Eye size={14} /> Open Customer Ledger
           </button>
@@ -401,35 +386,35 @@ export default function ManagerCustomers() {
       {/* ── CUSTOMER POPUP LEDGER MODAL ─────────────────────────────────────── */}
       {popupOpen && (
         <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh]">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh]">
             
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
               <div>
-                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <Building2 className="w-6 h-6 text-amber-600" /> Customer Accounts Ledger
+                <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
+                  <Building2 className="w-5 h-5 text-teal-600" /> Customer Accounts Ledger
                 </h3>
-                <p className="text-xs text-slate-500 font-bold mt-0.5">
+                <p className="text-xs text-slate-400 mt-0.5">
                   Filter by sales executive and date range to inspect team account conversions
                 </p>
               </div>
               <button
                 onClick={() => setPopupOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition active:scale-95"
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition"
               >
-                <X size={20} />
+                <X size={18} />
               </button>
             </div>
 
-            {/* Filter Control Options inside Modal */}
-            <div className="flex flex-wrap items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 flex-shrink-0 text-xs font-bold text-slate-600">
-              {/* Executive Filter Dropdown */}
-              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-3 py-1.5 font-bold text-xs">
-                <span className="text-slate-500">Sales Executive:</span>
+            {/* Filter Control Options — clean flat strip */}
+            <div className="flex flex-col md:flex-row md:items-center gap-3 pb-3 border-b border-slate-100 flex-shrink-0">
+              {/* Executive Filter */}
+              <div className="flex items-center gap-2 text-xs shrink-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Executive:</span>
                 <select
                   value={executiveFilter}
                   onChange={(e) => setExecutiveFilter(e.target.value)}
-                  className="bg-transparent text-slate-800 focus:outline-none cursor-pointer font-black"
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition"
                 >
                   <option value="All">All Executives</option>
                   {executives.map((ex) => (
@@ -440,75 +425,58 @@ export default function ManagerCustomers() {
                 </select>
               </div>
 
-              {/* Date Filter Pills */}
-              <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl p-1 text-xs">
-                <span className="text-slate-500 px-2 font-bold uppercase tracking-wider text-[9px]">Date:</span>
+              {/* Date Pills */}
+              <div className="flex items-center gap-1 overflow-x-auto max-w-full shrink-0 pb-1 sm:pb-0">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1 shrink-0">Date:</span>
                 {['All Time', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setDateFilterTab(tab)}
-                    className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                    className={`mgr-card px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition cursor-pointer shrink-0 ${
                       dateFilterTab === tab
-                        ? 'bg-amber-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:bg-slate-100'
+                        ? 'bg-slate-900 text-white'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                     }`}
                   >
                     {tab}
                   </button>
                 ))}
+                {dateFilterTab === 'Custom' && (
+                  <div className="flex items-center gap-1.5 ml-1 shrink-0">
+                    <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
+                      className="bg-slate-100 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none cursor-pointer" />
+                    <span className="text-slate-400 text-xs">→</span>
+                    <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
+                      className="bg-slate-100 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none cursor-pointer" />
+                  </div>
+                )}
               </div>
 
-              {/* Custom date range if picker tab is selected */}
-              {dateFilterTab === 'Custom' && (
-                <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs">
-                  <span className="text-slate-500 font-bold">From:</span>
-                  <input
-                    type="date"
-                    value={fromDate}
-                    onChange={(e) => setFromDate(e.target.value)}
-                    className="bg-transparent text-slate-800 focus:outline-none font-bold"
-                  />
-                  <span className="text-slate-500 font-bold ml-1">To:</span>
-                  <input
-                    type="date"
-                    value={toDate}
-                    onChange={(e) => setToDate(e.target.value)}
-                    className="bg-transparent text-slate-800 focus:outline-none font-bold"
-                  />
-                </div>
-              )}
-
-              {/* Search Inside Modal */}
-              <div className="relative flex-1 max-w-xs ml-auto">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+              {/* Search */}
+              <div className="relative flex-1 min-w-[200px]">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
                 <input
                   type="text"
                   value={search}
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Search customer, person, city..."
-                  className="w-full h-8 bg-white border border-slate-200 rounded-xl pl-9 pr-4 text-xs text-slate-900 focus:outline-none focus:border-amber-500 font-semibold"
+                  className="w-full h-8 bg-slate-100 rounded-lg pl-8 pr-3 text-xs text-slate-900 focus:outline-none font-semibold placeholder-slate-400"
                 />
               </div>
 
-              {/* Reset filter buttons */}
+              {/* Reset */}
               {(executiveFilter !== 'All' || dateFilterTab !== 'All Time' || search || fromDate || toDate) && (
                 <button
-                  onClick={() => {
-                    setExecutiveFilter('All')
-                    setDateFilterTab('All Time')
-                    setSearch('')
-                    setFromDate('')
-                    setToDate('')
-                  }}
-                  className="text-xs font-black text-rose-600 hover:underline cursor-pointer"
+                  onClick={() => { setExecutiveFilter('All'); setDateFilterTab('All Time'); setSearch(''); setFromDate(''); setToDate('') }}
+                  className="mgr-card text-xs font-bold text-rose-600 hover:text-rose-800 cursor-pointer transition shrink-0"
                 >
-                  Reset
+                  ✕ Reset
                 </button>
               )}
             </div>
 
             {/* Popup Table Container */}
-            <div className="overflow-y-auto flex-1 min-h-[300px] border border-slate-200 rounded-2xl shadow-2xs">
+            <div className="overflow-y-auto overflow-x-auto flex-1 min-h-[150px] border border-slate-200 rounded-2xl shadow-2xs">
               <table className="w-full text-left text-sm text-slate-800 min-w-[800px]">
                 <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-700 z-10">
                   <tr>
@@ -544,15 +512,15 @@ export default function ManagerCustomers() {
                           </div>
                           <div className="text-xs text-slate-600 font-semibold mt-1 space-y-0.5">
                             <p className="flex items-center gap-1">
-                              <User size={12} className="text-amber-700 shrink-0" />
+                              <User size={12} className="text-mgr-primary-700 shrink-0" />
                               <span>{cust.contactPerson || cust.person || '—'}</span>
                             </p>
                             <p className="flex items-center gap-1">
-                              <Mail size={12} className="text-amber-700 shrink-0" />
+                              <Mail size={12} className="text-mgr-primary-700 shrink-0" />
                               <span className="truncate">{cust.email || '—'}</span>
                             </p>
                             <p className="flex items-center gap-1">
-                              <MapPin size={12} className="text-amber-700 shrink-0" />
+                              <MapPin size={12} className="text-mgr-primary-700 shrink-0" />
                               <span>{cust.city || '—'}</span>
                             </p>
                           </div>
@@ -567,7 +535,7 @@ export default function ManagerCustomers() {
                         <td className="px-5 py-4.5">
                           <button
                             onClick={() => setSelectedCustomer(cust)}
-                            className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-black text-[11px] cursor-pointer transition shadow-3xs flex items-center gap-1 active:scale-95 inline-flex"
+                            className="mgr-card px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-[11px] cursor-pointer transition flex items-center gap-1"
                           >
                             <Eye size={12} /> View Details
                           </button>
@@ -595,7 +563,7 @@ export default function ManagerCustomers() {
               </div>
               <button
                 onClick={() => setSelectedCustomer(null)}
-                className="p-1 rounded-xl text-slate-400 hover:text-slate-600 cursor-pointer"
+                className="mgr-card p-1 rounded-xl text-slate-400 hover:text-slate-600 cursor-pointer"
               >
                 <X size={18} />
               </button>
@@ -603,29 +571,29 @@ export default function ManagerCustomers() {
 
             <div className="space-y-3 text-xs font-semibold text-slate-700 max-h-[60vh] overflow-y-auto pr-1">
               {/* Why They Reached Out */}
-              <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl space-y-1">
+              <div className="p-3.5 bg-mgr-primary-50 border border-mgr-primary-300 rounded-2xl space-y-1">
                 <span className="text-[10px] font-black text-[#b45309] uppercase tracking-wider block">
                   ❓ WHY THEY REACHED OUT TO US
                 </span>
-                <p className="text-xs text-amber-950 font-bold leading-relaxed">
+                <p className="text-xs text-mgr-primary-950 font-bold leading-relaxed">
                   {selectedCustomer.reachOutReason || 'Needed multi-device GPS field tracking for medical reps & real-time visit reports.'}
                 </p>
               </div>
 
               {/* Package Tier & Account Executive */}
               <div className="grid grid-cols-2 gap-2">
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-0.5">
+                <div className="p-3 bg-slate-50 border-slate-200 rounded-xl space-y-0.5">
                   <span className="text-[10px] text-slate-400 font-bold uppercase">Package Tier</span>
                   <p className="text-xs font-extrabold text-slate-900">{selectedCustomer.tier || 'Enterprise Platinum Suite'}</p>
                 </div>
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-0.5">
+                <div className="p-3 bg-slate-50 border-slate-200 rounded-xl space-y-0.5">
                   <span className="text-[10px] text-slate-400 font-bold uppercase">Assigned Sales Executive</span>
-                  <p className="text-xs font-black text-amber-900">{selectedCustomer.assignedExecutive}</p>
+                  <p className="text-xs font-black text-mgr-primary-900">{selectedCustomer.assignedExecutive}</p>
                 </div>
               </div>
 
               {/* Contact Info */}
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1.5">
+              <div className="p-3 bg-slate-50 border-slate-200 rounded-xl space-y-1.5">
                 <span className="text-[10px] text-slate-400 font-bold uppercase block">Contact Details</span>
                 <div className="grid grid-cols-2 gap-2 text-xs">
                   <div>
@@ -675,7 +643,7 @@ export default function ManagerCustomers() {
             <div className="flex justify-end pt-2 border-t border-slate-100">
               <button
                 onClick={() => setSelectedCustomer(null)}
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-extrabold text-xs cursor-pointer transition"
+                className="mgr-card px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-extrabold text-xs cursor-pointer transition"
               >
                 Close Dossier
               </button>
@@ -693,7 +661,7 @@ export default function ManagerCustomers() {
                 <h3 className="text-lg font-black text-slate-900">Onboard New Customer Account</h3>
                 <p className="text-xs font-bold text-[#b45309]">Assign account to territory Sales Executive</p>
               </div>
-              <button onClick={() => setShowAddModal(false)} className="p-1 rounded-xl text-slate-400 hover:text-slate-600 cursor-pointer">
+              <button onClick={() => setShowAddModal(false)} className="mgr-card p-1 rounded-xl text-slate-400 hover:text-slate-600 cursor-pointer">
                 <X size={18} />
               </button>
             </div>
@@ -707,7 +675,7 @@ export default function ManagerCustomers() {
                   placeholder="e.g. Zenith Global Infratech"
                   value={newCust.name}
                   onChange={(e) => setNewCust({ ...newCust, name: e.target.value })}
-                  className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                  className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-mgr-primary-500"
                 />
               </div>
 
@@ -720,7 +688,7 @@ export default function ManagerCustomers() {
                     placeholder="e.g. Mr. Rajesh Kumar"
                     value={newCust.contactPerson}
                     onChange={(e) => setNewCust({ ...newCust, contactPerson: e.target.value })}
-                    className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                    className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-mgr-primary-500"
                   />
                 </div>
                 <div>
@@ -731,7 +699,7 @@ export default function ManagerCustomers() {
                     placeholder="+91 98765 00000"
                     value={newCust.phone}
                     onChange={(e) => setNewCust({ ...newCust, phone: e.target.value })}
-                    className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                    className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-mgr-primary-500"
                   />
                 </div>
               </div>
@@ -744,7 +712,7 @@ export default function ManagerCustomers() {
                     placeholder="client@company.com"
                     value={newCust.email}
                     onChange={(e) => setNewCust({ ...newCust, email: e.target.value })}
-                    className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                    className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-mgr-primary-500"
                   />
                 </div>
                 <div>
@@ -754,7 +722,7 @@ export default function ManagerCustomers() {
                     placeholder="e.g. Chennai"
                     value={newCust.city}
                     onChange={(e) => setNewCust({ ...newCust, city: e.target.value })}
-                    className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                    className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-mgr-primary-500"
                   />
                 </div>
               </div>
@@ -765,7 +733,7 @@ export default function ManagerCustomers() {
                   <select
                     value={newCust.assignedExecutive}
                     onChange={(e) => setNewCust({ ...newCust, assignedExecutive: e.target.value })}
-                    className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl px-2 text-xs font-bold focus:outline-none cursor-pointer"
+                    className="mgr-card w-full h-9 bg-slate-50 border-slate-200 rounded-xl px-2 text-xs font-bold focus:outline-none cursor-pointer"
                   >
                     {executives.map((ex) => (
                       <option key={ex.id || ex.name} value={ex.name}>
@@ -791,7 +759,7 @@ export default function ManagerCustomers() {
                     placeholder="e.g. ₹6,50,000"
                     value={newCust.revenue}
                     onChange={(e) => setNewCust({ ...newCust, revenue: e.target.value })}
-                    className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                    className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-mgr-primary-500"
                   />
                 </div>
               </div>
@@ -803,7 +771,7 @@ export default function ManagerCustomers() {
                   placeholder="e.g. Requested multi-device field visit GPS tracking and EOD reports."
                   value={newCust.reachOutReason}
                   onChange={(e) => setNewCust({ ...newCust, reachOutReason: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-semibold focus:outline-none focus:border-amber-500"
+                  className="w-full bg-slate-50 border-slate-200 rounded-xl p-2.5 text-xs font-semibold focus:outline-none focus:border-mgr-primary-500"
                 />
               </div>
 
@@ -811,13 +779,13 @@ export default function ManagerCustomers() {
                 <button
                   type="button"
                   onClick={() => setShowAddModal(false)}
-                  className="px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs cursor-pointer hover:bg-slate-200 transition"
+                  className="mgr-card px-4 py-2 bg-slate-100 text-slate-600 rounded-xl font-bold text-xs cursor-pointer hover:bg-slate-200 transition"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 bg-[#ca8a04] hover:bg-[#a16207] text-white rounded-xl font-black text-xs cursor-pointer transition shadow-md shadow-yellow-600/20"
+                  className="mgr-card px-4 py-2 bg-mgr-primary-700 hover:bg-mgr-primary-800 text-white rounded-xl font-black text-xs cursor-pointer transition shadow-md shadow-yellow-600/20"
                 >
                   Onboard Customer Account
                 </button>

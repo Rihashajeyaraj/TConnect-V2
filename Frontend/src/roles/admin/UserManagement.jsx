@@ -40,6 +40,7 @@ import { normalizePhoneNumber } from '../../utils/formatUtils.js'
 import { FaceLivenessEngine, LIVENESS_CHALLENGES } from '../sales/FaceLivenessEngine.js'
 
 const EmployeeProfileModal = ({ employee, onClose }) => {
+  const [previewDoc, setPreviewDoc] = useState(null);
   if (!employee) return null;
   const parsedDocs = (() => {
     if (!employee.documents) return [];
@@ -155,28 +156,92 @@ const EmployeeProfileModal = ({ employee, onClose }) => {
               {parsedDocs.length === 0 ? (
                 <p className="text-slate-400 text-xs italic">No documents uploaded yet.</p>
               ) : (
-                parsedDocs.map((doc, idx) => (
-                  <div key={doc.id || idx} className="flex items-center justify-between border-b border-slate-100 pb-1 last:border-b-0">
-                    <div>
-                      <p className="font-bold text-slate-800">{doc.name}</p>
-                      <p className="text-[10px] text-emerald-600 font-medium">✅ {doc.fileName || 'Uploaded'}</p>
+                parsedDocs.map((doc, idx) => {
+                  const docUrl = doc.fileUrl || doc.url || doc.file_url || doc.file || doc.preview || doc.data || null;
+                  return (
+                    <div key={doc.id || idx} className="flex items-center justify-between border-b border-slate-100 pb-1.5 last:border-b-0">
+                      <div className="min-w-0 pr-2">
+                        <p className="font-bold text-slate-800 truncate">{doc.name}</p>
+                        <p className="text-[10px] text-emerald-600 font-medium truncate">✅ {doc.fileName || 'Uploaded'}</p>
+                      </div>
+                      {docUrl && (
+                        <button
+                          type="button"
+                          onClick={() => setPreviewDoc({ ...doc, fileUrl: docUrl })}
+                          className="px-2.5 py-1 bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-700 font-extrabold text-[11px] rounded-lg transition cursor-pointer flex-shrink-0 shadow-2xs"
+                        >
+                          View File
+                        </button>
+                      )}
                     </div>
-                    {doc.fileUrl && (
-                      <a
-                        href={doc.fileUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-2 py-0.5 bg-teal-50 border border-teal-200 text-teal-700 font-bold text-[10px] rounded-md hover:bg-teal-100 transition"
-                      >
-                        View File
-                      </a>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
           </Section>
         </div>
+
+        {/* In-App Document Preview Modal */}
+        {previewDoc && (
+          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] animate-in fade-in duration-150">
+            <div className="bg-white rounded-3xl max-w-2xl w-full p-6 space-y-4 shadow-2xl border border-slate-200 max-h-[90vh] flex flex-col">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
+                <div className="min-w-0 pr-4">
+                  <h3 className="font-black text-slate-900 text-sm truncate">{previewDoc.name}</h3>
+                  <p className="text-[11px] text-slate-400 font-semibold truncate">{previewDoc.fileName || "Document File"}</p>
+                </div>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  {previewDoc.fileUrl && (
+                    <a
+                      href={previewDoc.fileUrl}
+                      download={previewDoc.fileName || `${previewDoc.name}.png`}
+                      className="p-2 text-slate-500 hover:text-teal-600 hover:bg-teal-50 rounded-xl transition cursor-pointer"
+                      title="Download File"
+                    >
+                      <Download size={18} />
+                    </a>
+                  )}
+                  <button
+                    onClick={() => setPreviewDoc(null)}
+                    className="p-2 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-xl transition cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex-1 overflow-auto flex items-center justify-center bg-slate-50 rounded-2xl p-3 min-h-[320px] border border-slate-100">
+                {previewDoc.fileUrl?.startsWith('data:image') || previewDoc.fileUrl?.match(/\.(jpeg|jpg|gif|png|webp|svg)($|\?)/i) || previewDoc.fileName?.match(/\.(jpeg|jpg|gif|png|webp|svg)$/i) ? (
+                  <img
+                    src={previewDoc.fileUrl}
+                    alt={previewDoc.name}
+                    className="max-w-full max-h-[62vh] object-contain rounded-xl shadow-xs border border-slate-200"
+                  />
+                ) : previewDoc.fileUrl?.startsWith('data:application/pdf') || previewDoc.fileUrl?.match(/\.pdf($|\?)/i) || previewDoc.fileName?.match(/\.pdf$/i) ? (
+                  <iframe
+                    src={previewDoc.fileUrl}
+                    title={previewDoc.name}
+                    className="w-full h-[62vh] rounded-xl border border-slate-200"
+                  />
+                ) : (
+                  <div className="text-center py-12 space-y-3">
+                    <FileText size={48} className="mx-auto text-slate-400" />
+                    <p className="text-xs font-bold text-slate-600">Preview not supported for this file format.</p>
+                    {previewDoc.fileUrl && (
+                      <a
+                        href={previewDoc.fileUrl}
+                        download={previewDoc.fileName || 'document'}
+                        className="inline-flex items-center gap-1.5 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-extrabold shadow-sm transition"
+                      >
+                        <Download size={14} /> Download File
+                      </a>
+                    )}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -186,6 +251,7 @@ const ROLE_BADGE_CLASSES = {
   'Super Admin': 'bg-rose-50 text-rose-700 border-rose-200',
   'CEO / Founder': 'bg-purple-50 text-purple-700 border-purple-200',
   'Sales Manager': 'bg-blue-50 text-blue-700 border-blue-200',
+  'Team Lead': 'bg-indigo-50 text-indigo-700 border-indigo-200',
   'Sales Executive': 'bg-emerald-50 text-emerald-700 border-emerald-200',
 }
 
@@ -193,12 +259,239 @@ const isProtectedRole = (roleName) => {
   return roleName === 'CEO / Founder' || roleName === 'Super Admin'
 }
 
+// ======================================================
+// UserDirectoryTable — simple expandable row table
+// ======================================================
+function UserDirectoryTable({
+  filteredUsers, isProtectedRole, ROLE_BADGE_CLASSES,
+  toggleUserStatus, handleOpenEditModal, handleDeleteUser,
+  handleOpenReassignModal, setSelectedEnrollUser,
+  setDuplicateErrorUser, setShowEnrollFaceModal,
+  setSelectedEmployeeProfile, setShowCredentialsModal,
+}) {
+  const [expandedId, setExpandedId] = useState(null)
+
+  if (filteredUsers.length === 0) {
+    return (
+      <div className="bg-white rounded-xl border border-slate-200 p-14 text-center">
+        <Users className="w-8 h-8 text-slate-300 mx-auto mb-3" />
+        <p className="text-sm font-extrabold text-slate-600">No accounts found</p>
+        <p className="text-xs text-slate-400 mt-1">Try adjusting your search or filters</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[800px] text-left border-collapse text-xs whitespace-nowrap">
+          <thead>
+            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
+              <th className="px-4 py-3">Emp ID</th>
+              <th className="px-4 py-3">Name</th>
+              <th className="px-4 py-3">Role</th>
+              <th className="px-4 py-3">Assignment</th>
+              <th className="px-4 py-3 text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredUsers.map((user) => {
+              const isProtected = isProtectedRole(user.role)
+              const isExpanded = expandedId === user.id
+              const roleBadge = ROLE_BADGE_CLASSES[user.role] || 'bg-slate-100 text-slate-700 border-slate-200'
+              const initials = (user.name || 'U').split(' ').map(n => n[0]).join('').slice(0, 2).toUpperCase()
+              const isAssigned = !!user.reporting_manager_name
+
+              return (
+                <>
+                  {/* Main Row */}
+                  <tr
+                    key={user.id}
+                    className={`border-b border-slate-100 hover:bg-slate-50/60 transition ${
+                      isExpanded ? 'bg-slate-50/60' : ''
+                    }`}
+                  >
+                    {/* Emp ID */}
+                    <td className="px-4 py-3 font-mono text-[11px] text-slate-500 font-semibold">
+                      {user.employee_code || user.employee_id || '—'}
+                    </td>
+
+                    {/* Name */}
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-black text-[10px] flex items-center justify-center shrink-0">
+                          {initials}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-extrabold text-slate-900 text-xs truncate flex items-center gap-1">
+                            {user.name}
+                            {isProtected && <Lock className="w-2.5 h-2.5 text-amber-500" />}
+                          </p>
+                          <p className="text-[10px] text-slate-400 truncate">{user.email}</p>
+                        </div>
+                      </div>
+                    </td>
+
+                    {/* Role */}
+                    <td className="px-4 py-3">
+                      <span className={`inline-flex items-center px-2 py-0.5 rounded-full border text-[9px] font-extrabold uppercase tracking-wider ${roleBadge}`}>
+                        {user.role}
+                      </span>
+                    </td>
+
+                    {/* Assignment */}
+                    <td className="px-4 py-3">
+                      {isAssigned ? (
+                        <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-full text-[9px] font-extrabold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" /> Assigned
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-full text-[9px] font-extrabold">
+                          <span className="w-1.5 h-1.5 rounded-full bg-amber-400" /> Unassigned
+                        </span>
+                      )}
+                    </td>
+
+                    {/* Action */}
+                    <td className="px-4 py-3 text-center">
+                      <button
+                        onClick={() => setExpandedId(isExpanded ? null : user.id)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
+                          isExpanded
+                            ? 'bg-slate-900 text-white border-slate-900'
+                            : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400 hover:bg-slate-50'
+                        }`}
+                      >
+                        <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
+                        {isExpanded ? 'Close' : 'View'}
+                      </button>
+                    </td>
+                  </tr>
+
+                  {/* Expanded Detail Panel */}
+                  {isExpanded && (
+                    <tr key={`${user.id}-expanded`} className="bg-slate-50/50">
+                      <td colSpan={5} className="px-6 py-4">
+                        <div className="border border-slate-200 rounded-xl bg-white overflow-hidden">
+
+                          {/* Panel Header */}
+                          <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-black text-[11px] flex items-center justify-center">
+                                {initials}
+                              </div>
+                              <div>
+                                <p className="font-extrabold text-slate-900 text-xs">{user.name}</p>
+                                <p className="text-[10px] text-slate-400">{user.email}</p>
+                              </div>
+                            </div>
+                            {/* Status toggle */}
+                            <button
+                              onClick={() => toggleUserStatus(user.id)}
+                              disabled={isProtected}
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-extrabold transition cursor-pointer ${
+                                user.status === 'Active'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                  : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                              } ${isProtected ? 'opacity-60 cursor-not-allowed' : ''}`}
+                            >
+                              <span className={`w-1.5 h-1.5 rounded-full ${ user.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500' }`} />
+                              {user.status === 'Active' ? 'Active — click to deactivate' : 'Inactive — click to activate'}
+                            </button>
+                          </div>
+
+                          {/* Info Grid */}
+                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-0 divide-x divide-y divide-slate-100">
+                            <div className="px-4 py-3">
+                              <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Department</p>
+                              <p className="text-xs font-semibold text-slate-800">{user.dept || '—'}</p>
+                            </div>
+                            <div className="px-4 py-3">
+                              <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Reporting Manager</p>
+                              <p className="text-xs font-semibold text-slate-800">{user.reporting_manager_name || 'Unassigned'}</p>
+                              {user.reporting_manager_email && (
+                                <p className="text-[10px] text-slate-400">{user.reporting_manager_email}</p>
+                              )}
+                            </div>
+                            <div className="px-4 py-3">
+                              <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Phone</p>
+                              <p className="text-xs font-semibold text-slate-800">{user.phone || '—'}</p>
+                            </div>
+                            <div className="px-4 py-3">
+                              <p className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Emp ID</p>
+                              <p className="text-xs font-mono font-semibold text-slate-800">{user.employee_code || user.employee_id || '—'}</p>
+                            </div>
+                          </div>
+
+                          {/* Action Buttons */}
+                          {isProtected ? (
+                            <div className="px-4 py-3 border-t border-slate-100 flex items-center gap-2">
+                              <Lock className="w-3.5 h-3.5 text-amber-500" />
+                              <span className="text-xs font-bold text-slate-500">Protected account — actions restricted</span>
+                            </div>
+                          ) : (
+                            <div className="px-4 py-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                              <button
+                                onClick={() => { setDuplicateErrorUser(null); setSelectedEnrollUser(user); setShowEnrollFaceModal(true) }}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              >
+                                <Camera className="w-3.5 h-3.5" /> Biometric
+                              </button>
+                              <button
+                                onClick={() => setSelectedEmployeeProfile(user)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-teal-50 hover:bg-teal-100 border border-teal-200 text-teal-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              >
+                                <Eye className="w-3.5 h-3.5" /> View Profile
+                              </button>
+                              <button
+                                onClick={() => handleOpenEditModal(user)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 border border-blue-200 text-blue-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              >
+                                <Edit3 className="w-3.5 h-3.5" /> Edit
+                              </button>
+                              <button
+                                onClick={() => handleOpenReassignModal(user)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              >
+                                <ArrowRight className="w-3.5 h-3.5" /> Reassign
+                              </button>
+                              <button
+                                onClick={() => setShowCredentialsModal(user)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-700 text-white rounded-lg text-[11px] font-bold transition cursor-pointer"
+                              >
+                                <Key className="w-3.5 h-3.5" /> Access Keys
+                              </button>
+                              <button
+                                onClick={() => handleDeleteUser(user.id)}
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg text-[11px] font-bold transition cursor-pointer ml-auto"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" /> Delete
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
 function UserManagement() {
   const { showToast } = useToast()
   const location = useLocation()
   const searchInputRef = useRef(null)
   const [users, setUsers] = useState([])
-  const [activeTab, setActiveTab] = useState('table') // 'table' | 'hierarchy'
+  const [activeTab, setActiveTab] = useState(null) // None selected on load
+  const [showAllUsersModal, setShowAllUsersModal] = useState(false)
+  const [showUnassignedPoolModal, setShowUnassignedPoolModal] = useState(false)
+  const [showHierarchyModal, setShowHierarchyModal] = useState(false)
   const [departmentsList, setDepartmentsList] = useState([])
 
   useEffect(() => {
@@ -218,13 +511,9 @@ function UserManagement() {
     fetchDepartments()
   }, [])
 
-  const defaultDepts = [
-    'Sales & Business Development',
-    'Inside Sales',
-    'Field Sales',
-    'IT & System Admin'
-  ]
-  const deptOptions = departmentsList.length > 0 ? departmentsList : defaultDepts
+  const deptOptions = useMemo(() => {
+    return departmentsList.map(d => typeof d === 'string' ? d : (d.name || ''))
+  }, [departmentsList])
 
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedRole, setSelectedRole] = useState('ALL')
@@ -467,31 +756,34 @@ function UserManagement() {
   const salesManagers = useMemo(() => {
     return users.filter((u) => {
       const r = (u.role || '').toLowerCase()
-      return r.includes('manager') || r.includes('admin') || r.includes('ceo')
+      return r.includes('manager') || r.includes('admin') || r.includes('ceo') || r.includes('team lead') || r.includes('tl')
     })
   }, [users])
 
   const salesExecutives = useMemo(() => {
     return users.filter((u) => {
       const r = (u.role || '').toLowerCase()
-      const isManagerOrAdmin = r.includes('manager') || r.includes('admin') || r.includes('ceo')
+      const isManagerOrAdmin = r.includes('manager') || r.includes('admin') || r.includes('ceo') || r.includes('team lead') || r.includes('tl')
       return !isManagerOrAdmin
     })
   }, [users])
 
   const hierarchyManagers = useMemo(() => {
-    return users.filter((u) => (u.role || '').toLowerCase().trim() === 'sales manager')
+    return users.filter((u) => {
+      const r = (u.role || '').toLowerCase().trim()
+      return r === 'sales manager' || r === 'team lead' || r === 'tl'
+    })
   }, [users])
 
   const hierarchyExecutives = useMemo(() => {
     return users.filter((u) => (u.role || '').toLowerCase().trim() === 'sales executive')
   }, [users])
 
-  // Potential Reporting Managers (CEO, Admin, and Managers)
+  // Potential Reporting Managers (CEO, Admin, Managers, and Team Leads)
   const potentialReportingManagers = useMemo(() => {
     return users.filter((u) => {
       const r = (u.role || '').toLowerCase()
-      return r.includes('manager') || r.includes('admin') || r.includes('ceo') || r.includes('founder')
+      return r.includes('manager') || r.includes('admin') || r.includes('ceo') || r.includes('founder') || r.includes('team lead') || r.includes('tl')
     })
   }, [users])
 
@@ -785,28 +1077,43 @@ function UserManagement() {
     } catch (e) {}
   }, [users])
 
-  const handleOpenEditModal = (user) => {
+  const handleOpenEditModal = async (user) => {
     const saved = localStorage.getItem(`tc_leaves_${user.email.toLowerCase().trim()}`)
-    const leaveAllocation = saved ? JSON.parse(saved) : { annualLeaves: 12, halfDayPermissions: 6, shortPermissions: 2 }
+    const leaveAllocation = saved ? JSON.parse(saved) : { annualLeaves: 12, sickLeaves: 10, otherLeaves: 10, halfDayPermissions: 6, shortPermissions: 2 }
     
     // Load from database properties first, fallback to localStorage/defaults
     const annualLeaves = user.annual_leaves ?? user.annualLeaves ?? leaveAllocation.annualLeaves;
+    const sickLeaves = user.sick_leaves ?? user.sickLeaves ?? leaveAllocation.sickLeaves ?? 10;
+    const otherLeaves = user.other_leaves ?? user.otherLeaves ?? leaveAllocation.otherLeaves ?? 10;
     const halfDayPermissions = user.half_day_permissions ?? user.halfDayPermissions ?? leaveAllocation.halfDayPermissions;
     const shortPermissions = user.short_permissions ?? user.shortPermissions ?? leaveAllocation.shortPermissions;
+
+    let salaryVal = 35000;
+    try {
+      const salRes = await hrmsAPI.getSalaryByEmployeeId(user.employee_id || user.id);
+      if (salRes && salRes.data) {
+        salaryVal = salRes.data.monthly_salary || 0;
+      }
+    } catch (e) {
+      console.warn("Failed to load salary details:", e);
+    }
 
     setEditingUser({
       ...user,
       annualLeaves,
+      sickLeaves,
+      otherLeaves,
       halfDayPermissions,
-      shortPermissions
+      shortPermissions,
+      monthlySalary: salaryVal
     })
     setShowEditModal(true)
   }
 
-  // Set default reporting manager when role is changed to Sales Manager in Add form
+  // Set default reporting manager when role is changed to Sales Manager / Team Lead in Add form
   const handleAddRoleChange = (selectedRole) => {
     let extra = {}
-    if (selectedRole === 'Sales Manager') {
+    if (selectedRole === 'Sales Manager' || selectedRole === 'Team Lead') {
       const ceo = users.find(u => {
         const emailLower = (u.email || '').toLowerCase()
         const roleLower = (u.role || '').toLowerCase()
@@ -835,10 +1142,10 @@ function UserManagement() {
     setNewUser({ ...newUser, role: selectedRole, ...extra })
   }
 
-  // Set default reporting manager when role is changed to Sales Manager in Edit form
+  // Set default reporting manager when role is changed to Sales Manager / Team Lead in Edit form
   const handleEditRoleChange = (selectedRole) => {
     let extra = {}
-    if (selectedRole === 'Sales Manager') {
+    if (selectedRole === 'Sales Manager' || selectedRole === 'Team Lead') {
       const ceo = users.find(u => {
         const emailLower = (u.email || '').toLowerCase()
         const roleLower = (u.role || '').toLowerCase()
@@ -895,6 +1202,23 @@ function UserManagement() {
         half_day_permissions: Number(editingUser.halfDayPermissions || 6),
         short_permissions: Number(editingUser.shortPermissions || 2),
       })
+
+      // Update leaves directly in hrms.employees
+      await hrmsAPI.updateEmployee(editingUser.employee_id || editingUser.id, {
+        annual_leaves: Number(editingUser.annualLeaves || 12),
+        sick_leaves: Number(editingUser.sickLeaves || 10),
+        other_leaves: Number(editingUser.otherLeaves || 10),
+        half_day_permissions: Number(editingUser.halfDayPermissions || 6),
+        short_permissions: Number(editingUser.shortPermissions || 2),
+      })
+
+      // Update salary directly in hrms.salaries
+      if (editingUser.monthlySalary !== undefined) {
+        await hrmsAPI.updateSalary(editingUser.employee_id || editingUser.id, {
+          monthly_salary: Number(editingUser.monthlySalary || 0)
+        })
+      }
+
       showToast(`User profile and access credentials updated!`, 'success')
     } catch (err) {
       showToast(`User profile updated locally`, 'info')
@@ -1064,32 +1388,40 @@ function UserManagement() {
   // Role Statistics
   const activeCount = users.filter((u) => u.status === 'Active').length
   const inactiveCount = users.filter((u) => u.status === 'Inactive').length
-  const salesManagersCount = users.filter((u) => u.role === 'Sales Manager').length
+  const salesManagersCount = users.filter((u) => u.role === 'Sales Manager' || u.role === 'Team Lead').length
   const executivesCount = users.filter((u) => u.role === 'Sales Executive').length
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6 font-sans">
       <canvas ref={canvasRef} className="hidden" />
       {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <Users className="w-7 h-7 text-blue-600" /> Employee & User Account Management
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-6 shadow-xs">
+        <div className="min-w-0">
+          <h1 className="text-base sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+            <Users className="w-5 h-5 sm:w-7 sm:h-7 text-blue-600 shrink-0" /> <span className="truncate">Employee &amp; User Account Management</span>
           </h1>
-          <p className="text-xs font-semibold text-slate-500 mt-1">
-            Create portal access emails and passwords for Sales Managers and Executives and manage hierarchy assignments.
-          </p>
+
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
+            onClick={() => setActiveTab(activeTab === 'password-resets' ? 'hierarchy' : 'password-resets')}
+            className={`inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs font-bold rounded-xl shadow-sm border transition-all cursor-pointer ${
+              activeTab === 'password-resets'
+                ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500'
+                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+            }`}
+          >
+            <Key className="w-3.5 h-3.5" /> {activeTab === 'password-resets' ? 'Hierarchy View' : 'Password Requests'}
+          </button>
+          <button
             onClick={() => setShowAssignModal(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+            className="inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
           >
             <UserCheck className="w-4 h-4" /> Assign Sales Executives
           </button>
           <button
             onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+            className="inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Create New Employee Account
           </button>
@@ -1097,79 +1429,95 @@ function UserManagement() {
       </div>
 
       {/* KPI Stats Panel */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
-            <Users className="w-5 h-5" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <div 
+          onClick={() => setShowAllUsersModal(true)}
+          className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2 sm:gap-3 cursor-pointer hover:bg-slate-50 hover:border-slate-350 transition hover:scale-102 select-none"
+          title="Click to view all users directory table"
+        >
+          <div className="p-2 sm:p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 shrink-0">
+            <Users className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Users</p>
-            <p className="text-2xl font-extrabold text-slate-900">{users.length}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Sales Managers</p>
-            <p className="text-2xl font-extrabold text-slate-900">{salesManagers.length}</p>
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Total Users</p>
+            <p className="text-xl sm:text-2xl font-extrabold text-slate-900">{users.length}</p>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
-            <UserCheck className="w-5 h-5" />
+        <div 
+          onClick={() => {
+            setShowHierarchyModal(true);
+            showToast('Hierarchy view loaded successfully!', 'info');
+          }}
+          className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2 sm:gap-3 cursor-pointer hover:bg-slate-50 hover:border-slate-350 transition hover:scale-102 select-none"
+          title="Click to view managers & team hierarchy"
+        >
+          <div className="p-2 sm:p-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 shrink-0">
+            <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned Subordinates</p>
-            <p className="text-2xl font-extrabold text-slate-900">{salesExecutives.length - unassignedExecutives.length}</p>
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Sales Managers</p>
+            <p className="text-xl sm:text-2xl font-extrabold text-slate-900">{salesManagers.length}</p>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className={`p-3 rounded-xl border ${unassignedExecutives.length > 0 ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
-            <UserX className="w-5 h-5" />
+        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2 sm:gap-3">
+          <div className="p-2 sm:p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100 shrink-0">
+            <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Unassigned Pool</p>
-            <p className={`text-2xl font-extrabold ${unassignedExecutives.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{unassignedExecutives.length}</p>
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned Subordinates</p>
+            <p className="text-xl sm:text-2xl font-extrabold text-slate-900">{salesExecutives.length - unassignedExecutives.length}</p>
           </div>
         </div>
-      </div>
 
-      {/* View Switcher Tabs */}
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveTab('table')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer ${
-              activeTab === 'table'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <Layers className="w-4 h-4" /> All Users Directory ({users.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('hierarchy')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer ${
-              activeTab === 'hierarchy'
-                ? 'bg-[#061A4D] text-white shadow-md shadow-[#061A4D]/20'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <Network className="w-4 h-4" /> Manager & Executive Team Hierarchy ({hierarchyManagers.length} Managers)
-          </button>
+        <div 
+          onClick={() => setShowUnassignedPoolModal(true)}
+          className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2 sm:gap-3 cursor-pointer hover:bg-slate-50 hover:border-slate-350 transition hover:scale-102 select-none"
+          title="Click to view unassigned executives pool"
+        >
+          <div className={`p-2 sm:p-3 rounded-xl border shrink-0 ${unassignedExecutives.length > 0 ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+            <UserX className="w-4 h-4 sm:w-5 sm:h-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Unassigned Pool</p>
+            <p className={`text-xl sm:text-2xl font-extrabold ${unassignedExecutives.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{unassignedExecutives.length}</p>
+          </div>
         </div>
       </div>
 
       {/* ======================================================== */}
-      {/* VIEW 1: MANAGER & EXECUTIVE HIERARCHY                    */}
+      {/* VIEW 3: PASSWORD RESET REQUESTS                          */}
       {/* ======================================================== */}
-      {activeTab === 'hierarchy' && (
-        <div className="space-y-6">
+      {activeTab === 'password-resets' && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+          <PasswordResetRequestsPanel />
+        </div>
+      )}
+
+
+
+      {/* ======================================================== */}
+      {/* VIEW 1: MANAGER & EXECUTIVE HIERARCHY — POPUP MODAL       */}
+      {/* ======================================================== */}
+      {showHierarchyModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-6xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
+            {/* Modal Header */}
+            <div className="bg-[#0b2545] text-white p-4 flex items-center justify-between border-b border-slate-800 shrink-0">
+              <span className="font-bold text-sm flex items-center gap-2">
+                <Network className="w-5 h-5 text-indigo-400" /> Manager-to-Executive Team Hierarchy
+              </span>
+              <button
+                onClick={() => setShowHierarchyModal(false)}
+                className="text-white/60 hover:text-white font-bold text-base cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 bg-slate-50 space-y-6">
           {/* Header Info Note */}
           <div className="bg-white border border-[#DCE3EF] p-5 rounded-2xl flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -1291,22 +1639,22 @@ function UserManagement() {
                       ) : (
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-1">
                           {assigned.map((exec) => (
-                            <div
+                             <div
                               key={exec.id}
-                              className="bg-[#F7F9FC]/40 border border-[#DCE3EF] rounded-xl p-3 flex items-center justify-between gap-3 hover:border-slate-350 transition"
+                              className="bg-[#F7F9FC]/40 border border-[#DCE3EF] rounded-xl p-3 flex flex-col xs:flex-row xs:items-center justify-between gap-3 hover:border-slate-350 transition"
                             >
                               <div className="flex items-center gap-2.5 min-w-0">
                                 <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#123A8C] font-extrabold text-xs flex items-center justify-center border border-blue-100 shrink-0">
                                   {(exec.name || '').split(' ').map((n) => n[0]).join('')}
                                 </div>
-                                <div className="min-w-0">
+                                <div className="min-w-0 flex-1">
                                   <p className="font-extrabold text-xs text-slate-900 truncate flex items-center gap-1.5">
                                     {exec.name}
                                   </p>
                                   <p className="text-[10px] text-[#64748B] truncate mt-0.5">{exec.email}</p>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2 shrink-0">
+                              <div className="flex items-center gap-2 flex-wrap xs:flex-nowrap justify-start xs:justify-end shrink-0">
                                 <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border transition ${
                                   exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
                                 }`}>
@@ -1337,298 +1685,188 @@ function UserManagement() {
               })()}
             </div>
           </div>
+        </div>
+      </div>
+      </div>
+      )}
 
-          {/* Unassigned Executives Pool Section */}
-          <div className="bg-white border border-[#DCE3EF] rounded-2xl p-5 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
-              <div className="flex items-center gap-2">
-                <span className="p-2 bg-amber-50 text-[#D99A18] rounded-xl border border-amber-100">
-                  <UserX className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="font-extrabold text-sm text-[#071A45]">Unassigned Executives Pool ({unassignedExecutives.length})</h3>
-                  <p className="text-[11px] text-[#64748B] font-medium mt-0.5">Sales Executives who do not currently report to any manager.</p>
-                </div>
-              </div>
-              
-              {/* Unassigned search input */}
-              <div className="relative w-full sm:w-64">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search unassigned pool..."
-                  value={unassignedSearchQuery}
-                  onChange={(e) => setUnassignedSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-900 focus:outline-none focus:border-[#123A8C] font-semibold"
-                />
-              </div>
+      {/* ======================================================== */}
+      {/* VIEW 2: ALL USERS DIRECTORY — POPUP MODAL               */}
+      {/* ======================================================== */}
+      {showAllUsersModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-6xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
+            {/* Modal Header */}
+            <div className="bg-[#0b2545] text-white p-4 flex items-center justify-between border-b border-slate-800">
+              <span className="font-bold text-sm flex items-center gap-2">
+                <Users className="w-5 h-5 text-blue-400" /> All Registered Users Directory ({filteredUsers.length})
+              </span>
+              <button
+                onClick={() => setShowAllUsersModal(false)}
+                className="text-white/60 hover:text-white font-bold text-base cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
 
-            {filteredUnassignedPool.length === 0 ? (
-              <p className="text-xs text-slate-500 font-semibold py-8 text-center bg-slate-50/50 border border-dashed border-[#DCE3EF] rounded-xl">
-                {unassignedSearchQuery ? 'No unassigned pool matches search query.' : 'Unassigned executives pool is currently empty.'}
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {filteredUnassignedPool.map((exec) => (
-                  <div
-                    key={exec.id}
-                    className="p-3 bg-slate-50/40 border border-[#DCE3EF] rounded-xl flex items-center justify-between gap-3 hover:border-slate-350 transition"
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 bg-slate-50 space-y-4">
+              {/* Search + Filter Bar */}
+              <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-2 items-center justify-between">
+                <div className="relative w-full sm:w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="Search name, email, department..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <select
+                    value={selectedRole}
+                    onChange={(e) => setSelectedRole(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
                   >
-                    <div className="min-w-0 flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 font-extrabold text-[10px] flex items-center justify-center border border-amber-100 shrink-0">
-                        {(exec.name || '').split(' ').map((n) => n[0]).join('')}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-extrabold text-[11px] text-slate-900 truncate">{exec.name}</p>
-                        <p className="text-[9px] text-[#64748B] truncate mt-0.5">{exec.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`px-1.5 py-0.2 rounded-md text-[8px] font-black border transition ${
-                        exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
-                      }`}>
-                        {exec.status || 'Active'}
-                      </span>
-                      <button
-                        onClick={() => {
-                          setSelectedUnassignedExec(exec)
-                          setShowAssignToManagerModal(true)
-                        }}
-                        className="px-2.5 py-1 bg-[#061A4D] hover:bg-[#123A8C] text-white font-extrabold text-[10px] rounded-lg shadow-2xs cursor-pointer transition shrink-0"
-                      >
-                        Assign
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                    <option value="ALL">All Roles</option>
+                    <option value="Super Admin">Super Admin</option>
+                    <option value="Sales Manager">Sales Manager</option>
+                    <option value="Sales Executive">Sales Executive</option>
+                  </select>
+                  <select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                  <span className="self-center text-[11px] text-slate-400 font-bold">{filteredUsers.length} records</span>
+                </div>
               </div>
-            )}
+
+              {/* Table */}
+              <UserDirectoryTable
+                filteredUsers={filteredUsers}
+                isProtectedRole={isProtectedRole}
+                ROLE_BADGE_CLASSES={ROLE_BADGE_CLASSES}
+                toggleUserStatus={toggleUserStatus}
+                handleOpenEditModal={handleOpenEditModal}
+                handleDeleteUser={handleDeleteUser}
+                handleOpenReassignModal={handleOpenReassignModal}
+                setSelectedEnrollUser={setSelectedEnrollUser}
+                setDuplicateErrorUser={setDuplicateErrorUser}
+                setShowEnrollFaceModal={setShowEnrollFaceModal}
+                setSelectedEmployeeProfile={setSelectedEmployeeProfile}
+                setShowCredentialsModal={setShowCredentialsModal}
+              />
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-[#f8fafc] border-t border-slate-150 flex justify-end">
+              <button
+                onClick={() => setShowAllUsersModal(false)}
+                className="px-4 py-2 bg-[#0b2545] hover:bg-[#123A8C] text-white rounded-xl text-xs font-black cursor-pointer shadow-sm"
+              >
+                Close Directory
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-
-      {/* ======================================================== */}
-      {/* VIEW 2: ALL USERS DIRECTORY TABLE                        */}
-      {/* ======================================================== */}
-      {activeTab === 'table' && (
-        <div className="space-y-4">
-          {/* Filter and Search Bar */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row gap-3 justify-between items-center">
-            <div className="relative w-full md:w-80">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Search by name, email, department..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-semibold"
-              />
+      {/* Unassigned Executives Pool Modal overlay popup */}
+      {showUnassignedPoolModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-4xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
+            {/* Modal Header */}
+            <div className="bg-[#0b2545] text-white p-4 flex items-center justify-between border-b border-slate-800">
+              <span className="font-bold text-sm flex items-center gap-2">
+                <UserX className="w-5 h-5 text-amber-400" /> Unassigned Executives Pool ({unassignedExecutives.length})
+              </span>
+              <button
+                onClick={() => setShowUnassignedPoolModal(false)}
+                className="text-white/60 hover:text-white font-bold text-base cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
 
-            <div className="flex flex-wrap gap-2 w-full md:w-auto">
-              {/* Role Filter */}
-              <select
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600"
-              >
-                <option value="ALL">All Roles</option>
-                <option value="Super Admin">Super Admin</option>
-                <option value="Sales Manager">Sales Manager</option>
-                <option value="Sales Executive">Sales Executive</option>
-              </select>
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 bg-slate-50 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl text-[11px] font-semibold text-amber-900">
+                These are Sales Executives who do not currently report to any Sales Manager. Select a Sales Manager in the hierarchy page or click "Assign" below to link them.
+              </div>
 
-              {/* Status Filter */}
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:border-blue-600"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="Active">Active Users</option>
-                <option value="Inactive">Inactive Users</option>
-              </select>
+              {/* Search Bar */}
+              <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-2 items-center justify-between">
+                <div className="relative w-full sm:w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search unassigned pool..."
+                    value={unassignedSearchQuery}
+                    onChange={(e) => setUnassignedSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                </div>
+                <span className="text-[11px] text-slate-400 font-bold">{filteredUnassignedPool.length} unassigned records</span>
+              </div>
+
+              {/* Table / Grid */}
+              {filteredUnassignedPool.length === 0 ? (
+                <p className="text-xs text-slate-500 font-semibold py-12 text-center bg-white border border-dashed border-[#DCE3EF] rounded-2xl">
+                  {unassignedSearchQuery ? 'No matching unassigned pool records.' : 'Unassigned executives pool is currently empty.'}
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {filteredUnassignedPool.map((exec) => (
+                    <div
+                      key={exec.id}
+                      className="p-3 bg-white border border-[#DCE3EF] rounded-xl flex items-center justify-between gap-3 hover:border-slate-350 transition shadow-2xs"
+                    >
+                      <div className="min-w-0 flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 font-extrabold text-[10px] flex items-center justify-center border border-amber-100 shrink-0">
+                          {(exec.name || '').split(' ').map((n) => n[0]).join('')}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-extrabold text-[11px] text-slate-900 truncate">{exec.name}</p>
+                          <p className="text-[9px] text-[#64748B] truncate mt-0.5">{exec.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`px-1.5 py-0.2 rounded-md text-[8px] font-black border transition ${
+                          exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
+                        }`}>
+                          {exec.status || 'Active'}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setSelectedUnassignedExec(exec)
+                            setShowAssignToManagerModal(true)
+                          }}
+                          className="px-2.5 py-1 bg-[#061A4D] hover:bg-[#123A8C] text-white font-extrabold text-[10px] rounded-lg shadow-2xs cursor-pointer transition shrink-0"
+                        >
+                          Assign
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          </div>
 
-          {/* Users Data Table */}
-          <div className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700 border-collapse">
-                <thead className="bg-slate-50 border-b border-slate-200 text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                  <tr>
-                    <th className="p-4">User Details</th>
-                    <th className="p-4">Access Email</th>
-                    <th className="p-4">Role</th>
-                    <th className="p-4">Reporting Manager</th>
-                    <th className="p-4">Department</th>
-                    <th className="p-4">Status</th>
-                    <th className="p-4 text-center">Portal Access</th>
-                    <th className="p-4 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-semibold">
-                  {filteredUsers.map((user) => {
-                    const isProtected = isProtectedRole(user.role)
-                    return (
-                      <tr key={user.id} className="hover:bg-slate-50/70 transition">
-                        {/* User Details */}
-                        <td className="p-4">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-600 text-white font-extrabold text-xs flex items-center justify-center shadow-xs shrink-0">
-                              {user.name.split(' ').map((n) => n[0]).join('')}
-                            </div>
-                            <div>
-                              <p className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
-                                {user.name}
-                                {isProtected && (
-                                  <span title="Protected Account" className="text-amber-500">
-                                    <Lock className="w-3 h-3" />
-                                  </span>
-                                )}
-                              </p>
-                              <p className="text-[11px] text-slate-400 font-medium">{user.phone}</p>
-                            </div>
-                          </div>
-                        </td>
-
-                        {/* Access Email */}
-                        <td className="p-4">
-                          <span className="inline-flex items-center gap-1.5 text-slate-800 font-bold">
-                            <Mail className="w-3.5 h-3.5 text-blue-600" />
-                            {user.email}
-                          </span>
-                        </td>
-
-                        {/* Role */}
-                        <td className="p-4">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-extrabold ${ROLE_BADGE_CLASSES[user.role] || 'bg-slate-100 text-slate-700 border-slate-200'}`}>
-                            {user.role}
-                          </span>
-                        </td>
-
-                        {/* Reporting Manager */}
-                        <td className="p-4 text-slate-700 font-bold text-xs">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {user.reporting_manager_name ? (
-                              <span className="inline-flex items-center gap-1 bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded-md text-[11px]">
-                                👤 {user.reporting_manager_name}
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-500 border border-slate-200 px-2 py-0.5 rounded-md text-[10px]">
-                                Unassigned
-                              </span>
-                            )}
-                            {!isProtected && (
-                              <button
-                                onClick={() => handleOpenReassignModal(user)}
-                                className="text-blue-600 hover:text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2 py-0.5 rounded-md text-[10px] font-extrabold cursor-pointer transition flex items-center gap-1"
-                                title="Reassign Reporting Manager"
-                              >
-                                🔄 Reassign
-                              </button>
-                            )}
-                          </div>
-                        </td>
-
-                        {/* Department */}
-                        <td className="p-4 text-slate-600 font-medium">
-                          {user.dept}
-                        </td>
-
-                        {/* Status */}
-                        <td className="p-4">
-                          <button
-                            onClick={() => toggleUserStatus(user.id)}
-                            disabled={isProtected}
-                            className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full border text-[10px] font-extrabold transition cursor-pointer ${
-                              user.status === 'Active'
-                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
-                                : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                            } ${isProtected ? 'opacity-80 cursor-not-allowed' : ''}`}
-                          >
-                            {user.status === 'Active' ? (
-                              <>
-                                <UserCheck className="w-3 h-3" /> Active
-                              </>
-                            ) : (
-                              <>
-                                <UserX className="w-3 h-3" /> Inactive
-                              </>
-                            )}
-                          </button>
-                        </td>
-
-                        {/* Portal Access Passwords */}
-                        <td className="p-4 text-center">
-                          <button
-                            onClick={() => setShowCredentialsModal(user)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 rounded-lg text-[11px] font-bold transition cursor-pointer"
-                            title="View Portal Credentials"
-                          >
-                            <Key className="w-3 h-3 text-blue-600" /> Access Keys
-                          </button>
-                        </td>
-
-                        {/* Actions */}
-                        <td className="p-4 text-right">
-                          {isProtected ? (
-                            <span className="text-[10px] font-bold text-slate-400 bg-slate-100 px-2 py-1 rounded-lg border border-slate-200">
-                              🔒 Protected
-                            </span>
-                          ) : (
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button
-                                onClick={() => {
-                                  setDuplicateErrorUser(null)
-                                  setSelectedEnrollUser(user)
-                                  setShowEnrollFaceModal(true)
-                                }}
-                                className="p-1.5 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 border border-transparent hover:border-emerald-250 rounded-lg transition cursor-pointer"
-                                title="Enroll Biometric Face"
-                              >
-                                <Camera className="w-3.5 h-3.5 text-emerald-650" />
-                              </button>
-                              <button
-                                onClick={() => setSelectedEmployeeProfile(user)}
-                                className="p-1.5 text-slate-400 hover:text-teal-600 hover:bg-teal-50 border border-transparent hover:border-teal-200 rounded-lg transition cursor-pointer"
-                                title="View Employee Profile"
-                              >
-                                <Eye className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleOpenEditModal(user)}
-                                className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 border border-transparent hover:border-blue-200 rounded-lg transition cursor-pointer"
-                                title="Edit User Account"
-                              >
-                                <Edit3 className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteUser(user.id)}
-                                className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 border border-transparent hover:border-rose-200 rounded-lg transition cursor-pointer"
-                                title="Delete Account"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-
-                  {filteredUsers.length === 0 && (
-                    <tr>
-                      <td colSpan="8" className="p-8 text-center text-slate-400 font-semibold">
-                        No employee accounts found matching the search or role criteria.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-[#f8fafc] border-t border-slate-150 flex justify-end">
+              <button
+                onClick={() => setShowUnassignedPoolModal(false)}
+                className="px-4 py-2 bg-[#0b2545] hover:bg-[#123A8C] text-white rounded-xl text-xs font-black cursor-pointer shadow-sm"
+              >
+                Close Pool
+              </button>
             </div>
           </div>
         </div>
@@ -1675,6 +1913,7 @@ function UserManagement() {
                     value={newUser.email}
                     onChange={(e) => setNewUser({ ...newUser, email: e.target.value, name: `${newUser.first_name} ${newUser.last_name}`.trim() })}
                     className="w-full h-10 border border-slate-350 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
+                    autoComplete="new-email"
                     required
                   />
                 </div>
@@ -1690,6 +1929,7 @@ function UserManagement() {
                       value={newUser.password}
                       onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
                       className="w-full h-10 border border-slate-350 rounded-xl pl-3 pr-10 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
+                      autoComplete="new-password"
                       required
                     />
                     <button
@@ -1709,6 +1949,7 @@ function UserManagement() {
                     className="w-full h-10 border border-slate-350 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 font-bold bg-white focus:ring-1 focus:ring-blue-100"
                   >
                     <option value="Sales Manager">Sales Manager</option>
+                    <option value="Team Lead">Team Lead</option>
                     <option value="Sales Executive">Sales Executive</option>
                     <option value="System Admin">System Admin</option>
                   </select>
@@ -1802,11 +2043,15 @@ function UserManagement() {
                     onChange={(e) => setNewUser({ ...newUser, dept: e.target.value })}
                     className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 font-bold bg-white focus:ring-1 focus:ring-blue-100"
                   >
-                    {deptOptions.map((dept) => (
-                      <option key={dept} value={dept}>
-                        {dept}
-                      </option>
-                    ))}
+                    {deptOptions.length === 0 ? (
+                      <option value="">No departments configured — Add in Company Overview</option>
+                    ) : (
+                      deptOptions.map((dept) => (
+                        <option key={dept} value={dept}>
+                          {dept}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
 
@@ -2026,6 +2271,7 @@ function UserManagement() {
                     className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-blue-600"
                   >
                     <option value="Sales Manager">Sales Manager</option>
+                    <option value="Team Lead">Team Lead</option>
                     <option value="Sales Executive">Sales Executive</option>
                     <option value="System Admin">System Admin</option>
                   </select>
@@ -2038,11 +2284,15 @@ function UserManagement() {
                     onChange={(e) => setEditingUser({ ...editingUser, dept: e.target.value })}
                     className="w-full h-10 border border-[#DCE3EF] rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 font-bold bg-white focus:ring-1 focus:ring-blue-100"
                   >
-                    {deptOptions.map((dept) => (
-                      <option key={dept} value={dept}>
-                        {dept}
-                      </option>
-                    ))}
+                    {deptOptions.length === 0 ? (
+                      <option value="">No departments configured — Add in Company Overview</option>
+                    ) : (
+                      deptOptions.map((dept) => (
+                        <option key={dept} value={dept}>
+                          {dept}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
               </div>
@@ -2101,6 +2351,28 @@ function UserManagement() {
                     />
                   </div>
                   <div>
+                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Sick Leaves</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editingUser.sickLeaves || 10}
+                      onChange={(e) => setEditingUser({ ...editingUser, sickLeaves: Number(e.target.value) })}
+                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Other Leaves</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editingUser.otherLeaves || 10}
+                      onChange={(e) => setEditingUser({ ...editingUser, otherLeaves: Number(e.target.value) })}
+                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-3 gap-3 mt-2">
+                  <div>
                     <label className="block text-slate-600 font-bold mb-1 text-[10px]">Half-Day Slots</label>
                     <input
                       type="number"
@@ -2118,6 +2390,16 @@ function UserManagement() {
                       value={editingUser.shortPermissions || 2}
                       onChange={(e) => setEditingUser({ ...editingUser, shortPermissions: Number(e.target.value) })}
                       className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Monthly Salary (₹)</label>
+                    <input
+                      type="number"
+                      min={0}
+                      value={editingUser.monthlySalary || 0}
+                      onChange={(e) => setEditingUser({ ...editingUser, monthlySalary: Number(e.target.value) })}
+                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-amber-50/55"
                     />
                   </div>
                 </div>
@@ -2681,3 +2963,179 @@ function UserManagement() {
 }
 
 export default UserManagement
+
+// ── Password Reset Requests Panel (Admin Only) ──────────────────────────────
+
+export function PasswordResetRequestsPanel() {
+  const { showToast } = useToast()
+  const [requests, setRequests] = useState([])
+  const [loading, setLoading] = useState(false)
+  const [approveModal, setApproveModal] = useState(null) // { email, name }
+  const [tempPassword, setTempPassword] = useState('')
+  const [approving, setApproving] = useState(false)
+  const [showTempPwd, setShowTempPwd] = useState(false)
+
+  async function fetchRequests() {
+    setLoading(true)
+    try {
+      const res = await userAPI.getPasswordResetRequests()
+      setRequests(res?.data || [])
+    } catch {
+      showToast('Failed to load password reset requests.', 'error')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => { fetchRequests() }, [])
+
+  async function handleApprove(e) {
+    e.preventDefault()
+    if (!tempPassword || tempPassword.length < 8) {
+      showToast('Password must be at least 8 characters.', 'error')
+      return
+    }
+    setApproving(true)
+    try {
+      await userAPI.approvePasswordReset(approveModal.email, tempPassword)
+      showToast(`Password reset approved for ${approveModal.name}. Inform them via phone/chat.`, 'success')
+      setApproveModal(null)
+      setTempPassword('')
+      fetchRequests()
+    } catch (err) {
+      showToast(err?.detail || err?.message || 'Failed to approve reset.', 'error')
+    } finally {
+      setApproving(false)
+    }
+  }
+
+  async function handleReject(email, name) {
+    if (!window.confirm(`Reject password reset request from ${name}?`)) return
+    try {
+      await userAPI.rejectPasswordReset(email)
+      showToast(`Reset request from ${name} rejected.`, 'success')
+      fetchRequests()
+    } catch (err) {
+      showToast(err?.detail || err?.message || 'Failed to reject.', 'error')
+    }
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Header */}
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-extrabold text-slate-900 flex items-center gap-2">
+            <Key size={16} className="text-amber-500" />
+            Password Reset Requests
+            {requests.length > 0 && (
+              <span className="ml-1 inline-flex items-center justify-center h-5 min-w-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-black">
+                {requests.length}
+              </span>
+            )}
+          </h3>
+          <p className="text-xs text-slate-500 mt-0.5">Employees who have submitted forgot-password requests. Review and set a temporary password.</p>
+        </div>
+        <button onClick={fetchRequests} disabled={loading}
+          className="text-xs font-bold text-blue-600 hover:text-blue-700 flex items-center gap-1 cursor-pointer disabled:opacity-50">
+          {loading ? 'Loading...' : '↻ Refresh'}
+        </button>
+      </div>
+
+      {/* List */}
+      {loading ? (
+        <div className="flex justify-center py-10 text-slate-400 text-sm">Loading requests...</div>
+      ) : requests.length === 0 ? (
+        <div className="text-center py-12 rounded-2xl border border-dashed border-slate-200 bg-slate-50">
+          <CheckCircle2 size={28} className="mx-auto text-emerald-400 mb-2" />
+          <p className="text-sm font-bold text-slate-600">No pending password reset requests</p>
+          <p className="text-xs text-slate-400 mt-1">Employees who forget their password will appear here.</p>
+        </div>
+      ) : (
+        <div className="space-y-3">
+          {requests.map((req) => (
+            <div key={req.email} className="flex items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4">
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-sm font-extrabold text-slate-900">{req.employee_name}</span>
+                  {req.employee_code && (
+                    <span className="text-[10px] font-bold text-slate-500 bg-slate-100 rounded px-1.5 py-0.5">{req.employee_code}</span>
+                  )}
+                  <span className="text-[10px] font-bold text-amber-600 bg-amber-100 rounded px-1.5 py-0.5">⏳ Pending</span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">{req.email}</p>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Role: {req.role} · Requested: {req.requested_at ? new Date(req.requested_at).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) : '—'}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setApproveModal({ email: req.email, name: req.employee_name })}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow"
+                >
+                  <CheckCircle2 size={13} /> Approve
+                </button>
+                <button
+                  onClick={() => handleReject(req.email, req.employee_name)}
+                  className="flex items-center gap-1.5 px-3 py-2 bg-red-100 hover:bg-red-200 text-red-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                >
+                  <UserX size={13} /> Reject
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Approve Modal */}
+      {approveModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md shadow-2xl border border-slate-200">
+            <h3 className="text-lg font-extrabold text-slate-900 mb-1">Set Temporary Password</h3>
+            <p className="text-xs text-slate-500 mb-5">
+              Set a temporary password for <strong>{approveModal.name}</strong> ({approveModal.email}).
+              Communicate this password to the employee directly via phone or chat.
+            </p>
+
+            <div className="rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-xs text-amber-700 mb-5">
+              ⚠️ The employee will be forced to change this password on their next login.
+            </div>
+
+            <form onSubmit={handleApprove} className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">Temporary Password</label>
+                <div className="relative">
+                  <Lock size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-amber-500 pointer-events-none" />
+                  <input
+                    type={showTempPwd ? 'text' : 'password'}
+                    value={tempPassword}
+                    onChange={(e) => setTempPassword(e.target.value)}
+                    placeholder="Min. 8 characters"
+                    className="w-full h-11 bg-slate-50 border border-slate-300 rounded-xl pl-9 pr-10 text-sm font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-amber-400 focus:ring-4 focus:ring-amber-400/10 transition"
+                    required
+                    minLength={8}
+                  />
+                  <button type="button" tabIndex={-1} onClick={() => setShowTempPwd(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer">
+                    {showTempPwd ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => { setApproveModal(null); setTempPassword('') }}
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer">
+                  Cancel
+                </button>
+                <button type="submit" disabled={approving}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs shadow transition cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1">
+                  {approving ? 'Saving...' : <><CheckCircle2 size={13} /> Approve & Set Password</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}

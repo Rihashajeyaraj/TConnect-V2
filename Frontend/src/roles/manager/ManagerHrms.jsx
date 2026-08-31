@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import ManagerSalesReports from './ManagerSalesReports.jsx'
 import {
   LayoutDashboard,
   ClipboardList,
@@ -38,14 +39,14 @@ import {
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { useSearchParams } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
-import { attendanceAPI } from '../../services/api.js'
+import { attendanceAPI, hrmsAPI } from '../../services/api.js'
 import { calculateWorkHours } from '../sales/Attendance.jsx'
 import { formatDate } from '../../utils/dateUtils.js'
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'My Dashboard', icon: LayoutDashboard },
-  { key: 'team_leave', label: 'Team Leave Approval', icon: UserCheck },
   { key: 'leave', label: 'My Leave', icon: CalendarOff },
+  { key: 'sales_report', label: 'Sales Reports', icon: FileText },
   { key: 'calendar', label: 'Holiday Calendar', icon: CalendarDays },
   { key: 'handbook', label: 'Manager Handbook', icon: BookOpen },
   { key: 'activity', label: 'Activity Logs', icon: Activity },
@@ -111,18 +112,30 @@ const DEFAULT_TEAM_LEAVE_REQUESTS = [
   },
 ]
 
-const LEAVE_TYPES = ['Casual Leave', 'Sick Leave', 'Earned Leave', 'Emergency Leave', 'Work From Home', 'Half-Day Permission', 'Short Permission (2 Hours)']
+const LEAVE_TYPES = ['Casual Leave', 'Sick Leave', 'Other Leave', 'Work From Home', 'Half-Day Permission', 'Short Permission (2 Hours)']
 
 const LEAVE_BALANCE = [
-  { type: 'Casual Leave', total: 12, used: 3, remaining: 9 },
-  { type: 'Sick Leave', total: 10, used: 1, remaining: 9 },
-  { type: 'Earned Leave', total: 20, used: 5, remaining: 15 },
-  { type: 'Emergency Leave', total: 5, used: 0, remaining: 5 },
+  { type: 'Casual Leave',   total: 12, used: 3, remaining: 9,  color: 'bg-gradient-to-br from-blue-50 to-indigo-50/50 border-blue-200/60 shadow-xs',    bar: 'bg-blue-600',    icon: '🏖️' },
+  { type: 'Sick Leave',     total: 10, used: 1, remaining: 9,  color: 'bg-gradient-to-br from-rose-50 to-pink-50/50 border-rose-200/60 shadow-xs',    bar: 'bg-rose-600',    icon: '🤒' },
+  { type: 'Other Leave',   total: 10, used: 0, remaining: 10, color: 'bg-gradient-to-br from-violet-50 to-fuchsia-50/50 border-violet-200/60 shadow-xs', bar: 'bg-violet-600',  icon: '📋' },
 ]
 
 export default function ManagerHrms() {
   const currentUser = useCurrentUser()
   const { showToast } = useToast()
+
+  const [profile, setProfile] = useState({})
+  const [selectedLeaveDetailType, setSelectedLeaveDetailType] = useState(null)
+
+  useEffect(() => {
+    hrmsAPI.getEmployeeById("self")
+      .then(res => {
+        if (res && res.data) {
+          setProfile(res.data)
+        }
+      })
+      .catch(() => null)
+  }, [])
 
   const managerName = currentUser.name || currentUser.full_name || 'Sales Manager'
   const managerEmail = (currentUser.email || '').toLowerCase().trim()
@@ -255,6 +268,11 @@ export default function ManagerHrms() {
             appliedOn: formatDate(l.created_at) || 'Recent',
           }))
           setMyLeaveRequests(mine)
+
+          try {
+            localStorage.setItem(`tc_cached_team_leaves_${managerEmail}`, JSON.stringify(executiveRequests))
+            localStorage.setItem(`tc_cached_my_leaves_${managerEmail}`, JSON.stringify(mine))
+          } catch (e) {}
         }
       })
       .catch(() => null);
@@ -281,8 +299,13 @@ export default function ManagerHrms() {
   // ── Helpers ───────────────────────────────────────────────────────────────
   const getArr = (key) => { try { return JSON.parse(localStorage.getItem(key) || '[]') } catch { return [] } }
 
-  // ── Team Leave Approval State ──────────────────────────────────────────────
-  const [teamLeaveRequests, setTeamLeaveRequests] = useState([])
+  // ── Team Leave Approval State with Cache ───────────────────────────────────
+  const [teamLeaveRequests, setTeamLeaveRequests] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_team_leaves_${managerEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
   const [leaveRemarkInputs, setLeaveRemarkInputs] = useState({})
 
   // ── Manager's Own Leave State ──────────────────────────────────────────────
@@ -295,7 +318,12 @@ export default function ManagerHrms() {
     endTime: '11:30',
     reason: '',
   })
-  const [myLeaveRequests, setMyLeaveRequests] = useState([])
+  const [myLeaveRequests, setMyLeaveRequests] = useState(() => {
+    try {
+      const cached = localStorage.getItem(`tc_cached_my_leaves_${managerEmail}`)
+      return cached ? JSON.parse(cached) : []
+    } catch { return [] }
+  })
   const [leaveSubmitted, setLeaveSubmitted] = useState(false)
 
   // ── Documents State ────────────────────────────────────────────────────────
@@ -422,54 +450,72 @@ export default function ManagerHrms() {
   return (
     <div className="space-y-4 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-4 pb-12">
 
-      {/* ── TOP HEADER ───────────────────────────────────────────────────── */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              <ShieldCheck className="w-7 h-7 text-[#b45309]" /> TwiteHRMS Manager Portal
+      {/* ── TOP HEADER ── Premium Dark Accent ─────────────────────────────── */}
+      <div className="bg-gradient-to-br from-slate-950 to-[#0b3c5d] text-white rounded-3xl p-5 border border-slate-800 shadow-md space-y-4 relative overflow-hidden">
+        {/* Soft glow background */}
+        <div className="absolute right-0 top-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+        
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+          <div className="space-y-1.5">
+            <h1 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 text-white">
+              <ShieldCheck className="w-6.5 h-6.5 text-[#F2C76E]" /> TwiteHRMS Manager Portal
             </h1>
-            <p className="text-slate-500 text-xs sm:text-sm font-semibold mt-0.5">
-              {managerName} · Employee Code: <strong className="text-slate-800">{empCode}</strong> · Sales Manager &nbsp;✅ Active
-            </p>
-          </div>
-          <div className="flex flex-col items-end gap-0.5">
-            <span className="text-[10px] font-bold text-slate-400 uppercase">Department</span>
-            <span className="text-xs font-black text-[#b45309]">Sales & Business Development</span>
-          </div>
-        </div>
-
-        <div className="flex items-center flex-nowrap whitespace-nowrap gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-3 scrollbar-thin">
-          {hrmsTabs.map(({ key, label, icon: Icon }, index) => (
-            <div
-              key={key}
-              draggable="true"
-              onDragStart={(e) => handleTabDragStart(e, index)}
-              onDragOver={(e) => handleTabDragOver(e, index)}
-              onDrop={(e) => handleTabDrop(e, index)}
-              onDragEnd={handleTabDragEnd}
-              className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
-                draggedTabKey === index ? 'opacity-40' : ''
-              }`}
-            >
-              <button
-                onClick={() => setActiveSection(key)}
-                className={`px-3.5 py-2 rounded-xl text-xs sm:text-sm font-black flex items-center gap-2 transition shrink-0 cursor-pointer whitespace-nowrap ${activeSection === key ? 'bg-[#ca8a04] text-white shadow-md shadow-yellow-600/20' : 'text-slate-600 hover:bg-amber-50 hover:text-amber-900'
-                  }`}
-              >
-                <Icon size={14} />
-                {label}
-              </button>
+            <div className="flex flex-wrap items-center gap-2 text-slate-300 text-xs font-semibold">
+              <span>{managerName}</span>
+              <span className="text-slate-600">•</span>
+              <span>Code: <strong className="text-white font-mono">{empCode}</strong></span>
+              <span className="text-slate-600">•</span>
+              <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                Active
+              </span>
             </div>
-          ))}
-          <button
-            type="button"
-            onClick={resetHrmsTabs}
-            className="ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
-          >
-            Reset Order
-          </button>
+          </div>
+          <div className="flex flex-col sm:items-end gap-0.5 bg-white/5 border border-white/10 p-2.5 rounded-2xl sm:text-right shrink-0">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Department</span>
+            <span className="text-xs font-black text-[#F2C76E]">Sales & Business Development</span>
+          </div>
         </div>
+      </div>
+
+      {/* ── TABS NAVIGATION BAR ── Horizontal Swiping ─────────────────────── */}
+      <div className="bg-white border border-slate-200 p-2.5 rounded-2xl shadow-2xs flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full shrink-0">
+        <div className="flex items-center flex-nowrap gap-1.5">
+          {hrmsTabs.map(({ key, label, icon: Icon }, index) => {
+            const active = activeSection === key
+            return (
+              <div
+                key={key}
+                draggable="true"
+                onDragStart={(e) => handleTabDragStart(e, index)}
+                onDragOver={(e) => handleTabDragOver(e, index)}
+                onDrop={(e) => handleTabDrop(e, index)}
+                onDragEnd={handleTabDragEnd}
+                className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
+                  draggedTabKey === index ? 'opacity-40' : ''
+                }`}
+              >
+                <button
+                  onClick={() => setActiveSection(key)}
+                  className={`mgr-card px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition shrink-0 cursor-pointer whitespace-nowrap border ${
+                    active 
+                      ? 'bg-[#0b3c5d] text-white border-[#0b3c5d] shadow-sm' 
+                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-950'
+                  }`}
+                >
+                  <Icon size={14} />
+                  {label}
+                </button>
+              </div>
+            )
+          })}
+        </div>
+        <button
+          type="button"
+          onClick={resetHrmsTabs}
+          className="mgr-card ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
+        >
+          Reset Order
+        </button>
       </div>
 
       {/* ── MAIN CONTENT AREA ────────────────────────────────────────────── */}
@@ -479,33 +525,34 @@ export default function ManagerHrms() {
         <div className="space-y-6 max-w-5xl">
 
           {/* ── 1. LEAVE SUMMARY CARDS (ALLOWED, USED, REMAINING) ── */}
-          <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs space-y-4">
+          <div className="bg-white rounded-3xl p-5 sm:p-6 border border-slate-200 shadow-xs space-y-4">
             <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
               <CalendarOff className="w-5 h-5 text-[#b45309]" /> My Leave Summary (2026)
             </h3>
 
-
-
-            {/* Leave Type Breakdown */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+            {/* Leave Type Breakdown — 3 Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
               {LEAVE_BALANCE.map((lb) => (
-                <div key={lb.type} className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-1">
-                  <span className="text-[10px] font-black text-slate-500 uppercase block">{lb.type}</span>
+                <div key={lb.type} className={`p-5 rounded-3xl border shadow-2xs hover:shadow-sm transition ${lb.color} space-y-3`}>
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-black text-slate-600 uppercase tracking-wider">{lb.type}</span>
+                    <span className="text-lg">{lb.icon}</span>
+                  </div>
                   <div className="flex items-end justify-between">
-                    <span className="text-xl font-black text-slate-900">{lb.remaining}</span>
-                    <span className="text-[10px] text-slate-400 font-semibold">/ {lb.total} left</span>
+                    <span className="text-3xl font-black text-slate-900">{lb.remaining}</span>
+                    <span className="text-[11px] text-slate-400 font-semibold pb-1">/ {lb.total} left</span>
                   </div>
-                  <div className="w-full bg-slate-200 rounded-full h-1.5 overflow-hidden">
-                    <div className="h-full rounded-full bg-[#b45309]" style={{ width: `${Math.round((lb.remaining / lb.total) * 100)}%` }} />
+                  <div className="w-full bg-white/80 rounded-full h-2 overflow-hidden shadow-inner">
+                    <div className={`h-full rounded-full ${lb.bar} transition-all duration-500`} style={{ width: `${Math.round((lb.remaining / lb.total) * 100)}%` }} />
                   </div>
-                  <span className="text-[10px] text-slate-400">{lb.used} days used</span>
+                  <span className="text-[11px] text-slate-500 font-semibold">{lb.used} day{lb.used !== 1 ? 's' : ''} used</span>
                 </div>
               ))}
             </div>
           </div>
 
           {/* ── 2. ATTENDANCE HISTORY TABLE WITH TODAY | TOMORROW | THIS MONTH | CUSTOM TOGGLES ── */}
-          <div className="bg-white rounded-3xl p-6 sm:p-7 border border-slate-200 shadow-xs space-y-5">
+          <div className="bg-white rounded-3xl p-5 sm:p-7 border border-slate-200 shadow-xs space-y-5">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-lg font-black text-slate-900">Attendance History</h3>
@@ -515,7 +562,7 @@ export default function ManagerHrms() {
               <button
                 type="button"
                 onClick={() => window.location.href = "/manager/attendance"}
-                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95"
+                className="mgr-card px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
               >
                 📹 Mark Attendance Now
               </button>
@@ -523,14 +570,17 @@ export default function ManagerHrms() {
 
             {/* Filter Toggle Controls: TODAY | YESTERDAY | THIS MONTH | CUSTOM */}
             <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-0.5 bg-slate-100/80 p-0.5 rounded-lg border border-slate-200/80 flex-wrap">
+              <div className="flex items-center gap-1 bg-slate-100/85 p-1 rounded-xl overflow-x-auto max-w-full shrink-0 flex-nowrap border border-slate-200/60 no-scrollbar">
                 {["TODAY", "YESTERDAY", "THIS MONTH", "CUSTOM"].map((mode) => (
                   <button
                     key={mode}
                     type="button"
                     onClick={() => setReportFilterMode(mode)}
-                    className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${reportFilterMode === mode ? "bg-[#0b3c5d] text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
-                      }`}
+                    className={`mgr-card px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-extrabold tracking-wide transition cursor-pointer shrink-0 whitespace-nowrap ${
+                      reportFilterMode === mode 
+                        ? "bg-[#0b3c5d] text-white shadow-xs" 
+                        : "text-slate-500 hover:text-slate-900 hover:bg-slate-200/50"
+                    }`}
                   >
                     {mode === "CUSTOM" ? "CUSTOM DATE" : mode}
                   </button>
@@ -539,13 +589,13 @@ export default function ManagerHrms() {
 
               {/* Custom Date Input */}
               {reportFilterMode === "CUSTOM" && (
-                <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-1 bg-white text-xs font-bold text-slate-700">
+                <div className="flex items-center gap-2 border border-slate-200 rounded-xl px-3 py-1 bg-white text-xs font-bold text-slate-700 shadow-2xs shrink-0">
                   <span className="text-slate-400 font-medium">Select Target Date:</span>
                   <input
                     type="date"
                     value={customDateFilter}
                     onChange={(e) => setCustomDateFilter(e.target.value)}
-                    className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
+                    className="mgr-card text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
                   />
                 </div>
               )}
@@ -579,7 +629,7 @@ export default function ManagerHrms() {
 
                 if (filteredLogs.length === 0) {
                   return (
-                    <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-500 space-y-2">
+                    <div className="p-8 text-center bg-slate-50 border-slate-200 rounded-2xl text-xs font-semibold text-slate-500 space-y-2">
                       <p className="font-extrabold text-slate-700 text-sm">No attendance history logged for this filter mode ({reportFilterMode}).</p>
                       <p>Switch filter to <b>THIS MONTH</b> or mark a new check-in with camera!</p>
                     </div>
@@ -633,20 +683,222 @@ export default function ManagerHrms() {
           </div>
 
           {/* Leave Balance */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {LEAVE_BALANCE.map((lb) => (
-              <div key={lb.type} className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs space-y-1.5 text-xs">
-                <span className="text-[10px] font-black text-slate-400 uppercase block">{lb.type}</span>
-                <div className="flex items-end gap-1">
-                  <span className="text-2xl font-black text-slate-900">{lb.remaining}</span>
-                  <span className="text-[11px] text-slate-400 font-semibold mb-0.5">days left</span>
+          {(() => {
+            const myLeaves = Array.isArray(myLeaveRequests) ? myLeaveRequests : [];
+            const leaveCards = [
+              {
+                type: 'Casual Leave',
+                allowed: Number((profile && (profile.annual_leaves ?? profile.annualLeaves)) ?? 12),
+                consumed: myLeaves.filter(r => (r.leaveType === 'Casual Leave' || r.leaveType === 'Full Day Leave' || String(r.leaveType || '').includes('Casual') || String(r.leaveType || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => {
+                  const daysStr = String(r.days || r.duration || '1');
+                  const match = daysStr.match(/(\d+)/);
+                  return sum + (match ? parseFloat(match[1]) : 1.0);
+                }, 0),
+                unit: 'Days',
+                color: 'bg-emerald-50 border-emerald-200 text-emerald-955',
+                barColor: 'bg-emerald-600',
+                description: 'General full-day casual leaves'
+              },
+              {
+                type: 'Sick Leave',
+                allowed: Number((profile && (profile.sick_leaves ?? profile.sickLeaves)) ?? 10),
+                consumed: myLeaves.filter(r => (r.leaveType === 'Sick Leave' || String(r.leaveType || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => {
+                  const daysStr = String(r.days || r.duration || '1');
+                  const match = daysStr.match(/(\d+)/);
+                  return sum + (match ? parseFloat(match[1]) : 1.0);
+                }, 0),
+                unit: 'Days',
+                color: 'bg-rose-50 border-rose-200 text-rose-955',
+                barColor: 'bg-rose-600',
+                description: 'Medical rest / Sick leave balance'
+              },
+              {
+                type: 'Other Leave',
+                allowed: Number((profile && (profile.other_leaves ?? profile.otherLeaves)) ?? 10),
+                consumed: myLeaves.filter(r => (r.leaveType === 'Other Leave' || String(r.leaveType || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => {
+                  const daysStr = String(r.days || r.duration || '1');
+                  const match = daysStr.match(/(\d+)/);
+                  return sum + (match ? parseFloat(match[1]) : 1.0);
+                }, 0),
+                unit: 'Days',
+                color: 'bg-violet-50 border-violet-200 text-violet-955',
+                barColor: 'bg-violet-600',
+                description: 'Special leaves / WFH / Others'
+              },
+              {
+                type: 'Half-Day Permission',
+                allowed: Number((profile && (profile.half_day_permissions ?? profile.halfDayPermissions)) ?? 6),
+                consumed: myLeaves.filter(r => (r.leaveType === 'Half-Day Permission' || String(r.leaveType || '').includes('Half')) && r.status !== 'Rejected').reduce((sum, r) => sum + 0.5, 0),
+                unit: 'Days',
+                color: 'bg-amber-50 border-amber-200 text-amber-955',
+                barColor: 'bg-amber-600',
+                description: 'Half-day permissions quota'
+              },
+              {
+                type: 'Short Permission',
+                allowed: Number((profile && (profile.short_permissions ?? profile.shortPermissions)) ?? 2),
+                consumed: myLeaves.filter(r => (r.leaveType === 'Short Permission' || r.leaveType === 'Short Permission (2 Hours)' || String(r.leaveType || '').includes('Short')) && r.status !== 'Rejected').reduce((sum, r) => {
+                  const durationStr = String(r.days || r.duration || '2');
+                  const match = durationStr.match(/(\d+)/);
+                  return sum + (match ? parseFloat(match[1]) : 2.0);
+                }, 0),
+                unit: 'Hours',
+                color: 'bg-sky-50 border-sky-200 text-sky-955',
+                barColor: 'bg-sky-600',
+                description: 'Monthly 2-hour short permission limit'
+              }
+            ];
+
+            return (
+              <>
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                  {leaveCards.map((card) => {
+                    const remaining = Math.max(0, card.allowed - card.consumed);
+                    const pct = Math.round((remaining / card.allowed) * 100) || 0;
+                    return (
+                      <div
+                        key={card.type}
+                        onClick={() => setSelectedLeaveDetailType(card.type)}
+                        className={`${card.color} rounded-2xl p-4 border shadow-xs space-y-1.5 text-xs cursor-pointer hover:scale-102 transition duration-150 active:scale-98`}
+                      >
+                        <span className="text-[10px] font-black uppercase tracking-wider block opacity-75">{card.type}</span>
+                        <div className="flex items-end gap-1">
+                          <span className="text-2xl font-black">{remaining}</span>
+                          <span className="text-[10px] font-bold opacity-60 mb-0.5">{card.unit.toLowerCase()} left</span>
+                        </div>
+                        <div className="w-full bg-slate-200/50 rounded-full h-1.5 overflow-hidden">
+                          <div className={`h-full rounded-full ${card.barColor}`} style={{ width: `${pct}%` }} />
+                        </div>
+                        <div className="text-[9px] font-semibold opacity-60 flex justify-between">
+                          <span>Quota: {card.allowed}</span>
+                          <span>Used: {card.consumed}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                  <div className="h-full rounded-full bg-[#b45309]" style={{ width: `${Math.round((lb.remaining / lb.total) * 100)}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
+
+                {/* Leave Detail Modal */}
+                {selectedLeaveDetailType && (() => {
+                  const card = leaveCards.find(c => c.type === selectedLeaveDetailType);
+                  const remaining = Math.max(0, card.allowed - card.consumed);
+
+                  const history = myLeaves.filter(r => {
+                    const rType = String(r.leaveType || r.leave_type || '').toLowerCase();
+                    const cType = selectedLeaveDetailType.toLowerCase();
+
+                    if (cType.includes('casual')) {
+                      return rType.includes('casual') || rType.includes('full day');
+                    }
+                    if (cType.includes('sick')) {
+                      return rType.includes('sick');
+                    }
+                    if (cType.includes('other')) {
+                      return rType.includes('other');
+                    }
+                    if (cType.includes('half')) {
+                      return rType.includes('half');
+                    }
+                    if (cType.includes('short')) {
+                      return rType.includes('short');
+                    }
+                    return false;
+                  });
+
+                  return (
+                    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+                      <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-3xl max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 text-slate-800 text-xs">
+                        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+                          <div>
+                            <h3 className="text-base font-black text-slate-900">{selectedLeaveDetailType} History</h3>
+                            <p className="text-[10px] text-slate-500 font-semibold mt-0.5">{card.description}</p>
+                          </div>
+                          <button
+                            onClick={() => setSelectedLeaveDetailType(null)}
+                            className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
+                          >
+                            <X size={18} />
+                          </button>
+                        </div>
+
+                        <div className="p-6 pb-2 grid grid-cols-3 gap-3 border-b border-slate-100">
+                          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 text-center">
+                            <span className="text-[9px] font-black uppercase text-slate-400 block tracking-wider">Total Allowed</span>
+                            <span className="text-lg font-black text-slate-800">{card.allowed} {card.unit}</span>
+                          </div>
+                          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200/60 text-center">
+                            <span className="text-[9px] font-black uppercase text-slate-400 block tracking-wider">Total Taken</span>
+                            <span className="text-lg font-black text-slate-800">{card.consumed} {card.unit}</span>
+                          </div>
+                          <div className="p-3 bg-teal-50 rounded-xl border border-teal-200 text-center">
+                            <span className="text-[9px] font-black uppercase text-teal-700 block tracking-wider">Remaining</span>
+                            <span className="text-lg font-black text-teal-900">{remaining} {card.unit}</span>
+                          </div>
+                        </div>
+
+                        <div className="flex-1 overflow-y-auto p-6">
+                          {history.length === 0 ? (
+                            <div className="py-12 text-center text-slate-400 font-bold text-xs italic bg-slate-50 rounded-2xl border border-slate-100">
+                              No leave requests logged for this type.
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-left text-xs font-semibold text-slate-700 border-collapse">
+                                <thead>
+                                  <tr className="border-b border-slate-200 text-slate-400 font-black uppercase text-[9px] tracking-wider">
+                                    <th className="pb-2">Date (From/To)</th>
+                                    <th className="pb-2">Duration</th>
+                                    <th className="pb-2">Reason</th>
+                                    <th className="pb-2">Status</th>
+                                    <th className="pb-2">Reviewer Comment</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100 font-medium text-slate-850">
+                                  {history.map((r, idx) => {
+                                    const fromDateStr = r.fromDate || r.from_date || '—';
+                                    const toDateStr = r.toDate || r.to_date || '—';
+                                    const dateDisplay = fromDateStr === toDateStr ? fromDateStr : `${fromDateStr} to ${toDateStr}`;
+                                    return (
+                                      <tr key={r.id || idx} className="hover:bg-slate-50/50">
+                                        <td className="py-2.5">{dateDisplay}</td>
+                                        <td className="py-2.5 font-bold text-slate-900">{r.days || r.duration || '1 Day'}</td>
+                                        <td className="py-2.5 text-slate-500 italic font-normal max-w-[200px] truncate" title={r.reason}>
+                                          {r.reason}
+                                        </td>
+                                        <td className="py-2.5">
+                                          <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black border uppercase tracking-wider ${
+                                            r.status === 'Approved' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                            r.status === 'Rejected' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                                            'bg-amber-50 text-amber-750 border-amber-200'
+                                          }`}>{r.status || 'Pending'}</span>
+                                        </td>
+                                        <td className="py-2.5 text-slate-500 font-normal italic">
+                                          {r.managerRemark || r.manager_comment || r.managerComment || '—'}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-end">
+                          <button
+                            onClick={() => setSelectedLeaveDetailType(null)}
+                            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black cursor-pointer shadow-sm"
+                          >
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </>
+            );
+          })()}
 
           {/* Leave Application Form */}
           {leaveSubmitted ? (
@@ -654,7 +906,7 @@ export default function ManagerHrms() {
               <CheckCircle2 size={40} className="text-emerald-600 mx-auto" />
               <h2 className="text-xl font-black text-emerald-900">Leave Request Submitted!</h2>
               <p className="text-emerald-700 font-semibold text-sm">Your leave has been forwarded to CEO for approval.</p>
-              <button onClick={() => setLeaveSubmitted(false)} className="mt-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer">
+              <button onClick={() => setLeaveSubmitted(false)} className="mgr-card mt-2 px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold cursor-pointer">
                 Apply Another Leave
               </button>
             </div>
@@ -733,7 +985,7 @@ export default function ManagerHrms() {
                 />
               </div>
 
-              <button type="submit" className="w-full py-3 rounded-xl bg-[#b45309] hover:bg-amber-700 text-white font-black text-sm flex items-center justify-center gap-2 transition cursor-pointer">
+              <button type="submit" className="mgr-card w-full py-3 rounded-xl bg-[#b45309] hover:bg-mgr-primary-700 text-white font-black text-sm flex items-center justify-center gap-2 transition cursor-pointer">
                 <Send size={16} /> Submit Leave Request to CEO
               </button>
             </form>
@@ -755,7 +1007,7 @@ export default function ManagerHrms() {
                     </div>
                     <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border whitespace-nowrap ${r.status === 'Approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
                         r.status === 'Rejected' ? 'bg-rose-100 text-rose-800 border-rose-300' :
-                          'bg-amber-100 text-amber-800 border-amber-300'
+                          'bg-mgr-primary-100 text-mgr-primary-800 border-mgr-primary-300'
                       }`}>{r.status}</span>
                   </div>
                 ))}
@@ -765,122 +1017,7 @@ export default function ManagerHrms() {
         </div>
       )}
 
-      {/* 3. TEAM LEAVE APPROVAL */}
-      {activeSection === 'team_leave' && (
-        <div className="max-w-4xl space-y-5">
-          <div>
-            <h2 className="text-2xl font-black text-slate-900">Team Leave Approval</h2>
-            <p className="text-slate-500 text-sm mt-0.5 font-semibold">
-              Review and approve or reject leave requests from your Sales Executives.
-            </p>
-          </div>
 
-          {/* Summary */}
-          <div className="grid grid-cols-3 gap-3">
-            {[
-              { label: 'Pending', count: teamLeaveRequests.filter(r => r.status === 'Pending').length, color: 'amber' },
-              { label: 'Approved', count: teamLeaveRequests.filter(r => r.status === 'Approved').length, color: 'emerald' },
-              { label: 'Rejected', count: teamLeaveRequests.filter(r => r.status === 'Rejected').length, color: 'rose' },
-            ].map(({ label, count, color }) => (
-              <div key={label} className={`bg-${color}-50 border border-${color}-200 rounded-2xl p-4 text-center`}>
-                <h2 className={`text-3xl font-black text-${color}-700`}>{count}</h2>
-                <p className={`text-xs font-extrabold text-${color}-600 mt-0.5`}>{label}</p>
-              </div>
-            ))}
-          </div>
-
-          {/* Leave Cards */}
-          <div className="space-y-4">
-            {teamLeaveRequests.length === 0 ? (
-              <div className="bg-white border border-slate-200 rounded-2xl p-10 text-center text-slate-400 font-semibold text-xs">
-                No team leave requests found.
-              </div>
-            ) : (
-              teamLeaveRequests.map((req) => (
-                <div key={req.id} className={`bg-white border rounded-2xl p-5 shadow-xs space-y-3 ${req.status === 'Pending' ? 'border-amber-300' :
-                    req.status === 'Approved' ? 'border-emerald-300' : 'border-rose-300'
-                  }`}>
-                  {/* Header */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono font-black text-[#b45309] bg-amber-50 px-2 py-0.5 rounded border border-amber-300">
-                          [{req.employeeCode}]
-                        </span>
-                        <h3 className="font-black text-slate-900 text-sm">{req.executive}</h3>
-                      </div>
-                      <p className="text-[11px] text-slate-400 mt-0.5">Applied: {req.appliedOn}</p>
-                    </div>
-                    <span className={`px-3 py-1 rounded-full text-xs font-black border ${req.status === 'Approved' ? 'bg-emerald-100 text-emerald-800 border-emerald-300' :
-                        req.status === 'Rejected' ? 'bg-rose-100 text-rose-800 border-rose-300' :
-                          'bg-amber-100 text-amber-800 border-amber-300'
-                      }`}>{req.status}</span>
-                  </div>
-
-                  {/* Details */}
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-xs">
-                    <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">Leave Type</span>
-                      <span className="font-black text-slate-900">{req.leaveType}</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">From</span>
-                      <span className="font-black text-slate-900">{req.fromDate}</span>
-                    </div>
-                    <div className="p-2 bg-slate-50 rounded-xl border border-slate-100">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase block">To</span>
-                      <span className="font-black text-slate-900">{req.toDate}</span>
-                    </div>
-                    <div className="p-2 bg-amber-50 rounded-xl border border-amber-200">
-                      <span className="text-[10px] font-bold text-amber-700 uppercase block">Days</span>
-                      <span className="font-black text-amber-900">{req.days} Day(s)</span>
-                    </div>
-                  </div>
-
-                  <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 text-xs">
-                    <span className="text-[10px] font-extrabold text-slate-400 uppercase block">Reason</span>
-                    <p className="text-slate-700 font-medium mt-0.5">{req.reason}</p>
-                  </div>
-
-                  {req.managerRemark && (
-                    <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 text-xs">
-                      <span className="text-[10px] font-extrabold text-emerald-700 uppercase block">Manager Remark</span>
-                      <p className="text-emerald-800 font-medium mt-0.5 italic">"{req.managerRemark}"</p>
-                    </div>
-                  )}
-
-                  {/* Approve / Reject Actions */}
-                  {req.status === 'Pending' && (
-                    <div className="space-y-2 pt-2 border-t border-slate-100">
-                      <input
-                        type="text"
-                        value={leaveRemarkInputs[req.id] || ''}
-                        onChange={(e) => setLeaveRemarkInputs({ ...leaveRemarkInputs, [req.id]: e.target.value })}
-                        placeholder="Add remark (optional) before approving or rejecting..."
-                        className="w-full h-9 border border-slate-200 rounded-xl px-3 text-xs font-medium text-slate-800 focus:outline-none focus:border-[#b45309] bg-slate-50"
-                      />
-                      <div className="flex items-center gap-2">
-                        <button
-                          onClick={() => handleLeaveDecision(req.id, 'Approved')}
-                          className="flex-1 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition"
-                        >
-                          <CheckCircle size={14} /> Approve Leave
-                        </button>
-                        <button
-                          onClick={() => handleLeaveDecision(req.id, 'Rejected')}
-                          className="flex-1 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 cursor-pointer transition"
-                        >
-                          <XCircle size={14} /> Reject Leave
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      )}
 
       {/* 4. MY DOCUMENTS */}
       {activeSection === 'documents' && (
@@ -913,15 +1050,15 @@ export default function ManagerHrms() {
                   />
                   {doc.status === 'uploaded' ? (
                     <div className="flex items-center gap-1.5">
-                      <button onClick={() => setPreviewDoc(doc)} className="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-amber-50 text-[#b45309] border border-amber-300 cursor-pointer flex items-center gap-1">
+                      <button onClick={() => setPreviewDoc(doc)} className="mgr-card text-xs font-extrabold px-3 py-1.5 rounded-xl bg-mgr-primary-50 text-[#b45309] border border-mgr-primary-300 cursor-pointer flex items-center gap-1">
                         <Eye size={13} /> View
                       </button>
-                      <button onClick={() => document.getElementById(`file_m_${doc.id}`)?.click()} className="text-xs font-extrabold px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 cursor-pointer flex items-center gap-1">
+                      <button onClick={() => document.getElementById(`file_m_${doc.id}`)?.click()} className="mgr-card text-xs font-extrabold px-3 py-1.5 rounded-xl bg-slate-100 text-slate-700 border border-slate-200 cursor-pointer flex items-center gap-1">
                         <Upload size={13} /> Re-upload
                       </button>
                     </div>
                   ) : (
-                    <button onClick={() => document.getElementById(`file_m_${doc.id}`)?.click()} className="text-xs font-extrabold px-4 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1">
+                    <button onClick={() => document.getElementById(`file_m_${doc.id}`)?.click()} className="mgr-card text-xs font-extrabold px-4 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1">
                       <Upload size={13} /> Upload
                     </button>
                   )}
@@ -952,7 +1089,7 @@ export default function ManagerHrms() {
               }}
             />
             <div onClick={() => document.getElementById('file_manager_custom')?.click()}
-              className="border-2 border-dashed border-[#b45309]/40 hover:border-[#b45309] bg-amber-50/30 hover:bg-amber-50/60 rounded-2xl p-8 text-center transition cursor-pointer group"
+              className="mgr-card border-2 border-dashed border-[#b45309]/40 hover:border-[#b45309] bg-mgr-primary-50/30 hover:bg-mgr-primary-50/60 rounded-2xl p-8 text-center transition cursor-pointer group"
             >
               <FileUp size={32} className="text-[#b45309] group-hover:scale-110 transition mx-auto mb-2" />
               <p className="text-sm font-black text-slate-900">Click to upload any document</p>
@@ -1014,18 +1151,18 @@ export default function ManagerHrms() {
                   </thead>
                   <tbody className="divide-y divide-slate-100">
                     {eodReviewed.map((r, idx) => (
-                      <tr key={r.id || idx} className="hover:bg-amber-50/20">
+                      <tr key={r.id || idx} className="hover:bg-mgr-primary-50/20">
                         <td className="px-4 py-3 font-mono font-bold text-slate-700">{r.date}</td>
                         <td className="px-4 py-3">
-                          <span className="bg-amber-50 text-amber-950 border border-amber-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-black">
+                          <span className="bg-mgr-primary-50 text-mgr-primary-950 border border-mgr-primary-300 px-1.5 py-0.5 rounded text-[10px] font-mono font-black">
                             [{r.employee_code || 'EMP000012'}]
                           </span>
                         </td>
                         <td className="px-4 py-3 font-extrabold text-slate-900">{r.executive}</td>
                         <td className="px-4 py-3 font-black text-slate-800">{r.callsMade}</td>
                         <td className="px-4 py-3 font-black text-emerald-700">{r.visitsCompleted}</td>
-                        <td className="px-4 py-3 font-black text-indigo-700">{r.leadsGenerated}</td>
-                        <td className="px-4 py-3 font-black text-amber-900">{r.dealsClosed}</td>
+                        <td className="px-4 py-3 font-black text-mgr-secondary-700">{r.leadsGenerated}</td>
+                        <td className="px-4 py-3 font-black text-mgr-primary-900">{r.dealsClosed}</td>
                         <td className="px-4 py-3 italic text-slate-500 max-w-[200px]">
                           <p className="line-clamp-1">"{r.managerComment || 'Acknowledged'}"</p>
                         </td>
@@ -1051,7 +1188,7 @@ export default function ManagerHrms() {
                   <p className="text-xs text-slate-400 font-mono mt-0.5">{h.date}</p>
                 </div>
                 <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${h.type === 'National' ? 'bg-blue-50 text-blue-800 border-blue-200' :
-                    h.type === 'Festival' ? 'bg-amber-50 text-amber-800 border-amber-200' :
+                    h.type === 'Festival' ? 'bg-mgr-primary-50 text-mgr-primary-800 border-mgr-primary-200' :
                       'bg-emerald-50 text-emerald-800 border-emerald-200'
                   }`}>{h.type}</span>
               </div>
@@ -1076,6 +1213,11 @@ export default function ManagerHrms() {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Sales Reports sub-view */}
+      {activeSection === 'sales_report' && (
+        <ManagerSalesReports />
       )}
 
       {/* 8. ACTIVITY LOGS */}

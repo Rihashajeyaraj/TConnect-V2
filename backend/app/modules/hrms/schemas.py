@@ -23,6 +23,8 @@ class EmployeeCreate(BaseModel):
     password: Optional[str] = None
     send_welcome_email: Optional[bool] = True
     annual_leaves: Optional[int] = 12
+    sick_leaves: Optional[int] = 10
+    other_leaves: Optional[int] = 10
     half_day_permissions: Optional[int] = 6
     short_permissions: Optional[int] = 2
     incentive_percentage: Optional[float] = 5.0
@@ -60,6 +62,8 @@ class EmployeeUpdate(BaseModel):
     status: Optional[str] = None
     is_active: Optional[bool] = None
     annual_leaves: Optional[int] = None
+    sick_leaves: Optional[int] = None
+    other_leaves: Optional[int] = None
     half_day_permissions: Optional[int] = None
     short_permissions: Optional[int] = None
     incentive_percentage: Optional[float] = None
@@ -127,6 +131,8 @@ class EmployeeResponse(BaseModel):
     role: Optional[str] = None
     is_active: Optional[bool] = True
     annual_leaves: Optional[int] = 12
+    sick_leaves: Optional[int] = 10
+    other_leaves: Optional[int] = 10
     half_day_permissions: Optional[int] = 6
     short_permissions: Optional[int] = 2
     incentive_percentage: Optional[float] = 5.0
@@ -158,3 +164,8 @@ class EmployeeResponse(BaseModel):
     ifsc: Optional[str] = None
     branch: Optional[str] = None
     profile_photo: Optional[str] = None
+
+
+class SalaryUpdate(BaseModel):
+    monthly_salary: float
+

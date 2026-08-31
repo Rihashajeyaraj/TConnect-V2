@@ -60,7 +60,7 @@ export default function TwiteConnectLogo({ className = "w-9 h-9", showText = tru
       {showText && (
         <div className="flex flex-col leading-none">
           <span className={textClassName}>TwiteConnect</span>
-          <span className="text-[9px] text-amber-700 font-extrabold tracking-widest uppercase mt-0.5">
+          <span className="text-[9px] text-mgr-primary-700 font-extrabold tracking-widest uppercase mt-0.5">
             Connect • Track • Perform
           </span>
         </div>

@@ -150,37 +150,81 @@ function CeoLayout() {
       return
     }
 
-    const query = searchQuery.toLowerCase()
+    const query = searchQuery.toLowerCase().trim()
     const results = []
 
-    // Search nav pages
+    // 1. Search nav pages
     navItems.forEach((item) => {
       if (item.label.toLowerCase().includes(query)) {
         results.push({ type: 'page', title: `Go to ${item.label}`, path: item.path, desc: 'Executive Navigation' })
       }
     })
 
-    // Search leads/opportunities from localStorage if present
+    // 2. Search customers
     try {
-      const savedLeads = JSON.parse(localStorage.getItem('tc_leads')) || []
-      savedLeads.forEach((lead) => {
-        if ((lead.name || '').toLowerCase().includes(query) || (lead.company || '').toLowerCase().includes(query)) {
-          results.push({ type: 'lead', title: lead.name || lead.company, path: '/ceo/sales-revenue', desc: `Lead at ${lead.company}` })
+      const savedCusts = JSON.parse(localStorage.getItem('tc_customer_accounts') || '[]')
+      savedCusts.forEach((c) => {
+        const name = c.company || c.name || ''
+        const prod = c.product || ''
+        const exec = c.sales_executive || ''
+        if (name.toLowerCase().includes(query) || prod.toLowerCase().includes(query) || exec.toLowerCase().includes(query)) {
+          results.push({
+            type: 'customer',
+            title: `Client: ${name}`,
+            path: '/ceo/customers',
+            desc: `Product: ${prod} · Executive: ${exec}`
+          })
         }
       })
+    } catch (e) {}
 
-      const savedOpps = JSON.parse(localStorage.getItem('tc_opportunities')) || []
-      savedOpps.forEach((opp) => {
-        if ((opp.company || '').toLowerCase().includes(query)) {
-          results.push({ type: 'opportunity', title: `Deal: ${opp.company}`, path: '/ceo/sales-revenue', desc: `Value: ₹${(opp.value || 0).toLocaleString()} (${opp.stage})` })
+    // 3. Search leads
+    try {
+      const savedLeads = JSON.parse(localStorage.getItem('tc_leads') || '[]')
+      savedLeads.forEach((l) => {
+        const company = l.company || ''
+        const contact = l.contact_person || ''
+        const status = l.status || ''
+        if (company.toLowerCase().includes(query) || contact.toLowerCase().includes(query) || status.toLowerCase().includes(query)) {
+          results.push({
+            type: 'lead',
+            title: `Lead: ${company}`,
+            path: '/ceo/sales-revenue',
+            desc: `Contact: ${contact} · Stage: ${status}`
+          })
         }
       })
-    } catch {
-      // ignore parse errors
-    }
+    } catch (e) {}
+
+    // 4. Search team members
+    try {
+      const savedUsers = JSON.parse(localStorage.getItem('tc_app_users') || '[]')
+      savedUsers.forEach((u) => {
+        const name = u.name || ''
+        const dept = u.dept || ''
+        const role = u.role || ''
+        if (name.toLowerCase().includes(query) || dept.toLowerCase().includes(query) || role.toLowerCase().includes(query)) {
+          results.push({
+            type: 'employee',
+            title: `Staff: ${name}`,
+            path: '/ceo/team-management',
+            desc: `${role} · Dept: ${dept}`
+          })
+        }
+      })
+    } catch (e) {}
 
     setSearchResults(results)
   }, [searchQuery])
+
+  const handleSearchKeyDown = (e) => {
+    if (e.key === 'Enter' && searchResults.length > 0) {
+      const firstResult = searchResults[0]
+      navigate(firstResult.path)
+      setShowSearchResults(false)
+      setSearchQuery('')
+    }
+  }
 
   // Handle Sign Out
   const handleSignOut = () => {
@@ -413,7 +457,7 @@ function CeoLayout() {
       {/* Main Content Area */}
       <div className="flex flex-1 flex-col overflow-hidden h-screen">
         {/* Top Header */}
-        <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 shrink-0 z-20 shadow-xs">
+        <header className="relative flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 sm:px-6 shrink-0 z-20 shadow-xs">
           <div className="flex items-center gap-3 sm:gap-4 flex-1">
             {/* Mobile Menu Toggle */}
             <button
@@ -424,29 +468,14 @@ function CeoLayout() {
               <Menu className="size-5" />
             </button>
 
-            {/* Executive Badge & Real-time Indicator */}
-            <div className="hidden items-center gap-3 border-r border-slate-200 pr-4 mr-1 shrink-0 md:flex">
-              <span className="relative flex size-2.5 shrink-0">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full size-2.5 bg-emerald-500"></span>
-              </span>
-              <div className="flex flex-col justify-center text-left">
-                <span className="text-[11px] font-black tracking-widest text-[#832D51] uppercase leading-none">
-                  CEO Executive Suite
-                </span>
-                <span className="text-[11px] font-semibold text-slate-500 mt-1 leading-none">
-                  {currentDate}
-                </span>
-              </div>
-            </div>
-
             {/* Global Search Bar */}
             <div className="relative w-full max-w-md">
               <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search across CEO portal (sales, reports, teams, revenue)..."
+                placeholder="Search across sales, reports, teams, revenue..."
                 value={searchQuery}
+                onKeyDown={handleSearchKeyDown}
                 onChange={(e) => {
                   setSearchQuery(e.target.value)
                   setShowSearchResults(true)
@@ -482,6 +511,37 @@ function CeoLayout() {
                   </div>
                 </>
               )}
+            </div>
+          </div>
+
+          {/* Center: CEO Role Indicator Tag */}
+          <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
+            <div className="flex items-center gap-2.5 bg-slate-50/80 border border-slate-200/80 rounded-full px-4.5 py-1.5 shadow-xs pointer-events-auto">
+              <span className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+              </span>
+              <span
+                className="text-xs uppercase tracking-[0.25em] font-black"
+                style={{
+                  background: 'linear-gradient(to right, #475569 20%, #832D51 40%, #EA6993 60%, #475569 80%)',
+                  backgroundSize: '200% auto',
+                  color: 'transparent',
+                  WebkitBackgroundClip: 'text',
+                  backgroundClip: 'text',
+                  animation: 'tc-shimmer-ceo 3s linear infinite',
+                  display: 'inline-block'
+                }}
+              >
+                {currentUser?.role || 'Chief Executive Officer'}
+              </span>
+              <style>{`
+                @keyframes tc-shimmer-ceo {
+                  to {
+                    background-position: -200% center;
+                  }
+                }
+              `}</style>
             </div>
           </div>
 
@@ -536,12 +596,6 @@ function CeoLayout() {
               <Bell className="size-4.5" />
               <span className="absolute top-1.5 right-1.5 size-2 rounded-full bg-[#EA6993] ring-2 ring-white" />
             </Link>
-
-            {/* Executive Badge */}
-            <div className="hidden sm:flex items-center gap-2 rounded-xl bg-slate-100 px-3 py-1.5 border border-slate-200/80">
-              <Shield className="size-4 text-[#832D51]" />
-              <span className="text-xs font-bold text-slate-700">CEO Executive Access</span>
-            </div>
           </div>
         </header>
 

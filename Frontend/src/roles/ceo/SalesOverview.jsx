@@ -40,7 +40,7 @@ import {
   BarChart,
   Bar,
 } from 'recharts'
-import { reportAPI, expenseAPI } from '../../services/api.js'
+import { reportAPI, expenseAPI, hrmsAPI } from '../../services/api.js'
 import { exportToPDF, exportToExcel, exportToCSV } from '../../utils/exportUtils.js'
 
 const ANNUAL_TARGET = 35000000 // ₹3.50 Cr organization target
@@ -62,10 +62,19 @@ function SalesOverview({ initialSection }) {
   const [customRangeApplied, setCustomRangeApplied] = useState(null)
 
   // Financial report popup state
+  const [salariesList, setSalariesList] = useState([])
   const [showFinancialReportModal, setShowFinancialReportModal] = useState(false)
   const [modalTimeFilter, setModalTimeFilter] = useState('Monthly') // 'Monthly' | 'Yearly' | 'Custom'
   const [modalFromDate, setModalFromDate] = useState('')
   const [modalToDate, setModalToDate] = useState('')
+  
+  // CEO Reports Review state
+  const [ceoActiveTab, setCeoActiveTab] = useState('overview') // 'overview' | 'reports'
+  const [ceoReportsList, setCeoReportsList] = useState([])
+  const [loadingCeoReports, setLoadingCeoReports] = useState(false)
+  const [viewingCeoReport, setViewingCeoReport] = useState(null)
+  const [ceoRemarks, setCeoRemarks] = useState('')
+  const [submittingRemarks, setSubmittingRemarks] = useState(false)
 
   // Targets popup state
   const [showTargetsModal, setShowTargetsModal] = useState(false)
@@ -142,10 +151,11 @@ function SalesOverview({ initialSection }) {
       if (startLimit) params.from_date = startLimit
       if (endLimit) params.to_date = endLimit
 
-      const [salesRes, dashRes, expRes] = await Promise.allSettled([
+      const [salesRes, dashRes, expRes, salaryRes] = await Promise.allSettled([
         reportAPI.getCeoSalesOverview(params),
         reportAPI.getCeoDashboard(),
         expenseAPI.getManagerExpenses({ status: '' }),  // fetch all, filter by status in UI
+        hrmsAPI.getSalaries(),
       ])
 
       if (salesRes.status === 'fulfilled' && salesRes.value?.data) {
@@ -166,6 +176,10 @@ function SalesOverview({ initialSection }) {
           : []
         setRawExpenses(list)
       }
+
+      if (salaryRes.status === 'fulfilled' && salaryRes.value?.data) {
+        setSalariesList(salaryRes.value.data)
+      }
     } catch (err) {
       console.error('Failed to load Sales & Revenue data:', err)
       setError(err?.message || 'Server error loading sales & revenue summary')
@@ -178,6 +192,26 @@ function SalesOverview({ initialSection }) {
   useEffect(() => {
     fetchUnifiedData()
   }, [dateFilter, customRangeApplied])
+
+  const fetchCeoReports = async () => {
+    setLoadingCeoReports(true)
+    try {
+      const res = await hrmsAPI.getSalesReports ? await hrmsAPI.getSalesReports() : await reportAPI.getSalesReports()
+      if (res && res.data) {
+        setCeoReportsList(res.data)
+      }
+    } catch (err) {
+      console.error('Failed to load sales reports on CEO side', err)
+    } finally {
+      setLoadingCeoReports(false)
+    }
+  }
+
+  useEffect(() => {
+    if (ceoActiveTab === 'reports') {
+      fetchCeoReports()
+    }
+  }, [ceoActiveTab])
 
   const handleApplyCustomRange = (e) => {
     e.preventDefault()
@@ -319,7 +353,26 @@ function SalesOverview({ initialSection }) {
     return modalRevenueRecords.reduce((sum, r) => sum + (r.incentive || 0), 0)
   }, [modalRevenueRecords])
 
-  const netProfitLoss = modalTotalRevenue - (modalTotalReimbursements + modalTotalIncentives)
+  const modalTotalSalary = useMemo(() => {
+    const monthlySum = salariesList.reduce((sum, s) => sum + (s.monthly_salary || 0), 0)
+    if (modalTimeFilter === 'Monthly') {
+      return monthlySum
+    }
+    if (modalTimeFilter === 'Yearly') {
+      return monthlySum * 12
+    }
+    if (modalTimeFilter === 'Custom' && modalFromDate && modalToDate) {
+      const from = new Date(modalFromDate)
+      const to = new Date(modalToDate)
+      const diffTime = Math.abs(to - from)
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+      const diffMonths = Math.max(1, Math.round(diffDays / 30))
+      return monthlySum * diffMonths
+    }
+    return monthlySum
+  }, [salariesList, modalTimeFilter, modalFromDate, modalToDate])
+
+  const netProfitLoss = modalTotalRevenue - (modalTotalReimbursements + modalTotalIncentives + modalTotalSalary)
   const isProfit = netProfitLoss >= 0
 
   const unifiedModalLedger = useMemo(() => {
@@ -329,7 +382,33 @@ function SalesOverview({ initialSection }) {
       reimbursement: 0,
       details: 'Won Deal / Customer SLA'
     }))
-    const allItems = [...revenueItems, ...modalReimbursementRecords]
+    const salaryItems = salariesList.map(s => {
+      const monthlySum = s.monthly_salary || 0
+      let durationScale = 1
+      if (modalTimeFilter === 'Yearly') {
+        durationScale = 12
+      } else if (modalTimeFilter === 'Custom' && modalFromDate && modalToDate) {
+        const from = new Date(modalFromDate)
+        const to = new Date(modalToDate)
+        const diffTime = Math.abs(to - from)
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24))
+        durationScale = Math.max(1, Math.round(diffDays / 30))
+      }
+      
+      return {
+        id: `SAL-${s.employee_id || Math.random()}`,
+        date: modalRange.end,
+        sales_manager: 'N/A',
+        sales_executive: s.employee_name || 'Employee',
+        reimbursement: 0,
+        amount: 0,
+        incentive: 0,
+        salary: monthlySum * durationScale,
+        type: 'Salary',
+        details: `Salary Allocation (${durationScale} Month(s))`
+      }
+    })
+    const allItems = [...revenueItems, ...modalReimbursementRecords, ...salaryItems]
     const grouped = {}
     allItems.forEach(item => {
       const d = item.date || 'N/A'
@@ -339,16 +418,18 @@ function SalesOverview({ initialSection }) {
           totalRevenue: 0,
           totalReimbursements: 0,
           totalIncentives: 0,
+          totalSalary: 0,
           transactions: []
         }
       }
       grouped[d].totalRevenue += (item.amount || 0)
       grouped[d].totalReimbursements += (item.reimbursement || 0)
       grouped[d].totalIncentives += (item.incentive || 0)
+      grouped[d].totalSalary += (item.salary || 0)
       grouped[d].transactions.push(item)
     })
     return Object.values(grouped).sort((a, b) => b.date.localeCompare(a.date))
-  }, [modalRevenueRecords, modalReimbursementRecords])
+  }, [modalRevenueRecords, modalReimbursementRecords, salariesList, modalTimeFilter, modalFromDate, modalToDate, modalRange.end])
 
   // Key Financial & Sales Metrics (Realized, Pipeline, Target, Net Margin)
   // Safe numeric helpers
@@ -623,7 +704,35 @@ function SalesOverview({ initialSection }) {
           </p>
         </div>
 
-        <div className="flex items-center gap-2 flex-wrap">
+        {/* Sub-tab switcher */}
+        <div className="flex border-b border-slate-200/50 mt-1 gap-5 px-1.5 pb-0.5">
+          <button
+            onClick={() => setCeoActiveTab('overview')}
+            className={`pb-2 text-xs font-black border-b-2 transition cursor-pointer ${
+              ceoActiveTab === 'overview'
+                ? 'border-[#832D51] text-[#832D51]'
+                : 'border-transparent text-slate-400 hover:text-slate-700'
+            }`}
+          >
+            Overview Dashboard
+          </button>
+          <button
+            onClick={() => setCeoActiveTab('reports')}
+            className={`pb-2 text-xs font-black border-b-2 transition cursor-pointer ${
+              ceoActiveTab === 'reports'
+                ? 'border-[#832D51] text-[#832D51]'
+                : 'border-transparent text-slate-400 hover:text-slate-700'
+            }`}
+          >
+            Sales Manager Reports
+          </button>
+        </div>
+
+      </div>
+
+      {ceoActiveTab === 'overview' ? (
+        <>
+          <div className="flex items-center gap-2 flex-wrap">
           {/* Date range switcher */}
           <div className="flex items-center bg-slate-100 rounded-xl p-1 text-xs font-bold border border-slate-200">
             {['Today', 'This Week', 'This Month', 'Custom Date'].map((t) => (
@@ -653,7 +762,6 @@ function SalesOverview({ initialSection }) {
             Refresh
           </button>
         </div>
-      </div>
 
       {/* Custom Date Form Block */}
       {dateFilter === 'Custom Date' && (
@@ -1244,6 +1352,310 @@ function SalesOverview({ initialSection }) {
           </div>
         </div>
       </div>
+        </>
+      ) : (
+        /* ── CEO REPORTS REVIEW PANEL ── */
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-5">
+          <div className="flex justify-between items-center border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-sm font-black text-slate-900">Submitted Manager Sales Reports</h2>
+              <p className="text-[11px] font-bold text-slate-400 mt-1">Review weekly and monthly performance reports submitted by Sales Managers.</p>
+            </div>
+            <button
+              onClick={fetchCeoReports}
+              disabled={loadingCeoReports}
+              className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-750 transition cursor-pointer disabled:opacity-50"
+            >
+              <RefreshCw className={`size-3.5 ${loadingCeoReports ? 'animate-spin' : ''}`} />
+              Sync Reports
+            </button>
+          </div>
+
+          {loadingCeoReports ? (
+            <div className="py-20 text-center text-slate-400 font-bold flex flex-col items-center justify-center gap-2 text-xs">
+              <RefreshCw className="size-8 animate-spin text-[#832D51]" />
+              Loading submitted reports...
+            </div>
+          ) : ceoReportsList.length === 0 ? (
+            <div className="py-20 text-center text-slate-400 font-bold text-xs">
+              No sales reports have been submitted by Sales Managers yet.
+            </div>
+          ) : (
+            <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-2xs">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-150 text-slate-450 font-black uppercase tracking-wider">
+                    <th className="px-4 py-3">Reporting Period</th>
+                    <th className="px-4 py-3">Report Type</th>
+                    <th className="px-4 py-3">Submitted By</th>
+                    <th className="px-4 py-3 text-right">Target</th>
+                    <th className="px-4 py-3 text-right">Revenue Won</th>
+                    <th className="px-4 py-3 text-right">Achievement %</th>
+                    <th className="px-4 py-3">Status</th>
+                    <th className="px-4 py-3 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-bold text-slate-700 bg-white">
+                  {ceoReportsList.map((rep) => {
+                    const met = rep.metrics || {}
+                    const isWeekly = rep.report_type === 'weekly'
+                    return (
+                      <tr key={rep.id} className="hover:bg-slate-50/40">
+                        <td className="px-4 py-3 font-black text-slate-900">
+                          {isWeekly ? `Week ${rep.report_period.replace('-W', ' W')}` : rep.report_period}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-black border uppercase tracking-wider ${
+                            isWeekly ? 'bg-sky-50 text-sky-800 border-sky-100' : 'bg-violet-50 text-violet-800 border-violet-100'
+                          }`}>
+                            {rep.report_type}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 font-semibold">{rep.manager_name}</td>
+                        <td className="px-4 py-3 text-right font-semibold">₹{Number(met.target || 0).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right font-black text-slate-950">₹{Number(met.actualRevenue || 0).toLocaleString()}</td>
+                        <td className="px-4 py-3 text-right font-black text-slate-950">{met.achievementPct || 0}%</td>
+                        <td className="px-4 py-3">
+                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border ${
+                            rep.status === 'Reviewed' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
+                            'bg-amber-50 text-amber-800 border-amber-200'
+                          }`}>
+                            {rep.status === 'Reviewed' ? '✅ Reviewed' : '⏳ Submitted'}
+                          </span>
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={() => {
+                              setViewingCeoReport(rep)
+                              setCeoRemarks(rep.ceo_remarks || '')
+                            }}
+                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-[10px] px-3.5 py-1.5 rounded-lg shadow-2xs transition cursor-pointer"
+                          >
+                            Review & Remarks
+                          </button>
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── CEO REPORT DETAIL REVIEW MODAL ── */}
+      {viewingCeoReport && (() => {
+        const rep = viewingCeoReport
+        const met = rep.metrics || {}
+        const isWeekly = rep.report_type === 'weekly'
+        const ach = met.achievementPct || 0
+        const achDetails = ach >= 100 
+          ? { label: 'Target Achieved', color: 'bg-emerald-50 text-emerald-800 border-emerald-200' }
+          : ach >= 70 ? { label: 'On Track', color: 'bg-blue-50 text-blue-800 border-blue-200' }
+          : { label: 'At Risk', color: 'bg-rose-50 text-rose-800 border-rose-200' }
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 text-slate-805 text-xs">
+              
+              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
+                <div>
+                  <h3 className="text-base font-black text-slate-900">
+                    Review Sales Report ({isWeekly ? 'Weekly' : 'Monthly'})
+                  </h3>
+                  <p className="text-[10px] text-slate-500 font-bold mt-0.5">
+                    Period: {rep.report_period} | Submitted by {rep.manager_name}
+                  </p>
+                </div>
+                <button
+                  onClick={() => setViewingCeoReport(null)}
+                  className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-650 transition cursor-pointer animate-in fade-in"
+                >
+                  <X className="size-5" />
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                
+                {/* Metric Summary Cards */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-150">
+                    <span className="text-[9px] uppercase text-slate-400 font-black block">Target Quota</span>
+                    <span className="text-sm font-black text-slate-900">₹{Number(met.target || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-150">
+                    <span className="text-[9px] uppercase text-slate-400 font-black block">Actual Revenue</span>
+                    <span className="text-sm font-black text-slate-900">₹{Number(met.actualRevenue || 0).toLocaleString()}</span>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-150">
+                    <span className="text-[9px] uppercase text-slate-400 font-black block">Achievement Rate</span>
+                    <span className="text-sm font-black text-slate-900">{ach}%</span>
+                    <span className={`inline-block ml-2 px-2 py-0.5 rounded-full text-[8px] font-black border ${achDetails.color}`}>
+                      {achDetails.label}
+                    </span>
+                  </div>
+                  <div className="bg-slate-50 p-4 rounded-xl border border-slate-150">
+                    <span className="text-[9px] uppercase text-slate-400 font-black block">Active Pipeline</span>
+                    <span className="text-sm font-black text-slate-900">₹{Number(met.pipelineValue || 0).toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3.5 p-3.5 bg-slate-50/50 border border-slate-100 rounded-xl">
+                  <div>
+                    <span className="text-[8px] uppercase text-slate-400 font-black">New Leads</span>
+                    <p className="font-bold text-slate-800 text-xs">{met.newLeads || 0} Leads</p>
+                  </div>
+                  <div>
+                    <span className="text-[8px] uppercase text-slate-400 font-black font-extrabold">Meetings</span>
+                    <p className="font-bold text-slate-800 text-xs">{met.meetings || 0} Meetings</p>
+                  </div>
+                  <div>
+                    <span className="text-[8px] uppercase text-slate-400 font-black">Deals Won / Lost</span>
+                    <p className="font-bold text-slate-800 text-xs">{met.dealsWon || 0} Won / {met.dealsLost || 0} Lost</p>
+                  </div>
+                  <div>
+                    <span className="text-[8px] uppercase text-slate-400 font-black font-extrabold">Conversion</span>
+                    <p className="font-bold text-slate-800 text-xs">{met.conversionRate || 0}% Success</p>
+                  </div>
+                </div>
+
+                {/* Team Performance Breakdown */}
+                <div className="space-y-2">
+                  <h4 className="text-xs font-black uppercase text-slate-400 tracking-wider">Team Performance Breakdown</h4>
+                  <div className="border border-slate-100 rounded-xl overflow-hidden">
+                    <table className="w-full text-left border-collapse text-[11px]">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-150 text-slate-400 font-bold uppercase">
+                          <th className="px-3 py-2">Salesperson</th>
+                          <th className="px-3 py-2 text-right">Leads</th>
+                          <th className="px-3 py-2 text-right font-extrabold">Won</th>
+                          <th className="px-3 py-2 text-right">Revenue Won</th>
+                          <th className="px-3 py-2 text-right">Pipeline</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-bold text-slate-700">
+                        {!met.salespersonPerformance || met.salespersonPerformance.length === 0 ? (
+                          <tr>
+                            <td colSpan={5} className="py-4 text-center text-slate-400">No performance records.</td>
+                          </tr>
+                        ) : (
+                          met.salespersonPerformance.map((sp, idx) => (
+                            <tr key={idx}>
+                              <td className="px-3 py-2 font-black">{sp.name}</td>
+                              <td className="px-3 py-2 text-right font-normal">{sp.leads}</td>
+                              <td className="px-3 py-2 text-right text-emerald-600 font-black">{sp.wonDeals}</td>
+                              <td className="px-3 py-2 text-right">₹{Number(sp.revenue || 0).toLocaleString()}</td>
+                              <td className="px-3 py-2 text-right text-[#832D51]">₹{Number(sp.pipeline || 0).toLocaleString()}</td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Qualitative Remarks */}
+                <div className="space-y-4 border-t border-slate-100 pt-4">
+                  <h4 className="text-xs font-black uppercase text-[#832D51] tracking-wider">Manager Analysis Remarks</h4>
+                  <div className="grid gap-4 sm:grid-cols-2">
+                    <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
+                      <span className="text-[9px] uppercase text-slate-400 font-black block">Key Achievements</span>
+                      <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.keyAchievements || 'None'}</p>
+                    </div>
+                    {isWeekly ? (
+                      <>
+                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
+                          <span className="text-[9px] uppercase text-slate-400 font-black block">Pending Activities</span>
+                          <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.pendingActivities || 'None'}</p>
+                        </div>
+                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
+                          <span className="text-[9px] uppercase text-slate-400 font-black block text-rose-800">Issues / Escalations</span>
+                          <p className="font-semibold text-rose-900 mt-1 whitespace-pre-wrap">{met.issuesEscalations || 'None'}</p>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
+                          <span className="text-[9px] uppercase text-slate-400 font-black block">Major Challenges</span>
+                          <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.majorChallenges || 'None'}</p>
+                        </div>
+                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
+                          <span className="text-[9px] uppercase text-slate-400 font-black block">Lost Deal Analysis</span>
+                          <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.lostDealAnalysis || 'None'}</p>
+                        </div>
+                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
+                          <span className="text-[9px] uppercase text-slate-400 font-black block">Forecast (₹)</span>
+                          <p className="font-bold text-slate-900 mt-1">₹{Number(met.forecastVal || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
+                          <span className="text-[9px] uppercase text-slate-400 font-black block">Month-on-Month Comparison</span>
+                          <p className="font-semibold text-slate-800 mt-1">{met.prevMonthComparison || 'N/A'}</p>
+                        </div>
+                      </>
+                    )}
+                    <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
+                      <span className="text-[9px] uppercase text-slate-400 font-black block">Action Plan / Next Steps</span>
+                      <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.nextPeriodPlan || 'None'}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* CEO Feedback Editor */}
+                <div className="bg-[#832D51]/5 border border-[#832D51]/15 p-5 rounded-2xl space-y-3">
+                  <h4 className="text-xs font-black uppercase text-[#832D51] tracking-wider flex items-center gap-1.5">
+                    <CheckCircle className="size-4" />
+                    CEO Review & Remarks Feedback
+                  </h4>
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Remarks / Notes</label>
+                    <textarea
+                      rows={3}
+                      placeholder="Add CEO remarks, suggestions, and targets updates..."
+                      value={ceoRemarks}
+                      onChange={(e) => setCeoRemarks(e.target.value)}
+                      className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-medium focus:outline-none focus:border-[#832D51] text-slate-950"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
+                <button
+                  onClick={() => setViewingCeoReport(null)}
+                  className="px-4 py-2 border border-slate-200 hover:bg-slate-100 rounded-xl text-xs font-black cursor-pointer transition shadow-2xs"
+                >
+                  Close View
+                </button>
+                <button
+                  disabled={submittingRemarks}
+                  onClick={async () => {
+                    setSubmittingRemarks(true)
+                    try {
+                      const res = reportAPI.reviewSalesReport 
+                        ? await reportAPI.reviewSalesReport(rep.id, { status: 'Reviewed', ceo_remarks: ceoRemarks })
+                        : await hrmsAPI.reviewSalesReport(rep.id, { status: 'Reviewed', ceo_remarks: ceoRemarks })
+                      if (res && res.data) {
+                        showToast('Report reviewed successfully!', 'success')
+                        fetchCeoReports()
+                        setViewingCeoReport(null)
+                      }
+                    } catch (err) {
+                      showToast('Failed to review report', 'error')
+                    } finally {
+                      setSubmittingRemarks(false)
+                    }
+                  }}
+                  className="px-5 py-2.5 bg-[#832D51] hover:bg-[#6c2442] text-white rounded-xl text-xs font-black cursor-pointer shadow-md transition"
+                >
+                  Submit Remarks
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )
+      })()}
 
 
 
@@ -1316,7 +1728,7 @@ function SalesOverview({ initialSection }) {
             {/* Scrollable breakdown content */}
             <div className="flex-1 overflow-y-auto p-6 space-y-6">
               {/* Financial Calculation Formula block */}
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 {/* 1. Revenue */}
                 <div className="bg-slate-50 border border-slate-200/70 p-4.5 rounded-2xl relative">
                   <div className="flex justify-between items-center text-slate-400">
@@ -1347,7 +1759,17 @@ function SalesOverview({ initialSection }) {
                   <p className="text-[9px] text-slate-400 font-bold mt-1">Commission earned by executives</p>
                 </div>
 
-                {/* 4. Net Profit / Loss */}
+                {/* 4. Total Team Salary */}
+                <div className="bg-slate-50 border border-slate-200/70 p-4.5 rounded-2xl relative">
+                  <div className="flex justify-between items-center text-slate-400">
+                    <span className="text-[10px] font-black uppercase tracking-wider">Total Salaries</span>
+                    <Users className="size-4 text-[#832D51]" />
+                  </div>
+                  <h4 className="text-xl font-black text-slate-900 mt-2">₹{modalTotalSalary.toLocaleString()}</h4>
+                  <p className="text-[9px] text-slate-400 font-bold mt-1">Salary allocation for active team</p>
+                </div>
+
+                {/* 5. Net Profit / Loss */}
                 <div className={`p-4.5 rounded-2xl border relative ${
                   isProfit 
                     ? 'bg-emerald-50/60 border-emerald-200/80 text-emerald-950' 
@@ -1371,7 +1793,7 @@ function SalesOverview({ initialSection }) {
                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                   <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                     <Calendar className="size-4 text-slate-400" />
-                    Date-wise Transaction Ledger ({modalRevenueRecords.length + modalReimbursementRecords.length} records)
+                    Date-wise Transaction Ledger ({modalRevenueRecords.length + modalReimbursementRecords.length + salariesList.length} records)
                   </h4>
                   <span className="text-[10px] font-black text-[#832D51] bg-[#F8CAE4]/25 px-2.5 py-1 rounded-md">
                     Total Revenue: ₹{modalTotalRevenue.toLocaleString()}
@@ -1389,12 +1811,13 @@ function SalesOverview({ initialSection }) {
                           <th className="px-4 py-2.5 text-right">Revenue Amount</th>
                           <th className="px-4 py-2.5 text-right">Reimbursement</th>
                           <th className="px-4 py-2.5 text-right">Incentive</th>
+                          <th className="px-4 py-2.5 text-right">Salary</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
                         {unifiedModalLedger.length === 0 ? (
                           <tr>
-                            <td colSpan={6} className="py-10 text-center text-slate-400 font-bold">
+                            <td colSpan={7} className="py-10 text-center text-slate-400 font-bold">
                               No transactions recorded for this period.
                             </td>
                           </tr>
@@ -1414,6 +1837,9 @@ function SalesOverview({ initialSection }) {
                                 <td className="px-4 py-2 text-right font-black text-emerald-700">
                                   {group.totalIncentives > 0 ? `₹${group.totalIncentives.toLocaleString()}` : '—'}
                                 </td>
+                                <td className="px-4 py-2 text-right font-black text-[#832D51]">
+                                  {group.totalSalary > 0 ? `₹${group.totalSalary.toLocaleString()}` : '—'}
+                                </td>
                               </tr>
                               {/* Daily Transactions */}
                               {group.transactions.map((tx, idx) => (
@@ -1429,6 +1855,9 @@ function SalesOverview({ initialSection }) {
                                   </td>
                                   <td className="px-4 py-2.5 text-right font-semibold text-emerald-600">
                                     {tx.incentive > 0 ? `₹${tx.incentive.toLocaleString()}` : '—'}
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right font-bold text-[#832D51]">
+                                    {tx.salary > 0 ? `₹${tx.salary.toLocaleString()}` : '—'}
                                   </td>
                                 </tr>
                               ))}

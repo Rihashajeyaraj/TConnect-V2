@@ -12,66 +12,16 @@ import {
   Filter,
   Search,
   X,
+  MailOpen,
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
 import { formatDate } from '../../utils/dateUtils.js'
-
-const NOTIFICATIONS_LIST = [
-  {
-    id: 1,
-    title: '🎉 New Deal Converted!',
-    message: 'Ashwini E won and converted Zenith Logistics (₹8,90,000).',
-    time: '10 mins ago',
-    date: '2026-08-05',
-    read: false,
-    type: 'success',
-  },
-  {
-    id: 2,
-    title: 'Field Visit Completed',
-    message: 'Suresh Raina completed site meeting at ABC Hospital.',
-    time: '45 mins ago',
-    date: '2026-08-05',
-    read: false,
-    type: 'info',
-  },
-  {
-    id: 3,
-    title: 'Expense Claim Submitted',
-    message: 'Ashwini E submitted ₹3,500 travel reimbursement claim for approval.',
-    time: '1 hour ago',
-    date: '2026-08-05',
-    read: false,
-    type: 'alert',
-  },
-  {
-    id: 4,
-    title: 'Attendance Check-In Alert',
-    message: 'Karthik Raja checked in at 09:35 AM at Adyar IT Corridor.',
-    time: '2 hours ago',
-    date: '2026-08-04',
-    read: true,
-    type: 'info',
-  },
-]
+import { notificationAPI } from '../../services/api.js'
 
 export default function ManagerNotifications() {
   const { showToast } = useToast()
-  const [list, setList] = useState(() => {
-    try {
-      const saved = localStorage.getItem('tc_app_notifications')
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const managerAlerts = parsed.filter((n) => !n.recipientRole || n.recipientRole === 'manager')
-          if (managerAlerts.length > 0) {
-            return managerAlerts
-          }
-        }
-      }
-    } catch (e) {}
-    return NOTIFICATIONS_LIST
-  })
+  const [list, setList] = useState([])
+  const [loading, setLoading] = useState(true)
 
   // Date Wise Filter State
   const [dateFilter, setDateFilter] = useState('All') // 'All' | 'Today' | 'Yesterday' | 'This Week' | 'This Month' | 'Custom Date'
@@ -79,16 +29,52 @@ export default function ManagerNotifications() {
   const [typeFilter, setTypeFilter] = useState('All')
   const [search, setSearch] = useState('')
 
-  // Sync state changes to localStorage
-  useEffect(() => {
+  const fetchNotifications = async () => {
+    setLoading(true)
     try {
-      localStorage.setItem('tc_app_notifications', JSON.stringify(list))
-    } catch (e) {}
-  }, [list])
+      const res = await notificationAPI.getNotifications()
+      const raw = Array.isArray(res) ? res : res?.data || []
+      setList(
+        raw.map((n) => ({
+          ...n,
+          read: n.is_read || n.read || false,
+          type: n.category || n.type || 'info',
+          time: n.created_at ? new Date(n.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Recently',
+          date: n.created_at ? n.created_at.slice(0, 10) : '2026-08-05',
+        }))
+      )
+    } catch (e) {
+      console.error("Failed to load notifications:", e)
+    } finally {
+      setLoading(false)
+    }
+  }
 
-  const markAllRead = () => {
-    setList((prev) => prev.map((item) => ({ ...item, read: true })))
-    showToast('All notifications marked as read!', 'success')
+  useEffect(() => {
+    fetchNotifications()
+  }, [])
+
+  const markAllRead = async () => {
+    try {
+      const unreadList = list.filter((n) => !n.read)
+      await Promise.allSettled(unreadList.map((n) => notificationAPI.markRead(n.id)))
+      showToast('All notifications marked as read!', 'success')
+      fetchNotifications()
+    } catch (e) {
+      showToast('Failed to mark notifications as read', 'error')
+    }
+  }
+
+  const markSingleRead = async (id) => {
+    try {
+      await notificationAPI.markRead(id)
+      setList((prev) =>
+        prev.map((n) => (n.id === id ? { ...n, read: true } : n))
+      )
+      showToast('Notification marked as read', 'success')
+    } catch (e) {
+      showToast('Failed to update notification', 'error')
+    }
   }
 
   const todayStr = formatDate(new Date())
@@ -123,10 +109,10 @@ export default function ManagerNotifications() {
   return (
     <div className="space-y-6 font-sans text-slate-900 bg-slate-50 min-h-screen pb-12">
       {/* ── Header ──────────────────────────────────────────────────────────── */}
-      <div className="bg-white border border-amber-200 p-6 rounded-3xl shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white border border-mgr-primary-200 p-6 rounded-3xl shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2.5">
-            <Bell className="w-7 h-7 text-[#ca8a04]" /> Manager System Notifications & Alerts
+            <Bell className="w-7 h-7 text-mgr-primary-700" /> Manager System Notifications & Alerts
           </h1>
           <p className="text-xs text-slate-500 font-semibold mt-1">
             Real-time notifications for lead conversions by Executives, visit check-ins, EOD reports, and expense claims.
@@ -136,7 +122,7 @@ export default function ManagerNotifications() {
         {unreadCount > 0 && (
           <button
             onClick={markAllRead}
-            className="px-4 py-2.5 rounded-xl bg-[#ca8a04] hover:bg-[#a16207] text-white font-black text-xs flex items-center gap-1.5 cursor-pointer transition shadow-md shadow-yellow-600/20 shrink-0"
+            className="mgr-card px-4 py-2.5 rounded-xl bg-mgr-primary-700 hover:bg-mgr-primary-800 text-white font-black text-xs flex items-center gap-1.5 cursor-pointer transition shadow-md shadow-yellow-600/20 shrink-0"
           >
             <Check size={15} /> Mark All as Read ({unreadCount} Unread)
           </button>
@@ -153,19 +139,19 @@ export default function ManagerNotifications() {
             placeholder="Search notification title, executive, deal message..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="w-full h-9 bg-amber-50/50 border border-amber-300 rounded-xl pl-9 pr-4 text-xs font-semibold text-slate-900 focus:outline-none focus:border-amber-500"
+            className="w-full h-9 bg-mgr-primary-50/50 border border-mgr-primary-300 rounded-xl pl-9 pr-4 text-xs font-semibold text-slate-900 focus:outline-none focus:border-mgr-primary-500"
           />
         </div>
 
         <div className="flex items-center gap-2 flex-wrap text-xs">
           {/* Date Wise Filter */}
-          <div className="flex items-center gap-1.5 bg-[#fffdf5] border border-amber-300 rounded-xl px-3 py-1.5 font-extrabold text-amber-900">
-            <CalendarDays size={15} className="text-[#ca8a04]" />
+          <div className="flex items-center gap-1.5 bg-[#fffdf5] border border-mgr-primary-300 rounded-xl px-3 py-1.5 font-extrabold text-mgr-primary-900">
+            <CalendarDays size={15} className="text-mgr-primary-700" />
             <span>Date Filter:</span>
             <select
               value={dateFilter}
               onChange={(e) => setDateFilter(e.target.value)}
-              className="bg-transparent text-amber-950 font-black focus:outline-none cursor-pointer"
+              className="mgr-card bg-transparent text-mgr-primary-950 font-black focus:outline-none cursor-pointer"
             >
               <option value="All">All Dates</option>
               <option value="Today">Today</option>
@@ -181,18 +167,18 @@ export default function ManagerNotifications() {
               type="date"
               value={customDate}
               onChange={(e) => setCustomDate(e.target.value)}
-              className="h-9 bg-white border border-amber-300 rounded-xl px-2.5 text-xs font-bold focus:outline-none text-slate-900"
+              className="h-9 bg-white border border-mgr-primary-300 rounded-xl px-2.5 text-xs font-bold focus:outline-none text-slate-900"
             />
           )}
 
           {/* Alert Type Filter */}
-          <div className="flex items-center gap-1.5 bg-[#fffdf5] border border-amber-300 rounded-xl px-3 py-1.5 font-extrabold text-amber-900">
-            <Filter size={14} className="text-[#ca8a04]" />
+          <div className="flex items-center gap-1.5 bg-[#fffdf5] border border-mgr-primary-300 rounded-xl px-3 py-1.5 font-extrabold text-mgr-primary-900">
+            <Filter size={14} className="text-mgr-primary-700" />
             <span>Alert Type:</span>
             <select
               value={typeFilter}
               onChange={(e) => setTypeFilter(e.target.value)}
-              className="bg-transparent text-amber-950 font-black focus:outline-none cursor-pointer"
+              className="mgr-card bg-transparent text-mgr-primary-950 font-black focus:outline-none cursor-pointer"
             >
               <option value="All">All Alert Types</option>
               <option value="success">Deals & Wins</option>
@@ -216,14 +202,14 @@ export default function ManagerNotifications() {
               className={`p-5 rounded-3xl border transition flex items-start justify-between gap-4 ${
                 item.read
                   ? 'bg-white border-slate-200'
-                  : 'bg-[#fffdf5] border-amber-300 shadow-2xs'
+                  : 'bg-[#fffdf5] border-mgr-primary-300 shadow-2xs'
               }`}
             >
               <div className="space-y-1">
                 <div className="flex items-center gap-2">
                   <h3 className="text-base font-black text-slate-900">{item.title}</h3>
                   {item.date && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-900 border border-amber-300">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-mgr-primary-100 text-mgr-primary-900 border border-mgr-primary-300">
                       📅 {item.date}
                     </span>
                   )}
@@ -233,7 +219,14 @@ export default function ManagerNotifications() {
               </div>
 
               {!item.read && (
-                <span className="w-3 h-3 rounded-full bg-[#ca8a04] shrink-0 mt-1 shadow-2xs" title="Unread Alert" />
+                <button
+                  type="button"
+                  onClick={() => markSingleRead(item.id)}
+                  className="mgr-card p-1.5 rounded-xl bg-mgr-primary-50 hover:bg-mgr-primary-100 text-mgr-primary-800 border border-mgr-primary-200 transition active:scale-95 cursor-pointer shrink-0 mt-0.5 flex items-center justify-center"
+                  title="Mark as Read"
+                >
+                  <MailOpen className="w-3.5 h-3.5" />
+                </button>
               )}
             </div>
           ))

@@ -1,12 +1,24 @@
 from typing import List, Optional, Dict, Any
 import uuid
 import datetime
+import time
 from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
 from app.core.logger import logger
 
 _in_memory_employees: List[Dict[str, Any]] = []
+
+import threading
+_employees_cache_lock = threading.Lock()
+_EMPLOYEES_CACHE = None
+_EMPLOYEES_CACHE_TIMESTAMP = 0.0
+CACHE_TTL_SECONDS = 300.0  # 5 minutes TTL cache
+
+def _clear_employees_cache():
+    global _EMPLOYEES_CACHE, _EMPLOYEES_CACHE_TIMESTAMP
+    _EMPLOYEES_CACHE = None
+    _EMPLOYEES_CACHE_TIMESTAMP = 0.0
 
 
 class HRMSRepository:
@@ -85,6 +97,22 @@ class HRMSRepository:
 
     # ── Read all employees ────────────────────────────────────────────────────
     def get_all_employees(self) -> List[Dict[str, Any]]:
+        global _EMPLOYEES_CACHE, _EMPLOYEES_CACHE_TIMESTAMP
+        now = time.time()
+        if _EMPLOYEES_CACHE is not None and (now - _EMPLOYEES_CACHE_TIMESTAMP) < CACHE_TTL_SECONDS:
+            logger.info("Returning cached employees list")
+            return _EMPLOYEES_CACHE
+
+        with _employees_cache_lock:
+            now = time.time()
+            if _EMPLOYEES_CACHE is not None and (now - _EMPLOYEES_CACHE_TIMESTAMP) < CACHE_TTL_SECONDS:
+                logger.info("Returning cached employees list")
+                return _EMPLOYEES_CACHE
+            return self._get_all_employees_impl()
+
+    def _get_all_employees_impl(self) -> List[Dict[str, Any]]:
+        global _EMPLOYEES_CACHE, _EMPLOYEES_CACHE_TIMESTAMP
+
         all_employees: List[Dict[str, Any]] = []
         seen_emails: set = set()
         seen_ids: set = set()
@@ -248,13 +276,18 @@ class HRMSRepository:
                         emp["reporting_manager_email"] = email_found
 
         if all_employees:
+            _EMPLOYEES_CACHE = all_employees
+            _EMPLOYEES_CACHE_TIMESTAMP = time.time()
             return all_employees
 
+        _EMPLOYEES_CACHE = _in_memory_employees
+        _EMPLOYEES_CACHE_TIMESTAMP = time.time()
         logger.warning("No employees found from any source -- returning in-memory fallback")
         return _in_memory_employees
 
     # ── Create employee (called directly via HRMS routes) ─────────────────────
     def create_employee(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        _clear_employees_cache()
         email = data.get("email", "").strip()
         temp_password = data.get("password") or f"TC@Emp{len(_in_memory_employees)+1001}"
         company_id = data.get("company_id", "TC-001")
@@ -359,6 +392,7 @@ class HRMSRepository:
 
     # ── Sync employee created via Admin User Management ───────────────────────
     def sync_employee_from_user(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        _clear_employees_cache()
         """
         Called by UserRepository AFTER creating a Supabase Auth user.
         Inserts the employee record into hrms.employees using:
@@ -422,46 +456,69 @@ class HRMSRepository:
             emp_record.update(db_result)
             logger.info(f"✅ hrms.employees row created | user_id={auth_uid} | emp_code={emp_code}")
         else:
-            # Store in memory as last resort so HRMS listing still shows the employee
             _in_memory_employees.append(emp_record)
             logger.warning(
-                f"Employee {email} stored in-memory only — DB insert failed. "
-                f"Ensure hrms_schema.sql has been run and 'hrms' is in Supabase API exposed schemas."
+                f"Employee {email} stored in-memory only — DB insert failed."
             )
-
         return emp_record
 
     def update_employee(self, emp_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
-        clean_updates = {k: v for k, v in updates.items() if v is not None}
+        _clear_employees_cache()
+        clean_updates = updates.copy()
         is_uuid = lambda x: x and "-" in str(x)
 
         # Try hrms schema first
         try:
-            if is_uuid(emp_id):
-                res = self.supabase.schema("hrms").table("employees").update(clean_updates).eq("employee_id", emp_id).select().execute()
-            else:
-                res = self.supabase.schema("hrms").table("employees").update(clean_updates).eq("employee_code", emp_id).select().execute()
-                
-            if res.data and len(res.data) > 0:
-                return res.data[0]
-            
-            # If update succeeds but returns no rows, perform an upsert.
-            # We fetch existing details to populate employee_code and email to satisfy NOT NULL constraints.
+            # Resolve existing employee first to get the correct UUID
             existing = self.get_employee_by_id(emp_id)
             real_uuid = None
             if existing:
                 real_uuid = existing.get("employee_id") or existing.get("user_id") or existing.get("auth_user_id")
+            
+            if not real_uuid:
+                real_uuid = clean_updates.get("employee_id") or clean_updates.get("user_id") or clean_updates.get("auth_user_id")
+                
             if not real_uuid and is_uuid(emp_id):
                 real_uuid = emp_id
-
+ 
             if real_uuid:
                 clean_updates["employee_id"] = real_uuid
                 clean_updates["user_id"] = real_uuid
                 clean_updates["auth_user_id"] = real_uuid
+                
+                if existing:
+                    # Update row by matching email/code if PK update would miss (linking phase)
+                    query = self.supabase.schema("hrms").table("employees").update(clean_updates)
+                    if existing.get("email"):
+                        res = query.eq("email", existing["email"]).select().execute()
+                        if res.data and len(res.data) > 0:
+                            return res.data[0]
+                    elif existing.get("employee_code"):
+                        res = query.eq("employee_code", existing["employee_code"]).select().execute()
+                        if res.data and len(res.data) > 0:
+                            return res.data[0]
+                
+                res = self.supabase.schema("hrms").table("employees").update(clean_updates).eq("employee_id", real_uuid).select().execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            
+            # If not found or update returned no rows, perform an upsert
+            if real_uuid:
+                clean_updates["employee_id"] = real_uuid
+                clean_updates["user_id"] = real_uuid
+                clean_updates["auth_user_id"] = real_uuid
+            else:
+                # Generate new UUID if we don't have one
+                import uuid
+                new_id = str(uuid.uuid4())
+                real_uuid = new_id
+                clean_updates["employee_id"] = new_id
+                clean_updates["user_id"] = new_id
+                clean_updates["auth_user_id"] = new_id
 
             if existing:
-                clean_updates["employee_code"] = existing.get("employee_code") or "EMP-FALLBACK"
-                clean_updates["email"] = existing.get("email") or ""
+                clean_updates["employee_code"] = existing.get("employee_code") or clean_updates.get("employee_code") or "EMP-FALLBACK"
+                clean_updates["email"] = existing.get("email") or clean_updates.get("email") or ""
                 if "role" not in clean_updates:
                     clean_updates["role"] = existing.get("role") or "Admin"
                 if "designation" not in clean_updates:
@@ -471,12 +528,12 @@ class HRMSRepository:
                 if "department" not in clean_updates:
                     clean_updates["department"] = existing.get("department") or "Management"
             else:
-                clean_updates["employee_code"] = emp_id if not is_uuid(emp_id) else "EMP-FALLBACK"
-                clean_updates["email"] = ""
-                clean_updates["role"] = "Admin"
-                clean_updates["designation"] = "Admin"
-                clean_updates["dept"] = "Management"
-                clean_updates["department"] = "Management"
+                clean_updates["employee_code"] = clean_updates.get("employee_code") or (emp_id if not is_uuid(emp_id) else "EMP-FALLBACK")
+                clean_updates["email"] = clean_updates.get("email") or (emp_id if "@" in emp_id else "")
+                clean_updates["role"] = clean_updates.get("role") or "Admin"
+                clean_updates["designation"] = clean_updates.get("designation") or "Admin"
+                clean_updates["dept"] = clean_updates.get("dept") or "Management"
+                clean_updates["department"] = clean_updates.get("department") or "Management"
 
             res = self.supabase.schema("hrms").table("employees").upsert(clean_updates, on_conflict="employee_id").select().execute()
             if res.data and len(res.data) > 0:
@@ -502,6 +559,7 @@ class HRMSRepository:
 
     # ── Delete employee ───────────────────────────────────────────────────────
     def delete_employee(self, emp_id: str) -> bool:
+        _clear_employees_cache()
         """Delete employee from hrms.employees, public.employees, Supabase Auth, and memory."""
         global _in_memory_employees
         _in_memory_employees = [
@@ -678,3 +736,77 @@ class HRMSRepository:
         emp_code = f"EMP{next_num:06d}"  # e.g. EMP000001, EMP000012, EMP000100
         logger.info(f"Generated sequential employee_code: {emp_code} (max_found={max_num})")
         return emp_code
+
+    # ── Salary Management ─────────────────────────────────────────────────────
+    def get_salaries(self) -> List[Dict[str, Any]]:
+        try:
+            res = self.supabase.schema("hrms").table("salaries").select("*").execute()
+            salaries = res.data or []
+            
+            # Fetch employees to merge names and emails
+            emp_res = self.supabase.schema("hrms").table("employees").select("employee_id, name, email").execute()
+            emp_map = {e["employee_id"]: e for e in (emp_res.data or [])}
+            
+            for s in salaries:
+                emp = emp_map.get(s["employee_id"])
+                if emp:
+                    s["employee_name"] = emp.get("name") or "Employee"
+                    s["email"] = emp.get("email") or ""
+                else:
+                    s["employee_name"] = "Employee"
+                    s["email"] = ""
+            return salaries
+        except Exception as e:
+            logger.warning(f"Failed to fetch salaries: {e}")
+            return []
+
+    def get_salary_by_employee_id(self, emp_id: str) -> Optional[Dict[str, Any]]:
+        existing = self.get_employee_by_id(emp_id)
+        if not existing:
+            return None
+        real_uuid = existing.get("employee_id") or existing.get("user_id") or existing.get("auth_user_id")
+        if not real_uuid:
+            return None
+        try:
+            res = self.supabase.schema("hrms").table("salaries").select("*").eq("employee_id", real_uuid).execute()
+            if res.data and len(res.data) > 0:
+                s = res.data[0]
+                s["employee_name"] = existing.get("name") or "Employee"
+                s["email"] = existing.get("email") or ""
+                return s
+            # Return default zero salary if it doesn't exist
+            return {
+                "employee_id": real_uuid,
+                "employee_code": existing.get("employee_code") or "EMP-FALLBACK",
+                "monthly_salary": 0.0,
+                "employee_name": existing.get("name") or "Employee",
+                "email": existing.get("email") or ""
+            }
+        except Exception as e:
+            logger.warning(f"Failed to fetch salary for {real_uuid}: {e}")
+            return None
+
+    def update_salary(self, emp_id: str, monthly_salary: float) -> Optional[Dict[str, Any]]:
+        existing = self.get_employee_by_id(emp_id)
+        if not existing:
+            raise ValueError(f"Employee not found: {emp_id}")
+        real_uuid = existing.get("employee_id") or existing.get("user_id") or existing.get("auth_user_id")
+        if not real_uuid:
+            raise ValueError(f"Employee UUID could not be resolved for: {emp_id}")
+        
+        payload = {
+            "employee_id": real_uuid,
+            "employee_code": existing.get("employee_code") or "EMP-FALLBACK",
+            "monthly_salary": monthly_salary
+        }
+        try:
+            res = self.supabase.schema("hrms").table("salaries").upsert(payload, on_conflict="employee_id").select().execute()
+            if res.data and len(res.data) > 0:
+                s = res.data[0]
+                s["employee_name"] = existing.get("name") or "Employee"
+                s["email"] = existing.get("email") or ""
+                return s
+            return None
+        except Exception as e:
+            logger.warning(f"Failed to update salary for {real_uuid}: {e}")
+            raise e

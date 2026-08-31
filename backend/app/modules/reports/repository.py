@@ -44,16 +44,10 @@ class ReportsRepository:
             if key in self._geocoded_cache:
                 return self._geocoded_cache[key]
                 
-            import requests
-            url = f"https://nominatim.openstreetmap.org/reverse?format=json&lat={lat_f}&lon={lng_f}&zoom=18"
-            headers = {"User-Agent": "TConnect-Backend/1.0"}
-            res = requests.get(url, headers=headers, timeout=2)
-            if res.status_code == 200:
-                data = res.json()
-                display_name = data.get("display_name")
-                if display_name:
-                    self._geocoded_cache[key] = display_name
-                    return display_name
+            # Instant fallback to avoid blocking HTTP requests in lists and loops
+            coords_str = f"Location ({lat_f:.4f}, {lng_f:.4f})"
+            self._geocoded_cache[key] = coords_str
+            return coords_str
         except Exception as e:
             logger.warning(f"Reverse geocode failed for {lat}, {lng}: {e}")
         return None
@@ -1221,12 +1215,21 @@ class ReportsRepository:
         
         challenges = row.get("challenges_faced") or ""
         highlights_val = challenges
-        blockers_val = "None"
-        if " | " in challenges:
+        blockers_val = row.get("blockers") or "None"
+        if " | Blockers: " in challenges:
+            try:
+                blockers_val = challenges.split(" | Blockers: ")[1].split(" | ")[0].strip()
+            except Exception:
+                blockers_val = "None"
+        elif " | " in challenges:
             parts = challenges.split(" | ")
-            highlights_val = parts[0]
-            if len(parts) > 3:
-                blockers_val = parts[1]
+            if len(parts) > 1 and not any(parts[1].strip().startswith(p) for p in ("Executive:", "Email:", "EMP:", "Manager:")):
+                blockers_val = parts[1].strip()
+            else:
+                blockers_val = row.get("blockers") or "None"
+
+        if " | " in challenges:
+            highlights_val = challenges.split(" | ")[0].strip()
                 
         is_ack = bool(row.get("acknowledged", False))
         ack_by = row.get("acknowledged_by") or ""
@@ -1299,27 +1302,29 @@ class ReportsRepository:
             if login_time == "—": 
                 login_time = None
 
-            c_in_lat = matched_log.get("check_in_latitude") or matched_log.get("latitude")
-            c_in_lng = matched_log.get("check_in_longitude") or matched_log.get("longitude")
-            if c_in_lat is not None and c_in_lng is not None:
-                login_location = self._reverse_geocode_coords(c_in_lat, c_in_lng)
-            if not login_location:
-                stored_in_addr = matched_log.get("check_in_address") or matched_log.get("work_location") or matched_log.get("location_name")
-                if stored_in_addr and stored_in_addr != "Adyar IT Corridor, Chennai" and stored_in_addr != "—" and stored_in_addr.strip() != "":
-                    login_location = stored_in_addr
+            # Try database check-in address first
+            stored_in_addr = matched_log.get("check_in_address") or matched_log.get("work_location") or matched_log.get("location_name")
+            if stored_in_addr and stored_in_addr != "Adyar IT Corridor, Chennai" and stored_in_addr != "—" and stored_in_addr.strip() != "":
+                login_location = stored_in_addr
+            else:
+                c_in_lat = matched_log.get("check_in_latitude") or matched_log.get("latitude")
+                c_in_lng = matched_log.get("check_in_longitude") or matched_log.get("longitude")
+                if c_in_lat is not None and c_in_lng is not None:
+                    login_location = self._reverse_geocode_coords(c_in_lat, c_in_lng)
 
-            logout_time = matched_log.get("check_out_time") or matched_log.get("punch_out_time") or matched_log.get("clockOut")
+            logout_time = matched_log.get("check_out_time") or matched_log.get("punch_out_time") or matched_log.get("clockIn")
             if logout_time == "—": 
                 logout_time = None
 
-            c_out_lat = matched_log.get("check_out_latitude")
-            c_out_lng = matched_log.get("check_out_longitude")
-            if c_out_lat is not None and c_out_lng is not None:
-                logout_location = self._reverse_geocode_coords(c_out_lat, c_out_lng)
-            if not logout_location:
-                stored_out_addr = matched_log.get("check_out_address")
-                if stored_out_addr and stored_out_addr != "Adyar IT Corridor, Chennai" and stored_out_addr != "—" and stored_out_addr.strip() != "":
-                    logout_location = stored_out_addr
+            # Try database check-out address first
+            stored_out_addr = matched_log.get("check_out_address")
+            if stored_out_addr and stored_out_addr != "Adyar IT Corridor, Chennai" and stored_out_addr != "—" and stored_out_addr.strip() != "":
+                logout_location = stored_out_addr
+            else:
+                c_out_lat = matched_log.get("check_out_latitude")
+                c_out_lng = matched_log.get("check_out_longitude")
+                if c_out_lat is not None and c_out_lng is not None:
+                    logout_location = self._reverse_geocode_coords(c_out_lat, c_out_lng)
 
         if not login_time or login_time == "—": login_time = "N/A"
         if not login_location or login_location == "—": login_location = "N/A"
@@ -1444,8 +1449,9 @@ class ReportsRepository:
         followups = int(data.get("followupsScheduled") or data.get("followups_scheduled") or 0)
         deals = int(data.get("dealsClosed") or data.get("deals_closed") or 0)
 
-        high_str = str(data.get("highlights") or "Completed daily client meetings.")
-        full_high = f"{high_str} | Executive: {exec_name} | Email: {exec_email} | EMP: {emp_code} | Manager: {mgr_email}"
+        high_str = str(data.get("highlights") or "Completed daily client meetings.").replace(" | ", " - ")
+        block_str = str(data.get("blockers") or "None").replace(" | ", " - ")
+        full_high = f"{high_str} | Blockers: {block_str} | Executive: {exec_name} | Email: {exec_email} | EMP: {emp_code} | Manager: {mgr_email}"
 
         report_obj = {
             "id": report_id,
@@ -2395,4 +2401,94 @@ class ReportsRepository:
                 "revenue": total_revenue
             }
         }
+
+    def save_sales_report(self, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        report_id = data.get("id")
+        now_iso = datetime.utcnow().isoformat()
+        
+        manager_name = str(data.get("manager_name") or (user_payload or {}).get("name") or "Sales Manager")
+        manager_email = str(data.get("manager_email") or (user_payload or {}).get("email") or "").lower().strip()
+        manager_id = str(data.get("manager_id") or (user_payload or {}).get("employee_code") or (user_payload or {}).get("employee_id") or "MGR-001")
+        
+        report_obj = {
+            "employee_id": manager_id,
+            "employee_name": manager_name,
+            "manager_name": manager_name,
+            "report_date": datetime.utcnow().date().isoformat(),
+            "report_type": data.get("report_type"),
+            "report_period": data.get("report_period"),
+            "metrics": data.get("metrics", {}),
+            "status": data.get("status", "Draft"),
+            "ceo_remarks": data.get("ceo_remarks", ""),
+            "updated_at": now_iso
+        }
+        
+        if report_obj["status"] == "Submitted":
+            report_obj["submitted_at"] = now_iso
+            
+        try:
+            if report_id:
+                # Update existing
+                res = self.supabase.schema("system").table("reports_eod").update(report_obj).eq("id", report_id).execute()
+                if not res.data:
+                    res = self.supabase.table("reports_eod").update(report_obj).eq("id", report_id).execute()
+            else:
+                # Generate unique EOD report ID
+                import uuid
+                report_obj["id"] = f"EOD-SR-{uuid.uuid4().hex[:8]}"
+                res = self.supabase.schema("system").table("reports_eod").insert(report_obj).execute()
+                if not res.data:
+                    res = self.supabase.table("reports_eod").insert(report_obj).execute()
+                    
+            if res.data and len(res.data) > 0:
+                return res.data[0]
+        except Exception as e:
+            logger.error(f"Failed to save sales report to reports_eod: {e}")
+            raise e
+        return {}
+
+    def get_sales_reports(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        from app.core.scoping import normalize_user_role
+        role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+        manager_id = str((user_payload or {}).get("employee_code") or (user_payload or {}).get("employee_id") or "")
+        
+        try:
+            query = self.supabase.schema("system").table("reports_eod").select("*").in_("report_type", ["weekly", "monthly"])
+            if role not in ("super_admin", "ceo", "admin", "ceo / founder") and manager_id:
+                query = query.eq("employee_id", manager_id)
+            res = query.order("created_at", desc=True).execute()
+        except Exception:
+            try:
+                query = self.supabase.table("reports_eod").select("*").in_("report_type", ["weekly", "monthly"])
+                if role not in ("super_admin", "ceo", "admin", "ceo / founder") and manager_id:
+                    query = query.eq("employee_id", manager_id)
+                res = query.order("created_at", desc=True).execute()
+            except Exception as e:
+                logger.error(f"Failed to fetch sales reports from reports_eod: {e}")
+                return []
+                
+        return res.data if res and res.data else []
+
+    def review_sales_report(self, report_id: str, status: str, remarks: str, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        now_iso = datetime.utcnow().isoformat()
+        ceo_name = str((user_payload or {}).get("name") or "CEO")
+        update_obj = {
+            "status": status,
+            "ceo_remarks": remarks,
+            "acknowledged": True,
+            "acknowledged_by": ceo_name,
+            "updated_at": now_iso
+        }
+        
+        try:
+            res = self.supabase.schema("system").table("reports_eod").update(update_obj).eq("id", report_id).execute()
+            if not res.data:
+                res = self.supabase.table("reports_eod").update(update_obj).eq("id", report_id).execute()
+                
+            if res.data and len(res.data) > 0:
+                return res.data[0]
+        except Exception as e:
+            logger.error(f"Failed to review sales report {report_id} in reports_eod: {e}")
+            raise e
+        return {}
 

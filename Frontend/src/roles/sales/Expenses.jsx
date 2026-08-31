@@ -23,8 +23,9 @@ import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { expenseAPI, notificationAPI } from "../../services/api.js";
 import { useAutoSave } from "../../services/useAutoSave.js";
 
-export default function Expenses() {
+export default function Expenses(props) {
   const { showToast } = useToast();
+  const isModalView = props?.isModalView || false;
   const currentUser = useCurrentUser();
 
   const userEmail = (currentUser.email || "").toLowerCase().trim();
@@ -47,6 +48,7 @@ export default function Expenses() {
   // Persistent Expense State - empty by default, loaded from API
   const [expenseList, setExpenseList] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [statusFilter, setStatusFilter] = useState("all");
 
   const fetchExpenses = async () => {
     setLoading(true);
@@ -146,7 +148,13 @@ export default function Expenses() {
     }
   };
 
-  const [showSubmitModal, setShowSubmitModal] = useState(false);
+  const [showSubmitModal, setShowSubmitModal] = useState(props?.defaultOpenSubmit || false);
+
+  useEffect(() => {
+    if (props?.defaultOpenSubmit) {
+      setShowSubmitModal(props.defaultOpenSubmit);
+    }
+  }, [props?.defaultOpenSubmit]);
 
   // When a site visit is selected, auto-fill Client Name & Location
   const handleVisitSelect = (vId) => {
@@ -231,91 +239,136 @@ export default function Expenses() {
   };
 
   // Compute Live Metrics strictly for logged in executive
-  const myExpenseList = expenseList.filter(matchesUser);
-  const totalAmount = myExpenseList.reduce((acc, curr) => acc + (curr.rawAmount || parseInt(String(curr.amount || 0).replace(/[^0-9]/g, "")) || 0), 0);
-  const approvedAmount = myExpenseList
+  const allMyExpenses = expenseList.filter(matchesUser);
+  const totalAmount = allMyExpenses.reduce((acc, curr) => acc + (curr.rawAmount || parseInt(String(curr.amount || 0).replace(/[^0-9]/g, "")) || 0), 0);
+  const approvedAmount = allMyExpenses
     .filter((e) => (e.status || "").toLowerCase().includes("approved"))
     .reduce((acc, curr) => acc + (curr.rawAmount || parseInt(String(curr.amount || 0).replace(/[^0-9]/g, "")) || 0), 0);
 
-  const pendingAmount = myExpenseList
+  const pendingAmount = allMyExpenses
     .filter((e) => (e.status || "").toLowerCase().includes("pending"))
     .reduce((acc, curr) => acc + (curr.rawAmount || parseInt(String(curr.amount || 0).replace(/[^0-9]/g, "")) || 0), 0);
 
-  const rejectedAmount = myExpenseList
+  const rejectedAmount = allMyExpenses
     .filter((e) => (e.status || "").toLowerCase().includes("reject"))
     .reduce((acc, curr) => acc + (curr.rawAmount || parseInt(String(curr.amount || 0).replace(/[^0-9]/g, "")) || 0), 0);
+
+  const myExpenseList = allMyExpenses.filter((e) => {
+    if (statusFilter === "all") return true;
+    if (statusFilter === "approved") return (e.status || "").toLowerCase().includes("approved");
+    if (statusFilter === "pending") return (e.status || "").toLowerCase().includes("pending");
+    if (statusFilter === "rejected") return (e.status || "").toLowerCase().includes("reject");
+    return true;
+  });
 
   return (
     <div className="space-y-6 font-sans text-slate-900">
       {/* Header Banner */}
-      <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black shadow-md shadow-amber-500/20">
-            <Wallet size={24} />
+      {!isModalView ? (
+        <div className="bg-white rounded-3xl p-6 border border-slate-200 shadow-xs flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black shadow-md shadow-amber-500/20">
+              <Wallet size={24} />
+            </div>
+            <div>
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                Reimbursements
+              </h1>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-              Site Visit Expense Claims & Reimbursements
-            </h1>
-            <p className="text-xs text-slate-500 font-semibold mt-0.5">
-              Submit visit expense records for Sales Manager review & track real-time approval status.
-            </p>
-          </div>
-        </div>
 
-        <button
-          type="button"
-          onClick={() => setShowSubmitModal(true)}
-          className="px-5 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer shadow-md shadow-teal-600/20"
-        >
-          <Plus size={18} /> Request Visit Expense
-        </button>
-      </div>
+          <button
+            type="button"
+            onClick={() => setShowSubmitModal(true)}
+            className="px-5 py-3 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer shadow-md shadow-teal-600/20"
+          >
+            <Plus size={18} /> Request Visit Expense
+          </button>
+        </div>
+      ) : (
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            onClick={() => setShowSubmitModal(true)}
+            className="px-4 py-2.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs sm:text-sm flex items-center gap-2 transition cursor-pointer shadow-md shadow-teal-600/20"
+          >
+            <Plus size={16} /> Request Visit Expense
+          </button>
+        </div>
+      )}
 
       {/* Summary KPI Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-1">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] font-black uppercase tracking-wider">Total Claims</span>
-            <Wallet size={18} className="text-blue-600" />
+        <div
+          onClick={() => setStatusFilter("all")}
+          className={`rounded-3xl p-5 border shadow-2xs space-y-1 transition-all duration-200 cursor-pointer hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+            statusFilter === "all"
+              ? "bg-gradient-to-br from-blue-600 via-blue-700 to-indigo-850 border-blue-800 ring-2 ring-blue-500/40 shadow-lg shadow-blue-500/20 text-white"
+              : "bg-gradient-to-br from-blue-50 via-slate-50 to-indigo-50/20 border-blue-100 hover:from-blue-100/50 hover:to-indigo-100/30 hover:border-blue-300"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-black uppercase tracking-wider ${statusFilter === "all" ? "text-blue-100" : "text-slate-500"}`}>Total Claims</span>
+            <Wallet size={18} className={statusFilter === "all" ? "text-white" : "text-blue-600"} />
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-slate-900">
+          <h2 className={`text-xl sm:text-2xl font-black ${statusFilter === "all" ? "text-white" : "text-slate-900"}`}>
             ₹{totalAmount.toLocaleString("en-IN")}
           </h2>
-          <p className="text-[11px] text-slate-500 font-semibold">{expenseList.length} total requests</p>
+          <p className={`text-[11px] font-semibold ${statusFilter === "all" ? "text-blue-200" : "text-slate-500"}`}>{expenseList.length} total requests</p>
         </div>
 
-        <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-1">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] font-black uppercase tracking-wider text-emerald-700">Approved</span>
-            <CheckCircle size={18} className="text-emerald-600" />
+        <div
+          onClick={() => setStatusFilter(statusFilter === "approved" ? "all" : "approved")}
+          className={`rounded-3xl p-5 border shadow-2xs space-y-1 transition-all duration-200 cursor-pointer hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+            statusFilter === "approved"
+              ? "bg-gradient-to-br from-emerald-600 via-emerald-700 to-teal-850 border-emerald-800 ring-2 ring-emerald-500/40 shadow-lg shadow-emerald-500/20 text-white"
+              : "bg-gradient-to-br from-emerald-50 via-slate-50 to-teal-50/20 border-emerald-100 hover:from-emerald-100/50 hover:to-teal-100/30 hover:border-emerald-300"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-black uppercase tracking-wider ${statusFilter === "approved" ? "text-emerald-100" : "text-emerald-800"}`}>Approved</span>
+            <CheckCircle size={18} className={statusFilter === "approved" ? "text-white" : "text-emerald-600"} />
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-emerald-700">
+          <h2 className={`text-xl sm:text-2xl font-black ${statusFilter === "approved" ? "text-white" : "text-emerald-700"}`}>
             ₹{approvedAmount.toLocaleString("en-IN")}
           </h2>
-          <p className="text-[11px] text-emerald-600 font-semibold">Cleared by Manager</p>
+          <p className={`text-[11px] font-semibold ${statusFilter === "approved" ? "text-emerald-200" : "text-emerald-600"}`}>Cleared by Manager</p>
         </div>
 
-        <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-1">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] font-black uppercase tracking-wider text-amber-700">Pending</span>
-            <Clock3 size={18} className="text-amber-500" />
+        <div
+          onClick={() => setStatusFilter(statusFilter === "pending" ? "all" : "pending")}
+          className={`rounded-3xl p-5 border shadow-2xs space-y-1 transition-all duration-200 cursor-pointer hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+            statusFilter === "pending"
+              ? "bg-gradient-to-br from-amber-600 via-amber-700 to-orange-850 border-amber-850 ring-2 ring-amber-500/40 shadow-lg shadow-amber-500/20 text-white"
+              : "bg-gradient-to-br from-amber-50 via-slate-50 to-orange-50/20 border-amber-100 hover:from-amber-100/50 hover:to-orange-100/30 hover:border-amber-300"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-black uppercase tracking-wider ${statusFilter === "pending" ? "text-amber-100" : "text-amber-800"}`}>Pending</span>
+            <Clock3 size={18} className={statusFilter === "pending" ? "text-white" : "text-amber-500"} />
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-amber-600">
+          <h2 className={`text-xl sm:text-2xl font-black ${statusFilter === "pending" ? "text-white" : "text-amber-600"}`}>
             ₹{pendingAmount.toLocaleString("en-IN")}
           </h2>
-          <p className="text-[11px] text-amber-600 font-semibold">Awaiting Manager Approval</p>
+          <p className={`text-[11px] font-semibold ${statusFilter === "pending" ? "text-amber-200" : "text-amber-600"}`}>Awaiting Manager Approval</p>
         </div>
 
-        <div className="bg-white rounded-3xl p-5 border border-slate-200 shadow-xs space-y-1">
-          <div className="flex items-center justify-between text-slate-400">
-            <span className="text-[10px] font-black uppercase tracking-wider text-rose-700">Rejected</span>
-            <XCircle size={18} className="text-rose-600" />
+        <div
+          onClick={() => setStatusFilter(statusFilter === "rejected" ? "all" : "rejected")}
+          className={`rounded-3xl p-5 border shadow-2xs space-y-1 transition-all duration-200 cursor-pointer hover:shadow-md hover:scale-[1.02] active:scale-[0.98] ${
+            statusFilter === "rejected"
+              ? "bg-gradient-to-br from-rose-600 via-rose-700 to-pink-850 border-rose-800 ring-2 ring-rose-500/40 shadow-lg shadow-rose-500/20 text-white"
+              : "bg-gradient-to-br from-rose-50 via-slate-50 to-pink-50/20 border-rose-100 hover:from-rose-100/50 hover:to-pink-100/30 hover:border-rose-300"
+          }`}
+        >
+          <div className="flex items-center justify-between">
+            <span className={`text-[10px] font-black uppercase tracking-wider ${statusFilter === "rejected" ? "text-rose-100" : "text-rose-800"}`}>Rejected</span>
+            <XCircle size={18} className={statusFilter === "rejected" ? "text-white" : "text-rose-600"} />
           </div>
-          <h2 className="text-xl sm:text-2xl font-black text-rose-600">
+          <h2 className={`text-xl sm:text-2xl font-black ${statusFilter === "rejected" ? "text-white" : "text-rose-600"}`}>
             ₹{rejectedAmount.toLocaleString("en-IN")}
           </h2>
-          <p className="text-[11px] text-rose-600 font-semibold">Requires revision</p>
+          <p className={`text-[11px] font-semibold ${statusFilter === "rejected" ? "text-rose-200" : "text-rose-600"}`}>Requires revision</p>
         </div>
       </div>
 
