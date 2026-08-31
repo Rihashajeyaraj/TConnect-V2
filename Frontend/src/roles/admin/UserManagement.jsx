@@ -284,7 +284,7 @@ function UserDirectoryTable({
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
       <div className="overflow-x-auto">
-        <table className="w-full text-left border-collapse text-xs">
+        <table className="w-full min-w-[800px] text-left border-collapse text-xs whitespace-nowrap">
           <thead>
             <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
               <th className="px-4 py-3">Emp ID</th>
@@ -488,7 +488,10 @@ function UserManagement() {
   const location = useLocation()
   const searchInputRef = useRef(null)
   const [users, setUsers] = useState([])
-  const [activeTab, setActiveTab] = useState('table') // 'table' | 'hierarchy'
+  const [activeTab, setActiveTab] = useState(null) // None selected on load
+  const [showAllUsersModal, setShowAllUsersModal] = useState(false)
+  const [showUnassignedPoolModal, setShowUnassignedPoolModal] = useState(false)
+  const [showHierarchyModal, setShowHierarchyModal] = useState(false)
   const [departmentsList, setDepartmentsList] = useState([])
 
   useEffect(() => {
@@ -508,13 +511,9 @@ function UserManagement() {
     fetchDepartments()
   }, [])
 
-  const defaultDepts = [
-    'Sales & Business Development',
-    'Inside Sales',
-    'Field Sales',
-    'IT & System Admin'
-  ]
-  const deptOptions = departmentsList.length > 0 ? departmentsList : defaultDepts
+  const deptOptions = useMemo(() => {
+    return departmentsList.map(d => typeof d === 'string' ? d : (d.name || ''))
+  }, [departmentsList])
 
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedRole, setSelectedRole] = useState('ALL')
@@ -1396,23 +1395,33 @@ function UserManagement() {
     <div className="mx-auto max-w-[1400px] space-y-6 font-sans">
       <canvas ref={canvasRef} className="hidden" />
       {/* Page Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs">
-        <div>
-          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-            <Users className="w-7 h-7 text-blue-600" /> Employee & User Account Management
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-6 shadow-xs">
+        <div className="min-w-0">
+          <h1 className="text-base sm:text-2xl font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+            <Users className="w-5 h-5 sm:w-7 sm:h-7 text-blue-600 shrink-0" /> <span className="truncate">Employee &amp; User Account Management</span>
           </h1>
 
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
+            onClick={() => setActiveTab(activeTab === 'password-resets' ? 'hierarchy' : 'password-resets')}
+            className={`inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 text-xs font-bold rounded-xl shadow-sm border transition-all cursor-pointer ${
+              activeTab === 'password-resets'
+                ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-500'
+                : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-200'
+            }`}
+          >
+            <Key className="w-3.5 h-3.5" /> {activeTab === 'password-resets' ? 'Hierarchy View' : 'Password Requests'}
+          </button>
+          <button
             onClick={() => setShowAssignModal(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+            className="inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
           >
             <UserCheck className="w-4 h-4" /> Assign Sales Executives
           </button>
           <button
             onClick={() => setShowAddModal(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
+            className="inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
           >
             <Plus className="w-4 h-4" /> Create New Employee Account
           </button>
@@ -1420,81 +1429,60 @@ function UserManagement() {
       </div>
 
       {/* KPI Stats Panel */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
-            <Users className="w-5 h-5" />
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3 sm:gap-4">
+        <div 
+          onClick={() => setShowAllUsersModal(true)}
+          className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2 sm:gap-3 cursor-pointer hover:bg-slate-50 hover:border-slate-350 transition hover:scale-102 select-none"
+          title="Click to view all users directory table"
+        >
+          <div className="p-2 sm:p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 shrink-0">
+            <Users className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Users</p>
-            <p className="text-2xl font-extrabold text-slate-900">{users.length}</p>
-          </div>
-        </div>
-
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Sales Managers</p>
-            <p className="text-2xl font-extrabold text-slate-900">{salesManagers.length}</p>
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Total Users</p>
+            <p className="text-xl sm:text-2xl font-extrabold text-slate-900">{users.length}</p>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
-            <UserCheck className="w-5 h-5" />
+        <div 
+          onClick={() => {
+            setShowHierarchyModal(true);
+            showToast('Hierarchy view loaded successfully!', 'info');
+          }}
+          className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2 sm:gap-3 cursor-pointer hover:bg-slate-50 hover:border-slate-350 transition hover:scale-102 select-none"
+          title="Click to view managers & team hierarchy"
+        >
+          <div className="p-2 sm:p-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 shrink-0">
+            <ShieldCheck className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned Subordinates</p>
-            <p className="text-2xl font-extrabold text-slate-900">{salesExecutives.length - unassignedExecutives.length}</p>
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Sales Managers</p>
+            <p className="text-xl sm:text-2xl font-extrabold text-slate-900">{salesManagers.length}</p>
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className={`p-3 rounded-xl border ${unassignedExecutives.length > 0 ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
-            <UserX className="w-5 h-5" />
+        <div className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2 sm:gap-3">
+          <div className="p-2 sm:p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100 shrink-0">
+            <UserCheck className="w-4 h-4 sm:w-5 sm:h-5" />
           </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Unassigned Pool</p>
-            <p className={`text-2xl font-extrabold ${unassignedExecutives.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{unassignedExecutives.length}</p>
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned Subordinates</p>
+            <p className="text-xl sm:text-2xl font-extrabold text-slate-900">{salesExecutives.length - unassignedExecutives.length}</p>
           </div>
         </div>
-      </div>
 
-      {/* View Switcher Tabs */}
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => setActiveTab('table')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer ${
-              activeTab === 'table'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <Layers className="w-4 h-4" /> All Users Directory ({users.length})
-          </button>
-          <button
-            onClick={() => setActiveTab('hierarchy')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer ${
-              activeTab === 'hierarchy'
-                ? 'bg-[#061A4D] text-white shadow-md shadow-[#061A4D]/20'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <Network className="w-4 h-4" /> Manager & Executive Team Hierarchy ({hierarchyManagers.length} Managers)
-          </button>
-          <button
-            onClick={() => setActiveTab('password-resets')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer relative ${
-              activeTab === 'password-resets'
-                ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <Key className="w-4 h-4" /> Password Requests
-          </button>
+        <div 
+          onClick={() => setShowUnassignedPoolModal(true)}
+          className="bg-white p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-2 sm:gap-3 cursor-pointer hover:bg-slate-50 hover:border-slate-350 transition hover:scale-102 select-none"
+          title="Click to view unassigned executives pool"
+        >
+          <div className={`p-2 sm:p-3 rounded-xl border shrink-0 ${unassignedExecutives.length > 0 ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+            <UserX className="w-4 h-4 sm:w-5 sm:h-5" />
+          </div>
+          <div className="min-w-0">
+            <p className="text-[10px] sm:text-xs font-bold text-slate-500 uppercase tracking-wider">Unassigned Pool</p>
+            <p className={`text-xl sm:text-2xl font-extrabold ${unassignedExecutives.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{unassignedExecutives.length}</p>
+          </div>
         </div>
       </div>
 
@@ -1507,12 +1495,29 @@ function UserManagement() {
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* VIEW 1: MANAGER & EXECUTIVE HIERARCHY                    */}
-      {/* ======================================================== */}
-      {activeTab === 'hierarchy' && (
 
-        <div className="space-y-6">
+
+      {/* ======================================================== */}
+      {/* VIEW 1: MANAGER & EXECUTIVE HIERARCHY — POPUP MODAL       */}
+      {/* ======================================================== */}
+      {showHierarchyModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-6xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
+            {/* Modal Header */}
+            <div className="bg-[#0b2545] text-white p-4 flex items-center justify-between border-b border-slate-800 shrink-0">
+              <span className="font-bold text-sm flex items-center gap-2">
+                <Network className="w-5 h-5 text-indigo-400" /> Manager-to-Executive Team Hierarchy
+              </span>
+              <button
+                onClick={() => setShowHierarchyModal(false)}
+                className="text-white/60 hover:text-white font-bold text-base cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 bg-slate-50 space-y-6">
           {/* Header Info Note */}
           <div className="bg-white border border-[#DCE3EF] p-5 rounded-2xl flex items-center justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -1680,136 +1685,190 @@ function UserManagement() {
               })()}
             </div>
           </div>
+        </div>
+      </div>
+      </div>
+      )}
 
-          {/* Unassigned Executives Pool Section */}
-          <div className="bg-white border border-[#DCE3EF] rounded-2xl p-5 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
-              <div className="flex items-center gap-2">
-                <span className="p-2 bg-amber-50 text-[#D99A18] rounded-xl border border-amber-100">
-                  <UserX className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="font-extrabold text-sm text-[#071A45]">Unassigned Executives Pool ({unassignedExecutives.length})</h3>
-                  <p className="text-[11px] text-[#64748B] font-medium mt-0.5">Sales Executives who do not currently report to any manager.</p>
-                </div>
-              </div>
-              
-              {/* Unassigned search input */}
-              <div className="relative w-full sm:w-64">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search unassigned pool..."
-                  value={unassignedSearchQuery}
-                  onChange={(e) => setUnassignedSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-900 focus:outline-none focus:border-[#123A8C] font-semibold"
-                />
-              </div>
+      {/* ======================================================== */}
+      {/* VIEW 2: ALL USERS DIRECTORY — POPUP MODAL               */}
+      {/* ======================================================== */}
+      {showAllUsersModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-6xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
+            {/* Modal Header */}
+            <div className="bg-[#0b2545] text-white p-4 flex items-center justify-between border-b border-slate-800">
+              <span className="font-bold text-sm flex items-center gap-2">
+                <Users className="w-5 h-5 text-blue-400" /> All Registered Users Directory ({filteredUsers.length})
+              </span>
+              <button
+                onClick={() => setShowAllUsersModal(false)}
+                className="text-white/60 hover:text-white font-bold text-base cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
 
-            {filteredUnassignedPool.length === 0 ? (
-              <p className="text-xs text-slate-500 font-semibold py-8 text-center bg-slate-50/50 border border-dashed border-[#DCE3EF] rounded-xl">
-                {unassignedSearchQuery ? 'No unassigned pool matches search query.' : 'Unassigned executives pool is currently empty.'}
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {filteredUnassignedPool.map((exec) => (
-                  <div
-                    key={exec.id}
-                    className="p-3 bg-slate-50/40 border border-[#DCE3EF] rounded-xl flex items-center justify-between gap-3 hover:border-slate-350 transition"
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 bg-slate-50 space-y-4">
+              {/* Search + Filter Bar */}
+              <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-2 items-center justify-between">
+                <div className="relative w-full sm:w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="Search name, email, department..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                </div>
+                <div className="flex gap-2 flex-wrap">
+                  <select
+                    value={selectedRole}
+                    onChange={(e) => setSelectedRole(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
                   >
-                    <div className="min-w-0 flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 font-extrabold text-[10px] flex items-center justify-center border border-amber-100 shrink-0">
-                        {(exec.name || '').split(' ').map((n) => n[0]).join('')}
-                      </div>
-                      <div className="min-w-0">
-                        <p className="font-extrabold text-[11px] text-slate-900 truncate">{exec.name}</p>
-                        <p className="text-[9px] text-[#64748B] truncate mt-0.5">{exec.email}</p>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`px-1.5 py-0.2 rounded-md text-[8px] font-black border transition ${
-                        exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
-                      }`}>
-                        {exec.status || 'Active'}
-                      </span>
-                      <button
-                        onClick={() => {
-                          setSelectedUnassignedExec(exec)
-                          setShowAssignToManagerModal(true)
-                        }}
-                        className="px-2.5 py-1 bg-[#061A4D] hover:bg-[#123A8C] text-white font-extrabold text-[10px] rounded-lg shadow-2xs cursor-pointer transition shrink-0"
-                      >
-                        Assign
-                      </button>
-                    </div>
-                  </div>
-                ))}
+                    <option value="ALL">All Roles</option>
+                    <option value="Super Admin">Super Admin</option>
+                    <option value="Sales Manager">Sales Manager</option>
+                    <option value="Sales Executive">Sales Executive</option>
+                  </select>
+                  <select
+                    value={selectedStatus}
+                    onChange={(e) => setSelectedStatus(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+                  >
+                    <option value="ALL">All Statuses</option>
+                    <option value="Active">Active</option>
+                    <option value="Inactive">Inactive</option>
+                  </select>
+                  <span className="self-center text-[11px] text-slate-400 font-bold">{filteredUsers.length} records</span>
+                </div>
               </div>
-            )}
+
+              {/* Table */}
+              <UserDirectoryTable
+                filteredUsers={filteredUsers}
+                isProtectedRole={isProtectedRole}
+                ROLE_BADGE_CLASSES={ROLE_BADGE_CLASSES}
+                toggleUserStatus={toggleUserStatus}
+                handleOpenEditModal={handleOpenEditModal}
+                handleDeleteUser={handleDeleteUser}
+                handleOpenReassignModal={handleOpenReassignModal}
+                setSelectedEnrollUser={setSelectedEnrollUser}
+                setDuplicateErrorUser={setDuplicateErrorUser}
+                setShowEnrollFaceModal={setShowEnrollFaceModal}
+                setSelectedEmployeeProfile={setSelectedEmployeeProfile}
+                setShowCredentialsModal={setShowCredentialsModal}
+              />
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-[#f8fafc] border-t border-slate-150 flex justify-end">
+              <button
+                onClick={() => setShowAllUsersModal(false)}
+                className="px-4 py-2 bg-[#0b2545] hover:bg-[#123A8C] text-white rounded-xl text-xs font-black cursor-pointer shadow-sm"
+              >
+                Close Directory
+              </button>
+            </div>
           </div>
         </div>
       )}
 
-      {/* ======================================================== */}
-      {/* VIEW 2: ALL USERS DIRECTORY — CARD GRID               */}
-      {/* ======================================================== */}
-      {/* VIEW 2: ALL USERS DIRECTORY — TABLE                    */}
-      {/* ======================================================== */}
-      {activeTab === 'table' && (
-        <div className="space-y-4">
-          {/* Search + Filter Bar */}
-          <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-2 items-center justify-between">
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Search name, email, department..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
-              />
+      {/* Unassigned Executives Pool Modal overlay popup */}
+      {showUnassignedPoolModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-4xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
+            {/* Modal Header */}
+            <div className="bg-[#0b2545] text-white p-4 flex items-center justify-between border-b border-slate-800">
+              <span className="font-bold text-sm flex items-center gap-2">
+                <UserX className="w-5 h-5 text-amber-400" /> Unassigned Executives Pool ({unassignedExecutives.length})
+              </span>
+              <button
+                onClick={() => setShowUnassignedPoolModal(false)}
+                className="text-white/60 hover:text-white font-bold text-base cursor-pointer"
+              >
+                ✕
+              </button>
             </div>
-            <div className="flex gap-2 flex-wrap">
-              <select
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+
+            {/* Modal Body */}
+            <div className="flex-1 overflow-y-auto p-5 bg-slate-50 space-y-4">
+              <div className="bg-amber-50 border border-amber-200 p-3.5 rounded-xl text-[11px] font-semibold text-amber-900">
+                These are Sales Executives who do not currently report to any Sales Manager. Select a Sales Manager in the hierarchy page or click "Assign" below to link them.
+              </div>
+
+              {/* Search Bar */}
+              <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-2 items-center justify-between">
+                <div className="relative w-full sm:w-72">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search unassigned pool..."
+                    value={unassignedSearchQuery}
+                    onChange={(e) => setUnassignedSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
+                  />
+                </div>
+                <span className="text-[11px] text-slate-400 font-bold">{filteredUnassignedPool.length} unassigned records</span>
+              </div>
+
+              {/* Table / Grid */}
+              {filteredUnassignedPool.length === 0 ? (
+                <p className="text-xs text-slate-500 font-semibold py-12 text-center bg-white border border-dashed border-[#DCE3EF] rounded-2xl">
+                  {unassignedSearchQuery ? 'No matching unassigned pool records.' : 'Unassigned executives pool is currently empty.'}
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                  {filteredUnassignedPool.map((exec) => (
+                    <div
+                      key={exec.id}
+                      className="p-3 bg-white border border-[#DCE3EF] rounded-xl flex items-center justify-between gap-3 hover:border-slate-350 transition shadow-2xs"
+                    >
+                      <div className="min-w-0 flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 font-extrabold text-[10px] flex items-center justify-center border border-amber-100 shrink-0">
+                          {(exec.name || '').split(' ').map((n) => n[0]).join('')}
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-extrabold text-[11px] text-slate-900 truncate">{exec.name}</p>
+                          <p className="text-[9px] text-[#64748B] truncate mt-0.5">{exec.email}</p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`px-1.5 py-0.2 rounded-md text-[8px] font-black border transition ${
+                          exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
+                        }`}>
+                          {exec.status || 'Active'}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setSelectedUnassignedExec(exec)
+                            setShowAssignToManagerModal(true)
+                          }}
+                          className="px-2.5 py-1 bg-[#061A4D] hover:bg-[#123A8C] text-white font-extrabold text-[10px] rounded-lg shadow-2xs cursor-pointer transition shrink-0"
+                        >
+                          Assign
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-[#f8fafc] border-t border-slate-150 flex justify-end">
+              <button
+                onClick={() => setShowUnassignedPoolModal(false)}
+                className="px-4 py-2 bg-[#0b2545] hover:bg-[#123A8C] text-white rounded-xl text-xs font-black cursor-pointer shadow-sm"
               >
-                <option value="ALL">All Roles</option>
-                <option value="Super Admin">Super Admin</option>
-                <option value="Sales Manager">Sales Manager</option>
-                <option value="Sales Executive">Sales Executive</option>
-              </select>
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-              <span className="self-center text-[11px] text-slate-400 font-bold">{filteredUsers.length} records</span>
+                Close Pool
+              </button>
             </div>
           </div>
-
-          {/* Table */}
-          <UserDirectoryTable
-            filteredUsers={filteredUsers}
-            isProtectedRole={isProtectedRole}
-            ROLE_BADGE_CLASSES={ROLE_BADGE_CLASSES}
-            toggleUserStatus={toggleUserStatus}
-            handleOpenEditModal={handleOpenEditModal}
-            handleDeleteUser={handleDeleteUser}
-            handleOpenReassignModal={handleOpenReassignModal}
-            setSelectedEnrollUser={setSelectedEnrollUser}
-            setDuplicateErrorUser={setDuplicateErrorUser}
-            setShowEnrollFaceModal={setShowEnrollFaceModal}
-            setSelectedEmployeeProfile={setSelectedEmployeeProfile}
-            setShowCredentialsModal={setShowCredentialsModal}
-          />
         </div>
       )}
 
@@ -1984,11 +2043,15 @@ function UserManagement() {
                     onChange={(e) => setNewUser({ ...newUser, dept: e.target.value })}
                     className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 font-bold bg-white focus:ring-1 focus:ring-blue-100"
                   >
-                    {deptOptions.map((dept) => (
-                      <option key={dept} value={dept}>
-                        {dept}
-                      </option>
-                    ))}
+                    {deptOptions.length === 0 ? (
+                      <option value="">No departments configured — Add in Company Overview</option>
+                    ) : (
+                      deptOptions.map((dept) => (
+                        <option key={dept} value={dept}>
+                          {dept}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
 
@@ -2221,11 +2284,15 @@ function UserManagement() {
                     onChange={(e) => setEditingUser({ ...editingUser, dept: e.target.value })}
                     className="w-full h-10 border border-[#DCE3EF] rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 font-bold bg-white focus:ring-1 focus:ring-blue-100"
                   >
-                    {deptOptions.map((dept) => (
-                      <option key={dept} value={dept}>
-                        {dept}
-                      </option>
-                    ))}
+                    {deptOptions.length === 0 ? (
+                      <option value="">No departments configured — Add in Company Overview</option>
+                    ) : (
+                      deptOptions.map((dept) => (
+                        <option key={dept} value={dept}>
+                          {dept}
+                        </option>
+                      ))
+                    )}
                   </select>
                 </div>
               </div>

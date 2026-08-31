@@ -545,12 +545,12 @@ function RoleManagement() {
   }
 
   return (
-    <div className="space-y-6 font-sans">
+    <div className="space-y-4 sm:space-y-6 font-sans">
       {/* Top Title Banner */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-white via-white to-[#D4ECFC]/25 border border-[#64B5F6]/25 rounded-3xl p-6 shadow-xs">
-        <div>
-          <h1 className="text-2xl font-extrabold text-[#0B2545] tracking-tight flex items-center gap-2">
-            <ShieldCheck className="w-7 h-7 text-[#1E88E5]" /> Role & Permission Management (RBAC)
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-white via-white to-[#D4ECFC]/25 border border-[#64B5F6]/25 rounded-3xl p-4 sm:p-6 shadow-xs">
+        <div className="min-w-0">
+          <h1 className="text-base sm:text-2xl font-extrabold text-[#0B2545] tracking-tight flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 sm:w-7 sm:h-7 text-[#1E88E5] shrink-0" /> <span className="truncate">Role &amp; Permission Management (RBAC)</span>
           </h1>
           <p className="text-xs text-[#64748B] font-semibold mt-1">
             Control what each role can access and what actions they can perform across TwiteConnect.
@@ -558,7 +558,7 @@ function RoleManagement() {
         </div>
         <button
           onClick={() => setShowAddRoleModal(true)}
-          className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#0B2545] to-[#1E88E5] hover:from-[#1E88E5] hover:to-[#64B5F6] text-white text-xs font-extrabold rounded-xl shadow-md shadow-[#0B2545]/15 transition-all cursor-pointer"
+          className="inline-flex items-center justify-center gap-2 px-3 sm:px-4 py-2 sm:py-2.5 bg-gradient-to-r from-[#0B2545] to-[#1E88E5] hover:from-[#1E88E5] hover:to-[#64B5F6] text-white text-xs font-extrabold rounded-xl shadow-md shadow-[#0B2545]/15 transition-all cursor-pointer shrink-0"
         >
           <Plus className="w-4 h-4 text-white" /> Create Custom Role
         </button>
