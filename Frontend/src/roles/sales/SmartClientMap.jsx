@@ -650,7 +650,7 @@ export default function SmartClientMap() {
       const lng = executivePos.lng
       const pts = trailPointsRef.current
       const last = pts.length > 0 ? pts[pts.length - 1] : null
-      if (!last || haversineDistance(last.lat, last.lng, lat, lng) > 0.001) {
+      if (!last || haversineDistance(last.lat, last.lng, lat, lng) > 0.015) {
         pts.push({ lat, lng })
       }
 
