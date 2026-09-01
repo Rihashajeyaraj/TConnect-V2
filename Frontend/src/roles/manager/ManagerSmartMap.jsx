@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import {
   MapPin, Radio, Users, Activity, Clock, RefreshCw,
-  Search, Shield, Map, Eye, Compass, Navigation,
+  Search, Shield, Map as MapIcon, Eye, Compass, Navigation,
   AlertCircle, ChevronRight, Phone, Mail, Award, CheckCircle2, X,
   Route, Milestone, Minimize2, Maximize2, ArrowLeft
 } from 'lucide-react'
@@ -81,7 +81,8 @@ function getTrackingBadge(status, lastUpdatedMs, isOnline = true) {
 let HTMLMapMarker = null
 
 function initializeHTMLMapMarker() {
-  if (HTMLMapMarker) return
+  if (HTMLMapMarker) return HTMLMapMarker
+  if (!window.google || !window.google.maps || !window.google.maps.OverlayView) return null
   HTMLMapMarker = class extends window.google.maps.OverlayView {
     constructor(latlng, map, html, onClick, anchor = 'center') {
       super()
@@ -115,7 +116,7 @@ function initializeHTMLMapMarker() {
 
       this.div = div
       const panes = this.getPanes()
-      panes.overlayImage.appendChild(div)
+      panes?.overlayImage?.appendChild(div)
     }
 
     draw() {
@@ -153,6 +154,16 @@ function initializeHTMLMapMarker() {
       return this.latlng
     }
   }
+  return HTMLMapMarker
+}
+
+function createMapMarker(latlng, map, html, onClick, anchor = 'center') {
+  initializeHTMLMapMarker()
+  if (!HTMLMapMarker) {
+    console.warn('[SmartMap] OverlayView not ready for HTMLMapMarker')
+    return null
+  }
+  return new HTMLMapMarker(latlng, map, html, onClick, anchor)
 }
 
 export default function ManagerSmartMap() {
@@ -285,7 +296,7 @@ export default function ManagerSmartMap() {
     // Draw destination client marker (📍) if not exists
     if (!destMarkerRef.current) {
       const destLatLng = new window.google.maps.LatLng(clientDest.latitude, clientDest.longitude)
-      destMarkerRef.current = new HTMLMapMarker(
+      destMarkerRef.current = createMapMarker(
         destLatLng,
         googleMapRef.current,
         _buildDestIcon(),
@@ -788,14 +799,14 @@ export default function ManagerSmartMap() {
           }
           existingMarker.onClick = () => showInfoWindow(latlng, infoWindowHtml)
         } else {
-          const marker = new HTMLMapMarker(
+          const marker = createMapMarker(
             latlng,
             googleMapRef.current,
             html,
             () => showInfoWindow(latlng, infoWindowHtml),
             'center'
           )
-          teamMarkersMapRef.current.set(empId, marker)
+          if (marker) teamMarkersMapRef.current.set(empId, marker)
         }
       })
     }
@@ -1006,7 +1017,7 @@ export default function ManagerSmartMap() {
         </div>
       `;
 
-      const marker = new HTMLMapMarker(
+      const marker = createMapMarker(
         itemLatLng,
         googleMapRef.current,
         pinHtml,
@@ -1241,7 +1252,7 @@ export default function ManagerSmartMap() {
           const prev = crumbsRef.current[lastIndex - 1]
           initialHeading = getBearing(Number(prev.latitude), Number(prev.longitude), lat, lng)
         }
-        liveMarkerRef.current = new HTMLMapMarker(
+        liveMarkerRef.current = createMapMarker(
           latlng,
           googleMapRef.current,
           _buildLiveIcon('#8b5cf6', initialHeading, selectedExecutiveRef.current?.employee_name),
@@ -1354,7 +1365,7 @@ export default function ManagerSmartMap() {
           if (destMarkerRef.current) {
             destMarkerRef.current.setLatLng(destLatLng)
           } else {
-            destMarkerRef.current = new HTMLMapMarker(
+            destMarkerRef.current = createMapMarker(
               destLatLng,
               map,
               _buildDestIcon(),
@@ -1405,7 +1416,7 @@ export default function ManagerSmartMap() {
           latestLng = Number(session.end_longitude)
           const badgeColor = '#64748b'
           const latlng = new window.google.maps.LatLng(latestLat, latestLng)
-          liveMarkerRef.current = new HTMLMapMarker(
+          liveMarkerRef.current = createMapMarker(
             latlng,
             map,
             _buildLiveIcon(badgeColor, 0, executive?.employee_name),
@@ -1428,7 +1439,7 @@ export default function ManagerSmartMap() {
           const age = Date.now() - new Date(last.recorded_at).getTime()
           const badgeColor = age > GONE_MS ? '#dc2626' : age > STALE_MS ? '#f97316' : '#10b981'
           const latlng = new window.google.maps.LatLng(latestLat, latestLng)
-          liveMarkerRef.current = new HTMLMapMarker(
+          liveMarkerRef.current = createMapMarker(
             latlng,
             map,
             _buildLiveIcon(badgeColor, initialHeading, executive?.employee_name),
@@ -1443,7 +1454,7 @@ export default function ManagerSmartMap() {
           latestLng = Number(session.start_longitude)
           const badgeColor = '#10b981'
           const latlng = new window.google.maps.LatLng(latestLat, latestLng)
-          liveMarkerRef.current = new HTMLMapMarker(
+          liveMarkerRef.current = createMapMarker(
             latlng,
             map,
             _buildLiveIcon(badgeColor, 0, executive?.employee_name),
@@ -1458,7 +1469,7 @@ export default function ManagerSmartMap() {
           latestLng = Number(executive.longitude)
           const badgeColor = '#10b981'
           const latlng = new window.google.maps.LatLng(latestLat, latestLng)
-          liveMarkerRef.current = new HTMLMapMarker(
+          liveMarkerRef.current = createMapMarker(
             latlng,
             map,
             _buildLiveIcon(badgeColor, 0, executive?.employee_name),
