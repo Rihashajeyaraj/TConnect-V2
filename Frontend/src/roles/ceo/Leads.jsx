@@ -13,7 +13,7 @@ import { useToast } from '../../common/ToastContext.jsx'
 function Leads() {
   const { showToast } = useToast()
   const [leads, setLeads] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('All') // 'All', 'Hot', 'Warm', 'Cold', 'Not Assigned'
   const [searchQuery, setSearchQuery] = useState('')

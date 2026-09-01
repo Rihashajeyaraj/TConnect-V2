@@ -52,7 +52,7 @@ function SalesOverview({ initialSection }) {
   const [data, setData] = useState(null)
   const [dashboardData, setDashboardData] = useState(null)
   const [rawExpenses, setRawExpenses] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
   // Filters State

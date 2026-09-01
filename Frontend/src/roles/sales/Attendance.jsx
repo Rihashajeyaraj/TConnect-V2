@@ -80,7 +80,7 @@ export default function Attendance(props) {
   const [workMode, setWorkMode] = useState("office"); // office, client
   const [punchRemarks, setPunchRemarks] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
 
   // Client Visit destination selection state
   const [assignedClients, setAssignedClients] = useState([]);

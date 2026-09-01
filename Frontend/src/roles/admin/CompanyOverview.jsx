@@ -81,7 +81,7 @@ function CompanyOverview() {
   const { showToast } = useToast()
   const fileInputRef = useRef(null)
   const [activeTab, setActiveTab] = useState('profile')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 

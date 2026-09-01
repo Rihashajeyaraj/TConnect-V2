@@ -6,7 +6,7 @@ import { useToast } from '../../common/ToastContext.jsx'
 export default function ManagerOpportunities() {
   const { showToast } = useToast()
   const [opportunities, setOpportunities] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [stageFilter, setStageFilter] = useState('All')
 

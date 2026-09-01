@@ -30,7 +30,7 @@ const TABS = [
 function OrganizationMasterData() {
   const { showToast } = useToast()
   const [activeTab, setActiveTab] = useState('branches')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 

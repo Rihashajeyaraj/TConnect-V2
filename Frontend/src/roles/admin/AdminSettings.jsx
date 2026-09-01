@@ -20,7 +20,7 @@ import { normalizePhoneNumber } from '../../utils/formatUtils.js'
 function AdminSettings() {
   const { showToast } = useToast()
   const fileInputRef = useRef(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [saving, setSaving] = useState(false)
 
   // Company and configuration settings state
