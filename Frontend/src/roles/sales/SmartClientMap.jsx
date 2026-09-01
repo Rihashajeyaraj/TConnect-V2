@@ -4,9 +4,9 @@ import {
   CheckCircle2, Clock, User, Building2, X, Plus,
   Navigation2, Bell, Sparkles, PhoneCall, Check, Map as MapIcon,
   ChevronRight, AlertCircle, Loader2, Route, Target,
-  ArrowLeft, List, Radio, Activity, AlertTriangle
+  ArrowLeft, List, Radio, Activity, AlertTriangle, MessageSquare, Send, MessageCircle
 } from 'lucide-react'
-import { crmAPI, customerAPI, visitAPI, spatialAPI, authAPI, settingsAPI, auditAPI } from '../../services/api.js'
+import { crmAPI, customerAPI, visitAPI, spatialAPI, authAPI, settingsAPI, auditAPI, notificationAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser, { getStoredUser } from '../../hooks/useCurrentUser.js'
 import { loadGoogleMaps } from '../../utils/loadGoogleMaps.js'
@@ -125,7 +125,8 @@ function alertTypeLabel(alertType) {
 let HTMLMapMarker = null
 
 function initializeHTMLMapMarker() {
-  if (HTMLMapMarker) return
+  if (HTMLMapMarker) return HTMLMapMarker
+  if (!window.google || !window.google.maps || !window.google.maps.OverlayView) return null
   HTMLMapMarker = class extends window.google.maps.OverlayView {
     constructor(latlng, map, html, onClick, anchor = 'center') {
       super()
@@ -159,7 +160,7 @@ function initializeHTMLMapMarker() {
 
       this.div = div
       const panes = this.getPanes()
-      panes.overlayImage.appendChild(div)
+      panes?.overlayImage?.appendChild(div)
     }
 
     draw() {
@@ -197,6 +198,16 @@ function initializeHTMLMapMarker() {
       return this.latlng
     }
   }
+  return HTMLMapMarker
+}
+
+function createMapMarker(latlng, map, html, onClick, anchor = 'center') {
+  initializeHTMLMapMarker()
+  if (!HTMLMapMarker) {
+    console.warn('[SmartClientMap] OverlayView not ready for HTMLMapMarker')
+    return null
+  }
+  return new HTMLMapMarker(latlng, map, html, onClick, anchor)
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
@@ -231,10 +242,145 @@ export default function SmartClientMap() {
   const [gpsAccuracyThreshold, setGpsAccuracyThreshold] = useState(100.0)
 
   // ── Data ─────────────────────────────────────────────────────────────────
-  const [rawLeads,     setRawLeads]     = useState([])
-  const [rawCustomers, setRawCustomers] = useState([])
-  const [rawVisits,    setRawVisits]    = useState([])
-  const [dataLoading,  setDataLoading]  = useState(true)
+  const [rawLeads,     setRawLeads]     = useState(() => {
+    try {
+      const saved = localStorage.getItem("tc_sm_leads");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  })
+  const [rawCustomers, setRawCustomers] = useState(() => {
+    try {
+      const saved = localStorage.getItem("tc_customer_accounts");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  })
+  const [rawVisits,    setRawVisits]    = useState(() => {
+    try {
+      const saved = localStorage.getItem("tc_sales_visits");
+      return saved ? JSON.parse(saved) : [];
+    } catch { return []; }
+  })
+  const [dataLoading,  setDataLoading]  = useState(() => {
+    return !(localStorage.getItem("tc_sm_leads") || localStorage.getItem("tc_customer_accounts"));
+  })
+
+  // ── Executive Mobile Inquiry Response State ────────────────────────────────
+  const [activeInquiry, setActiveInquiry] = useState(null)
+  const [replyText, setReplyText] = useState('')
+  const [isReplying, setIsReplying] = useState(false)
+
+  // Helper for persistent handled inquiry IDs across page reloads
+  const getHandledInquiryIds = () => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem('tc_handled_inquiries') || '[]'))
+    } catch {
+      return new Set()
+    }
+  }
+
+  const addHandledInquiryId = (id) => {
+    if (!id) return
+    try {
+      const ids = getHandledInquiryIds()
+      ids.add(String(id))
+      localStorage.setItem('tc_handled_inquiries', JSON.stringify(Array.from(ids).slice(-100)))
+    } catch (e) { console.warn('Save handled inquiry err:', e) }
+  }
+
+  const parseIsoTimeMs = (isoStr) => {
+    if (!isoStr) return 0
+    let str = String(isoStr).trim()
+    if (!str.endsWith('Z') && !str.includes('+') && !str.includes('-')) {
+      str += 'Z'
+    }
+    const ms = new Date(str).getTime()
+    return isNaN(ms) ? 0 : ms
+  }
+
+  // Poll for Manager Location Inquiries
+  useEffect(() => {
+    const checkInquiries = async () => {
+      try {
+        const res = await notificationAPI.getNotifications()
+        const notifs = Array.isArray(res) ? res : (res?.data || [])
+        const handledIds = getHandledInquiryIds()
+        const nowMs = Date.now()
+
+        const inquiries = notifs.filter(n => {
+          const cat = String(n.category || n.type || '').toUpperCase()
+          if (!cat.includes('INQUIRY') && !String(n.title || '').includes('Inquiry')) return false
+          if (n.read || n.is_read) return false
+          const notifId = String(n.id || n.notification_id || '')
+          if (!notifId || handledIds.has(notifId)) return false
+
+          // UTC timezone safe parsing check (only mute if older than 3 mins)
+          const createdAtMs = parseIsoTimeMs(n.created_at)
+          const ageMs = nowMs - createdAtMs
+          if (createdAtMs > 0 && ageMs > 180000) {
+            addHandledInquiryId(notifId)
+            return false
+          }
+          return true
+        })
+
+        if (inquiries.length > 0) {
+          setActiveInquiry(inquiries[0])
+        }
+      } catch (e) { console.warn('Inquiry check err:', e) }
+    }
+
+    checkInquiries()
+    const interval = setInterval(checkInquiries, 4000)
+    return () => clearInterval(interval)
+  }, [currentUser?.email])
+
+  const handleDismissInquiry = (inquiry) => {
+    if (inquiry) {
+      const notifId = String(inquiry.id || inquiry.notification_id || '')
+      if (notifId) {
+        addHandledInquiryId(notifId)
+        notificationAPI.markRead(notifId).catch(() => null)
+      }
+    }
+    setActiveInquiry(null)
+  }
+
+  const handleSendReplyToManager = async (chipText) => {
+    const textToSend = chipText || replyText
+    if (!textToSend) return
+    setIsReplying(true)
+
+    const currentInquiry = activeInquiry
+    const notifId = currentInquiry ? String(currentInquiry.id || currentInquiry.notification_id || '') : ''
+    if (notifId) {
+      addHandledInquiryId(notifId)
+      notificationAPI.markRead(notifId).catch(() => null)
+    }
+    setActiveInquiry(null)
+
+    const myName = currentUser?.name || currentUser?.full_name || getStoredUser()?.name || 'Sales Executive'
+    const myEmail = currentUser?.email || getStoredUser()?.email || ''
+    const myCode = currentUser?.employee_code || currentUser?.employee_id || getStoredUser()?.employee_code || 'EMP000012'
+
+    try {
+      await notificationAPI.sendNotification({
+        title: `💬 Reply from ${myName}`,
+        message: textToSend,
+        category: 'LOCATION_INQUIRY_REPLY',
+        type: 'LOCATION_INQUIRY_REPLY',
+        recipient_role: 'manager',
+        employee_id: myCode,
+        sender_name: myName,
+        sender_email: myEmail
+      })
+      showToast('Reply sent to Manager!', 'success')
+      setReplyText('')
+    } catch (err) {
+      showToast('Failed to send reply', 'error')
+    } finally {
+      setIsReplying(false)
+    }
+  }
 
   // ── UI ───────────────────────────────────────────────────────────────────
   const [searchQuery,   setSearchQuery]   = useState('')
@@ -333,7 +479,9 @@ export default function SmartClientMap() {
 
   // ─── 3. Fetch scoped DB records ─────────────────────────────────────────
   const loadData = useCallback(async () => {
-    setDataLoading(true)
+    if (!rawLeads.length && !rawCustomers.length) {
+      setDataLoading(true)
+    }
     try {
       let user = currentUser
       if (!user?.email) user = getStoredUser()
@@ -538,6 +686,26 @@ export default function SmartClientMap() {
     return path
   }, [executivePos])
 
+  // ── Auto-Restore Active Navigation Route on Mount / Page Switch ────────────
+  useEffect(() => {
+    try {
+      const savedNavStr = localStorage.getItem('tc_active_nav_session')
+      if (savedNavStr) {
+        const savedNav = JSON.parse(savedNavStr)
+        if (savedNav && savedNav.selectedStop && savedNav.selectedStop.has_exact_coords) {
+          console.log('[SmartClientMap] Restoring active navigation to:', savedNav.selectedStop.title)
+          setSelectedStop(savedNav.selectedStop)
+          setSelectedEntity(savedNav.selectedStop)
+          fetchRoute(savedNav.selectedStop)
+          setNavMode(true)
+          setNavDestination(savedNav.navDestination || { lat: savedNav.selectedStop.latitude, lng: savedNav.selectedStop.longitude })
+        }
+      }
+    } catch (e) {
+      console.warn('[SmartClientMap] Nav session restore err:', e)
+    }
+  }, [fetchRoute])
+
   // ─── 7. Select destination ──────────────────────────────────────────────
   const handleSelectStop = useCallback((entity) => {
     setSearchQuery('')
@@ -559,13 +727,65 @@ export default function SmartClientMap() {
 
     setSelectedStop(entity)
     fetchRoute(entity)
-  }, [fetchRoute, showToast])
+
+    // Persist active navigation session in localStorage until Executive clicks Stop Nav
+    try {
+      localStorage.setItem('tc_active_nav_session', JSON.stringify({
+        selectedStop: entity,
+        navMode: true,
+        navDestination: { lat: entity.latitude, lng: entity.longitude },
+        timestamp: Date.now()
+      }))
+    } catch (e) { console.warn('Save active nav err:', e) }
+
+    // Push new client destination & notify Manager instantly
+    const clientData = {
+      client_id: entity.id,
+      client_name: entity.title,
+      company_name: entity.title,
+      client_address: entity.address,
+      client_phone: entity.phone,
+      client_latitude: entity.latitude,
+      client_longitude: entity.longitude,
+    };
+
+    spatialAPI.startSession(executivePos.lat, executivePos.lng, clientData)
+      .then(res => {
+        const data = res?.data || res;
+        const sessId = data?.session?.id || data?.id || data?.session_id;
+        if (sessId) localStorage.setItem('tc_tracking_session', sessId);
+        window.dispatchEvent(new CustomEvent('tc:start-tracking', {
+          detail: { lat: executivePos.lat, lng: executivePos.lng, clientData, sessionId: sessId }
+        }));
+      })
+      .catch(() => null);
+
+    notificationAPI.sendNotification({
+      title: "📍 Destination Changed",
+      message: `${currentUser?.name || 'Sales Executive'} set destination to ${entity.category || 'Client'} "${entity.title}".`,
+      category: "VISIT",
+      type: "VISIT",
+      recipient_role: "manager"
+    }).catch(() => null);
+
+  }, [fetchRoute, showToast, executivePos, currentUser])
 
   // ─── 8. Start Navigation Mode ───────────────────────────────────────────
   const startNavigation = useCallback(async () => {
     if (!selectedStop?.has_exact_coords) return
     setNavMode(true)
     setNavDestination({ lat: selectedStop.latitude, lng: selectedStop.longitude })
+    
+    // Persist active navigation session in localStorage
+    try {
+      localStorage.setItem('tc_active_nav_session', JSON.stringify({
+        selectedStop: selectedStop,
+        navMode: true,
+        navDestination: { lat: selectedStop.latitude, lng: selectedStop.longitude },
+        timestamp: Date.now()
+      }))
+    } catch (e) { console.warn('Save active nav err:', e) }
+
     lastRoutePos.current = { lat: executivePos.lat, lng: executivePos.lng }
     trailPointsRef.current = [{ lat: executivePos.lat, lng: executivePos.lng }]
     if (trailPolylineRef.current) {
@@ -608,6 +828,9 @@ export default function SmartClientMap() {
   const stopNavigation = useCallback(async () => {
     setNavMode(false)
     setNavDestination(null)
+    setSelectedStop(null)
+    setRoutePath([])
+    setRouteDetails(null)
     setOffRoute(false)
     setNearDestination(false)
     if (trailPolylineRef.current) {
@@ -615,6 +838,10 @@ export default function SmartClientMap() {
       trailPolylineRef.current = null
     }
     trailPointsRef.current = []
+
+    // Clear persistent navigation session on explicit Stop Nav click
+    localStorage.removeItem('tc_active_nav_session')
+
     showToast('Navigation stopped.', 'info')
 
     const sessId = localStorage.getItem('tc_tracking_session')
@@ -830,7 +1057,7 @@ export default function SmartClientMap() {
         <div class="relative w-8 h-8 rounded-full bg-cyan-600 border-2 border-white text-white flex items-center justify-center font-black shadow-lg text-xs">👤</div>
       </div>`
       
-      execMarkerRef.current = new HTMLMapMarker(
+      execMarkerRef.current = createMapMarker(
         latlng,
         googleMapRef.current,
         html,
@@ -864,7 +1091,7 @@ export default function SmartClientMap() {
       const destLatLng = new window.google.maps.LatLng(selectedStop.latitude, selectedStop.longitude)
       const destHtml = `<div style="width:36px;height:36px;background:#2563eb;border:3px solid #fff;border-radius:50% 50% 50% 0;transform:rotate(-45deg);box-shadow:0 2px 10px rgba(0,0,0,.4)"></div>`
       
-      const destMarker = new HTMLMapMarker(
+      const destMarker = createMapMarker(
         destLatLng,
         map,
         destHtml,
@@ -884,7 +1111,7 @@ export default function SmartClientMap() {
       </div>`
       const clientLatLng = new window.google.maps.LatLng(client.latitude, client.longitude)
       
-      const clientMarker = new HTMLMapMarker(
+      const clientMarker = createMapMarker(
         clientLatLng,
         map,
         clientHtml,
@@ -1006,6 +1233,18 @@ export default function SmartClientMap() {
           >
             <List size={16} />
           </button>
+
+          {/* Collapsed Round Manager Message Button */}
+          {activeInquiry && (
+            <button
+              onClick={() => setActiveInquiry(activeInquiry)}
+              className="relative w-9 h-9 bg-amber-500 hover:bg-amber-600 text-white shadow-xl rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer animate-bounce"
+              title="Manager Inquiry"
+            >
+              <MessageSquare size={16} />
+              <span className="absolute -top-1 -right-1 w-3 h-3 bg-red-600 rounded-full border-2 border-white" />
+            </button>
+          )}
         </div>
       ) : (
         <div className={`absolute left-2 right-2 sm:left-4 sm:right-4 md:left-6 md:right-auto md:w-[400px] z-[1000] ${
@@ -1428,6 +1667,87 @@ export default function SmartClientMap() {
             <Loader2 size={32} className="text-blue-600 animate-spin mx-auto" />
             <p className="text-sm font-black text-slate-700">Loading Smart Map…</p>
             <p className="text-xs text-slate-400">Acquiring GPS position</p>
+          </div>
+        </div>
+      )}
+
+      {/* ══ MOBILE-FIRST MANAGER INQUIRY POPUP MODAL ══ */}
+      {activeInquiry && (
+        <div className="fixed inset-0 z-[9999] bg-slate-950/70 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4">
+          <div className="bg-white rounded-t-3xl md:rounded-3xl w-full md:max-w-md p-5 shadow-2xl border border-slate-100 animate-in slide-in-from-bottom duration-200 space-y-4">
+            
+            {/* Mobile Drag Handle */}
+            <div className="md:hidden flex justify-center pb-1">
+              <div className="w-10 h-1 bg-slate-200 rounded-full" />
+            </div>
+
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-lg shadow-md animate-pulse">
+                  ⚡
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Manager Status Check</h3>
+                  <p className="text-[10px] font-semibold text-slate-400">Tap 1-Touch Reply Below</p>
+                </div>
+              </div>
+              <button onClick={() => handleDismissInquiry(activeInquiry)} className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Manager Question Box */}
+            <div className="bg-amber-50 rounded-2xl p-3.5 border border-amber-200/80">
+              <p className="text-xs font-black text-amber-900">
+                "{activeInquiry.message || 'Why are you stopped at this location?'}"
+              </p>
+              <span className="text-[9px] font-bold text-amber-700 mt-1 block">From: Manager</span>
+            </div>
+
+            {/* Large 1-Tap Touch Chips */}
+            <div className="space-y-2">
+              <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Quick Response (1-Tap)</span>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: '🚦 In Heavy Traffic', reply: 'In heavy traffic. Moving slowly.' },
+                  { label: '🤝 Meeting Client', reply: 'Currently inside client office meeting.' },
+                  { label: '⛽ Bike / Fuel Issue', reply: 'Stopped for fuel / bike maintenance.' },
+                  { label: '☕ Short Break', reply: 'Taking a 5-min tea / lunch break.' },
+                  { label: '📍 Reaching Soon', reply: 'On the way. Reaching client in 5 mins.' },
+                  { label: '🌧️ Heavy Rain', reply: 'Stopped due to heavy rain.' },
+                ].map(chip => (
+                  <button
+                    key={chip.label}
+                    onClick={() => handleSendReplyToManager(chip.reply)}
+                    disabled={isReplying}
+                    className="py-3 px-2.5 rounded-2xl bg-slate-50 hover:bg-blue-600 hover:text-white border border-slate-200 text-left text-xs font-black text-slate-800 transition active:scale-95 shadow-2xs flex items-center justify-between cursor-pointer group"
+                  >
+                    <span>{chip.label}</span>
+                    <span className="text-xs group-hover:translate-x-0.5 transition">➔</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom Reply Box */}
+            <div className="flex gap-2 pt-2 border-t border-slate-100">
+              <input
+                type="text"
+                value={replyText}
+                onChange={e => setReplyText(e.target.value)}
+                placeholder="Or type custom reason…"
+                className="flex-1 px-3 py-2.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              />
+              <button
+                onClick={() => handleSendReplyToManager()}
+                disabled={isReplying || !replyText.trim()}
+                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-black shadow-md active:scale-95 transition cursor-pointer"
+              >
+                {isReplying ? 'Sending…' : 'Send'}
+              </button>
+            </div>
+
           </div>
         </div>
       )}

@@ -3,7 +3,7 @@ import {
   MapPin, Radio, Users, Activity, Clock, RefreshCw,
   Search, Shield, Map as MapIcon, Eye, Compass, Navigation,
   AlertCircle, ChevronRight, Phone, Mail, Award, CheckCircle2, X,
-  Route, Milestone, Minimize2, Maximize2, ArrowLeft
+  Route, Milestone, Minimize2, Maximize2, ArrowLeft, MessageSquare, Send, MessageCircle
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 import { spatialAPI, authAPI, settingsAPI, crmAPI, customerAPI, visitAPI, auditAPI, notificationAPI } from '../../services/api.js'
@@ -200,6 +200,127 @@ export default function ManagerSmartMap() {
   const completedVisitIdsRef = useRef(new Set())
   const scheduledVisitIdsRef = useRef(new Set())
   const notifiedEventsRef = useRef(new Map())
+
+  // Executive replies & inquiry modal state
+  const [executiveReplies, setExecutiveReplies] = useState(() => {
+    try {
+      return JSON.parse(localStorage.getItem('tc_executive_replies') || '{}')
+    } catch { return {} }
+  })
+  const [inquiryModalEx, setInquiryModalEx] = useState(null)
+  const [customInquiryText, setCustomInquiryText] = useState('')
+
+  // Poll for incoming replies from Sales Executives
+  useEffect(() => {
+    const fetchReplies = async () => {
+      try {
+        const res = await notificationAPI.getNotifications()
+        const notifs = Array.isArray(res) ? res : (res?.data || [])
+        const replies = notifs.filter(n => {
+          const cat = String(n.category || n.type || '').toUpperCase()
+          return cat.includes('REPLY') || String(n.title || '').includes('Reply')
+        })
+        
+        setExecutiveReplies(prev => {
+          const next = { ...prev }
+          let updated = false
+          replies.forEach(r => {
+            const senderName = r.sender_name || r.title?.replace('💬 Reply from ', '') || 'Executive'
+            const empId = String(r.employee_id || r.sender_id || r.user_id || senderName || 'unknown').toLowerCase().trim()
+            const existing = next[empId] || []
+            if (!existing.some(e => e.id === r.id || e.timestamp === r.created_at)) {
+              updated = true
+              next[empId] = [{
+                id: r.id || Date.now(),
+                message: r.message || r.title,
+                sender_name: senderName,
+                sender_email: r.sender_email || r.recipient_email || '',
+                timestamp: r.created_at || new Date().toISOString(),
+                read: false
+              }, ...existing]
+
+              showToast(`💬 Reply from ${senderName}: "${r.message || r.title}"`, 'info')
+            }
+          })
+          if (updated) localStorage.setItem('tc_executive_replies', JSON.stringify(next))
+          return updated ? next : prev
+        })
+      } catch (e) { console.warn('Fetch replies err:', e) }
+    }
+
+    fetchReplies()
+    const interval = setInterval(fetchReplies, 3000)
+    return () => clearInterval(interval)
+  }, [showToast])
+
+  const getUserReplies = (ex) => {
+    if (!ex) return []
+    const exName = resolveRealName(ex).toLowerCase().trim()
+    const exEmail = String(ex.email || ex.employee_email || '').toLowerCase().trim()
+    const exEmpId = String(ex.employee_id || ex.employee_code || ex.id || '').toLowerCase().trim()
+
+    const allReplies = Object.entries(executiveReplies).flatMap(([key, list]) => {
+      const matchKey = (exEmpId && key === exEmpId) || (exEmail && key === exEmail) || (exName && key.includes(exName))
+      if (matchKey) return list
+      return list.filter(r => {
+        const sName = String(r.sender_name || '').toLowerCase().trim()
+        const sEmail = String(r.sender_email || '').toLowerCase().trim()
+        return (sName && exName && sName.includes(exName)) || (sEmail && exEmail && sEmail === exEmail)
+      })
+    })
+
+    const seen = new Set()
+    return allReplies.filter(r => {
+      const id = r.id || r.timestamp
+      if (seen.has(id)) return false
+      seen.add(id)
+      return true
+    })
+  }
+
+  const markRepliesAsRead = (ex) => {
+    if (!ex) return
+    const exName = resolveRealName(ex).toLowerCase().trim()
+    const exEmpId = String(ex.employee_id || ex.employee_code || ex.id || '').toLowerCase().trim()
+    setExecutiveReplies(prev => {
+      const next = { ...prev }
+      Object.keys(next).forEach(k => {
+        if (k === exEmpId || (exName && k.includes(exName))) {
+          next[k] = next[k].map(r => ({ ...r, read: true }))
+        } else {
+          next[k] = next[k].map(r => {
+            const sName = String(r.sender_name || '').toLowerCase().trim()
+            if (sName && exName && sName.includes(exName)) return { ...r, read: true }
+            return r
+          })
+        }
+      })
+      localStorage.setItem('tc_executive_replies', JSON.stringify(next))
+      return next
+    })
+  }
+
+  const handleSendInquiry = async (ex, questionText) => {
+    const q = questionText || customInquiryText || 'Why are you stopped at this location?'
+    const targetEmail = (ex.email || ex.employee_email || ex.user_email || '').toLowerCase().trim()
+    const empCode = (ex.employee_id || ex.employee_code || ex.id || '').trim()
+    try {
+      await notificationAPI.sendNotification({
+        title: '⚡ Quick Status Inquiry',
+        message: q,
+        category: 'LOCATION_INQUIRY',
+        type: 'LOCATION_INQUIRY',
+        recipient_role: 'executive',
+        recipient_email: targetEmail,
+        employee_id: empCode,
+        sender_name: currentUser?.name || 'Sales Manager'
+      })
+      showToast(`Inquiry sent to ${resolveRealName(ex)}`, 'success')
+      setCustomInquiryText('')
+    } catch (err) {
+      showToast('Failed to send inquiry', 'error')
+    }
+  }
 
   const sendManagerNotification = useCallback((title, message, category = 'TRACKING') => {
     const payload = {
@@ -1958,6 +2079,9 @@ export default function ManagerSmartMap() {
                   const isCV = ex.check_in_mode === 'Client Visit'
                   const statusColor = !ex.is_online ? '#94a3b8' : isCV ? '#8b5cf6' : '#10b981'
                   const statusLabel = !ex.is_online ? 'Offline' : isCV ? 'Client Visit' : 'Field Active'
+                  const userReplies = getUserReplies(ex)
+                  const unreadCount = userReplies.filter(r => !r.read).length
+                  const hasReply = userReplies.length > 0
 
                   // Card background based on status
                   const cardBg = !ex.is_online
@@ -1970,21 +2094,60 @@ export default function ManagerSmartMap() {
                     <button
                       key={ex.employee_id || ex.id}
                       onClick={() => handleSelectExecutive(ex)}
-                      className={`mgr-card text-left rounded-2xl p-4 shadow-2xs hover:shadow-md active:scale-[0.98] transition-all duration-150 group border ${cardBg}`}
+                      className={`mgr-card text-left rounded-2xl p-4 shadow-2xs hover:shadow-md active:scale-[0.98] transition-all duration-150 group border relative ${cardBg}`}
                     >
                       <div className="flex items-start gap-3">
                         <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-black flex-shrink-0" style={{ background: statusColor }}>
                           {initials}
                         </div>
                         <div className="min-w-0 flex-1">
-                          <div className="font-black text-slate-900 text-sm truncate">{name}</div>
+                          <div className="font-black text-slate-900 text-sm truncate pr-6">{name}</div>
                           <div className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">{ex.designation || ex.role || 'Sales Executive'}</div>
                           <div className="mt-2 inline-flex items-center gap-1.5 text-[10px] font-bold px-2 py-0.5 rounded-full border" style={{ background: statusColor + '15', color: statusColor, borderColor: statusColor + '40' }}>
                             <span className="w-1.5 h-1.5 rounded-full" style={{ background: statusColor }} />
                             {statusLabel}
                           </div>
                         </div>
+
+                        {/* WhatsApp-style Corner Chat Icon + Unread Counter Badge */}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setInquiryModalEx(ex)
+                            markRepliesAsRead(ex)
+                          }}
+                          className={`relative p-2.5 rounded-2xl transition active:scale-95 flex items-center justify-center cursor-pointer group/chat shrink-0 ${
+                            unreadCount > 0
+                              ? 'bg-red-500 text-white border border-red-600 shadow-md animate-pulse'
+                              : hasReply
+                              ? 'bg-emerald-500 text-white border border-emerald-600 shadow-sm'
+                              : 'bg-white hover:bg-blue-50 text-slate-500 hover:text-blue-600 border border-slate-200'
+                          }`}
+                          title="Ask Inquiry / View Executive Replies"
+                        >
+                          <MessageSquare size={16} />
+                          {unreadCount > 0 && (
+                            <span className="absolute -top-2 -right-2 min-w-[22px] h-5 px-1 bg-red-600 text-white font-black text-[10px] rounded-full flex items-center justify-center border-2 border-white shadow-lg animate-bounce">
+                              {unreadCount}
+                            </span>
+                          )}
+                          {unreadCount === 0 && hasReply && (
+                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-white" />
+                          )}
+                        </div>
                       </div>
+
+                      {hasReply && (
+                        <div className={`mt-2.5 text-[10px] rounded-xl p-2 border font-extrabold flex items-center gap-1.5 truncate ${
+                          unreadCount > 0
+                            ? 'bg-red-50 border-red-200 text-red-700 animate-pulse'
+                            : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                        }`}>
+                          <MessageCircle size={12} className={unreadCount > 0 ? 'text-red-500 shrink-0 animate-bounce' : 'text-emerald-600 shrink-0'} />
+                          <span className="truncate">Reply: "{userReplies[0].message}"</span>
+                        </div>
+                      )}
+
                       {ex.is_online && (
                         <div className="mt-3 pt-3 border-t border-white/60 flex justify-between items-center text-[10px] text-slate-500 font-semibold">
                           <span>In: {ex.check_in_time || '—'}</span>
@@ -2134,6 +2297,97 @@ export default function ManagerSmartMap() {
             </div>
           )}
         </>
+      )}
+      {/* ── Manager Quick Inquiry & Replies Modal ── */}
+      {inquiryModalEx && (
+        <div className="fixed inset-0 z-[1200] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-md w-full p-5 shadow-2xl border border-slate-100 animate-in fade-in zoom-in-95 duration-150 space-y-4">
+            
+            {/* Header */}
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 font-black text-sm">
+                  💬
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">{resolveRealName(inquiryModalEx)}</h3>
+                  <p className="text-[10px] font-semibold text-slate-400">Executive Inquiry & Replies</p>
+                </div>
+              </div>
+              <button onClick={() => setInquiryModalEx(null)} className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700 transition cursor-pointer">
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Executive replies chat history */}
+            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Executive Responses Chat History</span>
+                <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                  {getUserReplies(inquiryModalEx).length} Messages
+                </span>
+              </div>
+              {(() => {
+                const replies = getUserReplies(inquiryModalEx)
+                if (replies.length === 0) {
+                  return <p className="text-xs text-slate-400 italic py-2">No response messages received yet.</p>
+                }
+                return replies.map((r, i) => (
+                  <div key={r.id || i} className="bg-slate-50 rounded-2xl p-3 border border-slate-200/90 space-y-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-black text-blue-600 uppercase tracking-wider">
+                        💬 {r.sender_name || resolveRealName(inquiryModalEx)}
+                      </span>
+                      <span className="text-[9px] font-semibold text-slate-400">
+                        {r.timestamp ? new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                      </span>
+                    </div>
+                    <p className="text-xs font-bold text-slate-800">"{r.message}"</p>
+                  </div>
+                ))
+              })()}
+            </div>
+
+            {/* Send Quick Question Chips */}
+            <div className="space-y-2 pt-2 border-t border-slate-100">
+              <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Send Quick Inquiry</span>
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: '🚦 In Traffic?', q: 'Why are you stopped? Are you in traffic?' },
+                  { label: '🤝 Client Meeting?', q: 'Are you currently in a client meeting?' },
+                  { label: '⛽ Bike / Fuel Stop?', q: 'Are you stopped for fuel or vehicle issue?' },
+                  { label: '☕ Tea / Break?', q: 'Taking a lunch / tea break?' },
+                ].map(chip => (
+                  <button
+                    key={chip.label}
+                    onClick={() => handleSendInquiry(inquiryModalEx, chip.q)}
+                    className="p-2 rounded-xl bg-slate-50 hover:bg-blue-50 hover:border-blue-300 border border-slate-200 text-left text-xs font-bold text-slate-700 transition active:scale-95 cursor-pointer"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom Input Box */}
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={customInquiryText}
+                onChange={e => setCustomInquiryText(e.target.value)}
+                placeholder="Type custom question..."
+                className="flex-1 px-3 py-2 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+              />
+              <button
+                onClick={() => handleSendInquiry(inquiryModalEx)}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-extrabold shadow-md active:scale-95 transition flex items-center gap-1 cursor-pointer"
+              >
+                <Send size={12} /> Send
+              </button>
+            </div>
+
+          </div>
+        </div>
       )}
     </div>
   )
