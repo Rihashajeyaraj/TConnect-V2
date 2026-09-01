@@ -27,8 +27,18 @@ function redirectToLogin() {
 
 // ─────────────────────────────────────────────────────────────
 // Core request function — uses only real Supabase session token
+// Deduplicates in-flight GET requests to eliminate duplicate network calls
 // ─────────────────────────────────────────────────────────────
+const inFlightRequests = new Map()
+
 async function request(endpoint, options = {}) {
+  const method = (options.method || 'GET').toUpperCase()
+
+  // For GET requests, reuse identical in-flight promises to deduplicate parallel calls
+  if (method === 'GET' && inFlightRequests.has(endpoint)) {
+    return inFlightRequests.get(endpoint)
+  }
+
   const token = getStoredToken()
 
   const headers = {
@@ -44,37 +54,50 @@ async function request(endpoint, options = {}) {
     console.log("[VISIT API] payload:", options.body);
   }
 
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, config)
-
-    let data
+  const executeRequest = async () => {
     try {
-      data = await response.json()
-    } catch {
-      data = { message: `HTTP ${response.status}: Failed to parse response` }
-    }
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, config)
 
-    // On 401 — session expired or invalid. Clear storage and redirect to login.
-    // Exclude match-face endpoint, which uses 401 to denote unrecognized face.
-    if (response.status === 401 && !endpoint.includes('/auth/') && !endpoint.includes('/attendance/match-face')) {
-      clearSession()
-      redirectToLogin()
-      return Promise.reject({ message: 'Session expired. Please log in again.', status: 401 })
-    }
-
-    if (!response.ok) {
-      if (endpoint === '/visits' && options.method === 'POST') {
-        console.error("[VISIT API] status:", response.status);
-        console.error("[VISIT API] response:", JSON.stringify(data));
+      let data
+      try {
+        data = await response.json()
+      } catch {
+        data = { message: `HTTP ${response.status}: Failed to parse response` }
       }
-      return Promise.reject(data || { message: `HTTP Error ${response.status}` })
-    }
 
-    return data
-  } catch (error) {
-    if (error?.status === 401) return Promise.reject(error)
-    return Promise.reject(error || { message: 'Network or server error' })
+      // On 401 — session expired or invalid. Clear storage and redirect to login.
+      // Exclude match-face endpoint, which uses 401 to denote unrecognized face.
+      if (response.status === 401 && !endpoint.includes('/auth/') && !endpoint.includes('/attendance/match-face')) {
+        clearSession()
+        redirectToLogin()
+        return Promise.reject({ message: 'Session expired. Please log in again.', status: 401 })
+      }
+
+      if (!response.ok) {
+        if (endpoint === '/visits' && options.method === 'POST') {
+          console.error("[VISIT API] status:", response.status);
+          console.error("[VISIT API] response:", JSON.stringify(data));
+        }
+        return Promise.reject(data || { message: `HTTP Error ${response.status}` })
+      }
+
+      return data
+    } catch (error) {
+      if (error?.status === 401) return Promise.reject(error)
+      return Promise.reject(error || { message: 'Network or server error' })
+    }
   }
+
+  const requestPromise = executeRequest()
+
+  if (method === 'GET') {
+    inFlightRequests.set(endpoint, requestPromise)
+    requestPromise.finally(() => {
+      inFlightRequests.delete(endpoint)
+    })
+  }
+
+  return requestPromise
 }
 
 

@@ -16,7 +16,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { useToast } from "../../common/ToastContext.jsx";
-import { attendanceAPI, spatialAPI, crmAPI, customerAPI, settingsAPI } from "../../services/api.js";
+import { attendanceAPI, spatialAPI, crmAPI, customerAPI, settingsAPI, notificationAPI } from "../../services/api.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { exportToExcel, exportToCSV } from "../../utils/exportUtils.js";
 import { FaceLivenessEngine, LIVENESS_CHALLENGES } from "./FaceLivenessEngine.js";
@@ -663,6 +663,15 @@ export default function Attendance(props) {
       setCheckedInSuccessfully(true);
       stopCamera();
 
+      // Send notification to Manager
+      notificationAPI.sendNotification({
+        title: "🟢 Executive Online",
+        message: `${matchedEmployeeName || userName} is now online and checked in (${workMode === "client" ? `Client Visit to ${selectedClient?.title || 'client'}` : 'Office Mode'}).`,
+        category: "ATTENDANCE",
+        type: "ATTENDANCE",
+        recipient_role: "manager"
+      }).catch(() => null);
+
       loadAttendanceLogs();
       window.dispatchEvent(new CustomEvent("tc:attendance-marked"));
 
@@ -720,6 +729,15 @@ export default function Attendance(props) {
     activeSessionRef.current = null;
     localStorage.removeItem('tc_tracking_session');
     setTrackingStatus('idle');
+
+    // Send notification to Manager
+    notificationAPI.sendNotification({
+      title: "⬛ Executive Ended Session",
+      message: `${userName} has ended their tracking session and checked out.`,
+      category: "TRACKING",
+      type: "TRACKING",
+      recipient_role: "manager"
+    }).catch(() => null);
 
     // Trigger cleanup in parent wrapper (SalesLayout.jsx)
     window.dispatchEvent(new CustomEvent("tc:stop-tracking"));

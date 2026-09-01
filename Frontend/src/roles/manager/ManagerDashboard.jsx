@@ -132,7 +132,9 @@ export default function ManagerDashboard() {
   // ── Fetch All Live Data on Mount ────────────────────────────────────────────
   const loadDashboardData = async () => {
     try {
-      setLoading(true)
+      if (allEmployees.length === 0) {
+        setLoading(true)
+      }
       const [empRes, leadsRes, custRes, visitsRes, targetsRes, attRes] = await Promise.allSettled([
         hrmsAPI.getEmployees(),
         crmAPI.getLeads(),
@@ -276,7 +278,7 @@ export default function ManagerDashboard() {
     return { emails, names, codes, ids }
   }, [assignedExecutives])
 
-  const matchesAssignedTeam = (item) => {
+  const matchesAssignedTeam = React.useCallback((item) => {
     if (!item) return false
     if (assignedExecutives.length === 0) return false // No assignment set
 
@@ -295,7 +297,7 @@ export default function ManagerDashboard() {
     }
 
     return false
-  }
+  }, [assignedExecutives, assignedIdentifiers])
 
   // ── 2. FILTERED TEAM DATA (Within Date Range) ───────────────────────────────
   const filteredTeamLeads = useMemo(() => {

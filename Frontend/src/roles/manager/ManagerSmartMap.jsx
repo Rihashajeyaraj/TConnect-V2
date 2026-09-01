@@ -6,7 +6,7 @@ import {
   Route, Milestone, Minimize2, Maximize2, ArrowLeft
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
-import { spatialAPI, authAPI, settingsAPI, crmAPI, customerAPI, visitAPI, auditAPI } from '../../services/api.js'
+import { spatialAPI, authAPI, settingsAPI, crmAPI, customerAPI, visitAPI, auditAPI, notificationAPI } from '../../services/api.js'
 import { loadGoogleMaps } from '../../utils/loadGoogleMaps.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser, { getStoredUser } from '../../hooks/useCurrentUser.js'
@@ -66,16 +66,15 @@ try {
 } catch { /* Realtime unavailable; fall back to polling */ }
 
 // ── Stale thresholds ───────────────────────────────────────────────────────────
-const STALE_MS  = 5  * 60 * 1000  // 5 min → stale
-const GONE_MS   = 10 * 60 * 1000  // 10 min → offline
+const STALE_MS  = 1 * 60 * 1000  // > 1 min → stale
 
-function getTrackingBadge(status, lastUpdatedMs) {
-  if (status === 'ended') return { label: 'Stopped', color: '#475569', dot: '⬛' }
-  if (!lastUpdatedMs)     return { label: 'No Data', color: '#475569', dot: '⬛' }
+function getTrackingBadge(status, lastUpdatedMs, isOnline = true) {
+  if (status === 'ended' || status === 'stopped') return { label: 'Stopped', color: '#475569', dot: '⬛' }
+  if (!isOnline)          return { label: 'Offline',  color: '#dc2626', dot: '🔴' }
+  if (!lastUpdatedMs)     return { label: 'No Signal', color: '#475569', dot: '⬛' }
   const age = Date.now() - lastUpdatedMs
-  if (age > GONE_MS)  return { label: 'Offline',  color: '#dc2626', dot: '🔴' }
-  if (age > STALE_MS) return { label: 'Stale',    color: '#f97316', dot: '🟠' }
-  return                       { label: 'Live',    color: '#10b981', dot: '🟢' }
+  if (age > STALE_MS) return { label: 'Stale (>1m)', color: '#f97316', dot: '🟠' }
+  return                       { label: 'Live',       color: '#10b981', dot: '🟢' }
 }
 
 // ─── Custom HTML Map Marker for Google Maps Overlay ───────────────────────────
@@ -189,6 +188,25 @@ export default function ManagerSmartMap() {
   const [onRouteClients,   setOnRouteClients]    = useState([])
   const completedVisitIdsRef = useRef(new Set())
   const scheduledVisitIdsRef = useRef(new Set())
+  const notifiedEventsRef = useRef(new Map())
+
+  const sendManagerNotification = useCallback((title, message, category = 'TRACKING') => {
+    const payload = {
+      title,
+      message,
+      category,
+      type: category,
+      recipient_role: 'manager',
+      recipient_email: currentUser?.email || '',
+      created_at: new Date().toISOString()
+    }
+    notificationAPI.sendNotification(payload).catch((e) => console.warn('Manager notif notice:', e))
+    auditAPI.logEvent({
+      action: `MANAGER_NOTIF_${category}`,
+      entity_type: 'NOTIFICATION',
+      details: { title, message, recipient_role: 'manager' }
+    }).catch(() => null)
+  }, [currentUser])
 
   // ─── 2. Fetch team locations ──────────────────────────────────────────────
   const fetchData = useCallback(async (isSilent = false) => {
@@ -451,7 +469,11 @@ export default function ManagerSmartMap() {
 
   useEffect(() => {
     if (!autoRefresh) return
-    const t = setInterval(() => fetchData(true), 15000) // 15 seconds fallback polling (Supabase Realtime handles instant updates)
+    const t = setInterval(() => {
+      if (!document.hidden) {
+        fetchData(true)
+      }
+    }, 15000) // 15 seconds fallback polling (Supabase Realtime handles instant updates)
     return () => clearInterval(t)
   }, [autoRefresh, fetchData])
 
@@ -613,15 +635,36 @@ export default function ManagerSmartMap() {
     if (!latestExecPos) return 'No GPS Data';
     if (!destClient) return 'No Destination';
 
-
     const distM = haversineDistance(latestExecPos.lat, latestExecPos.lng, Number(destClient.latitude), Number(destClient.longitude)) * 1000;
     
     if (distM <= 50) {
+      if (destClient && selectedExecutiveRef.current) {
+        const arrivedKey = `arrived_${selectedExecutiveRef.current.employee_id || 'ex'}_${destClient.id}`
+        if (!notifiedEventsRef.current.has(arrivedKey)) {
+          notifiedEventsRef.current.set(arrivedKey, true)
+          sendManagerNotification(
+            '🎯 Executive Reached Client',
+            `${resolveRealName(selectedExecutiveRef.current)} has reached client destination "${destClient.company_name || destClient.title}".`,
+            'VISIT'
+          )
+        }
+      }
       return 'Arrived';
     }
     
     if (distM <= 450) {
       return 'Near Location';
+    }
+
+    // Check if executive is still at start location (hasn't moved yet)
+    const startLat = trackSessionRef.current?.start_latitude != null ? Number(trackSessionRef.current.start_latitude) : (crumbsRef.current[0] ? Number(crumbsRef.current[0].latitude) : null);
+    const startLng = trackSessionRef.current?.start_longitude != null ? Number(trackSessionRef.current.start_longitude) : (crumbsRef.current[0] ? Number(crumbsRef.current[0].longitude) : null);
+    
+    if (startLat != null && startLng != null) {
+      const distFromStartM = haversineDistance(latestExecPos.lat, latestExecPos.lng, startLat, startLng) * 1000;
+      if (distFromStartM < 25 && (crumbsRef.current.length <= 1 || trackBreadcrumbs.length <= 1)) {
+        return 'At Start Location';
+      }
     }
 
     // Check if Idle (no movement >= 10m for > 1 minute)
@@ -634,20 +677,30 @@ export default function ManagerSmartMap() {
   };
 
   const getHeartbeatStatus = () => {
-    if (trackStatus === 'ended') return { label: 'Ended', color: 'text-slate-400 bg-slate-500/10 border-slate-500/20', dot: 'bg-slate-500' };
+    if (trackStatus === 'ended' || trackStatus === 'stopped') {
+      return { label: 'Stopped', color: 'text-slate-400 bg-slate-500/10 border-slate-500/20', dot: 'bg-slate-500' };
+    }
+    if (selectedExecutive && !selectedExecutive.is_online) {
+      return { label: 'Offline (Logged Out)', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20', dot: 'bg-rose-500' };
+    }
     if (!lastPingMs) return { label: 'No Signal', color: 'text-slate-400 bg-slate-500/10 border-slate-500/20', dot: 'bg-slate-500' };
     
     const age = Date.now() - lastPingMs;
-    if (age <= 10000) {
+    if (age <= 60000) {
       return { label: 'Live Connection', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', dot: 'bg-emerald-500 animate-pulse' };
     }
-    if (age <= 30000) {
-      return { label: 'Connection Unstable', color: 'text-mgr-primary-400 bg-mgr-primary-500/10 border-mgr-primary-500/20', dot: 'bg-mgr-primary-550' };
+    if (selectedExecutive) {
+      const staleKey = `stale_${selectedExecutive.employee_id}_${Math.floor(lastPingMs / 60000)}`
+      if (!notifiedEventsRef.current.has(staleKey)) {
+        notifiedEventsRef.current.set(staleKey, true)
+        sendManagerNotification(
+          '🟠 Executive GPS Stale',
+          `${resolveRealName(selectedExecutive)}'s GPS signal has not updated for over 1 minute.`,
+          'TRACKING'
+        )
+      }
     }
-    if (age <= 60000) {
-      return { label: 'GPS Stale', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20', dot: 'bg-orange-500' };
-    }
-    return { label: 'Offline', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20', dot: 'bg-rose-500' };
+    return { label: 'GPS Stale (>1 min)', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20', dot: 'bg-orange-500' };
   };
 
   // ─── 5. Team / Client markers ─────────────────────────────────────────────
@@ -1057,53 +1110,22 @@ export default function ManagerSmartMap() {
       <div class="live-scooty-container" style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; user-select: none;">
         
         <!-- Top Floating Executive Name Pill -->
-        <div style="background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(6px); border: 1.5px solid ${color}; border-radius: 20px; padding: 2px 7px; color: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 800; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); margin-bottom: 3px; display: flex; align-items: center; gap: 4px;">
+        <div style="background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(6px); border: 1.5px solid ${color}; border-radius: 20px; padding: 2px 8px; color: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 800; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); margin-bottom: 2px; display: flex; align-items: center; gap: 4px; z-index: 10;">
           <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; animation: liveBlink 1.2s infinite ease-in-out;"></span>
           <span>${displayName}</span>
         </div>
 
-        <!-- Animated Scooty & Radar Ring Wrapper -->
-        <div class="live-vehicle-wrapper" style="transform: rotate(${heading}deg); transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; position: relative;">
+        <!-- Animated Motorcycle & Radar Ring Wrapper -->
+        <div class="live-vehicle-wrapper" style="transform: rotate(${heading}deg); transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); width: 64px; height: 50px; display: flex; align-items: center; justify-content: center; position: relative;">
           
-          <!-- Outer Radar Pulse Halo (Zomato/Swiggy style) -->
-          <div style="position: absolute; width: 44px; height: 44px; border-radius: 50%; background: ${color}28; border: 1.5px solid ${color}66; animation: scootyRadarPulse 2s infinite cubic-bezier(0.2, 0.8, 0.2, 1); z-index: -1;"></div>
+          <!-- Outer Radar Pulse Halo -->
+          <div style="position: absolute; width: 48px; height: 48px; border-radius: 50%; background: ${color}28; border: 1.5px solid ${color}66; animation: scootyRadarPulse 2s infinite cubic-bezier(0.2, 0.8, 0.2, 1); z-index: -1;"></div>
           
           <!-- Forward Direction Arrow Pointer -->
-          <div style="position: absolute; top: -5px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 7px solid ${color}; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5));"></div>
+          <div style="position: absolute; top: -6px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 8px solid ${color}; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); z-index: 5;"></div>
 
-          <!-- Main Scooty Badge Circle -->
-          <div style="width: 38px; height: 38px; border-radius: 50%; background: radial-gradient(circle at 30% 30%, #1e293b, #090d16); border: 2.5px solid ${color}; display: flex; align-items: center; justify-content: center; box-shadow: 0 6px 16px rgba(0,0,0,0.6), inset 0 1px 2px rgba(255,255,255,0.2);">
-            
-            <!-- Detailed Scooty Graphic (Delivery / Live Tracker style) -->
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="22" height="22" fill="none">
-              <!-- Rear Wheel -->
-              <circle cx="6" cy="18" r="2.5" fill="#0f172a" stroke="#f1f5f9" stroke-width="1.2"/>
-              <circle cx="6" cy="18" r="1" fill="${color}"/>
-              
-              <!-- Front Wheel -->
-              <circle cx="18" cy="18" r="2.5" fill="#0f172a" stroke="#f1f5f9" stroke-width="1.2"/>
-              <circle cx="18" cy="18" r="1" fill="${color}"/>
-
-              <!-- Scooty Base Frame & Footboard -->
-              <path d="M8 18 H15 L16.5 13 H10 L8 18 Z" fill="${color}"/>
-              
-              <!-- Rear Delivery Box / Bag (Zomato/Swiggy style) -->
-              <rect x="4.5" y="10.5" width="4.5" height="4.5" rx="1" fill="#f59e0b" stroke="#0f172a" stroke-width="0.8"/>
-              <path d="M5.5 12.5 H8" stroke="#ffffff" stroke-width="0.8"/>
-
-              <!-- Front Steering Column & Handlebar -->
-              <path d="M14 14 L17 7.5 H15.5 M17 7.5 H18.5" stroke="#f8fafc" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
-              
-              <!-- Headlight Beam -->
-              <circle cx="17.5" cy="8" r="1" fill="#fef08a"/>
-              <path d="M19 7 L23 5 L23 10 Z" fill="#fef08a" opacity="0.45"/>
-
-              <!-- Rider Helmet -->
-              <circle cx="11.5" cy="7.5" r="2.8" fill="#38bdf8" stroke="#0f172a" stroke-width="1"/>
-              <path d="M12.5 7.5 Q13.5 8 13.8 9.5" stroke="#0f172a" stroke-width="0.8"/>
-            </svg>
-
-          </div>
+          <!-- Direct 3D Motorcycle Rider PNG Asset from Login Form -->
+          <img src="/motorcycle_rider.png" alt="Motorcycle Rider" style="width: 58px; height: 44px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));" />
         </div>
       </div>
       <style>
@@ -2038,7 +2060,7 @@ export default function ManagerSmartMap() {
 
               {/* Proximity Status */}
               {(() => {
-                const badge = getTrackingBadge(trackStatus === 'ended' ? 'ended' : trackStatus, lastPingMs)
+                const badge = getTrackingBadge(trackStatus === 'ended' ? 'ended' : trackStatus, lastPingMs, selectedExecutive?.is_online)
                 const prox = getProximityStatus()
                 return (
                   <div className="space-y-2">
@@ -2047,6 +2069,7 @@ export default function ManagerSmartMap() {
                       <span className={`px-2 py-0.5 rounded-full ${
                         prox === 'Arrived' ? 'bg-emerald-100 text-emerald-700' :
                         prox === 'Near Location' ? 'bg-blue-100 text-blue-700' :
+                        prox === 'At Start Location' ? 'bg-amber-100 text-amber-800' :
                         prox === 'Idle' ? 'bg-orange-100 text-orange-700 animate-pulse' :
                         prox === 'Travelling' ? 'bg-violet-100 text-violet-700' :
                         'bg-slate-100 text-slate-400'
