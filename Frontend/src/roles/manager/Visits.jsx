@@ -34,7 +34,7 @@ export default function ManagerVisits() {
   const { showToast } = useToast()
 
   // API State
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [visits, setVisits] = useState([])
   const [attendanceLogs, setAttendanceLogs] = useState([])
   const [attendanceLoaded, setAttendanceLoaded] = useState(false)

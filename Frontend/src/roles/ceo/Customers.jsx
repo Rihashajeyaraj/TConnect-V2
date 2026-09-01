@@ -32,7 +32,7 @@ function CeoCustomers() {
   // Raw Data State
   const [data, setData] = useState(null)
   const [leads, setLeads] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
 
   // Reassignment & View state

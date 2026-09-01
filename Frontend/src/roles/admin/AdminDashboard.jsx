@@ -27,7 +27,7 @@ import Attendance from '../sales/Attendance.jsx'
 export default function AdminDashboard() {
   const { showToast } = useToast()
   const navigate = useNavigate()
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [dateRange, setDateRange] = useState('Today')
   const [roleFilter, setRoleFilter] = useState('All')
   

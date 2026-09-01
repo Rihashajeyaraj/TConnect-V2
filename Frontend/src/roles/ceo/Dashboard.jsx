@@ -49,7 +49,7 @@ import { exportToPDF, exportToExcel, exportToCSV } from '../../utils/exportUtils
 
 function CeoDashboard() {
   const { showToast } = useToast()
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
   const [timeRange, setTimeRange] = useState('This Month')
   

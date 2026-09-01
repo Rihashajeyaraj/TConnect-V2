@@ -20,7 +20,7 @@ export default function CEOVisits() {
   const { showToast } = useToast()
 
   // API State
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [visits, setVisits] = useState([])
   const [summary, setSummary] = useState({
     scheduled_today: 0,

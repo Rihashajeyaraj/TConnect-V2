@@ -22,7 +22,7 @@ import { formatDateTime } from '../../utils/dateUtils.js'
 
 function AdminReports() {
   const { showToast } = useToast()
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [employees, setEmployees] = useState([])
   const [auditLogs, setAuditLogs] = useState([])
   const [activeTab, setActiveTab] = useState(() => {

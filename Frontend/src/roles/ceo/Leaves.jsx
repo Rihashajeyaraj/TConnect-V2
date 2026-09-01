@@ -13,7 +13,7 @@ function Leaves() {
   const { showToast } = useToast()
   const [leaves, setLeaves] = useState([])
   const [employees, setEmployees] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
 

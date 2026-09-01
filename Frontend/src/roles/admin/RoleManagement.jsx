@@ -136,7 +136,7 @@ function RoleManagement() {
   const [searchQuery, setSearchQuery] = useState('')
   const [permissionSearch, setPermissionSearch] = useState('')
   const [showAddRoleModal, setShowAddRoleModal] = useState(false)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [hasChanges, setHasChanges] = useState(false)
 
   // Expanded collapsible card modules dictionary

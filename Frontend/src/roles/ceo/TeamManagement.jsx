@@ -34,7 +34,7 @@ function TeamManagement() {
   const [team, setTeam] = useState([])
   const [activeTab, setActiveTab] = useState('All') // 'All' | 'Admin' | 'Sales Manager' | 'Sales Executive' | 'hierarchy'
   const [searchQuery, setSearchQuery] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(false)
   const [viewingEmp, setViewingEmp] = useState(null)
 
   // Add/Edit modal state
