@@ -30,7 +30,7 @@ const TABS = [
 function OrganizationMasterData() {
   const { showToast } = useToast()
   const [activeTab, setActiveTab] = useState('branches')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
@@ -335,7 +335,7 @@ function OrganizationMasterData() {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[700px] border-collapse text-left whitespace-nowrap">
+            <table className="w-full border-collapse text-left">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-100">
                   <th className="px-6 py-3 text-[10px] font-black uppercase tracking-wider text-slate-500">ID</th>

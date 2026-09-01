@@ -20,7 +20,7 @@ import { normalizePhoneNumber } from '../../utils/formatUtils.js'
 function AdminSettings() {
   const { showToast } = useToast()
   const fileInputRef = useRef(null)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
 
   // Company and configuration settings state
@@ -123,11 +123,11 @@ function AdminSettings() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 max-w-4xl">
+    <div className="space-y-6 max-w-4xl">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-xs">
-        <div className="min-w-0">
-          <h1 className="text-base sm:text-xl font-extrabold text-slate-900 tracking-tight">System Settings &amp; Configuration</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+        <div>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">System Settings & Configuration</h1>
           <p className="text-xs text-slate-500 mt-1">Configure company profiles, tax preferences, currency units, and security rules.</p>
         </div>
         <button

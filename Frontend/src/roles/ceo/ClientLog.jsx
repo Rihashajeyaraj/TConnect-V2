@@ -20,7 +20,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
   const [leads, setLeads] = useState([])
   const [customers, setCustomers] = useState([])
   const [visits, setVisits] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
 
   // Filters

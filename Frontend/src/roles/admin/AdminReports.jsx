@@ -22,7 +22,7 @@ import { formatDateTime } from '../../utils/dateUtils.js'
 
 function AdminReports() {
   const { showToast } = useToast()
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [employees, setEmployees] = useState([])
   const [auditLogs, setAuditLogs] = useState([])
   const [activeTab, setActiveTab] = useState(() => {
@@ -127,9 +127,9 @@ function AdminReports() {
   return (
     <div className="space-y-6">
       {/* Page Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 sm:p-6 rounded-2xl border border-slate-200 shadow-xs">
-        <div className="min-w-0">
-          <h1 className="text-base sm:text-xl font-extrabold text-slate-900 tracking-tight">Reports &amp; Security Audit Logs</h1>
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs">
+        <div>
+          <h1 className="text-xl font-extrabold text-slate-900 tracking-tight">Reports &amp; Security Audit Logs</h1>
           <p className="text-xs text-slate-500 mt-1">Audit administrative operations, analyze role permissions, and view system metrics.</p>
         </div>
         <div className="flex items-center gap-2">
@@ -384,7 +384,7 @@ function AdminReports() {
 
             {activeTab === 'employees' && (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[800px] border-collapse text-left whitespace-nowrap">
+                <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
                       <th className="px-6 py-3 text-[10px] font-black uppercase text-slate-500">Code</th>
@@ -427,7 +427,7 @@ function AdminReports() {
 
             {activeTab === 'security' && (
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[800px] border-collapse text-left whitespace-nowrap">
+                <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-100">
                       <th className="px-6 py-3 text-[10px] font-black uppercase text-slate-500">Timestamp</th>

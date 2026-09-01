@@ -23,7 +23,7 @@ import { formatDate } from '../../utils/dateUtils.js'
 function Notifications() {
   const { showToast } = useToast()
   const [notifications, setNotifications] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [activeFilter, setActiveFilter] = useState('ALL') // 'ALL' | 'UNREAD' | 'ACTIONABLE'
 
   const loadNotifications = async () => {

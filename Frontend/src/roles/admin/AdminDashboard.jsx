@@ -27,7 +27,7 @@ import Attendance from '../sales/Attendance.jsx'
 export default function AdminDashboard() {
   const { showToast } = useToast()
   const navigate = useNavigate()
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [dateRange, setDateRange] = useState('Today')
   const [roleFilter, setRoleFilter] = useState('All')
   
@@ -586,10 +586,10 @@ export default function AdminDashboard() {
   }
 
   return (
-    <div className="space-y-4 sm:space-y-6 font-sans text-slate-900">
+    <div className="space-y-6 font-sans text-slate-900">
       {/* Filter Toolbar */}
-      <div className="bg-white rounded-2xl p-3 sm:p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
-        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
           {/* Date Range Selector */}
           <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold">
             <Calendar className="w-4 h-4 text-slate-400" />
@@ -611,7 +611,7 @@ export default function AdminDashboard() {
 
       {/* SECTION 1: System Admin Controls KPIs */}
       {activeWidgets.systemStats && (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 sm:gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {/* Total Registered Users */}
           <div 
             onClick={() => setShowTotalUsersPage(true)}
@@ -695,12 +695,12 @@ export default function AdminDashboard() {
       ) }
 
       {/* SECTION 1.5: Quick Actions Panel */}
-      <div className="bg-gradient-to-br from-white via-slate-50 to-[#D4ECFC]/15 border border-[#64B5F6]/25 p-3 sm:p-4 rounded-2xl shadow-xs space-y-3">
+      <div className="bg-gradient-to-br from-white via-slate-50 to-[#D4ECFC]/15 border border-[#64B5F6]/25 p-4 rounded-2xl shadow-xs space-y-3">
         <h3 className="font-extrabold text-[#0B2545] text-xs flex items-center gap-1.5 uppercase tracking-wider">
           Quick Actions
         </h3>
         
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 sm:gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {[
             {
               title: "Attendance",
@@ -906,7 +906,7 @@ export default function AdminDashboard() {
                 </div>
               ) : (
                 <div className="border border-slate-200 rounded-2xl overflow-x-auto">
-                  <table className="w-full min-w-[700px] text-left border-collapse text-xs font-semibold text-slate-700 whitespace-nowrap">
+                  <table className="w-full text-left border-collapse text-xs font-semibold text-slate-700">
                     <thead>
                       <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
                         <th className="px-5 py-3.5">Employee Name & Role</th>
@@ -1020,7 +1020,7 @@ export default function AdminDashboard() {
                 </div>
               ) : (
                 <div className="border border-[#DCE3EF] rounded-2xl overflow-x-auto shadow-xs">
-                  <table className="w-full min-w-[700px] text-left border-collapse text-xs font-semibold text-[#071A45] whitespace-nowrap">
+                  <table className="w-full text-left border-collapse text-xs font-semibold text-[#071A45]">
                     <thead>
                       <tr className="bg-slate-50 border-b border-[#DCE3EF] text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
                         <th className="px-5 py-3.5">Employee Details</th>
@@ -1164,7 +1164,7 @@ export default function AdminDashboard() {
 
                 return (
                   <div className="border border-[#DCE3EF] rounded-2xl overflow-x-auto shadow-xs bg-white">
-                    <table className="w-full min-w-[800px] text-left border-collapse text-xs font-semibold text-[#071A45] whitespace-nowrap">
+                    <table className="w-full text-left border-collapse text-xs font-semibold text-[#071A45]">
                       <thead>
                         <tr className="bg-slate-50 border-b border-[#DCE3EF] text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
                           <th className="px-5 py-3.5">Timestamp</th>
@@ -1319,17 +1319,203 @@ export default function AdminDashboard() {
       {/* Attendance Modal overlay popup */}
       {showAttendanceModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="relative max-w-md w-full overflow-visible">
-            {/* Floating Close Button */}
-            <button
-              onClick={() => setShowAttendanceModal(false)}
-              className="absolute -top-2.5 -right-2.5 z-50 w-7 h-7 rounded-full bg-slate-900 hover:bg-slate-800 text-white flex items-center justify-center font-extrabold text-xs shadow-md transition cursor-pointer"
-              title="Close Portal"
-            >
-              ✕
-            </button>
-            <div className="bg-transparent overflow-hidden text-left text-xs font-semibold text-slate-800">
-              <Attendance isModalView={true} />
+          <div className="bg-white rounded-3xl max-w-4xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[85vh] text-left text-xs font-semibold text-slate-800">
+            {/* Modal Header */}
+            <div className="bg-slate-950 text-white p-5 flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2">
+                <Clock className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-100">Real-Time Team Attendance Monitor</h3>
+                  <p className="text-[10px] text-slate-400 font-semibold mt-0.5">Punch check-in, check-out, and view today's active registers.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowAttendanceModal(false)}
+                className="text-slate-400 hover:text-white font-bold text-sm cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Modal Tabs */}
+            <div className="flex bg-[#071A45] border-b border-slate-800 px-4">
+              <button
+                type="button"
+                onClick={() => setAttendanceModalTab('mark')}
+                className={`py-3 px-5 font-black text-xs border-b-2 transition cursor-pointer select-none ${
+                  attendanceModalTab === 'mark'
+                    ? 'border-emerald-500 text-emerald-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                📹 Mark My Attendance
+              </button>
+              <button
+                type="button"
+                onClick={() => setAttendanceModalTab('logs')}
+                className={`py-3 px-5 font-black text-xs border-b-2 transition cursor-pointer select-none ${
+                  attendanceModalTab === 'logs'
+                    ? 'border-emerald-500 text-emerald-400'
+                    : 'border-transparent text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                📋 Team Attendance Registers
+              </button>
+            </div>
+
+            {attendanceModalTab === 'mark' ? (
+              <div className="flex-1 overflow-y-auto p-5 bg-slate-50">
+                <Attendance isModalView={true} />
+              </div>
+            ) : (
+              <>
+                {/* Modal Controls */}
+                <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                  <div className="relative w-full sm:w-72">
+                    <input
+                      type="text"
+                      placeholder="Filter by employee name or email..."
+                      value={attendanceSearchName}
+                      onChange={(e) => setAttendanceSearchName(e.target.value)}
+                      className="w-full pl-8 pr-7 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-500"
+                    />
+                    <Search className="absolute left-2.5 top-2.5 w-3.5 h-3.5 text-slate-400" />
+                    {attendanceSearchName && (
+                      <button
+                        onClick={() => setAttendanceSearchName('')}
+                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-[10px] cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Attendance Quick Stats */}
+                  <div className="flex gap-4 text-[10px] font-black uppercase tracking-wider text-slate-500">
+                    <span className="text-emerald-700">✓ {stats.attendanceSummary.present} Present</span>
+                    <span className="text-amber-700">⏰ {stats.attendanceSummary.late} Late</span>
+                    <span className="text-rose-700">✗ {stats.attendanceSummary.absent} Absent</span>
+                  </div>
+                </div>
+
+                {/* Logs List Table */}
+                <div className="flex-1 overflow-y-auto p-4">
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
+                        <tr>
+                          <th className="px-4 py-3">Employee</th>
+                          <th className="px-4 py-3">Designation</th>
+                          <th className="px-4 py-3">Log Time</th>
+                          <th className="px-4 py-3">Location Address</th>
+                          <th className="px-4 py-3 text-center">Status</th>
+                          <th className="px-4 py-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {(() => {
+                          const filtered = allEmployees.filter(emp => {
+                            const q = attendanceSearchName.toLowerCase().trim()
+                            if (!q) return true
+                            return (
+                              (emp.name || '').toLowerCase().includes(q) ||
+                              (emp.email || '').toLowerCase().includes(q) ||
+                              (emp.employee_code || '').toLowerCase().includes(q)
+                            )
+                          })
+
+                          if (filtered.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan="6" className="p-8 text-center text-slate-400 font-semibold">
+                                  No employees found matching filter keyword.
+                                </td>
+                              </tr>
+                            )
+                          }
+
+                          return filtered.map(emp => {
+                            // Find if checked in today
+                            const log = attendanceLogs.find(l => {
+                              const logId = String(l.employee_id || l.user_id || '').toLowerCase()
+                              const logEmail = String(l.email || l.user_email || '').toLowerCase()
+                              return logId === String(emp.employee_code || emp.id).toLowerCase() || logEmail === String(emp.email).toLowerCase()
+                            })
+
+                            const isPresent = !!log
+                            const hasClockedOut = log && (log.check_out_time || log.logoutTime)
+
+                            return (
+                              <tr key={emp.id} className="hover:bg-slate-50/50">
+                                <td className="px-4 py-3 font-extrabold text-slate-900">
+                                  <p>{emp.name}</p>
+                                  <span className="text-[10px] text-slate-400 font-mono font-bold">{emp.employee_code || emp.employee_id || 'N/A'}</span>
+                                </td>
+                                <td className="px-4 py-3 text-slate-500">{emp.designation || emp.role}</td>
+                                <td className="px-4 py-3 font-mono">
+                                  {isPresent ? (
+                                    <div className="space-y-0.5 text-[10px]">
+                                      <p className="text-emerald-700">In: {log.check_in_time || log.loginTime || '—'}</p>
+                                      {hasClockedOut && <p className="text-rose-700">Out: {log.check_out_time || log.logoutTime || '—'}</p>}
+                                    </div>
+                                  ) : (
+                                    <span className="text-slate-400 font-semibold italic">Not Checked In</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-[11px] text-slate-600 max-w-[200px] truncate" title={log?.check_in_address || log?.loginLocation}>
+                                  {isPresent ? (log.check_in_address || log.loginLocation || 'Standard GPS') : '—'}
+                                </td>
+                                <td className="px-4 py-3 text-center">
+                                  {isPresent ? (
+                                    <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider ${
+                                      hasClockedOut ? 'bg-slate-100 text-slate-700 border-slate-350' : 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                                    }`}>
+                                      {hasClockedOut ? 'Checked Out' : 'Present'}
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black border uppercase tracking-wider bg-rose-50 text-rose-800 border-rose-200">
+                                      Absent
+                                    </span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-right">
+                                  {!isPresent ? (
+                                    <button
+                                      onClick={() => handleAdminClockIn(emp)}
+                                      className="bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-lg shadow-3xs cursor-pointer select-none"
+                                    >
+                                      ✓ Clock In
+                                    </button>
+                                  ) : !hasClockedOut ? (
+                                    <button
+                                      onClick={() => handleAdminClockOut(emp)}
+                                      className="bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[10px] px-3 py-1.5 rounded-lg shadow-3xs cursor-pointer select-none"
+                                    >
+                                      ✗ Clock Out
+                                    </button>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 font-semibold italic">Shift Completed</span>
+                                  )}
+                                </td>
+                              </tr>
+                            )
+                          })
+                        })()}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Modal Footer */}
+            <div className="px-6 py-4 bg-slate-50 border-t border-slate-150 flex justify-end">
+              <button
+                onClick={() => setShowAttendanceModal(false)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black cursor-pointer shadow-sm"
+              >
+                Close Portal
+              </button>
             </div>
           </div>
         </div>

@@ -5,7 +5,7 @@ import { formatDate } from '../../utils/dateUtils.js'
 
 function Attendance() {
   const [attendance, setAttendance] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
 
   const loadData = async () => {

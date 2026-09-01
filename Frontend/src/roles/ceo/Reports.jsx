@@ -25,7 +25,7 @@ function Reports() {
   const [selectedReportKey, setSelectedReportKey] = useState('SALES')
   const [dateFilter, setDateFilter] = useState('This Month')
   const [searchQuery, setSearchQuery] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   // Real Database Reports Datasets State
   const [reportData, setReportData] = useState({

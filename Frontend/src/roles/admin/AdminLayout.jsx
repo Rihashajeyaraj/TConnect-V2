@@ -546,28 +546,49 @@ function AdminLayout() {
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-slate-900 flex flex-col font-sans admin-portal-root">
       <style>{`
-        /* ── Mobile-first font scale ── */
         .admin-portal-root {
-          font-size: 13px;
+          font-size: 15px !important;
         }
-        @media (min-width: 1024px) {
-          .admin-portal-root {
-            font-size: 14px;
-          }
+        .admin-portal-root .text-xs,
+        .admin-portal-root .text-xs\\/5 {
+          font-size: 13.5px !important;
         }
-        .admin-sidebar-link {
-          font-size: 13px !important;
+        .admin-portal-root .text-sm {
+          font-size: 15.5px !important;
         }
-        .admin-sidebar-header {
+        .admin-portal-root .text-base {
+          font-size: 17.5px !important;
+        }
+        .admin-portal-root .text-lg {
+          font-size: 20px !important;
+        }
+        .admin-portal-root .text-xl {
+          font-size: 23px !important;
+        }
+        .admin-portal-root .text-2xl {
+          font-size: 26px !important;
+        }
+        .admin-portal-root .text-[9px] {
           font-size: 11px !important;
         }
-        /* Prevent any fixed-width text from overflowing on narrow screens */
-        .admin-portal-root * {
-          word-break: break-word;
+        .admin-portal-root .text-[10px] {
+          font-size: 12px !important;
+        }
+        .admin-portal-root .text-[11px] {
+          font-size: 13px !important;
+        }
+        .admin-portal-root .text-[13px] {
+          font-size: 15px !important;
+        }
+        .admin-sidebar-link {
+          font-size: 20px !important;
+        }
+        .admin-sidebar-header {
+          font-size: 13.5px !important;
         }
       `}</style>
       {/* Top Header */}
-      <header className="relative h-14 lg:h-16 bg-white border-b border-[#64B5F6]/25 flex items-center justify-between px-3 lg:px-6 sticky top-0 z-30 shadow-xs">
+      <header className="relative h-16 bg-white border-b border-[#64B5F6]/25 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -575,7 +596,7 @@ function AdminLayout() {
           >
             {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-          <Link to="/admin" className="flex items-center gap-2.5 font-extrabold text-sm sm:text-xl text-[#0B2545]">
+          <Link to="/admin" className="flex items-center gap-2.5 font-extrabold text-xl text-[#0B2545]">
             <span className="bg-gradient-to-tr from-[#0B2545] to-[#1E88E5] text-[#D4ECFC] px-2.5 py-1 rounded-xl text-sm shadow-md shadow-[#0B2545]/30">TC</span>
             <span className="text-slate-900 tracking-tight">TConnect Admin</span>
           </Link>
@@ -760,7 +781,7 @@ function AdminLayout() {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 p-3 sm:p-4 lg:p-8 overflow-y-auto bg-[#F7F9FC] min-w-0">
+        <main className="flex-1 p-4 lg:p-8 overflow-y-auto bg-[#F7F9FC]">
           <Outlet />
         </main>
       </div>

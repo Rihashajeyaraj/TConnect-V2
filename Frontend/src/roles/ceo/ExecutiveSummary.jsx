@@ -35,7 +35,7 @@ import { reportAPI, customerAPI } from '../../services/api.js'
 const COLORS = ['#832D51', '#EA6993', '#3a7d63', '#0891b2', '#d97706', '#4f46e5', '#64748b']
 
 function ExecutiveSummary() {
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [summaryData, setSummaryData] = useState({
     totalRevenue: 0,
     activeLeads: 0,

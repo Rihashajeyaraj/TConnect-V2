@@ -21,7 +21,7 @@ import {
 export default function AdminManagement() {
   const { showToast } = useToast()
   const [admins, setAdmins] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [statusFilter, setStatusFilter] = useState('All')
 

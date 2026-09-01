@@ -21,7 +21,7 @@ import { notificationAPI } from '../../services/api.js'
 export default function ManagerNotifications() {
   const { showToast } = useToast()
   const [list, setList] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   // Date Wise Filter State
   const [dateFilter, setDateFilter] = useState('All') // 'All' | 'Today' | 'Yesterday' | 'This Week' | 'This Month' | 'Custom Date'
