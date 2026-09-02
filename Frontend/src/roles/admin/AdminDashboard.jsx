@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import { formatDate } from '../../utils/dateUtils.js'
+import { normalizePhoneNumber } from '../../utils/formatUtils.js'
 import { exportToCSV } from '../../utils/exportUtils.js'
 import {
   Users,
@@ -1543,7 +1544,11 @@ export default function AdminDashboard() {
             </div>
 
             {/* Form Fields */}
-            <form onSubmit={handleCreateEmployeeSubmit} className="flex-1 overflow-y-auto p-6 space-y-4">
+            <form onSubmit={handleCreateEmployeeSubmit} autoComplete="off" className="flex-1 overflow-y-auto p-6 space-y-4">
+              {/* Fake hidden input traps to block browser autofill */}
+              <input type="text" name="fake_usernamenotremembered" style={{ display: 'none' }} tabIndex={-1} />
+              <input type="password" name="fake_passwordnotremembered" style={{ display: 'none' }} tabIndex={-1} />
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Full Name</label>
@@ -1573,9 +1578,12 @@ export default function AdminDashboard() {
                   <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Access Email Address</label>
                   <input
                     type="email" required
+                    name="new_sys_emp_email"
+                    id="new_sys_emp_email"
+                    autoComplete="off"
                     value={createEmpForm.email}
                     onChange={(e) => setCreateEmpForm({...createEmpForm, email: e.target.value})}
-                    placeholder="john.doe@tconnect.com"
+                    placeholder="e.g. employee.name@company.com"
                     className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
@@ -1583,6 +1591,9 @@ export default function AdminDashboard() {
                   <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Portal Login Password</label>
                   <input
                     type="password" required
+                    name="new_sys_emp_password"
+                    id="new_sys_emp_password"
+                    autoComplete="new-password"
                     value={createEmpForm.password}
                     onChange={(e) => setCreateEmpForm({...createEmpForm, password: e.target.value})}
                     placeholder="Min 6 characters"
@@ -1595,10 +1606,11 @@ export default function AdminDashboard() {
                 <div>
                   <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Phone Number</label>
                   <input
-                    type="text"
+                    type="tel"
+                    maxLength={10}
                     value={createEmpForm.phone}
-                    onChange={(e) => setCreateEmpForm({...createEmpForm, phone: e.target.value})}
-                    placeholder="+91 98765 00021"
+                    onChange={(e) => setCreateEmpForm({...createEmpForm, phone: normalizePhoneNumber(e.target.value)})}
+                    placeholder="10-digit number e.g. 9876543210"
                     className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-indigo-500"
                   />
                 </div>
@@ -1784,9 +1796,11 @@ export default function AdminDashboard() {
                   <div>
                     <label className="block text-[10px] font-black text-[#071A45] uppercase tracking-wider mb-1">Phone Number</label>
                     <input
-                      type="text"
+                      type="tel"
+                      maxLength={10}
                       value={editEmpForm.phone}
-                      onChange={(e) => setEditEmpForm({...editEmpForm, phone: e.target.value})}
+                      onChange={(e) => setEditEmpForm({...editEmpForm, phone: normalizePhoneNumber(e.target.value)})}
+                      placeholder="10-digit number e.g. 9876543210"
                       className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-slate-50/50 text-xs font-bold focus:outline-none"
                     />
                   </div>

@@ -1234,17 +1234,25 @@ const Section = ({ icon: Icon, title, color = "blue", children }) => (
 
 const Field = ({ label, value, editMode, onChange, readOnly = false }) => {
   const isDate = label.toLowerCase().includes('date') || label.toLowerCase().includes('dob') || label.toLowerCase().includes('birth');
+  const isPhone = label.toLowerCase().includes('phone') || label.toLowerCase().includes('mobile') || label.toLowerCase().includes('contact');
   return (
     <div>
       <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
       {editMode ? (
         <input
-          type={isDate ? "date" : "text"}
+          type={isDate ? "date" : isPhone ? "tel" : "text"}
+          maxLength={isPhone ? 10 : undefined}
           value={value || ""}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            if (isPhone) {
+              onChange(e.target.value.replace(/\D/g, '').slice(0, 10))
+            } else {
+              onChange(e.target.value)
+            }
+          }}
           disabled={readOnly}
           readOnly={readOnly}
-          className={`text-sm font-semibold text-slate-900 border-b border-blue-500 focus:outline-none bg-transparent w-full ${
+          className={`text-sm font-semibold text-slate-900 border-b border-[#123A8C] focus:outline-none bg-transparent w-full ${
             readOnly ? "opacity-60 cursor-not-allowed border-dashed border-slate-300" : ""
           }`}
         />
@@ -1253,6 +1261,6 @@ const Field = ({ label, value, editMode, onChange, readOnly = false }) => {
       )}
     </div>
   );
-}
+};
 
 export default AdminLayout

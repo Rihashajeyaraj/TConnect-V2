@@ -3,20 +3,39 @@ import { X, Mail, Phone, MapPin, Building, Shield, Calendar, UserCheck, Briefcas
 import { formatDate } from '../utils/dateUtils.js'
 import PhotoLightboxModal from './PhotoLightboxModal.jsx'
 
+import { hrmsAPI } from '../services/api.js'
+
 export default function EmployeeProfileModal({ employee, onClose }) {
   const [showExpandedPhoto, setShowExpandedPhoto] = useState(false)
+  const [fullProfile, setFullProfile] = useState(employee || {})
+
+  React.useEffect(() => {
+    let isMounted = true
+    const empId = employee?.employee_id || employee?.id || employee?.auth_user_id
+    if (empId) {
+      hrmsAPI.getEmployee(empId)
+        .then(res => {
+          if (isMounted && res && res.data) {
+            setFullProfile(prev => ({ ...prev, ...res.data }))
+          }
+        })
+        .catch(() => {})
+    }
+    return () => { isMounted = false }
+  }, [employee])
 
   if (!employee) return null
+  const empData = fullProfile || employee
 
-  const name = employee.name || `${employee.first_name || ''} ${employee.last_name || ''}`.trim() || employee.full_name || 'Employee'
-  const code = employee.employee_code || employee.employee_id || employee.id || 'N/A'
-  const role = employee.role || employee.designation || 'Sales Executive'
-  const dept = employee.department || employee.dept || 'Sales & Business Development'
-  const email = employee.email || '—'
-  const phone = employee.phone || employee.mobile || '—'
-  const photo = employee.profile_photo || null
-  const mgr = employee.reporting_manager_name || employee.reporting_manager_email || 'Not Assigned'
-  const status = employee.status || employee.employment_status || 'Active'
+  const name = empData.name || `${empData.first_name || ''} ${empData.last_name || ''}`.trim() || empData.full_name || 'Employee'
+  const code = empData.employee_code || empData.employee_id || empData.id || 'N/A'
+  const role = empData.role || empData.designation || 'Sales Executive'
+  const dept = empData.department || empData.dept || 'Sales & Business Development'
+  const email = empData.email || '—'
+  const phone = empData.phone || empData.mobile || '—'
+  const photo = empData.profile_photo || null
+  const mgr = empData.reporting_manager_name || empData.reporting_manager_email || 'Not Assigned'
+  const status = empData.status || empData.employment_status || 'Active'
 
   const initials = name.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'EM'
 

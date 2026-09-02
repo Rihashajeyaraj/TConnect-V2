@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import { normalizePhoneNumber } from "../../utils/formatUtils.js";
 import {
   CalendarDays,
   Clock3,
@@ -909,10 +910,11 @@ export default function ClientLog(props) {
                 <div>
                   <label className="block text-slate-700 font-extrabold mb-1">Contact Phone Number</label>
                   <input
-                    type="text"
-                    placeholder="+91 98765 43210"
+                    type="tel"
+                    maxLength={10}
+                    placeholder="10-digit number e.g. 9876543210"
                     value={visitForm.phone}
-                    onChange={(e) => setVisitForm(p => ({ ...p, phone: e.target.value }))}
+                    onChange={(e) => setVisitForm(p => ({ ...p, phone: normalizePhoneNumber(e.target.value) }))}
                     className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white focus:outline-none focus:border-teal-500 font-medium text-slate-900 text-xs sm:text-sm"
                   />
                 </div>

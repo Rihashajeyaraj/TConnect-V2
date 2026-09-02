@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { normalizePhoneNumber } from '../../utils/formatUtils.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import {
   Users,
@@ -760,10 +761,11 @@ function TeamManagement() {
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Phone</label>
                   <input
-                    type="text"
+                    type="tel"
+                    maxLength={10}
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="+91 99999 88888"
+                    onChange={(e) => setFormData({ ...formData, phone: normalizePhoneNumber(e.target.value) })}
+                    placeholder="10-digit number e.g. 9876543210"
                     className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#832D51]"
                   />
                 </div>

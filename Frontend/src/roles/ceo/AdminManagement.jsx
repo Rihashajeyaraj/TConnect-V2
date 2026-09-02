@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { useToast } from '../../common/ToastContext.jsx'
 import { userAPI } from '../../services/api.js'
 import { formatDate } from '../../utils/dateUtils.js'
+import { normalizePhoneNumber } from '../../utils/formatUtils.js'
 import { exportToCSV } from '../../utils/exportUtils.js'
 import {
   ShieldCheck,
@@ -437,10 +438,11 @@ export default function AdminManagement() {
                 <div>
                   <label className="block mb-1.5">Phone Number</label>
                   <input
-                    type="text"
-                    placeholder="+91 99999 00000"
+                    type="tel"
+                    maxLength={10}
+                    placeholder="10-digit number e.g. 9876543210"
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                    onChange={(e) => setFormData({ ...formData, phone: normalizePhoneNumber(e.target.value) })}
                     className="w-full h-11 bg-slate-50 border border-slate-300 rounded-xl px-3.5 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:bg-white"
                   />
                 </div>

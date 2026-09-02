@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { normalizePhoneNumber } from '../../utils/formatUtils.js'
 import {
   Building2,
   Search,
@@ -710,11 +711,12 @@ export default function ManagerCustomers() {
                 <div>
                   <label className="text-[10px] font-black text-slate-400 uppercase block mb-1">Phone Number *</label>
                   <input
-                    type="text"
+                    type="tel"
                     required
-                    placeholder="+91 98765 00000"
+                    maxLength={10}
+                    placeholder="10-digit number e.g. 9876543210"
                     value={newCust.phone}
-                    onChange={(e) => setNewCust({ ...newCust, phone: e.target.value })}
+                    onChange={(e) => setNewCust({ ...newCust, phone: normalizePhoneNumber(e.target.value) })}
                     className="w-full h-9 bg-slate-50 border-slate-200 rounded-xl px-3 text-xs font-semibold focus:outline-none focus:border-mgr-primary-500"
                   />
                 </div>

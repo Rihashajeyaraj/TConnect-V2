@@ -41,11 +41,30 @@ import { FaceLivenessEngine, LIVENESS_CHALLENGES } from '../sales/FaceLivenessEn
 
 const EmployeeProfileModal = ({ employee, onClose }) => {
   const [previewDoc, setPreviewDoc] = useState(null);
+  const [fullProfile, setFullProfile] = useState(employee || {});
+
+  useEffect(() => {
+    let isMounted = true;
+    const empId = employee?.employee_id || employee?.id || employee?.auth_user_id;
+    if (empId) {
+      hrmsAPI.getEmployee(empId)
+        .then(res => {
+          if (isMounted && res && res.data) {
+            setFullProfile(prev => ({ ...prev, ...res.data }));
+          }
+        })
+        .catch(() => {});
+    }
+    return () => { isMounted = false; };
+  }, [employee]);
+
   if (!employee) return null;
+  const empData = fullProfile || employee;
+
   const parsedDocs = (() => {
-    if (!employee.documents) return [];
+    if (!empData.documents) return [];
     try {
-      return typeof employee.documents === "string" ? JSON.parse(employee.documents) : employee.documents;
+      return typeof empData.documents === "string" ? JSON.parse(empData.documents) : empData.documents;
     } catch {
       return [];
     }
@@ -80,16 +99,16 @@ const EmployeeProfileModal = ({ employee, onClose }) => {
 
         <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
           <div className="w-16 h-16 rounded-full overflow-hidden bg-slate-100 border-2 border-blue-500 shrink-0 flex items-center justify-center font-bold text-slate-700 text-xl">
-            {employee.profile_photo ? (
-              <img src={employee.profile_photo} alt="Profile" className="w-full h-full object-cover" />
+            {empData.profile_photo ? (
+              <img src={empData.profile_photo} alt="Profile" className="w-full h-full object-cover" />
             ) : (
-              (employee.name || "E").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
+              (empData.name || "E").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
             )}
           </div>
           <div>
-            <h3 className="font-extrabold text-slate-900 text-lg">{employee.name}</h3>
+            <h3 className="font-extrabold text-slate-900 text-lg">{empData.name}</h3>
             <p className="text-xs text-slate-500 font-semibold">
-              {employee.employee_code || employee.employee_id || "N/A"} · {employee.department || employee.dept || "Sales"} · {employee.designation || employee.role || "Sales Executive"}
+              {empData.employee_code || empData.employee_id || "N/A"} · {empData.department || empData.dept || "Sales"} · {empData.designation || empData.role || "Sales Executive"}
             </p>
           </div>
         </div>
@@ -97,47 +116,47 @@ const EmployeeProfileModal = ({ employee, onClose }) => {
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <Section icon={Briefcase} title="Work Details" color="blue">
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <InfoRow label="Official Email" value={employee.email} />
-              <InfoRow label="Phone Number" value={employee.phone} />
-              <InfoRow label="Employment Type" value={employee.employment_type} />
-              <InfoRow label="Work Mode" value={employee.work_mode} />
-              <InfoRow label="Work Location" value={employee.work_location} />
-              <InfoRow label="Status" value={employee.status} />
+              <InfoRow label="Official Email" value={empData.email} />
+              <InfoRow label="Phone Number" value={empData.phone} />
+              <InfoRow label="Employment Type" value={empData.employment_type || "Full Time"} />
+              <InfoRow label="Work Mode" value={empData.work_mode || "On-Site"} />
+              <InfoRow label="Work Location" value={empData.work_location || "Headquarters"} />
+              <InfoRow label="Status" value={empData.status || "Active"} />
             </div>
           </Section>
 
           <Section icon={HeartPulse} title="Personal Details" color="rose">
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <InfoRow label="Date of Birth" value={employee.date_of_birth} />
-              <InfoRow label="Marital Status" value={employee.marital_status} />
-              <InfoRow label="Blood Group" value={employee.blood_group} />
-              <InfoRow label="PAN ID" value={employee.pan_id} />
-              <InfoRow label="Personal Email" value={employee.personal_email} />
-              <InfoRow label="Alternate Contact" value={employee.alternate_contact} />
-              <InfoRow label="City" value={employee.city} />
-              <InfoRow label="State" value={employee.state} />
-              <InfoRow label="Country" value={employee.country} />
-              <InfoRow label="Postal Code" value={employee.postal_code} />
+              <InfoRow label="Date of Birth" value={empData.date_of_birth ? formatDate(empData.date_of_birth) : "—"} />
+              <InfoRow label="Marital Status" value={empData.marital_status} />
+              <InfoRow label="Blood Group" value={empData.blood_group} />
+              <InfoRow label="PAN ID" value={empData.pan_id} />
+              <InfoRow label="Personal Email" value={empData.personal_email} />
+              <InfoRow label="Alternate Contact" value={empData.alternate_contact} />
+              <InfoRow label="City" value={empData.city} />
+              <InfoRow label="State" value={empData.state} />
+              <InfoRow label="Country" value={empData.country || "India"} />
+              <InfoRow label="Postal Code" value={empData.postal_code} />
             </div>
             <div className="mt-2 text-xs space-y-2 border-t border-slate-100 pt-2">
-              <InfoRow label="Current Address" value={employee.current_address} />
-              <InfoRow label="Permanent Address" value={employee.permanent_address} />
+              <InfoRow label="Current Address" value={empData.current_address} />
+              <InfoRow label="Permanent Address" value={empData.permanent_address} />
             </div>
           </Section>
 
           <Section icon={Code2} title="Skills & Tech" color="indigo">
             <div className="space-y-2 text-xs">
-              <InfoRow label="Primary Skills" value={employee.primary_skills} />
-              <InfoRow label="Secondary Skills" value={employee.secondary_skills} />
-              <InfoRow label="Tools & Tech" value={employee.tools} />
+              <InfoRow label="Primary Skills" value={empData.primary_skills} />
+              <InfoRow label="Secondary Skills" value={empData.secondary_skills} />
+              <InfoRow label="Tools & Tech" value={empData.tools} />
             </div>
           </Section>
 
           <Section icon={AlertCircle} title="Emergency Contact" color="rose">
             <div className="grid grid-cols-2 gap-3 text-xs">
-              <InfoRow label="Contact Name" value={employee.emergency_name} />
-              <InfoRow label="Relationship" value={employee.emergency_relationship} />
-              <InfoRow label="Contact Number" value={employee.emergency_contact} />
+              <InfoRow label="Contact Name" value={empData.emergency_name} />
+              <InfoRow label="Relationship" value={empData.emergency_relationship} />
+              <InfoRow label="Contact Number" value={empData.emergency_contact} />
             </div>
           </Section>
 
@@ -488,7 +507,8 @@ function UserManagement() {
   const location = useLocation()
   const searchInputRef = useRef(null)
   const [users, setUsers] = useState([])
-  const [activeTab, setActiveTab] = useState('table') // 'table' | 'hierarchy'
+  const [activeTab, setActiveTab] = useState('hierarchy') // 'hierarchy' | 'password-resets'
+  const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [departmentsList, setDepartmentsList] = useState([])
 
   useEffect(() => {
@@ -1419,61 +1439,109 @@ function UserManagement() {
         </div>
       </div>
 
-      {/* KPI Stats Panel */}
+      {/* KPI Stats Panel (Interactive Cards -> Click to open Users Directory Modal) */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedRole('ALL')
+            setSelectedStatus('ALL')
+            setShowDirectoryModal(true)
+          }}
+          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:shadow-md hover:border-blue-400 transition-all flex items-center gap-3 cursor-pointer text-left group"
+          title="Click to view total users directory modal"
+        >
+          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 group-hover:scale-105 transition-transform">
             <Users className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Total Users</p>
-            <p className="text-2xl font-extrabold text-slate-900">{users.length}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-blue-600 transition-colors">Total Users</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <p className="text-2xl font-extrabold text-slate-900">{users.length}</p>
+              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">View ↗</span>
+            </div>
           </div>
-        </div>
+        </button>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedRole('Sales Manager')
+            setSelectedStatus('ALL')
+            setShowDirectoryModal(true)
+          }}
+          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:shadow-md hover:border-indigo-400 transition-all flex items-center gap-3 cursor-pointer text-left group"
+          title="Click to view Sales Managers in directory modal"
+        >
+          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 group-hover:scale-105 transition-transform">
             <ShieldCheck className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Sales Managers</p>
-            <p className="text-2xl font-extrabold text-slate-900">{salesManagers.length}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">Sales Managers</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <p className="text-2xl font-extrabold text-slate-900">{salesManagers.length}</p>
+              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">View ↗</span>
+            </div>
           </div>
-        </div>
+        </button>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedRole('Sales Executive')
+            setSelectedStatus('ALL')
+            setShowDirectoryModal(true)
+          }}
+          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:shadow-md hover:border-emerald-400 transition-all flex items-center gap-3 cursor-pointer text-left group"
+          title="Click to view Sales Executives in directory modal"
+        >
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100 group-hover:scale-105 transition-transform">
             <UserCheck className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Assigned Subordinates</p>
-            <p className="text-2xl font-extrabold text-slate-900">{salesExecutives.length - unassignedExecutives.length}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-emerald-600 transition-colors">Assigned Subordinates</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <p className="text-2xl font-extrabold text-slate-900">{salesExecutives.length - unassignedExecutives.length}</p>
+              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">View ↗</span>
+            </div>
           </div>
-        </div>
+        </button>
 
-        <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex items-center gap-3">
-          <div className={`p-3 rounded-xl border ${unassignedExecutives.length > 0 ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
+        <button
+          type="button"
+          onClick={() => {
+            setSelectedRole('ALL')
+            setSelectedStatus('ALL')
+            setShowDirectoryModal(true)
+          }}
+          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:shadow-md hover:border-amber-400 transition-all flex items-center gap-3 cursor-pointer text-left group"
+          title="Click to view Unassigned Executives in directory modal"
+        >
+          <div className={`p-3 rounded-xl border group-hover:scale-105 transition-transform ${unassignedExecutives.length > 0 ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
             <UserX className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider">Unassigned Pool</p>
-            <p className={`text-2xl font-extrabold ${unassignedExecutives.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{unassignedExecutives.length}</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-amber-600 transition-colors">Unassigned Pool</p>
+            <div className="flex items-center gap-1.5 mt-0.5">
+              <p className={`text-2xl font-extrabold ${unassignedExecutives.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{unassignedExecutives.length}</p>
+              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">View ↗</span>
+            </div>
           </div>
-        </div>
+        </button>
       </div>
 
       {/* View Switcher Tabs */}
       <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
         <div className="flex items-center gap-2">
           <button
-            onClick={() => setActiveTab('table')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer ${
-              activeTab === 'table'
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
+            onClick={() => {
+              setSelectedRole('ALL')
+              setSelectedStatus('ALL')
+              setShowDirectoryModal(true)
+            }}
+            className="px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/20"
           >
-            <Layers className="w-4 h-4" /> All Users Directory ({users.length})
+            <Layers className="w-4 h-4" /> All Users Directory ({users.length}) ↗
           </button>
           <button
             onClick={() => setActiveTab('hierarchy')}
@@ -1756,60 +1824,118 @@ function UserManagement() {
       {/* ======================================================== */}
       {/* VIEW 2: ALL USERS DIRECTORY — TABLE                    */}
       {/* ======================================================== */}
-      {activeTab === 'table' && (
-        <div className="space-y-4">
-          {/* Search + Filter Bar */}
-          <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row gap-2 items-center justify-between">
-            <div className="relative w-full sm:w-72">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-              <input
-                ref={searchInputRef}
-                type="text"
-                placeholder="Search name, email, department..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-8 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs text-slate-800 focus:outline-none focus:border-blue-500 font-semibold"
+      {/* ======================================================== */}
+      {/* ALL USERS DIRECTORY — POPUP MODAL TABLE                   */}
+      {/* ======================================================== */}
+      {showDirectoryModal && (
+        <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-6xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
+            
+            {/* Modal Header */}
+            <div className="bg-[#061A4D] text-white p-5 flex items-center justify-between border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md">
+                  <Users className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-100 flex items-center gap-2">
+                    All Users Directory
+                    <span className="text-xs bg-blue-500/30 border border-blue-400/40 text-blue-200 px-2.5 py-0.5 rounded-full font-bold">
+                      {filteredUsers.length} Users Found
+                    </span>
+                  </h3>
+                  <p className="text-[11px] text-slate-300 font-medium mt-0.5">
+                    Full system database directory. Filter by Role/Status or Search by Name/Email.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowDirectoryModal(false)}
+                className="text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+              >
+                <span>✕ Close</span>
+              </button>
+            </div>
+
+            {/* Search & Filter Bar inside Modal */}
+            <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row gap-3 items-center justify-between shrink-0">
+              <div className="relative w-full sm:w-80">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  ref={searchInputRef}
+                  type="text"
+                  placeholder="Search name, email, department..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-250 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-bold shadow-2xs"
+                />
+              </div>
+
+              <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end flex-wrap">
+                <select
+                  value={selectedRole}
+                  onChange={(e) => setSelectedRole(e.target.value)}
+                  className="px-3.5 py-2 bg-white border border-slate-250 rounded-xl text-xs font-extrabold text-slate-700 focus:outline-none cursor-pointer shadow-2xs"
+                >
+                  <option value="ALL">All Roles</option>
+                  <option value="Super Admin">Super Admin</option>
+                  <option value="Sales Manager">Sales Manager</option>
+                  <option value="Sales Executive">Sales Executive</option>
+                </select>
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="px-3.5 py-2 bg-white border border-slate-250 rounded-xl text-xs font-extrabold text-slate-700 focus:outline-none cursor-pointer shadow-2xs"
+                >
+                  <option value="ALL">All Statuses</option>
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSearchQuery('')
+                    setSelectedRole('ALL')
+                    setSelectedStatus('ALL')
+                  }}
+                  className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+                >
+                  Reset Filters
+                </button>
+              </div>
+            </div>
+
+            {/* Table Body */}
+            <div className="flex-1 overflow-y-auto p-4">
+              <UserDirectoryTable
+                filteredUsers={filteredUsers}
+                isProtectedRole={isProtectedRole}
+                ROLE_BADGE_CLASSES={ROLE_BADGE_CLASSES}
+                toggleUserStatus={toggleUserStatus}
+                handleOpenEditModal={handleOpenEditModal}
+                handleDeleteUser={handleDeleteUser}
+                handleOpenReassignModal={handleOpenReassignModal}
+                setSelectedEnrollUser={setSelectedEnrollUser}
+                setDuplicateErrorUser={setDuplicateErrorUser}
+                setShowEnrollFaceModal={setShowEnrollFaceModal}
+                setSelectedEmployeeProfile={setSelectedEmployeeProfile}
+                setShowCredentialsModal={setShowCredentialsModal}
               />
             </div>
-            <div className="flex gap-2 flex-wrap">
-              <select
-                value={selectedRole}
-                onChange={(e) => setSelectedRole(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs font-bold text-slate-600 shrink-0">
+              <span>Showing {filteredUsers.length} of {users.length} total records</span>
+              <button
+                type="button"
+                onClick={() => setShowDirectoryModal(false)}
+                className="px-5 py-2 bg-[#061A4D] hover:bg-[#123A8C] text-white rounded-xl font-extrabold shadow-sm transition cursor-pointer"
               >
-                <option value="ALL">All Roles</option>
-                <option value="Super Admin">Super Admin</option>
-                <option value="Sales Manager">Sales Manager</option>
-                <option value="Sales Executive">Sales Executive</option>
-              </select>
-              <select
-                value={selectedStatus}
-                onChange={(e) => setSelectedStatus(e.target.value)}
-                className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 focus:outline-none cursor-pointer"
-              >
-                <option value="ALL">All Statuses</option>
-                <option value="Active">Active</option>
-                <option value="Inactive">Inactive</option>
-              </select>
-              <span className="self-center text-[11px] text-slate-400 font-bold">{filteredUsers.length} records</span>
+                Close Modal
+              </button>
             </div>
           </div>
-
-          {/* Table */}
-          <UserDirectoryTable
-            filteredUsers={filteredUsers}
-            isProtectedRole={isProtectedRole}
-            ROLE_BADGE_CLASSES={ROLE_BADGE_CLASSES}
-            toggleUserStatus={toggleUserStatus}
-            handleOpenEditModal={handleOpenEditModal}
-            handleDeleteUser={handleDeleteUser}
-            handleOpenReassignModal={handleOpenReassignModal}
-            setSelectedEnrollUser={setSelectedEnrollUser}
-            setDuplicateErrorUser={setDuplicateErrorUser}
-            setShowEnrollFaceModal={setShowEnrollFaceModal}
-            setSelectedEmployeeProfile={setSelectedEmployeeProfile}
-            setShowCredentialsModal={setShowCredentialsModal}
-          />
         </div>
       )}
 
@@ -1834,7 +1960,11 @@ function UserManagement() {
               </span>
             </div>
 
-            <form onSubmit={handleAddUser} className="space-y-4 text-xs">
+            <form onSubmit={handleAddUser} autoComplete="off" className="space-y-4 text-xs">
+              {/* Fake hidden input traps to block browser autofill */}
+              <input type="text" name="fake_usernamenotremembered" style={{ display: 'none' }} tabIndex={-1} />
+              <input type="password" name="fake_passwordnotremembered" style={{ display: 'none' }} tabIndex={-1} />
+
               {/* Account Access Fields Group */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
@@ -1850,11 +1980,13 @@ function UserManagement() {
                   <label className="block text-slate-700 font-bold mb-1">Access Email Address (Portal Login Email)</label>
                   <input
                     type="email"
-                    placeholder="e.g. arun.kumar@twite.ai"
+                    name="new_user_login_email"
+                    id="new_user_login_email"
+                    placeholder="e.g. employee.name@company.com"
                     value={newUser.email}
                     onChange={(e) => setNewUser({ ...newUser, email: e.target.value, name: `${newUser.first_name} ${newUser.last_name}`.trim() })}
                     className="w-full h-10 border border-slate-350 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
-                    autoComplete="new-email"
+                    autoComplete="off"
                     required
                   />
                 </div>
@@ -1866,6 +1998,8 @@ function UserManagement() {
                   <div className="relative">
                     <input
                       type={showAddPassword ? 'text' : 'password'}
+                      name="new_user_login_password"
+                      id="new_user_login_password"
                       placeholder="Assign login password (e.g. Sales2026#)"
                       value={newUser.password}
                       onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
