@@ -321,6 +321,16 @@ async def reassign_customers(
         if success_count == 0:
             from fastapi import HTTPException
             raise HTTPException(status_code=500, detail="No customers were updated in the database. Check the customer IDs and try again.")
+
+        from app.modules.audit.service import create_audit_log
+        create_audit_log(
+            "CLIENT_REASSIGNED",
+            "crm.customers",
+            user_payload,
+            description=f"Admin reassigned {success_count} client(s) to employee '{payload.new_employee_id}'. Reason: {payload.reassignment_reason or 'Admin Reassignment'}",
+            new_value={"new_employee_id": payload.new_employee_id, "customer_ids": payload.customer_ids}
+        )
+
         return StandardResponse.success_response(
             data={"reassigned_count": success_count, "updated_customers": updated_customers},
             message=f"Successfully reassigned {success_count} customers."

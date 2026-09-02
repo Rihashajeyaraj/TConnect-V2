@@ -27,6 +27,19 @@ function haversineDistance(lat1, lon1, lat2, lon2) {
   return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
 }
 
+function distanceToPolyline(lat, lng, polylinePts) {
+  if (!polylinePts || polylinePts.length === 0) return Infinity
+  let minDistance = Infinity
+  for (let i = 0; i < polylinePts.length; i++) {
+    const pt = polylinePts[i]
+    const pLat = Array.isArray(pt) ? pt[0] : pt.lat
+    const pLng = Array.isArray(pt) ? pt[1] : pt.lng
+    const dist = haversineDistance(lat, lng, pLat, pLng)
+    if (dist < minDistance) minDistance = dist
+  }
+  return minDistance
+}
+
 function decodePolyline(encoded) {
   if (!encoded) return []
   let index = 0, len = encoded.length
@@ -65,16 +78,23 @@ try {
   }
 } catch { /* Realtime unavailable; fall back to polling */ }
 
-// ── Stale thresholds ───────────────────────────────────────────────────────────
-const STALE_MS  = 1 * 60 * 1000  // > 1 min → stale
+// ── Stale & Offline thresholds ───────────────────────────────────────────────
+const STALE_MS   = 1 * 60 * 1000  // > 1 min → Stale
+const OFFLINE_MS = 5 * 60 * 1000  // > 5 mins → Offline
 
 function getTrackingBadge(status, lastUpdatedMs, isOnline = true) {
-  if (status === 'ended' || status === 'stopped') return { label: 'Stopped', color: '#475569', dot: '⬛' }
-  if (!isOnline)          return { label: 'Offline',  color: '#dc2626', dot: '🔴' }
-  if (!lastUpdatedMs)     return { label: 'No Signal', color: '#475569', dot: '⬛' }
+  if (status === 'ended' || status === 'stopped') return { label: 'Session Ended', color: '#64748b', dot: '⬛' }
+  if (!isOnline) return { label: 'Offline', color: '#dc2626', dot: '🔴' }
+  if (!lastUpdatedMs) return { label: 'No Signal', color: '#64748b', dot: '⬛' }
+
   const age = Date.now() - lastUpdatedMs
-  if (age > STALE_MS) return { label: 'Stale (>1m)', color: '#f97316', dot: '🟠' }
-  return                       { label: 'Live',       color: '#10b981', dot: '🟢' }
+  if (age > OFFLINE_MS) return { label: 'Offline (>5m)', color: '#dc2626', dot: '🔴' }
+  if (age > STALE_MS) {
+    const minsAgo = Math.floor(age / 60000)
+    return { label: `Stale (${minsAgo}m ago)`, color: '#f97316', dot: '🟠' }
+  }
+
+  return { label: 'Live GPS', color: '#10b981', dot: '🟢' }
 }
 
 // ─── Custom HTML Map Marker for Google Maps Overlay ───────────────────────────
@@ -373,6 +393,7 @@ export default function ManagerSmartMap() {
   const endMarkerRef    = useRef(null)  // grey end pin
   const destMarkerRef   = useRef(null)  // client destination pin
   const destRouteRef    = useRef(null)  // Polyline route to destination
+  const offRoutePolylineRef = useRef(null) // Purple dashed polyline for route deviation
   const destClientRef   = useRef(null)  // ref to avoid stale closures for selected client
   const selectedExecutiveRef = useRef(null)
   const trackSessionRef = useRef(null)
@@ -976,6 +997,7 @@ export default function ManagerSmartMap() {
     if (endMarkerRef.current)   { endMarkerRef.current.setMap(null);   endMarkerRef.current   = null }
     if (destMarkerRef.current)  { destMarkerRef.current.setMap(null);  destMarkerRef.current  = null }
     if (destRouteRef.current)   { destRouteRef.current.setMap(null);   destRouteRef.current   = null }
+    if (offRoutePolylineRef.current) { offRoutePolylineRef.current.setMap(null); offRoutePolylineRef.current = null }
     if (nearbyClientMarkersRef.current) {
       nearbyClientMarkersRef.current.forEach(m => m.setMap(null))
       nearbyClientMarkersRef.current = []
@@ -1359,15 +1381,46 @@ export default function ManagerSmartMap() {
         } else if (gPath.length >= 2) {
           trackRouteRef.current = new window.google.maps.Polyline({
             path: gPath,
-            strokeOpacity: 0,
-            icons: [{
-              icon: lineSymbol,
-              offset: '0%',
-              repeat: '16px'
-            }],
+            strokeColor: '#2563eb',
+            strokeOpacity: 0.85,
+            strokeWeight: 5,
+            geodesic: true,
             map: googleMapRef.current,
             zIndex: 15
           })
+        }
+
+        // Render purple dashed line if executive takes a different / deviated route
+        if (destRoutePathRef.current && destRoutePathRef.current.length > 2 && gPath.length >= 2) {
+          const distToCorridor = distanceToPolyline(lat, lng, destRoutePathRef.current)
+          if (distToCorridor > 0.3) {
+            const purpleSymbol = {
+              path: 'M 0,-2 0,2',
+              strokeOpacity: 1,
+              scale: 2.5,
+              strokeColor: '#9333ea', // Purple dashed line for off-route deviation
+              strokeWeight: 4
+            }
+            if (offRoutePolylineRef.current) {
+              offRoutePolylineRef.current.setPath(gPath)
+            } else {
+              offRoutePolylineRef.current = new window.google.maps.Polyline({
+                path: gPath,
+                geodesic: true,
+                strokeOpacity: 0,
+                icons: [{
+                  icon: purpleSymbol,
+                  offset: '0%',
+                  repeat: '16px',
+                }],
+                map: googleMapRef.current,
+                zIndex: 20
+              })
+            }
+          } else if (offRoutePolylineRef.current) {
+            offRoutePolylineRef.current.setMap(null)
+            offRoutePolylineRef.current = null
+          }
         }
       }
     } catch (polylineErr) {
@@ -1664,21 +1717,12 @@ export default function ManagerSmartMap() {
         trailPointsRef.current = pathCoords
 
         if (pathCoords.length > 1) {
-          const lineSymbol = {
-            path: 'M 0,-2 0,2',
-            strokeOpacity: 1,
-            scale: 2,
-            strokeColor: '#9333ea',
-            strokeWeight: 3
-          }
           trackRouteRef.current = new window.google.maps.Polyline({
             path: pathCoords,
-            strokeOpacity: 0,
-            icons: [{
-              icon: lineSymbol,
-              offset: '0%',
-              repeat: '16px'
-            }],
+            strokeColor: '#2563eb',
+            strokeOpacity: 0.85,
+            strokeWeight: 5,
+            geodesic: true,
             map: map,
             zIndex: 15
           })
@@ -1876,6 +1920,34 @@ export default function ManagerSmartMap() {
       realtimeChRef.current = channels
     }
 
+    // ── Instant Sub-Second Local Broadcast & Storage Listener ──
+    let bc;
+    try {
+      bc = new BroadcastChannel('tc_live_gps_stream')
+      bc.onmessage = (event) => {
+        const loc = event.data
+        if (loc && loc.latitude && loc.longitude) {
+          _applyNewCrumb(loc)
+          fetchData(true)
+        }
+      }
+    } catch (e) {}
+
+    const handleInstantLocationUpdate = (e) => {
+      if (e.type === 'storage' && e.key !== 'tc_executive_live_location') return
+      try {
+        const raw = e.type === 'storage' ? e.newValue : e.detail
+        const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+        if (parsed && parsed.latitude && parsed.longitude) {
+          _applyNewCrumb(parsed)
+          fetchData(true)
+        }
+      } catch (err) {}
+    }
+
+    window.addEventListener('storage', handleInstantLocationUpdate)
+    window.addEventListener('tc_location_update', handleInstantLocationUpdate)
+
     // Always start polling timer as secure backend API fallback
     pollTimerRef.current = setInterval(async () => {
       try {
@@ -1918,7 +1990,7 @@ export default function ManagerSmartMap() {
       } catch (err) {
         console.warn("Polling error:", err)
       }
-    }, 10000) // 10 seconds fallback polling (Realtime channel provides immediate updates)
+    }, 3000) // Rapid 3 seconds fallback polling (Realtime channel & BroadcastChannel provide sub-second updates)
   }, [_applyNewCrumb, _handleSessionEnded, fetchData])
 
   // Stale detection timer: re-evaluate badge every 30s

@@ -1167,6 +1167,7 @@ function UserManagement() {
 
     setEditingUser({
       ...user,
+      newPassword: '',
       annualLeaves,
       sickLeaves,
       otherLeaves,
@@ -1248,27 +1249,40 @@ function UserManagement() {
     }
     localStorage.setItem(`tc_leaves_${editingUser.email.toLowerCase().trim()}`, JSON.stringify(leaveAllocation));
 
+    const updatedUserObj = {
+      ...editingUser,
+      accessPassword: editingUser.newPassword?.trim() ? editingUser.newPassword.trim() : (editingUser.accessPassword || editingUser.password)
+    }
+    delete updatedUserObj.newPassword
+
     setUsers((prev) =>
-      prev.map((u) => (u.id === editingUser.id ? { ...editingUser } : u))
+      prev.map((u) => (u.id === editingUser.id ? updatedUserObj : u))
     )
     setShowEditModal(false)
 
     try {
-      await userAPI.updateUser(editingUser.id, {
+      const updatePayload = {
         name: editingUser.name,
         email: editingUser.email,
         phone: editingUser.phone,
         role: editingUser.role,
         dept: editingUser.dept,
         status: editingUser.status,
-        accessPassword: editingUser.accessPassword,
         reporting_manager_id: editingUser.reporting_manager_id || null,
         reporting_manager_name: editingUser.reporting_manager_name || null,
         reporting_manager_email: editingUser.reporting_manager_email || null,
         annual_leaves: Number(editingUser.annualLeaves || 12),
         half_day_permissions: Number(editingUser.halfDayPermissions || 6),
         short_permissions: Number(editingUser.shortPermissions || 2),
-      })
+      }
+
+      // ONLY send password to backend if Admin explicitly entered a new non-empty password!
+      if (editingUser.newPassword && editingUser.newPassword.trim().length > 0) {
+        updatePayload.password = editingUser.newPassword.trim()
+        updatePayload.accessPassword = editingUser.newPassword.trim()
+      }
+
+      await userAPI.updateUser(editingUser.id, updatePayload)
 
       // Update leaves directly in hrms.employees
       await hrmsAPI.updateEmployee(editingUser.employee_id || editingUser.id, {
@@ -2513,12 +2527,15 @@ function UserManagement() {
               </div>
 
               <div>
-                <label className="block text-slate-700 font-bold mb-1">Portal Access Password</label>
+                <label className="block text-slate-700 font-bold mb-1">
+                  New Portal Access Password <span className="text-slate-400 font-normal text-xs ml-1">(Leave blank to keep existing password)</span>
+                </label>
                 <div className="relative">
                   <input
                     type={showEditPassword ? 'text' : 'password'}
-                    value={editingUser.accessPassword || ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, accessPassword: e.target.value })}
+                    placeholder="Leave empty to retain existing password"
+                    value={editingUser.newPassword || ''}
+                    onChange={(e) => setEditingUser({ ...editingUser, newPassword: e.target.value })}
                     className="w-full h-10 border border-slate-300 rounded-xl pl-3 pr-10 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
                   />
                   <button

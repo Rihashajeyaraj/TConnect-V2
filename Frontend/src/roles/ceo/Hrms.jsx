@@ -24,7 +24,7 @@ import {
   Code2,
   CreditCard,
 } from 'lucide-react'
-import { hrmsAPI, attendanceAPI, userAPI } from '../../services/api.js'
+import { hrmsAPI, attendanceAPI, userAPI, reportAPI } from '../../services/api.js'
 import { exportToCSV } from '../../utils/exportUtils.js'
 
 const EmployeeProfileModal = ({ employee, onClose }) => {
@@ -256,6 +256,7 @@ function CeoHrms({ initialTab = 'employees' }) {
 
   const DEFAULT_CEO_TABS = [
     { id: 'employees', label: 'Employees Directory', icon: Users },
+    { id: 'daily_reports', label: 'Management Daily Reports', icon: FileText },
     { id: 'leaves', label: 'Leave Requests', icon: Calendar },
     { id: 'permissions', label: 'Permission Requests', icon: Clock },
     { id: 'attendance', label: 'Attendance Summary', icon: UserCheck },
@@ -351,9 +352,11 @@ function CeoHrms({ initialTab = 'employees' }) {
 
   // 2. Leave Requests State
   const [leaveRequests, setLeaveRequests] = useState([])
+  const [leavePage, setLeavePage] = useState(1)
 
   // 3. Permission Requests State
   const [permissionRequests, setPermissionRequests] = useState([])
+  const [permPage, setPermPage] = useState(1)
 
   // 4. Attendance Summary State
   const [attendanceSummary, setAttendanceSummary] = useState({
@@ -364,6 +367,84 @@ function CeoHrms({ initialTab = 'employees' }) {
     absent: 0,
     dailyLogs: [],
   })
+
+  // 5. Management Daily Reports State (Admin & Sales Manager Daily Reports managed by CEO)
+  const [managementDailyReports, setManagementDailyReports] = useState(() => {
+    try {
+      const saved = localStorage.getItem('tc_ceo_management_daily_reports')
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed
+      }
+    } catch (e) {}
+
+    const todayStr = new Date().toISOString().slice(0, 10)
+    return [
+      {
+        id: 'RPT-MGR-001',
+        date: todayStr,
+        submitted_by: 'Jeeva kumar',
+        email: 'jeeva.manager@tconnect.com',
+        role: 'Sales Manager',
+        department: 'Sales & Business Development',
+        tasks_accomplished: 'Conducted team pipeline review, accompanied executive on 3 high-value enterprise client meetings.',
+        key_highlights: 'Closed ₹1,25,000 contract with Apex Corp.',
+        blockers: 'None. Escalated 1 customized SLA request to CEO.',
+        status: 'Pending Review',
+        ceo_remarks: '',
+        submitted_at: `${todayStr} 18:30`,
+      },
+      {
+        id: 'RPT-ADM-002',
+        date: todayStr,
+        submitted_by: 'Siva Murugan',
+        email: 'siva.admin@tconnect.com',
+        role: 'Admin',
+        department: 'Human Resources',
+        tasks_accomplished: 'Completed monthly payroll verification, processed 2 new executive onboardings and asset allocation.',
+        key_highlights: 'All employee attendance logs and biometric integrations synced 100%.',
+        blockers: 'Awaiting CEO clearance for 2 leave override requests.',
+        status: 'Pending Review',
+        ceo_remarks: '',
+        submitted_at: `${todayStr} 19:10`,
+      },
+      {
+        id: 'RPT-MGR-003',
+        date: todayStr,
+        submitted_by: 'Anand Raj',
+        email: 'anand.field@tconnect.com',
+        role: 'Sales Manager',
+        department: 'Field Operations',
+        tasks_accomplished: 'Inspected Chennai & Bangalore field visit logs, verified check-in GPS alerts.',
+        key_highlights: 'Field team logged 14 client check-ins today.',
+        blockers: 'Vehicle travel allowance claim requires CEO signoff.',
+        status: 'Reviewed',
+        ceo_remarks: 'Approved. Keep up the high field coverage.',
+        submitted_at: `${todayStr} 17:45`,
+      },
+      {
+        id: 'RPT-ADM-004',
+        date: todayStr,
+        submitted_by: 'Priya Sharma',
+        email: 'priya.sysadmin@tconnect.com',
+        role: 'Admin',
+        department: 'IT & Operations',
+        tasks_accomplished: 'Audited role permission matrix, updated branch master settings in Admin portal.',
+        key_highlights: 'System uptime 99.9%. Supabase RLS security policies verified clean.',
+        blockers: 'None.',
+        status: 'Reviewed',
+        ceo_remarks: 'Verified & cleared.',
+        submitted_at: `${todayStr} 18:00`,
+      },
+    ]
+  })
+
+  const [dailyReportRoleFilter, setDailyReportRoleFilter] = useState('All')
+  const [dailyReportStatusFilter, setDailyReportStatusFilter] = useState('All')
+  const [selectedReportForReview, setSelectedReportForReview] = useState(null)
+  const [reportReviewModalOpen, setReportReviewModalOpen] = useState(false)
+  const [reportCeoRemarksInput, setReportCeoRemarksInput] = useState('')
+  const [reportPage, setReportPage] = useState(1)
 
   // Review modal state
   const [reviewModalOpen, setReviewModalOpen] = useState(false)
@@ -425,15 +506,36 @@ function CeoHrms({ initialTab = 'employees' }) {
     async function fetchHrmsData() {
       setLoading(true)
       try {
-        const [empRes, leaveRes, attRes] = await Promise.all([
+        const [empRes, leaveRes, attRes, eodRes] = await Promise.all([
           hrmsAPI.getEmployees().catch(() => null),
           attendanceAPI.getLeaveRequests().catch(() => null),
           attendanceAPI.getLogs().catch(() => null),
+          reportAPI.getEODReports ? reportAPI.getEODReports().catch(() => null) : Promise.resolve(null),
         ])
 
         const rawLogs = (attRes && attRes.data && Array.isArray(attRes.data)) ? attRes.data : []
         setRawAttendanceLogs(rawLogs)
         const todayStr = new Date().toISOString().slice(0, 10)
+
+        // Load dynamic EOD work reports from backend or derive from management staff
+        const rawEod = Array.isArray(eodRes?.data) ? eodRes.data : (Array.isArray(eodRes) ? eodRes : [])
+        if (rawEod.length > 0) {
+          const mappedEod = rawEod.map((r, idx) => ({
+            id: r.id || r.report_id || `RPT-${idx + 1}`,
+            date: r.date || r.report_date || (r.created_at ? r.created_at.split('T')[0] : todayStr),
+            submitted_by: r.submitted_by || r.employee_name || r.name || 'Management Executive',
+            email: r.email || r.employee_email || '',
+            role: r.role || r.designation || 'Sales Manager',
+            department: r.department || r.dept || 'Sales & BD',
+            tasks_accomplished: r.tasks_accomplished || r.tasks || r.summary || r.report || 'EOD Work Summary submitted.',
+            key_highlights: r.key_highlights || r.highlights || r.wins || '—',
+            blockers: r.blockers || r.issues || 'None',
+            status: r.status || 'Pending Review',
+            ceo_remarks: r.ceo_remarks || r.remarks || '',
+            submitted_at: r.created_at || r.submitted_at || '',
+          }))
+          setManagementDailyReports(mappedEod)
+        }
 
         // Filter today's attendance logs
         const todayLogs = rawLogs.filter(l => {
@@ -707,17 +809,72 @@ function CeoHrms({ initialTab = 'employees' }) {
     return matchesSearch && matchesRole
   })
 
+  // Daily Report Filtering
+  const filteredDailyReports = React.useMemo(() => {
+    return managementDailyReports.filter((r) => {
+      let matchesRole = true
+      if (dailyReportRoleFilter === 'Sales Manager') {
+        matchesRole = r.role.toLowerCase().includes('manager')
+      } else if (dailyReportRoleFilter === 'Admin') {
+        matchesRole = r.role.toLowerCase().includes('admin') || r.role.toLowerCase().includes('ceo')
+      }
+
+      let matchesStatus = true
+      if (dailyReportStatusFilter === 'Pending Review') {
+        matchesStatus = r.status === 'Pending Review'
+      } else if (dailyReportStatusFilter === 'Reviewed') {
+        matchesStatus = r.status === 'Reviewed'
+      }
+
+      return matchesRole && matchesStatus
+    })
+  }, [managementDailyReports, dailyReportRoleFilter, dailyReportStatusFilter])
+
+  const paginatedDailyReports = React.useMemo(() => {
+    const start = (reportPage - 1) * 10
+    return filteredDailyReports.slice(start, start + 10)
+  }, [filteredDailyReports, reportPage])
+
+  const handleSaveReportReview = (statusToSet = 'Reviewed') => {
+    if (!selectedReportForReview) return
+
+    const updatedList = managementDailyReports.map((r) => {
+      if (r.id === selectedReportForReview.id) {
+        return {
+          ...r,
+          status: statusToSet,
+          ceo_remarks: reportCeoRemarksInput.trim() || r.ceo_remarks || 'Reviewed by CEO',
+          reviewed_at: new Date().toISOString(),
+        }
+      }
+      return r
+    })
+
+    setManagementDailyReports(updatedList)
+    try {
+      localStorage.setItem('tc_ceo_management_daily_reports', JSON.stringify(updatedList))
+    } catch (e) {}
+
+    showToast(`Daily report from ${selectedReportForReview.submitted_by} marked as ${statusToSet}`, 'success')
+    setReportReviewModalOpen(false)
+    setSelectedReportForReview(null)
+    setReportCeoRemarksInput('')
+  }
+
   const pendingLeaves = leaveRequests.filter((l) => l.status === 'Pending')
   const pendingPermissions = permissionRequests.filter((p) => p.status === 'Pending')
+  const pendingReports = managementDailyReports.filter((r) => r.status === 'Pending Review')
 
   const getBadgeValue = (id) => {
     if (id === 'employees') return employees.length
+    if (id === 'daily_reports') return pendingReports.length
     if (id === 'leaves') return pendingLeaves.length
     if (id === 'permissions') return pendingPermissions.length
     return null
   }
 
   const hasAlert = (id) => {
+    if (id === 'daily_reports') return pendingReports.length > 0
     if (id === 'leaves') return pendingLeaves.length > 0
     if (id === 'permissions') return pendingPermissions.length > 0
     return false
@@ -954,6 +1111,174 @@ function CeoHrms({ initialTab = 'employees' }) {
         </div>
       )}
 
+      {/* ── TAB 2: MANAGEMENT DAILY REPORTS (Admin & Sales Manager Daily Reports Managed by CEO) ── */}
+      {activeTab === 'daily_reports' && (
+        <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+            <div>
+              <h2 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+                <FileText className="size-4.5 text-[#832D51]" />
+                Admin & Sales Manager Daily Work Reports
+              </h2>
+              <p className="text-xs text-slate-500 font-medium">
+                Executive CEO oversight: View, evaluate, and provide feedback on daily work reports submitted by Sales Managers and Admins.
+              </p>
+            </div>
+
+            {/* Role & Status Filter Controls */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Role Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
+                <Filter className="size-3.5 text-[#832D51]" />
+                <span>Management Role:</span>
+                <select
+                  value={dailyReportRoleFilter}
+                  onChange={(e) => {
+                    setDailyReportRoleFilter(e.target.value)
+                    setReportPage(1)
+                  }}
+                  className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
+                >
+                  <option value="All">All Management</option>
+                  <option value="Sales Manager">Sales Managers</option>
+                  <option value="Admin">Admins</option>
+                </select>
+              </div>
+
+              {/* Status Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
+                <span>Review Status:</span>
+                <select
+                  value={dailyReportStatusFilter}
+                  onChange={(e) => {
+                    setDailyReportStatusFilter(e.target.value)
+                    setReportPage(1)
+                  }}
+                  className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
+                >
+                  <option value="All">All Statuses</option>
+                  <option value="Pending Review">Pending CEO Review</option>
+                  <option value="Reviewed">Reviewed</option>
+                </select>
+              </div>
+
+              {/* Export CSV */}
+              <button
+                onClick={() => exportToCSV(filteredDailyReports, 'CEO_Management_Daily_Reports')}
+                className="flex items-center gap-1 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                <Download className="size-3.5" /> CSV
+              </button>
+            </div>
+          </div>
+
+          {/* Table */}
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="pb-3 px-2">Date</th>
+                  <th className="pb-3 px-2">Management Executive</th>
+                  <th className="pb-3 px-2">Role & Department</th>
+                  <th className="pb-3 px-2">Tasks & Accomplishments</th>
+                  <th className="pb-3 px-2">Key Highlights / Wins</th>
+                  <th className="pb-3 px-2">Blockers / Escalations</th>
+                  <th className="pb-3 px-2 text-center">Status</th>
+                  <th className="pb-3 px-2 text-right">CEO Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-medium">
+                {paginatedDailyReports.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-slate-400 font-bold">
+                      No daily work reports found for selected filter.
+                    </td>
+                  </tr>
+                ) : (
+                  paginatedDailyReports.map((report) => (
+                    <tr key={report.id} className="hover:bg-slate-50/70 transition">
+                      <td className="py-3.5 px-2 font-black text-slate-900 whitespace-nowrap">
+                        {formatDDMMYYYY(report.date)}
+                      </td>
+                      <td className="py-3.5 px-2">
+                        <p className="font-extrabold text-slate-900">{report.submitted_by}</p>
+                        <p className="text-[10px] text-slate-400">{report.email}</p>
+                      </td>
+                      <td className="py-3.5 px-2">
+                        <span className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider border ${
+                          report.role.toLowerCase().includes('manager')
+                            ? 'bg-[#832D51]/10 text-[#832D51] border-[#832D51]/20'
+                            : 'bg-purple-50 text-purple-800 border-purple-200'
+                        }`}>
+                          {report.role}
+                        </span>
+                        <p className="text-[10px] text-slate-500 font-semibold mt-0.5">{report.department}</p>
+                      </td>
+                      <td className="py-3.5 px-2 text-slate-700 max-w-xs truncate" title={report.tasks_accomplished}>
+                        {report.tasks_accomplished}
+                      </td>
+                      <td className="py-3.5 px-2 text-emerald-800 font-semibold max-w-xs truncate" title={report.key_highlights}>
+                        {report.key_highlights || '—'}
+                      </td>
+                      <td className="py-3.5 px-2 text-rose-700 font-semibold max-w-xs truncate" title={report.blockers}>
+                        {report.blockers || 'None'}
+                      </td>
+                      <td className="py-3.5 px-2 text-center">
+                        <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black border ${
+                          report.status === 'Reviewed'
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                            : 'bg-amber-50 text-amber-800 border-amber-200'
+                        }`}>
+                          {report.status}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-2 text-right">
+                        <button
+                          onClick={() => {
+                            setSelectedReportForReview(report)
+                            setReportCeoRemarksInput(report.ceo_remarks || '')
+                            setReportReviewModalOpen(true)
+                          }}
+                          className="px-2.5 py-1.5 bg-[#832D51] hover:bg-[#68243f] text-white font-extrabold rounded-xl text-[10px] shadow-xs transition cursor-pointer"
+                        >
+                          {report.status === 'Reviewed' ? 'View / Edit Feedback' : 'Review Report'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          {/* Pagination */}
+          {filteredDailyReports.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100">
+              <div className="text-xs text-slate-500 font-medium">
+                Showing <span className="font-black text-slate-900">{Math.min((reportPage - 1) * 10 + 1, filteredDailyReports.length)}</span> to <span className="font-black text-slate-900">{Math.min(reportPage * 10, filteredDailyReports.length)}</span> of <span className="font-black text-slate-900">{filteredDailyReports.length}</span> reports
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setReportPage(prev => Math.max(1, prev - 1))}
+                  disabled={reportPage === 1}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                >
+                  Previous
+                </button>
+                <span className="text-xs font-black text-slate-700 px-2">Page {reportPage} of {Math.ceil(filteredDailyReports.length / 10) || 1}</span>
+                <button
+                  onClick={() => setReportPage(prev => Math.min(Math.ceil(filteredDailyReports.length / 10), prev + 1))}
+                  disabled={reportPage >= Math.ceil(filteredDailyReports.length / 10)}
+                  className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                >
+                  Next
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* ── TAB 2: LEAVE REQUESTS ─────────────────────────────── */}
       {activeTab === 'leaves' && (
         <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
@@ -985,7 +1310,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {leaveRequests.map((leave) => (
+                {leaveRequests.slice((leavePage - 1) * 10, leavePage * 10).map((leave) => (
                   <tr key={leave.id} className="hover:bg-slate-50/70 transition">
                     <td className="py-3.5 px-2 font-bold text-slate-600">
                       {formatDDMMYYYY(leave.date || leave.submitted_at)}
@@ -1036,6 +1361,34 @@ function CeoHrms({ initialTab = 'employees' }) {
               </tbody>
             </table>
           </div>
+
+          {/* Leave Requests Pagination Bar (10 per page) */}
+          {leaveRequests.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100">
+              <div className="text-xs text-slate-500 font-medium">
+                Showing <span className="font-black text-slate-900">{Math.min((leavePage - 1) * 10 + 1, leaveRequests.length)}</span> to <span className="font-black text-slate-900">{Math.min(leavePage * 10, leaveRequests.length)}</span> of <span className="font-black text-slate-900">{leaveRequests.length}</span> records
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setLeavePage(prev => Math.max(1, prev - 1))}
+                  disabled={leavePage === 1}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+                >
+                  <ChevronLeft className="size-3.5" /> Previous
+                </button>
+                <span className="text-xs font-black text-slate-800 px-2">
+                  Page {leavePage} of {Math.ceil(leaveRequests.length / 10) || 1}
+                </span>
+                <button
+                  onClick={() => setLeavePage(prev => Math.min(Math.ceil(leaveRequests.length / 10) || 1, prev + 1))}
+                  disabled={leavePage >= Math.ceil(leaveRequests.length / 10)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+                >
+                  Next <ChevronRight className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1070,7 +1423,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {permissionRequests.map((perm) => (
+                {permissionRequests.slice((permPage - 1) * 10, permPage * 10).map((perm) => (
                   <tr key={perm.id} className="hover:bg-slate-50/70 transition">
                     <td className="py-3.5 px-2 font-bold text-slate-600">
                       {formatDDMMYYYY(perm.date || perm.submitted_at)}
@@ -1121,6 +1474,34 @@ function CeoHrms({ initialTab = 'employees' }) {
               </tbody>
             </table>
           </div>
+
+          {/* Permission Requests Pagination Bar (10 per page) */}
+          {permissionRequests.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100">
+              <div className="text-xs text-slate-500 font-medium">
+                Showing <span className="font-black text-slate-900">{Math.min((permPage - 1) * 10 + 1, permissionRequests.length)}</span> to <span className="font-black text-slate-900">{Math.min(permPage * 10, permissionRequests.length)}</span> of <span className="font-black text-slate-900">{permissionRequests.length}</span> records
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setPermPage(prev => Math.max(1, prev - 1))}
+                  disabled={permPage === 1}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+                >
+                  <ChevronLeft className="size-3.5" /> Previous
+                </button>
+                <span className="text-xs font-black text-slate-800 px-2">
+                  Page {permPage} of {Math.ceil(permissionRequests.length / 10) || 1}
+                </span>
+                <button
+                  onClick={() => setPermPage(prev => Math.min(Math.ceil(permissionRequests.length / 10) || 1, prev + 1))}
+                  disabled={permPage >= Math.ceil(permissionRequests.length / 10)}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+                >
+                  Next <ChevronRight className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -1332,6 +1713,79 @@ function CeoHrms({ initialTab = 'employees' }) {
           </div>
         </div>
       )}
+      {/* CEO Daily Report Review & Feedback Modal */}
+      {reportReviewModalOpen && selectedReportForReview && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-xl w-full p-6 space-y-4 border border-slate-200 shadow-2xl relative text-left">
+            <button
+              onClick={() => setReportReviewModalOpen(false)}
+              className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 cursor-pointer font-bold"
+            >
+              ✕
+            </button>
+
+            <div className="border-b border-slate-100 pb-3">
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#832D51]">Management Work Report Review</span>
+              <h3 className="font-extrabold text-slate-900 text-base mt-0.5">
+                {selectedReportForReview.submitted_by} ({selectedReportForReview.role})
+              </h3>
+              <p className="text-xs text-slate-500">
+                Submitted for {formatDDMMYYYY(selectedReportForReview.date)} · {selectedReportForReview.department}
+              </p>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <p className="text-[10px] font-black uppercase text-slate-400">Tasks Accomplished</p>
+                <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{selectedReportForReview.tasks_accomplished}</p>
+              </div>
+
+              {selectedReportForReview.key_highlights && (
+                <div className="bg-emerald-50/60 p-3 rounded-xl border border-emerald-200/80">
+                  <p className="text-[10px] font-black uppercase text-emerald-700">Key Highlights & Wins</p>
+                  <p className="font-bold text-emerald-900 mt-1">{selectedReportForReview.key_highlights}</p>
+                </div>
+              )}
+
+              {selectedReportForReview.blockers && selectedReportForReview.blockers !== 'None' && (
+                <div className="bg-rose-50/60 p-3 rounded-xl border border-rose-200/80">
+                  <p className="text-[10px] font-black uppercase text-rose-700">Blockers & CEO Escalation</p>
+                  <p className="font-bold text-rose-900 mt-1">{selectedReportForReview.blockers}</p>
+                </div>
+              )}
+
+              <div className="space-y-1.5 pt-2">
+                <label className="text-[11px] font-black uppercase tracking-wider text-slate-700 block">
+                  CEO Feedback & Executive Remarks
+                </label>
+                <textarea
+                  rows={3}
+                  value={reportCeoRemarksInput}
+                  onChange={(e) => setReportCeoRemarksInput(e.target.value)}
+                  placeholder="Type executive feedback, instructions, or approval notes for this manager/admin..."
+                  className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-semibold text-slate-800 outline-none focus:border-[#832D51]"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
+              <button
+                onClick={() => setReportReviewModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleSaveReportReview('Reviewed')}
+                className="px-5 py-2 bg-[#832D51] hover:bg-[#68243f] text-white font-extrabold rounded-xl text-xs shadow-sm transition cursor-pointer"
+              >
+                Mark Reviewed & Send Feedback
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Employee Profile View Modal */}
       {selectedEmployee && (
         <EmployeeProfileModal

@@ -1126,19 +1126,20 @@ export default function SmartClientMap() {
         const offRoutePolyline = new window.google.maps.Polyline({
           path: pathCoords,
           geodesic: true,
-          strokeColor: '#ef4444',
-          strokeOpacity: 0.8,
-          strokeWeight: 3,
+          strokeOpacity: 0,
           icons: [{
             icon: {
-              path: 'M 0,-1 0,1',
+              path: 'M 0,-2 0,2',
               strokeOpacity: 1,
-              scale: 3,
+              scale: 2.5,
+              strokeColor: '#9333ea', // Purple dashed line for off-route deviation
+              strokeWeight: 4,
             },
-            offset: '0',
-            repeat: '20px',
+            offset: '0%',
+            repeat: '16px',
           }],
           map: map,
+          zIndex: 20
         })
         activePolylinesRef.current.push(offRoutePolyline)
       }

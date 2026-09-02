@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Calendar, Search, MapPin, Clock, CheckCircle, RefreshCw } from 'lucide-react'
+import { Calendar, Search, MapPin, Clock, CheckCircle, RefreshCw, ChevronLeft, ChevronRight } from 'lucide-react'
 import { attendanceAPI } from '../../services/api.js'
 import { formatDate } from '../../utils/dateUtils.js'
 
@@ -7,6 +7,8 @@ function Attendance() {
   const [attendance, setAttendance] = useState([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
+  const [currentPage, setCurrentPage] = useState(1)
+  const ITEMS_PER_PAGE = 10
 
   const loadData = async () => {
     setLoading(true)
@@ -38,7 +40,13 @@ function Attendance() {
     loadData()
   }, [])
 
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search])
+
   const filtered = attendance.filter(a => a.name.toLowerCase().includes(search.toLowerCase()))
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1
+  const paginatedAttendance = filtered.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6">
@@ -94,7 +102,7 @@ function Attendance() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-              {filtered.map((a) => (
+              {paginatedAttendance.map((a) => (
                 <tr key={a.id} className="hover:bg-slate-50/60 transition">
                   <td className="px-5 py-3.5 font-bold text-slate-900">{a.name}</td>
                   <td className="px-5 py-3.5 text-slate-500">{a.date}</td>
@@ -110,6 +118,41 @@ function Attendance() {
               ))}
             </tbody>
           </table>
+        )}
+
+        {/* Pagination Bar (10 per page) */}
+        {filtered.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-slate-50/80 border-t border-slate-200/80">
+            <div className="text-xs text-slate-500 font-medium">
+              Showing <span className="font-black text-slate-900">{Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, filtered.length)}</span> to <span className="font-black text-slate-900">{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}</span> of <span className="font-black text-slate-900">{filtered.length.toLocaleString()}</span> records
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+              >
+                <ChevronLeft className="size-3.5" />
+                Previous
+              </button>
+
+              <div className="flex items-center gap-1 px-2">
+                <span className="text-xs font-black text-slate-800">
+                  Page {currentPage} of {totalPages}
+                </span>
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage >= totalPages}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+              >
+                Next
+                <ChevronRight className="size-3.5" />
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>

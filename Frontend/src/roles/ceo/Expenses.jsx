@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Search, Receipt, RefreshCw, Calendar, ExternalLink, CheckCircle2, Clock, XCircle, Download } from 'lucide-react'
+import { Search, Receipt, RefreshCw, Calendar, ExternalLink, CheckCircle2, Clock, XCircle, Download, ChevronLeft, ChevronRight } from 'lucide-react'
 import { expenseAPI } from '../../services/api.js'
 
 const STATUS_META = {
@@ -105,6 +105,19 @@ export default function CeoExpenses() {
     })
   }, [expenses, search, statusFilter])
 
+  const [currentPage, setCurrentPage] = useState(1)
+  const ITEMS_PER_PAGE = 10
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search, statusFilter])
+
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1
+  const paginatedExpenses = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE
+    return filtered.slice(start, start + ITEMS_PER_PAGE)
+  }, [filtered, currentPage])
+
   const totalAmount = filtered.reduce((s, e) => s + e.amount, 0)
   const approvedCount = expenses.filter(e => e.status_label === 'Approved').length
   const pendingCount  = expenses.filter(e => e.status_label === 'Pending').length
@@ -206,7 +219,7 @@ export default function CeoExpenses() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filtered.map(e => (
+                {paginatedExpenses.map(e => (
                   <tr key={e.id} className="hover:bg-slate-50/60 transition">
                     <td className="px-5 py-3.5">
                       <p className="font-extrabold text-slate-900">{e.executive_name}</p>
@@ -263,6 +276,41 @@ export default function CeoExpenses() {
                 </tr>
               </tfoot>
             </table>
+          </div>
+        )}
+
+        {/* Pagination Bar (10 rows per page) */}
+        {filtered.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-slate-50/80 border-t border-slate-200/80">
+            <div className="text-xs text-slate-500 font-medium">
+              Showing <span className="font-black text-slate-900">{Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, filtered.length)}</span> to <span className="font-black text-slate-900">{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}</span> of <span className="font-black text-slate-900">{filtered.length.toLocaleString()}</span> records
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+              >
+                <ChevronLeft className="size-3.5" />
+                Previous
+              </button>
+
+              <div className="flex items-center gap-1 px-2">
+                <span className="text-xs font-black text-slate-800">
+                  Page {currentPage} of {totalPages}
+                </span>
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage >= totalPages}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+              >
+                Next
+                <ChevronRight className="size-3.5" />
+              </button>
+            </div>
           </div>
         )}
       </div>

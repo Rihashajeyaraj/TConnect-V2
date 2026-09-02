@@ -309,6 +309,16 @@ async def reassign_leads(
         if success_count == 0:
             from fastapi import HTTPException
             raise HTTPException(status_code=500, detail="No leads were updated in the database. Check the lead IDs and try again.")
+
+        from app.modules.audit.service import create_audit_log
+        create_audit_log(
+            "LEAD_REASSIGNED",
+            "crm.leads",
+            user_payload,
+            description=f"Admin reassigned {success_count} lead(s) to executive '{payload.new_employee_id}'. Reason: {payload.reassignment_reason or 'Admin Reassignment'}",
+            new_value={"new_employee_id": payload.new_employee_id, "lead_ids": payload.lead_ids}
+        )
+
         return StandardResponse.success_response(
             data={"reassigned_count": success_count, "updated_leads": updated_leads},
             message=f"Successfully reassigned {success_count} leads."

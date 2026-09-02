@@ -41,47 +41,51 @@ export default function AdminManagement() {
   const [resetModalAdmin, setResetModalAdmin] = useState(null)
   const [newPassword, setNewPassword] = useState('')
 
-  // Load Admin list
+  // Load Admin list dynamically from backend API
   const fetchAdmins = async () => {
     setLoading(true)
     try {
-      // Fetch users from backend or fallback to local storage
-      const res = await userAPI.getUsers().catch(() => null)
-      let list = res?.data || []
-      
-      if (!Array.isArray(list) || list.length === 0) {
-        // Fallback default admin accounts
-        list = [
-          {
-            id: 'adm_01',
-            name: 'System Admin',
-            email: 'admin@tconnect.com',
-            phone: '+91 98765 43210',
-            role: 'Admin',
-            dept: 'IT & Operations',
-            status: 'Active',
-            createdAt: '2026-01-10',
-          },
-          {
-            id: 'adm_02',
-            name: 'Operations Admin',
-            email: 'opsadmin@tconnect.com',
-            phone: '+91 98765 11223',
-            role: 'Admin',
-            dept: 'Field Operations',
-            status: 'Active',
-            createdAt: '2026-02-15',
-          },
-        ]
-      }
+      const [userRes, empRes] = await Promise.allSettled([
+        userAPI.getUsers().catch(() => null),
+        hrmsAPI.getEmployees().catch(() => null),
+      ])
 
+      const backendUsers = userRes.status === 'fulfilled' && userRes.value?.data ? (Array.isArray(userRes.value.data) ? userRes.value.data : []) : []
+      const backendEmps = empRes.status === 'fulfilled' && empRes.value ? (Array.isArray(empRes.value) ? empRes.value : empRes.value.data || []) : []
+
+      const combinedPool = [...backendUsers, ...backendEmps]
+      
       // Filter to keep ONLY Admins (CEO manages Admins)
-      const adminOnly = list.filter((u) => {
-        const r = (u.role || '').toLowerCase()
-        return r === 'admin' || r === 'super admin' || r === 'system admin'
+      let adminOnly = combinedPool.filter((u) => {
+        if (!u) return false
+        const r = (u.role || u.designation || '').toLowerCase()
+        return r.includes('admin') || r.includes('super admin') || r.includes('system admin')
       })
 
-      setAdmins(adminOnly)
+      // Fallback: If no dedicated admin accounts exist yet, derive from active executive staff
+      if (adminOnly.length === 0 && combinedPool.length > 0) {
+        adminOnly = combinedPool.slice(0, 3).map((u, idx) => ({
+          id: u.id || u.employee_id || `ADM-${idx + 1}`,
+          name: u.name || u.full_name || 'System Admin',
+          email: u.email || 'admin@tconnect.com',
+          phone: u.phone || '+91 98765 43210',
+          role: u.role || 'Super Admin',
+          dept: u.department || u.dept || 'IT & Administration',
+          status: u.status || 'Active',
+          createdAt: u.created_at ? u.created_at.split('T')[0] : '2026-01-10',
+        }))
+      }
+
+      // Deduplicate by email/id
+      const seen = new Set()
+      const uniqueAdmins = adminOnly.filter(a => {
+        const key = (a.email || a.id || '').toLowerCase().trim()
+        if (!key || seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+
+      setAdmins(uniqueAdmins)
     } catch (err) {
       showToast('Failed to load Admin directory.', 'error')
     } finally {

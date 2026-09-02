@@ -9,7 +9,9 @@ import {
   CheckCircle,
   Briefcase,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { reportAPI, visitAPI } from '../../services/api.js'
 import { formatDate } from '../../utils/dateUtils.js'
@@ -22,6 +24,10 @@ export default function ClientLog({ initialSection = 'leads' }) {
   const [visits, setVisits] = useState([])
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
+
+  // Pagination states
+  const [leadPage, setLeadPage] = useState(1)
+  const [customerPage, setCustomerPage] = useState(1)
 
   // Filters
   const [leadsCategory, setLeadsCategory] = useState('All')
@@ -348,7 +354,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
                           <td colSpan="6" className="text-center py-12 text-slate-405 font-semibold italic">No matching leads found</td>
                         </tr>
                       ) : (
-                        filteredLeads.map(lead => (
+                        filteredLeads.slice((leadPage - 1) * 10, leadPage * 10).map(lead => (
                           <tr key={lead.id || lead.lead_id} className="hover:bg-slate-50/50 transition">
                             <td className="px-6 py-4 text-slate-500 font-semibold">
                               {formatDate(lead.date || lead.created_at)}
@@ -388,9 +394,32 @@ export default function ClientLog({ initialSection = 'leads' }) {
                     </tbody>
                   </table>
                 </div>
-                <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-6 py-4 text-xs font-bold text-slate-500">
-                  <span>Showing {filteredLeads.length} of {leads.length} entries</span>
-                </div>
+                {filteredLeads.length > 0 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-6 py-3 text-xs font-bold text-slate-500">
+                    <span>
+                      Showing {Math.min((leadPage - 1) * 10 + 1, filteredLeads.length)} to {Math.min(leadPage * 10, filteredLeads.length)} of {filteredLeads.length} entries
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setLeadPage(prev => Math.max(1, prev - 1))}
+                        disabled={leadPage === 1}
+                        className="flex items-center gap-1 px-3 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition"
+                      >
+                        <ChevronLeft className="size-3.5" /> Previous
+                      </button>
+                      <span className="px-2 text-slate-800 font-black">
+                        Page {leadPage} of {Math.ceil(filteredLeads.length / 10) || 1}
+                      </span>
+                      <button
+                        onClick={() => setLeadPage(prev => Math.min(Math.ceil(filteredLeads.length / 10) || 1, prev + 1))}
+                        disabled={leadPage >= Math.ceil(filteredLeads.length / 10)}
+                        className="flex items-center gap-1 px-3 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition"
+                      >
+                        Next <ChevronRight className="size-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}
@@ -441,7 +470,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
                           <td colSpan="8" className="text-center py-12 text-slate-400 font-semibold italic">No customers found</td>
                         </tr>
                       ) : (
-                        filteredCustomers.map(cust => (
+                        filteredCustomers.slice((customerPage - 1) * 10, customerPage * 10).map(cust => (
                           <tr key={cust.id || cust.customer_id} className="hover:bg-slate-50/50 transition">
                             <td className="px-6 py-4 text-slate-500 font-semibold">
                               {formatDate(cust.created_at || cust.date)}
@@ -485,9 +514,32 @@ export default function ClientLog({ initialSection = 'leads' }) {
                     </tbody>
                   </table>
                 </div>
-                <div className="flex items-center justify-between border-t border-slate-100 bg-slate-50 px-6 py-4 text-xs font-bold text-slate-500">
-                  <span>Showing {filteredCustomers.length} of {customers.length} entries</span>
-                </div>
+                {filteredCustomers.length > 0 && (
+                  <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-t border-slate-100 bg-slate-50 px-6 py-3 text-xs font-bold text-slate-500">
+                    <span>
+                      Showing {Math.min((customerPage - 1) * 10 + 1, filteredCustomers.length)} to {Math.min(customerPage * 10, filteredCustomers.length)} of {filteredCustomers.length} entries
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setCustomerPage(prev => Math.max(1, prev - 1))}
+                        disabled={customerPage === 1}
+                        className="flex items-center gap-1 px-3 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition"
+                      >
+                        <ChevronLeft className="size-3.5" /> Previous
+                      </button>
+                      <span className="px-2 text-slate-800 font-black">
+                        Page {customerPage} of {Math.ceil(filteredCustomers.length / 10) || 1}
+                      </span>
+                      <button
+                        onClick={() => setCustomerPage(prev => Math.min(Math.ceil(filteredCustomers.length / 10) || 1, prev + 1))}
+                        disabled={customerPage >= Math.ceil(filteredCustomers.length / 10)}
+                        className="flex items-center gap-1 px-3 py-1 rounded-lg border border-slate-200 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition"
+                      >
+                        Next <ChevronRight className="size-3.5" />
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             </>
           )}

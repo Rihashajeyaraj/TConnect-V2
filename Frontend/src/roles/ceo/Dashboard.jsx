@@ -26,6 +26,7 @@ import {
   SlidersHorizontal,
   Wallet,
   X,
+  Search,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -49,6 +50,7 @@ import {
 } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import { exportToPDF, exportToExcel, exportToCSV } from '../../utils/exportUtils.js'
+import { formatDDMMYYYY } from '../../utils/formatUtils.js'
 
 function CeoDashboard() {
   const { showToast } = useToast()
@@ -70,6 +72,10 @@ function CeoDashboard() {
   // Customer Win Toggle & Selected Manager Card State
   const [customerWinToggle, setCustomerWinToggle] = useState(false)
   const [selectedManagerCard, setSelectedManagerCard] = useState(null)
+
+  // Employee Directory Modal Filter States
+  const [employeeRoleFilter, setEmployeeRoleFilter] = useState('ALL')
+  const [employeeCustomSearch, setEmployeeCustomSearch] = useState('')
 
   // Attendance & Field Visit State for Present, Absent, Field Visit cards
   const [attendanceMetrics, setAttendanceMetrics] = useState({
@@ -1314,7 +1320,7 @@ function CeoDashboard() {
                             ) : (
                               filteredLedgerItems.map((rec, i) => (
                                 <tr key={i} className="hover:bg-slate-50/50">
-                                  <td className="px-3 py-2.5 text-slate-900 font-black text-[11px] whitespace-nowrap">{rec.date || '—'}</td>
+                                  <td className="px-3 py-2.5 text-slate-900 font-black text-[11px] whitespace-nowrap">{formatDDMMYYYY(rec.date)}</td>
                                   <td className="px-3 py-2.5 text-slate-800 font-bold text-[11px]">{rec.sales_manager}</td>
                                   <td className="px-3 py-2.5 text-slate-700 font-semibold text-[11px]">{rec.sales_executive}</td>
                                   <td className="px-3 py-2.5 text-slate-600 font-medium text-[11px]">{rec.product}</td>
@@ -1546,7 +1552,7 @@ function CeoDashboard() {
                                 ) : (
                                   filteredDeals.map((cust, i) => (
                                     <tr key={cust.id || i} className="hover:bg-slate-50/50">
-                                      <td className="px-4 py-3.5 text-slate-500 font-semibold">{cust.date || 'N/A'}</td>
+                                      <td className="px-4 py-3.5 text-slate-500 font-semibold">{formatDDMMYYYY(cust.date)}</td>
                                       <td className="px-4 py-3.5 text-slate-900 font-bold">{cust.sales_executive || 'Sales Rep'}</td>
                                       <td className="px-4 py-3.5">
                                         <div className="font-bold text-slate-900">{cust.name || cust.client_name_details}</div>
@@ -1579,42 +1585,156 @@ function CeoDashboard() {
               })()}
 
               {/* 3. EMPLOYEES MODAL VIEW */}
-              {activeModal === 'employees' && (
-                <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-2xs">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider">
-                          <th className="px-5 py-3">Employee ID</th>
-                          <th className="px-5 py-3">Name</th>
-                          <th className="px-5 py-3">Role</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
-                        {(!dashboardData?.employeeSummary?.employeesList || dashboardData.employeeSummary.employeesList.length === 0) ? (
-                          <tr>
-                            <td colSpan={3} className="py-12 text-center text-slate-400 font-bold">
-                              No employees found.
-                            </td>
-                          </tr>
-                        ) : (
-                          dashboardData.employeeSummary.employeesList.map((emp, i) => (
-                            <tr key={i} className="hover:bg-slate-50/50">
-                              <td className="px-5 py-3.5 font-bold text-[#832D51]">{emp.employee_id}</td>
-                              <td className="px-5 py-3.5 text-slate-900 font-black">{emp.name}</td>
-                              <td className="px-5 py-3.5 text-slate-600">
-                                <span className="inline-flex items-center rounded-md bg-[#F8CAE4]/25 px-2 py-0.5 font-extrabold text-[#832D51] tracking-wider uppercase text-[10px]">
-                                  {emp.role}
-                                </span>
-                              </td>
+              {activeModal === 'employees' && (() => {
+                const allEmployeesList = dashboardData?.employeeSummary?.employeesList || []
+                
+                const filteredEmployeesList = allEmployeesList.filter(emp => {
+                  const roleLower = String(emp.role || '').toLowerCase()
+                  const nameLower = String(emp.name || '').toLowerCase()
+                  const idLower = String(emp.employee_id || '').toLowerCase()
+
+                  // Tab Role Filter
+                  if (employeeRoleFilter === 'MANAGER') {
+                    if (!roleLower.includes('manager') && !roleLower.includes('lead')) return false
+                  } else if (employeeRoleFilter === 'EXECUTIVE') {
+                    if (!roleLower.includes('executive') && !roleLower.includes('rep') && !roleLower.includes('staff')) return false
+                  } else if (employeeRoleFilter === 'ADMIN') {
+                    if (!roleLower.includes('admin') && !roleLower.includes('ceo') && !roleLower.includes('founder') && !roleLower.includes('director')) return false
+                  } else if (employeeRoleFilter === 'CUSTOM') {
+                    if (employeeCustomSearch.trim()) {
+                      const q = employeeCustomSearch.toLowerCase().trim()
+                      if (!roleLower.includes(q) && !nameLower.includes(q) && !idLower.includes(q)) return false
+                    }
+                  }
+
+                  // Search box filtering
+                  if (employeeRoleFilter !== 'CUSTOM' && employeeCustomSearch.trim()) {
+                    const q = employeeCustomSearch.toLowerCase().trim()
+                    if (!roleLower.includes(q) && !nameLower.includes(q) && !idLower.includes(q)) return false
+                  }
+
+                  return true
+                })
+
+                const managerCount = allEmployeesList.filter(e => (e.role || '').toLowerCase().includes('manager') || (e.role || '').toLowerCase().includes('lead')).length
+                const execCount = allEmployeesList.filter(e => (e.role || '').toLowerCase().includes('executive') || (e.role || '').toLowerCase().includes('rep')).length
+                const adminCount = allEmployeesList.filter(e => (e.role || '').toLowerCase().includes('admin') || (e.role || '').toLowerCase().includes('ceo') || (e.role || '').toLowerCase().includes('founder')).length
+
+                return (
+                  <div className="space-y-3.5">
+                    {/* Role Filter Buttons & Custom Search */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/70">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          onClick={() => setEmployeeRoleFilter('ALL')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            employeeRoleFilter === 'ALL'
+                              ? 'bg-slate-900 text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          ALL <span className="ml-1 px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-200">{allEmployeesList.length}</span>
+                        </button>
+                        
+                        <button
+                          onClick={() => setEmployeeRoleFilter('MANAGER')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            employeeRoleFilter === 'MANAGER'
+                              ? 'bg-[#832D51] text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          MANAGER <span className={`ml-1 px-1.5 py-0.2 text-[10px] rounded-full ${employeeRoleFilter === 'MANAGER' ? 'bg-[#6a2240] text-pink-100' : 'bg-slate-100 text-slate-700'}`}>{managerCount}</span>
+                        </button>
+
+                        <button
+                          onClick={() => setEmployeeRoleFilter('EXECUTIVE')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            employeeRoleFilter === 'EXECUTIVE'
+                              ? 'bg-indigo-600 text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          EXECUTIVE <span className={`ml-1 px-1.5 py-0.2 text-[10px] rounded-full ${employeeRoleFilter === 'EXECUTIVE' ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-100 text-slate-700'}`}>{execCount}</span>
+                        </button>
+
+                        <button
+                          onClick={() => setEmployeeRoleFilter('ADMIN')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            employeeRoleFilter === 'ADMIN'
+                              ? 'bg-purple-600 text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          ADMIN <span className={`ml-1 px-1.5 py-0.2 text-[10px] rounded-full ${employeeRoleFilter === 'ADMIN' ? 'bg-purple-700 text-purple-100' : 'bg-slate-100 text-slate-700'}`}>{adminCount}</span>
+                        </button>
+
+                        <button
+                          onClick={() => setEmployeeRoleFilter('CUSTOM')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            employeeRoleFilter === 'CUSTOM'
+                              ? 'bg-emerald-600 text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          CUSTOM
+                        </button>
+                      </div>
+
+                      <div className="relative min-w-[200px] flex-1 max-w-xs">
+                        <Search className="absolute left-3 top-2.5 size-3.5 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder={employeeRoleFilter === 'CUSTOM' ? "Filter custom role, name, ID..." : "Search workforce..."}
+                          value={employeeCustomSearch}
+                          onChange={(e) => setEmployeeCustomSearch(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#832D51]"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Employee Directory Table */}
+                    <div className="border border-slate-200/80 rounded-2xl overflow-hidden shadow-2xs bg-white">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                              <th className="px-5 py-3">Employee ID</th>
+                              <th className="px-5 py-3">Name</th>
+                              <th className="px-5 py-3">Role</th>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium">
+                            {filteredEmployeesList.length === 0 ? (
+                              <tr>
+                                <td colSpan={3} className="py-12 text-center text-slate-400 font-bold">
+                                  No employee records found matching filter ({employeeRoleFilter}).
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredEmployeesList.map((emp, i) => (
+                                <tr key={i} className="hover:bg-slate-50/50">
+                                  <td className="px-5 py-3.5 font-bold text-[#832D51]">{emp.employee_id}</td>
+                                  <td className="px-5 py-3.5 text-slate-900 font-black">{emp.name}</td>
+                                  <td className="px-5 py-3.5 text-slate-600">
+                                    <span className={`inline-flex items-center rounded-md px-2.5 py-0.5 font-black uppercase text-[10px] tracking-wider border ${
+                                      (emp.role || '').toLowerCase().includes('manager') ? 'bg-[#832D51]/10 text-[#832D51] border-[#832D51]/30' :
+                                      (emp.role || '').toLowerCase().includes('admin') || (emp.role || '').toLowerCase().includes('ceo') ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                                      'bg-indigo-50 text-indigo-800 border-indigo-200'
+                                    }`}>
+                                      {emp.role}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* 4. PENDING APPROVALS MODAL VIEW */}
               {activeModal === 'approvals' && (
@@ -1648,7 +1768,7 @@ function CeoDashboard() {
                               <td className="px-5 py-3.5 text-slate-500 font-mono">{req.employee_id || '—'}</td>
                               <td className="px-5 py-3.5 text-slate-500">{req.role}</td>
                               <td className="px-5 py-3.5 text-slate-600 font-bold">{req.request_type}</td>
-                              <td className="px-5 py-3.5 text-slate-600">{req.date}</td>
+                              <td className="px-5 py-3.5 text-slate-600">{formatDDMMYYYY(req.date)}</td>
                               <td className="px-5 py-3.5 text-slate-600 font-bold">{req.duration || '—'}</td>
                               <td className="px-5 py-3.5 text-slate-500 italic max-w-xs truncate">{req.reason || '—'}</td>
                               <td className="px-5 py-3.5">

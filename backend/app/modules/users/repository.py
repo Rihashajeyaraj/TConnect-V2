@@ -382,6 +382,15 @@ class UserRepository:
 
     def update_user(self, user_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         _clear_users_cache()
+
+        # Remove password and accessPassword from updates if empty/None so existing employee password is NEVER overwritten!
+        clean_updates = {k: v for k, v in updates.items() if v is not None}
+        if "password" in clean_updates and not str(clean_updates["password"]).strip():
+            del clean_updates["password"]
+        if "accessPassword" in clean_updates and not str(clean_updates["accessPassword"]).strip():
+            del clean_updates["accessPassword"]
+
+        updates = clean_updates
         target = None
         for idx, u in enumerate(_in_memory_users):
             if u["id"] == user_id or u.get("email") == updates.get("email"):

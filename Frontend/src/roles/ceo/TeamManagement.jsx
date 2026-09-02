@@ -25,7 +25,7 @@ import {
   Eye,
   User,
 } from 'lucide-react'
-import { hrmsAPI, userAPI, crmAPI, customerAPI } from '../../services/api.js'
+import { hrmsAPI, userAPI, crmAPI, customerAPI, settingsAPI } from '../../services/api.js'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { isItemOwnedByUser } from '../../utils/userScope.js'
 
@@ -152,19 +152,30 @@ function TeamManagement() {
   };
 
   // Load backend employees
+  const [masterDepts, setMasterDepts] = useState([])
+
   useEffect(() => {
     async function loadData() {
       setLoading(true)
       try {
-        const [usersRes, leadsRes, custRes] = await Promise.all([
+        const [usersRes, leadsRes, custRes, settingsRes] = await Promise.all([
           userAPI.getUsers().catch(() => null),
           crmAPI.getLeads().catch(() => null),
           customerAPI.getCustomers().catch(() => null),
+          settingsAPI.getSettings().catch(() => null),
         ])
 
         const userList = usersRes && usersRes.data && Array.isArray(usersRes.data) ? usersRes.data : []
         const rawLeads = Array.isArray(leadsRes) ? leadsRes : (leadsRes?.data || [])
         const rawCustomers = Array.isArray(custRes) ? custRes : (custRes?.data || [])
+        const settingsData = settingsRes?.data || settingsRes
+
+        const adminDeptsRaw = settingsData?.departments || []
+        const adminDeptsClean = Array.isArray(adminDeptsRaw)
+          ? adminDeptsRaw.map(d => typeof d === 'string' ? d.trim() : (d?.name || d?.department_name || d?.title || '').trim()).filter(Boolean)
+          : []
+
+        setMasterDepts(adminDeptsClean)
 
         const mapped = mapEmployeeData(userList, rawLeads, rawCustomers)
         setTeam(mapped)
@@ -178,7 +189,10 @@ function TeamManagement() {
     loadData()
   }, [])
 
-  const allDepartments = Array.from(new Set(team.map(m => m.department || m.dept || 'Sales & BD').filter(Boolean)))
+  const allDepartments = Array.from(new Set([
+    ...masterDepts,
+    ...team.map(m => m.department || m.dept || 'Sales & BD').filter(Boolean)
+  ]))
 
   // Filtered members
   const filteredTeam = team.filter((m) => {
