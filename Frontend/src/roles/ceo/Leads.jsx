@@ -262,7 +262,7 @@ function Leads() {
                             />
                           </td>
                           <td className="px-6 py-4 text-slate-500 font-semibold">
-                            {formatDateString(lead.date || lead.created_at)}
+                            {formatDate(lead.date || lead.created_at)}
                           </td>
                           <td className="px-6 py-4 text-[#3a7d63] font-black">
                             {lead.sales_manager || lead.manager_name || 'Direct/Unassigned'}

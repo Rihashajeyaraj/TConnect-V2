@@ -341,6 +341,11 @@ function CeoHrms({ initialTab = 'employees' }) {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState(null)
 
+  // Filtering states
+  const [roleFilter, setRoleFilter] = useState('All') // 'All' | 'Admin' | 'Sales Manager' | 'Sales Executive'
+  const [datePeriodFilter, setDatePeriodFilter] = useState('Today') // 'Today' | 'This Month' | 'Custom'
+  const [rawAttendanceLogs, setRawAttendanceLogs] = useState([])
+
   // 1. Employees Directory State
   const [employees, setEmployees] = useState([])
 
@@ -392,6 +397,29 @@ function CeoHrms({ initialTab = 'employees' }) {
     }
   }
 
+  // Helper to format date into DD/MM/YYYY
+  const formatDDMMYYYY = (raw) => {
+    if (!raw || raw === '—' || raw === '--') return '—'
+    try {
+      const s = String(raw).split('T')[0].split(' ')[0]
+      const parts = s.split('-')
+      if (parts.length === 3 && parts[0].length === 4) {
+        const [y, m, d] = parts
+        return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`
+      }
+      const dObj = new Date(raw)
+      if (!isNaN(dObj.getTime())) {
+        const day = String(dObj.getDate()).padStart(2, '0')
+        const month = String(dObj.getMonth() + 1).padStart(2, '0')
+        const year = dObj.getFullYear()
+        return `${day}/${month}/${year}`
+      }
+      return raw
+    } catch {
+      return raw
+    }
+  }
+
   // Load real data from backend
   useEffect(() => {
     async function fetchHrmsData() {
@@ -404,6 +432,7 @@ function CeoHrms({ initialTab = 'employees' }) {
         ])
 
         const rawLogs = (attRes && attRes.data && Array.isArray(attRes.data)) ? attRes.data : []
+        setRawAttendanceLogs(rawLogs)
         const todayStr = new Date().toISOString().slice(0, 10)
 
         // Filter today's attendance logs
@@ -453,6 +482,7 @@ function CeoHrms({ initialTab = 'employees' }) {
         if (leaveRes && leaveRes.data && leaveRes.data.length > 0) {
           const rawList = leaveRes.data.map((l, idx) => ({
             id: l.id || l.leave_id || `LV-${500 + idx}`,
+            date: (l.from_date || l.start_date || l.date || l.created_at || new Date().toISOString().slice(0, 10)).split('T')[0],
             employee_name: l.employee_name || l.name || l.executive_name || 'Team Member',
             role: l.role || 'Sales Executive',
             leave_type: l.leave_type || 'Leave',
@@ -607,13 +637,75 @@ function CeoHrms({ initialTab = 'employees' }) {
     })
   }, [attendanceSummary.dailyLogs, attendanceFilter, customStart, customEnd])
 
-  // Filtered queries
-  const filteredEmployees = employees.filter(
-    (e) =>
+  // Process employee rows with login/logout time and date matching selected filter
+  const todayStr = new Date().toISOString().slice(0, 10)
+
+  const processedEmployeeRows = employees.map((emp) => {
+    const empCode = emp.employee_code || emp.employee_id || emp.id || ''
+    const empEmail = (emp.email || '').toLowerCase().trim()
+    const empName = (emp.name || emp.full_name || '').toLowerCase().trim()
+
+    // Find attendance log for this employee matching period filter
+    const empLog = rawAttendanceLogs.find((l) => {
+      const matchEmp =
+        (l.employee_id && (l.employee_id === emp.id || l.employee_id === empCode)) ||
+        (l.user_id && (l.user_id === emp.id || l.user_id === empCode)) ||
+        (l.employee_code && l.employee_code === empCode) ||
+        (l.email && l.email.toLowerCase().trim() === empEmail) ||
+        (l.employee_name && l.employee_name.toLowerCase().trim() === empName) ||
+        (l.name && l.name.toLowerCase().trim() === empName)
+
+      if (!matchEmp) return false
+
+      const lDate = l.date || (l.check_in_time ? String(l.check_in_time).slice(0, 10) : '') || (l.created_at ? String(l.created_at).slice(0, 10) : '')
+      if (datePeriodFilter === 'Today') return lDate === todayStr || l.is_today === true
+      if (datePeriodFilter === 'This Month') return lDate.startsWith(todayStr.slice(0, 7))
+      if (datePeriodFilter === 'Custom') {
+        if (customStart && lDate < customStart) return false
+        if (customEnd && lDate > customEnd) return false
+        return true
+      }
+      return true
+    })
+
+    const loginTime = empLog ? formatTimeOnly(empLog.check_in_time || empLog.clockIn || empLog.login_time) : (emp.checkin || '—')
+    const logoutTime = empLog ? formatTimeOnly(empLog.check_out_time || empLog.clockOut || empLog.logout_time) : '—'
+    const logDate = empLog?.date ? String(empLog.date).slice(0, 10) : todayStr
+
+    let status = emp.status || 'Absent'
+    if (empLog) {
+      if (logoutTime !== '—') status = 'Logged Off'
+      else if (loginTime !== '—') status = 'Logged In'
+      else status = 'Present'
+    }
+
+    return {
+      ...emp,
+      date: logDate,
+      loginTime,
+      logoutTime,
+      status,
+    }
+  })
+
+  // Filter by Role & Search Query
+  const filteredEmployees = processedEmployeeRows.filter((e) => {
+    const matchesSearch =
       e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       e.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
       e.department.toLowerCase().includes(searchQuery.toLowerCase())
-  )
+
+    let matchesRole = true
+    if (roleFilter === 'Admin') {
+      matchesRole = e.role.toLowerCase().includes('admin')
+    } else if (roleFilter === 'Sales Manager') {
+      matchesRole = e.role.toLowerCase().includes('manager') || e.role.toLowerCase().includes('lead')
+    } else if (roleFilter === 'Sales Executive') {
+      matchesRole = e.role.toLowerCase().includes('executive')
+    }
+
+    return matchesSearch && matchesRole
+  })
 
   const pendingLeaves = leaveRequests.filter((l) => l.status === 'Pending')
   const pendingPermissions = permissionRequests.filter((p) => p.status === 'Pending')
@@ -713,70 +805,140 @@ function CeoHrms({ initialTab = 'employees' }) {
       {/* ── TAB 1: EMPLOYEES DIRECTORY ────────────────────────── */}
       {activeTab === 'employees' && (
         <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-slate-100 pb-4">
             <div>
               <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
                 Corporate Employee Directory
               </h2>
-              <p className="text-xs text-slate-500 font-medium">All registered corporate personnel</p>
+              <p className="text-xs text-slate-500 font-medium">All registered corporate personnel & daily attendance logs</p>
             </div>
 
-            <div className="relative w-full sm:w-72">
-              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Search staff, role, department..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
-              />
+            {/* Filter Strip */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Role Filter Dropdown */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
+                <Filter className="size-3.5 text-[#832D51]" />
+                <span>Role:</span>
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
+                >
+                  <option value="All">All Roles</option>
+                  <option value="Admin">Admin</option>
+                  <option value="Sales Manager">Sales Manager</option>
+                  <option value="Sales Executive">Sales Executive</option>
+                </select>
+              </div>
+
+              {/* Date Period Filter Dropdown */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
+                <Calendar className="size-3.5 text-[#832D51]" />
+                <span>Period:</span>
+                <select
+                  value={datePeriodFilter}
+                  onChange={(e) => setDatePeriodFilter(e.target.value)}
+                  className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
+                >
+                  <option value="Today">Today</option>
+                  <option value="This Month">This Month</option>
+                  <option value="Custom">Custom Date</option>
+                </select>
+              </div>
+
+              {/* Custom Date Inputs */}
+              {datePeriodFilter === 'Custom' && (
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1 text-xs">
+                  <input
+                    type="date"
+                    value={customStart}
+                    onChange={(e) => setCustomStart(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 outline-none"
+                  />
+                  <span className="text-slate-400 font-bold">to</span>
+                  <input
+                    type="date"
+                    value={customEnd}
+                    onChange={(e) => setCustomEnd(e.target.value)}
+                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 outline-none"
+                  />
+                </div>
+              )}
+
+              {/* Search Box */}
+              <div className="relative w-full sm:w-60">
+                <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search staff, role, dept..."
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  className="h-8.5 w-full rounded-xl border border-slate-200 pl-8 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
+                />
+              </div>
             </div>
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
+            <table className="w-full text-left text-xs border-collapse">
               <thead>
-                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
-                  <th className="pb-3">Employee</th>
-                  <th className="pb-3">Designation</th>
-                  <th className="pb-3">Department</th>
-                  <th className="pb-3">Today's Check-in</th>
-                  <th className="pb-3">Status</th>
-                  <th className="pb-3 text-right">Actions</th>
+                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="pb-3 px-2">Date</th>
+                  <th className="pb-3 px-2">Employee</th>
+                  <th className="pb-3 px-2">Designation</th>
+                  <th className="pb-3 px-2">Department</th>
+                  <th className="pb-3 px-2 text-center">Login Time</th>
+                  <th className="pb-3 px-2 text-center">Logout Time</th>
+                  <th className="pb-3 px-2 text-center">Status</th>
+                  <th className="pb-3 px-2 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {filteredEmployees.map((emp) => (
                   <tr key={emp.id} className="hover:bg-slate-50/70 transition">
-                    <td className="py-3">
+                    <td className="py-3 px-2 font-bold text-slate-600">
+                      {formatDDMMYYYY(emp.date)}
+                    </td>
+                    <td className="py-3 px-2">
                       <p className="font-extrabold text-slate-900">{emp.name}</p>
                       <p className="text-[10px] text-slate-400">{emp.email}</p>
                     </td>
-                    <td className="py-3">
+                    <td className="py-3 px-2">
                       <span className="inline-flex rounded-md bg-[#F8CAE4]/20 px-2 py-0.5 text-[10px] font-black text-[#832D51]">
                         {emp.role}
                       </span>
                     </td>
-                    <td className="py-3 text-slate-700">{emp.department}</td>
-                    <td className="py-3 font-extrabold text-xs">
-                      {emp.checkin && emp.checkin !== '—' ? (
-                        <span className="text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                          {emp.checkin}
+                    <td className="py-3 px-2 text-slate-700">{emp.department}</td>
+                    <td className="py-3 px-2 text-center font-extrabold text-xs">
+                      {emp.loginTime && emp.loginTime !== '—' ? (
+                        <span className="text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
+                          {emp.loginTime}
                         </span>
                       ) : (
                         <span className="text-slate-400 font-semibold italic">—</span>
                       )}
                     </td>
-                    <td className="py-3">
+                    <td className="py-3 px-2 text-center font-extrabold text-xs">
+                      {emp.logoutTime && emp.logoutTime !== '—' ? (
+                        <span className="text-blue-700 bg-blue-50 px-2 py-1 rounded-lg border border-blue-200">
+                          {emp.logoutTime}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 font-semibold italic">—</span>
+                      )}
+                    </td>
+                    <td className="py-3 px-2 text-center">
                       <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black border ${
-                        emp.status === 'Present'
+                        emp.status === 'Logged In' || emp.status === 'Present'
                           ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                          : emp.status === 'Logged Off'
+                          ? 'bg-blue-50 text-blue-700 border-blue-200'
                           : 'bg-rose-50 text-rose-700 border-rose-200'
                       }`}>
                         {emp.status}
                       </span>
                     </td>
-                    <td className="py-3 text-right">
+                    <td className="py-3 px-2 text-right">
                       <button
                         onClick={() => setSelectedEmployee(emp)}
                         className="px-2.5 py-1.5 bg-[#832D51] hover:bg-[#68243f] text-white font-extrabold rounded-xl text-[10px] shadow-xs transition cursor-pointer"
@@ -812,25 +974,29 @@ function CeoHrms({ initialTab = 'employees' }) {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
-                  <th className="pb-3">Applicant & Role</th>
-                  <th className="pb-3">Leave Type</th>
-                  <th className="pb-3">Duration & Dates</th>
-                  <th className="pb-3">Reason</th>
-                  <th className="pb-3">Status</th>
-                  <th className="pb-3 text-right">CEO Review</th>
+                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="pb-3 px-2">Date</th>
+                  <th className="pb-3 px-2">Applicant & Role</th>
+                  <th className="pb-3 px-2">Leave Type</th>
+                  <th className="pb-3 px-2">Duration & Dates</th>
+                  <th className="pb-3 px-2">Reason</th>
+                  <th className="pb-3 px-2">Status</th>
+                  <th className="pb-3 px-2 text-right">CEO Review</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {leaveRequests.map((leave) => (
                   <tr key={leave.id} className="hover:bg-slate-50/70 transition">
-                    <td className="py-3.5">
+                    <td className="py-3.5 px-2 font-bold text-slate-600">
+                      {formatDDMMYYYY(leave.date || leave.submitted_at)}
+                    </td>
+                    <td className="py-3.5 px-2">
                       <p className="font-extrabold text-slate-900">{leave.employee_name}</p>
                       <p className="text-[10px] text-slate-400">{leave.role}</p>
                     </td>
-                    <td className="py-3.5 font-bold text-slate-800">{leave.leave_type}</td>
-                    <td className="py-3.5 text-slate-700">{leave.duration}</td>
-                    <td className="py-3.5 text-slate-600 max-w-xs truncate">{leave.reason}</td>
+                    <td className="py-3.5 px-2 font-bold text-slate-800">{leave.leave_type}</td>
+                    <td className="py-3.5 px-2 text-slate-700">{leave.duration}</td>
+                    <td className="py-3.5 px-2 text-slate-600 max-w-xs truncate">{leave.reason}</td>
                     <td className="py-3.5">
                       <span
                         className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black ${leave.status === 'Approved'
@@ -893,25 +1059,29 @@ function CeoHrms({ initialTab = 'employees' }) {
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
-                  <th className="pb-3">Staff Member</th>
-                  <th className="pb-3">Permission Type</th>
-                  <th className="pb-3">Time Window</th>
-                  <th className="pb-3">Justification</th>
-                  <th className="pb-3">Status</th>
-                  <th className="pb-3 text-right">CEO Action</th>
+                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                  <th className="pb-3 px-2">Date</th>
+                  <th className="pb-3 px-2">Staff Member</th>
+                  <th className="pb-3 px-2">Permission Type</th>
+                  <th className="pb-3 px-2">Time Window</th>
+                  <th className="pb-3 px-2">Justification</th>
+                  <th className="pb-3 px-2">Status</th>
+                  <th className="pb-3 px-2 text-right">CEO Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {permissionRequests.map((perm) => (
                   <tr key={perm.id} className="hover:bg-slate-50/70 transition">
-                    <td className="py-3.5">
+                    <td className="py-3.5 px-2 font-bold text-slate-600">
+                      {formatDDMMYYYY(perm.date || perm.submitted_at)}
+                    </td>
+                    <td className="py-3.5 px-2">
                       <p className="font-extrabold text-slate-900">{perm.employee_name}</p>
                       <p className="text-[10px] text-slate-400">{perm.role}</p>
                     </td>
-                    <td className="py-3.5 font-bold text-slate-800">{perm.type}</td>
-                    <td className="py-3.5 text-slate-700">{perm.timing}</td>
-                    <td className="py-3.5 text-slate-600 max-w-xs truncate">{perm.reason}</td>
+                    <td className="py-3.5 px-2 font-bold text-slate-800">{perm.type}</td>
+                    <td className="py-3.5 px-2 text-slate-700">{perm.timing}</td>
+                    <td className="py-3.5 px-2 text-slate-600 max-w-xs truncate">{perm.reason}</td>
                     <td className="py-3.5">
                       <span
                         className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black ${perm.status === 'Approved'

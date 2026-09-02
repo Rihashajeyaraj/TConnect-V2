@@ -15,6 +15,7 @@ import {
 } from 'lucide-react'
 import { visitAPI, hrmsAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
+import { formatDDMMYYYY } from '../../utils/formatUtils.js'
 
 export default function CEOVisits() {
   const { showToast } = useToast()
@@ -612,7 +613,7 @@ export default function CEOVisits() {
                       {visit.assigned_to || 'Sales Executive'}
                     </td>
                     <td className="px-6 py-4 text-slate-500 font-semibold font-mono">
-                      <span>{visit.visit_date}</span>
+                      <span>{formatDDMMYYYY(visit.visit_date)}</span>
                       <span className="text-amber-800 font-black ml-1.5">• {visit.visit_time}</span>
                     </td>
                     <td className="px-6 py-4">

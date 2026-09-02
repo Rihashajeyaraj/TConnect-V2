@@ -733,8 +733,8 @@ function SalesOverview({ initialSection }) {
       {ceoActiveTab === 'overview' ? (
         <>
           <div className="flex items-center gap-2 flex-wrap">
-          {/* Date range switcher */}
-          <div className="flex items-center bg-slate-100 rounded-xl p-1 text-xs font-bold border border-slate-200">
+          {/* Date range switcher (Compact & Interactive) */}
+          <div className="flex items-center bg-slate-100 rounded-xl p-0.5 sm:p-1 text-[11px] font-bold border border-slate-200">
             {['Today', 'This Week', 'This Month', 'Custom Date'].map((t) => (
               <button
                 key={t}
@@ -742,7 +742,7 @@ function SalesOverview({ initialSection }) {
                   setDateFilter(t)
                   if (t !== 'Custom Date') setCustomRangeApplied(null)
                 }}
-                className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                className={`px-2.5 py-1 rounded-lg transition-all duration-150 active:scale-95 cursor-pointer ${
                   dateFilter === t
                     ? 'bg-[#832D51] text-white shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
@@ -756,7 +756,7 @@ function SalesOverview({ initialSection }) {
           <button
             onClick={fetchUnifiedData}
             disabled={loading}
-            className="flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3.5 py-1.5 text-xs font-bold text-slate-700 transition cursor-pointer disabled:opacity-50"
+            className="flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2.5 py-1 text-[11px] sm:text-xs font-bold text-slate-700 transition-all duration-150 active:scale-95 cursor-pointer disabled:opacity-50"
           >
             <RefreshCw className={`size-3.5 ${loading ? 'animate-spin' : ''}`} />
             Refresh
@@ -767,54 +767,52 @@ function SalesOverview({ initialSection }) {
       {dateFilter === 'Custom Date' && (
         <form
           onSubmit={handleApplyCustomRange}
-          className="flex items-center gap-3 bg-white p-4 border border-slate-200 rounded-2xl shadow-2xs flex-wrap"
+          className="flex items-center gap-3 bg-white p-3 sm:p-4 border border-slate-200 rounded-xl shadow-2xs flex-wrap"
         >
           <div className="flex items-center gap-2">
-            <label className="text-xs font-black text-slate-500 uppercase">From</label>
+            <span className="text-[11px] font-bold text-slate-500">From:</span>
             <input
               type="date"
               value={fromDate}
               onChange={(e) => setFromDate(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
-              required
+              className="h-8 rounded-lg border border-slate-200 px-2 text-xs font-semibold text-slate-800"
             />
           </div>
           <div className="flex items-center gap-2">
-            <label className="text-xs font-black text-slate-500 uppercase">To</label>
+            <span className="text-[11px] font-bold text-slate-500">To:</span>
             <input
               type="date"
               value={toDate}
               onChange={(e) => setToDate(e.target.value)}
-              className="bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
-              required
+              className="h-8 rounded-lg border border-slate-200 px-2 text-xs font-semibold text-slate-800"
             />
           </div>
           <button
             type="submit"
-            className="bg-[#832D51] hover:bg-[#6a2240] text-white text-xs font-bold px-4 py-1.5 rounded-xl transition cursor-pointer"
+            className="bg-[#832D51] hover:bg-[#6a2240] text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all duration-150 active:scale-95 cursor-pointer"
           >
             Apply Range
           </button>
         </form>
       )}
 
-      {/* ── 1. Top Summary Cards (8 Key Executive KPIs) ────────────────────── */}
-      <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Card 1: Total Revenue */}
+      {/* ── 1. Top Summary Cards (Compact, Solid Pastel & 2px Border) ── */}
+      <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        {/* Card 1: Total Revenue (Emerald Theme) */}
         <button
           onClick={() => {
             setShowFinancialReportModal(true)
           }}
-          className={`text-left rounded-2xl p-4.5 border transition-all duration-200 relative overflow-hidden group cursor-pointer ${
+          className={`text-left rounded-2xl p-3.5 sm:p-4 transition-all duration-150 relative overflow-hidden group cursor-pointer active:scale-95 ${
             activeKpi === 'revenue' && wonToggle
-              ? 'bg-[#832D51] text-white border-[#832D51] shadow-md shadow-[#832D51]/15 ring-2 ring-[#832D51]'
-              : 'bg-white text-slate-900 border-slate-200/90 hover:border-[#832D51]'
+              ? 'bg-[#832D51] text-white border-2 border-[#832D51] shadow-md'
+              : 'bg-[#DCFCE7] text-slate-900 border-2 border-[#16A34A] shadow-sm hover:shadow-md'
           }`}
         >
-          <div className="flex justify-between items-start">
+          <div className="flex justify-between items-center">
             <span
               className={`text-[10px] font-black uppercase tracking-wider ${
-                activeKpi === 'revenue' && wonToggle ? 'text-pink-200' : 'text-slate-400'
+                activeKpi === 'revenue' && wonToggle ? 'text-pink-200' : 'text-[#15803D]'
               }`}
             >
               Total Revenue
@@ -823,45 +821,48 @@ function SalesOverview({ initialSection }) {
               className={`grid size-7 place-items-center rounded-lg ${
                 activeKpi === 'revenue' && wonToggle
                   ? 'bg-white/20 text-white'
-                  : 'bg-pink-50 text-[#832D51]'
+                  : 'bg-[#16A34A]/20 text-[#15803D]'
               }`}
             >
               <DollarSign className="size-4" />
             </span>
           </div>
-          <p className="text-2xl font-black tracking-tight mt-2.5">
+          <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
             ₹{totalRevenue.toLocaleString()}
           </p>
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100/60">
+          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
             <span
               className={`text-[10px] font-bold ${
-                activeKpi === 'revenue' && wonToggle ? 'text-pink-100' : 'text-slate-500'
+                activeKpi === 'revenue' && wonToggle ? 'text-pink-100' : 'text-[#166534]'
               }`}
             >
               Realized won deals
             </span>
-            <span className="inline-flex items-center rounded-md bg-emerald-500/15 px-1.5 py-0.5 text-[9px] font-black text-emerald-700">
+            <span className="inline-flex items-center rounded-md bg-[#16A34A]/20 px-1.5 py-0.5 text-[9px] font-black text-[#15803D]">
               Won
             </span>
           </div>
+          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#15803D]">
+            <span>▼ Showing list</span>
+          </div>
         </button>
 
-        {/* Card 2: Total Customers */}
+        {/* Card 2: Total Customers (Blue Theme) */}
         <button
           onClick={() => {
             setActiveKpi('customers')
             setWonToggle(false)
           }}
-          className={`text-left rounded-2xl p-4.5 border transition-all duration-200 relative overflow-hidden group cursor-pointer ${
+          className={`text-left rounded-2xl p-3.5 sm:p-4 transition-all duration-150 relative overflow-hidden group cursor-pointer active:scale-95 ${
             activeKpi === 'customers' && !wonToggle
-              ? 'bg-[#832D51] text-white border-[#832D51] shadow-md shadow-[#832D51]/15 ring-2 ring-[#832D51]'
-              : 'bg-white text-slate-900 border-slate-200/90 hover:border-[#832D51]'
+              ? 'bg-[#832D51] text-white border-2 border-[#832D51] shadow-md'
+              : 'bg-[#DBEAFE] text-slate-900 border-2 border-[#2563EB] shadow-sm hover:shadow-md'
           }`}
         >
-          <div className="flex justify-between items-start">
+          <div className="flex justify-between items-center">
             <span
               className={`text-[10px] font-black uppercase tracking-wider ${
-                activeKpi === 'customers' && !wonToggle ? 'text-pink-200' : 'text-slate-400'
+                activeKpi === 'customers' && !wonToggle ? 'text-pink-200' : 'text-[#1E40AF]'
               }`}
             >
               Total Customers
@@ -870,115 +871,125 @@ function SalesOverview({ initialSection }) {
               className={`grid size-7 place-items-center rounded-lg ${
                 activeKpi === 'customers' && !wonToggle
                   ? 'bg-white/20 text-white'
-                  : 'bg-blue-50 text-blue-600'
+                  : 'bg-[#2563EB]/20 text-[#1E40AF]'
               }`}
             >
               <Building2 className="size-4" />
             </span>
           </div>
-          <p className="text-2xl font-black tracking-tight mt-2.5">
+          <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
             {totalCustomersCount}
           </p>
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100/60">
+          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
             <span
               className={`text-[10px] font-bold ${
-                activeKpi === 'customers' && !wonToggle ? 'text-pink-100' : 'text-slate-500'
+                activeKpi === 'customers' && !wonToggle ? 'text-pink-100' : 'text-[#1D4ED8]'
               }`}
             >
               Accounts in period
             </span>
-            <span className="text-[9px] font-black text-slate-400">Directory</span>
+            <span className="text-[9px] font-black text-[#1E40AF]">Directory</span>
+          </div>
+          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#1E40AF]">
+            <span>▼ Showing list</span>
           </div>
         </button>
 
-        {/* Card 3: Won Deals */}
-        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+        {/* Card 3: Won Deals (Teal / Cyan Theme) */}
+        <div className="bg-[#CFFAFE] border-2 border-[#0891B2] text-slate-900 rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#155E75]">
               Won Deals
             </span>
-            <span className="grid size-7 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
+            <span className="grid size-7 place-items-center rounded-lg bg-[#0891B2]/20 text-[#155E75]">
               <CheckCircle2 className="size-4" />
             </span>
           </div>
-          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
+          <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
             {totalWonDealsCount}
           </p>
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-            <span className="text-[10px] font-bold text-slate-500">Converted orders</span>
-            <span className="text-[9px] font-bold text-emerald-600">Closed</span>
+          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
+            <span className="text-[10px] font-bold text-[#0E7490]">Converted orders</span>
+            <span className="text-[9px] font-bold text-[#155E75]">Closed</span>
+          </div>
+          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#155E75]">
+            <span>▼ Showing list</span>
           </div>
         </div>
 
-        {/* Card 4: Net Margin (replaced Open Pipeline) */}
-        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Net Margin</span>
-            <span className="grid size-7 place-items-center rounded-lg bg-emerald-50 text-emerald-600">
+        {/* Card 4: Net Margin (Yellow / Amber Theme) */}
+        <div className="bg-[#FEF08A] border-2 border-[#CA8A04] text-slate-900 rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#854D0E]">Net Margin</span>
+            <span className="grid size-7 place-items-center rounded-lg bg-[#CA8A04]/20 text-[#854D0E]">
               <TrendingUp className="size-4" />
             </span>
           </div>
-          <div className="flex items-baseline gap-1.5 mt-2.5">
-            <p className="text-2xl font-black tracking-tight text-slate-900">{netProfitMargin}%</p>
-            <span className="text-xs font-bold text-slate-400">margin</span>
+          <div className="flex items-baseline gap-1.5 mt-2">
+            <p className="text-xl sm:text-2xl font-black tracking-tight text-slate-950">{netProfitMargin}%</p>
+            <span className="text-xs font-bold text-[#854D0E]">margin</span>
           </div>
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-            <span className="text-[10px] font-bold text-slate-500">₹{netProfit.toLocaleString()} net</span>
-            <span className="text-[9px] font-bold text-emerald-600">After Expenses</span>
+          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
+            <span className="text-[10px] font-bold text-[#A16207]">₹{netProfit.toLocaleString()} net</span>
+            <span className="text-[9px] font-bold text-[#854D0E]">After Expenses</span>
+          </div>
+          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#854D0E]">
+            <span>▼ Showing list</span>
           </div>
         </div>
 
-        {/* Card: Target Achieved */}
+        {/* Card 5: Target Achieved (Purple Theme) */}
         <button
           onClick={() => setShowTargetsModal(true)}
-          className="text-left bg-white text-slate-900 border border-slate-200/90 hover:border-[#832D51] rounded-2xl p-4.5 shadow-xs transition-all duration-200 cursor-pointer focus:outline-none"
+          className="text-left bg-[#F3E8FF] border-2 border-[#9333EA] text-slate-900 rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 active:scale-95 cursor-pointer"
         >
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#6B21A8]">
               Target Achieved
             </span>
-            <span className="grid size-7 place-items-center rounded-lg bg-indigo-50 text-indigo-600">
+            <span className="grid size-7 place-items-center rounded-lg bg-[#9333EA]/20 text-[#6B21A8]">
               <Target className="size-4" />
             </span>
           </div>
-          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
+          <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
             {targetAchievementRate}%
           </p>
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-            <span className="text-[10px] font-bold text-slate-500">YTD Target Progress</span>
-            <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[9px] font-black ${
-              Number(targetAchievementRate) >= 100 
-                ? 'bg-emerald-500/15 text-emerald-700' 
-                : 'bg-indigo-500/15 text-indigo-700'
-            }`}>
+          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
+            <span className="text-[10px] font-bold text-[#7E22CE]">YTD Target Progress</span>
+            <span className="inline-flex items-center rounded-md bg-[#9333EA]/20 px-1.5 py-0.5 text-[9px] font-black text-[#6B21A8]">
               Target
             </span>
           </div>
+          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#6B21A8]">
+            <span>▼ Showing list</span>
+          </div>
         </button>
 
-        <div className="bg-white text-slate-900 border border-slate-200/90 rounded-2xl p-4.5 shadow-xs">
-          <div className="flex justify-between items-start">
-            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+        {/* Card 6: Approved Expenses (Rose Theme) */}
+        <div className="bg-[#FFE4E6] border-2 border-[#E11D48] text-slate-900 rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer">
+          <div className="flex justify-between items-center">
+            <span className="text-[10px] font-black uppercase tracking-wider text-[#9F1239]">
               Approved Expense Claims
             </span>
-            <span className="grid size-7 place-items-center rounded-lg bg-rose-50 text-rose-600">
+            <span className="grid size-7 place-items-center rounded-lg bg-[#E11D48]/20 text-[#9F1239]">
               <Wallet className="size-4" />
             </span>
           </div>
-          <p className="text-2xl font-black tracking-tight mt-2.5 text-slate-900">
+          <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
             ₹{totalOperationalExpenses.toLocaleString()}
           </p>
-          <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-100">
-            <span className="text-[10px] font-bold text-slate-500">
+          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
+            <span className="text-[10px] font-bold text-[#BE123C]">
               {approvedExpenseCount > 0
-                ? `${approvedExpenseCount} manager-approved claim${approvedExpenseCount !== 1 ? 's' : ''}`
+                ? `${approvedExpenseCount} approved claim${approvedExpenseCount !== 1 ? 's' : ''}`
                 : 'Executive field claims'}
             </span>
-            <span className="text-[9px] font-bold text-rose-600">Approved</span>
+            <span className="text-[9px] font-bold text-[#9F1239]">Approved</span>
+          </div>
+          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#9F1239]">
+            <span>▼ Showing list</span>
           </div>
         </div>
-
-        {/* Old Net Margin card removed from row 2 — now shown in row 1 */}
       </div>
 
       {/* ── Product Performance Cards Row ────────────────────────────────────── */}

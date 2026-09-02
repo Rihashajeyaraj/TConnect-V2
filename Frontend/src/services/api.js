@@ -361,6 +361,7 @@ export const settingsAPI = {
   createProduct: (data) => request('/settings/products', { method: 'POST', body: JSON.stringify(data) }),
   updateProduct: (id, data) => request(`/settings/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteProduct: (id) => request(`/settings/products/${id}`, { method: 'DELETE' }),
+  deleteRole: (id) => request(`/settings/roles/${id}`, { method: 'DELETE' }),
 }
 
 export const spatialAPI = {

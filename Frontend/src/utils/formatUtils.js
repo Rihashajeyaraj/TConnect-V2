@@ -41,3 +41,42 @@ export function normalizePhoneNumber(phone) {
   if (!phone) return '';
   return String(phone).replace(/\D/g, '').slice(0, 10);
 }
+
+/**
+ * Formats any date string or Date object into DD/MM/YYYY format.
+ * Examples:
+ *   "2026-09-02" -> "02/09/2026"
+ *   "2026-09-02T10:30:00Z" -> "02/09/2026"
+ */
+export function formatDDMMYYYY(rawDate) {
+  if (!rawDate || rawDate === '—' || rawDate === '--' || rawDate === 'N/A') return '—';
+  try {
+    const str = String(rawDate).trim();
+    const isoDatePart = str.split('T')[0].split(' ')[0];
+    const parts = isoDatePart.split('-');
+    if (parts.length === 3 && parts[0].length === 4) {
+      const [y, m, d] = parts;
+      return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`;
+    }
+    if (str.includes('/')) {
+      const slashParts = str.split('/');
+      if (slashParts.length === 3) {
+        if (slashParts[0].length === 4) {
+          return `${slashParts[2].padStart(2, '0')}/${slashParts[1].padStart(2, '0')}/${slashParts[0]}`;
+        }
+        return `${slashParts[0].padStart(2, '0')}/${slashParts[1].padStart(2, '0')}/${slashParts[2]}`;
+      }
+    }
+    const dObj = new Date(str);
+    if (!isNaN(dObj.getTime())) {
+      const day = String(dObj.getDate()).padStart(2, '0');
+      const month = String(dObj.getMonth() + 1).padStart(2, '0');
+      const year = dObj.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+    return str;
+  } catch {
+    return String(rawDate);
+  }
+}
+

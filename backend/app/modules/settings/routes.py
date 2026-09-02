@@ -216,3 +216,22 @@ async def delete_product(
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# Roles CRUD
+@router.delete("/roles/{role_id}", response_model=StandardResponse)
+async def delete_role(
+    role_id: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        service.delete_role(role_id)
+        return StandardResponse.success_response(
+            message=f"Role '{role_id}' deleted successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+

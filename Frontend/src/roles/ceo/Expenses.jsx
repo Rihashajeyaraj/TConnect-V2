@@ -16,15 +16,32 @@ function fmtINR(val) {
 }
 
 function fmtDate(str) {
-  if (!str) return '—'
-  const d = new Date(str)
-  if (isNaN(d)) return String(str).slice(0, 10)
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  if (!str || str === '—' || str === '--') return '—'
+  try {
+    const s = String(str).split('T')[0].split(' ')[0]
+    const parts = s.split('-')
+    if (parts.length === 3 && parts[0].length === 4) {
+      const [y, m, d] = parts
+      return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`
+    }
+    const dObj = new Date(str)
+    if (!isNaN(dObj.getTime())) {
+      const day = String(dObj.getDate()).padStart(2, '0')
+      const month = String(dObj.getMonth() + 1).padStart(2, '0')
+      const year = dObj.getFullYear()
+      return `${day}/${month}/${year}`
+    }
+    return String(str)
+  } catch {
+    return String(str)
+  }
 }
 
 function normalize(e, idx) {
   const statusRaw = e.status || e.approval_status || 'PENDING'
   const meta = STATUS_META[statusRaw] || { label: statusRaw, cls: 'bg-slate-50 text-slate-600 border-slate-200' }
+  const isApproved = (statusRaw || '').toLowerCase() === 'approved'
+
   return {
     id: e.id || e.expense_id || `EXP-${idx}`,
     executive_name: e.employee_name || e.assigned_to || e.executive_name || e.name || 'Sales Executive',
@@ -34,7 +51,7 @@ function normalize(e, idx) {
     amount: parseFloat(String(e.amount || 0).replace(/[^\d.]/g, '')) || 0,
     claim_date: e.created_at || e.claim_date || e.submitted_at || '',
     approved_by: e.reviewed_by || e.approved_by || e.manager_name || '—',
-    approved_at: e.approved_at || e.reviewed_at || e.updated_at || '',
+    approved_at: e.approved_at || e.reviewed_at || e.approved_date || e.approval_date || e.updated_at || (isApproved ? (e.created_at || e.claim_date || e.submitted_at) : '') || '',
     receipt_url: e.receipt_url || e.receipt || e.bill_url || '',
     receipt_name: e.receipt_name || e.bill || e.file_name || 'Receipt',
     status: statusRaw,

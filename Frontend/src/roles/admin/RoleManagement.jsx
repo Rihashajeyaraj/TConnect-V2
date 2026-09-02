@@ -497,10 +497,38 @@ function RoleManagement() {
     }
   }
 
+  // Delete custom role flow
+  const handleDeleteRole = async (roleToDelete) => {
+    if (!roleToDelete) return
+    if (roleToDelete.isSystem || roleToDelete.is_system) {
+      showToast('System roles (ADMIN, SALES MANAGER, SALES EXECUTIVE) are protected and cannot be deleted.', 'error')
+      return
+    }
+    if (!window.confirm(`Are you sure you want to delete custom role '${roleToDelete.name}'? This action cannot be undone.`)) {
+      return
+    }
+    try {
+      await settingsAPI.deleteRole(roleToDelete.id)
+      showToast(`Custom role '${roleToDelete.name}' deleted successfully!`, 'success')
+      const remaining = roles.filter((r) => r.id !== roleToDelete.id)
+      setRoles(remaining)
+      if (selectedRole?.id === roleToDelete.id) {
+        const nextRole = remaining[0] || null
+        setSelectedRole(nextRole)
+        buildRenderPermsForRole(nextRole)
+      }
+    } catch (err) {
+      showToast(err?.message || 'Failed to delete role', 'error')
+    }
+  }
+
   // Filters roles list
   const filteredRoles = useMemo(() => {
     return roles.filter((r) => r.name.toLowerCase().includes(searchQuery.toLowerCase()))
   }, [roles, searchQuery])
+
+  const systemRolesCount = useMemo(() => roles.filter((r) => r.isSystem || r.is_system).length, [roles])
+  const customRolesCount = useMemo(() => roles.filter((r) => !(r.isSystem || r.is_system)).length, [roles])
 
   // Filters permissions matching selected activeModule or search query
   const matchingPerms = useMemo(() => {
@@ -593,7 +621,8 @@ function RoleManagement() {
         {/* Left Column: Roles list */}
         <div className="lg:col-span-4 bg-gradient-to-br from-white via-white to-[#D4ECFC]/10 p-5 rounded-3xl border border-[#64B5F6]/25 shadow-xs space-y-4 lg:sticky lg:top-6">
           <h2 className="font-extrabold text-[#0B2545] text-sm flex items-center justify-between border-b pb-2">
-            <span>System User Roles ({roles.length})</span>
+            <span>System User Roles ({systemRolesCount})</span>
+            <span className="text-[11px] font-semibold text-slate-500">Custom ({customRolesCount})</span>
           </h2>
 
           <div className="relative">
@@ -610,6 +639,7 @@ function RoleManagement() {
           <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1">
             {filteredRoles.map((role) => {
               const isSelected = selectedRole?.id === role.id
+              const isSys = role.isSystem || role.is_system
               return (
                 <div
                   key={role.id}
@@ -626,15 +656,30 @@ function RoleManagement() {
                   <div className="flex items-center justify-between mb-1.5">
                     <span className="font-extrabold text-[#0B2545] text-xs flex items-center gap-1.5 uppercase tracking-tight">
                       {role.name}
-                      {role.isSystem && (
+                      {isSys && (
                         <span className="text-[9px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-black border border-slate-300">
                           System
                         </span>
                       )}
                     </span>
-                    <span className="text-[10px] font-bold text-[#0B2545] bg-[#D4ECFC] px-2.5 py-0.5 rounded-full border border-[#64B5F6]/25 flex items-center gap-1">
-                      <Users className="w-3 h-3 text-[#0B2545]" /> {role.userCount} Users
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="text-[10px] font-bold text-[#0B2545] bg-[#D4ECFC] px-2.5 py-0.5 rounded-full border border-[#64B5F6]/25 flex items-center gap-1">
+                        <Users className="w-3 h-3 text-[#0B2545]" /> {role.userCount} Users
+                      </span>
+                      {!isSys && (
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            handleDeleteRole(role)
+                          }}
+                          className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                          title="Delete Custom Role"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <p className="text-[11px] text-[#64748B] font-medium leading-relaxed mt-1 line-clamp-2">
                     {role.description}

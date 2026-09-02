@@ -351,7 +351,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
                         filteredLeads.map(lead => (
                           <tr key={lead.id || lead.lead_id} className="hover:bg-slate-50/50 transition">
                             <td className="px-6 py-4 text-slate-500 font-semibold">
-                              {formatDateString(lead.date || lead.created_at)}
+                              {formatDate(lead.date || lead.created_at)}
                             </td>
                             <td className="px-6 py-4 text-[#3a7d63] font-black">
                               {lead.sales_manager || lead.manager_name || 'Direct/Unassigned'}
@@ -444,7 +444,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
                         filteredCustomers.map(cust => (
                           <tr key={cust.id || cust.customer_id} className="hover:bg-slate-50/50 transition">
                             <td className="px-6 py-4 text-slate-500 font-semibold">
-                              {formatDateString(cust.created_at || cust.date)}
+                              {formatDate(cust.created_at || cust.date)}
                             </td>
                             <td className="px-6 py-4 text-[#3a7d63] font-black">
                               {cust.sales_manager || 'Direct/Unassigned'}

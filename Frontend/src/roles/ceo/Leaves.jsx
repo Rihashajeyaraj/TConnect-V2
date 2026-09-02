@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Calendar, Search, AlertCircle, CheckCircle, Clock, Check, X, MessageSquare } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
 import { attendanceAPI, hrmsAPI } from '../../services/api.js'
+import { formatDate } from '../../utils/dateUtils.js'
 
 const STATUS_COLORS = {
   Pending: 'text-amber-600 bg-amber-50 border-amber-100',
@@ -164,7 +165,7 @@ function Leaves() {
                   </span>
                 </td>
                 <td className="px-6 py-4 text-slate-800">{l.type}</td>
-                <td className="px-6 py-4 whitespace-nowrap">{l.start} to {l.end}</td>
+                <td className="px-6 py-4 whitespace-nowrap">{formatDate(l.start)} to {formatDate(l.end)}</td>
                 <td className="px-6 py-4 text-center font-bold text-slate-950">{l.days} days</td>
                 <td className="px-6 py-4 text-slate-500 max-w-xs truncate">{l.reason}</td>
                 <td className="px-6 py-4 text-slate-400 italic font-normal">{l.remarks || 'No remarks added'}</td>

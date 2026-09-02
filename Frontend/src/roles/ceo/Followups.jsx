@@ -15,6 +15,7 @@ import {
   X,
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
+import { formatDate } from '../../utils/dateUtils.js'
 
 const STATUS_COLORS = {
   Completed: 'bg-emerald-100 text-emerald-800 border-emerald-300',
@@ -276,7 +277,7 @@ export default function CEOFollowups() {
                       </td>
                       <td className="px-5 py-3.5 text-[#832D51]">{item.executive}</td>
                       <td className="px-5 py-3.5 text-slate-650">{item.type}</td>
-                      <td className="px-5 py-3.5 text-slate-800">{item.scheduledTime}</td>
+                      <td className="px-5 py-3.5 text-slate-800">{formatDate(item.scheduledTime)}</td>
                       <td className="px-5 py-3.5">
                         <span className={`font-black ${PRIORITY_COLORS[item.priority] || 'text-slate-700'}`}>{item.priority}</span>
                       </td>
