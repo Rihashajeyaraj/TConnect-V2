@@ -22,7 +22,7 @@ const STATUS_CLASSES = {
 
 function TeamPerformance() {
   const [team, setTeam] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [searchQuery, setSearchQuery] = useState('')
   const [deptFilter, setDeptFilter] = useState('All')
   const [statusFilter, setStatusFilter] = useState('All')

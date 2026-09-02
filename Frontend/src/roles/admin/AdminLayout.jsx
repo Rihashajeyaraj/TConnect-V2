@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react'
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
+import ImageCropperModal from '../../common/ImageCropperModal.jsx'
+import PhotoLightboxModal from '../../common/PhotoLightboxModal.jsx'
+import TwiteConnectLogo from '../../common/TwiteConnectLogo.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { clearUserCache } from '../../utils/userScope.js'
 import { notificationAPI, hrmsAPI } from '../../services/api.js'
@@ -46,7 +49,7 @@ const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/admin' },
   { label: 'Company Overview', icon: Building2, path: '/admin/company' },
   { label: 'User Management', icon: Users, path: '/admin/users' },
-  { label: 'Customers', icon: Users, path: '/admin/customers' },
+  { label: 'Clients', icon: Users, path: '/admin/customers' },
   { label: 'Role Management', icon: ShieldCheck, path: '/admin/roles' },
   { label: 'HRMS', icon: UserCheck2, path: '/admin/hrms' },
   { label: 'Reports & Audit Logs', icon: FileText, path: '/admin/reports' },
@@ -380,23 +383,82 @@ function AdminLayout() {
   };
 
 
+  // Load latest profile photo from Supabase DB on layout mount
+  useEffect(() => {
+    hrmsAPI.getEmployeeById('self')
+      .then(res => {
+        const photo = res?.data?.profile_photo || res?.profile_photo
+        if (photo) {
+          setProfilePhoto(photo)
+          try { localStorage.setItem(`tc_admin_photo_${adminEmail}`, photo) } catch (_) {}
+        }
+      })
+      .catch(() => {})
+  }, [adminEmail])
+
+  const [cropImageSrc, setCropImageSrc] = useState(null)
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
+  const [showExpandedHeaderPhoto, setShowExpandedHeaderPhoto] = useState(false)
+
   const handlePhotoUpload = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
+
+    console.log("[ProfilePhoto] File selected")
+    console.log("[ProfilePhoto] File name:", file.name)
+    console.log("[ProfilePhoto] File type:", file.type)
+    console.log("[ProfilePhoto] File size:", file.size)
+
+    if (!file.type.startsWith("image/")) {
+      showToast("Please upload an image file (JPG, PNG, etc.)", "error")
+      e.target.value = ""
+      return
+    }
+
     const reader = new FileReader()
-    reader.onload = (ev) => {
-      const dataUrl = ev.target.result
-      setProfilePhoto(dataUrl)
-      localStorage.setItem(`tc_admin_photo_${adminEmail}`, dataUrl)
-      showToast("Profile photo updated!", "success")
+    reader.onload = () => {
+      setCropImageSrc(reader.result)
     }
     reader.readAsDataURL(file)
+    e.target.value = ""
   }
 
-  const removePhoto = () => {
-    setProfilePhoto(null)
-    localStorage.removeItem(`tc_admin_photo_${adminEmail}`)
-    showToast("Profile photo removed.", "info")
+  const handleCropComplete = async (croppedFile) => {
+    try {
+      setIsUploadingPhoto(true)
+      showToast("Uploading cropped profile photo to Storage...", "info")
+      console.log("[ProfilePhoto] Uploading cropped file to Supabase Storage...")
+      const res = await hrmsAPI.uploadAvatar("self", croppedFile)
+      console.log("[ProfilePhoto] Storage & DB Upload response:", res)
+
+      const newPhotoUrl = res?.data?.profile_photo || res?.profile_photo
+
+      if (!newPhotoUrl) {
+        throw new Error("Database update failed: profile_photo empty in response")
+      }
+
+      console.log("[ProfilePhoto] Successfully saved photo URL:", newPhotoUrl)
+      setProfilePhoto(newPhotoUrl)
+      try { localStorage.setItem(`tc_admin_photo_${adminEmail}`, newPhotoUrl) } catch (e) { }
+      showToast("Profile photo cropped & saved to Database successfully!", "success")
+      setCropImageSrc(null)
+    } catch (err) {
+      console.error("[ProfilePhoto] Upload failed:", err)
+      showToast(`Failed to update profile photo: ${err.message || err}`, "error")
+    } finally {
+      setIsUploadingPhoto(false)
+    }
+  }
+
+  const removePhoto = async () => {
+    try {
+      await hrmsAPI.updateEmployee("self", { profile_photo: null })
+      setProfilePhoto(null)
+      try { localStorage.removeItem(`tc_admin_photo_${adminEmail}`) } catch (e) { }
+      showToast("Profile photo removed successfully.", "info")
+    } catch (err) {
+      showToast(`Failed to remove profile photo: ${err.message || err}`, "error")
+    }
   }
 
   const loadNotifications = async () => {
@@ -435,11 +497,12 @@ function AdminLayout() {
         const labels = JSON.parse(saved);
         const ordered = [];
         labels.forEach(label => {
-          const match = navItems.find(n => n.label === label);
-          if (match) ordered.push(match);
+          const target = label === 'Customers' ? 'Clients' : label;
+          const match = navItems.find(n => n.label === target || n.label === label);
+          if (match && !ordered.some(o => o.path === match.path)) ordered.push(match);
         });
         navItems.forEach(n => {
-          if (!ordered.some(o => o.label === n.label)) {
+          if (!ordered.some(o => o.path === n.path)) {
             ordered.push(n);
           }
         });
@@ -458,11 +521,12 @@ function AdminLayout() {
         const labels = JSON.parse(saved);
         const ordered = [];
         labels.forEach(label => {
-          const match = navItems.find(n => n.label === label);
-          if (match) ordered.push(match);
+          const target = label === 'Customers' ? 'Clients' : label;
+          const match = navItems.find(n => n.label === target || n.label === label);
+          if (match && !ordered.some(o => o.path === match.path)) ordered.push(match);
         });
         navItems.forEach(n => {
-          if (!ordered.some(o => o.label === n.label)) {
+          if (!ordered.some(o => o.path === n.path)) {
             ordered.push(n);
           }
         });
@@ -546,28 +610,149 @@ function AdminLayout() {
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-slate-900 flex flex-col font-sans admin-portal-root">
       <style>{`
-        /* ── Mobile-first font scale ── */
-        .admin-portal-root {
-          font-size: 13px;
-        }
-        @media (min-width: 1024px) {
+        @media (max-width: 639px) {
           .admin-portal-root {
-            font-size: 14px;
+            font-size: 13px !important;
+          }
+          .admin-portal-root .text-xs,
+          .admin-portal-root .text-xs\\/5 {
+            font-size: 11px !important;
+          }
+          .admin-portal-root .text-sm {
+            font-size: 12.5px !important;
+          }
+          .admin-portal-root .text-base {
+            font-size: 13.5px !important;
+          }
+          .admin-portal-root .text-lg {
+            font-size: 15px !important;
+          }
+          .admin-portal-root .text-xl {
+            font-size: 16.5px !important;
+          }
+          .admin-portal-root .text-2xl {
+            font-size: 18.5px !important;
+          }
+          .admin-portal-root .text-[9px] {
+            font-size: 9.5px !important;
+          }
+          .admin-portal-root .text-[10px] {
+            font-size: 10px !important;
+          }
+          .admin-portal-root .text-[11px] {
+            font-size: 11px !important;
+          }
+          .admin-portal-root .text-[13px] {
+            font-size: 12.5px !important;
+          }
+          .admin-portal-root th,
+          .admin-portal-root td {
+            font-size: 11px !important;
+          }
+          .admin-sidebar-link {
+            font-size: 12.5px !important;
+          }
+          .admin-sidebar-header {
+            font-size: 11.5px !important;
           }
         }
-        .admin-sidebar-link {
-          font-size: 13px !important;
+
+        @media (min-width: 640px) and (max-width: 1024px) {
+          .admin-portal-root {
+            font-size: 13.5px !important;
+          }
+          .admin-portal-root .text-xs,
+          .admin-portal-root .text-xs\\/5 {
+            font-size: 11.5px !important;
+          }
+          .admin-portal-root .text-sm {
+            font-size: 13px !important;
+          }
+          .admin-portal-root .text-base {
+            font-size: 14.5px !important;
+          }
+          .admin-portal-root .text-lg {
+            font-size: 16px !important;
+          }
+          .admin-portal-root .text-xl {
+            font-size: 18px !important;
+          }
+          .admin-portal-root .text-2xl {
+            font-size: 20px !important;
+          }
+          .admin-portal-root .text-[9px] {
+            font-size: 10px !important;
+          }
+          .admin-portal-root .text-[10px] {
+            font-size: 10.5px !important;
+          }
+          .admin-portal-root .text-[11px] {
+            font-size: 11.5px !important;
+          }
+          .admin-portal-root .text-[13px] {
+            font-size: 13px !important;
+          }
+          .admin-portal-root th,
+          .admin-portal-root td {
+            font-size: 12px !important;
+          }
+          .admin-sidebar-link {
+            font-size: 13.5px !important;
+          }
+          .admin-sidebar-header {
+            font-size: 12px !important;
+          }
         }
-        .admin-sidebar-header {
-          font-size: 11px !important;
-        }
-        /* Prevent any fixed-width text from overflowing on narrow screens */
-        .admin-portal-root * {
-          word-break: break-word;
+
+        @media (min-width: 1025px) {
+          .admin-portal-root {
+            font-size: 14px !important;
+          }
+          .admin-portal-root .text-xs,
+          .admin-portal-root .text-xs\\/5 {
+            font-size: 12px !important;
+          }
+          .admin-portal-root .text-sm {
+            font-size: 13.5px !important;
+          }
+          .admin-portal-root .text-base {
+            font-size: 15px !important;
+          }
+          .admin-portal-root .text-lg {
+            font-size: 17px !important;
+          }
+          .admin-portal-root .text-xl {
+            font-size: 19px !important;
+          }
+          .admin-portal-root .text-2xl {
+            font-size: 22px !important;
+          }
+          .admin-portal-root .text-[9px] {
+            font-size: 10.5px !important;
+          }
+          .admin-portal-root .text-[10px] {
+            font-size: 11px !important;
+          }
+          .admin-portal-root .text-[11px] {
+            font-size: 12px !important;
+          }
+          .admin-portal-root .text-[13px] {
+            font-size: 13.5px !important;
+          }
+          .admin-portal-root th,
+          .admin-portal-root td {
+            font-size: 12.5px !important;
+          }
+          .admin-sidebar-link {
+            font-size: 14px !important;
+          }
+          .admin-sidebar-header {
+            font-size: 12.5px !important;
+          }
         }
       `}</style>
       {/* Top Header */}
-      <header className="relative h-14 lg:h-16 bg-white border-b border-[#64B5F6]/25 flex items-center justify-between px-3 lg:px-6 sticky top-0 z-30 shadow-xs">
+      <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -575,40 +760,21 @@ function AdminLayout() {
           >
             {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
-          <Link to="/admin" className="flex items-center gap-2.5 font-extrabold text-sm sm:text-xl text-[#0B2545]">
-            <span className="bg-gradient-to-tr from-[#0B2545] to-[#1E88E5] text-[#D4ECFC] px-2.5 py-1 rounded-xl text-sm shadow-md shadow-[#0B2545]/30">TC</span>
-            <span className="text-slate-900 tracking-tight">TConnect Admin</span>
+          <Link to="/admin" className="flex items-center gap-2.5">
+            <TwiteConnectLogo className="w-9 h-9" />
           </Link>
         </div>
 
-        {/* Center: Admin Role Indicator Tag */}
-        <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
-          <div className="flex items-center gap-2.5 bg-slate-50/80 border border-slate-200/80 rounded-full px-4.5 py-1.5 shadow-xs pointer-events-auto">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#64B5F6] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#64B5F6]"></span>
+        {/* Center: Clean Admin Pill Tag (matching user screenshot) */}
+        <div className="hidden sm:flex items-center justify-center">
+          <div className="flex items-center gap-2.5 bg-white border border-slate-200/90 rounded-full px-5 py-1.5 shadow-xs">
+            <span className="relative flex h-2.5 w-2.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500"></span>
             </span>
-            <span
-              className="text-xs uppercase tracking-[0.25em] font-black"
-              style={{
-                background: 'linear-gradient(to right, #0B2545 20%, #225F9F 40%, #1E88E5 60%, #64B5F6 80%)',
-                backgroundSize: '200% auto',
-                color: 'transparent',
-                WebkitBackgroundClip: 'text',
-                backgroundClip: 'text',
-                animation: 'tc-shimmer-admin 3s linear infinite',
-                display: 'inline-block'
-              }}
-            >
-              {currentUser?.role || 'System Administrator'}
+            <span className="text-xs uppercase tracking-wider font-black text-blue-600">
+              SYSTEM ADMIN
             </span>
-            <style>{`
-              @keyframes tc-shimmer-admin {
-                to {
-                  background-position: -200% center;
-                }
-              }
-            `}</style>
           </div>
         </div>
         <div className="flex items-center gap-3">
@@ -760,7 +926,7 @@ function AdminLayout() {
         </aside>
 
         {/* Main Content Area */}
-        <main className="flex-1 p-3 sm:p-4 lg:p-8 overflow-y-auto bg-[#F7F9FC] min-w-0">
+        <main className="flex-1 p-4 lg:p-8 overflow-y-auto bg-[#F7F9FC]">
           <Outlet />
         </main>
       </div>
@@ -1131,6 +1297,26 @@ function AdminLayout() {
           </div>
         </div>
       )}
+
+      {/* WhatsApp-style Image Cropper Modal */}
+      {cropImageSrc && (
+        <ImageCropperModal
+          imageSrc={cropImageSrc}
+          onCancel={() => setCropImageSrc(null)}
+          onCropComplete={handleCropComplete}
+          isUploading={isUploadingPhoto}
+        />
+      )}
+
+      {/* Full-Screen Photo Lightbox */}
+      {showExpandedHeaderPhoto && (
+        <PhotoLightboxModal
+          photoUrl={profilePhoto}
+          name={currentUser.name || 'Admin'}
+          role={currentUser.role || 'Admin'}
+          onClose={() => setShowExpandedHeaderPhoto(false)}
+        />
+      )}
     </div>
   )
 }
@@ -1148,17 +1334,25 @@ const Section = ({ icon: Icon, title, color = "blue", children }) => (
 
 const Field = ({ label, value, editMode, onChange, readOnly = false }) => {
   const isDate = label.toLowerCase().includes('date') || label.toLowerCase().includes('dob') || label.toLowerCase().includes('birth');
+  const isPhone = label.toLowerCase().includes('phone') || label.toLowerCase().includes('mobile') || label.toLowerCase().includes('contact');
   return (
     <div>
       <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider mb-0.5">{label}</p>
       {editMode ? (
         <input
-          type={isDate ? "date" : "text"}
+          type={isDate ? "date" : isPhone ? "tel" : "text"}
+          maxLength={isPhone ? 10 : undefined}
           value={value || ""}
-          onChange={(e) => onChange(e.target.value)}
+          onChange={(e) => {
+            if (isPhone) {
+              onChange(e.target.value.replace(/\D/g, '').slice(0, 10))
+            } else {
+              onChange(e.target.value)
+            }
+          }}
           disabled={readOnly}
           readOnly={readOnly}
-          className={`text-sm font-semibold text-slate-900 border-b border-blue-500 focus:outline-none bg-transparent w-full ${
+          className={`text-sm font-semibold text-slate-900 border-b border-[#123A8C] focus:outline-none bg-transparent w-full ${
             readOnly ? "opacity-60 cursor-not-allowed border-dashed border-slate-300" : ""
           }`}
         />
@@ -1167,6 +1361,6 @@ const Field = ({ label, value, editMode, onChange, readOnly = false }) => {
       )}
     </div>
   );
-}
+};
 
 export default AdminLayout

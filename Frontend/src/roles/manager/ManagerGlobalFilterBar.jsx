@@ -91,7 +91,7 @@ export default function ManagerGlobalFilterBar() {
               )}
             </h3>
             <p className="text-[10px] font-semibold text-slate-500">
-              Filter applies across Dashboard, Leads, Field Visits, Expenses, Customers, Team Reports & HRMS.
+              Filter applies across Dashboard, Leads, Field Visits, Expenses, Clients, Team Reports & HRMS.
             </p>
           </div>
         </div>

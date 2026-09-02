@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from 'react'
-import { Search, Receipt, RefreshCw, Calendar, ExternalLink, CheckCircle2, Clock, XCircle, Download } from 'lucide-react'
+import { Search, Receipt, RefreshCw, Calendar, ExternalLink, CheckCircle2, Clock, XCircle, Download, ChevronLeft, ChevronRight } from 'lucide-react'
 import { expenseAPI } from '../../services/api.js'
 
 const STATUS_META = {
@@ -16,15 +16,32 @@ function fmtINR(val) {
 }
 
 function fmtDate(str) {
-  if (!str) return '—'
-  const d = new Date(str)
-  if (isNaN(d)) return String(str).slice(0, 10)
-  return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })
+  if (!str || str === '—' || str === '--') return '—'
+  try {
+    const s = String(str).split('T')[0].split(' ')[0]
+    const parts = s.split('-')
+    if (parts.length === 3 && parts[0].length === 4) {
+      const [y, m, d] = parts
+      return `${d.padStart(2, '0')}/${m.padStart(2, '0')}/${y}`
+    }
+    const dObj = new Date(str)
+    if (!isNaN(dObj.getTime())) {
+      const day = String(dObj.getDate()).padStart(2, '0')
+      const month = String(dObj.getMonth() + 1).padStart(2, '0')
+      const year = dObj.getFullYear()
+      return `${day}/${month}/${year}`
+    }
+    return String(str)
+  } catch {
+    return String(str)
+  }
 }
 
 function normalize(e, idx) {
   const statusRaw = e.status || e.approval_status || 'PENDING'
   const meta = STATUS_META[statusRaw] || { label: statusRaw, cls: 'bg-slate-50 text-slate-600 border-slate-200' }
+  const isApproved = (statusRaw || '').toLowerCase() === 'approved'
+
   return {
     id: e.id || e.expense_id || `EXP-${idx}`,
     executive_name: e.employee_name || e.assigned_to || e.executive_name || e.name || 'Sales Executive',
@@ -34,7 +51,7 @@ function normalize(e, idx) {
     amount: parseFloat(String(e.amount || 0).replace(/[^\d.]/g, '')) || 0,
     claim_date: e.created_at || e.claim_date || e.submitted_at || '',
     approved_by: e.reviewed_by || e.approved_by || e.manager_name || '—',
-    approved_at: e.approved_at || e.reviewed_at || e.updated_at || '',
+    approved_at: e.approved_at || e.reviewed_at || e.approved_date || e.approval_date || e.updated_at || (isApproved ? (e.created_at || e.claim_date || e.submitted_at) : '') || '',
     receipt_url: e.receipt_url || e.receipt || e.bill_url || '',
     receipt_name: e.receipt_name || e.bill || e.file_name || 'Receipt',
     status: statusRaw,
@@ -87,6 +104,19 @@ export default function CeoExpenses() {
       return matchStatus && matchSearch
     })
   }, [expenses, search, statusFilter])
+
+  const [currentPage, setCurrentPage] = useState(1)
+  const ITEMS_PER_PAGE = 10
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search, statusFilter])
+
+  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE) || 1
+  const paginatedExpenses = useMemo(() => {
+    const start = (currentPage - 1) * ITEMS_PER_PAGE
+    return filtered.slice(start, start + ITEMS_PER_PAGE)
+  }, [filtered, currentPage])
 
   const totalAmount = filtered.reduce((s, e) => s + e.amount, 0)
   const approvedCount = expenses.filter(e => e.status_label === 'Approved').length
@@ -189,7 +219,7 @@ export default function CeoExpenses() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filtered.map(e => (
+                {paginatedExpenses.map(e => (
                   <tr key={e.id} className="hover:bg-slate-50/60 transition">
                     <td className="px-5 py-3.5">
                       <p className="font-extrabold text-slate-900">{e.executive_name}</p>
@@ -246,6 +276,41 @@ export default function CeoExpenses() {
                 </tr>
               </tfoot>
             </table>
+          </div>
+        )}
+
+        {/* Pagination Bar (10 rows per page) */}
+        {filtered.length > 0 && (
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-slate-50/80 border-t border-slate-200/80">
+            <div className="text-xs text-slate-500 font-medium">
+              Showing <span className="font-black text-slate-900">{Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, filtered.length)}</span> to <span className="font-black text-slate-900">{Math.min(currentPage * ITEMS_PER_PAGE, filtered.length)}</span> of <span className="font-black text-slate-900">{filtered.length.toLocaleString()}</span> records
+            </div>
+
+            <div className="flex items-center gap-1.5">
+              <button
+                onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                disabled={currentPage === 1}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+              >
+                <ChevronLeft className="size-3.5" />
+                Previous
+              </button>
+
+              <div className="flex items-center gap-1 px-2">
+                <span className="text-xs font-black text-slate-800">
+                  Page {currentPage} of {totalPages}
+                </span>
+              </div>
+
+              <button
+                onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                disabled={currentPage >= totalPages}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+              >
+                Next
+                <ChevronRight className="size-3.5" />
+              </button>
+            </div>
           </div>
         )}
       </div>

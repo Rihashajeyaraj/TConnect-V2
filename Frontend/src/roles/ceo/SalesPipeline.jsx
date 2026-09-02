@@ -29,7 +29,7 @@ const STAGE_COLORS = {
 function SalesPipeline() {
   const { showToast } = useToast()
   const [opportunities, setOpportunities] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   // Fetch opportunities from Supabase on mount
   useEffect(() => {

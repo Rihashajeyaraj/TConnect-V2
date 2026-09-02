@@ -20,7 +20,7 @@ export default function Notifications() {
   const userId = currentUser.id || currentUser.user_id || "";
 
   const [items, setItems] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
 

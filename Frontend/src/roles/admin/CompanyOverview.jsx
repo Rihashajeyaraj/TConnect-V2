@@ -22,58 +22,58 @@ import {
   RefreshCw,
   FolderOpen
 } from 'lucide-react'
-import { settingsAPI, userAPI } from '../../services/api.js'
+import { settingsAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 
 const TABS = [
   { 
     key: 'profile', 
     label: 'Company Profile', 
-    icon: Building2,
-    activeClass: 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-600/25',
-    inactiveClass: 'bg-blue-50/40 text-blue-700 hover:bg-blue-50 border-blue-100'
+    icon: Building2, 
+    activeClass: 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/35 scale-[1.02] hover:bg-blue-700',
+    inactiveClass: 'bg-blue-50/50 text-blue-700 border-blue-200/80 hover:bg-blue-100 hover:text-blue-800 hover:border-blue-300'
   },
   { 
     key: 'branches', 
     label: 'Branches & Locations', 
-    icon: MapPin,
-    activeClass: 'bg-blue-600 border-blue-600 text-white shadow-md shadow-blue-600/25',
-    inactiveClass: 'bg-blue-50/40 text-blue-700 hover:bg-blue-50 border-blue-100'
+    icon: Building2, 
+    activeClass: 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/35 scale-[1.02] hover:bg-blue-700',
+    inactiveClass: 'bg-blue-50/50 text-blue-700 border-blue-200/80 hover:bg-blue-100 hover:text-blue-800 hover:border-blue-300'
   },
   { 
     key: 'departments', 
     label: 'Departments', 
-    icon: Users,
-    activeClass: 'bg-emerald-600 border-emerald-600 text-white shadow-md shadow-emerald-600/25',
-    inactiveClass: 'bg-emerald-50/40 text-emerald-700 hover:bg-emerald-50 border-emerald-100'
+    icon: Briefcase, 
+    activeClass: 'bg-emerald-600 text-white border-emerald-600 shadow-md shadow-emerald-500/35 scale-[1.02] hover:bg-emerald-700',
+    inactiveClass: 'bg-emerald-50/50 text-emerald-700 border-emerald-200/80 hover:bg-emerald-100 hover:text-emerald-800 hover:border-emerald-300'
   },
   { 
     key: 'designations', 
     label: 'Designations', 
-    icon: Briefcase,
-    activeClass: 'bg-indigo-600 border-indigo-600 text-white shadow-md shadow-indigo-600/25',
-    inactiveClass: 'bg-indigo-50/40 text-indigo-700 hover:bg-indigo-50 border-indigo-100'
+    icon: Layers, 
+    activeClass: 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-500/35 scale-[1.02] hover:bg-indigo-700',
+    inactiveClass: 'bg-indigo-50/50 text-indigo-700 border-indigo-200/80 hover:bg-indigo-100 hover:text-indigo-800 hover:border-indigo-300'
   },
   { 
     key: 'products', 
     label: 'Products & Services', 
-    icon: ShoppingBag,
-    activeClass: 'bg-rose-600 border-rose-600 text-white shadow-md shadow-rose-600/25',
-    inactiveClass: 'bg-rose-50/40 text-rose-700 hover:bg-rose-50 border-rose-100'
+    icon: ShoppingBag, 
+    activeClass: 'bg-rose-600 text-white border-rose-600 shadow-md shadow-rose-500/35 scale-[1.02] hover:bg-rose-700',
+    inactiveClass: 'bg-rose-50/50 text-rose-700 border-rose-200/80 hover:bg-rose-100 hover:text-rose-800 hover:border-rose-300'
   },
   { 
     key: 'lead_sources', 
     label: 'Lead Sources', 
-    icon: Target,
-    activeClass: 'bg-amber-600 border-amber-600 text-white shadow-md shadow-amber-600/25',
-    inactiveClass: 'bg-amber-50/40 text-amber-700 hover:bg-amber-50 border-amber-100'
+    icon: Target, 
+    activeClass: 'bg-amber-500 text-white border-amber-500 shadow-md shadow-amber-500/35 scale-[1.02] hover:bg-amber-600',
+    inactiveClass: 'bg-amber-50/50 text-amber-700 border-amber-200/80 hover:bg-amber-100 hover:text-amber-800 hover:border-amber-300'
   },
   { 
     key: 'customer_categories', 
     label: 'Customer Categories', 
-    icon: Bookmark,
-    activeClass: 'bg-purple-600 border-purple-600 text-white shadow-md shadow-purple-600/25',
-    inactiveClass: 'bg-purple-50/40 text-purple-700 hover:bg-purple-50 border-purple-100'
+    icon: Bookmark, 
+    activeClass: 'bg-purple-600 text-white border-purple-600 shadow-md shadow-purple-500/35 scale-[1.02] hover:bg-purple-700',
+    inactiveClass: 'bg-purple-50/50 text-purple-700 border-purple-200/80 hover:bg-purple-100 hover:text-purple-800 hover:border-purple-300'
   }
 ]
 
@@ -81,11 +81,11 @@ function CompanyOverview() {
   const { showToast } = useToast()
   const fileInputRef = useRef(null)
   const [activeTab, setActiveTab] = useState('profile')
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
 
-  // Company Profile Info Inputs State
+  // Company Profile State
   const [companyProfile, setCompanyProfile] = useState({
     companyName: 'TwiteConnect Technologies Pvt. Ltd.',
     legalName: 'TwiteConnect Software Solutions & Services',
@@ -108,8 +108,6 @@ function CompanyOverview() {
     lead_sources: [],
     customer_categories: []
   })
-
-  const [users, setUsers] = useState([])
 
   // Modal Control States
   const [showAddModal, setShowAddModal] = useState(false)
@@ -154,14 +152,6 @@ function CompanyOverview() {
           lead_sources: Array.isArray(data.lead_sources) ? data.lead_sources : [],
           customer_categories: Array.isArray(data.customer_categories) ? data.customer_categories : []
         })
-      }
-      try {
-        const usersRes = await userAPI.getUsers()
-        if (usersRes && Array.isArray(usersRes.data)) {
-          setUsers(usersRes.data)
-        }
-      } catch (userErr) {
-        console.warn('Failed to load users for dynamic counts:', userErr)
       }
     } catch (err) {
       console.warn('Fetched company settings with fallback state:', err)
@@ -246,6 +236,58 @@ function CompanyOverview() {
     } catch (err) {
       const errorMsg = err?.message || err?.detail || 'Failed to save company profile'
       showToast(errorMsg, 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const handlePopulateSampleData = async () => {
+    if (!window.confirm('Do you want to pre-populate the master configuration settings with standard company defaults (branches, departments, designations, products, lead sources, and categories)? This will initialize system dropdown fields.')) return
+    setSaving(true)
+    const sampleSetup = {
+      branches: [
+        { id: 1, name: 'Chennai HQ', type: 'Headquarters', location: 'OMR IT Expressway, Chennai', staffCount: 15, status: 'Active' },
+        { id: 2, name: 'Bangalore Office', type: 'Regional Office', location: 'Whitefield, Bangalore', staffCount: 8, status: 'Active' },
+        { id: 3, name: 'Mumbai Hub', type: 'Sales Hub', location: 'Andheri East, Mumbai', staffCount: 3, status: 'Active' }
+      ],
+      departments: [
+        { id: 101, name: 'Sales & Business Development', lead: 'Arun Kumar', staffCount: 18, budget: '₹15,00,000', status: 'Active' },
+        { id: 102, name: 'Human Resources', lead: 'Siva Murugan', staffCount: 2, budget: '₹3,00,050', status: 'Active' },
+        { id: 103, name: 'Engineering & Tech', lead: 'Jeeva Nathan', staffCount: 4, budget: '₹8,00,000', status: 'Active' },
+        { id: 104, name: 'Finance & Accounts', lead: 'Bavani R', staffCount: 1, budget: '₹2,00,000', status: 'Active' }
+      ],
+      designations: [
+        { id: 'DES-1', name: 'Sales Executive', status: 'Active' },
+        { id: 'DES-2', name: 'Sales Manager', status: 'Active' },
+        { id: 'DES-3', name: 'System Administrator', status: 'Active' },
+        { id: 'DES-4', name: 'CEO & Managing Director', status: 'Active' },
+        { id: 'DES-5', name: 'HR Manager', status: 'Active' }
+      ],
+      products: [
+        { id: 'PRO-1', name: 'TConnect Core ERP Suite', price: '₹4,500/user/month', status: 'Active' },
+        { id: 'PRO-2', name: 'GPS Field Tracker Plugin', price: '₹950/user/month', status: 'Active' },
+        { id: 'PRO-3', name: 'Custom CRM Portal', price: '₹12,000/month flat', status: 'Active' }
+      ],
+      lead_sources: [
+        { id: 'LSD-1', name: 'Direct Sales Outreach', status: 'Active' },
+        { id: 'LSD-2', name: 'Corporate Website Form', status: 'Active' },
+        { id: 'LSD-3', name: 'Existing Customer Referral', status: 'Active' },
+        { id: 'LSD-4', name: 'LinkedIn Professional Campaign', status: 'Active' }
+      ],
+      customer_categories: [
+        { id: 'CAT-1', name: 'Enterprise Tier-1', status: 'Active' },
+        { id: 'CAT-2', name: 'SME Tier-2', status: 'Active' },
+        { id: 'CAT-3', name: 'Retail Client Tier-3', status: 'Active' }
+      ]
+    }
+
+    try {
+      await settingsAPI.updateSettings(sampleSetup)
+      setMasterData(sampleSetup)
+      showToast('Master configuration settings pre-populated with standard defaults!', 'success')
+    } catch (err) {
+      setMasterData(sampleSetup)
+      showToast('Loaded sample configuration settings onto page!', 'success')
     } finally {
       setSaving(false)
     }
@@ -508,32 +550,26 @@ function CompanyOverview() {
       ? `<img src="${companyProfile.logoUrl}" class="logo" />`
       : `<div class="logo-fallback">${(companyProfile.companyName || 'TC').substring(0, 2).toUpperCase()}</div>`
 
-    const branchRows = masterData.branches.map((b, i) => {
-      const staffCount = users.filter(u => u.branch === b.name || u.branch_office === b.name || u.branch_name === b.name || u.assignment === b.name).length
-      return `
-        <tr>
-          <td style="text-align:center;color:#64748b;">${i + 1}</td>
-          <td><strong>${b.name}</strong></td>
-          <td>${b.type || '—'}</td>
-          <td>${b.location || '—'}</td>
-          <td style="text-align:center;">${staffCount}</td>
-          <td style="text-align:center;"><span class="badge-active">${b.status || 'Active'}</span></td>
-        </tr>
-      `
-    }).join('')
+    const branchRows = masterData.branches.map((b, i) => `
+      <tr>
+        <td style="text-align:center;color:#64748b;">${i + 1}</td>
+        <td><strong>${b.name}</strong></td>
+        <td>${b.type || '—'}</td>
+        <td>${b.location || '—'}</td>
+        <td style="text-align:center;">${b.staffCount || 0}</td>
+        <td style="text-align:center;"><span class="badge-active">${b.status || 'Active'}</span></td>
+      </tr>
+    `).join('')
 
-    const deptRows = masterData.departments.map((d, i) => {
-      const staffCount = users.filter(u => (u.department || u.dept || '').toLowerCase() === d.name.toLowerCase()).length
-      return `
-        <tr>
-          <td style="text-align:center;color:#64748b;">${i + 1}</td>
-          <td><strong>${d.name}</strong></td>
-          <td>${d.lead || 'Unassigned'}</td>
-          <td style="text-align:center;">${staffCount}</td>
-          <td style="text-align:right;">${d.budget || '₹0'}</td>
-        </tr>
-      `
-    }).join('')
+    const deptRows = masterData.departments.map((d, i) => `
+      <tr>
+        <td style="text-align:center;color:#64748b;">${i + 1}</td>
+        <td><strong>${d.name}</strong></td>
+        <td>${d.lead || 'Unassigned'}</td>
+        <td style="text-align:center;">${d.staffCount || 0}</td>
+        <td style="text-align:right;">${d.budget || '₹0'}</td>
+      </tr>
+    `).join('')
 
     printWindow.document.write(`<!DOCTYPE html>
 <html lang="en">
@@ -695,6 +731,14 @@ function CompanyOverview() {
           >
             <Printer className="w-4 h-4" />
           </button>
+          <button
+            onClick={handlePopulateSampleData}
+            disabled={saving}
+            className="px-3.5 py-2.5 border border-dashed border-[#64B5F6]/45 hover:border-[#1E88E5] text-[#0B2545] rounded-xl text-[10px] font-black uppercase transition cursor-pointer flex items-center gap-1"
+            title="Reset default configuration setup values"
+          >
+            <RefreshCw className="w-3 h-3" /> Reset Setup
+          </button>
         </div>
       </div>
 
@@ -764,7 +808,7 @@ function CompanyOverview() {
                   type="text"
                   value={companyProfile.companyName}
                   onChange={(e) => setCompanyProfile({ ...companyProfile, companyName: e.target.value })}
-                  className="w-full h-10.5 bg-white border border-slate-300 rounded-xl px-3.5 text-xs font-semibold text-[#0B2545] focus:border-[#1E88E5] focus:ring-2 focus:ring-[#1E88E5]/10 focus:outline-none shadow-2xs transition-all duration-200"
+                  className="w-full h-10.5 bg-[#EEF4F8]/30 border border-[#64B5F6]/20 rounded-xl px-3.5 text-xs font-semibold text-[#0B2545] focus:bg-white focus:border-[#1E88E5] focus:outline-none"
                 />
               </div>
 
@@ -774,7 +818,7 @@ function CompanyOverview() {
                   type="text"
                   value={companyProfile.taxIdGstin}
                   onChange={(e) => setCompanyProfile({ ...companyProfile, taxIdGstin: e.target.value })}
-                  className="w-full h-10.5 bg-white border border-slate-300 rounded-xl px-3.5 text-xs font-semibold text-[#0B2545] focus:border-[#1E88E5] focus:ring-2 focus:ring-[#1E88E5]/10 focus:outline-none shadow-2xs transition-all duration-200"
+                  className="w-full h-10.5 bg-[#EEF4F8]/30 border border-[#64B5F6]/20 rounded-xl px-3.5 text-xs font-semibold text-[#0B2545] focus:bg-white focus:border-[#1E88E5] focus:outline-none"
                 />
               </div>
 
@@ -786,7 +830,7 @@ function CompanyOverview() {
                     type="email"
                     value={companyProfile.email}
                     onChange={(e) => setCompanyProfile({ ...companyProfile, email: e.target.value })}
-                    className="w-full h-10.5 bg-white border border-slate-300 rounded-xl pl-9 pr-3.5 text-xs font-semibold text-[#0B2545] focus:border-[#1E88E5] focus:ring-2 focus:ring-[#1E88E5]/10 focus:outline-none shadow-2xs transition-all duration-200"
+                    className="w-full h-10.5 bg-[#EEF4F8]/30 border border-[#64B5F6]/20 rounded-xl pl-9 pr-3.5 text-xs font-semibold text-[#0B2545] focus:bg-white focus:border-[#1E88E5] focus:outline-none"
                   />
                 </div>
               </div>
@@ -799,7 +843,7 @@ function CompanyOverview() {
                     type="text"
                     value={companyProfile.phone}
                     onChange={(e) => setCompanyProfile({ ...companyProfile, phone: e.target.value })}
-                    className="w-full h-10.5 bg-white border border-slate-300 rounded-xl pl-9 pr-3.5 text-xs font-semibold text-[#0B2545] focus:border-[#1E88E5] focus:ring-2 focus:ring-[#1E88E5]/10 focus:outline-none shadow-2xs transition-all duration-200"
+                    className="w-full h-10.5 bg-[#EEF4F8]/30 border border-[#64B5F6]/20 rounded-xl pl-9 pr-3.5 text-xs font-semibold text-[#0B2545] focus:bg-white focus:border-[#1E88E5] focus:outline-none"
                   />
                 </div>
               </div>
@@ -812,7 +856,7 @@ function CompanyOverview() {
                     type="text"
                     value={companyProfile.website}
                     onChange={(e) => setCompanyProfile({ ...companyProfile, website: e.target.value })}
-                    className="w-full h-10.5 bg-white border border-slate-300 rounded-xl pl-9 pr-3.5 text-xs font-semibold text-[#0B2545] focus:border-[#1E88E5] focus:ring-2 focus:ring-[#1E88E5]/10 focus:outline-none shadow-2xs transition-all duration-200"
+                    className="w-full h-10.5 bg-[#EEF4F8]/30 border border-[#64B5F6]/20 rounded-xl pl-9 pr-3.5 text-xs font-semibold text-[#0B2545] focus:bg-white focus:border-[#1E88E5] focus:outline-none"
                   />
                 </div>
               </div>
@@ -823,7 +867,7 @@ function CompanyOverview() {
                   rows={3}
                   value={companyProfile.address}
                   onChange={(e) => setCompanyProfile({ ...companyProfile, address: e.target.value })}
-                  className="w-full bg-white border border-slate-300 rounded-xl p-3.5 text-xs font-semibold text-[#0B2545] focus:border-[#1E88E5] focus:ring-2 focus:ring-[#1E88E5]/10 focus:outline-none shadow-2xs transition-all duration-200"
+                  className="w-full bg-[#EEF4F8]/30 border border-[#64B5F6]/20 rounded-xl p-3.5 text-xs font-semibold text-[#0B2545] focus:bg-white focus:border-[#1E88E5] focus:outline-none"
                 />
               </div>
             </div>
@@ -849,24 +893,24 @@ function CompanyOverview() {
                 No locations match the query. Click "Add New Item" to create one.
               </div>
             ) : (
-              <div className="overflow-x-auto w-full border border-slate-300 rounded-2xl bg-white shadow-xs">
-                <table className="w-full min-w-[700px] text-left text-xs border-collapse whitespace-nowrap">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-100 border-b border-slate-300 text-slate-500 uppercase tracking-wider text-[9px] font-black">
-                      <th className="py-3 px-4 font-bold">Branch Office</th>
-                      <th className="py-3 px-4 font-bold">Type</th>
-                      <th className="py-3 px-4 font-bold">Address / Coordinates</th>
-                      <th className="py-3 px-4 font-bold text-center">Status</th>
-                      <th className="py-3 px-4 font-bold text-right">Actions</th>
+                    <tr className="border-b border-slate-200 text-slate-500">
+                      <th className="py-2.5 font-bold">Branch Office</th>
+                      <th className="py-2.5 font-bold">Type</th>
+                      <th className="py-2.5 font-bold">Address / Coordinates</th>
+                      <th className="py-2.5 font-bold text-center">Status</th>
+                      <th className="py-2.5 font-bold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredList.map((b) => (
-                      <tr key={b.id} className="border-b border-slate-200 hover:bg-slate-50/70 font-semibold bg-white">
-                        <td className="py-3 px-4 text-[#0B2545] font-black">{b.name}</td>
-                        <td className="py-3 px-4 text-slate-500">{b.type || 'Regional Office'}</td>
-                        <td className="py-3 px-4 text-slate-700">{b.location || '—'}</td>
-                        <td className="py-3 px-4 text-center">
+                      <tr key={b.id} className="border-b border-slate-100 hover:bg-slate-50/50 font-semibold">
+                        <td className="py-3 text-[#0B2545] font-black">{b.name}</td>
+                        <td className="py-3 text-slate-500">{b.type || 'Regional Office'}</td>
+                        <td className="py-3 text-slate-700">{b.location || '—'}</td>
+                        <td className="py-3 text-center">
                           <button
                             onClick={() => handleToggleStatus('branches', b)}
                             className={`px-2 py-0.5 rounded-full text-[9px] font-black border cursor-pointer transition ${
@@ -876,7 +920,7 @@ function CompanyOverview() {
                             {b.status || 'Active'}
                           </button>
                         </td>
-                        <td className="py-3 px-4 text-right space-x-1.5">
+                        <td className="py-3 text-right space-x-1.5">
                           <button
                             onClick={() => handleOpenEdit('branches', b)}
                             className="p-1 rounded bg-slate-50 border border-slate-200 text-slate-500 hover:text-[#1E88E5] transition cursor-pointer"
@@ -918,24 +962,24 @@ function CompanyOverview() {
                 No matching departments found.
               </div>
             ) : (
-              <div className="overflow-x-auto w-full border border-slate-300 rounded-2xl bg-white shadow-xs">
-                <table className="w-full min-w-[700px] text-left text-xs border-collapse whitespace-nowrap">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-100 border-b border-slate-300 text-slate-500 uppercase tracking-wider text-[9px] font-black">
-                      <th className="py-3 px-4 font-bold">Department</th>
-                      <th className="py-3 px-4 font-bold">Manager / Lead</th>
-                      <th className="py-3 px-4 font-bold text-center">Staff Count</th>
-                      <th className="py-3 px-4 font-bold text-center">Status</th>
-                      <th className="py-3 px-4 font-bold text-right">Actions</th>
+                    <tr className="border-b border-slate-200 text-slate-500">
+                      <th className="py-2.5 font-bold">Department</th>
+                      <th className="py-2.5 font-bold">Manager / Lead</th>
+                      <th className="py-2.5 font-bold text-center">Staff Count</th>
+                      <th className="py-2.5 font-bold text-center">Status</th>
+                      <th className="py-2.5 font-bold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredList.map((d) => (
-                      <tr key={d.id} className="border-b border-slate-200 hover:bg-slate-50/70 font-semibold bg-white">
-                        <td className="py-3 px-4 text-[#0B2545] font-black">{d.name}</td>
-                        <td className="py-3 px-4 text-[#1E88E5]">{d.lead || 'Unassigned'}</td>
-                        <td className="py-3 px-4 text-center text-slate-500">{users.filter(u => (u.department || u.dept || '').toLowerCase() === d.name.toLowerCase()).length}</td>
-                        <td className="py-3 px-4 text-center">
+                      <tr key={d.id} className="border-b border-slate-100 hover:bg-slate-50/50 font-semibold">
+                        <td className="py-3 text-[#0B2545] font-black">{d.name}</td>
+                        <td className="py-3 text-[#1E88E5]">{d.lead || 'Unassigned'}</td>
+                        <td className="py-3 text-center text-slate-500">{d.staffCount || 0}</td>
+                        <td className="py-3 text-center">
                           <button
                             onClick={() => handleToggleStatus('departments', d)}
                             className={`px-2 py-0.5 rounded-full text-[9px] font-black border cursor-pointer transition ${
@@ -945,7 +989,7 @@ function CompanyOverview() {
                             {d.status || 'Active'}
                           </button>
                         </td>
-                        <td className="py-3 px-4 text-right space-x-1.5">
+                        <td className="py-3 text-right space-x-1.5">
                           <button
                             onClick={() => handleOpenEdit('departments', d)}
                             className="p-1 rounded bg-slate-50 border border-slate-200 text-slate-500 hover:text-[#1E88E5] transition cursor-pointer"
@@ -987,22 +1031,22 @@ function CompanyOverview() {
                 No designations matches setup query.
               </div>
             ) : (
-              <div className="overflow-x-auto w-full border border-slate-300 rounded-2xl bg-white shadow-xs">
-                <table className="w-full min-w-[700px] text-left text-xs border-collapse whitespace-nowrap">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-100 border-b border-slate-300 text-slate-500 uppercase tracking-wider text-[9px] font-black">
-                      <th className="py-3 px-4 font-bold">Designation Title</th>
-                      <th className="py-3 px-4 font-bold">Standard Role ID</th>
-                      <th className="py-3 px-4 font-bold text-center">Status</th>
-                      <th className="py-3 px-4 font-bold text-right">Actions</th>
+                    <tr className="border-b border-slate-200 text-slate-500">
+                      <th className="py-2.5 font-bold">Designation Title</th>
+                      <th className="py-2.5 font-bold">Standard Role ID</th>
+                      <th className="py-2.5 font-bold text-center">Status</th>
+                      <th className="py-2.5 font-bold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredList.map((des) => (
-                      <tr key={des.id} className="border-b border-slate-200 hover:bg-slate-50/70 font-semibold bg-white">
-                        <td className="py-3 px-4 text-[#0B2545] font-black">{des.name}</td>
-                        <td className="py-3 px-4 text-slate-500 font-mono">{des.id}</td>
-                        <td className="py-3 px-4 text-center">
+                      <tr key={des.id} className="border-b border-slate-100 hover:bg-slate-50/50 font-semibold">
+                        <td className="py-3 text-[#0B2545] font-black">{des.name}</td>
+                        <td className="py-3 text-slate-500 font-mono">{des.id}</td>
+                        <td className="py-3 text-center">
                           <button
                             onClick={() => handleToggleStatus('designations', des)}
                             className={`px-2 py-0.5 rounded-full text-[9px] font-black border cursor-pointer transition ${
@@ -1012,7 +1056,7 @@ function CompanyOverview() {
                             {des.status || 'Active'}
                           </button>
                         </td>
-                        <td className="py-3 px-4 text-right space-x-1.5">
+                        <td className="py-3 text-right space-x-1.5">
                           <button
                             onClick={() => handleOpenEdit('designations', des)}
                             className="p-1 rounded bg-slate-50 border border-slate-200 text-slate-500 hover:text-[#1E88E5] transition cursor-pointer"
@@ -1054,29 +1098,29 @@ function CompanyOverview() {
                 No items defined in catalog list.
               </div>
             ) : (
-              <div className="overflow-x-auto w-full border border-slate-300 rounded-2xl bg-white shadow-xs">
-                <table className="w-full min-w-[700px] text-left text-xs border-collapse whitespace-nowrap">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-100 border-b border-slate-300 text-slate-500 uppercase tracking-wider text-[9px] font-black">
-                      <th className="py-3 px-4 font-bold">Item Name</th>
-                      <th className="py-3 px-4 font-bold">Fee / Pricing</th>
-                      <th className="py-3 px-4 font-bold">Classification</th>
-                      <th className="py-3 px-4 font-bold">Assigned Offices</th>
-                      <th className="py-3 px-4 font-bold text-center">Status</th>
-                      <th className="py-3 px-4 font-bold text-right">Actions</th>
+                    <tr className="border-b border-slate-200 text-slate-500">
+                      <th className="py-2.5 font-bold">Item Name</th>
+                      <th className="py-2.5 font-bold">Fee / Pricing</th>
+                      <th className="py-2.5 font-bold">Classification</th>
+                      <th className="py-2.5 font-bold">Assigned Offices</th>
+                      <th className="py-2.5 font-bold text-center">Status</th>
+                      <th className="py-2.5 font-bold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredList.map((p) => (
-                      <tr key={p.id} className="border-b border-slate-200 hover:bg-slate-50/70 font-semibold bg-white">
-                        <td className="py-3 px-4 text-[#0B2545] font-black">{p.name}</td>
-                        <td className="py-3 px-4 text-[#1E88E5] font-extrabold">{p.price || '₹0'}</td>
-                        <td className="py-3 px-4">
+                      <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50/50 font-semibold">
+                        <td className="py-3 text-[#0B2545] font-black">{p.name}</td>
+                        <td className="py-3 text-[#1E88E5] font-extrabold">{p.price || '₹0'}</td>
+                        <td className="py-3">
                           <span className="inline-flex items-center rounded-md bg-[#D4ECFC]/40 px-2 py-0.5 text-[9px] font-bold text-[#0B2545] border border-[#64B5F6]/25">
                             {p.product_type || 'Product'}
                           </span>
                         </td>
-                        <td className="py-3 px-4">
+                        <td className="py-3">
                           <div className="flex flex-wrap gap-1 max-w-[200px]">
                             {p.branches && p.branches.length > 0 ? (
                               p.branches.map(brId => {
@@ -1092,7 +1136,7 @@ function CompanyOverview() {
                             )}
                           </div>
                         </td>
-                        <td className="py-3 px-4 text-center">
+                        <td className="py-3 text-center">
                           <button
                             onClick={() => handleToggleStatus('products', p)}
                             className={`px-2 py-0.5 rounded-full text-[9px] font-black border cursor-pointer transition ${
@@ -1102,7 +1146,7 @@ function CompanyOverview() {
                             {p.status || 'Active'}
                           </button>
                         </td>
-                        <td className="py-3 px-4 text-right space-x-1.5">
+                        <td className="py-3 text-right space-x-1.5">
                           <button
                             onClick={() => handleOpenEdit('products', p)}
                             className="p-1 rounded bg-slate-50 border border-slate-200 text-slate-500 hover:text-[#1E88E5] transition cursor-pointer"
@@ -1144,22 +1188,22 @@ function CompanyOverview() {
                 No custom lead sources defined.
               </div>
             ) : (
-              <div className="overflow-x-auto w-full border border-slate-300 rounded-2xl bg-white shadow-xs">
-                <table className="w-full min-w-[700px] text-left text-xs border-collapse whitespace-nowrap">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-100 border-b border-slate-300 text-slate-500 uppercase tracking-wider text-[9px] font-black">
-                      <th className="py-3 px-4 font-bold">Source Title</th>
-                      <th className="py-3 px-4 font-bold">Standard ID</th>
-                      <th className="py-3 px-4 font-bold text-center">Status</th>
-                      <th className="py-3 px-4 font-bold text-right">Actions</th>
+                    <tr className="border-b border-slate-200 text-slate-500">
+                      <th className="py-2.5 font-bold">Source Title</th>
+                      <th className="py-2.5 font-bold">Standard ID</th>
+                      <th className="py-2.5 font-bold text-center">Status</th>
+                      <th className="py-2.5 font-bold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredList.map((src) => (
-                      <tr key={src.id} className="border-b border-slate-200 hover:bg-slate-50/70 font-semibold bg-white">
-                        <td className="py-3 px-4 text-[#0B2545] font-black">{src.name}</td>
-                        <td className="py-3 px-4 text-slate-500 font-mono">{src.id}</td>
-                        <td className="py-3 px-4 text-center">
+                      <tr key={src.id} className="border-b border-slate-100 hover:bg-slate-50/50 font-semibold">
+                        <td className="py-3 text-[#0B2545] font-black">{src.name}</td>
+                        <td className="py-3 text-slate-500 font-mono">{src.id}</td>
+                        <td className="py-3 text-center">
                           <button
                             onClick={() => handleToggleStatus('lead_sources', src)}
                             className={`px-2 py-0.5 rounded-full text-[9px] font-black border cursor-pointer transition ${
@@ -1169,7 +1213,7 @@ function CompanyOverview() {
                             {src.status || 'Active'}
                           </button>
                         </td>
-                        <td className="py-3 px-4 text-right space-x-1.5">
+                        <td className="py-3 text-right space-x-1.5">
                           <button
                             onClick={() => handleOpenEdit('lead_sources', src)}
                             className="p-1 rounded bg-slate-50 border border-slate-200 text-slate-500 hover:text-[#1E88E5] transition cursor-pointer"
@@ -1211,22 +1255,22 @@ function CompanyOverview() {
                 No categories defined.
               </div>
             ) : (
-              <div className="overflow-x-auto w-full border border-slate-300 rounded-2xl bg-white shadow-xs">
-                <table className="w-full min-w-[700px] text-left text-xs border-collapse whitespace-nowrap">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-100 border-b border-slate-300 text-slate-500 uppercase tracking-wider text-[9px] font-black">
-                      <th className="py-3 px-4 font-bold">Category Title</th>
-                      <th className="py-3 px-4 font-bold">Standard ID</th>
-                      <th className="py-3 px-4 font-bold text-center">Status</th>
-                      <th className="py-3 px-4 font-bold text-right">Actions</th>
+                    <tr className="border-b border-slate-200 text-slate-500">
+                      <th className="py-2.5 font-bold">Category Title</th>
+                      <th className="py-2.5 font-bold">Standard ID</th>
+                      <th className="py-2.5 font-bold text-center">Status</th>
+                      <th className="py-2.5 font-bold text-right">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredList.map((cat) => (
-                      <tr key={cat.id} className="border-b border-slate-200 hover:bg-slate-50/70 font-semibold bg-white">
-                        <td className="py-3 px-4 text-[#0B2545] font-black">{cat.name}</td>
-                        <td className="py-3 px-4 text-slate-500 font-mono">{cat.id}</td>
-                        <td className="py-3 px-4 text-center">
+                      <tr key={cat.id} className="border-b border-slate-100 hover:bg-slate-50/50 font-semibold">
+                        <td className="py-3 text-[#0B2545] font-black">{cat.name}</td>
+                        <td className="py-3 text-slate-500 font-mono">{cat.id}</td>
+                        <td className="py-3 text-center">
                           <button
                             onClick={() => handleToggleStatus('customer_categories', cat)}
                             className={`px-2 py-0.5 rounded-full text-[9px] font-black border cursor-pointer transition ${
@@ -1236,7 +1280,7 @@ function CompanyOverview() {
                             {cat.status || 'Active'}
                           </button>
                         </td>
-                        <td className="py-3 px-4 text-right space-x-1.5">
+                        <td className="py-3 text-right space-x-1.5">
                           <button
                             onClick={() => handleOpenEdit('customer_categories', cat)}
                             className="p-1 rounded bg-slate-50 border border-slate-200 text-slate-500 hover:text-[#1E88E5] transition cursor-pointer"

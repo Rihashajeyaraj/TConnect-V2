@@ -13,7 +13,7 @@ import { useToast } from '../../common/ToastContext.jsx'
 function Leads() {
   const { showToast } = useToast()
   const [leads, setLeads] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('All') // 'All', 'Hot', 'Warm', 'Cold', 'Not Assigned'
   const [searchQuery, setSearchQuery] = useState('')
@@ -262,7 +262,7 @@ function Leads() {
                             />
                           </td>
                           <td className="px-6 py-4 text-slate-500 font-semibold">
-                            {formatDateString(lead.date || lead.created_at)}
+                            {formatDate(lead.date || lead.created_at)}
                           </td>
                           <td className="px-6 py-4 text-[#3a7d63] font-black">
                             {lead.sales_manager || lead.manager_name || 'Direct/Unassigned'}

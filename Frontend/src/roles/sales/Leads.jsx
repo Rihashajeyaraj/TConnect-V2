@@ -3341,10 +3341,11 @@ export default function Leads(props) {
                 <div>
                   <label className="block text-slate-700 font-extrabold mb-1">Phone Number</label>
                   <input
-                    type="text"
-                    placeholder="+91 98765 43210"
+                    type="tel"
+                    maxLength={10}
+                    placeholder="10-digit number e.g. 9876543210"
                     value={oppForm.phone}
-                    onChange={(e) => setOppForm({ ...oppForm, phone: e.target.value })}
+                    onChange={(e) => setOppForm({ ...oppForm, phone: normalizePhoneNumber(e.target.value) })}
                     className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500"
                   />
                 </div>

@@ -140,12 +140,16 @@ export default function Dashboard() {
 
   // ── Helper to read cache ──────────────────────────────────────────────────────
   const getCachedValue = (key, fallback) => {
-    if (!userEmail) return fallback;
     try {
-      const cached = localStorage.getItem(`tc_se_dashboard_cache_${userEmail}`);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        return parsed[key] !== undefined ? parsed[key] : fallback;
+      const stored = getStoredUser();
+      const email = (stored?.email || currentUser?.email || "").toLowerCase().trim();
+      const keysToTry = email ? [`tc_se_dashboard_cache_${email}`, "tc_se_dashboard_cache"] : ["tc_se_dashboard_cache"];
+      for (let k of keysToTry) {
+        const cached = localStorage.getItem(k);
+        if (cached) {
+          const parsed = JSON.parse(cached);
+          if (parsed && parsed[key] !== undefined) return parsed[key];
+        }
       }
     } catch (e) {}
     return fallback;
@@ -155,7 +159,7 @@ export default function Dashboard() {
   const [kpis, setKpis] = useState(() => getCachedValue("kpis", null));
   const [todos, setTodos] = useState([]);
   const [notifications, setNotifications] = useState([]);
-  const [loading, setLoading] = useState(() => !getCachedValue("kpis", null));
+  const [loading, setLoading] = useState(false); // Instant cached render without blocking UI
   const [todoLoading, setTodoLoading] = useState(false);
   const [newTodo, setNewTodo] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(() => localStorage.getItem("tc_dashboard_date_filter") || "Today");

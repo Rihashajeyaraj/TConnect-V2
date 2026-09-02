@@ -147,23 +147,31 @@ class UserRepository:
             emp_id = str(emp.get("employee_id") or emp.get("id") or f"usr_{uuid.uuid4()}")
             mgr_id, mgr_name, mgr_email = resolve_manager(emp)
             
-            db_users.append({
+            u_dict = {
                 "id": emp_id,
-                "auth_user_id": str(emp.get("user_id") or emp_id),
+                "auth_user_id": str(emp.get("user_id") or emp.get("auth_user_id") or emp_id),
                 "employee_id": emp_id,
                 "employee_code": emp.get("employee_code") or "N/A",
+                "first_name": emp.get("first_name") or "",
+                "last_name": emp.get("last_name") or "",
                 "name": emp.get("name") or f"{emp.get('first_name', '')} {emp.get('last_name', '')}".strip() or "User Account",
                 "email": emp.get("email", "user@tconnect.com"),
                 "phone": emp.get("phone") or emp.get("mobile", "+91 99999 00000"),
                 "role": emp.get("role") or emp.get("designation", "Sales Executive"),
                 "dept": emp.get("dept") or emp.get("department", "Sales & Business Development"),
+                "department": emp.get("department") or emp.get("dept", "Sales & Business Development"),
+                "designation": emp.get("designation") or emp.get("role", "Sales Executive"),
                 "status": emp.get("status", "Active"),
                 "lastLogin": "Recently",
                 "accessPassword": emp.get("accessPassword") or emp.get("password", "TConnect2026#"),
                 "reporting_manager_id": mgr_id,
                 "reporting_manager_name": mgr_name,
                 "reporting_manager_email": mgr_email,
-            })
+            }
+            for k, v in emp.items():
+                if k not in u_dict or u_dict[k] is None:
+                    u_dict[k] = v
+            db_users.append(u_dict)
 
         # 4. Load from Supabase Auth and merge
         auth_users_list = []
@@ -374,6 +382,15 @@ class UserRepository:
 
     def update_user(self, user_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         _clear_users_cache()
+
+        # Remove password and accessPassword from updates if empty/None so existing employee password is NEVER overwritten!
+        clean_updates = {k: v for k, v in updates.items() if v is not None}
+        if "password" in clean_updates and not str(clean_updates["password"]).strip():
+            del clean_updates["password"]
+        if "accessPassword" in clean_updates and not str(clean_updates["accessPassword"]).strip():
+            del clean_updates["accessPassword"]
+
+        updates = clean_updates
         target = None
         for idx, u in enumerate(_in_memory_users):
             if u["id"] == user_id or u.get("email") == updates.get("email"):
@@ -476,14 +493,20 @@ class UserRepository:
             db_updates["reporting_manager_name"] = mgr_name_val if ("reporting_manager_id" in updates and updates.get("reporting_manager_id")) else updates.get("reporting_manager_name")
         if "reporting_manager_email" in updates or mgr_email_val is not None:
             db_updates["reporting_manager_email"] = mgr_email_val if ("reporting_manager_id" in updates and updates.get("reporting_manager_id")) else updates.get("reporting_manager_email")
-        if "annual_leaves" in updates:
-            db_updates["annual_leaves"] = updates["annual_leaves"]
-        if "half_day_permissions" in updates:
-            db_updates["half_day_permissions"] = updates["half_day_permissions"]
-        if "short_permissions" in updates:
-            db_updates["short_permissions"] = updates["short_permissions"]
-        if "incentive_percentage" in updates:
-            db_updates["incentive_percentage"] = updates["incentive_percentage"]
+        profile_fields = [
+            "first_name", "last_name", "name", "email", "phone", "mobile", "role", "designation",
+            "dept", "department", "status", "gender", "date_of_birth", "joining_date",
+            "employment_type", "work_mode", "work_location", "marital_status", "blood_group",
+            "pan_id", "personal_email", "alternate_contact", "current_address", "permanent_address",
+            "city", "state", "country", "postal_code", "primary_skills", "secondary_skills",
+            "tools", "emergency_name", "emergency_relationship", "emergency_contact",
+            "account_holder", "bank_name", "account_number", "ifsc", "branch", "profile_photo",
+            "annual_leaves", "sick_leaves", "other_leaves", "half_day_permissions", "short_permissions",
+            "incentive_percentage", "employee_code"
+        ]
+        for field in profile_fields:
+            if field in updates and updates[field] is not None:
+                db_updates[field] = updates[field]
 
         print("[REPORTING MANAGER]")
         print(f"employee_id: {user_id}")

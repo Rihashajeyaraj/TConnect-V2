@@ -16,7 +16,7 @@ import {
   RefreshCw
 } from "lucide-react";
 import { useToast } from "../../common/ToastContext.jsx";
-import { attendanceAPI, spatialAPI, crmAPI, customerAPI, settingsAPI } from "../../services/api.js";
+import { attendanceAPI, spatialAPI, crmAPI, customerAPI, settingsAPI, notificationAPI } from "../../services/api.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { exportToExcel, exportToCSV } from "../../utils/exportUtils.js";
 import { FaceLivenessEngine, LIVENESS_CHALLENGES } from "./FaceLivenessEngine.js";
@@ -72,7 +72,6 @@ export default function Attendance(props) {
   const userEmail = (currentUser.email || "executive@tconnect.com").toLowerCase().trim();
   const userName = currentUser.name || currentUser.full_name || "Sales Executive";
   const userEmpCode = currentUser.employee_code || currentUser.employee_id || "EMP000012";
-  const isAdmin = currentUser?.role?.toLowerCase().includes("admin") || currentUser?.designation?.toLowerCase().includes("admin");
 
   // States
   const [isEnrolled, setIsEnrolled] = useState(true);
@@ -80,7 +79,7 @@ export default function Attendance(props) {
   const [workMode, setWorkMode] = useState("office"); // office, client
   const [punchRemarks, setPunchRemarks] = useState("");
   const [isSaving, setIsSaving] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   // Client Visit destination selection state
   const [assignedClients, setAssignedClients] = useState([]);
@@ -734,7 +733,14 @@ export default function Attendance(props) {
         window.dispatchEvent(new CustomEvent("tc:attendance-sync"));
       } catch { /* non-critical */ }
 
-      // Async refresh from backend (non-blocking)
+      // Send notification to Manager
+      notificationAPI.sendNotification({
+        title: "🟢 Executive Online",
+        message: `${matchedEmployeeName || userName} is now online and checked in (${workMode === "client" ? `Client Visit to ${selectedClient?.title || 'client'}` : 'Office Mode'}).`,
+        category: "ATTENDANCE",
+        type: "ATTENDANCE",
+        recipient_role: "manager"
+      }).catch(() => null);
       loadAttendanceLogs();
       window.dispatchEvent(new CustomEvent("tc:attendance-marked"));
 
@@ -792,6 +798,15 @@ export default function Attendance(props) {
     activeSessionRef.current = null;
     localStorage.removeItem('tc_tracking_session');
     setTrackingStatus('idle');
+
+    // Send notification to Manager
+    notificationAPI.sendNotification({
+      title: "⬛ Executive Ended Session",
+      message: `${userName} has ended their tracking session and checked out.`,
+      category: "TRACKING",
+      type: "TRACKING",
+      recipient_role: "manager"
+    }).catch(() => null);
 
     // Trigger cleanup in parent wrapper (SalesLayout.jsx)
     window.dispatchEvent(new CustomEvent("tc:stop-tracking"));
@@ -993,29 +1008,79 @@ export default function Attendance(props) {
   }, [selectedLogForMap, googleMapsLoaded]);
 
   return (
-    <div className={isModalView ? "w-full text-slate-800 font-sans space-y-4" : "min-h-screen w-full bg-slate-50 text-slate-800 font-sans p-3 sm:p-4 md:p-6 lg:p-8 space-y-4 sm:space-y-6"}>
+    <div className={isModalView ? "w-full text-slate-800 font-sans space-y-4" : "min-h-screen w-full bg-slate-50 text-slate-800 font-sans p-4 sm:p-6 lg:p-8 space-y-6"}>
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Header Navigation */}
-      {!isModalView && (
-        <div className="flex flex-wrap items-center justify-between bg-white px-3 sm:px-6 py-2.5 sm:py-4 rounded-2xl border border-slate-200/80 shadow-xs gap-3">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            {!isModalView && (
-              <button
-                onClick={() => navigate(-1)}
-                className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-650 flex items-center justify-center transition cursor-pointer shrink-0"
-              >
-                <ChevronLeft size={16} />
-              </button>
-            )}
-            <div className="min-w-0">
-              <h1 className="text-xs sm:text-base font-black text-slate-900 flex items-center gap-1.5 sm:gap-2 truncate">
-                <ShieldCheck className="text-emerald-600 w-4 h-4 sm:w-5 sm:h-5 shrink-0" /> <span className="truncate">Attendance Portal</span>
-              </h1>
-              <p className="text-[10px] sm:text-[11px] text-slate-500 font-bold truncate">{userName} ({userEmpCode})</p>
-            </div>
+      <div className="flex flex-wrap items-center justify-between bg-white px-6 py-4 rounded-2xl border border-slate-200/80 shadow-xs gap-3">
+        <div className="flex items-center gap-3">
+          {!isModalView && (
+            <button
+              onClick={() => navigate(-1)}
+              className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-650 flex items-center justify-center transition cursor-pointer"
+            >
+              <ChevronLeft size={18} />
+            </button>
+          )}
+          <div>
+            <h1 className="text-base font-black text-slate-900 flex items-center gap-2">
+              <ShieldCheck className="text-emerald-600 w-5 h-5" /> Attendance Portal
+            </h1>
+            <p className="text-[11px] text-slate-500 font-bold">{userName} ({userEmpCode})</p>
           </div>
+        </div>
 
+        <div className="flex items-center gap-2 bg-slate-100 p-0.5 rounded-xl">
+          <button
+            onClick={() => setActiveTab("punch")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === "punch" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            📹 Check In/Out
+          </button>
+          <button
+            onClick={() => setActiveTab("report")}
+            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+              activeTab === "report" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
+            }`}
+          >
+            📊 Logs History
+          </button>
+        </div>
+      </div>
+
+      {activeTab === "punch" ? (
+        <div className="max-w-4xl mx-auto bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-md space-y-6">
+          {/* Header section (Title & Location) */}
+          <div className="text-center border-b border-slate-100 pb-4">
+            <h2 className="text-lg font-black text-slate-900">My Attendance</h2>
+            <div className="mt-2 flex items-center justify-center gap-2">
+              {locationError ? (
+                <span className="text-xs text-rose-600 font-bold bg-rose-50 border border-rose-200 px-3 py-1 rounded-full">
+                  ⚠️ {locationError}
+                </span>
+              ) : (
+                <div className="inline-flex items-center gap-2 bg-slate-50 border border-slate-200/80 px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-700 max-w-2xl">
+                  <span className="text-emerald-600">📍</span>
+                  <span className="truncate">{currentLocation}</span>
+                  {gpsAccuracy && (
+                    <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                      ±{gpsAccuracy}m
+                    </span>
+                  )}
+                </div>
+              )}
+              <button
+                type="button"
+                onClick={captureLocation}
+                disabled={loadingLocation}
+                title="Refresh Live Location"
+                className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition cursor-pointer disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={loadingLocation ? "animate-spin text-emerald-600" : ""} />
+              </button>
+            </div>
           <div className="flex items-center gap-1.5 bg-slate-100 p-0.5 rounded-xl shrink-0">
             <button
               onClick={() => setActiveTab("punch")}
@@ -1035,10 +1100,6 @@ export default function Attendance(props) {
             </button>
           </div>
         </div>
-      )}
-
-      {activeTab === "punch" ? (
-        <div className="max-w-sm mx-auto bg-white rounded-3xl shadow-xl overflow-hidden" style={{fontFamily: "'Inter', 'Segoe UI', sans-serif"}}>
 
           {/* ── Title + Location header ── */}
           <div className="pt-6 pb-3 px-6 text-center border-b border-slate-100">
@@ -1302,72 +1363,264 @@ export default function Attendance(props) {
             </div>
           )}
 
-          {/* ── Start Camera button ── */}
-          <div className="px-5 mt-3">
-            <button
-              type="button"
-              onClick={() => {
-                setIsCameraActive(false);
-                setMatchStatus("PENDING");
-                setTimeout(() => {
-                  setIsCameraActive(true);
-                  startLivenessScan();
-                }, 100);
-              }}
-              disabled={!isEnrolled}
-              className="w-full py-2.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-[12px] font-semibold text-slate-700 transition flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <span>🎥</span> Start Camera
-            </button>
-          </div>
-
-          {/* ── Remark input ── */}
-          {!isAdmin && (
-            <div className="px-5 mt-3">
-              <input
-                type="text"
-                value={punchRemarks}
-                onChange={(e) => setPunchRemarks(e.target.value)}
-                placeholder={workMode === "office" ? "Add a remark (optional)" : "Enter visit remarks / notes"}
-                className="w-full text-[12px] font-medium px-4 py-3 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-400 focus:bg-white transition text-slate-800 placeholder-slate-400"
-              />
+          {!isEnrolled && (
+            <div className="bg-amber-50 border border-amber-250 p-4 rounded-2xl text-xs font-bold text-amber-900 space-y-1.5 select-none text-left">
+              <div className="flex items-center gap-2 text-amber-700">
+                <AlertCircle size={16} />
+                <span>Biometric Face Profile Missing</span>
+              </div>
+              <p className="font-semibold text-amber-800 leading-relaxed">
+                Your face biometrics are not registered yet. Please contact your System Administrator to enroll your face in the Admin Portal. Face recognition is required for Login and Logout.
+              </p>
             </div>
           )}
 
-          {/* ── LOGIN / LOGOUT buttons ── */}
-          <div className="px-5 mt-4 pb-1 grid grid-cols-2 gap-3">
-            <button
-              id="attendance-login-btn"
-              onClick={handleClockInSubmit}
-              disabled={isSaving}
-              className="py-3.5 rounded-full text-[13px] font-black tracking-widest uppercase text-white transition-all duration-200 bg-gradient-to-r from-emerald-400 to-teal-500 hover:from-emerald-500 hover:to-teal-600 shadow-md active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              {isSaving ? "..." : "LOGIN"}
-            </button>
-            <button
-              id="attendance-logout-btn"
-              onClick={handleClockOutSubmit}
-              disabled={isSaving}
-              className="py-3.5 rounded-full text-[13px] font-black tracking-widest uppercase text-white transition-all duration-200 bg-gradient-to-r from-pink-400 to-rose-500 hover:from-pink-500 hover:to-rose-600 shadow-md active:scale-95 disabled:opacity-70 disabled:cursor-not-allowed"
-            >
-              {isSaving ? "..." : "LOGOUT"}
-            </button>
-          </div>
+          {/* 2-Column Grid Layout: Camera (Left) and Controls (Right) */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+            
+            {/* Left Column: Camera and Face Guide */}
+            <div className="space-y-4">
+              {/* Camera Section */}
+              <div className="relative w-full aspect-[4/3] rounded-2xl bg-slate-950 overflow-hidden shadow-inner border border-slate-200 flex items-center justify-center">
+                {isCameraActive ? (
+                  <>
+                    <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
+                    
+                    {/* Face Guide oval frame */}
+                    <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
+                      <div className={`w-[180px] h-[240px] sm:w-[200px] sm:h-[260px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
+                        isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
+                      }`} />
+                    </div>
+                  </>
+                ) : (
+                  <div className="flex flex-col items-center gap-2 text-slate-500 font-semibold text-xs py-12">
+                    <VideoOff size={32} />
+                    <span>{isEnrolled ? "Camera is Off" : "🔒 Biometrics Required"}</span>
+                  </div>
+                )}
+              </div>
 
-          {/* ── Status line ── */}
-          <div className="px-5 pb-6 mt-3 text-center">
-            {(checkedInSuccessfully || checkedOutSuccessfully) ? (
-              <p className="text-[12px] font-bold text-emerald-600">
-                ✓ {checkedInSuccessfully ? "Login marked successfully!" : "Logout marked successfully!"}
-              </p>
-            ) : (
-              <p className="text-[12px] font-semibold text-slate-500">
-                Status: {matchStatus === "MATCHED" ? "Face verified — ready to mark" : matchStatus === "FALLBACK" ? "Identity fallback — ready to mark" : matchStatus === "FAILED" ? "Face not recognized. Retry." : "Ready to mark attendance"}
-              </p>
-            )}
+              {/* Face Guide / Status Feedback */}
+              <div className="text-center py-2 bg-slate-50 rounded-xl border border-slate-100">
+                {matchStatus === "MATCHED" ? (
+                  <div className="text-emerald-600 font-black text-xs flex items-center justify-center gap-1">
+                    <CheckCircle2 size={14} /> Face verified ✓
+                  </div>
+                ) : matchStatus === "FALLBACK" ? (
+                  <div className="space-y-1">
+                    <div className="text-amber-600 font-black text-xs flex items-center justify-center gap-1">
+                      <AlertCircle size={13} /> Biometric Unavailable
+                    </div>
+                    <div className="text-[10px] text-slate-500 font-bold">Using identity fallback — proceed with Login</div>
+                  </div>
+                ) : matchStatus === "FAILED" ? (
+                  <div className="text-rose-600 font-black text-xs flex items-center justify-center gap-1">
+                    <AlertCircle size={13} /> Face not recognized. Retry.
+                  </div>
+                ) : livenessStatus === "VERIFYING" && isFaceAligned ? (
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-center gap-1.5 text-xs text-slate-700 font-bold select-none">
+                      <span>Blink Progress:</span>
+                      <span className="text-sm font-black">
+                        {blinkCount === 0 && "○ ○"}
+                        {blinkCount === 1 && "● ○"}
+                        {blinkCount >= 2 && "● ●"}
+                      </span>
+                    </div>
+                    <div className="text-[10px] text-slate-550 font-bold">Blink naturally</div>
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-slate-455 font-bold">
+                    Position your face inside the oval guide
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Controls, Remarks, Punch button, Status */}
+            <div className="space-y-5">
+              {/* Work Mode Selection */}
+              <div className="space-y-2">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                  Where are you working today?
+                </label>
+                <div className="grid grid-cols-2 gap-3.5">
+                  <button
+                    onClick={() => setWorkMode("office")}
+                    className={`py-2 px-4 rounded-xl border text-xs font-extrabold transition cursor-pointer select-none ${
+                      workMode === "office"
+                        ? "border-emerald-600 bg-emerald-50/20 text-emerald-700 font-black"
+                        : "border-slate-200 hover:bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    Office
+                  </button>
+                  <button
+                    onClick={() => setWorkMode("client")}
+                    className={`py-2 px-4 rounded-xl border text-xs font-extrabold transition cursor-pointer select-none ${
+                      workMode === "client"
+                        ? "border-emerald-600 bg-emerald-50/20 text-emerald-700 font-black"
+                        : "border-slate-200 hover:bg-slate-50 text-slate-600"
+                    }`}
+                  >
+                    Client Visit
+                  </button>
+                </div>
+              </div>
+
+              {/* Start Camera button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setIsCameraActive(false);
+                  setTimeout(() => {
+                    setIsCameraActive(true);
+                    startLivenessScan();
+                  }, 100);
+                }}
+                disabled={!isEnrolled}
+                className="w-full py-2.5 px-4 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-xs font-black text-slate-700 transition cursor-pointer flex items-center justify-center gap-1.5 shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isEnrolled ? "📹 Start Camera" : "🔒 Biometrics Required"}
+              </button>
+
+              {/* Destination Dropdown for Client Visit */}
+              {workMode === "client" && (
+                <div className="space-y-1.5 animate-in fade-in slide-in-from-top-2 duration-200">
+                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
+                    Target Client Destination (Required)
+                  </label>
+                  {loadingClients ? (
+                    <div className="text-xs text-slate-500 font-bold p-2 bg-slate-100 rounded-xl text-center">
+                      Loading assigned clients...
+                    </div>
+                  ) : assignedClients.length === 0 ? (
+                    <div className="text-xs text-rose-600 font-bold p-3 bg-rose-50 border border-rose-100 rounded-xl text-center">
+                      No Leads or Customers are assigned to you.
+                    </div>
+                  ) : (
+                    <>
+                      <select
+                        value={selectedClient ? selectedClient.id : ""}
+                        onChange={async (e) => {
+                          const client = assignedClients.find(c => c.id === e.target.value);
+                          if (client) {
+                            if (client.latitude == null || client.longitude == null) {
+                              showToast("🔄 Fetching client coordinates from address...", "info");
+                              const coords = await geocodeAddress(client.address);
+                              if (coords) {
+                                client.latitude = coords.latitude;
+                                client.longitude = coords.longitude;
+                                try {
+                                  if (client.category === 'Lead') {
+                                    await crmAPI.updateLead(client.id, { latitude: coords.latitude, longitude: coords.longitude });
+                                  } else if (client.category === 'Customer') {
+                                    await customerAPI.updateCustomer(client.id, { latitude: coords.latitude, longitude: coords.longitude });
+                                  }
+                                  showToast("📍 Client coordinates updated and saved successfully!", "success");
+                                } catch (dbErr) {
+                                  console.warn("Failed to persist coordinates to database:", dbErr);
+                                  showToast("📍 Client coordinates updated locally (failed to save to database).", "warning");
+                                }
+                              } else {
+                                showToast("⚠️ Could not resolve client address to coordinates.", "warning");
+                              }
+                            }
+                            setSelectedClient({ ...client });
+                          } else {
+                            setSelectedClient(null);
+                          }
+                        }}
+                        className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-500 focus:bg-white transition text-slate-900 cursor-pointer"
+                      >
+                        <option value="">-- Select Client (Lead or Customer) --</option>
+                        {assignedClients.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            [{c.category}] {c.title} {c.company_name !== c.title ? `(${c.company_name})` : ''}
+                          </option>
+                        ))}
+                      </select>
+                      {selectedClient && (
+                        <div className="text-[10px] font-bold px-1 select-none">
+                          {selectedClient.latitude && selectedClient.longitude ? (
+                            <span className="text-emerald-600">
+                              📍 Destination Set: {selectedClient.latitude.toFixed(4)}, {selectedClient.longitude.toFixed(4)}
+                            </span>
+                          ) : (
+                            <span className="text-amber-600 flex items-center gap-1">
+                              ⚠️ Stored GPS coordinates missing. Reverse-geocoding/address fallback will be used on map.
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {/* Remarks Field */}
+              <div className="space-y-1">
+                <input
+                  type="text"
+                  value={punchRemarks}
+                  onChange={(e) => setPunchRemarks(e.target.value)}
+                  placeholder={workMode === "office" ? "Add a remark (optional)" : "Enter visit remarks / notes"}
+                  className="w-full text-xs font-semibold px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:outline-none focus:border-emerald-500 focus:bg-white transition text-slate-900"
+                />
+              </div>
+
+              {/* Actions Panel showing both buttons */}
+              {checkedInSuccessfully ? (
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-center text-xs text-emerald-800 font-bold animate-pulse">
+                  ✓ Logged In Successfully ✓
+                </div>
+              ) : checkedOutSuccessfully ? (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-center text-xs text-rose-800 font-bold animate-pulse">
+                  ✓ Logged Out Successfully ✓
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3.5">
+                  <button
+                    onClick={handleClockInSubmit}
+                    disabled={!isEnrolled || isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
+                    className={`py-3 disabled:opacity-50 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition cursor-pointer text-center ${
+                      matchStatus === "FALLBACK"
+                        ? "bg-amber-500 hover:bg-amber-600"
+                        : "bg-emerald-600 hover:bg-emerald-700"
+                    }`}
+                  >
+                    {isSaving ? "Saving..." : "LOGIN"}
+                  </button>
+                  <button
+                    onClick={handleClockOutSubmit}
+                    disabled={!isEnrolled || isSaving || (matchStatus !== "MATCHED" && matchStatus !== "FALLBACK")}
+                    className={`py-3 disabled:opacity-50 text-white rounded-xl text-xs font-black uppercase tracking-wider shadow-md hover:shadow-lg transition cursor-pointer text-center ${
+                      matchStatus === "FALLBACK"
+                        ? "bg-amber-500 hover:bg-amber-600"
+                        : "bg-rose-600 hover:bg-rose-700"
+                    }`}
+                  >
+                    {isSaving ? "Saving..." : "LOGOUT"}
+                  </button>
+                </div>
+              )}
+
+              {/* Status Indicator */}
+              <div className="text-center text-[10px] text-slate-455 font-bold pt-2 border-t border-slate-100">
+                {todayAttendance ? (
+                  <span>
+                    Logged in today at: {todayAttendance.loginTime} 
+                    {todayAttendance.logoutTime !== "—" && ` · Checked out: ${todayAttendance.logoutTime}`}
+                  </span>
+                ) : (
+                  "Status: Ready to mark attendance"
+                )}
+              </div>
+            </div>
           </div>
         </div>
-      ) : (
+        ) : (
         /* History logs list view */
         <div className="max-w-6xl mx-auto space-y-6">
           <div className="bg-white rounded-2xl p-6 border border-slate-200/80 shadow-xs space-y-6">

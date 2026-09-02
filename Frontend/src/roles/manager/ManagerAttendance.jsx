@@ -52,7 +52,7 @@ export default function ManagerAttendance() {
 
   const [assignedExecutives, setAssignedExecutives] = useState([])
   const [attendanceLogs, setAttendanceLogs] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
 
   const loadData = async () => {
     try {

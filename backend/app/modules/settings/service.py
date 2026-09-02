@@ -34,3 +34,7 @@ class SettingsService:
 
     def delete_product(self, product_id: str) -> None:
         self.repo.delete_product(product_id)
+
+    def delete_role(self, role_id: str) -> None:
+        self.repo.delete_role(role_id)
+

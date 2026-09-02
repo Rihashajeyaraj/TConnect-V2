@@ -34,8 +34,11 @@ import {
 } from 'lucide-react'
 import { hrmsAPI, reportAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
+import { formatDate } from '../../utils/dateUtils.js'
 
 const DEFAULT_EOD_REPORTS = []
+
+import EmployeeProfileModal from '../../common/EmployeeProfileModal.jsx'
 
 const getStoredUser = () => {
   try {
@@ -49,6 +52,9 @@ export default function ManagerTeam() {
 
   // View Mode State: 'table' (default) or 'cards'
   const [viewMode, setViewMode] = useState('table')
+
+  // Employee Profile Card Modal State
+  const [viewingEmpProfile, setViewingEmpProfile] = useState(null)
 
   // Search & Filter State
   const [search, setSearch] = useState('')
@@ -99,7 +105,7 @@ export default function ManagerTeam() {
       return cached ? JSON.parse(cached) : []
     } catch { return [] }
   })
-  const [attendanceSearch, setAttendanceSearch] = useState('')
+  const [attendanceExecutiveFilter, setAttendanceExecutiveFilter] = useState('All')
   const [attendanceTypeFilter, setAttendanceTypeFilter] = useState('All')
 
   const teamLogs = React.useMemo(() => {
@@ -145,16 +151,48 @@ export default function ManagerTeam() {
   const filteredTeamLogs = React.useMemo(() => {
     return teamLogs.filter(log => {
       const matchesType = attendanceTypeFilter === 'All' || log.attendanceType === attendanceTypeFilter;
-      const matchesSearch = attendanceSearch ? (
-        log.employeeName.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
-        log.employeeCode.toLowerCase().includes(attendanceSearch.toLowerCase()) ||
-        (log.check_in_address || log.loginLocation || '').toLowerCase().includes(attendanceSearch.toLowerCase())
-      ) : true;
-      return matchesType && matchesSearch;
+      let matchesExec = true;
+      if (attendanceExecutiveFilter !== 'All') {
+        const target = attendanceExecutiveFilter.toLowerCase().trim();
+        const empName = String(log.employeeName || '').toLowerCase();
+        const empCode = String(log.employeeCode || '').toLowerCase();
+        matchesExec = empName.includes(target) || target.includes(empName) || empCode === target;
+      }
+      return matchesType && matchesExec;
     });
-  }, [teamLogs, attendanceTypeFilter, attendanceSearch]);
+  }, [teamLogs, attendanceTypeFilter, attendanceExecutiveFilter]);
 
-  // Filter leave requests to only include assigned executives and exclude manager/admin/ceo requests
+  // Leave modal filter state
+  const [leaveExecutiveFilter, setLeaveExecutiveFilter] = useState('All')
+  const [leaveDateTab, setLeaveDateTab] = useState('All Time')
+  const [leaveFromDate, setLeaveFromDate] = useState('')
+  const [leaveToDate, setLeaveToDate] = useState('')
+
+  const handleLeaveDateTab = (tab) => {
+    setLeaveDateTab(tab)
+    const now = new Date()
+    const todayStr = now.toISOString().split('T')[0]
+
+    if (tab === 'Today') {
+      setLeaveFromDate(todayStr)
+      setLeaveToDate(todayStr)
+    } else if (tab === 'Yesterday') {
+      const yest = new Date(now)
+      yest.setDate(yest.getDate() - 1)
+      const yestStr = yest.toISOString().split('T')[0]
+      setLeaveFromDate(yestStr)
+      setLeaveToDate(yestStr)
+    } else if (tab === 'This Month') {
+      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+      setLeaveFromDate(firstDay)
+      setLeaveToDate(todayStr)
+    } else if (tab === 'All Time') {
+      setLeaveFromDate('')
+      setLeaveToDate('')
+    }
+  }
+
+  // Filter leave requests to only include assigned executives and apply Executive & Date filters
   const filteredLeaveRequests = React.useMemo(() => {
     return teamLeaveRequests.filter((req) => {
       if (!req) return false
@@ -165,13 +203,13 @@ export default function ManagerTeam() {
       }
 
       const reqEmail = String(req.executive_email || req.email || "").toLowerCase().trim();
-      const reqCode = String(req.employee_code || "").toLowerCase().trim();
-      const reqName = String(req.executive_name || req.employee_name || "").toLowerCase().trim();
+      const reqCode = String(req.employee_code || req.employee_id || req.emp_code || "").toLowerCase().trim();
+      const reqName = String(req.executive_name || req.executive || req.employee_name || "").toLowerCase().trim();
 
       // Check if matches assigned team
-      return executives.some((ex) => {
+      const matchesTeam = executives.some((ex) => {
         const exEmail = String(ex.email || "").toLowerCase().trim();
-        const exCode = String(ex.employee_code || "").toLowerCase().trim();
+        const exCode = String(ex.employee_code || ex.employee_id || ex.emp_code || "").toLowerCase().trim();
         const exName = String(ex.name || "").toLowerCase().trim();
         return (
           (exEmail && reqEmail === exEmail) ||
@@ -179,8 +217,37 @@ export default function ManagerTeam() {
           (exName && (reqName.includes(exName) || exName.includes(reqName)))
         );
       });
+      if (!matchesTeam) return false;
+
+      // Executive Filter check
+      if (leaveExecutiveFilter !== 'All') {
+        const targetVal = leaveExecutiveFilter.toLowerCase().trim();
+        const matchesExec =
+          reqName.includes(targetVal) ||
+          targetVal.includes(reqName) ||
+          reqCode === targetVal ||
+          reqEmail === targetVal;
+        if (!matchesExec) return false;
+      }
+
+      // Date Filter check
+      const rDateStr = String(req.start_date || req.leave_date || req.date || req.from_date || (req.created_at ? String(req.created_at).split('T')[0] : '') || '');
+      if (rDateStr) {
+        let cleanDate = rDateStr.split('T')[0].split(' ')[0];
+        if (cleanDate.includes('/')) {
+          const parts = cleanDate.split('/');
+          if (parts.length === 3) {
+            if (parts[2].length === 4) cleanDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+            else if (parts[0].length === 4) cleanDate = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+          }
+        }
+        if (leaveFromDate && cleanDate < leaveFromDate) return false;
+        if (leaveToDate && cleanDate > leaveToDate) return false;
+      }
+
+      return true;
     });
-  }, [teamLeaveRequests, executives])
+  }, [teamLeaveRequests, executives, leaveExecutiveFilter, leaveFromDate, leaveToDate])
 
   useEffect(() => {
     attendanceAPI.getLeaveRequests()
@@ -879,7 +946,7 @@ export default function ManagerTeam() {
                           onClick={() => setSelectedReportModal(report)}
                           className="mgr-card hover:bg-mgr-primary-50/40 transition cursor-pointer"
                         >
-                          <td className="px-5 py-3 font-mono font-bold text-slate-800">{report.date}</td>
+                          <td className="px-5 py-3 font-mono font-bold text-slate-800">{formatDate(report.date)}</td>
                           <td className="px-5 py-3 font-mono font-black text-mgr-primary-955">
                             <span className="bg-mgr-primary-100 text-mgr-primary-955 border border-mgr-primary-300 px-1.5 py-0.5 rounded text-[10px]">
                               [{report.employee_code || 'EMP000012'}]
@@ -935,27 +1002,101 @@ export default function ManagerTeam() {
             </div>
 
             <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-xs">
-              <div className="flex flex-wrap items-center justify-end gap-3 border-b border-slate-100 pb-3">
-                <button
-                  onClick={() => {
-                    attendanceAPI.getLeaveRequests().then((res) => {
-                      const raw = Array.isArray(res) ? res : (res?.data || [])
-                      if (Array.isArray(raw)) setTeamLeaveRequests(raw)
-                    })
-                  }}
-                  className="mgr-card px-3.5 py-2 rounded-xl bg-mgr-primary-50 hover:bg-mgr-primary-100 text-mgr-primary-955 border border-mgr-primary-300 font-extrabold text-xs transition cursor-pointer flex items-center gap-1.5"
-                >
-                  <RefreshCw size={14} /> Refresh Requests
-                </button>
+              {/* Filter Strip */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div className="flex flex-wrap items-center gap-3">
+                  {/* Executive Filter Dropdown */}
+                  <div className="flex items-center gap-2 text-xs">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Executive:</span>
+                    <select
+                      value={leaveExecutiveFilter}
+                      onChange={(e) => setLeaveExecutiveFilter(e.target.value)}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-xl px-3 py-1.5 text-xs border border-slate-200 transition"
+                    >
+                      <option value="All">All Executives</option>
+                      {executives.map((ex) => (
+                        <option key={ex.id || ex.employee_code} value={ex.name || ex.full_name}>
+                          {ex.name || ex.full_name} ({ex.employee_code || ex.employee_id})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Date Filter Pills */}
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">Date:</span>
+                    {['All Time', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => handleLeaveDateTab(tab)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                          leaveDateTab === tab
+                            ? 'bg-slate-900 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+                        }`}
+                      >
+                        {tab}
+                      </button>
+                    ))}
+                    {leaveDateTab === 'Custom' && (
+                      <div className="flex items-center gap-1.5 ml-1">
+                        <input
+                          type="date"
+                          value={leaveFromDate}
+                          onChange={(e) => setLeaveFromDate(e.target.value)}
+                          className="bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-bold focus:outline-none cursor-pointer"
+                        />
+                        <span className="text-slate-400 text-xs font-bold">→</span>
+                        <input
+                          type="date"
+                          value={leaveToDate}
+                          onChange={(e) => setLeaveToDate(e.target.value)}
+                          className="bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-bold focus:outline-none cursor-pointer"
+                        />
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  {/* Reset Filters button */}
+                  {(leaveExecutiveFilter !== 'All' || leaveDateTab !== 'All Time' || leaveFromDate || leaveToDate) && (
+                    <button
+                      onClick={() => {
+                        setLeaveExecutiveFilter('All')
+                        setLeaveDateTab('All Time')
+                        setLeaveFromDate('')
+                        setLeaveToDate('')
+                      }}
+                      className="px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl cursor-pointer transition"
+                    >
+                      ✕ Reset Filters
+                    </button>
+                  )}
+
+                  {/* Refresh Requests Button */}
+                  <button
+                    onClick={() => {
+                      attendanceAPI.getLeaveRequests().then((res) => {
+                        const raw = Array.isArray(res) ? res : (res?.data || [])
+                        if (Array.isArray(raw)) setTeamLeaveRequests(raw)
+                      })
+                    }}
+                    className="mgr-card px-3.5 py-2 rounded-xl bg-mgr-primary-50 hover:bg-mgr-primary-100 text-mgr-primary-955 border border-mgr-primary-300 font-extrabold text-xs transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                  >
+                    <RefreshCw size={14} /> Refresh Requests
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs font-bold text-slate-800 min-w-[850px]">
+                <table className="w-full text-left text-xs font-bold text-slate-800 min-w-[900px]">
                   <thead>
                     <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-700">
                       <th className="px-4 py-3.5">Executive Name</th>
                       <th className="px-4 py-3.5">Request Type</th>
-                      <th className="px-4 py-3.5">Date & Slot</th>
+                      <th className="px-4 py-3.5">Date</th>
+                      <th className="px-4 py-3.5">Duration / Slot</th>
                       <th className="px-4 py-3.5">Reason</th>
                       <th className="px-4 py-3.5">Current Status</th>
                       <th className="px-4 py-3.5 text-right">Approve / Reject Action</th>
@@ -964,70 +1105,85 @@ export default function ManagerTeam() {
                   <tbody className="divide-y divide-slate-200">
                     {filteredLeaveRequests.length === 0 ? (
                       <tr>
-                        <td colSpan="6" className="text-center py-10 text-slate-500 font-bold text-sm bg-slate-50/50">
-                          No leave or permission requests currently pending for your team.
+                        <td colSpan="7" className="text-center py-10 text-slate-500 font-bold text-sm bg-slate-50/50">
+                          No leave or permission requests found matching your selected filters.
                         </td>
                       </tr>
                     ) : (
-                      filteredLeaveRequests.map((req, idx) => (
-                        <tr key={req.id || idx} className="hover:bg-mgr-primary-50/40 transition-colors">
-                          <td className="px-4 py-3.5 font-black text-slate-900 text-sm">
-                            {req.executive_name || req.executive || "Sales Executive"}
-                            <div className="text-[10px] text-slate-400 font-extrabold font-mono">[{req.employee_code || "EMP000012"}]</div>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <span className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black border ${
-                              req.leave_type?.includes("Half")
-                                ? "bg-mgr-primary-100 text-mgr-primary-955 border-mgr-primary-300"
-                                : req.leave_type?.includes("Permission")
-                                  ? "bg-mgr-accent-100 text-mgr-accent-955 border-mgr-accent-300"
-                                  : "bg-emerald-100 text-emerald-955 border-emerald-300"
-                            }`}>
-                              {req.leave_type || "Leave Request"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5 text-slate-700">
-                            <div>📅 {req.start_date} {req.end_date && req.end_date !== req.start_date ? `to ${req.end_date}` : ""}</div>
-                            <div className="text-[10px] text-slate-400 font-extrabold mt-0.5">({req.duration || "Full Day"})</div>
-                          </td>
-                          <td className="px-4 py-3.5 max-w-[240px]">
-                            <p className="text-slate-600 font-medium leading-relaxed italic">"{req.reason || "No reason specified."}"</p>
-                          </td>
-                          <td className="px-4 py-3.5">
-                            <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                              req.status === "Approved"
-                                ? "bg-emerald-100 text-emerald-955 border-emerald-300"
-                                : req.status === "Rejected"
-                                  ? "bg-rose-100 text-rose-955 border-rose-300"
-                                  : "bg-mgr-primary-100 text-mgr-primary-900 border-mgr-primary-300"
-                            }`}>
-                              {req.status === "Approved"
-                                ? "✓ Approved"
-                                : req.status === "Rejected"
-                                  ? "✗ Rejected"
-                                  : "⏳ Pending"}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3.5 text-right space-y-1">
-                            <div className="flex items-center justify-end gap-2">
-                              <button
-                                onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Approved")}
-                                disabled={req.status === "Approved"}
-                                className="mgr-card px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
-                              >
-                                <CheckCircle2 size={14} /> Approve
-                              </button>
-                              <button
-                                onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Rejected")}
-                                disabled={req.status === "Rejected"}
-                                className="mgr-card px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
-                              >
-                                <XCircle size={14} /> Reject
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      ))
+                      filteredLeaveRequests.map((req, idx) => {
+                        const rawDate = req.start_date || req.leave_date || req.date || req.from_date || (req.created_at ? String(req.created_at).split('T')[0] : '2026-09-02');
+                        const reqDate = formatDate(rawDate);
+                        const endDateStr = req.end_date && req.end_date !== req.start_date ? ` to ${req.end_date}` : "";
+                        return (
+                          <tr key={req.id || idx} className="hover:bg-mgr-primary-50/40 transition-colors">
+                            <td 
+                              onClick={() => setViewingEmpProfile({ name: req.executive_name || req.executive, employee_code: req.employee_code, email: req.executive_email, role: 'Sales Executive', status: 'Active' })}
+                              className="px-4 py-3.5 font-bold text-slate-900 hover:text-blue-600 cursor-pointer transition"
+                              title="Click to view full employee profile"
+                            >
+                              {req.executive_name || req.executive || "Sales Executive"}
+                              <div className="text-[10px] text-slate-400 font-extrabold font-mono">[{req.employee_code || "EMP000012"}]</div>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <span className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black border ${
+                                req.leave_type?.includes("Half")
+                                  ? "bg-mgr-primary-100 text-mgr-primary-955 border-mgr-primary-300"
+                                  : req.leave_type?.includes("Permission")
+                                    ? "bg-mgr-accent-100 text-mgr-accent-955 border-mgr-accent-300"
+                                    : "bg-emerald-100 text-emerald-955 border-emerald-300"
+                              }`}>
+                                {req.leave_type || "Leave Request"}
+                              </span>
+                            </td>
+                            {/* Separate Date Column */}
+                            <td className="px-4 py-3.5 text-slate-900 font-mono font-bold">
+                              🗓️ {reqDate}{endDateStr}
+                            </td>
+                            {/* Separate Duration / Slot Column */}
+                            <td className="px-4 py-3.5 text-slate-700">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 font-extrabold border border-slate-200">
+                                ⏱ {req.duration || req.slot || "1 Day"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3.5 max-w-[220px]">
+                              <p className="text-slate-600 font-medium leading-relaxed italic">"{req.reason || "No reason specified."}"</p>
+                            </td>
+                            <td className="px-4 py-3.5">
+                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                                req.status === "Approved"
+                                  ? "bg-emerald-100 text-emerald-955 border-emerald-300"
+                                  : req.status === "Rejected"
+                                    ? "bg-rose-100 text-rose-955 border-rose-300"
+                                    : "bg-mgr-primary-100 text-mgr-primary-900 border-mgr-primary-300"
+                              }`}>
+                                {req.status === "Approved"
+                                  ? "✓ Approved"
+                                  : req.status === "Rejected"
+                                    ? "✗ Rejected"
+                                    : "⏳ Pending"}
+                              </span>
+                            </td>
+                            <td className="px-4 py-3.5 text-right space-y-1">
+                              <div className="flex items-center justify-end gap-2">
+                                <button
+                                  onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Approved")}
+                                  disabled={req.status === "Approved"}
+                                  className="mgr-card px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
+                                >
+                                  <CheckCircle2 size={14} /> Approve
+                                </button>
+                                <button
+                                  onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Rejected")}
+                                  disabled={req.status === "Rejected"}
+                                  className="mgr-card px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
+                                >
+                                  <XCircle size={14} /> Reject
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        )
+                      })
                     )}
                   </tbody>
                 </table>
@@ -1052,7 +1208,7 @@ export default function ManagerTeam() {
                   <span className="text-xs text-slate-400 font-semibold">• {selectedReportModal.designation}</span>
                 </div>
                 <h3 className="text-xl font-black text-slate-900 flex items-center gap-2.5 pt-1">
-                  <FileText className="w-6 h-6 text-mgr-primary-700" /> EOD Daily Work Report ({selectedReportModal.date})
+                  <FileText className="w-6 h-6 text-mgr-primary-700" /> EOD Daily Work Report ({formatDate(selectedReportModal.date)})
                 </h3>
               </div>
               <button
@@ -1224,7 +1380,7 @@ export default function ManagerTeam() {
               </button>
             </div>
 
-            {/* Toggle Filter and Search */}
+            {/* Toggle Filter and Executive Dropdown */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs text-xs">
               <div className="flex bg-slate-200/60 p-1 rounded-xl">
                 {['All', 'Office', 'Client Visit'].map((tab) => (
@@ -1240,15 +1396,21 @@ export default function ManagerTeam() {
                 ))}
               </div>
 
-              <div className="relative flex-1 max-w-sm">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  value={attendanceSearch}
-                  onChange={(e) => setAttendanceSearch(e.target.value)}
-                  placeholder="Search by Employee, Code, Location..."
-                  className="w-full h-9 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 text-xs font-semibold text-slate-900 focus:outline-none focus:border-[#0b3c5d]"
-                />
+              {/* Executive Dropdown Filter */}
+              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs font-bold text-slate-700 min-w-[250px]">
+                <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider whitespace-nowrap">Executive:</span>
+                <select
+                  value={attendanceExecutiveFilter}
+                  onChange={(e) => setAttendanceExecutiveFilter(e.target.value)}
+                  className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-black text-xs w-full"
+                >
+                  <option value="All">All Executives</option>
+                  {executives.map((ex) => (
+                    <option key={ex.id || ex.employee_code || ex.email} value={ex.name || ex.full_name}>
+                      {ex.name || ex.full_name} ({ex.employee_code || ex.employee_id || 'EMP'})
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
 
@@ -1274,9 +1436,23 @@ export default function ManagerTeam() {
                     </thead>
                     <tbody className="divide-y divide-slate-100 text-slate-800 font-medium">
                       {filteredTeamLogs.map((log, idx) => {
-                        const dateStr = log.attendance_date || log.date || (log.check_in_time ? String(log.check_in_time).substring(0, 10) : '—');
+                        const rawDate = log.attendance_date || log.date || (log.created_at ? String(log.created_at).substring(0, 10) : '') || (log.check_in_time ? String(log.check_in_time).substring(0, 10) : '');
+                        const formattedDateStr = formatDate(rawDate) || '—';
+                        
                         const checkInTime = formatTelemetryTime(log.check_in_time || log.punch_in_time || log.loginTime);
-                        const checkOutTime = formatTelemetryTime(log.check_out_time || log.punch_out_time || log.logoutTime) || '—';
+                        let rawOutTime = log.check_out_time || log.punch_out_time || log.logoutTime;
+                        let checkOutTime = formatTelemetryTime(rawOutTime);
+
+                        // Auto logout rule: if employee forgot to log out on a past date or unclosed log, auto log out at 12:00 PM
+                        const todayStr = new Date().toISOString().split('T')[0];
+                        const isPastDate = rawDate && rawDate < todayStr;
+                        const isForgotLogout = !rawOutTime || rawOutTime === '—' || !checkOutTime;
+
+                        if (isForgotLogout && isPastDate) {
+                          checkOutTime = '12:00 PM';
+                        }
+
+                        const isLoggedOff = (checkOutTime && checkOutTime !== '—') || log.status === 'Logged off' || String(log.attendance_status || '').toLowerCase().includes('off');
                         
                         let locationDisplay = log.check_in_address || log.loginLocation || 'Office / Field Site';
                         if (log.isClientVisit) {
@@ -1290,8 +1466,12 @@ export default function ManagerTeam() {
 
                         return (
                           <tr key={log.id || idx} className="hover:bg-slate-50/50 transition">
-                            <td className="py-3 pl-2">
-                              <p className="font-black text-slate-900">{log.employeeName}</p>
+                            <td 
+                              onClick={() => setViewingEmpProfile({ name: log.employeeName, employee_code: log.employeeCode, role: 'Sales Executive', status: 'Active' })}
+                              className="py-3 pl-2 cursor-pointer group hover:text-blue-600 transition"
+                              title="Click to view full employee profile"
+                            >
+                              <p className="font-black text-slate-900 group-hover:text-blue-600">{log.employeeName}</p>
                               <p className="text-[10px] text-slate-400 font-mono">[{log.employeeCode}]</p>
                             </td>
                             <td className="py-3">
@@ -1301,14 +1481,14 @@ export default function ManagerTeam() {
                                 {log.attendanceType}
                               </span>
                             </td>
-                            <td className="py-3">{dateStr}</td>
+                            <td className="py-3 font-bold text-slate-800">{formattedDateStr}</td>
                             <td className="py-3 font-bold text-slate-900">{checkInTime || '—'}</td>
                             <td className="py-3 font-bold text-slate-900">{checkOutTime}</td>
                             <td className="py-3">
                               <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[9px] font-black border uppercase tracking-wider ${
-                                log.status === 'Present' || String(log.status || '').toLowerCase().includes('present') ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'
+                                isLoggedOff ? 'bg-rose-50 text-rose-700 border-rose-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               }`}>
-                                {log.status || 'Present'}
+                                {isLoggedOff ? 'LOGGED OFF' : 'LOGGED IN'}
                               </span>
                             </td>
                             <td className="py-3 text-slate-500 font-normal max-w-[280px] truncate" title={locationDisplay}>
@@ -1324,6 +1504,14 @@ export default function ManagerTeam() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Employee Profile Card Modal */}
+      {viewingEmpProfile && (
+        <EmployeeProfileModal
+          employee={viewingEmpProfile}
+          onClose={() => setViewingEmpProfile(null)}
+        />
       )}
     </div>
   )

@@ -27,12 +27,22 @@ function redirectToLogin() {
 
 // ─────────────────────────────────────────────────────────────
 // Core request function — uses only real Supabase session token
+// Deduplicates in-flight GET requests to eliminate duplicate network calls
 // ─────────────────────────────────────────────────────────────
+const inFlightRequests = new Map()
+
 async function request(endpoint, options = {}) {
+  const method = (options.method || 'GET').toUpperCase()
+
+  // For GET requests, reuse identical in-flight promises to deduplicate parallel calls
+  if (method === 'GET' && inFlightRequests.has(endpoint)) {
+    return inFlightRequests.get(endpoint)
+  }
+
   const token = getStoredToken()
 
   const headers = {
-    'Content-Type': 'application/json',
+    ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers,
   }
@@ -44,37 +54,50 @@ async function request(endpoint, options = {}) {
     console.log("[VISIT API] payload:", options.body);
   }
 
-  try {
-    const response = await fetch(`${API_BASE_URL}${endpoint}`, config)
-
-    let data
+  const executeRequest = async () => {
     try {
-      data = await response.json()
-    } catch {
-      data = { message: `HTTP ${response.status}: Failed to parse response` }
-    }
+      const response = await fetch(`${API_BASE_URL}${endpoint}`, config)
 
-    // On 401 — session expired or invalid. Clear storage and redirect to login.
-    // Exclude match-face endpoint, which uses 401 to denote unrecognized face.
-    if (response.status === 401 && !endpoint.includes('/auth/') && !endpoint.includes('/attendance/match-face')) {
-      clearSession()
-      redirectToLogin()
-      return Promise.reject({ message: 'Session expired. Please log in again.', status: 401 })
-    }
-
-    if (!response.ok) {
-      if (endpoint === '/visits' && options.method === 'POST') {
-        console.error("[VISIT API] status:", response.status);
-        console.error("[VISIT API] response:", JSON.stringify(data));
+      let data
+      try {
+        data = await response.json()
+      } catch {
+        data = { message: `HTTP ${response.status}: Failed to parse response` }
       }
-      return Promise.reject(data || { message: `HTTP Error ${response.status}` })
-    }
 
-    return data
-  } catch (error) {
-    if (error?.status === 401) return Promise.reject(error)
-    return Promise.reject(error || { message: 'Network or server error' })
+      // On 401 — session expired or invalid. Clear storage and redirect to login.
+      // Exclude match-face endpoint, which uses 401 to denote unrecognized face.
+      if (response.status === 401 && !endpoint.includes('/auth/') && !endpoint.includes('/attendance/match-face')) {
+        clearSession()
+        redirectToLogin()
+        return Promise.reject({ message: 'Session expired. Please log in again.', status: 401 })
+      }
+
+      if (!response.ok) {
+        if (endpoint === '/visits' && options.method === 'POST') {
+          console.error("[VISIT API] status:", response.status);
+          console.error("[VISIT API] response:", JSON.stringify(data));
+        }
+        return Promise.reject(data || { message: `HTTP Error ${response.status}` })
+      }
+
+      return data
+    } catch (error) {
+      if (error?.status === 401) return Promise.reject(error)
+      return Promise.reject(error || { message: 'Network or server error' })
+    }
   }
+
+  const requestPromise = executeRequest()
+
+  if (method === 'GET') {
+    inFlightRequests.set(endpoint, requestPromise)
+    requestPromise.finally(() => {
+      inFlightRequests.delete(endpoint)
+    })
+  }
+
+  return requestPromise
 }
 
 
@@ -200,7 +223,22 @@ export const hrmsAPI = {
   getEmployees: () => request('/hrms/employees'),
   createEmployee: (data) => request('/hrms/employees', { method: 'POST', body: JSON.stringify(data) }),
   getEmployeeById: (id) => request(`/hrms/employees/${id}`),
+  getEmployee: (id) => request(`/hrms/employees/${id}`),
   updateEmployee: (id, data) => request(`/hrms/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  uploadAvatar: (id, file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const base64Data = reader.result
+        request(`/hrms/employees/${id}/avatar`, {
+          method: 'POST',
+          body: JSON.stringify({ image_base64: base64Data, filename: file.name })
+        }).then(resolve).catch(reject)
+      }
+      reader.onerror = (err) => reject(err)
+      reader.readAsDataURL(file)
+    })
+  },
   deleteEmployee: (id) => request(`/hrms/employees/${id}`, { method: 'DELETE' }),
   getSalaries: () => request('/hrms/salaries'),
   getSalaryByEmployeeId: (empId) => request(`/hrms/employees/${empId}/salary`),
@@ -258,6 +296,7 @@ export const notificationAPI = {
   getUnreadCount: () => request('/notifications/unread-count'),
   sendNotification: (data) => request('/notifications', { method: 'POST', body: JSON.stringify(data) }),
   markRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
+  markAsRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
 }
 
 export const reportAPI = {
@@ -322,6 +361,7 @@ export const settingsAPI = {
   createProduct: (data) => request('/settings/products', { method: 'POST', body: JSON.stringify(data) }),
   updateProduct: (id, data) => request(`/settings/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteProduct: (id) => request(`/settings/products/${id}`, { method: 'DELETE' }),
+  deleteRole: (id) => request(`/settings/roles/${id}`, { method: 'DELETE' }),
 }
 
 export const spatialAPI = {

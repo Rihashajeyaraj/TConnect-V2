@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { normalizePhoneNumber } from '../../utils/formatUtils.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import {
   Users,
@@ -24,7 +25,7 @@ import {
   Eye,
   User,
 } from 'lucide-react'
-import { hrmsAPI, userAPI, crmAPI, customerAPI } from '../../services/api.js'
+import { hrmsAPI, userAPI, crmAPI, customerAPI, settingsAPI } from '../../services/api.js'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { isItemOwnedByUser } from '../../utils/userScope.js'
 
@@ -32,10 +33,12 @@ function TeamManagement() {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
   const [team, setTeam] = useState([])
-  const [activeTab, setActiveTab] = useState('All') // 'All' | 'Admin' | 'Sales Manager' | 'Sales Executive' | 'hierarchy'
+  const [activeTab, setActiveTab] = useState('All') // 'All' | 'Department-Wise' | 'hierarchy' | 'Admin' | 'Sales Manager' | 'Sales Executive'
   const [searchQuery, setSearchQuery] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [selectedDepartment, setSelectedDepartment] = useState('All')
+  const [loading, setLoading] = useState(true)
   const [viewingEmp, setViewingEmp] = useState(null)
+  const [selectedDeptModal, setSelectedDeptModal] = useState(null)
 
   // Add/Edit modal state
   const [showModal, setShowModal] = useState(false)
@@ -149,19 +152,30 @@ function TeamManagement() {
   };
 
   // Load backend employees
+  const [masterDepts, setMasterDepts] = useState([])
+
   useEffect(() => {
     async function loadData() {
       setLoading(true)
       try {
-        const [usersRes, leadsRes, custRes] = await Promise.all([
+        const [usersRes, leadsRes, custRes, settingsRes] = await Promise.all([
           userAPI.getUsers().catch(() => null),
           crmAPI.getLeads().catch(() => null),
           customerAPI.getCustomers().catch(() => null),
+          settingsAPI.getSettings().catch(() => null),
         ])
 
         const userList = usersRes && usersRes.data && Array.isArray(usersRes.data) ? usersRes.data : []
         const rawLeads = Array.isArray(leadsRes) ? leadsRes : (leadsRes?.data || [])
         const rawCustomers = Array.isArray(custRes) ? custRes : (custRes?.data || [])
+        const settingsData = settingsRes?.data || settingsRes
+
+        const adminDeptsRaw = settingsData?.departments || []
+        const adminDeptsClean = Array.isArray(adminDeptsRaw)
+          ? adminDeptsRaw.map(d => typeof d === 'string' ? d.trim() : (d?.name || d?.department_name || d?.title || '').trim()).filter(Boolean)
+          : []
+
+        setMasterDepts(adminDeptsClean)
 
         const mapped = mapEmployeeData(userList, rawLeads, rawCustomers)
         setTeam(mapped)
@@ -175,24 +189,33 @@ function TeamManagement() {
     loadData()
   }, [])
 
+  const allDepartments = Array.from(new Set([
+    ...masterDepts,
+    ...team.map(m => m.department || m.dept || 'Sales & BD').filter(Boolean)
+  ]))
+
   // Filtered members
   const filteredTeam = team.filter((m) => {
+    const deptName = m.department || m.dept || 'Sales & BD'
     const matchesSearch =
       m.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       m.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
       m.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      deptName.toLowerCase().includes(searchQuery.toLowerCase()) ||
       (m.manager || '').toLowerCase().includes(searchQuery.toLowerCase())
 
-    const matchesRole = activeTab === 'All' || activeTab === 'hierarchy' || (activeTab === 'Admin' ? (m.role === 'Admin' || m.role === 'Super Admin' || m.role === 'System Admin') : m.role === activeTab)
+    const matchesRole = activeTab === 'All' || activeTab === 'Department-Wise' || activeTab === 'hierarchy' || (activeTab === 'Admin' ? (m.role === 'Admin' || m.role === 'Super Admin' || m.role === 'System Admin') : m.role === activeTab)
+    const matchesDept = selectedDepartment === 'All' || deptName === selectedDepartment
 
-    return matchesSearch && matchesRole
+    return matchesSearch && matchesRole && matchesDept
   })
 
-  // Counts
+  // Counts & Manager Options
   const totalStaff = team.length
   const totalAdmins = team.filter((m) => m.role === 'Admin' || m.role === 'Super Admin' || m.role === 'System Admin').length
-  const totalManagers = team.filter((m) => m.role === 'Sales Manager' || m.role === 'Team Lead').length
-  const totalExecutives = team.filter((m) => m.role === 'Sales Executive').length
+  const totalManagers = team.filter((m) => (m.role || '').toLowerCase().includes('manager') || (m.role || '').toLowerCase().includes('lead')).length
+  const totalExecutives = team.filter((m) => (m.role || '').toLowerCase().includes('executive')).length
+  const managers = team.filter((m) => (m.role || '').toLowerCase().includes('manager') || (m.role || '').toLowerCase().includes('lead') || (m.role || '').toLowerCase().includes('admin'))
 
   const handleOpenAdd = () => {
     setEditingEmp(null)
@@ -404,8 +427,125 @@ function TeamManagement() {
     }
   }
 
-  // Managers with their respective executives for hierarchy tree
-  const managers = team.filter((m) => m.role === 'Sales Manager' || m.role === 'Team Lead')
+  // Group team members by Department
+  const departmentSummaries = Object.entries(
+    team.reduce((acc, emp) => {
+      const deptName = emp.department || emp.dept || 'Sales & BD'
+      if (!acc[deptName]) {
+        acc[deptName] = {
+          name: deptName,
+          members: [],
+          admins: [],
+          managers: [],
+          executives: [],
+          totalRevenue: 0,
+          totalDeals: 0,
+        }
+      }
+      acc[deptName].members.push(emp)
+      const rLower = (emp.role || '').toLowerCase()
+      if (rLower.includes('admin')) {
+        acc[deptName].admins.push(emp)
+      } else if (rLower.includes('manager') || rLower.includes('lead')) {
+        acc[deptName].managers.push(emp)
+      } else {
+        acc[deptName].executives.push(emp)
+      }
+      acc[deptName].totalRevenue += emp.revenue || 0
+      acc[deptName].totalDeals += emp.deals_won || 0
+      return acc
+    }, {})
+  ).map(([_, data]) => data)
+
+  const filteredDeptSummaries = departmentSummaries.filter((d) => {
+    if (!searchQuery) return true
+    const q = searchQuery.toLowerCase()
+    return (
+      d.name.toLowerCase().includes(q) ||
+      d.members.some((m) =>
+        m.name.toLowerCase().includes(q) ||
+        m.email.toLowerCase().includes(q) ||
+        m.role.toLowerCase().includes(q)
+      )
+    )
+  })
+
+  const renderStaffTable = (membersList) => (
+    <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xs">
+      <div className="overflow-x-auto">
+        <table className="w-full text-left border-collapse text-xs">
+          <thead>
+            <tr className="bg-slate-50/80 border-b border-slate-200/70 text-slate-400 font-black uppercase tracking-wider text-[10px]">
+              <th className="px-4 py-3">Employee Name</th>
+              <th className="px-4 py-3">Designation / Role</th>
+              <th className="px-4 py-3">Reporting Manager</th>
+              <th className="px-4 py-3">Phone</th>
+              <th className="px-4 py-3 text-center">Deals Won</th>
+              <th className="px-4 py-3 text-right">Revenue Output</th>
+              <th className="px-4 py-3 text-center">Status</th>
+              <th className="px-4 py-3 text-center">Action</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100 font-medium">
+            {membersList.map((emp, idx) => (
+              <tr key={`${emp.id}_${idx}`} className="hover:bg-slate-50/70 transition">
+                <td className="px-4 py-3">
+                  <p className="font-extrabold text-slate-900">{emp.name}</p>
+                  <p className="text-[10px] text-slate-400 font-medium">{emp.email}</p>
+                </td>
+                <td className="px-4 py-3">
+                  <span className={`inline-flex rounded-md px-2 py-0.5 text-[9px] font-black uppercase ${
+                    emp.role.includes('Admin') ? 'bg-purple-100 text-purple-800 border border-purple-200' :
+                    emp.role.includes('Manager') ? 'bg-[#F8CAE4]/40 text-[#832D51] border border-[#832D51]/30' :
+                    'bg-blue-100 text-blue-800 border border-blue-200'
+                  }`}>
+                    {emp.role}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-slate-700 font-bold">
+                  {emp.manager || 'Direct / CEO Office'}
+                </td>
+                <td className="px-4 py-3 text-slate-600 font-semibold">
+                  {emp.phone || 'N/A'}
+                </td>
+                <td className="px-4 py-3 text-center font-black text-slate-900">
+                  {emp.deals_won || 0}
+                </td>
+                <td className="px-4 py-3 text-right font-black text-emerald-700">
+                  ₹{(emp.revenue || 0).toLocaleString()}
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[9px] font-black uppercase border ${
+                    emp.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-slate-100 text-slate-500 border-slate-200'
+                  }`}>
+                    {emp.status}
+                  </span>
+                </td>
+                <td className="px-4 py-3 text-center">
+                  <div className="flex items-center justify-center gap-1">
+                    <button
+                      onClick={() => handleOpenView(emp)}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+                      title="View Profile"
+                    >
+                      <Eye className="size-3.5" />
+                    </button>
+                    <button
+                      onClick={() => handleOpenEdit(emp)}
+                      className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition cursor-pointer"
+                      title="Edit Employee"
+                    >
+                      <Edit2 className="size-3.5" />
+                    </button>
+                  </div>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 pb-12">
@@ -421,7 +561,7 @@ function TeamManagement() {
             </h1>
           </div>
           <p className="mt-1 text-xs text-slate-500 font-medium max-w-3xl">
-            Executive control of Admins, Sales Managers, and Sales Executives. Manage reporting hierarchies, sales outputs, and role assignments.
+            Executive Department Directory. Click any Department Card to view Admins, Sales Managers, and Sales Executives hierarchy details.
           </p>
         </div>
 
@@ -444,277 +584,182 @@ function TeamManagement() {
         </div>
       </div>
 
-      {/* Role Breakdown KPI Cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        {/* Total Workforce */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Workforce</span>
-          <div className="mt-3 flex items-baseline justify-between">
-            <p className="text-3xl font-black text-slate-900">{totalStaff}</p>
-            <span className="text-xs font-bold text-emerald-600">100% Active</span>
-          </div>
-        </div>
 
-        {/* Admins */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Admins</span>
-          <div className="mt-3 flex items-baseline justify-between">
-            <p className="text-3xl font-black text-slate-900">{totalAdmins}</p>
-            <span className="text-xs font-bold text-slate-500">Operations Control</span>
-          </div>
-        </div>
 
-        {/* Sales Managers */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Sales Managers</span>
-          <div className="mt-3 flex items-baseline justify-between">
-            <p className="text-3xl font-black text-[#832D51]">{totalManagers}</p>
-            <span className="text-xs font-bold text-[#EA6993]">Team Leaders</span>
-          </div>
-        </div>
-
-        {/* Sales Executives */}
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-5 shadow-xs">
-          <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Sales Executives</span>
-          <div className="mt-3 flex items-baseline justify-between">
-            <p className="text-3xl font-black text-[#EA6993]">{totalExecutives}</p>
-            <span className="text-xs font-bold text-amber-700">Field / Inside Sales</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs & Search */}
+      {/* Department Search Header */}
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
-        <div className="flex items-center gap-1 overflow-x-auto w-full sm:w-auto">
-          {['All', 'hierarchy', 'Admin', 'Sales Manager', 'Sales Executive'].map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${
-                activeTab === tab
-                  ? 'bg-[#832D51] text-white shadow-xs'
-                  : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-              }`}
-            >
-              {tab === 'hierarchy' ? 'Manager → Executive Hierarchy' : tab}
-            </button>
-          ))}
+        <div>
+          <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">DEPARTMENT DIRECTORY ({filteredDeptSummaries.length})</h2>
+          <p className="text-xs text-slate-500 font-semibold mt-0.5">Click any Department Card to inspect its Admins, Sales Managers & Sales Executives</p>
         </div>
 
-        <div className="relative w-full sm:w-72">
+        <div className="relative w-full sm:w-80">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
-            placeholder="Search staff, designation, manager..."
+            placeholder="Search Department or Employee..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-9 w-full rounded-xl border border-slate-200 pl-9 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
+            className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-4 text-xs font-bold placeholder:text-slate-400 outline-none focus:border-[#832D51] transition"
           />
         </div>
       </div>
 
-      {/* Hierarchy View OR Table View */}
-      {activeTab === 'hierarchy' ? (
-        /* Manager → Executive Hierarchy Cards Tree */
-        <div className="grid gap-6 lg:grid-cols-2">
-          {managers.map((mgr) => {
-            const reportingExecs = team.filter(
-              (m) => m.role === 'Sales Executive' && (m.reporting_manager_id === mgr.id || m.manager === mgr.name)
-            )
-            const managerTotalRevenue = reportingExecs.reduce((acc, curr) => acc + curr.revenue, 0)
-            const managerTotalDeals = reportingExecs.reduce((acc, curr) => acc + curr.deals_won, 0)
-
-            return (
-              <div
-                key={mgr.id}
-                className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4"
-              >
-                {/* Manager Node Header */}
-                <div className="flex items-start justify-between border-b border-slate-100 pb-4">
-                  <div className="flex items-center gap-3">
-                    <span className="grid size-12 place-items-center rounded-2xl bg-[#832D51] text-white font-black text-sm shadow-sm">
-                      {mgr.name.split(' ').map((n) => n[0]).join('')}
-                    </span>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-base font-black text-slate-900">{mgr.name}</h3>
-                        <span className="rounded bg-[#F8CAE4]/20 px-2 py-0.5 text-[10px] font-black text-[#832D51]">
-                          Sales Manager
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-500 mt-0.5">{mgr.email} · {mgr.phone}</p>
-                    </div>
-                  </div>
-
-                  <div className="text-right">
-                    <span className="text-[10px] uppercase font-bold text-slate-400">Team Revenue</span>
-                    <p className="text-sm font-black text-emerald-700">
-                      {managerTotalRevenue >= 100000 
-                        ? `₹${(managerTotalRevenue / 100000).toFixed(1)}L` 
-                        : `₹${managerTotalRevenue.toLocaleString()}`
-                      }
-                    </p>
-                  </div>
-                </div>
-
-                {/* Direct Reports List */}
-                <div className="space-y-2.5">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400">
-                    Direct Sales Executive Reports ({reportingExecs.length})
-                  </span>
-
-                  <div className="space-y-2">
-                    {reportingExecs.map((exec) => (
-                      <div
-                        key={exec.id}
-                        className="flex items-center justify-between rounded-xl border border-slate-200/70 bg-slate-50/70 p-3 text-xs"
-                      >
-                        <div className="flex items-center gap-2.5">
-                          <span className="grid size-7 place-items-center rounded-lg bg-white text-slate-800 font-bold border border-slate-200">
-                            {exec.name[0]}
-                          </span>
-                          <div>
-                            <p className="font-extrabold text-slate-900">{exec.name}</p>
-                            <p className="text-[10px] text-slate-400">{exec.department}</p>
-                          </div>
-                        </div>
-
-                        <div className="flex items-center gap-6 text-right">
-                          <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-1 text-right">
-                            <div>
-                              <p className="text-[9px] uppercase font-bold text-slate-400">Leads Count</p>
-                              <span className="font-black text-slate-800">{exec.lead_count || 0}</span>
-                            </div>
-                            <div>
-                              <p className="text-[9px] uppercase font-bold text-slate-400">Leads Closed</p>
-                              <span className="font-black text-indigo-700">{exec.deals_won || 0} Won</span>
-                            </div>
-                            <div>
-                              <p className="text-[9px] uppercase font-bold text-slate-400">Revenue</p>
-                              <span className="font-black text-emerald-700">₹{(exec.revenue || 0).toLocaleString()}</span>
-                            </div>
-                            <div>
-                              <p className="text-[9px] uppercase font-bold text-slate-400">Incentive (5%)</p>
-                              <span className="font-black text-purple-700">₹{(exec.incentives || 0).toLocaleString()}</span>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => handleOpenView(exec)}
-                            className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 cursor-pointer"
-                            title="View Profile"
-                          >
-                            <Eye className="size-3.5" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenEdit(exec)}
-                            className="rounded-lg p-1 text-slate-400 hover:bg-slate-200 hover:text-slate-700 cursor-pointer"
-                            title="Edit"
-                          >
-                            <Edit2 className="size-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-
-                    {reportingExecs.length === 0 && (
-                      <div className="py-6 text-center text-xs text-slate-400">
-                        No executives assigned to this manager yet.
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            )
-          })}
+      {/* DEPARTMENT CARDS GRID */}
+      {loading ? (
+        <div className="bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400 font-bold text-xs">
+          Loading departments & staff directory...
         </div>
       ) : (
-        /* Team Table View */
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider">
-                <th className="pb-3">Employee Name</th>
-                <th className="pb-3">Designation / Role</th>
-                <th className="pb-3">Department</th>
-                <th className="pb-3">Reporting Manager</th>
-                <th className="pb-3">Deals Won</th>
-                <th className="pb-3">Revenue Output</th>
-                <th className="pb-3">Status</th>
-                <th className="pb-3 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 font-medium">
-              {filteredTeam.map((emp, idx) => (
-                <tr key={`${emp.id}-${idx}`} className="hover:bg-slate-50/70 transition">
-                  <td className="py-3">
-                    <p className="font-extrabold text-slate-900">{emp.name}</p>
-                    <p className="text-[10px] text-slate-400">{emp.email}</p>
-                  </td>
-                  <td className="py-3">
-                    <span
-                      className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black ${
-                        emp.role === 'Admin'
-                          ? 'bg-purple-50 text-purple-700 border border-purple-200'
-                          : emp.role === 'Sales Manager'
-                          ? 'bg-[#F8CAE4]/20 text-[#832D51] border border-[#EA6993]/30'
-                          : 'bg-amber-50 text-amber-800 border border-amber-200'
-                      }`}
-                    >
-                      {emp.role}
+        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+          {filteredDeptSummaries.map((dept) => (
+            <div
+              key={dept.name}
+              onClick={() => setSelectedDeptModal(dept)}
+              className="rounded-3xl border-2 border-slate-200 bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#832D51] hover:shadow-md hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900 space-y-4"
+            >
+              {/* Card Top */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-11 place-items-center rounded-2xl bg-[#832D51]/10 text-[#832D51] font-black">
+                    <Building className="size-5.5" />
+                  </span>
+                  <div>
+                    <h3 className="text-base font-black text-slate-950">{dept.name}</h3>
+                    <span className="text-[11px] text-slate-500 font-bold">
+                      {dept.members.length} Total Staff
                     </span>
-                  </td>
-                  <td className="py-3 text-slate-700">{emp.department}</td>
-                  <td className="py-3 text-slate-600 font-bold">{emp.manager || 'None'}</td>
-                  <td className="py-3 font-extrabold text-slate-900">{emp.deals_won}</td>
-                  <td className="py-3 font-black text-[#832D51]">
-                    ₹{(emp.revenue || 0).toLocaleString()}
-                  </td>
-                  <td className="py-3">
-                    <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black border ${
-                      emp.status?.toLowerCase() === 'active'
-                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                        : 'bg-rose-50 text-rose-700 border-rose-200'
-                    }`}>
-                      {emp.status}
+                  </div>
+                </div>
+                <ChevronRight className="size-5 text-slate-400" />
+              </div>
+
+              {/* Hierarchy Counts Pill */}
+              <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 flex items-center justify-between text-xs">
+                <div className="text-center">
+                  <span className="text-[9px] font-black uppercase text-purple-700 block">Admins</span>
+                  <span className="font-black text-slate-900 text-sm">{dept.admins.length}</span>
+                </div>
+                <div className="h-6 w-px bg-slate-200" />
+                <div className="text-center">
+                  <span className="text-[9px] font-black uppercase text-[#832D51] block">Managers</span>
+                  <span className="font-black text-slate-900 text-sm">{dept.managers.length}</span>
+                </div>
+                <div className="h-6 w-px bg-slate-200" />
+                <div className="text-center">
+                  <span className="text-[9px] font-black uppercase text-blue-700 block">Executives</span>
+                  <span className="font-black text-slate-900 text-sm">{dept.executives.length}</span>
+                </div>
+              </div>
+
+              {/* Department Financials */}
+              <div className="flex items-center justify-between pt-1 text-xs">
+                <div>
+                  <span className="text-[9px] font-bold text-slate-400 uppercase">Deals Closed</span>
+                  <p className="font-black text-slate-900">{dept.totalDeals}</p>
+                </div>
+                <div className="text-right">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase">Department Revenue</span>
+                  <p className="font-black text-emerald-700">₹{dept.totalRevenue.toLocaleString()}</p>
+                </div>
+              </div>
+
+              {/* Card Footer Call to Action */}
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-black text-[#832D51]">
+                <span>▶ Click to view staff hierarchy details</span>
+                <span>→</span>
+              </div>
+            </div>
+          ))}
+
+          {filteredDeptSummaries.length === 0 && (
+            <div className="col-span-full bg-white border border-slate-200 rounded-2xl p-12 text-center text-slate-400 font-bold text-xs">
+              No matching departments found.
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* POP-UP DEPARTMENT HIERARCHY MODAL (Admins, Managers & Executives) */}
+      {selectedDeptModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
+            {/* Modal Header with Close Symbol (X) */}
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/70 shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="grid size-11 place-items-center rounded-2xl bg-[#832D51] text-white font-black">
+                  <Building className="size-6" />
+                </span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base sm:text-lg font-black text-slate-900">{selectedDeptModal.name} Department</h3>
+                    <span className="px-2.5 py-0.5 rounded-full bg-[#832D51]/10 text-[#832D51] text-xs font-black">
+                      {selectedDeptModal.members.length} Total Staff
                     </span>
-                  </td>
-                  <td className="py-3 text-right">
-                    <div className="flex items-center justify-end gap-1">
-                      <button
-                        onClick={() => handleOpenView(emp)}
-                        className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition cursor-pointer"
-                        title="View Employee Profile"
-                      >
-                        <Eye className="size-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleOpenEdit(emp)}
-                        className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 hover:text-slate-900 transition cursor-pointer"
-                        title="Edit Employee"
-                      >
-                        <Edit2 className="size-3.5" />
-                      </button>
-                      <button
-                        onClick={() => handleToggleDeactivate(emp)}
-                        className={`rounded-lg p-1.5 transition ${
-                          emp.status === 'Active'
-                            ? 'text-rose-500 hover:bg-rose-50 hover:text-rose-700'
-                            : 'text-emerald-500 hover:bg-emerald-50 hover:text-emerald-700'
-                        }`}
-                        title={emp.status === 'Active' ? 'Deactivate Employee' : 'Activate Employee'}
-                      >
-                        {emp.status === 'Active' ? (
-                          <XCircle className="size-3.5" />
-                        ) : (
-                          <CheckCircle2 className="size-3.5" />
-                        )}
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+                  </div>
+                  <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                    Hierarchy: {selectedDeptModal.admins.length} Admins • {selectedDeptModal.managers.length} Sales Managers • {selectedDeptModal.executives.length} Sales Executives
+                  </p>
+                </div>
+              </div>
+
+              <button
+                onClick={() => setSelectedDeptModal(null)}
+                className="grid size-9 place-items-center rounded-xl bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
+                title="Close Department Modal"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {/* Modal Body: Organized Hierarchy Tables */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/30">
+              {/* SECTION 1: ADMINS & DEPARTMENT LEADS */}
+              {selectedDeptModal.admins.length > 0 && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2 pb-1 border-b border-slate-200/70">
+                    <ShieldCheck className="size-4.5 text-purple-700" />
+                    <h4 className="text-xs font-black uppercase tracking-wider text-purple-900">
+                      ADMINS & DEPARTMENT LEADS ({selectedDeptModal.admins.length})
+                    </h4>
+                  </div>
+                  {renderStaffTable(selectedDeptModal.admins)}
+                </div>
+              )}
+
+              {/* SECTION 2: SALES MANAGERS & TEAM LEADS */}
+              {selectedDeptModal.managers.length > 0 && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2 pb-1 border-b border-slate-200/70">
+                    <UserCheck className="size-4.5 text-[#832D51]" />
+                    <h4 className="text-xs font-black uppercase tracking-wider text-[#832D51]">
+                      SALES MANAGERS & TEAM LEADS ({selectedDeptModal.managers.length})
+                    </h4>
+                  </div>
+                  {renderStaffTable(selectedDeptModal.managers)}
+                </div>
+              )}
+
+              {/* SECTION 3: SALES EXECUTIVES & FIELD REPS */}
+              {selectedDeptModal.executives.length > 0 && (
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2 pb-1 border-b border-slate-200/70">
+                    <Users className="size-4.5 text-blue-700" />
+                    <h4 className="text-xs font-black uppercase tracking-wider text-blue-900">
+                      SALES EXECUTIVES & REPS ({selectedDeptModal.executives.length})
+                    </h4>
+                  </div>
+                  {renderStaffTable(selectedDeptModal.executives)}
+                </div>
+              )}
+
+              {selectedDeptModal.members.length === 0 && (
+                <div className="py-12 text-center text-xs text-slate-400 font-bold">
+                  No staff members currently assigned to this department.
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -760,10 +805,11 @@ function TeamManagement() {
                 <div>
                   <label className="block font-bold text-slate-700 mb-1">Phone</label>
                   <input
-                    type="text"
+                    type="tel"
+                    maxLength={10}
                     value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="+91 99999 88888"
+                    onChange={(e) => setFormData({ ...formData, phone: normalizePhoneNumber(e.target.value) })}
+                    placeholder="10-digit number e.g. 9876543210"
                     className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#832D51]"
                   />
                 </div>

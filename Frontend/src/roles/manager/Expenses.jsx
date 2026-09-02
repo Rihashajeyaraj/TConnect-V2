@@ -32,7 +32,7 @@ export default function ManagerExpenses() {
   const { showToast } = useToast()
 
   // API State
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [expenses, setExpenses] = useState([])
   const [summary, setSummary] = useState({
     pending_approval: 0,

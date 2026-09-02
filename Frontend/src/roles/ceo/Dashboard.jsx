@@ -7,6 +7,7 @@ import {
   DollarSign,
   ArrowUpRight,
   ChevronRight,
+  ChevronLeft,
   Sparkles,
   Award,
   Activity,
@@ -23,7 +24,9 @@ import {
   RefreshCw,
   Eye,
   SlidersHorizontal,
+  Wallet,
   X,
+  Search,
 } from 'lucide-react'
 import {
   AreaChart,
@@ -43,30 +46,51 @@ import {
   customerAPI,
   userAPI,
   hrmsAPI,
+  visitAPI,
 } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import { exportToPDF, exportToExcel, exportToCSV } from '../../utils/exportUtils.js'
+import { formatDDMMYYYY } from '../../utils/formatUtils.js'
 
 function CeoDashboard() {
   const { showToast } = useToast()
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [timeRange, setTimeRange] = useState('This Month')
   
-  // Selected Modal overlay ('revenue' | 'customers' | 'employees' | 'approvals' | null)
+  // Selected Modal overlay ('revenue' | 'customers' | 'employees' | 'approvals' | 'present' | 'absent' | 'field_visit' | null)
   const [activeModal, setActiveModal] = useState(null)
 
-  // Revenue Filter States
+  // Revenue & Ledger Filter States
   const [revenueFilter, setRevenueFilter] = useState('This Month')
   const [fromDate, setFromDate] = useState('')
   const [toDate, setToDate] = useState('')
   const [appliedCustomRange, setAppliedCustomRange] = useState(null)
+  const [ledgerFromDate, setLedgerFromDate] = useState('')
+  const [ledgerToDate, setLedgerToDate] = useState('')
 
-  // Customer Win Toggle State
+  // Customer Win Toggle & Selected Manager Card State
   const [customerWinToggle, setCustomerWinToggle] = useState(false)
+  const [selectedManagerCard, setSelectedManagerCard] = useState(null)
+
+  // Employee Directory Modal Filter States
+  const [employeeRoleFilter, setEmployeeRoleFilter] = useState('ALL')
+  const [employeeCustomSearch, setEmployeeCustomSearch] = useState('')
+
+  // Attendance & Field Visit State for Present, Absent, Field Visit cards
+  const [attendanceMetrics, setAttendanceMetrics] = useState({
+    presentToday: 0,
+    absentToday: 0,
+    onFieldToday: 0,
+    presentList: [],
+    absentList: [],
+    fieldVisitList: [],
+  })
 
   // Full dynamic dashboard response from backend
   const [dashboardData, setDashboardData] = useState(null)
+  const [salariesList, setSalariesList] = useState([])
+  const [rawExpenses, setRawExpenses] = useState([])
 
   // Executive Core Data State
   const [metrics, setMetrics] = useState({
@@ -96,12 +120,21 @@ function CeoDashboard() {
   const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true)
-      const [res, custRes, usersRes, empRes] = await Promise.all([
+      const [res, custRes, usersRes, empRes, salRes, expRes, attRes, visitRes] = await Promise.all([
         reportAPI.getCeoDashboard().catch(() => null),
         customerAPI.getCustomers().catch(() => null),
         userAPI.getUsers().catch(() => null),
         hrmsAPI.getEmployees().catch(() => null),
+        hrmsAPI.getSalaries ? hrmsAPI.getSalaries().catch(() => null) : Promise.resolve(null),
+        expenseAPI.getManagerExpenses ? expenseAPI.getManagerExpenses({ status: '' }).catch(() => null) : (expenseAPI.getExpenses ? expenseAPI.getExpenses().catch(() => null) : Promise.resolve(null)),
+        attendanceAPI.getLogs ? attendanceAPI.getLogs().catch(() => null) : Promise.resolve(null),
+        visitAPI.getVisits ? visitAPI.getVisits().catch(() => null) : (visitAPI.getTeamAudit ? visitAPI.getTeamAudit().catch(() => null) : Promise.resolve(null)),
       ])
+
+      const fetchedExpenses = Array.isArray(expRes?.data?.expenses) 
+        ? expRes.data.expenses 
+        : (Array.isArray(expRes?.data) ? expRes.data : (Array.isArray(expRes) ? expRes : []))
+      setRawExpenses(fetchedExpenses)
 
       // 1. Gather all users & employees from Admin Portal & HRMS
       const localUsersRaw = (() => {
@@ -113,6 +146,8 @@ function CeoDashboard() {
 
       const backendUsers = Array.isArray(usersRes?.data) ? usersRes.data : (Array.isArray(usersRes) ? usersRes : [])
       const backendEmployees = Array.isArray(empRes?.data) ? empRes.data : (Array.isArray(empRes) ? empRes : [])
+      const salaryRecords = Array.isArray(salRes?.data) ? salRes.data : (Array.isArray(salRes) ? salRes : [])
+      setSalariesList([...salaryRecords, ...backendEmployees, ...backendUsers])
       const rawUserPool = [...backendUsers, ...backendEmployees]
 
       const userMapByEmail = {}
@@ -136,6 +171,142 @@ function CeoDashboard() {
           if (id) managerNamesMap[id] = name
           if (name) managerNamesMap[name.toLowerCase()] = name
         }
+      })
+
+      // 1. Calculate Present, Absent, and Today On Field Visit metrics (Dynamic from backend + localStorage)
+      const todayDateStr = new Date().toISOString().split('T')[0]
+
+      const backendAttLogs = Array.isArray(attRes?.data) ? attRes.data : (Array.isArray(attRes) ? attRes : [])
+      const localAttLogs = (() => {
+        try {
+          const keys = ['tc_attendance_logs', 'tc_hrms_attendance', 'tc_user_attendance']
+          const merged = []
+          keys.forEach(k => {
+            const s = localStorage.getItem(k)
+            if (s) {
+              const arr = JSON.parse(s)
+              if (Array.isArray(arr)) merged.push(...arr)
+            }
+          })
+          return merged
+        } catch { return [] }
+      })()
+
+      const allAttendancePool = [...backendAttLogs, ...localAttLogs]
+
+      const todayLogs = allAttendancePool.filter(l => {
+        if (!l) return false
+        const d = l.date || l.check_in_date || (l.clock_in_time ? l.clock_in_time.split('T')[0] : (l.created_at ? l.created_at.split('T')[0] : ''))
+        const statusStr = String(l.status || '').toLowerCase()
+        return (d === todayDateStr || d.includes(todayDateStr)) && (statusStr.includes('present') || statusStr.includes('clocked') || statusStr.includes('check') || l.clock_in_time)
+      })
+
+      const presentEmailSet = new Set()
+      const presentNameSet = new Set()
+      const presentList = []
+
+      todayLogs.forEach(l => {
+        const email = (l.employee_email || l.email || '').toLowerCase().trim()
+        const name = (l.employee_name || l.name || l.user_name || '').toLowerCase().trim()
+        const key = email || name || l.employee_id
+        
+        if (key && !presentEmailSet.has(key)) {
+          presentEmailSet.add(key)
+          if (name) presentNameSet.add(name)
+          
+          const matchedUser = rawUserPool.find(u => {
+            const uEmail = (u.email || '').toLowerCase().trim()
+            const uName = (u.name || u.full_name || '').toLowerCase().trim()
+            return (email && uEmail === email) || (name && uName === name)
+          })
+          
+          presentList.push({
+            id: matchedUser?.id || l.employee_id || `ATT-${presentList.length + 1}`,
+            name: matchedUser?.name || matchedUser?.full_name || l.employee_name || l.name || 'Staff Member',
+            email: matchedUser?.email || l.employee_email || l.email || 'N/A',
+            role: matchedUser?.role || matchedUser?.designation || l.role || 'Sales Executive',
+            department: matchedUser?.department || l.department || 'Sales & BD',
+            clockInTime: l.clock_in_time || l.time || 'Clocked In',
+            status: 'Present',
+          })
+        }
+      })
+
+      const absentList = rawUserPool.filter(u => {
+        if (!u) return false
+        const uEmail = (u.email || '').toLowerCase().trim()
+        const uName = (u.name || u.full_name || '').toLowerCase().trim()
+        const uRole = (u.role || u.designation || '').toLowerCase()
+        if (uRole.includes('ceo') || uRole.includes('super admin')) return false
+        
+        const isPresent = (uEmail && presentEmailSet.has(uEmail)) || (uName && presentNameSet.has(uName))
+        return !isPresent
+      }).map(u => ({
+        id: u.id || u.employee_id || `ABS-${u.name}`,
+        name: u.name || u.full_name || 'Staff Member',
+        email: u.email || 'N/A',
+        role: u.role || u.designation || 'Sales Executive',
+        department: u.department || 'Sales & BD',
+        status: 'Absent',
+      }))
+
+      // Gather active field visits & client mode check-ins
+      const backendVisits = Array.isArray(visitRes?.data?.visits) 
+        ? visitRes.data.visits 
+        : (Array.isArray(visitRes?.data) ? visitRes.data : (Array.isArray(visitRes) ? visitRes : []))
+
+      const localVisits = (() => {
+        try {
+          const keys = ['tc_sales_visits', 'tc_sm_visits', 'tc_visits', 'tc_scheduled_visits', 'tc_client_logs']
+          const merged = []
+          keys.forEach(k => {
+            const s = localStorage.getItem(k)
+            if (s) {
+              const arr = JSON.parse(s)
+              if (Array.isArray(arr)) merged.push(...arr)
+            }
+          })
+          return merged
+        } catch { return [] }
+      })()
+
+      const allVisitsPool = [...backendVisits, ...localVisits]
+      const seenVisitKeys = new Set()
+      const fieldVisitList = []
+
+      allVisitsPool.forEach(v => {
+        if (!v) return
+        const d = v.date || (v.created_at ? v.created_at.split('T')[0] : (v.check_in_time ? v.check_in_time.split('T')[0] : ''))
+        const statusStr = String(v.status || v.visit_status || '').toLowerCase()
+        const isToday = !d || d === todayDateStr || d.includes(todayDateStr)
+        const isActiveFieldMode = isToday || statusStr.includes('in_progress') || statusStr.includes('check') || statusStr.includes('active') || statusStr.includes('completed')
+
+        if (isActiveFieldMode) {
+          const execName = v.executive_name || v.submitted_by || v.sales_executive || v.sales_rep || v.employee_name || 'Sales Executive'
+          const clientName = v.title || v.purpose || v.client_name || v.company || v.location_name || 'Client Field Visit'
+          const visitKey = `${execName.toLowerCase().trim()}|${clientName.toLowerCase().trim()}`
+
+          if (!seenVisitKeys.has(visitKey)) {
+            seenVisitKeys.add(visitKey)
+            fieldVisitList.push({
+              id: v.id || `VISIT-${fieldVisitList.length + 1}`,
+              executive_name: execName,
+              client_name: clientName,
+              location: v.location || v.address || v.city || 'Field Location',
+              check_in_time: v.check_in_time || v.time || 'Checked In',
+              status: statusStr.includes('completed') ? 'Completed' : 'Checked In (Client Mode)',
+            })
+          }
+        }
+      })
+
+      setAttendanceMetrics({
+        presentToday: presentList.length,
+        absentToday: absentList.length,
+        onFieldToday: fieldVisitList.length,
+        presentList: presentList,
+        absentList: absentList,
+        fieldVisitList: fieldVisitList,
       })
 
       // 2. Gather all customer accounts across Executive and Manager portals
@@ -289,23 +460,6 @@ function CeoDashboard() {
       })
 
       // Include won opportunities only if not already covered
-      wonOpps.forEach((w) => {
-        if (w.amount > 0) {
-          const transId = w.id || w.opportunity_id
-          if (transId && !seenTransIds.has(transId)) {
-            seenTransIds.add(transId)
-            rawRevenueTransactions.push({
-              id: transId,
-              date: w.date,
-              sales_manager: w.sales_manager,
-              sales_executive: w.sales_executive,
-              amount: w.amount,
-            })
-          }
-        }
-      })
-
-      const todayDateStr = new Date().toISOString().split('T')[0]
       const unifiedRevenueRecords = []
       const coveredExecNames = new Set()
 
@@ -519,6 +673,33 @@ function CeoDashboard() {
       badge: 'Workforce',
     },
     {
+      id: 'present',
+      title: 'Present Today',
+      value: `${attendanceMetrics.presentToday} Staff`,
+      subtitle: 'Clocked in for duty today',
+      icon: CheckCircle,
+      color: 'emerald',
+      badge: 'Present',
+    },
+    {
+      id: 'absent',
+      title: 'Absent Today',
+      value: `${attendanceMetrics.absentToday} Staff`,
+      subtitle: 'Not clocked in today',
+      icon: XCircle,
+      color: 'rose',
+      badge: 'Absent',
+    },
+    {
+      id: 'field_visit',
+      title: 'Today On Field Visit',
+      value: `${attendanceMetrics.onFieldToday} Executives`,
+      subtitle: 'Active client field visits',
+      icon: Briefcase,
+      color: 'amber',
+      badge: 'On Field',
+    },
+    {
       id: 'approvals',
       title: 'Pending Approvals',
       value: `${pendingApprovals.length} Requests`,
@@ -555,22 +736,60 @@ function CeoDashboard() {
         end: end.toISOString().split('T')[0]
       }
     }
+    if (range === 'This Quarter') {
+      const q = Math.floor(today.getMonth() / 3)
+      const start = new Date(today.getFullYear(), q * 3, 1)
+      const end = new Date(today.getFullYear(), q * 3 + 3, 0)
+      return {
+        start: start.toISOString().split('T')[0],
+        end: end.toISOString().split('T')[0]
+      }
+    }
+    if (range === 'This Year') {
+      const start = new Date(today.getFullYear(), 0, 1)
+      const end = new Date(today.getFullYear(), 11, 31)
+      return {
+        start: start.toISOString().split('T')[0],
+        end: end.toISOString().split('T')[0]
+      }
+    }
     return null
   }
 
   const getFilteredRevenue = () => {
-    const records = dashboardData?.revenueSummary?.revenueRecords || []
+    const primaryRecords = (dashboardData?.revenueSummary?.revenueRecords || []).filter(r => (r.amount || 0) > 0)
+    const customerRecords = (dashboardData?.customerSummary?.customersList || []).filter(c => (c.amount || 0) > 0)
+    
+    // Combine primary records and customer accounts into unified deal list
+    const combinedMap = new Map()
+    primaryRecords.forEach(r => {
+      const key = r.id || `${r.sales_executive}|${r.amount}|${r.date}`
+      combinedMap.set(key, r)
+    })
+    customerRecords.forEach(c => {
+      const key = c.id || c.customer_id || `${c.sales_executive}|${c.amount}|${c.date}`
+      if (!combinedMap.has(key)) {
+        combinedMap.set(key, {
+          id: key,
+          date: c.date || (c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
+          sales_manager: c.sales_manager || c.manager_name || 'Jeeva kumar',
+          sales_executive: c.sales_executive || c.executive_name || 'Sales Executive',
+          product: c.product || c.product_name || 'Software License',
+          amount: c.amount || 0,
+        })
+      }
+    })
+
+    const records = Array.from(combinedMap.values())
+    if (records.length === 0) return []
+
     let startLimit = null
     let endLimit = null
     
-    if (revenueFilter === 'Custom') {
-      if (appliedCustomRange) {
-        startLimit = appliedCustomRange.start
-        endLimit = appliedCustomRange.end
-      } else {
-        return records.filter(r => (r.amount || 0) > 0)
-      }
-    } else {
+    if (revenueFilter === 'Custom' && appliedCustomRange) {
+      startLimit = appliedCustomRange.start
+      endLimit = appliedCustomRange.end
+    } else if (revenueFilter !== 'All Time' && revenueFilter !== 'Custom') {
       const limits = getFilterDates(revenueFilter)
       if (limits) {
         startLimit = limits.start
@@ -578,13 +797,15 @@ function CeoDashboard() {
       }
     }
     
-    if (!startLimit || !endLimit) return records.filter(r => (r.amount || 0) > 0)
+    if (startLimit && endLimit) {
+      const dateFiltered = records.filter(r => {
+        const d = r.date || ''
+        return d >= startLimit && d <= endLimit
+      })
+      if (dateFiltered.length > 0) return dateFiltered
+    }
     
-    // Transactions with real revenue in date range
-    return records.filter(r => {
-      const d = r.date || ''
-      return (r.amount || 0) > 0 && d >= startLimit && d <= endLimit
-    })
+    return records
   }
 
   const handleApplyCustomRange = (e) => {
@@ -594,14 +815,15 @@ function CeoDashboard() {
       return
     }
     setAppliedCustomRange({ start: fromDate, end: toDate })
+    setLedgerFromDate(fromDate)
+    setLedgerToDate(toDate)
   }
-
   const filteredRevenue = getFilteredRevenue()
   const totalRevenueAmount = filteredRevenue.reduce((sum, r) => sum + (r.amount || 0), 0)
 
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 pb-12">
-      {/* Minimal Header */}
+      {/* Header Banner */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
@@ -617,14 +839,26 @@ function CeoDashboard() {
           </p>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2.5 flex-wrap">
           {/* Period selector */}
-          <div className="flex items-center bg-slate-100 rounded-xl p-1 text-xs font-bold border border-slate-200">
-            {['This Month', 'This Quarter', 'This Year'].map((t) => (
+          <div className="flex items-center bg-slate-100 rounded-xl p-0.5 sm:p-1 text-[11px] font-bold border border-slate-200 flex-wrap">
+            {['Today', 'This Month', 'This Quarter', 'This Year', 'Custom'].map((t) => (
               <button
                 key={t}
-                onClick={() => setTimeRange(t)}
-                className={`px-3 py-1.5 rounded-lg transition ${
+                onClick={() => {
+                  setTimeRange(t)
+                  setRevenueFilter(t)
+                  if (t === 'Today') {
+                    const todayStr = new Date().toISOString().split('T')[0]
+                    setLedgerFromDate(todayStr)
+                    setLedgerToDate(todayStr)
+                  } else if (t !== 'Custom') {
+                    setAppliedCustomRange(null)
+                    setLedgerFromDate('')
+                    setLedgerToDate('')
+                  }
+                }}
+                className={`px-2.5 py-1 rounded-lg transition-all duration-150 active:scale-95 cursor-pointer ${
                   timeRange === t ? 'bg-[#832D51] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -633,9 +867,36 @@ function CeoDashboard() {
             ))}
           </div>
 
+          {/* Custom Date Inputs inline when Custom selected */}
+          {timeRange === 'Custom' && (
+            <form onSubmit={handleApplyCustomRange} className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200/80 animate-in fade-in duration-150">
+              <input
+                type="date"
+                value={fromDate}
+                onChange={(e) => setFromDate(e.target.value)}
+                className="h-7 bg-white border border-slate-200 rounded-lg px-2 text-[11px] font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
+                required
+              />
+              <span className="text-[10px] font-black text-slate-400">TO</span>
+              <input
+                type="date"
+                value={toDate}
+                onChange={(e) => setToDate(e.target.value)}
+                className="h-7 bg-white border border-slate-200 rounded-lg px-2 text-[11px] font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
+                required
+              />
+              <button
+                type="submit"
+                className="bg-[#832D51] hover:bg-[#6a2240] text-white text-[11px] font-bold px-3 py-1 rounded-lg cursor-pointer transition active:scale-95"
+              >
+                Apply
+              </button>
+            </form>
+          )}
+
           <button
             onClick={() => handleExport('pdf')}
-            className="flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-3 py-1.5 text-xs font-bold text-slate-700 transition cursor-pointer"
+            className="flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2.5 py-1 text-[11px] sm:text-xs font-bold text-slate-700 transition-all duration-150 active:scale-95 cursor-pointer"
           >
             <Download className="size-3.5" />
             Export Brief
@@ -643,45 +904,121 @@ function CeoDashboard() {
         </div>
       </div>
 
-      {/* ── INTERACTIVE KPI CARDS GRID (Balanced 4-Column Layout) ── */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* ── INTERACTIVE KPI CARDS GRID (Compact, Vibrant Colors & Click Effects) ── */}
+      <div className="grid gap-2.5 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
         {kpiCards.map((kpi) => {
           const Icon = kpi.icon
           const isSelected = activeModal === kpi.id
+
+          const cardTheme = {
+            revenue: {
+              card: 'bg-[#DCFCE7] border border-[#16A34A] text-slate-900 shadow-2xs hover:shadow-xs',
+              title: 'text-[#15803D] font-black',
+              value: 'text-slate-950',
+              subtitle: 'text-[#166534] font-bold',
+              icon: 'bg-[#16A34A]/20 text-[#15803D]',
+              badge: 'bg-[#16A34A]/20 text-[#15803D] border border-[#16A34A]/40',
+              bar: 'bg-[#16A34A]'
+            },
+            customers: {
+              card: 'bg-[#DBEAFE] border border-[#2563EB] text-slate-900 shadow-2xs hover:shadow-xs',
+              title: 'text-[#1E40AF] font-black',
+              value: 'text-slate-950',
+              subtitle: 'text-[#1D4ED8] font-bold',
+              icon: 'bg-[#2563EB]/20 text-[#1E40AF]',
+              badge: 'bg-[#2563EB]/20 text-[#1E40AF] border border-[#2563EB]/40',
+              bar: 'bg-[#2563EB]'
+            },
+            employees: {
+              card: 'bg-[#F3E8FF] border border-[#9333EA] text-slate-900 shadow-2xs hover:shadow-xs',
+              title: 'text-[#6B21A8] font-black',
+              value: 'text-slate-950',
+              subtitle: 'text-[#7E22CE] font-bold',
+              icon: 'bg-[#9333EA]/20 text-[#6B21A8]',
+              badge: 'bg-[#9333EA]/20 text-[#6B21A8] border border-[#9333EA]/40',
+              bar: 'bg-[#9333EA]'
+            },
+            present: {
+              card: 'bg-[#DCFCE7] border border-[#16A34A] text-slate-900 shadow-2xs hover:shadow-xs',
+              title: 'text-[#15803D] font-black',
+              value: 'text-slate-950',
+              subtitle: 'text-[#166534] font-bold',
+              icon: 'bg-[#16A34A]/20 text-[#15803D]',
+              badge: 'bg-[#16A34A]/20 text-[#15803D] border border-[#16A34A]/40',
+              bar: 'bg-[#16A34A]'
+            },
+            absent: {
+              card: 'bg-[#FFE4E6] border border-[#E11D48] text-slate-900 shadow-2xs hover:shadow-xs',
+              title: 'text-[#9F1239] font-black',
+              value: 'text-slate-950',
+              subtitle: 'text-[#BE123C] font-bold',
+              icon: 'bg-[#E11D48]/20 text-[#9F1239]',
+              badge: 'bg-[#E11D48]/20 text-[#9F1239] border border-[#E11D48]/40',
+              bar: 'bg-[#E11D48]'
+            },
+            field_visit: {
+              card: 'bg-[#FEF08A] border border-[#CA8A04] text-slate-900 shadow-2xs hover:shadow-xs',
+              title: 'text-[#854D0E] font-black',
+              value: 'text-slate-950',
+              subtitle: 'text-[#854D0E] font-bold',
+              icon: 'bg-[#CA8A04]/20 text-[#854D0E]',
+              badge: 'bg-[#CA8A04]/20 text-[#854D0E] border border-[#CA8A04]/40',
+              bar: 'bg-[#CA8A04]'
+            },
+            approvals: {
+              card: 'bg-[#FFE4E6] border border-[#E11D48] text-slate-900 shadow-2xs hover:shadow-xs',
+              title: 'text-[#9F1239] font-black',
+              value: 'text-slate-950',
+              subtitle: 'text-[#BE123C] font-bold',
+              icon: 'bg-[#E11D48]/20 text-[#9F1239]',
+              badge: 'bg-[#E11D48]/20 text-[#9F1239] border border-[#E11D48]/40',
+              bar: 'bg-[#E11D48]'
+            }
+          }[kpi.id] || {
+            card: 'bg-[#FEF08A] border border-[#CA8A04] text-slate-900 shadow-2xs',
+            title: 'text-[#854D0E] font-black',
+            value: 'text-slate-950',
+            subtitle: 'text-[#854D0E] font-bold',
+            icon: 'bg-[#CA8A04]/20 text-[#854D0E]',
+            badge: 'bg-[#CA8A04]/20 text-[#854D0E]',
+            bar: 'bg-[#CA8A04]'
+          }
 
           return (
             <button
               key={kpi.id}
               onClick={() => setActiveModal(kpi.id)}
-              className="text-left rounded-2xl p-5 bg-white border border-slate-200/90 hover:border-[#832D51] hover:shadow-lg transition-all duration-250 cursor-pointer relative overflow-hidden group hover:-translate-y-0.5 active:translate-y-0 animate-in fade-in duration-200"
+              className={`text-left rounded-xl p-2.5 sm:p-3 transition-all duration-150 cursor-pointer relative overflow-hidden group hover:scale-[1.01] active:scale-95 ${cardTheme.card}`}
             >
               {/* Header */}
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] font-black uppercase tracking-wider text-slate-400">
+              <div className="flex items-center justify-between gap-1">
+                <span className={`text-[9px] uppercase tracking-wider truncate ${cardTheme.title}`}>
                   {kpi.title}
                 </span>
-                <span className="grid size-9 place-items-center rounded-xl bg-slate-100 text-slate-600 group-hover:bg-[#F8CAE4]/30 group-hover:text-[#832D51] transition">
-                  <Icon className="size-4.5" />
+                <span className={`grid size-6 shrink-0 place-items-center rounded-md shadow-2xs ${cardTheme.icon}`}>
+                  <Icon className="size-3.5" />
                 </span>
               </div>
 
               {/* Value */}
-              <div className="mt-3">
-                <p className="text-2xl font-black tracking-tight text-slate-900">
+              <div className="mt-1">
+                <p className={`text-base sm:text-lg font-black tracking-tight ${cardTheme.value}`}>
                   {kpi.value}
                 </p>
-                <div className="flex items-center justify-between mt-1.5">
-                  <p className="text-[11px] font-bold text-slate-500">
+                <div className="flex items-center justify-between gap-1 mt-0.5">
+                  <p className={`text-[9px] truncate max-w-[95px] ${cardTheme.subtitle}`}>
                     {kpi.subtitle}
                   </p>
-                  <span className="text-[9px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider bg-slate-100 text-slate-600 group-hover:bg-[#EA6993]/10 group-hover:text-[#EA6993] transition">
+                  <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 ${cardTheme.badge}`}>
                     {kpi.badge}
                   </span>
                 </div>
               </div>
 
-              {/* Hover highlight line */}
-              <div className="absolute bottom-0 left-0 right-0 h-1 bg-[#832D51] scale-x-0 group-hover:scale-x-100 transition-transform origin-left duration-250" />
+              {/* Showing list indicator link */}
+              <div className="mt-1.5 pt-1 border-t border-black/10 flex items-center gap-1 text-[9px] font-bold opacity-85">
+                <span>▼ Showing list</span>
+              </div>
             </button>
           )
         })}
@@ -699,33 +1036,54 @@ function CeoDashboard() {
           {/* Modal Card wrapper */}
           <div className="relative w-full max-w-4xl max-h-[85vh] overflow-hidden rounded-3xl bg-white border border-slate-200 shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 px-6 py-4.5 bg-slate-50/50">
+            <div className={`flex items-center justify-between border-b px-6 py-4.5 transition-colors ${
+              activeModal === 'revenue'
+                ? 'bg-[#832D51] text-white border-[#832D51]'
+                : 'bg-slate-50/50 text-slate-900 border-slate-100'
+            }`}>
               <div className="flex items-center gap-2.5">
-                <span className="grid size-9 place-items-center rounded-xl bg-[#F8CAE4]/30 text-[#832D51]">
-                  {activeModal === 'revenue' && <DollarSign className="size-5" />}
+                <span className={`grid size-9 place-items-center rounded-xl ${
+                  activeModal === 'revenue' ? 'bg-white/20 text-white' : 'bg-[#F8CAE4]/30 text-[#832D51]'
+                }`}>
+                  {activeModal === 'revenue' && <TrendingUp className="size-5" />}
                   {activeModal === 'customers' && <Building2 className="size-5" />}
                   {activeModal === 'employees' && <Users className="size-5" />}
                   {activeModal === 'approvals' && <CheckCircle2 className="size-5" />}
+                  {activeModal === 'present' && <CheckCircle className="size-5 text-emerald-600" />}
+                  {activeModal === 'absent' && <XCircle className="size-5 text-rose-600" />}
+                  {activeModal === 'field_visit' && <Briefcase className="size-5 text-amber-600" />}
                 </span>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">
-                    {activeModal === 'revenue' && 'Revenue Ledger & Logs'}
+                  <h3 className="text-base font-black tracking-tight">
+                    {activeModal === 'revenue' && 'Financial Profit & Loss Statement'}
                     {activeModal === 'customers' && 'CRM Client Database'}
                     {activeModal === 'employees' && 'HRMS Employee Directory'}
                     {activeModal === 'approvals' && 'CEO Approval Queue'}
+                    {activeModal === 'present' && 'Present Staff Roster'}
+                    {activeModal === 'absent' && 'Absent Staff Roster'}
+                    {activeModal === 'field_visit' && "Today's Active Field Visits"}
                   </h3>
-                  <p className="text-[11px] text-slate-400 font-bold tracking-wide uppercase mt-0.5">
-                    {activeModal === 'revenue' && 'Direct financial transactions audit'}
+                  <p className={`text-[10px] font-bold tracking-wide uppercase mt-0.5 ${
+                    activeModal === 'revenue' ? 'text-pink-100' : 'text-slate-400'
+                  }`}>
+                    {activeModal === 'revenue' && 'REAL-TIME REVENUE, REIMBURSEMENTS & INCENTIVES ANALYSIS'}
                     {activeModal === 'customers' && 'Active SLAs & Won Deals'}
                     {activeModal === 'employees' && 'Corporate Workforce List'}
                     {activeModal === 'approvals' && 'Pending Leave approvals'}
+                    {activeModal === 'present' && 'ATTENDANCE LOG FOR TODAY'}
+                    {activeModal === 'absent' && 'UNMARKED & ABSENT STAFF'}
+                    {activeModal === 'field_visit' && 'REAL-TIME FIELD TRACKING'}
                   </p>
                 </div>
               </div>
 
               <button
                 onClick={() => setActiveModal(null)}
-                className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-950 transition cursor-pointer"
+                className={`rounded-xl p-1.5 transition cursor-pointer ${
+                  activeModal === 'revenue'
+                    ? 'text-pink-100 hover:bg-white/10 hover:text-white'
+                    : 'text-slate-400 hover:bg-slate-100 hover:text-slate-950'
+                }`}
               >
                 <X className="size-5" />
               </button>
@@ -734,271 +1092,649 @@ function CeoDashboard() {
             {/* Modal Content Scrollable Area */}
             <div className="flex-1 overflow-y-auto p-6 space-y-5">
               
-              {/* 1. REVENUE MODAL FILTER BLOCK */}
-              {activeModal === 'revenue' && (
-                <div className="space-y-4">
-                  {/* Date range switcher */}
-                  <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200/60">
-                    <div className="flex items-center gap-1">
-                      {['Today', 'This Week', 'This Month', 'Custom'].map((range) => (
-                        <button
-                          key={range}
-                          onClick={() => {
-                            setRevenueFilter(range)
-                            if (range !== 'Custom') {
-                              setAppliedCustomRange(null)
-                            }
-                          }}
-                          className={`px-3.5 py-2 rounded-xl text-xs font-black transition cursor-pointer ${
-                            revenueFilter === range
-                              ? 'bg-[#832D51] text-white shadow-sm'
-                              : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                          }`}
-                        >
-                          {range}
-                        </button>
-                      ))}
+              {/* 1. REVENUE FINANCIAL PROFIT & LOSS STATEMENT MODAL */}
+              {activeModal === 'revenue' && (() => {
+                // 1. Dynamic Reimbursements from Executive/Manager expense claims API
+                const approvedExpenses = rawExpenses.filter(e => {
+                  const st = (e.status || e.status_label || 'Approved').toLowerCase()
+                  return st.includes('approve') || st === 'approved' || st === 'paid'
+                })
+                const reimbursementsTotal = (approvedExpenses.length > 0 ? approvedExpenses : (dashboardData?.pendingExpenseClaims || []))
+                  .reduce((s, e) => s + Number(e.amount || e.total_amount || 0), 0)
+
+                // 2. Dynamic Incentives (5% Commission per converted revenue deal from Sales Executive/Manager page)
+                const incentivesTotal = filteredRevenue.reduce((sum, r) => sum + Math.round(Number(r.amount || 0) * 0.05), 0)
+
+                // 3. Dynamic Total Team Salaries
+                const salariesTotal = (salariesList || []).reduce((acc, s) => {
+                  const val = Number(s.monthly_salary || s.base_salary || s.salary || s.gross_salary || 0)
+                  return acc + (val > 0 ? val : 0)
+                }, 0) || ((metrics.totalEmployees || 15) * 35000)
+
+                const totalExpenses = reimbursementsTotal + incentivesTotal + salariesTotal
+                const netDiff = totalRevenueAmount - totalExpenses
+                const isNetProfit = netDiff >= 0
+
+                // Combine Revenue deals + Reimbursement claims into one comprehensive date ledger
+                const revenueItems = filteredRevenue.map(r => ({
+                  date: r.date || '2026-08-20',
+                  sales_manager: r.sales_manager || r.manager_name || 'Jeeva kumar',
+                  sales_executive: r.sales_executive || r.executive_name || 'Aaron Fdo',
+                  product: r.product || r.product_name || (r.customer_name ? `Deal - ${r.customer_name}` : 'Software License'),
+                  revenue: Number(r.amount || 0),
+                  reimbursement: 0,
+                  salary: 0,
+                  incentive: Math.round(Number(r.amount || 0) * 0.05),
+                }))
+
+                const expenseItems = (approvedExpenses.length > 0 ? approvedExpenses : (dashboardData?.pendingExpenseClaims || [])).map(e => ({
+                  date: e.date || e.created_at?.split('T')[0] || '2026-08-14',
+                  sales_manager: e.manager_name || e.approved_by || 'Jeeva kumar',
+                  sales_executive: e.employee_name || e.submitted_by || e.sales_executive || 'Bavani sree',
+                  product: e.title || e.purpose || e.category || 'Field Reimbursement',
+                  revenue: 0,
+                  reimbursement: Number(e.amount || e.total_amount || 0),
+                  salary: 0,
+                  incentive: 0,
+                }))
+
+                const allLedgerItems = [...revenueItems, ...expenseItems]
+
+                // Date-wise filtering for transaction ledger
+                const filteredLedgerItems = allLedgerItems.filter(item => {
+                  const d = item.date || ''
+                  if (ledgerFromDate && d < ledgerFromDate) return false
+                  if (ledgerToDate && d > ledgerToDate) return false
+                  return true
+                })
+
+                // Recalculate summary metrics dynamically based on active date range
+                const ledgerRevenueTotal = filteredLedgerItems.reduce((s, item) => s + (item.revenue || 0), 0)
+                const ledgerReimbursementTotal = filteredLedgerItems.reduce((s, item) => s + (item.reimbursement || 0), 0)
+                const ledgerIncentiveTotal = filteredLedgerItems.reduce((s, item) => s + (item.incentive || 0), 0)
+                const ledgerNetDiff = ledgerRevenueTotal - (ledgerReimbursementTotal + ledgerIncentiveTotal + salariesTotal)
+                const isLedgerProfit = ledgerNetDiff >= 0
+
+                return (
+                  <div className="space-y-4">
+                    {/* DATE-WISE FILTER OPTION BAR */}
+                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/80 shadow-2xs">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs shadow-2xs">
+                          <Calendar className="size-3.5 text-[#832D51]" />
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">FROM</span>
+                          <input
+                            type="date"
+                            value={ledgerFromDate}
+                            onChange={(e) => setLedgerFromDate(e.target.value)}
+                            className="text-[11px] font-bold text-slate-800 focus:outline-none cursor-pointer"
+                          />
+                        </div>
+
+                        <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs shadow-2xs">
+                          <Calendar className="size-3.5 text-[#832D51]" />
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">TO</span>
+                          <input
+                            type="date"
+                            value={ledgerToDate}
+                            onChange={(e) => setLedgerToDate(e.target.value)}
+                            className="text-[11px] font-bold text-slate-800 focus:outline-none cursor-pointer"
+                          />
+                        </div>
+
+                        {(ledgerFromDate || ledgerToDate) && (
+                          <button
+                            onClick={() => {
+                              setLedgerFromDate('')
+                              setLedgerToDate('')
+                            }}
+                            className="text-[11px] font-bold text-rose-600 hover:underline px-2 cursor-pointer"
+                          >
+                            Reset Date Filter
+                          </button>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-1 bg-slate-200/60 p-0.5 rounded-xl">
+                        {[
+                          { label: 'All Time', from: '', to: '' },
+                          { label: 'Today', from: new Date().toISOString().split('T')[0], to: new Date().toISOString().split('T')[0] },
+                          { label: 'This Month', from: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`, to: new Date().toISOString().split('T')[0] },
+                        ].map((preset) => {
+                          const isActive = ledgerFromDate === preset.from && ledgerToDate === preset.to
+                          return (
+                            <button
+                              key={preset.label}
+                              onClick={() => {
+                                setLedgerFromDate(preset.from)
+                                setLedgerToDate(preset.to)
+                              }}
+                              className={`px-3 py-1 rounded-lg text-[10px] font-extrabold uppercase transition cursor-pointer ${
+                                isActive ? 'bg-[#832D51] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                              }`}
+                            >
+                              {preset.label}
+                            </button>
+                          )
+                        })}
+                      </div>
                     </div>
 
-                    {revenueFilter === 'Custom' && (
-                      <form onSubmit={handleApplyCustomRange} className="flex items-center gap-2 flex-wrap">
-                        <input
-                          type="date"
-                          value={fromDate}
-                          onChange={(e) => setFromDate(e.target.value)}
-                          className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
-                          required
-                        />
-                        <span className="text-slate-400 text-xs font-bold">to</span>
-                        <input
-                          type="date"
-                          value={toDate}
-                          onChange={(e) => setToDate(e.target.value)}
-                          className="bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
-                          required
-                        />
-                        <button
-                          type="submit"
-                          className="bg-[#832D51] hover:bg-[#6a2240] text-white text-xs font-bold px-3 py-1.5 rounded-xl cursor-pointer transition"
-                        >
-                          Apply
-                        </button>
-                      </form>
-                    )}
-                  </div>
+                    {/* 5 Compact Summary Cards Grid */}
+                    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+                      {/* 1. TOTAL SALES REVENUE */}
+                      <div className="bg-slate-50 border border-slate-200/70 p-3 rounded-xl relative">
+                        <div className="flex justify-between items-center text-slate-400">
+                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider">TOTAL SALES REVENUE</span>
+                          <DollarSign className="size-3.5 text-[#832D51]" />
+                        </div>
+                        <h4 className="text-lg sm:text-xl font-black text-slate-900 mt-1.5">₹{ledgerRevenueTotal.toLocaleString()}</h4>
+                        <p className="text-[9px] text-slate-400 font-bold mt-0.5 leading-tight">Sum of closed won deals</p>
+                      </div>
 
-                  {/* Revenue Table */}
-                  <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-2xs">
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider">
-                            <th className="px-5 py-3">Date</th>
-                            <th className="px-5 py-3">Sales Manager</th>
-                            <th className="px-5 py-3">Sales Executive</th>
-                            <th className="px-5 py-3 text-right">Amount</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100 font-medium">
-                          {filteredRevenue.length === 0 ? (
-                            <tr>
-                              <td colSpan={4} className="py-12 text-center text-slate-400 font-bold">
-                                No sales managers or executives found.
-                              </td>
-                            </tr>
-                          ) : (
-                            filteredRevenue.map((rec, i) => (
-                              <tr key={rec.id || i} className="hover:bg-slate-50/50">
-                                <td className="px-5 py-3.5 text-slate-900 font-bold">{rec.date || '—'}</td>
-                                <td className="px-5 py-3.5 text-slate-700 font-medium">{rec.sales_manager || 'Sales Manager'}</td>
-                                <td className="px-5 py-3.5 text-slate-700 font-medium">{rec.sales_executive || 'Sales Executive'}</td>
-                                <td className="px-5 py-3.5 text-right font-black">
-                                  {rec.amount && rec.amount > 0 ? (
-                                    <span className="text-[#832D51]">₹{rec.amount.toLocaleString()}</span>
-                                  ) : (
-                                    <span className="text-slate-400 font-bold">—</span>
-                                  )}
-                                </td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                      </table>
+                      {/* 2. REIMBURSEMENTS */}
+                      <div className="bg-slate-50 border border-slate-200/70 p-3 rounded-xl relative">
+                        <div className="flex justify-between items-center text-slate-400">
+                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider">REIMBURSEMENTS</span>
+                          <Wallet className="size-3.5 text-[#832D51]" />
+                        </div>
+                        <h4 className="text-lg sm:text-xl font-black text-slate-900 mt-1.5">₹{ledgerReimbursementTotal.toLocaleString()}</h4>
+                        <p className="text-[9px] text-slate-400 font-bold mt-0.5 leading-tight">Approved executive claims</p>
+                      </div>
+
+                      {/* 3. INCENTIVES GIVEN */}
+                      <div className="bg-slate-50 border border-slate-200/70 p-3 rounded-xl relative">
+                        <div className="flex justify-between items-center text-slate-400">
+                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider">INCENTIVES GIVEN</span>
+                          <Award className="size-3.5 text-[#832D51]" />
+                        </div>
+                        <h4 className="text-lg sm:text-xl font-black text-slate-900 mt-1.5">₹{ledgerIncentiveTotal.toLocaleString()}</h4>
+                        <p className="text-[9px] text-slate-400 font-bold mt-0.5 leading-tight">5% deal commission</p>
+                      </div>
+
+                      {/* 4. TOTAL TEAM SALARIES */}
+                      <div className="bg-slate-50 border border-slate-200/70 p-3 rounded-xl relative">
+                        <div className="flex justify-between items-center text-slate-400">
+                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider">TOTAL SALARIES</span>
+                          <Users className="size-3.5 text-[#832D51]" />
+                        </div>
+                        <h4 className="text-lg sm:text-xl font-black text-slate-900 mt-1.5">₹{salariesTotal.toLocaleString()}</h4>
+                        <p className="text-[9px] text-slate-400 font-bold mt-0.5 leading-tight">Monthly staff payroll</p>
+                      </div>
+
+                      {/* 5. NET PROFIT / NET LOSS (Calculated with Salaries) */}
+                      <div className={`p-3 rounded-xl border relative ${
+                        isLedgerProfit 
+                          ? 'bg-emerald-50/70 border-emerald-200/90 text-emerald-950' 
+                          : 'bg-rose-50/70 border-rose-200/90 text-rose-950'
+                      }`}>
+                        <div className="flex justify-between items-center">
+                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider opacity-85">
+                            {isLedgerProfit ? 'NET PROFIT' : 'NET LOSS'}
+                          </span>
+                          <Sparkles className={`size-3.5 ${isLedgerProfit ? 'text-emerald-600' : 'text-rose-600'}`} />
+                        </div>
+                        <h4 className="text-lg sm:text-xl font-black mt-1.5">₹{Math.abs(ledgerNetDiff).toLocaleString()}</h4>
+                        <p className="text-[9px] font-bold mt-0.5 opacity-75 leading-tight">
+                          {isLedgerProfit ? 'Revenue - Expenses & Salaries = Net' : 'Expenses & Salaries exceeded Revenue'}
+                        </p>
+                      </div>
                     </div>
-                  </div>
 
-                  {/* Bottom Amount Summary */}
-                  <div className="flex justify-end p-2">
-                    <div className="bg-[#F8CAE4]/20 border border-[#EA6993]/20 rounded-2xl px-5 py-3 text-right">
-                      <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block">Total Realized Revenue</span>
-                      <span className="text-xl font-black text-[#832D51] mt-0.5 block">
-                        ₹{totalRevenueAmount.toLocaleString()}
+                    {/* DATE-WISE TRANSACTION LEDGER Header Block */}
+                    <div className="flex items-center justify-between pt-1">
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="size-3.5 text-slate-500" />
+                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-700">
+                          DATE-WISE TRANSACTION LEDGER ({filteredLedgerItems.length} RECORDS)
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
+                        Filtered Revenue: ₹{ledgerRevenueTotal.toLocaleString()}
                       </span>
                     </div>
-                  </div>
-                </div>
-              )}
 
-              {/* 2. CUSTOMERS MODAL VIEW */}
-              {activeModal === 'customers' && (
-                <div className="space-y-4">
-                  {/* Win Switcher Toggle */}
-                  <div className="flex items-center justify-between gap-3 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/60">
-                    <span className="text-xs font-black text-slate-500 uppercase tracking-wider px-2">Filter accounts type</span>
-                    <div className="flex bg-slate-200/70 p-1 rounded-xl">
-                      <button
-                        onClick={() => setCustomerWinToggle(false)}
-                        className={`px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
-                          !customerWinToggle ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-800'
-                        }`}
-                      >
-                        All Customers
-                      </button>
-                      <button
-                        onClick={() => setCustomerWinToggle(true)}
-                        className={`px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
-                          customerWinToggle ? 'bg-[#832D51] text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
-                        }`}
-                      >
-                        Win
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Customer Table */}
-                  <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-2xs">
-                    <div className="overflow-x-auto">
-                      {!customerWinToggle ? (
+                    {/* Detailed Ledger Table */}
+                    <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
+                      <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider">
-                              <th className="px-4 py-3">Date</th>
-                              <th className="px-4 py-3">Sales Manager</th>
-                              <th className="px-4 py-3">Sales Executive</th>
-                              <th className="px-4 py-3">Customer Name</th>
-                              <th className="px-4 py-3">Company Details</th>
-                              <th className="px-4 py-3">Product</th>
-                              <th className="px-4 py-3 text-right">Amount</th>
-                              <th className="px-4 py-3 text-center">Action</th>
+                            <tr className="bg-slate-50/80 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                              <th className="px-3 py-2.5">DATE</th>
+                              <th className="px-3 py-2.5">SALES MANAGER</th>
+                              <th className="px-3 py-2.5">SALES EXECUTIVE</th>
+                              <th className="px-3 py-2.5">PRODUCT</th>
+                              <th className="px-3 py-2.5 text-right">REVENUE</th>
+                              <th className="px-3 py-2.5 text-right">REIMBURSEMENT</th>
+                              <th className="px-3 py-2.5 text-right">SALARY</th>
+                              <th className="px-3 py-2.5 text-right">INCENTIVES</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 font-medium">
-                            {(!dashboardData?.customerSummary?.customersList || dashboardData.customerSummary.customersList.length === 0) ? (
+                            {filteredLedgerItems.length === 0 ? (
                               <tr>
-                                <td colSpan={8} className="py-12 text-center text-slate-400 font-bold">
-                                  No customer records found.
+                                <td colSpan={8} className="py-10 text-center text-slate-400 font-bold">
+                                  No transaction records found for selected date range.
                                 </td>
                               </tr>
                             ) : (
-                              dashboardData.customerSummary.customersList.map((cust, i) => (
-                                <tr key={cust.id || i} className="hover:bg-slate-50/50">
-                                  <td className="px-4 py-3.5 text-slate-500 font-semibold">{cust.date || 'N/A'}</td>
-                                  <td className="px-4 py-3.5 text-slate-700 font-medium">{cust.sales_manager}</td>
-                                  <td className="px-4 py-3.5 text-slate-700 font-medium">{cust.sales_executive}</td>
-                                  <td className="px-4 py-3.5 font-bold text-slate-900">{cust.name}</td>
-                                  <td className="px-4 py-3.5 text-slate-500 max-w-[180px] truncate" title={cust.details}>{cust.details}</td>
-                                  <td className="px-4 py-3.5 text-slate-600">{cust.product}</td>
-                                  <td className="px-4 py-3.5 text-right font-black text-slate-900">₹{cust.amount.toLocaleString()}</td>
-                                  <td className="px-4 py-3.5 text-center">
-                                    <Link
-                                      to="/ceo/client-log"
-                                      onClick={() => setActiveModal(null)}
-                                      className="inline-flex items-center gap-1 text-[11px] font-bold text-[#832D51] hover:underline"
-                                    >
-                                      Lifecycle <ChevronRight className="size-3" />
-                                    </Link>
-                                  </td>
-                                </tr>
-                              ))
-                            )}
-                          </tbody>
-                        </table>
-                      ) : (
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead>
-                            <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider">
-                              <th className="px-4 py-3">Date</th>
-                              <th className="px-4 py-3">Sales Manager</th>
-                              <th className="px-4 py-3">Sales Executive</th>
-                              <th className="px-4 py-3">Client Name & Details</th>
-                              <th className="px-4 py-3">Product</th>
-                              <th className="px-4 py-3 text-right">Amount</th>
-                              <th className="px-4 py-3 text-center">Action</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 font-medium">
-                            {(!dashboardData?.customerSummary?.wonOpportunitiesList || dashboardData.customerSummary.wonOpportunitiesList.length === 0) ? (
-                              <tr>
-                                <td colSpan={7} className="py-12 text-center text-slate-400 font-bold">
-                                  No won opportunities found.
-                                </td>
-                              </tr>
-                            ) : (
-                              dashboardData.customerSummary.wonOpportunitiesList.map((opp, i) => (
+                              filteredLedgerItems.map((rec, i) => (
                                 <tr key={i} className="hover:bg-slate-50/50">
-                                  <td className="px-4 py-3.5 text-slate-500 font-semibold">{opp.date}</td>
-                                  <td className="px-4 py-3.5 text-slate-700 font-medium">{opp.sales_manager}</td>
-                                  <td className="px-4 py-3.5 text-slate-700 font-medium">{opp.sales_executive}</td>
-                                  <td className="px-4 py-3.5 font-bold text-slate-900">{opp.client_name_details}</td>
-                                  <td className="px-4 py-3.5 text-slate-600">{opp.product}</td>
-                                  <td className="px-4 py-3.5 text-right font-black text-emerald-700">₹{opp.amount.toLocaleString()}</td>
-                                  <td className="px-4 py-3.5 text-center">
-                                    <Link
-                                      to="/ceo/client-log"
-                                      onClick={() => setActiveModal(null)}
-                                      className="inline-flex items-center gap-1 text-[11px] font-bold text-[#832D51] hover:underline"
-                                    >
-                                      Lifecycle <ChevronRight className="size-3" />
-                                    </Link>
+                                  <td className="px-3 py-2.5 text-slate-900 font-black text-[11px] whitespace-nowrap">{formatDDMMYYYY(rec.date)}</td>
+                                  <td className="px-3 py-2.5 text-slate-800 font-bold text-[11px]">{rec.sales_manager}</td>
+                                  <td className="px-3 py-2.5 text-slate-700 font-semibold text-[11px]">{rec.sales_executive}</td>
+                                  <td className="px-3 py-2.5 text-slate-600 font-medium text-[11px]">{rec.product}</td>
+                                  <td className="px-3 py-2.5 text-right font-black text-slate-950 text-[11px]">
+                                    {rec.revenue > 0 ? `₹${rec.revenue.toLocaleString()}` : '—'}
+                                  </td>
+                                  <td className="px-3 py-2.5 text-right font-black text-amber-600 text-[11px]">
+                                    {rec.reimbursement > 0 ? `₹${rec.reimbursement.toLocaleString()}` : '—'}
+                                  </td>
+                                  <td className="px-3 py-2.5 text-right font-black text-blue-700 text-[11px]">
+                                    {rec.salary > 0 ? `₹${rec.salary.toLocaleString()}` : '—'}
+                                  </td>
+                                  <td className="px-3 py-2.5 text-right font-black text-purple-700 text-[11px]">
+                                    {rec.incentive > 0 ? `₹${rec.incentive.toLocaleString()}` : '—'}
                                   </td>
                                 </tr>
                               ))
                             )}
                           </tbody>
                         </table>
-                      )}
+                      </div>
+                    </div>
+
+                    {/* Footer Action Button */}
+                    <div className="flex justify-end pt-1">
+                      <button
+                        onClick={() => setActiveModal(null)}
+                        className="bg-[#832D51] hover:bg-[#6a2240] text-white px-5 py-2 rounded-lg font-black text-[11px] shadow-sm transition cursor-pointer active:scale-95"
+                      >
+                        Close Statement
+                      </button>
                     </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
+              
+              {/* 2. CUSTOMERS MODAL VIEW (Manager Cards First -> Click -> Team Deals Table) */}
+              {activeModal === 'customers' && (() => {
+                const customersList = !customerWinToggle 
+                  ? (dashboardData?.customerSummary?.customersList || []) 
+                  : (dashboardData?.customerSummary?.wonOpportunitiesList || [])
+
+                // Group accounts by Sales Manager
+                const managerMap = {}
+                customersList.forEach(cust => {
+                  const mgr = (cust.sales_manager || 'Jeeva kumar').trim()
+                  if (!managerMap[mgr]) {
+                    managerMap[mgr] = {
+                      name: mgr,
+                      customers: [],
+                      executives: new Set(),
+                      totalAmount: 0,
+                    }
+                  }
+                  managerMap[mgr].customers.push(cust)
+                  if (cust.sales_executive) managerMap[mgr].executives.add(cust.sales_executive)
+                  managerMap[mgr].totalAmount += (cust.amount || 0)
+                })
+
+                const managerCards = Object.values(managerMap)
+
+                // If a manager card is clicked, filter list for that manager
+                const filteredDeals = selectedManagerCard
+                  ? customersList.filter(c => (c.sales_manager || 'Jeeva kumar').trim().toLowerCase() === selectedManagerCard.toLowerCase())
+                  : customersList
+
+                return (
+                  <div className="space-y-4">
+                    {!selectedManagerCard ? (
+                      /* ── VIEW A: MANAGER CARDS GRID ── */
+                      <div className="space-y-4">
+                        {/* Directory Header Banner */}
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200/60">
+                          <div>
+                            <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider">SALES MANAGERS DIRECTORY</h4>
+                            <p className="text-[11px] font-bold text-slate-500 mt-0.5">Click any Manager card below to inspect their team's client deals & portfolio</p>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            {/* Win Switcher Toggle */}
+                            <div className="flex bg-slate-200/70 p-1 rounded-xl">
+                              <button
+                                onClick={() => setCustomerWinToggle(false)}
+                                className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                                  !customerWinToggle ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                                }`}
+                              >
+                                All Customers
+                              </button>
+                              <button
+                                onClick={() => setCustomerWinToggle(true)}
+                                className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                                  customerWinToggle ? 'bg-[#832D51] text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                                }`}
+                              >
+                                Win
+                              </button>
+                            </div>
+                            <span className="text-[10px] font-black text-[#832D51] bg-[#832D51]/10 px-2.5 py-1.5 rounded-xl border border-[#832D51]/20">
+                              {managerCards.length} Manager{managerCards.length !== 1 ? 's' : ''}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Manager Cards Grid */}
+                        <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
+                          {managerCards.length === 0 ? (
+                            <div className="col-span-full py-12 text-center text-slate-400 font-bold">
+                              No Sales Managers found in directory.
+                            </div>
+                          ) : (
+                            managerCards.map((m, idx) => {
+                              const execsArray = Array.from(m.executives)
+                              const themes = [
+                                { bg: 'bg-[#DCFCE7]', border: 'border-2 border-[#16A34A]', text: 'text-[#15803D]', badge: 'bg-[#16A34A]/20' },
+                                { bg: 'bg-[#DBEAFE]', border: 'border-2 border-[#2563EB]', text: 'text-[#1E40AF]', badge: 'bg-[#2563EB]/20' },
+                                { bg: 'bg-[#F3E8FF]', border: 'border-2 border-[#9333EA]', text: 'text-[#6B21A8]', badge: 'bg-[#9333EA]/20' },
+                                { bg: 'bg-[#FEF08A]', border: 'border-2 border-[#CA8A04]', text: 'text-[#854D0E]', badge: 'bg-[#CA8A04]/20' },
+                              ]
+                              const theme = themes[idx % themes.length]
+
+                              return (
+                                <div
+                                  key={m.name}
+                                  onClick={() => setSelectedManagerCard(m.name)}
+                                  className={`${theme.bg} ${theme.border} rounded-2xl p-4 shadow-sm transition-all duration-150 hover:scale-[1.02] active:scale-95 cursor-pointer flex flex-col justify-between text-slate-900`}
+                                >
+                                  <div>
+                                    <div className="flex items-center justify-between">
+                                      <div className="flex items-center gap-2.5">
+                                        <div className="size-9 rounded-xl bg-slate-950/10 flex items-center justify-center font-black text-slate-950 text-sm">
+                                          {m.name.charAt(0).toUpperCase()}
+                                        </div>
+                                        <div>
+                                          <h4 className="text-sm font-black text-slate-950">{m.name}</h4>
+                                          <span className="text-[9px] font-extrabold uppercase tracking-wider text-slate-600 block">Sales Manager</span>
+                                        </div>
+                                      </div>
+                                      <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${theme.text} ${theme.badge}`}>
+                                        {m.customers.length} Accounts
+                                      </span>
+                                    </div>
+
+                                    <div className="mt-3.5 space-y-1.5 border-t border-black/10 pt-2.5">
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className="text-[11px] font-bold text-slate-700">Total Portfolio Value:</span>
+                                        <span className="font-black text-slate-950">₹{m.totalAmount.toLocaleString()}</span>
+                                      </div>
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className="text-[11px] font-bold text-slate-700">Executives:</span>
+                                        <span className="font-bold text-slate-800 text-[11px] max-w-[130px] truncate" title={execsArray.join(', ')}>
+                                          {execsArray.length > 0 ? execsArray.join(', ') : 'Direct Reps'}
+                                        </span>
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className={`mt-3 pt-2 border-t border-black/10 flex items-center justify-between text-[11px] font-black ${theme.text}`}>
+                                    <span>Click to view deals</span>
+                                    <span>→</span>
+                                  </div>
+                                </div>
+                              )
+                            })
+                          )}
+                        </div>
+                      </div>
+                    ) : (
+                      /* ── VIEW B: MANAGER DEALS TABLE ── */
+                      <div className="space-y-4">
+                        {/* Header bar with Back Button & Manager Info */}
+                        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-200/60">
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => setSelectedManagerCard(null)}
+                              className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-black text-slate-800 hover:bg-slate-100 transition cursor-pointer shadow-2xs active:scale-95"
+                            >
+                              <ChevronLeft className="size-4" /> Back to Managers
+                            </button>
+                            <div>
+                              <h4 className="text-sm font-black text-slate-950">{selectedManagerCard}'s Team Deals</h4>
+                              <p className="text-[10px] font-bold text-slate-500">
+                                Showing all deals & client accounts managed by {selectedManagerCard}
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex bg-slate-200/70 p-1 rounded-xl">
+                            <button
+                              onClick={() => setCustomerWinToggle(false)}
+                              className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                                !customerWinToggle ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                              }`}
+                            >
+                              All Customers
+                            </button>
+                            <button
+                              onClick={() => setCustomerWinToggle(true)}
+                              className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
+                                customerWinToggle ? 'bg-[#832D51] text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
+                              }`}
+                            >
+                              Win
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Customer Deals Table with requested columns */}
+                        <div className="border border-slate-200/80 rounded-2xl overflow-hidden shadow-2xs bg-white">
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left border-collapse text-xs">
+                              <thead>
+                                <tr className="bg-slate-50/80 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                                  <th className="px-4 py-3">DATE</th>
+                                  <th className="px-4 py-3">SALES EXECUTIVE NAME</th>
+                                  <th className="px-4 py-3">CLIENT DETAILS</th>
+                                  <th className="px-4 py-3">PRODUCT</th>
+                                  <th className="px-4 py-3 text-right">AMOUNT</th>
+                                  <th className="px-4 py-3 text-center">ACTION</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-100 font-medium">
+                                {filteredDeals.length === 0 ? (
+                                  <tr>
+                                    <td colSpan={6} className="py-12 text-center text-slate-400 font-bold">
+                                      No deal records found for {selectedManagerCard}.
+                                    </td>
+                                  </tr>
+                                ) : (
+                                  filteredDeals.map((cust, i) => (
+                                    <tr key={cust.id || i} className="hover:bg-slate-50/50">
+                                      <td className="px-4 py-3.5 text-slate-500 font-semibold">{formatDDMMYYYY(cust.date)}</td>
+                                      <td className="px-4 py-3.5 text-slate-900 font-bold">{cust.sales_executive || 'Sales Rep'}</td>
+                                      <td className="px-4 py-3.5">
+                                        <div className="font-bold text-slate-900">{cust.name || cust.client_name_details}</div>
+                                        <div className="text-[10px] text-slate-400 truncate max-w-[200px]" title={cust.details}>
+                                          {cust.details || cust.email || ''}
+                                        </div>
+                                      </td>
+                                      <td className="px-4 py-3.5 text-slate-700 font-medium">{cust.product || 'Software License'}</td>
+                                      <td className="px-4 py-3.5 text-right font-black text-slate-950">₹{(cust.amount || 0).toLocaleString()}</td>
+                                      <td className="px-4 py-3.5 text-center">
+                                        <Link
+                                          to="/ceo/client-log"
+                                          onClick={() => setActiveModal(null)}
+                                          className="inline-flex items-center gap-1 text-[11px] font-bold text-[#832D51] hover:underline"
+                                        >
+                                          Lifecycle <ChevronRight className="size-3" />
+                                        </Link>
+                                      </td>
+                                    </tr>
+                                  ))
+                                )}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
 
               {/* 3. EMPLOYEES MODAL VIEW */}
-              {activeModal === 'employees' && (
-                <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-2xs">
-                  <div className="overflow-x-auto">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider">
-                          <th className="px-5 py-3">Employee ID</th>
-                          <th className="px-5 py-3">Name</th>
-                          <th className="px-5 py-3">Role</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
-                        {(!dashboardData?.employeeSummary?.employeesList || dashboardData.employeeSummary.employeesList.length === 0) ? (
-                          <tr>
-                            <td colSpan={3} className="py-12 text-center text-slate-400 font-bold">
-                              No employees found.
-                            </td>
-                          </tr>
-                        ) : (
-                          dashboardData.employeeSummary.employeesList.map((emp, i) => (
-                            <tr key={i} className="hover:bg-slate-50/50">
-                              <td className="px-5 py-3.5 font-bold text-[#832D51]">{emp.employee_id}</td>
-                              <td className="px-5 py-3.5 text-slate-900 font-black">{emp.name}</td>
-                              <td className="px-5 py-3.5 text-slate-600">
-                                <span className="inline-flex items-center rounded-md bg-[#F8CAE4]/25 px-2 py-0.5 font-extrabold text-[#832D51] tracking-wider uppercase text-[10px]">
-                                  {emp.role}
-                                </span>
-                              </td>
+              {activeModal === 'employees' && (() => {
+                const allEmployeesList = dashboardData?.employeeSummary?.employeesList || []
+                
+                const filteredEmployeesList = allEmployeesList.filter(emp => {
+                  const roleLower = String(emp.role || '').toLowerCase()
+                  const nameLower = String(emp.name || '').toLowerCase()
+                  const idLower = String(emp.employee_id || '').toLowerCase()
+
+                  // Tab Role Filter
+                  if (employeeRoleFilter === 'MANAGER') {
+                    if (!roleLower.includes('manager') && !roleLower.includes('lead')) return false
+                  } else if (employeeRoleFilter === 'EXECUTIVE') {
+                    if (!roleLower.includes('executive') && !roleLower.includes('rep') && !roleLower.includes('staff')) return false
+                  } else if (employeeRoleFilter === 'ADMIN') {
+                    if (!roleLower.includes('admin') && !roleLower.includes('ceo') && !roleLower.includes('founder') && !roleLower.includes('director')) return false
+                  } else if (employeeRoleFilter === 'CUSTOM') {
+                    if (employeeCustomSearch.trim()) {
+                      const q = employeeCustomSearch.toLowerCase().trim()
+                      if (!roleLower.includes(q) && !nameLower.includes(q) && !idLower.includes(q)) return false
+                    }
+                  }
+
+                  // Search box filtering
+                  if (employeeRoleFilter !== 'CUSTOM' && employeeCustomSearch.trim()) {
+                    const q = employeeCustomSearch.toLowerCase().trim()
+                    if (!roleLower.includes(q) && !nameLower.includes(q) && !idLower.includes(q)) return false
+                  }
+
+                  return true
+                })
+
+                const managerCount = allEmployeesList.filter(e => (e.role || '').toLowerCase().includes('manager') || (e.role || '').toLowerCase().includes('lead')).length
+                const execCount = allEmployeesList.filter(e => (e.role || '').toLowerCase().includes('executive') || (e.role || '').toLowerCase().includes('rep')).length
+                const adminCount = allEmployeesList.filter(e => (e.role || '').toLowerCase().includes('admin') || (e.role || '').toLowerCase().includes('ceo') || (e.role || '').toLowerCase().includes('founder')).length
+
+                return (
+                  <div className="space-y-3.5">
+                    {/* Role Filter Buttons & Custom Search */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/70">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <button
+                          onClick={() => setEmployeeRoleFilter('ALL')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            employeeRoleFilter === 'ALL'
+                              ? 'bg-slate-900 text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          ALL <span className="ml-1 px-1.5 py-0.2 text-[10px] rounded-full bg-slate-800 text-slate-200">{allEmployeesList.length}</span>
+                        </button>
+                        
+                        <button
+                          onClick={() => setEmployeeRoleFilter('MANAGER')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            employeeRoleFilter === 'MANAGER'
+                              ? 'bg-[#832D51] text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          MANAGER <span className={`ml-1 px-1.5 py-0.2 text-[10px] rounded-full ${employeeRoleFilter === 'MANAGER' ? 'bg-[#6a2240] text-pink-100' : 'bg-slate-100 text-slate-700'}`}>{managerCount}</span>
+                        </button>
+
+                        <button
+                          onClick={() => setEmployeeRoleFilter('EXECUTIVE')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            employeeRoleFilter === 'EXECUTIVE'
+                              ? 'bg-indigo-600 text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          EXECUTIVE <span className={`ml-1 px-1.5 py-0.2 text-[10px] rounded-full ${employeeRoleFilter === 'EXECUTIVE' ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-100 text-slate-700'}`}>{execCount}</span>
+                        </button>
+
+                        <button
+                          onClick={() => setEmployeeRoleFilter('ADMIN')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            employeeRoleFilter === 'ADMIN'
+                              ? 'bg-purple-600 text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          ADMIN <span className={`ml-1 px-1.5 py-0.2 text-[10px] rounded-full ${employeeRoleFilter === 'ADMIN' ? 'bg-purple-700 text-purple-100' : 'bg-slate-100 text-slate-700'}`}>{adminCount}</span>
+                        </button>
+
+                        <button
+                          onClick={() => setEmployeeRoleFilter('CUSTOM')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            employeeRoleFilter === 'CUSTOM'
+                              ? 'bg-emerald-600 text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          CUSTOM
+                        </button>
+                      </div>
+
+                      <div className="relative min-w-[200px] flex-1 max-w-xs">
+                        <Search className="absolute left-3 top-2.5 size-3.5 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder={employeeRoleFilter === 'CUSTOM' ? "Filter custom role, name, ID..." : "Search workforce..."}
+                          value={employeeCustomSearch}
+                          onChange={(e) => setEmployeeCustomSearch(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#832D51]"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Employee Directory Table */}
+                    <div className="border border-slate-200/80 rounded-2xl overflow-hidden shadow-2xs bg-white">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                              <th className="px-5 py-3">Employee ID</th>
+                              <th className="px-5 py-3">Name</th>
+                              <th className="px-5 py-3">Role</th>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium">
+                            {filteredEmployeesList.length === 0 ? (
+                              <tr>
+                                <td colSpan={3} className="py-12 text-center text-slate-400 font-bold">
+                                  No employee records found matching filter ({employeeRoleFilter}).
+                                </td>
+                              </tr>
+                            ) : (
+                              filteredEmployeesList.map((emp, i) => (
+                                <tr key={i} className="hover:bg-slate-50/50">
+                                  <td className="px-5 py-3.5 font-bold text-[#832D51]">{emp.employee_id}</td>
+                                  <td className="px-5 py-3.5 text-slate-900 font-black">{emp.name}</td>
+                                  <td className="px-5 py-3.5 text-slate-600">
+                                    <span className={`inline-flex items-center rounded-md px-2.5 py-0.5 font-black uppercase text-[10px] tracking-wider border ${
+                                      (emp.role || '').toLowerCase().includes('manager') ? 'bg-[#832D51]/10 text-[#832D51] border-[#832D51]/30' :
+                                      (emp.role || '').toLowerCase().includes('admin') || (emp.role || '').toLowerCase().includes('ceo') ? 'bg-purple-50 text-purple-800 border-purple-200' :
+                                      'bg-indigo-50 text-indigo-800 border-indigo-200'
+                                    }`}>
+                                      {emp.role}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* 4. PENDING APPROVALS MODAL VIEW */}
               {activeModal === 'approvals' && (
@@ -1032,7 +1768,7 @@ function CeoDashboard() {
                               <td className="px-5 py-3.5 text-slate-500 font-mono">{req.employee_id || '—'}</td>
                               <td className="px-5 py-3.5 text-slate-500">{req.role}</td>
                               <td className="px-5 py-3.5 text-slate-600 font-bold">{req.request_type}</td>
-                              <td className="px-5 py-3.5 text-slate-600">{req.date}</td>
+                              <td className="px-5 py-3.5 text-slate-600">{formatDDMMYYYY(req.date)}</td>
                               <td className="px-5 py-3.5 text-slate-600 font-bold">{req.duration || '—'}</td>
                               <td className="px-5 py-3.5 text-slate-500 italic max-w-xs truncate">{req.reason || '—'}</td>
                               <td className="px-5 py-3.5">
@@ -1055,6 +1791,162 @@ function CeoDashboard() {
                                     Approve
                                   </button>
                                 </div>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 5. PRESENT STAFF ROSTER MODAL */}
+              {activeModal === 'present' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200/90 rounded-xl p-3.5">
+                    <div className="flex items-center gap-2">
+                      <CheckCircle className="size-4 text-emerald-600" />
+                      <span className="text-xs font-black text-emerald-950 uppercase tracking-wider">
+                        PRESENT STAFF TODAY ({attendanceMetrics.presentToday} EMPLOYEES)
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full uppercase">
+                      ON DUTY
+                    </span>
+                  </div>
+
+                  <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                          <th className="px-4 py-3">STAFF NAME</th>
+                          <th className="px-4 py-3">ROLE / DESIGNATION</th>
+                          <th className="px-4 py-3">CLOCK-IN TIME</th>
+                          <th className="px-4 py-3 text-right">STATUS</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {attendanceMetrics.presentList.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="py-8 text-center text-slate-400 font-bold">
+                              No present staff records found for today.
+                            </td>
+                          </tr>
+                        ) : (
+                          attendanceMetrics.presentList.map((emp, i) => (
+                            <tr key={i} className="hover:bg-slate-50/50">
+                              <td className="px-4 py-3 text-slate-900 font-black">{emp.name || emp.full_name || 'Staff Member'}</td>
+                              <td className="px-4 py-3 text-slate-600 font-semibold">{emp.role || emp.designation || 'Sales Executive'}</td>
+                              <td className="px-4 py-3 text-slate-700 font-bold">09:15 AM</td>
+                              <td className="px-4 py-3 text-right font-black text-emerald-600">
+                                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md text-[10px]">
+                                  Present
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 6. ABSENT STAFF ROSTER MODAL */}
+              {activeModal === 'absent' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between bg-rose-50 border border-rose-200/90 rounded-xl p-3.5">
+                    <div className="flex items-center gap-2">
+                      <XCircle className="size-4 text-rose-600" />
+                      <span className="text-xs font-black text-rose-950 uppercase tracking-wider">
+                        ABSENT STAFF TODAY ({attendanceMetrics.absentToday} EMPLOYEES)
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full uppercase">
+                      UNMARKED / ON LEAVE
+                    </span>
+                  </div>
+
+                  <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                          <th className="px-4 py-3">STAFF NAME</th>
+                          <th className="px-4 py-3">ROLE / DESIGNATION</th>
+                          <th className="px-4 py-3">ATTENDANCE STATUS</th>
+                          <th className="px-4 py-3 text-right">ACTION</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {attendanceMetrics.absentList.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="py-8 text-center text-slate-400 font-bold">
+                              All staff members are present today. No absent records found.
+                            </td>
+                          </tr>
+                        ) : (
+                          attendanceMetrics.absentList.map((emp, i) => (
+                            <tr key={i} className="hover:bg-slate-50/50">
+                              <td className="px-4 py-3 text-slate-900 font-black">{emp.name || emp.full_name || 'Staff Member'}</td>
+                              <td className="px-4 py-3 text-slate-600 font-semibold">{emp.role || emp.designation || 'Staff Member'}</td>
+                              <td className="px-4 py-3 text-rose-600 font-bold">Not Clocked In</td>
+                              <td className="px-4 py-3 text-right font-black">
+                                <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-md text-[10px]">
+                                  Absent
+                                </span>
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* 7. TODAY ON FIELD VISIT MODAL */}
+              {activeModal === 'field_visit' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between bg-amber-50 border border-amber-200/90 rounded-xl p-3.5">
+                    <div className="flex items-center gap-2">
+                      <Briefcase className="size-4 text-amber-600" />
+                      <span className="text-xs font-black text-amber-950 uppercase tracking-wider">
+                        ACTIVE FIELD VISITS TODAY ({attendanceMetrics.onFieldToday} EXECUTIVES)
+                      </span>
+                    </div>
+                    <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full uppercase">
+                      LIVE FIELD TRACKING
+                    </span>
+                  </div>
+
+                  <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
+                    <table className="w-full text-left border-collapse text-xs">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                          <th className="px-4 py-3">EXECUTIVE NAME</th>
+                          <th className="px-4 py-3">CLIENT / PURPOSE</th>
+                          <th className="px-4 py-3">LOCATION</th>
+                          <th className="px-4 py-3 text-right">STATUS</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 font-medium">
+                        {attendanceMetrics.fieldVisitList.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="py-8 text-center text-slate-400 font-bold">
+                              No active field visits or client mode check-ins logged for today.
+                            </td>
+                          </tr>
+                        ) : (
+                          attendanceMetrics.fieldVisitList.map((v, i) => (
+                            <tr key={i} className="hover:bg-slate-50/50">
+                              <td className="px-4 py-3 text-slate-900 font-black">{v.executive_name || v.submitted_by || v.sales_executive || 'Sales Executive'}</td>
+                              <td className="px-4 py-3 text-slate-700 font-semibold">{v.client_name || v.title || v.purpose || 'Client Field Visit'}</td>
+                              <td className="px-4 py-3 text-slate-600 font-medium">{v.location || v.address || 'Field Location'}</td>
+                              <td className="px-4 py-3 text-right font-black text-amber-600">
+                                <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-md text-[10px]">
+                                  {v.status || 'Checked In'}
+                                </span>
                               </td>
                             </tr>
                           ))

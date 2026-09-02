@@ -1701,7 +1701,7 @@ async def get_location_history(
             last_rec = breadcrumbs[-1]["recorded_at"]
             last_dt = datetime.datetime.fromisoformat(last_rec.replace("Z", "+00:00"))
             diff_sec = (datetime.datetime.now(datetime.timezone.utc) - last_dt).total_seconds()
-            if diff_sec > 60:
+            if diff_sec > 300:
                 tracking_status = "stale"
         except Exception:
             pass

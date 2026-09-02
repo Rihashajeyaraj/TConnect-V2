@@ -6,6 +6,7 @@ import {
   Building2,
   ChevronDown,
   ChevronRight,
+  ChevronLeft,
   Filter,
   DollarSign,
   Phone,
@@ -23,6 +24,7 @@ import {
 import { customerAPI, hrmsAPI, crmAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
+import { formatDDMMYYYY } from '../../utils/formatUtils.js'
 
 function CeoCustomers() {
   const { showToast } = useToast()
@@ -32,7 +34,7 @@ function CeoCustomers() {
   // Raw Data State
   const [data, setData] = useState(null)
   const [leads, setLeads] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
 
   // Reassignment & View state
@@ -54,8 +56,9 @@ function CeoCustomers() {
   const [expandedManagers, setExpandedManagers] = useState({})
   const [expandedExecutives, setExpandedExecutives] = useState({})
 
-  // Detail Drawer State
+  // Detail Drawer & Pop-up Table Modal States
   const [selectedCust, setSelectedCust] = useState(null)
+  const [isTableModalOpen, setIsTableModalOpen] = useState(false)
 
   const loadCustomerDirectory = async () => {
     try {
@@ -224,10 +227,44 @@ function CeoCustomers() {
     return !isInactive && !isNotActive && isExec
   })
 
-  // Reconciled live stats
+  // Static overall company totals (never change when selecting manager cards)
+  const totalCompanyCustomers = rawCustomers.length
+  const totalCompanyRevenue = rawCustomers.reduce((sum, c) => sum + (c.amount || c.contract_value || 0), 0)
+  
+  // Dynamic filtered counts for modal table
   const liveUniqueCustomers = filteredCustomers.length
   const liveTotalRevenue = filteredCustomers.reduce((sum, c) => sum + (c.amount || 0), 0)
   
+  // Pagination & Sorting (10 rows per page, sorted datewise descending)
+  const ITEMS_PER_PAGE = 10
+  const [customerPage, setCustomerPage] = useState(1)
+  const [leadPage, setLeadPage] = useState(1)
+
+  useEffect(() => {
+    setCustomerPage(1)
+    setLeadPage(1)
+  }, [searchQuery, selectedManager, selectedExecutive, selectedProduct, selectedCategory])
+
+  // Datewise Sorting (Latest Date First)
+  const sortedCustomers = [...filteredCustomers].sort((a, b) => {
+    const dA = String(a.date || a.created_at || a.created_date || '1970-01-01')
+    const dB = String(b.date || b.created_at || b.created_date || '1970-01-01')
+    return dB.localeCompare(dA)
+  })
+
+  const sortedLeads = [...filteredLeads].sort((a, b) => {
+    const dA = String(a.date || a.created_at || a.created_date || '1970-01-01')
+    const dB = String(b.date || b.created_at || b.created_date || '1970-01-01')
+    return dB.localeCompare(dA)
+  })
+
+  // Paginated Slices (10 rows only per page)
+  const customerTotalPages = Math.ceil(sortedCustomers.length / ITEMS_PER_PAGE) || 1
+  const paginatedCustomers = sortedCustomers.slice((customerPage - 1) * ITEMS_PER_PAGE, customerPage * ITEMS_PER_PAGE)
+
+  const leadTotalPages = Math.ceil(sortedLeads.length / ITEMS_PER_PAGE) || 1
+  const paginatedLeads = sortedLeads.slice((leadPage - 1) * ITEMS_PER_PAGE, leadPage * ITEMS_PER_PAGE)
+
   // Managers and executives count based on filtered dataset
   const liveManagersCount = Array.from(new Set(
     filteredCustomers
@@ -269,17 +306,23 @@ function CeoCustomers() {
         </button>
       </div>
 
-      {/* View Tabs */}
-      <div className="flex bg-white/40 border border-slate-200/90 p-1 rounded-xl self-start lg:self-auto shrink-0 max-w-[320px] shadow-2xs">
+      {/* View Tabs Toggle Pill (Compact & Click Effect) */}
+      <div className="flex bg-white border border-slate-200/90 p-0.5 sm:p-1 rounded-xl self-start lg:self-auto shrink-0 max-w-[280px] shadow-2xs">
         <button
           onClick={() => {
             setActiveTab('customers')
             setSelectedCustIds([])
+            setSelectedManager('All')
+            setSelectedExecutive('All')
+            setSelectedProduct('All')
+            setSelectedCategory('All')
+            setSearchQuery('')
+            setIsTableModalOpen(false)
           }}
-          className={`flex-1 px-4 py-2 text-xs font-black uppercase rounded-lg transition cursor-pointer ${
+          className={`flex-1 px-3 py-1 sm:px-3.5 sm:py-1.5 text-[11px] sm:text-xs font-extrabold uppercase rounded-lg transition-all duration-150 active:scale-95 cursor-pointer ${
             activeTab === 'customers'
               ? 'bg-[#832D51] text-white shadow-xs'
-              : 'text-slate-500 hover:text-slate-955'
+              : 'text-slate-500 hover:text-slate-900'
           }`}
         >
           Customers
@@ -288,94 +331,281 @@ function CeoCustomers() {
           onClick={() => {
             setActiveTab('leads')
             setSelectedCustIds([])
+            setSelectedManager('All')
+            setSelectedExecutive('All')
+            setSelectedProduct('All')
+            setSelectedCategory('All')
+            setSearchQuery('')
+            setIsTableModalOpen(false)
           }}
-          className={`flex-1 px-4 py-2 text-xs font-black uppercase rounded-lg transition cursor-pointer ${
+          className={`flex-1 px-3 py-1 sm:px-3.5 sm:py-1.5 text-[11px] sm:text-xs font-extrabold uppercase rounded-lg transition-all duration-150 active:scale-95 cursor-pointer ${
             activeTab === 'leads'
               ? 'bg-[#832D51] text-white shadow-xs'
-              : 'text-slate-500 hover:text-slate-955'
+              : 'text-slate-500 hover:text-slate-900'
           }`}
         >
           Leads ({leadsCount})
         </button>
       </div>
 
-      {/* Summary KPI Cards Grid */}
+      {/* Summary KPI Cards Grid (Compact, Solid Pastel & 2px Border) */}
       {activeTab === 'customers' ? (
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Customers</span>
-              <Building2 className="size-4.5 text-[#832D51]" />
+        <div className="grid gap-2.5 sm:gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Card 1: Emerald Theme - Total Customers */}
+          <div 
+            onClick={() => {
+              setSelectedManager('All')
+              setSelectedExecutive('All')
+              setSelectedProduct('All')
+              setSearchQuery('')
+              setIsTableModalOpen(true)
+            }}
+            className="bg-[#DCFCE7] border-2 border-[#16A34A] rounded-xl p-2.5 shadow-2xs transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900"
+          >
+            <div className="flex justify-between items-center">
+              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#15803D]">Total Customers</span>
+              <span className="p-1 rounded-lg bg-[#16A34A]/20 text-[#15803D]">
+                <Building2 className="size-3.5" />
+              </span>
             </div>
-            <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
-              {liveUniqueCustomers}
-            </p>
-            <p className="text-[10px] font-bold text-slate-500 mt-1">Unique customer accounts</p>
+            <div className="flex items-baseline justify-between mt-1">
+              <p className="text-base sm:text-lg font-black tracking-tight text-slate-950">
+                {totalCompanyCustomers}
+              </p>
+              <span className="text-[9px] font-bold text-[#166534]">Accounts</span>
+            </div>
+            <div className="mt-1.5 pt-1 border-t border-[#16A34A]/25 flex items-center gap-1 text-[9px] font-bold text-[#15803D]">
+              <span>▶ Click card to view pop-up table</span>
+            </div>
           </div>
 
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Revenue Portfolio</span>
-              <DollarSign className="size-4.5 text-emerald-600" />
+          {/* Card 2: Blue Theme - Total Revenue Portfolio */}
+          <div 
+            onClick={() => {
+              setSelectedManager('All')
+              setSelectedExecutive('All')
+              setSelectedProduct('All')
+              setSearchQuery('')
+              setIsTableModalOpen(true)
+            }}
+            className="bg-[#DBEAFE] border-2 border-[#2563EB] rounded-xl p-2.5 shadow-2xs transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900"
+          >
+            <div className="flex justify-between items-center">
+              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#1E40AF]">Total Revenue Portfolio</span>
+              <span className="p-1 rounded-lg bg-[#2563EB]/20 text-[#1E40AF]">
+                <DollarSign className="size-3.5" />
+              </span>
             </div>
-            <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
-              ₹{liveTotalRevenue.toLocaleString()}
-            </p>
-            <p className="text-[10px] font-bold text-slate-500 mt-1">Contract value portfolio</p>
+            <div className="flex items-baseline justify-between mt-1">
+              <p className="text-base sm:text-lg font-black tracking-tight text-slate-950">
+                ₹{totalCompanyRevenue.toLocaleString()}
+              </p>
+              <span className="text-[9px] font-bold text-[#1D4ED8]">Portfolio</span>
+            </div>
+            <div className="mt-1.5 pt-1 border-t border-[#2563EB]/25 flex items-center gap-1 text-[9px] font-bold text-[#1E40AF]">
+              <span>▶ Click card to view pop-up table</span>
+            </div>
           </div>
         </div>
       ) : (
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Total Leads</span>
-              <Target className="size-4.5 text-[#832D51]" />
+        <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {/* Lead Card 1: Purple Theme */}
+          <div 
+            onClick={() => {
+              setSelectedCategory('All')
+              setSelectedProduct('All')
+              setSearchQuery('')
+              setIsTableModalOpen(true)
+            }}
+            className="bg-[#F3E8FF] border-2 border-[#9333EA] rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900"
+          >
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#6B21A8]">Total Leads</span>
+              <span className="p-1.5 rounded-lg bg-[#9333EA]/20 text-[#6B21A8]">
+                <Target className="size-4" />
+              </span>
             </div>
-            <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
+            <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
               {filteredLeads.length}
             </p>
-            <p className="text-[10px] font-bold text-slate-500 mt-1">Total active lead records</p>
+            <p className="text-[10px] font-bold text-[#7E22CE] mt-0.5">Total active lead records</p>
+            <div className="mt-2 pt-1.5 border-t border-[#9333EA]/30 flex items-center gap-1 text-[10px] font-bold text-[#6B21A8]">
+              <span>▶ Click card to view pop-up table</span>
+            </div>
           </div>
 
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Hot Leads</span>
-              <span className="size-2 rounded-full bg-red-500 animate-pulse inline-block" />
+          {/* Lead Card 2: Rose Theme */}
+          <div 
+            onClick={() => {
+              setSelectedCategory('Hot')
+              setSelectedProduct('All')
+              setSearchQuery('')
+              setIsTableModalOpen(true)
+            }}
+            className="bg-[#FFE4E6] border-2 border-[#E11D48] rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900"
+          >
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#9F1239]">Hot Leads</span>
+              <span className="size-2.5 rounded-full bg-red-500 animate-pulse inline-block ring-2 ring-red-300" />
             </div>
-            <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
+            <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
               {filteredLeads.filter(l => (l.category || '').toLowerCase() === 'hot').length}
             </p>
-            <p className="text-[10px] font-bold text-slate-500 mt-1">High conversion priority</p>
+            <p className="text-[10px] font-bold text-[#BE123C] mt-0.5">High conversion priority</p>
+            <div className="mt-2 pt-1.5 border-t border-[#E11D48]/30 flex items-center gap-1 text-[10px] font-bold text-[#9F1239]">
+              <span>▶ Click card to view pop-up table</span>
+            </div>
           </div>
 
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Warm Leads</span>
-              <span className="size-2 rounded-full bg-amber-500 inline-block" />
+          {/* Lead Card 3: Amber / Yellow Theme */}
+          <div 
+            onClick={() => {
+              setSelectedCategory('Warm')
+              setSelectedProduct('All')
+              setSearchQuery('')
+              setIsTableModalOpen(true)
+            }}
+            className="bg-[#FEF08A] border-2 border-[#CA8A04] rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900"
+          >
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#854D0E]">Warm Leads</span>
+              <span className="size-2.5 rounded-full bg-amber-500 inline-block ring-2 ring-amber-300" />
             </div>
-            <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
+            <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
               {filteredLeads.filter(l => (l.category || '').toLowerCase() === 'warm').length}
             </p>
-            <p className="text-[10px] font-bold text-slate-500 mt-1">Medium conversion priority</p>
+            <p className="text-[10px] font-bold text-[#A16207] mt-0.5">Medium conversion priority</p>
+            <div className="mt-2 pt-1.5 border-t border-[#CA8A04]/30 flex items-center gap-1 text-[10px] font-bold text-[#854D0E]">
+              <span>▶ Click card to view pop-up table</span>
+            </div>
           </div>
 
-          <div className="bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
-            <div className="flex justify-between items-start">
-              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">Cold Leads</span>
-              <span className="size-2 rounded-full bg-blue-500 inline-block" />
+          {/* Lead Card 4: Cyan / Sky Theme */}
+          <div 
+            onClick={() => {
+              setSelectedCategory('Cold')
+              setSelectedProduct('All')
+              setSearchQuery('')
+              setIsTableModalOpen(true)
+            }}
+            className="bg-[#CFFAFE] border-2 border-[#0891B2] rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900"
+          >
+            <div className="flex justify-between items-center">
+              <span className="text-[10px] font-black uppercase tracking-wider text-[#155E75]">Cold Leads</span>
+              <span className="size-2.5 rounded-full bg-cyan-500 inline-block ring-2 ring-cyan-300" />
             </div>
-            <p className="text-2xl font-black tracking-tight mt-3 text-slate-900">
+            <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
               {filteredLeads.filter(l => (l.category || '').toLowerCase() === 'cold').length}
             </p>
-            <p className="text-[10px] font-bold text-slate-500 mt-1">Low conversion priority</p>
+            <p className="text-[10px] font-bold text-[#0E7490] mt-0.5">Low conversion priority</p>
+            <div className="mt-2 pt-1.5 border-t border-[#0891B2]/30 flex items-center gap-1 text-[10px] font-bold text-[#155E75]">
+              <span>▶ Click card to view pop-up table</span>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Filters Strip */}
-      <div className={`bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs grid gap-3 ${
-        activeTab === 'leads' ? 'sm:grid-cols-3' : 'sm:grid-cols-2 lg:grid-cols-4'
-      }`}>
+      {/* Sales Manager Directory Cards (Click card to filter deals) */}
+      {activeTab === 'customers' && allManagersList.length > 0 && (
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-black text-slate-800 uppercase tracking-wider">SALES MANAGERS DIRECTORY</span>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {allManagersList.map((mgr, idx) => {
+              const mgrCusts = rawCustomers.filter(c => (c.manager_name || c.sales_manager || '').trim().toLowerCase() === mgr.toLowerCase())
+              const totalVal = mgrCusts.reduce((s, c) => s + (c.amount || c.contract_value || 0), 0)
+              const isSelected = selectedManager === mgr
+              const themes = [
+                { bg: 'bg-[#DCFCE7]', border: 'border-2 border-[#16A34A]', text: 'text-[#15803D]', badge: 'bg-[#16A34A]/20' },
+                { bg: 'bg-[#DBEAFE]', border: 'border-2 border-[#2563EB]', text: 'text-[#1E40AF]', badge: 'bg-[#2563EB]/20' },
+                { bg: 'bg-[#F3E8FF]', border: 'border-2 border-[#9333EA]', text: 'text-[#6B21A8]', badge: 'bg-[#9333EA]/20' },
+                { bg: 'bg-[#FEF08A]', border: 'border-2 border-[#CA8A04]', text: 'text-[#854D0E]', badge: 'bg-[#CA8A04]/20' },
+              ]
+              const theme = themes[idx % themes.length]
+
+              return (
+                <div
+                  key={mgr}
+                  onClick={() => {
+                    setSelectedManager(mgr)
+                    setSelectedExecutive('All')
+                    setSelectedProduct('All')
+                    setSearchQuery('')
+                    setIsTableModalOpen(true)
+                  }}
+                  className={`${theme.bg} ${theme.border} rounded-2xl p-3.5 shadow-sm transition-all duration-150 hover:scale-[1.02] active:scale-95 cursor-pointer text-slate-900 ${
+                    isSelected ? 'ring-4 ring-[#832D51]/30 scale-[1.02]' : ''
+                  }`}
+                >
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="size-7 rounded-lg bg-slate-950/10 flex items-center justify-center font-black text-slate-950 text-xs">
+                        {mgr.charAt(0).toUpperCase()}
+                      </div>
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-600">Manager</span>
+                    </div>
+                    <span className={`px-2 py-0.5 rounded-md text-[10px] font-black ${theme.text} ${theme.badge}`}>
+                      {mgrCusts.length} Accounts
+                    </span>
+                  </div>
+
+                  <h4 className="text-sm font-black text-slate-950 mt-2">{mgr}</h4>
+
+                  <div className="mt-2.5 pt-2 border-t border-black/10 flex items-center justify-between text-xs">
+                    <span className="text-[10px] font-bold text-slate-700">Portfolio Value:</span>
+                    <span className="font-black text-slate-950">₹{totalVal.toLocaleString()}</span>
+                  </div>
+
+                  <div className={`mt-2 pt-1 border-t border-black/10 flex items-center justify-between text-[10px] font-black ${theme.text}`}>
+                    <span>Click to view {mgr}'s deals</span>
+                    <span>→</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* POP-UP DATA TABLE MODAL (Triggered when any card is clicked) */}
+      {isTableModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-150">
+          <div className="bg-white border border-slate-200/90 rounded-3xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden">
+            {/* Modal Header with Title & Close (X) Symbol */}
+            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/70 shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="grid size-10 place-items-center rounded-xl bg-[#832D51] text-white font-black">
+                  <Layers className="size-5" />
+                </span>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-slate-900">
+                    {activeTab === 'customers' 
+                      ? (selectedManager !== 'All' ? `${selectedManager}'s Customer Accounts` : 'Customer Accounts Directory Table') 
+                      : (selectedCategory !== 'All' ? `${selectedCategory} Priority Leads Directory` : 'Leads Directory Table')}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                    Showing {activeTab === 'customers' ? filteredCustomers.length : filteredLeads.length} matching records datewise (10 per page)
+                  </p>
+                </div>
+              </div>
+
+              {/* Close Icon (X) Button */}
+              <button
+                onClick={() => setIsTableModalOpen(false)}
+                className="grid size-9 place-items-center rounded-xl bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
+                title="Close Table Modal"
+              >
+                <X className="size-5" />
+              </button>
+            </div>
+
+            {/* Modal Content Area */}
+            <div className="p-4 sm:p-6 overflow-y-auto space-y-4 flex-1 bg-slate-50/30">
+              {/* Filters Strip */}
+              <div className={`bg-white border border-slate-200/90 rounded-2xl p-4 shadow-xs grid gap-3 ${
+                activeTab === 'leads' ? 'sm:grid-cols-3' : 'sm:grid-cols-2 lg:grid-cols-4'
+              }`}>
         <div className="relative">
           <Search className="absolute left-3 top-2.5 size-4 text-slate-400" />
           <input
@@ -484,7 +714,7 @@ function CeoCustomers() {
                         />
                       </th>
                     )}
-                    <th className="px-4 py-3">Customer ID</th>
+                    <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Customer Name</th>
                     <th className="px-4 py-3">Company Name</th>
                     <th className="px-4 py-3">Product</th>
@@ -496,12 +726,12 @@ function CeoCustomers() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {filteredCustomers.length === 0 ? (
+                  {paginatedCustomers.length === 0 ? (
                     <tr>
                       <td colSpan="9" className="text-center py-12 text-slate-400 font-semibold italic">No customer records found</td>
                     </tr>
                   ) : (
-                    filteredCustomers.map((cust, ci) => {
+                    paginatedCustomers.map((cust, ci) => {
                       const custId = cust.customer_id || cust.id
                       const hasExec = !!(cust.executive_id && cust.executive_name && cust.executive_name !== 'Direct / Unassigned' && cust.executive_name !== 'Unassigned')
                       const isManagerUnassigned = !cust.manager_name || cust.manager_name === 'Unassigned / Direct' || cust.manager_name === 'Unassigned'
@@ -528,8 +758,8 @@ function CeoCustomers() {
                               />
                             </td>
                           )}
-                          <td className="px-4 py-3 font-mono text-slate-500 text-[10px]">
-                            {cust.customer_id}
+                          <td className="px-4 py-3 text-slate-700 font-bold text-[11px] whitespace-nowrap">
+                            {formatDDMMYYYY(cust.date || cust.created_at)}
                           </td>
                           <td className="px-4 py-3 font-bold text-slate-900 hover:text-[#832D51]">
                             {cust.customer_name}
@@ -586,6 +816,41 @@ function CeoCustomers() {
                 </tbody>
               </table>
             </div>
+
+            {/* PAGINATION BAR FOR CUSTOMERS (10 ROWS PER PAGE) */}
+            {sortedCustomers.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-slate-50/80 border-t border-slate-200/80">
+                <div className="text-xs text-slate-500 font-medium">
+                  Showing <span className="font-black text-slate-900">{Math.min((customerPage - 1) * ITEMS_PER_PAGE + 1, sortedCustomers.length)}</span> to <span className="font-black text-slate-900">{Math.min(customerPage * ITEMS_PER_PAGE, sortedCustomers.length)}</span> of <span className="font-black text-slate-900">{sortedCustomers.length.toLocaleString()}</span> records
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setCustomerPage(prev => Math.max(1, prev - 1))}
+                    disabled={customerPage === 1}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+                  >
+                    <ChevronLeft className="size-3.5" />
+                    Previous
+                  </button>
+
+                  <div className="flex items-center gap-1 px-2">
+                    <span className="text-xs font-black text-slate-800">
+                      Page {customerPage} of {customerTotalPages}
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => setCustomerPage(prev => Math.min(customerTotalPages, prev + 1))}
+                    disabled={customerPage >= customerTotalPages}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+                  >
+                    Next
+                    <ChevronRight className="size-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
           <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -609,7 +874,7 @@ function CeoCustomers() {
                         />
                       </th>
                     )}
-                    <th className="px-4 py-3">Lead ID</th>
+                    <th className="px-4 py-3">Date</th>
                     <th className="px-4 py-3">Name</th>
                     <th className="px-4 py-3">Company Name</th>
                     <th className="px-4 py-3">Sales Manager</th>
@@ -622,12 +887,12 @@ function CeoCustomers() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
-                  {filteredLeads.length === 0 ? (
+                  {paginatedLeads.length === 0 ? (
                     <tr>
                       <td colSpan="8" className="text-center py-12 text-slate-400 font-semibold italic">No lead records found</td>
                     </tr>
                   ) : (
-                    filteredLeads.map((lead, li) => {
+                    paginatedLeads.map((lead, li) => {
                       const leadId = lead.id || lead.lead_id
                       const hasOwner = !!(lead.sales_executive || lead.assigned_to || lead.assigned_to_email || lead.employee_code)
                       
@@ -652,8 +917,8 @@ function CeoCustomers() {
                               />
                             </td>
                           )}
-                          <td className="px-4 py-3 font-mono text-slate-500 text-[10px]">
-                            {leadId}
+                          <td className="px-4 py-3 text-slate-700 font-bold text-[11px] whitespace-nowrap">
+                            {formatDDMMYYYY(lead.date || lead.created_at)}
                           </td>
                           <td className="px-4 py-3 font-bold text-slate-900">
                             {lead.name || lead.contact_name}
@@ -721,9 +986,48 @@ function CeoCustomers() {
                 </tbody>
               </table>
             </div>
+
+            {/* PAGINATION BAR FOR LEADS (10 ROWS PER PAGE) */}
+            {sortedLeads.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-slate-50/80 border-t border-slate-200/80">
+                <div className="text-xs text-slate-500 font-medium">
+                  Showing <span className="font-black text-slate-900">{Math.min((leadPage - 1) * ITEMS_PER_PAGE + 1, sortedLeads.length)}</span> to <span className="font-black text-slate-900">{Math.min(leadPage * ITEMS_PER_PAGE, sortedLeads.length)}</span> of <span className="font-black text-slate-900">{sortedLeads.length.toLocaleString()}</span> records
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setLeadPage(prev => Math.max(1, prev - 1))}
+                    disabled={leadPage === 1}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+                  >
+                    <ChevronLeft className="size-3.5" />
+                    Previous
+                  </button>
+
+                  <div className="flex items-center gap-1 px-2">
+                    <span className="text-xs font-black text-slate-800">
+                      Page {leadPage} of {leadTotalPages}
+                    </span>
+                  </div>
+
+                  <button
+                    onClick={() => setLeadPage(prev => Math.min(leadTotalPages, prev + 1))}
+                    disabled={leadPage >= leadTotalPages}
+                    className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+                  >
+                    Next
+                    <ChevronRight className="size-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         )}
       </div>
+    </div>
+  </div>
+</div>
+)}
 
       {/* Customer Detail Drawer */}
       {selectedCust && (

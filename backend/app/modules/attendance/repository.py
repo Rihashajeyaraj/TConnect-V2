@@ -264,6 +264,9 @@ class AttendanceRepository:
             if str(mem.get("id")) not in existing_ids:
                 logs.append(mem)
 
+        from datetime import datetime
+        today_str = datetime.utcnow().strftime("%Y-%m-%d")
+
         # Standardize field names for Frontend consumers across SE, SM, CEO
         standardized = []
         for l in logs:
@@ -272,7 +275,18 @@ class AttendanceRepository:
             row["employee_name"] = row["name"]
             row["clockIn"] = row.get("check_in_time") or row.get("punch_in_time") or "09:00 AM"
             row["check_in_time"] = row["clockIn"]
-            row["clockOut"] = row.get("check_out_time") or row.get("punch_out_time") or "—"
+
+            raw_out = row.get("check_out_time") or row.get("punch_out_time")
+            log_date = str(row.get("attendance_date") or row.get("date") or row.get("created_at") or "").split("T")[0]
+
+            # Auto logout logic: if employee forgot to log out (past date or missing checkout), set auto logout at 12:00 PM
+            if (not raw_out or raw_out == "—") and log_date and log_date < today_str:
+                raw_out = "12:00 PM"
+                row["check_out_time"] = "12:00 PM"
+                row["punch_out_time"] = "12:00 PM"
+                row["total_working_hours"] = row.get("total_working_hours") or "Auto Logged Off (12:00 PM)"
+
+            row["clockOut"] = raw_out or "—"
             row["check_out_time"] = row["clockOut"]
             row["mode"] = row.get("mode") or "Biometric"
             row["workHours"] = row.get("total_working_hours") or row.get("work_hours") or ("In Progress" if row["clockOut"] == "—" else "8.5 hrs")

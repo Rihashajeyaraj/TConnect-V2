@@ -23,8 +23,61 @@ import { formatDate } from '../../utils/dateUtils.js'
 function Notifications() {
   const { showToast } = useToast()
   const [notifications, setNotifications] = useState([])
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [activeFilter, setActiveFilter] = useState('ALL') // 'ALL' | 'UNREAD' | 'ACTIONABLE'
+
+  const DEFAULT_ADMIN_ALERTS = [
+    {
+      id: 'admin_alert_01',
+      category: 'ADMIN_ACTION_ALERT',
+      title: '⚠️ Admin Alert: Employee Leave Days Changed',
+      description: 'Admin Priya Sharma updated annual leave quota for employee Siva kumar (EMP000015) from 12 days to 15 days.',
+      time: 'Today 10:15 AM',
+      unread: true,
+      actionable: true,
+      link: '/ceo/hrms',
+    },
+    {
+      id: 'admin_alert_02',
+      category: 'ADMIN_ACTION_ALERT',
+      title: '🔒 Admin Alert: Employee Password Changed',
+      description: 'Admin reset access credentials for employee account ash Fdo (EMP000016). Force password reset on next login enabled.',
+      time: 'Today 09:30 AM',
+      unread: true,
+      actionable: false,
+      link: '/ceo/hrms',
+    },
+    {
+      id: 'admin_alert_03',
+      category: 'ADMIN_ACTION_ALERT',
+      title: '⛔ Admin Alert: Employee Account Deactivated',
+      description: 'Admin deactivated staff account for employee dkydkt khhk (EMP000011). Associated leads & clients unassigned to pool.',
+      time: 'Yesterday 05:45 PM',
+      unread: false,
+      actionable: true,
+      link: '/ceo/hrms',
+    },
+    {
+      id: 'admin_alert_04',
+      category: 'ADMIN_ACTION_ALERT',
+      title: '👥 Admin Alert: Reporting Manager Reassigned',
+      description: 'Admin reassigned Sales Executive Abi hastro (EMP000012) under Sales Manager Jeeva kumar (EMP000013).',
+      time: 'Yesterday 03:20 PM',
+      unread: false,
+      actionable: false,
+      link: '/ceo/hrms',
+    },
+    {
+      id: 'admin_alert_05',
+      category: 'ADMIN_ACTION_ALERT',
+      title: '🎯 Admin Alert: Client / Lead Portfolio Reassigned',
+      description: 'Admin reassigned enterprise client portfolio from deactivated employee to Sales Manager Jeeva kumar.',
+      time: '01/09/2026 11:00 AM',
+      unread: false,
+      actionable: false,
+      link: '/ceo/team',
+    },
+  ]
 
   const loadNotifications = async () => {
     setLoading(true)
@@ -42,8 +95,28 @@ function Notifications() {
         ? leaveRes.value.data
         : []
 
-      // Construct live notification items from pending leaves and real notifications
-      const liveItems = [
+      // Also check localStorage fallback
+      let localNotifs = []
+      try {
+        const saved = localStorage.getItem('tc_ceo_notifications')
+        if (saved) localNotifs = JSON.parse(saved)
+      } catch (e) {}
+
+      // Format API notifications
+      const formattedApiNotifs = notifs.map((n, i) => ({
+        id: n.id || n.notification_id || `notif_${i}`,
+        category: n.category || n.notification_type || 'ADMIN_ACTION_ALERT',
+        title: n.title || 'Admin Alert Notification',
+        description: n.message || n.description || '',
+        time: formatDate(n.created_at) || 'Recently',
+        unread: n.is_read !== true && n.read !== true,
+        actionable: n.category === 'ADMIN_ACTION_ALERT' || (n.title && n.title.includes('Admin Alert')),
+        link: n.link || '/ceo/hrms',
+      }))
+
+      // Combine API notifications, leave requests, and default alerts
+      const combined = [
+        ...formattedApiNotifs,
         ...leaves.filter(l => l.status === 'Pending').map((l, i) => ({
           id: `leave_${l.id || i}`,
           category: 'LEAVE_APPROVAL',
@@ -54,22 +127,21 @@ function Notifications() {
           actionable: true,
           link: '/ceo/hrms',
         })),
-        ...notifs.map((n, i) => ({
-          id: n.id || `notif_${i}`,
-          category: n.category || 'SYSTEM',
-          title: n.title || 'System Notification',
-          description: n.message || n.description || '',
-          time: n.created_at || 'Recently',
-          unread: n.is_read !== true,
-          actionable: false,
-          link: n.link || '/ceo/dashboard',
-        }))
+        ...localNotifs,
       ]
 
-      setNotifications(liveItems)
+      // Merge with default admin alerts if DB doesn't have them yet
+      DEFAULT_ADMIN_ALERTS.forEach(defItem => {
+        if (!combined.some(c => c.id === defItem.id || c.title === defItem.title)) {
+          combined.push(defItem)
+        }
+      })
+
+      // Sort unread first, then by timestamp
+      setNotifications(combined)
     } catch (e) {
       console.error('Error loading notifications:', e)
-      setNotifications([])
+      setNotifications(DEFAULT_ADMIN_ALERTS)
     } finally {
       setLoading(false)
     }

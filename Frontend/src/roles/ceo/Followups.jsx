@@ -13,8 +13,11 @@ import {
   Table,
   Eye,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
+import { formatDate } from '../../utils/dateUtils.js'
 
 const STATUS_COLORS = {
   Completed: 'bg-emerald-100 text-emerald-800 border-emerald-300',
@@ -88,6 +91,16 @@ export default function CEOFollowups() {
     const matchesStatus = statusFilter === 'All' || f.status === statusFilter
     return matchesSearch && matchesStatus
   })
+
+  const [currentPage, setCurrentPage] = useState(1)
+  const ITEMS_PER_PAGE = 10
+
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [search, statusFilter])
+
+  const totalPages = Math.ceil(filteredFollowups.length / ITEMS_PER_PAGE) || 1
+  const paginatedFollowups = filteredFollowups.slice((currentPage - 1) * ITEMS_PER_PAGE, currentPage * ITEMS_PER_PAGE)
 
   const totalPending = followups.filter((f) => f.status === 'Pending').length
   const totalCompleted = followups.filter((f) => f.status === 'Completed').length
@@ -265,7 +278,7 @@ export default function CEOFollowups() {
                     <td colSpan="9" className="text-center py-10 text-slate-400">No matching follow-ups.</td>
                   </tr>
                 ) : (
-                  filteredFollowups.map((item) => (
+                  paginatedFollowups.map((item) => (
                     <tr key={item.id} className="hover:bg-slate-50/50 transition">
                       <td className="px-5 py-3.5 text-slate-900 font-black">{item.customer}</td>
                       <td className="px-5 py-3.5 text-slate-600 font-semibold">{item.contactPerson}</td>
@@ -276,7 +289,7 @@ export default function CEOFollowups() {
                       </td>
                       <td className="px-5 py-3.5 text-[#832D51]">{item.executive}</td>
                       <td className="px-5 py-3.5 text-slate-650">{item.type}</td>
-                      <td className="px-5 py-3.5 text-slate-800">{item.scheduledTime}</td>
+                      <td className="px-5 py-3.5 text-slate-800">{formatDate(item.scheduledTime)}</td>
                       <td className="px-5 py-3.5">
                         <span className={`font-black ${PRIORITY_COLORS[item.priority] || 'text-slate-700'}`}>{item.priority}</span>
                       </td>
@@ -299,6 +312,41 @@ export default function CEOFollowups() {
               </tbody>
             </table>
           </div>
+
+          {/* Pagination Bar (10 rows per page) */}
+          {filteredFollowups.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 px-4 py-3 bg-slate-50/80 border-t border-slate-200/80">
+              <div className="text-xs text-slate-500 font-medium">
+                Showing <span className="font-black text-slate-900">{Math.min((currentPage - 1) * ITEMS_PER_PAGE + 1, filteredFollowups.length)}</span> to <span className="font-black text-slate-900">{Math.min(currentPage * ITEMS_PER_PAGE, filteredFollowups.length)}</span> of <span className="font-black text-slate-900">{filteredFollowups.length.toLocaleString()}</span> records
+              </div>
+
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
+                  disabled={currentPage === 1}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+                >
+                  <ChevronLeft className="size-3.5" />
+                  Previous
+                </button>
+
+                <div className="flex items-center gap-1 px-2">
+                  <span className="text-xs font-black text-slate-800">
+                    Page {currentPage} of {totalPages}
+                  </span>
+                </div>
+
+                <button
+                  onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                  disabled={currentPage >= totalPages}
+                  className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer transition shadow-2xs"
+                >
+                  Next
+                  <ChevronRight className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

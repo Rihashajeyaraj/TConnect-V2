@@ -6,19 +6,33 @@ import ChangePassword from './common/ChangePassword.jsx'
 import Signup from './common/Signup.jsx'
 import ProtectedRoute from './common/ProtectedRoute.jsx'
 import { ToastProvider } from './common/ToastContext.jsx'
+import PwaInstallPrompt from './common/PwaInstallPrompt.jsx'
+
+// ── Resilient Lazy Import Wrapper ──────────────────────────────────────
+const lazyWithRetry = (componentImport) =>
+  lazy(async () => {
+    try {
+      return await componentImport()
+    } catch (error) {
+      console.warn('Retrying dynamic module import:', error)
+      // Force page reload on stale HMR chunk if needed
+      window.location.reload()
+      return new Promise(() => {})
+    }
+  })
 
 // ── Lazy-loaded Route Components ─────────────────────────────────────
 // CEO Portal
-const CeoLayout = lazy(() => import('./roles/ceo/CeoLayout.jsx'))
-const CeoDashboard = lazy(() => import('./roles/ceo/Dashboard.jsx'))
-const CeoSalesRevenue = lazy(() => import('./roles/ceo/SalesOverview.jsx'))
-const CeoCustomers = lazy(() => import('./roles/ceo/Customers.jsx'))
-const CeoTeamManagement = lazy(() => import('./roles/ceo/TeamManagement.jsx'))
-const CeoHrms = lazy(() => import('./roles/ceo/Hrms.jsx'))
-const CeoReports = lazy(() => import('./roles/ceo/Reports.jsx'))
-const CeoNotifications = lazy(() => import('./roles/ceo/Notifications.jsx'))
-const CeoSettings = lazy(() => import('./roles/ceo/Settings.jsx'))
-const CeoExpenses = lazy(() => import('./roles/ceo/Expenses.jsx'))
+const CeoLayout = lazyWithRetry(() => import('./roles/ceo/CeoLayout.jsx'))
+const CeoDashboard = lazyWithRetry(() => import('./roles/ceo/Dashboard.jsx'))
+const CeoSalesRevenue = lazyWithRetry(() => import('./roles/ceo/SalesOverview.jsx'))
+const CeoCustomers = lazyWithRetry(() => import('./roles/ceo/Customers.jsx'))
+const CeoTeamManagement = lazyWithRetry(() => import('./roles/ceo/TeamManagement.jsx'))
+const CeoHrms = lazyWithRetry(() => import('./roles/ceo/Hrms.jsx'))
+const CeoReports = lazyWithRetry(() => import('./roles/ceo/Reports.jsx'))
+const CeoNotifications = lazyWithRetry(() => import('./roles/ceo/Notifications.jsx'))
+const CeoSettings = lazyWithRetry(() => import('./roles/ceo/Settings.jsx'))
+const CeoExpenses = lazyWithRetry(() => import('./roles/ceo/Expenses.jsx'))
 
 // Admin Portal
 const AdminLayout = lazy(() => import('./roles/admin/AdminLayout.jsx'))
@@ -186,6 +200,7 @@ function App() {
 
           </Routes>
         </Suspense>
+        <PwaInstallPrompt />
       </BrowserRouter>
     </ToastProvider>
   )
