@@ -281,6 +281,7 @@ export const notificationAPI = {
   getUnreadCount: () => request('/notifications/unread-count'),
   sendNotification: (data) => request('/notifications', { method: 'POST', body: JSON.stringify(data) }),
   markRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
+  markAsRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
 }
 
 export const reportAPI = {

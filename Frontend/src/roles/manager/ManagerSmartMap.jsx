@@ -572,19 +572,32 @@ export default function ManagerSmartMap() {
     }
   };
 
-  // ─── 1. Load Google Maps CDN ──────────────────────────────────────────────
+  // ─── 1. Load Google Maps CDN with Instant Cache ────────────────────────────
   useEffect(() => {
-    // If already loaded (e.g. hot reload), skip the network round-trip entirely
+    // If already loaded (e.g. hot reload), skip network round-trip entirely
     if (window.google?.maps) {
       initializeHTMLMapMarker()
       setMapLoaded(true)
       return
     }
 
+    const cachedKey = localStorage.getItem('tc_gmaps_key')
+    if (cachedKey) {
+      setGoogleMapsApiKey(cachedKey)
+      loadGoogleMaps(cachedKey)
+        .then(maps => {
+          if (!maps) return
+          initializeHTMLMapMarker()
+          setMapLoaded(true)
+        })
+        .catch(err => console.warn('Cached Google Maps load notice:', err))
+    }
+
     settingsAPI.getConfig()
       .then(res => {
         const key = res?.data?.google_maps_api_key
         if (!key) return
+        localStorage.setItem('tc_gmaps_key', key)
         setGoogleMapsApiKey(key)
         return loadGoogleMaps(key)
       })
@@ -714,7 +727,7 @@ export default function ManagerSmartMap() {
       zoom: 13,
       zoomControl: true,
       zoomControlOptions: {
-        position: window.google.maps.ControlPosition.RIGHT_BOTTOM
+        position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9
       },
       mapTypeControl: false,
       streetViewControl: false,

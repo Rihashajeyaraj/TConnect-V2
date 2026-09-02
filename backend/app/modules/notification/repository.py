@@ -19,10 +19,11 @@ class NotificationRepository:
             return {}
         row = dict(n)
         # Map DB columns back to legacy/frontend keys
-        row["message"] = row.get("description") or ""
-        row["type"] = row.get("category") or "INFO"
-        row["notification_type"] = row.get("category") or "INFO"
-        row["recipient_id"] = row.get("recipient_user_id")
+        row["id"] = str(row.get("id") or row.get("notification_id") or uuid.uuid4())
+        row["message"] = row.get("description") or row.get("message") or ""
+        row["type"] = row.get("category") or row.get("type") or "INFO"
+        row["notification_type"] = row.get("category") or row.get("type") or "INFO"
+        row["recipient_id"] = row.get("recipient_user_id") or row.get("recipient_id")
         row["read"] = row.get("is_read") or row.get("read") or False
         row["is_read"] = row.get("is_read") or row.get("read") or False
         return row
@@ -65,12 +66,6 @@ class NotificationRepository:
                 r_role = str(n.get("recipient_role") or "").strip().lower()
                 r_email = str(n.get("recipient_email") or "").lower().strip()
                 
-                # Exclude if it has a specific recipient ID/email and it's not the user
-                if r_id and user_id and r_id != user_id and r_id.lower() != user_emp_code.lower():
-                    continue
-                if r_email and user_email and r_email != user_email:
-                    continue
-                
                 # Flexible role match (e.g. "executive" vs "Sales Executive", "manager" vs "Sales Manager")
                 role_match = (
                     r_role in ["all", ""] or
@@ -79,7 +74,10 @@ class NotificationRepository:
                     ("manager" in r_role and "manager" in user_role)
                 )
 
-                if role_match or r_id == user_id or r_email == user_email:
+                id_match = (r_id and user_id and r_id == user_id) or (r_id and user_emp_code and r_id.lower() == user_emp_code.lower())
+                email_match = (r_email and user_email and r_email == user_email)
+
+                if role_match or id_match or email_match:
                     filtered.append(n)
             return filtered
 
@@ -169,6 +167,14 @@ class NotificationRepository:
 
     def mark_as_read(self, notification_id: str) -> Dict[str, Any]:
         updates = {"is_read": True, "read": True, "unread": False}
+        
+        # Always update in-memory cache first so getNotifications never returns old unread items
+        for n in _in_memory_notifications:
+            if str(n.get("id")) == str(notification_id) or str(n.get("notification_id")) == str(notification_id):
+                n["is_read"] = True
+                n["read"] = True
+                n["unread"] = False
+
         try:
             res = self.supabase.schema("system").table("notifications").update(updates).eq("id", notification_id).execute()
             if res.data and len(res.data) > 0:
@@ -181,9 +187,4 @@ class NotificationRepository:
             except Exception as e:
                 logger.warning(f"mark_as_read failed: {e}")
 
-        for n in _in_memory_notifications:
-            if str(n.get("id")) == str(notification_id):
-                n["is_read"] = True
-                n["read"] = True
-                return n
         return {"id": notification_id, "is_read": True}

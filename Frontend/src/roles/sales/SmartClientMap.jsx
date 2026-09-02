@@ -269,32 +269,39 @@ export default function SmartClientMap() {
   const [replyText, setReplyText] = useState('')
   const [isReplying, setIsReplying] = useState(false)
 
-  // Helper for persistent handled inquiry IDs across page reloads
-  const getHandledInquiryIds = () => {
+  // Composite fingerprint for an inquiry to avoid ID mismatch or repeat popups
+  const getInquiryKey = (n) => {
+    if (!n) return ''
+    const id = n.id || n.notification_id
+    if (id) return String(id).toLowerCase().trim()
+    const msg = n.message || n.description || n.title || ''
+    const time = n.created_at || n.timestamp || ''
+    return `${msg}:${time}`.toLowerCase().trim()
+  }
+
+  // Helper for persistent handled inquiry keys across page reloads
+  const getHandledInquiryKeys = () => {
     try {
-      return new Set(JSON.parse(localStorage.getItem('tc_handled_inquiries') || '[]'))
+      const raw = localStorage.getItem('tc_handled_inquiry_keys')
+      if (!raw) return new Set()
+      const arr = JSON.parse(raw)
+      const validKeys = arr.filter(k => k && k.length > 5 && !k.startsWith(':'))
+      return new Set(validKeys)
     } catch {
       return new Set()
     }
   }
 
-  const addHandledInquiryId = (id) => {
-    if (!id) return
+  const addHandledInquiryKey = (inquiry) => {
+    if (!inquiry) return
+    const key = getInquiryKey(inquiry)
     try {
-      const ids = getHandledInquiryIds()
-      ids.add(String(id))
-      localStorage.setItem('tc_handled_inquiries', JSON.stringify(Array.from(ids).slice(-100)))
-    } catch (e) { console.warn('Save handled inquiry err:', e) }
-  }
-
-  const parseIsoTimeMs = (isoStr) => {
-    if (!isoStr) return 0
-    let str = String(isoStr).trim()
-    if (!str.endsWith('Z') && !str.includes('+') && !str.includes('-')) {
-      str += 'Z'
-    }
-    const ms = new Date(str).getTime()
-    return isNaN(ms) ? 0 : ms
+      const keys = getHandledInquiryKeys()
+      if (key) keys.add(key)
+      if (inquiry.id) keys.add(String(inquiry.id))
+      if (inquiry.notification_id) keys.add(String(inquiry.notification_id))
+      localStorage.setItem('tc_handled_inquiry_keys', JSON.stringify(Array.from(keys).slice(-100)))
+    } catch (e) { console.warn('Save handled inquiry key err:', e) }
   }
 
   // Poll for Manager Location Inquiries
@@ -303,46 +310,48 @@ export default function SmartClientMap() {
       try {
         const res = await notificationAPI.getNotifications()
         const notifs = Array.isArray(res) ? res : (res?.data || [])
-        const handledIds = getHandledInquiryIds()
-        const nowMs = Date.now()
+        const handledKeys = getHandledInquiryKeys()
 
         const inquiries = notifs.filter(n => {
           const cat = String(n.category || n.type || '').toUpperCase()
           if (!cat.includes('INQUIRY') && !String(n.title || '').includes('Inquiry')) return false
           if (n.read || n.is_read) return false
-          const notifId = String(n.id || n.notification_id || '')
-          if (!notifId || handledIds.has(notifId)) return false
-
-          // UTC timezone safe parsing check (only mute if older than 3 mins)
-          const createdAtMs = parseIsoTimeMs(n.created_at)
-          const ageMs = nowMs - createdAtMs
-          if (createdAtMs > 0 && ageMs > 180000) {
-            addHandledInquiryId(notifId)
-            return false
-          }
+          
+          const key = getInquiryKey(n)
+          const rawId = String(n.id || n.notification_id || '')
+          if (handledKeys.has(key) || (rawId && handledKeys.has(rawId))) return false
           return true
         })
 
         if (inquiries.length > 0) {
-          setActiveInquiry(inquiries[0])
+          const nextInquiry = inquiries[0]
+          const nextKey = getInquiryKey(nextInquiry)
+          if (activeInquiryRef.current && getInquiryKey(activeInquiryRef.current) === nextKey) return
+          activeInquiryRef.current = nextInquiry
+          setActiveInquiry(nextInquiry)
         }
       } catch (e) { console.warn('Inquiry check err:', e) }
     }
 
     checkInquiries()
-    const interval = setInterval(checkInquiries, 4000)
+    const interval = setInterval(checkInquiries, 3000)
     return () => clearInterval(interval)
   }, [currentUser?.email])
 
   const handleDismissInquiry = (inquiry) => {
-    if (inquiry) {
-      const notifId = String(inquiry.id || inquiry.notification_id || '')
-      if (notifId) {
-        addHandledInquiryId(notifId)
-        notificationAPI.markRead(notifId).catch(() => null)
-      }
-    }
+    activeInquiryRef.current = null
     setActiveInquiry(null)
+    setReplyText('')
+
+    try {
+      if (inquiry) {
+        addHandledInquiryKey(inquiry)
+        const notifId = String(inquiry.id || inquiry.notification_id || '')
+        if (notifId) notificationAPI.markRead(notifId).catch(() => null)
+      }
+    } catch (e) {
+      console.warn('Dismiss inquiry notice:', e)
+    }
   }
 
   const handleSendReplyToManager = async (chipText) => {
@@ -351,11 +360,12 @@ export default function SmartClientMap() {
     setIsReplying(true)
 
     const currentInquiry = activeInquiry
-    const notifId = currentInquiry ? String(currentInquiry.id || currentInquiry.notification_id || '') : ''
-    if (notifId) {
-      addHandledInquiryId(notifId)
-      notificationAPI.markRead(notifId).catch(() => null)
+    if (currentInquiry) {
+      addHandledInquiryKey(currentInquiry)
+      const notifId = String(currentInquiry.id || currentInquiry.notification_id || '')
+      if (notifId) notificationAPI.markRead(notifId).catch(() => null)
     }
+    activeInquiryRef.current = null
     setActiveInquiry(null)
 
     const myName = currentUser?.name || currentUser?.full_name || getStoredUser()?.name || 'Sales Executive'
@@ -397,12 +407,24 @@ export default function SmartClientMap() {
   }, [])
 
   // ── Route ─────────────────────────────────────────────────────────────────
-  // Load config dynamically on mount
+  // Load config dynamically on mount with instant localStorage cache
   useEffect(() => {
     if (window.google?.maps) {
       initializeHTMLMapMarker()
       setMapLoaded(true)
       return
+    }
+
+    const cachedKey = localStorage.getItem('tc_gmaps_key')
+    if (cachedKey) {
+      setGoogleMapsApiKey(cachedKey)
+      loadGoogleMaps(cachedKey)
+        .then(maps => {
+          if (!maps) return
+          initializeHTMLMapMarker()
+          setMapLoaded(true)
+        })
+        .catch(err => console.warn('Cached Google Maps load notice:', err))
     }
 
     settingsAPI.getConfig()
@@ -413,6 +435,7 @@ export default function SmartClientMap() {
         }
         const key = res?.data?.google_maps_api_key
         if (!key) return
+        localStorage.setItem('tc_gmaps_key', key)
         setGoogleMapsApiKey(key)
         return loadGoogleMaps(key)
       })
@@ -870,45 +893,7 @@ export default function SmartClientMap() {
       setOffRoute(distToRoute > OFF_ROUTE_THRESHOLD_KM)
     }
 
-    // Dynamic traveled trail polyline (purple dotted line)
-    try {
-      const lat = executivePos.lat
-      const lng = executivePos.lng
-      const pts = trailPointsRef.current
-      const last = pts.length > 0 ? pts[pts.length - 1] : null
-      if (!last || haversineDistance(last.lat, last.lng, lat, lng) > 0.001) {
-        pts.push({ lat, lng })
-      }
 
-      if (pts.length >= 2 && googleMapRef.current && window.google) {
-        const gPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
-        if (trailPolylineRef.current) {
-          trailPolylineRef.current.setPath(gPath)
-        } else {
-          const lineSymbol = {
-            path: window.google.maps.SymbolPath.CIRCLE,
-            fillOpacity: 1,
-            scale: 4,
-            strokeColor: '#9333ea', // Vibrant Purple Dotted Line
-            fillColor: '#a855f7',
-            strokeWeight: 1.5
-          }
-          trailPolylineRef.current = new window.google.maps.Polyline({
-            path: gPath,
-            strokeOpacity: 0,
-            icons: [{
-              icon: lineSymbol,
-              offset: '0%',
-              repeat: '12px'
-            }],
-            map: googleMapRef.current,
-            zIndex: 20
-          })
-        }
-      }
-    } catch (trailErr) {
-      console.warn('Failed to update traveled trail on Sales map:', trailErr)
-    }
 
     // Debounced OSRM re-fetch
     const moved = lastRoutePos.current
@@ -1011,7 +996,7 @@ export default function SmartClientMap() {
       zoom: 14,
       zoomControl: true,
       zoomControlOptions: {
-        position: window.google.maps.ControlPosition.RIGHT_BOTTOM
+        position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9
       },
       mapTypeControl: false,
       streetViewControl: false,
@@ -1673,8 +1658,16 @@ export default function SmartClientMap() {
 
       {/* ══ MOBILE-FIRST MANAGER INQUIRY POPUP MODAL ══ */}
       {activeInquiry && (
-        <div className="fixed inset-0 z-[9999] bg-slate-950/70 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4">
-          <div className="bg-white rounded-t-3xl md:rounded-3xl w-full md:max-w-md p-5 shadow-2xl border border-slate-100 animate-in slide-in-from-bottom duration-200 space-y-4">
+        <div
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleDismissInquiry(activeInquiry)
+          }}
+          className="fixed inset-0 z-[9999] bg-slate-950/70 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4 cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-t-3xl md:rounded-3xl w-full md:max-w-md p-5 shadow-2xl border border-slate-100 animate-in slide-in-from-bottom duration-200 space-y-4 cursor-default"
+          >
             
             {/* Mobile Drag Handle */}
             <div className="md:hidden flex justify-center pb-1">
