@@ -223,6 +223,7 @@ export const hrmsAPI = {
   getEmployees: () => request('/hrms/employees'),
   createEmployee: (data) => request('/hrms/employees', { method: 'POST', body: JSON.stringify(data) }),
   getEmployeeById: (id) => request(`/hrms/employees/${id}`),
+  getEmployee: (id) => request(`/hrms/employees/${id}`),
   updateEmployee: (id, data) => request(`/hrms/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   uploadAvatar: (id, file) => {
     return new Promise((resolve, reject) => {

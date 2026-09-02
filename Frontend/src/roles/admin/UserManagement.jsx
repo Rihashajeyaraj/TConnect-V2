@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef } from 'react'
+import React, { useState, useEffect, useMemo, useRef, Fragment } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
   Users,
@@ -33,11 +33,23 @@ import {
   AlertCircle,
   CreditCard,
   FileText,
+  X,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
 import { hrmsAPI, userAPI, settingsAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import { normalizePhoneNumber } from '../../utils/formatUtils.js'
+import { formatDate } from '../../utils/dateUtils.js'
 import { FaceLivenessEngine, LIVENESS_CHALLENGES } from '../sales/FaceLivenessEngine.js'
+
+const getUserPhoto = (u) => {
+  const p = u?.profile_photo || u?.avatar_url || u?.photo_url || u?.profile_photo_url || u?.avatar || u?.photo
+  if (!p || typeof p !== 'string') return null
+  const trimmed = p.trim()
+  if (!trimmed || trimmed.includes('test_avatar') || trimmed.includes('example.com')) return null
+  return trimmed
+}
 
 const EmployeeProfileModal = ({ employee, onClose }) => {
   const [previewDoc, setPreviewDoc] = useState(null);
@@ -46,8 +58,8 @@ const EmployeeProfileModal = ({ employee, onClose }) => {
   useEffect(() => {
     let isMounted = true;
     const empId = employee?.employee_id || employee?.id || employee?.auth_user_id;
-    if (empId) {
-      hrmsAPI.getEmployee(empId)
+    if (empId && (hrmsAPI.getEmployeeById || hrmsAPI.getEmployee)) {
+      (hrmsAPI.getEmployeeById || hrmsAPI.getEmployee)(empId)
         .then(res => {
           if (isMounted && res && res.data) {
             setFullProfile(prev => ({ ...prev, ...res.data }));
@@ -99,8 +111,13 @@ const EmployeeProfileModal = ({ employee, onClose }) => {
 
         <div className="flex items-center gap-4 border-b border-slate-100 pb-4">
           <div className="w-16 h-16 rounded-full overflow-hidden bg-slate-100 border-2 border-blue-500 shrink-0 flex items-center justify-center font-bold text-slate-700 text-xl">
-            {empData.profile_photo ? (
-              <img src={empData.profile_photo} alt="Profile" className="w-full h-full object-cover" />
+            {getUserPhoto(empData) ? (
+              <img
+                src={getUserPhoto(empData)}
+                alt="Profile"
+                onError={(e) => { e.currentTarget.style.display = 'none' }}
+                className="w-full h-full object-cover"
+              />
             ) : (
               (empData.name || "E").split(" ").map(n => n[0]).join("").slice(0, 2).toUpperCase()
             )}
@@ -322,7 +339,7 @@ function UserDirectoryTable({
               const isAssigned = !!user.reporting_manager_name
 
               return (
-                <>
+                <Fragment key={user.id}>
                   {/* Main Row */}
                   <tr
                     key={user.id}
@@ -338,9 +355,19 @@ function UserDirectoryTable({
                     {/* Name */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-black text-[10px] flex items-center justify-center shrink-0">
+                      <div className="relative w-7 h-7 shrink-0">
+                        {getUserPhoto(user) && (
+                          <img
+                            src={getUserPhoto(user)}
+                            alt={user.name}
+                            onError={(e) => { e.currentTarget.style.display = 'none' }}
+                            className="w-7 h-7 rounded-lg object-cover border border-slate-200 absolute inset-0 z-10"
+                          />
+                        )}
+                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-black text-[10px] flex items-center justify-center">
                           {initials}
                         </div>
+                      </div>
                         <div className="min-w-0">
                           <p className="font-extrabold text-slate-900 text-xs truncate flex items-center gap-1">
                             {user.name}
@@ -396,8 +423,18 @@ function UserDirectoryTable({
                           {/* Panel Header */}
                           <div className="px-4 py-3 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                             <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-black text-[11px] flex items-center justify-center">
-                                {initials}
+                              <div className="relative w-8 h-8 shrink-0">
+                                {getUserPhoto(user) && (
+                                  <img
+                                    src={getUserPhoto(user)}
+                                    alt={user.name}
+                                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                                    className="w-8 h-8 rounded-xl object-cover border border-slate-200 absolute inset-0 z-10"
+                                  />
+                                )}
+                                <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-black text-[11px] flex items-center justify-center">
+                                  {initials}
+                                </div>
                               </div>
                               <div>
                                 <p className="font-extrabold text-slate-900 text-xs">{user.name}</p>
@@ -492,7 +529,7 @@ function UserDirectoryTable({
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               )
             })}
           </tbody>
@@ -507,9 +544,18 @@ function UserManagement() {
   const location = useLocation()
   const searchInputRef = useRef(null)
   const [users, setUsers] = useState([])
-  const [activeTab, setActiveTab] = useState('hierarchy') // 'hierarchy' | 'password-resets'
+  const [activeTab, setActiveTab] = useState(null) // null | 'hierarchy' | 'password-resets'
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
+  const [showUnassignedPoolModal, setShowUnassignedPoolModal] = useState(false)
+  const [selectedHierarchyDept, setSelectedHierarchyDept] = useState('ALL')
   const [departmentsList, setDepartmentsList] = useState([])
+  const [expandedManagerIds, setExpandedManagerIds] = useState([])
+
+  const toggleExpandManager = (mgrId) => {
+    setExpandedManagerIds(prev =>
+      prev.includes(mgrId) ? prev.filter(id => id !== mgrId) : [...prev, mgrId]
+    )
+  }
 
   useEffect(() => {
     async function fetchDepartments() {
@@ -1440,7 +1486,7 @@ function UserManagement() {
       </div>
 
       {/* KPI Stats Panel (Interactive Cards -> Click to open Users Directory Modal) */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <button
           type="button"
           onClick={() => {
@@ -1466,104 +1512,42 @@ function UserManagement() {
         <button
           type="button"
           onClick={() => {
-            setSelectedRole('Sales Manager')
-            setSelectedStatus('ALL')
-            setShowDirectoryModal(true)
+            setActiveTab(prev => prev === 'hierarchy' ? null : 'hierarchy')
           }}
-          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:shadow-md hover:border-indigo-400 transition-all flex items-center gap-3 cursor-pointer text-left group"
-          title="Click to view Sales Managers in directory modal"
+          className={`p-4 rounded-2xl border shadow-xs hover:shadow-md transition-all flex items-center gap-3 cursor-pointer text-left group ${
+            activeTab === 'hierarchy'
+              ? 'bg-indigo-50/60 border-indigo-300 ring-2 ring-indigo-500/20'
+              : 'bg-white border-slate-200 hover:border-indigo-400'
+          }`}
+          title="Click to toggle Team Hierarchy view"
         >
           <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 group-hover:scale-105 transition-transform">
-            <ShieldCheck className="w-5 h-5" />
+            <Network className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">Sales Managers</p>
+            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">Team Hierarchy</p>
             <div className="flex items-center gap-1.5 mt-0.5">
-              <p className="text-2xl font-extrabold text-slate-900">{salesManagers.length}</p>
-              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">View ↗</span>
-            </div>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedRole('Sales Executive')
-            setSelectedStatus('ALL')
-            setShowDirectoryModal(true)
-          }}
-          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:shadow-md hover:border-emerald-400 transition-all flex items-center gap-3 cursor-pointer text-left group"
-          title="Click to view Sales Executives in directory modal"
-        >
-          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100 group-hover:scale-105 transition-transform">
-            <UserCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-emerald-600 transition-colors">Assigned Subordinates</p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <p className="text-2xl font-extrabold text-slate-900">{salesExecutives.length - unassignedExecutives.length}</p>
-              <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">View ↗</span>
-            </div>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => {
-            setSelectedRole('ALL')
-            setSelectedStatus('ALL')
-            setShowDirectoryModal(true)
-          }}
-          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:shadow-md hover:border-amber-400 transition-all flex items-center gap-3 cursor-pointer text-left group"
-          title="Click to view Unassigned Executives in directory modal"
-        >
-          <div className={`p-3 rounded-xl border group-hover:scale-105 transition-transform ${unassignedExecutives.length > 0 ? 'bg-amber-50 text-amber-600 border-amber-200' : 'bg-slate-50 text-slate-500 border-slate-200'}`}>
-            <UserX className="w-5 h-5" />
-          </div>
-          <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-amber-600 transition-colors">Unassigned Pool</p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <p className={`text-2xl font-extrabold ${unassignedExecutives.length > 0 ? 'text-amber-600' : 'text-slate-900'}`}>{unassignedExecutives.length}</p>
-              <span className="text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-100">View ↗</span>
+              <p className="text-2xl font-extrabold text-slate-900">{hierarchyManagers.length}</p>
+              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
+                {activeTab === 'hierarchy' ? `${hierarchyManagers.length} Managers (Open)` : `${hierarchyManagers.length} Managers (Click to View ↗)`}
+              </span>
             </div>
           </div>
         </button>
       </div>
 
-      {/* View Switcher Tabs */}
-      <div className="flex items-center justify-between gap-3 border-b border-slate-200 pb-2">
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => {
-              setSelectedRole('ALL')
-              setSelectedStatus('ALL')
-              setShowDirectoryModal(true)
-            }}
-            className="px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer bg-blue-600 hover:bg-blue-700 text-white shadow-md shadow-blue-600/20"
-          >
-            <Layers className="w-4 h-4" /> All Users Directory ({users.length}) ↗
-          </button>
-          <button
-            onClick={() => setActiveTab('hierarchy')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer ${
-              activeTab === 'hierarchy'
-                ? 'bg-[#061A4D] text-white shadow-md shadow-[#061A4D]/20'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <Network className="w-4 h-4" /> Manager & Executive Team Hierarchy ({hierarchyManagers.length} Managers)
-          </button>
-          <button
-            onClick={() => setActiveTab('password-resets')}
-            className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer relative ${
-              activeTab === 'password-resets'
-                ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
-                : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-            }`}
-          >
-            <Key className="w-4 h-4" /> Password Requests
-          </button>
-        </div>
+      {/* View Switcher Bar */}
+      <div className="flex items-center justify-end gap-3 border-b border-slate-200 pb-2">
+        <button
+          onClick={() => setActiveTab(activeTab === 'password-resets' ? 'hierarchy' : 'password-resets')}
+          className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer relative ${
+            activeTab === 'password-resets'
+              ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Key className="w-4 h-4" /> {activeTab === 'password-resets' ? 'Back to Hierarchy' : 'Password Requests'}
+        </button>
       </div>
 
       {/* ======================================================== */}
@@ -1576,245 +1560,471 @@ function UserManagement() {
       )}
 
       {/* ======================================================== */}
-      {/* VIEW 1: MANAGER & EXECUTIVE HIERARCHY                    */}
+      {/* ======================================================== */}
+      {/* VIEW 1: MANAGER & EXECUTIVE HIERARCHY / ORG FLOWCHART    */}
       {/* ======================================================== */}
       {activeTab === 'hierarchy' && (
-
         <div className="space-y-6">
-          {/* Header Info Note */}
-          <div className="bg-white border border-[#DCE3EF] p-5 rounded-2xl flex items-center justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2.5 bg-[#061A4D] text-white rounded-xl shadow-inner">
-                <Network className="w-5 h-5 text-[#F2C76E]" />
+
+          {/* Department Cards Bar */}
+          <div>
+            <div className="flex items-center justify-between gap-3 mb-3">
+              <div className="flex items-center gap-2">
+                <Building className="w-4 h-4 text-[#123A8C]" />
+                <h3 className="font-extrabold text-sm text-[#071A45]">Department Hierarchy Filter</h3>
               </div>
-              <div>
-                <h4 className="font-extrabold text-[#071A45] text-sm">Manager-to-Executive Team Hierarchy</h4>
-                <p className="text-[11px] text-[#64748B] font-medium mt-0.5">
-                  Select a Sales Manager in the left panel to manage their assigned executive team subordinates.
-                </p>
-              </div>
+            </div>
+
+            {/* Department Cards Grid */}
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
+              {/* Card 1: All Departments */}
+              <button
+                type="button"
+                onClick={() => setSelectedHierarchyDept('ALL')}
+                className={`p-3.5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs ${
+                  selectedHierarchyDept === 'ALL'
+                    ? 'bg-gradient-to-br from-[#061A4D] to-[#123A8C] text-white border-transparent ring-2 ring-[#061A4D]/30 shadow-md scale-[1.02]'
+                    : 'bg-white text-slate-800 border-slate-200 hover:border-blue-400 hover:shadow-sm'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className={`p-2 rounded-xl border ${selectedHierarchyDept === 'ALL' ? 'bg-white/10 border-white/20 text-white' : 'bg-blue-50 border-blue-100 text-blue-600'}`}>
+                    <Layers className="w-4 h-4" />
+                  </div>
+                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${selectedHierarchyDept === 'ALL' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    All ({users.length})
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <p className="font-extrabold text-xs leading-tight">All Departments</p>
+                  <p className={`text-[10px] font-semibold mt-0.5 ${selectedHierarchyDept === 'ALL' ? 'text-blue-200' : 'text-slate-500'}`}>Full Org Chart</p>
+                </div>
+              </button>
+
+              {/* Card 2: Sales & Business */}
+              <button
+                type="button"
+                onClick={() => setSelectedHierarchyDept('Sales')}
+                className={`p-3.5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs ${
+                  selectedHierarchyDept === 'Sales'
+                    ? 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-transparent ring-2 ring-blue-500/30 shadow-md scale-[1.02]'
+                    : 'bg-white text-slate-800 border-slate-200 hover:border-indigo-400 hover:shadow-sm'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className={`p-2 rounded-xl border ${selectedHierarchyDept === 'Sales' ? 'bg-white/10 border-white/20 text-white' : 'bg-indigo-50 border-indigo-100 text-indigo-600'}`}>
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${selectedHierarchyDept === 'Sales' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    {users.filter(u => (u.department || u.dept || 'Sales').toLowerCase().includes('sales')).length}
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <p className="font-extrabold text-xs leading-tight">Sales & Business</p>
+                  <p className={`text-[10px] font-semibold mt-0.5 ${selectedHierarchyDept === 'Sales' ? 'text-blue-100' : 'text-slate-500'}`}>Sales & Exec Teams</p>
+                </div>
+              </button>
+
+              {/* Card 3: Management */}
+              <button
+                type="button"
+                onClick={() => setSelectedHierarchyDept('Management')}
+                className={`p-3.5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs ${
+                  selectedHierarchyDept === 'Management'
+                    ? 'bg-gradient-to-br from-amber-600 to-amber-800 text-white border-transparent ring-2 ring-amber-500/30 shadow-md scale-[1.02]'
+                    : 'bg-white text-slate-800 border-slate-200 hover:border-amber-400 hover:shadow-sm'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className={`p-2 rounded-xl border ${selectedHierarchyDept === 'Management' ? 'bg-white/10 border-white/20 text-white' : 'bg-amber-50 border-amber-100 text-amber-600'}`}>
+                    <ShieldCheck className="w-4 h-4" />
+                  </div>
+                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${selectedHierarchyDept === 'Management' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    {users.filter(u => {
+                      const d = (u.department || u.dept || '').toLowerCase()
+                      const r = (u.role || '').toLowerCase()
+                      return d.includes('mgmt') || d.includes('management') || r.includes('ceo') || r.includes('admin')
+                    }).length}
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <p className="font-extrabold text-xs leading-tight">Management & Admin</p>
+                  <p className={`text-[10px] font-semibold mt-0.5 ${selectedHierarchyDept === 'Management' ? 'text-amber-100' : 'text-slate-500'}`}>Leadership Node</p>
+                </div>
+              </button>
+
+              {/* Card 4: Operations & IT */}
+              <button
+                type="button"
+                onClick={() => setSelectedHierarchyDept('Operations')}
+                className={`p-3.5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs ${
+                  selectedHierarchyDept === 'Operations'
+                    ? 'bg-gradient-to-br from-emerald-600 to-teal-700 text-white border-transparent ring-2 ring-emerald-500/30 shadow-md scale-[1.02]'
+                    : 'bg-white text-slate-800 border-slate-200 hover:border-emerald-400 hover:shadow-sm'
+                }`}
+              >
+                <div className="flex items-center justify-between">
+                  <div className={`p-2 rounded-xl border ${selectedHierarchyDept === 'Operations' ? 'bg-white/10 border-white/20 text-white' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
+                    <Briefcase className="w-4 h-4" />
+                  </div>
+                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${selectedHierarchyDept === 'Operations' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    {users.filter(u => {
+                      const d = (u.department || u.dept || '').toLowerCase()
+                      return d.includes('op') || d.includes('it') || d.includes('tech')
+                    }).length}
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <p className="font-extrabold text-xs leading-tight">Operations & IT</p>
+                  <p className={`text-[10px] font-semibold mt-0.5 ${selectedHierarchyDept === 'Operations' ? 'text-emerald-100' : 'text-slate-500'}`}>Tech & Operations</p>
+                </div>
+              </button>
+
+              {/* Card 5: Unassigned Pool */}
+              <button
+                type="button"
+                onClick={() => setShowUnassignedPoolModal(true)}
+                className="p-3.5 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-orange-50/50 hover:border-amber-400 transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs"
+              >
+                <div className="flex items-center justify-between">
+                  <div className="p-2 rounded-xl bg-amber-100 border border-amber-200 text-amber-700">
+                    <UserX className="w-4 h-4" />
+                  </div>
+                  <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
+                    {unassignedExecutives.length} Unassigned
+                  </span>
+                </div>
+                <div className="mt-3">
+                  <p className="font-extrabold text-xs text-amber-900 leading-tight">Unassigned Pool ↗</p>
+                  <p className="text-[10px] font-semibold text-amber-700 mt-0.5">Click to Assign</p>
+                </div>
+              </button>
             </div>
           </div>
 
-          {/* Two-panel layout */}
-          <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
-            {/* Left Panel: Sales Managers List */}
-            <div className="md:col-span-5 bg-white border border-[#DCE3EF] p-5 rounded-2xl shadow-xs space-y-4">
-              <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
-                <h3 className="font-extrabold text-[#071A45] text-sm flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-[#123A8C]" /> Sales Managers ({hierarchyManagers.length})
-                </h3>
-              </div>
-              <div className="space-y-2 max-h-[500px] overflow-y-auto pr-1">
-                {hierarchyManagers.length === 0 ? (
-                  <p className="text-xs text-[#64748B] font-semibold text-center py-8 bg-slate-50/50 border border-dashed border-[#DCE3EF] rounded-xl">
-                    No Sales Managers found in database.
-                  </p>
-                ) : (
-                  hierarchyManagers.map((mgr) => {
-                    const isSelected = String(selectedManagerId) === String(mgr.id)
-                    const relationship = managerHierarchy.find(h => String(h.manager.id) === String(mgr.id))
-                    const count = relationship ? relationship.count : 0
+          {/* HIERARCHY FLOWCHART CHART VIEW */}
+          <div className="bg-white border border-[#DCE3EF] rounded-3xl p-6 shadow-xs space-y-8 overflow-x-auto">
+              
+              {/* LEVEL 1: CEO / TOP LEADERSHIP APEX NODE */}
+              <div className="flex flex-col items-center">
+                <div className="bg-gradient-to-br from-amber-500/15 via-yellow-500/10 to-amber-500/20 border border-amber-400/80 px-4 py-2.5 rounded-2xl shadow-md max-w-xs w-full text-center relative group hover:border-amber-500 transition-all">
+                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full shadow-xs flex items-center gap-1 shrink-0 whitespace-nowrap">
+                    <Sparkles className="w-2.5 h-2.5" /> Executive Leadership (CEO)
+                  </div>
+                  
+                  {(() => {
+                    const ceoObj = users.find(u => (u.role || '').toLowerCase().includes('ceo') || (u.role || '').toLowerCase().includes('founder')) || users.find(u => (u.role || '').toLowerCase().includes('admin')) || { name: 'CEO & Founder', email: 'ceo@twiteconnect.com', role: 'CEO' }
                     return (
-                      <div
-                        key={mgr.id}
-                        onClick={() => setSelectedManagerId(mgr.id)}
-                        className={`p-4 rounded-xl border transition cursor-pointer relative flex flex-col justify-between ${
-                          isSelected
-                            ? 'border-[#123A8C] bg-blue-50/20 shadow-xs ring-2 ring-[#123A8C]/15'
-                            : 'border-[#DCE3EF] bg-slate-50/30 hover:bg-slate-50 hover:border-slate-350'
-                        }`}
-                      >
-                        {isSelected && (
-                          <div className="absolute top-0 left-0 bottom-0 w-1 bg-[#D9A441] rounded-l-xl" />
-                        )}
-                        <div className="flex items-start justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#061A4D] to-[#123A8C] text-white flex items-center justify-center font-black text-xs shadow-sm uppercase border border-white">
-                              {(mgr.name || '').split(' ').map((n) => n[0]).join('')}
-                            </div>
-                            <div>
-                              <h4 className="font-extrabold text-xs text-[#071A45]">{mgr.name}</h4>
-                              <p className="text-[10px] text-[#64748B] font-semibold mt-0.5">{mgr.email}</p>
-                            </div>
+                      <div className="mt-1 flex flex-col items-center">
+                        <div className="relative w-9 h-9 shrink-0 mb-1">
+                          {getUserPhoto(ceoObj) && (
+                            <img
+                              src={getUserPhoto(ceoObj)}
+                              alt={ceoObj.name}
+                              onError={(e) => { e.currentTarget.style.display = 'none' }}
+                              className="w-9 h-9 rounded-xl object-cover border border-white shadow-xs absolute inset-0 z-10"
+                            />
+                          )}
+                          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-400 text-white font-extrabold text-xs flex items-center justify-center border border-white shadow-xs">
+                            {(ceoObj.name || '').split(' ').map(n => n[0]).join('')}
                           </div>
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border transition ${
-                            mgr.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
-                          }`}>
-                            {mgr.status || 'Active'}
-                          </span>
                         </div>
-                        <div className="mt-3 pt-2.5 border-t border-slate-200/50 flex items-center justify-between text-[11px] text-[#64748B] font-bold">
-                          <span>Subordinates</span>
-                          <span className="text-[#123A8C] font-extrabold">{count} {count === 1 ? 'Executive' : 'Executives'}</span>
-                        </div>
+                        <h4 className="font-extrabold text-xs text-slate-900 leading-tight">{ceoObj.name}</h4>
+                        <p className="text-[10px] text-amber-700 font-extrabold">{ceoObj.role || 'Chief Executive Officer'}</p>
+                        <p className="text-[9px] text-slate-500 font-medium">{ceoObj.email}</p>
                       </div>
                     )
-                  })
-                )}
+                  })()}
+                </div>
+
+                {/* Connecting Line from CEO down to Level 2 */}
+                <div className="w-0.5 h-4 bg-gradient-to-b from-amber-400 to-indigo-500 my-0.5"></div>
               </div>
-            </div>
 
-            {/* Right Panel: Selected Manager's Team Subordinates */}
-            <div className="md:col-span-7 bg-white border border-[#DCE3EF] p-5 rounded-2xl shadow-xs space-y-6">
-              {(() => {
-                const mgrObj = hierarchyManagers.find(m => String(m.id) === String(selectedManagerId))
-                const relationship = managerHierarchy.find(h => String(h.manager.id) === String(selectedManagerId))
-                const assigned = relationship ? relationship.assignedExecutives : []
-                const count = relationship ? relationship.count : 0
+              {/* LEVEL 2: ADMINS & MANAGERS FLOWCHART BRANCHES */}
+              <div className="flex flex-col items-center">
+                {/* Horizontal branch bar & Expand/Collapse Controls */}
+                <div className="w-full max-w-4xl border-t-2 border-indigo-400 relative flex flex-col items-center justify-center mb-6 pt-3">
+                  <span className="bg-indigo-100 text-indigo-900 border border-indigo-200 text-[10px] font-black uppercase tracking-wider px-3 py-0.5 rounded-full shadow-xs">
+                    Reporting Manager Flow Chart: CEO → Admins → Managers → Executives
+                  </span>
+                  
+                  <div className="flex items-center gap-2 mt-3">
+                    <button
+                      type="button"
+                      onClick={() => setExpandedManagerIds(hierarchyManagers.map(m => m.id))}
+                      className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[11px] font-extrabold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                    >
+                      <ChevronDown className="w-3.5 h-3.5" /> Expand All Managers ({hierarchyManagers.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setExpandedManagerIds([])}
+                      className="px-3 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-[11px] font-extrabold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                    >
+                      <ChevronUp className="w-3.5 h-3.5" /> Collapse All
+                    </button>
+                  </div>
+                </div>
 
-                if (!mgrObj) {
-                  return (
-                    <div className="py-20 text-center text-xs text-slate-500 font-semibold border border-dashed border-[#DCE3EF] rounded-xl bg-slate-50/40">
-                      Please select a Sales Manager from the list to view their team hierarchy.
+                {/* MANAGER & EXECUTIVE TEAM FLOW CARDS */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 w-full">
+                  {hierarchyManagers.length === 0 ? (
+                    <div className="col-span-full py-12 text-center text-xs text-slate-500 font-semibold border border-dashed border-slate-200 rounded-2xl bg-slate-50">
+                      No Sales Managers configured for hierarchy chart.
                     </div>
-                  )
-                }
+                  ) : (
+                    hierarchyManagers
+                      .filter(m => selectedHierarchyDept === 'ALL' || (m.department || m.dept || 'Sales').toLowerCase().includes(selectedHierarchyDept.toLowerCase()))
+                      .map((mgr) => {
+                        const relationship = managerHierarchy.find(h => String(h.manager.id) === String(mgr.id))
+                        const assigned = relationship ? relationship.assignedExecutives : []
+                        const isExpanded = expandedManagerIds.includes(mgr.id)
+                        
+                        return (
+                          <div key={mgr.id} className="bg-slate-50/70 border-2 border-indigo-200 hover:border-indigo-400 rounded-3xl p-4 shadow-xs transition-all flex flex-col justify-between">
+                            
+                            {/* Manager Level Card (Always Compact & Clean) */}
+                            <div className="bg-white border border-indigo-100 rounded-2xl p-4 shadow-xs space-y-3">
+                              <div className="flex items-center justify-between">
+                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                  👔 Sales Manager
+                                </span>
+                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${mgr.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
+                                  {mgr.status || 'Active'}
+                                </span>
+                              </div>
 
-                return (
-                  <div className="space-y-6">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="font-extrabold text-[#071A45] text-base">{mgrObj.name}</h3>
-                          <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border transition ${
-                            mgrObj.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
-                          }`}>
-                            {mgrObj.status || 'Active'}
-                          </span>
-                        </div>
-                        <p className="text-xs text-[#64748B] font-semibold mt-1">
-                          Sales Manager &middot; {mgrObj.email}
-                        </p>
-                      </div>
-                    </div>
-
-                    {/* Assigned Executives Subordinates List */}
-                    <div className="space-y-3">
-                      <h4 className="text-[10px] font-black uppercase tracking-wider text-[#64748B]">
-                        Assigned Executives ({count})
-                      </h4>
-
-                      {assigned.length === 0 ? (
-                        <div className="py-12 text-center border border-dashed border-[#DCE3EF] rounded-xl bg-slate-50/40 space-y-2.5">
-                          <p className="text-xs text-slate-500 font-semibold">No Sales Executives reporting to this manager yet.</p>
-                        </div>
-                      ) : (
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[350px] overflow-y-auto pr-1">
-                          {assigned.map((exec) => (
-                             <div
-                              key={exec.id}
-                              className="bg-[#F7F9FC]/40 border border-[#DCE3EF] rounded-xl p-3 flex flex-col xs:flex-row xs:items-center justify-between gap-3 hover:border-slate-350 transition"
-                            >
-                              <div className="flex items-center gap-2.5 min-w-0">
-                                <div className="w-8 h-8 rounded-lg bg-blue-50 text-[#123A8C] font-extrabold text-xs flex items-center justify-center border border-blue-100 shrink-0">
-                                  {(exec.name || '').split(' ').map((n) => n[0]).join('')}
+                              <div className="flex items-center gap-3 pt-0.5">
+                                <div className="relative w-10 h-10 shrink-0">
+                                  {getUserPhoto(mgr) && (
+                                    <img
+                                      src={getUserPhoto(mgr)}
+                                      alt={mgr.name}
+                                      onError={(e) => { e.currentTarget.style.display = 'none' }}
+                                      className="w-10 h-10 rounded-xl object-cover border border-white shadow-md absolute inset-0 z-10"
+                                    />
+                                  )}
+                                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#061A4D] to-[#123A8C] text-white flex items-center justify-center font-extrabold text-xs shadow-md border border-white">
+                                    {(mgr.name || '').split(' ').map(n => n[0]).join('')}
+                                  </div>
                                 </div>
                                 <div className="min-w-0 flex-1">
-                                  <p className="font-extrabold text-xs text-slate-900 truncate flex items-center gap-1.5">
-                                    {exec.name}
-                                  </p>
-                                  <p className="text-[10px] text-[#64748B] truncate mt-0.5">{exec.email}</p>
+                                  <h4 className="font-extrabold text-xs text-slate-900 truncate">{mgr.name}</h4>
+                                  <p className="text-[10px] text-slate-500 font-medium truncate">{mgr.email}</p>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2 flex-wrap xs:flex-nowrap justify-start xs:justify-end shrink-0">
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border transition ${
-                                  exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
-                                }`}>
-                                  {exec.status || 'Active'}
-                                </span>
-                                <button
-                                  onClick={() => handleOpenReassignModal(exec)}
-                                  className="p-1 text-blue-600 hover:bg-blue-50 rounded-lg border border-blue-200 text-[10px] font-bold px-1.5 flex items-center gap-1 cursor-pointer transition"
-                                  title="Transfer / Reassign Manager"
-                                >
-                                  🔄 Reassign
-                                </button>
-                                <button
-                                  onClick={() => handleUnassignExecutive(exec.id, exec.name, mgrObj.name)}
-                                  className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                  title="Remove from Manager's Team"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                )
-              })()}
-            </div>
-          </div>
 
-          {/* Unassigned Executives Pool Section */}
-          <div className="bg-white border border-[#DCE3EF] rounded-2xl p-5 shadow-xs space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
-              <div className="flex items-center gap-2">
-                <span className="p-2 bg-amber-50 text-[#D99A18] rounded-xl border border-amber-100">
-                  <UserX className="w-4 h-4" />
-                </span>
-                <div>
-                  <h3 className="font-extrabold text-sm text-[#071A45]">Unassigned Executives Pool ({unassignedExecutives.length})</h3>
-                  <p className="text-[11px] text-[#64748B] font-medium mt-0.5">Sales Executives who do not currently report to any manager.</p>
+                              {/* Expand / Collapse Subordinates Button */}
+                              <button
+                                type="button"
+                                onClick={() => toggleExpandManager(mgr.id)}
+                                className={`w-full py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-between transition cursor-pointer ${
+                                  isExpanded
+                                    ? 'bg-[#061A4D] text-white border-[#061A4D] shadow-xs'
+                                    : 'bg-indigo-50/80 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
+                                }`}
+                              >
+                                <span className="flex items-center gap-1.5 text-[11px]">
+                                  <Users className="w-3.5 h-3.5" />
+                                  {assigned.length} Direct Subordinate{assigned.length === 1 ? '' : 's'}
+                                </span>
+                                <span className="text-[10px] font-extrabold flex items-center gap-1">
+                                  {isExpanded ? (
+                                    <>Collapse <ChevronUp className="w-3.5 h-3.5" /></>
+                                  ) : (
+                                    <>Expand <ChevronDown className="w-3.5 h-3.5" /></>
+                                  )}
+                                </span>
+                              </button>
+                            </div>
+
+                            {/* Subordinate Executives Cards Container (Visible when Expanded) */}
+                            {isExpanded && (
+                              <div className="animate-in fade-in zoom-in-95 duration-150">
+                                {/* Connecting vertical node line */}
+                                <div className="flex justify-center my-2">
+                                  <div className="w-0.5 h-5 bg-indigo-300"></div>
+                                </div>
+
+                                <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5">
+                                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
+                                      <Users className="w-3 h-3 text-indigo-600" /> Direct Subordinates ({assigned.length})
+                                    </span>
+                                  </div>
+
+                                  {assigned.length === 0 ? (
+                                    <div className="py-4 text-center text-[11px] text-slate-400 font-medium bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                                      No executives reporting yet.
+                                    </div>
+                                  ) : (
+                                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+                                      {assigned.map((exec) => (
+                                        <div
+                                          key={exec.id}
+                                          className="p-2.5 bg-emerald-50/40 border border-emerald-100 hover:border-emerald-300 rounded-xl flex items-center justify-between gap-2 transition"
+                                        >
+                                          <div className="flex items-center gap-2 min-w-0">
+                                            <div className="relative w-7 h-7 shrink-0">
+                                              {getUserPhoto(exec) && (
+                                                <img
+                                                  src={getUserPhoto(exec)}
+                                                  alt={exec.name}
+                                                  onError={(e) => { e.currentTarget.style.display = 'none' }}
+                                                  className="w-7 h-7 rounded-lg object-cover border border-emerald-200 absolute inset-0 z-10"
+                                                />
+                                              )}
+                                              <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white font-extrabold text-[10px] flex items-center justify-center">
+                                                {(exec.name || '').split(' ').map(n => n[0]).join('')}
+                                              </div>
+                                            </div>
+                                            <div className="min-w-0">
+                                              <p className="font-bold text-xs text-slate-900 truncate">{exec.name}</p>
+                                              <p className="text-[9px] text-slate-500 truncate">{exec.email}</p>
+                                            </div>
+                                          </div>
+                                          <button
+                                            onClick={() => handleOpenReassignModal(exec)}
+                                            className="p-1 text-blue-600 hover:bg-blue-50 rounded-lg text-[9px] font-extrabold px-1.5 border border-blue-200 cursor-pointer transition shrink-0"
+                                            title="Reassign Reporting Manager"
+                                          >
+                                            Reassign
+                                          </button>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                          </div>
+                        )
+                      })
+                  )}
                 </div>
               </div>
-              
-              {/* Unassigned search input */}
-              <div className="relative w-full sm:w-64">
-                <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+
+            </div>
+          </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* UNASSIGNED EXECUTIVES POOL — POPUP MODAL                 */}
+      {/* ======================================================== */}
+      {showUnassignedPoolModal && (
+        <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-5xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800 animate-in fade-in zoom-in-95 duration-150">
+            
+            {/* Modal Header */}
+            <div className="bg-[#061A4D] text-white p-5 flex items-center justify-between border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-amber-500 text-white rounded-xl shadow-md">
+                  <UserX className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-slate-100 flex items-center gap-2">
+                    Unassigned Executives Pool ({unassignedExecutives.length})
+                  </h3>
+                  <p className="text-xs text-slate-300 font-medium">Sales Executives who do not currently report to any manager.</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowUnassignedPoolModal(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800/60 transition cursor-pointer"
+                title="Close modal"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Controls / Search Bar */}
+            <div className="p-4 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 shrink-0">
+              <div className="relative w-full sm:w-80">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Search unassigned pool..."
                   value={unassignedSearchQuery}
                   onChange={(e) => setUnassignedSearchQuery(e.target.value)}
-                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-[11px] text-slate-900 focus:outline-none focus:border-[#123A8C] font-semibold"
+                  className="w-full pl-9 pr-4 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#123A8C] font-medium shadow-xs"
                 />
+              </div>
+              <div className="text-xs text-slate-500 font-bold shrink-0">
+                Showing {filteredUnassignedPool.length} of {unassignedExecutives.length} unassigned
               </div>
             </div>
 
-            {filteredUnassignedPool.length === 0 ? (
-              <p className="text-xs text-slate-500 font-semibold py-8 text-center bg-slate-50/50 border border-dashed border-[#DCE3EF] rounded-xl">
-                {unassignedSearchQuery ? 'No unassigned pool matches search query.' : 'Unassigned executives pool is currently empty.'}
-              </p>
-            ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-                {filteredUnassignedPool.map((exec) => (
-                  <div
-                    key={exec.id}
-                    className="p-3 bg-slate-50/40 border border-[#DCE3EF] rounded-xl flex items-center justify-between gap-3 hover:border-slate-350 transition"
-                  >
-                    <div className="min-w-0 flex items-center gap-2">
-                      <div className="w-7 h-7 rounded-lg bg-amber-50 text-amber-700 font-extrabold text-[10px] flex items-center justify-center border border-amber-100 shrink-0">
-                        {(exec.name || '').split(' ').map((n) => n[0]).join('')}
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto max-h-[calc(90vh-140px)]">
+              {filteredUnassignedPool.length === 0 ? (
+                <div className="p-12 text-center bg-slate-50/50 border border-dashed border-slate-200 rounded-2xl">
+                  <UserX className="w-10 h-10 text-slate-300 mx-auto mb-2" />
+                  <p className="text-sm font-bold text-slate-600">
+                    {unassignedSearchQuery ? 'No unassigned pool matches search query.' : 'Unassigned executives pool is currently empty.'}
+                  </p>
+                  <p className="text-xs text-slate-400 mt-1">All sales executives are currently assigned to reporting managers.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3.5">
+                  {filteredUnassignedPool.map((exec) => (
+                    <div
+                      key={exec.id}
+                      className="p-3.5 bg-white border border-slate-200 rounded-2xl flex items-center justify-between gap-3 hover:border-amber-400 hover:shadow-md transition-all group"
+                    >
+                      <div className="min-w-0 flex items-center gap-3">
+                        <div className="relative w-9 h-9 shrink-0 group-hover:scale-105 transition-transform">
+                          {getUserPhoto(exec) && (
+                            <img
+                              src={getUserPhoto(exec)}
+                              alt={exec.name}
+                              onError={(e) => { e.currentTarget.style.display = 'none' }}
+                              className="w-9 h-9 rounded-xl object-cover border border-amber-200 absolute inset-0 z-10"
+                            />
+                          )}
+                          <div className="w-9 h-9 rounded-xl bg-amber-50 text-amber-700 font-black text-xs flex items-center justify-center border border-amber-100">
+                            {(exec.name || '').split(' ').map((n) => n[0]).join('')}
+                          </div>
+                        </div>
+                        <div className="min-w-0">
+                          <p className="font-bold text-xs text-slate-900 truncate">{exec.name}</p>
+                          <p className="text-[10px] text-slate-500 truncate mt-0.5">{exec.email}</p>
+                        </div>
                       </div>
-                      <div className="min-w-0">
-                        <p className="font-extrabold text-[11px] text-slate-900 truncate">{exec.name}</p>
-                        <p className="text-[9px] text-[#64748B] truncate mt-0.5">{exec.email}</p>
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold border transition ${
+                          exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
+                        }`}>
+                          {exec.status || 'Active'}
+                        </span>
+                        <button
+                          onClick={() => {
+                            setSelectedUnassignedExec(exec)
+                            setShowAssignToManagerModal(true)
+                          }}
+                          className="px-3 py-1.5 bg-[#061A4D] hover:bg-[#123A8C] text-white font-bold text-xs rounded-xl shadow-xs cursor-pointer transition shrink-0"
+                        >
+                          Assign
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2 shrink-0">
-                      <span className={`px-1.5 py-0.2 rounded-md text-[8px] font-black border transition ${
-                        exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
-                      }`}>
-                        {exec.status || 'Active'}
-                      </span>
-                      <button
-                        onClick={() => {
-                          setSelectedUnassignedExec(exec)
-                          setShowAssignToManagerModal(true)
-                        }}
-                        className="px-2.5 py-1 bg-[#061A4D] hover:bg-[#123A8C] text-white font-extrabold text-[10px] rounded-lg shadow-2xs cursor-pointer transition shrink-0"
-                      >
-                        Assign
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
+              <span className="text-xs text-slate-500 font-medium">Click <strong>Assign</strong> to pair an executive with a manager.</span>
+              <button
+                onClick={() => setShowUnassignedPoolModal(false)}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl font-bold text-xs transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+
           </div>
         </div>
       )}

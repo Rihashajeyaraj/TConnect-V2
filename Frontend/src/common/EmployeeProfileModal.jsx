@@ -12,8 +12,8 @@ export default function EmployeeProfileModal({ employee, onClose }) {
   React.useEffect(() => {
     let isMounted = true
     const empId = employee?.employee_id || employee?.id || employee?.auth_user_id
-    if (empId) {
-      hrmsAPI.getEmployee(empId)
+    if (empId && (hrmsAPI.getEmployeeById || hrmsAPI.getEmployee)) {
+      (hrmsAPI.getEmployeeById || hrmsAPI.getEmployee)(empId)
         .then(res => {
           if (isMounted && res && res.data) {
             setFullProfile(prev => ({ ...prev, ...res.data }))

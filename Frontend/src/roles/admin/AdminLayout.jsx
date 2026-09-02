@@ -610,45 +610,145 @@ function AdminLayout() {
   return (
     <div className="min-h-screen bg-[#F7F9FC] text-slate-900 flex flex-col font-sans admin-portal-root">
       <style>{`
-        .admin-portal-root {
-          font-size: 15px !important;
+        @media (max-width: 639px) {
+          .admin-portal-root {
+            font-size: 13px !important;
+          }
+          .admin-portal-root .text-xs,
+          .admin-portal-root .text-xs\\/5 {
+            font-size: 11px !important;
+          }
+          .admin-portal-root .text-sm {
+            font-size: 12.5px !important;
+          }
+          .admin-portal-root .text-base {
+            font-size: 13.5px !important;
+          }
+          .admin-portal-root .text-lg {
+            font-size: 15px !important;
+          }
+          .admin-portal-root .text-xl {
+            font-size: 16.5px !important;
+          }
+          .admin-portal-root .text-2xl {
+            font-size: 18.5px !important;
+          }
+          .admin-portal-root .text-[9px] {
+            font-size: 9.5px !important;
+          }
+          .admin-portal-root .text-[10px] {
+            font-size: 10px !important;
+          }
+          .admin-portal-root .text-[11px] {
+            font-size: 11px !important;
+          }
+          .admin-portal-root .text-[13px] {
+            font-size: 12.5px !important;
+          }
+          .admin-portal-root th,
+          .admin-portal-root td {
+            font-size: 11px !important;
+          }
+          .admin-sidebar-link {
+            font-size: 12.5px !important;
+          }
+          .admin-sidebar-header {
+            font-size: 11.5px !important;
+          }
         }
-        .admin-portal-root .text-xs,
-        .admin-portal-root .text-xs\\/5 {
-          font-size: 13.5px !important;
+
+        @media (min-width: 640px) and (max-width: 1024px) {
+          .admin-portal-root {
+            font-size: 13.5px !important;
+          }
+          .admin-portal-root .text-xs,
+          .admin-portal-root .text-xs\\/5 {
+            font-size: 11.5px !important;
+          }
+          .admin-portal-root .text-sm {
+            font-size: 13px !important;
+          }
+          .admin-portal-root .text-base {
+            font-size: 14.5px !important;
+          }
+          .admin-portal-root .text-lg {
+            font-size: 16px !important;
+          }
+          .admin-portal-root .text-xl {
+            font-size: 18px !important;
+          }
+          .admin-portal-root .text-2xl {
+            font-size: 20px !important;
+          }
+          .admin-portal-root .text-[9px] {
+            font-size: 10px !important;
+          }
+          .admin-portal-root .text-[10px] {
+            font-size: 10.5px !important;
+          }
+          .admin-portal-root .text-[11px] {
+            font-size: 11.5px !important;
+          }
+          .admin-portal-root .text-[13px] {
+            font-size: 13px !important;
+          }
+          .admin-portal-root th,
+          .admin-portal-root td {
+            font-size: 12px !important;
+          }
+          .admin-sidebar-link {
+            font-size: 13.5px !important;
+          }
+          .admin-sidebar-header {
+            font-size: 12px !important;
+          }
         }
-        .admin-portal-root .text-sm {
-          font-size: 15.5px !important;
-        }
-        .admin-portal-root .text-base {
-          font-size: 17.5px !important;
-        }
-        .admin-portal-root .text-lg {
-          font-size: 20px !important;
-        }
-        .admin-portal-root .text-xl {
-          font-size: 23px !important;
-        }
-        .admin-portal-root .text-2xl {
-          font-size: 26px !important;
-        }
-        .admin-portal-root .text-[9px] {
-          font-size: 11px !important;
-        }
-        .admin-portal-root .text-[10px] {
-          font-size: 12px !important;
-        }
-        .admin-portal-root .text-[11px] {
-          font-size: 13px !important;
-        }
-        .admin-portal-root .text-[13px] {
-          font-size: 15px !important;
-        }
-        .admin-sidebar-link {
-          font-size: 20px !important;
-        }
-        .admin-sidebar-header {
-          font-size: 13.5px !important;
+
+        @media (min-width: 1025px) {
+          .admin-portal-root {
+            font-size: 14px !important;
+          }
+          .admin-portal-root .text-xs,
+          .admin-portal-root .text-xs\\/5 {
+            font-size: 12px !important;
+          }
+          .admin-portal-root .text-sm {
+            font-size: 13.5px !important;
+          }
+          .admin-portal-root .text-base {
+            font-size: 15px !important;
+          }
+          .admin-portal-root .text-lg {
+            font-size: 17px !important;
+          }
+          .admin-portal-root .text-xl {
+            font-size: 19px !important;
+          }
+          .admin-portal-root .text-2xl {
+            font-size: 22px !important;
+          }
+          .admin-portal-root .text-[9px] {
+            font-size: 10.5px !important;
+          }
+          .admin-portal-root .text-[10px] {
+            font-size: 11px !important;
+          }
+          .admin-portal-root .text-[11px] {
+            font-size: 12px !important;
+          }
+          .admin-portal-root .text-[13px] {
+            font-size: 13.5px !important;
+          }
+          .admin-portal-root th,
+          .admin-portal-root td {
+            font-size: 12.5px !important;
+          }
+          .admin-sidebar-link {
+            font-size: 14px !important;
+          }
+          .admin-sidebar-header {
+            font-size: 12.5px !important;
+          }
         }
       `}</style>
       {/* Top Header */}
