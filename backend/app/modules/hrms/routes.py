@@ -1,11 +1,15 @@
-from fastapi import APIRouter, Depends, status, HTTPException
+import time
+import logging
+from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, File
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
 from app.core.scoping import get_allowed_user_identifiers, is_record_accessible, normalize_user_role
-from app.modules.hrms.schemas import EmployeeCreate, EmployeeUpdate, EmployeeResponse
+from app.modules.hrms.schemas import EmployeeCreate, EmployeeUpdate, EmployeeResponse, EmployeeAvatarPayload
 from app.modules.hrms.service import HRMSService
 from app.modules.hrms.permissions import CanViewEmployees, CanManageEmployees
 from app.modules.audit.service import create_audit_log
+from app.database.supabase import get_supabase_admin_client, get_supabase_client
+from app.core.config import settings
 
 router = APIRouter(prefix="/hrms", tags=["HRMS"])
 
@@ -14,8 +18,6 @@ def get_service() -> HRMSService:
     return HRMSService()
 
 
-
-import logging
 logger = logging.getLogger("hrms_routes")
 
 def _resolve_and_link_self(user_payload: dict, service) -> str:
@@ -310,6 +312,141 @@ async def update_employee(
         data=updated,
         message="Employee profile updated successfully"
     )
+
+
+@router.post("/employees/{emp_id}/avatar", response_model=StandardResponse)
+async def upload_employee_avatar(
+    emp_id: str,
+    payload: EmployeeAvatarPayload,
+    user_payload: dict = Depends(get_current_user_payload),
+    service: HRMSService = Depends(get_service)
+):
+    """Upload profile photo to Supabase Storage and update hrms.employees.profile_photo in DB."""
+    current_emp_code = str(
+        user_payload.get("employee_code") 
+        or user_payload.get("employee_id") 
+        or user_payload.get("user_metadata", {}).get("employee_code")
+        or user_payload.get("user_metadata", {}).get("employee_id")
+        or ""
+    ).strip()
+    current_user_id = str(
+        user_payload.get("sub") 
+        or user_payload.get("user_id") 
+        or user_payload.get("user_metadata", {}).get("user_id")
+        or user_payload.get("user_metadata", {}).get("sub")
+        or ""
+    ).strip()
+    user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+
+    is_self = (
+        emp_id == current_emp_code
+        or emp_id == current_user_id
+        or emp_id.lower() == "self"
+    )
+    if is_self:
+        emp_id = _resolve_and_link_self(user_payload, service)
+
+    if not is_self and user_role not in ("admin", "super_admin", "ceo"):
+        raise HTTPException(status_code=403, detail="Not authorized to update photo for other employees")
+
+    import base64
+    raw_b64 = payload.image_base64
+    if "," in raw_b64:
+        header, raw_b64 = raw_b64.split(",", 1)
+        
+    try:
+        contents = base64.b64decode(raw_b64)
+    except Exception as b64_err:
+        raise HTTPException(status_code=400, detail=f"Invalid base64 image data: {b64_err}")
+
+    if not contents:
+        raise HTTPException(status_code=400, detail="Uploaded image file is empty")
+
+    # 1. Step 1: Upload to Supabase Storage
+    try:
+        supabase_admin = get_supabase_admin_client() or get_supabase_client()
+        bucket_name = "avatars"
+
+        logger.info(f"[ProfilePhoto] Storage upload started")
+        logger.info(f"[ProfilePhoto] Storage bucket: {bucket_name}")
+
+        # Check / create bucket if needed
+        try:
+            buckets = supabase_admin.storage.list_buckets()
+            bucket_names = [b.name for b in buckets] if buckets else []
+            if bucket_name not in bucket_names:
+                supabase_admin.storage.create_bucket(bucket_name, options={"public": True})
+        except Exception as e_b:
+            logger.info(f"Storage bucket check/create info: {e_b}")
+
+        filename = payload.filename or "photo.png"
+        ext = filename.split(".")[-1] if "." in filename else "png"
+        clean_ext = ext.lower() if ext.lower() in ["png", "jpg", "jpeg", "webp", "gif"] else "png"
+        safe_emp = str(emp_id).replace("@", "_at_").replace(".", "_")
+        file_path = f"profile_{safe_emp}_{int(time.time())}.{clean_ext}"
+
+        logger.info(f"[ProfilePhoto] Storage path: {file_path}")
+
+        storage_res = supabase_admin.storage.from_(bucket_name).upload(
+            path=file_path,
+            file=contents,
+            file_options={"content-type": f"image/{clean_ext}", "upsert": "true"}
+        )
+        logger.info(f"[ProfilePhoto] Storage response: {storage_res}")
+        
+        public_url_res = supabase_admin.storage.from_(bucket_name).get_public_url(file_path)
+        photo_url = str(public_url_res) if public_url_res else ""
+        if not photo_url or "http" not in photo_url:
+            base_url = settings.SUPABASE_URL.rstrip("/").removesuffix("/rest/v1")
+            photo_url = f"{base_url}/storage/v1/object/public/{bucket_name}/{file_path}"
+
+        logger.info(f"[ProfilePhoto] Saved storage path: {file_path}")
+        logger.info(f"[ProfilePhoto] Generated URL: {photo_url}")
+
+    except Exception as st_err:
+        logger.error(f"[ProfilePhoto] Storage upload failed for employee {emp_id}: {st_err}")
+        raise HTTPException(status_code=500, detail=f"Storage upload failed: {str(st_err)}")
+
+    # 2. Step 2: Update hrms.employees.profile_photo in DB
+    try:
+        logger.info(f"[ProfilePhoto] Updating employee profile...")
+        logger.info(f"[ProfilePhoto] Employee ID: {emp_id}")
+        logger.info(f"[ProfilePhoto] profile_photo value: {photo_url}")
+
+        update_data = EmployeeUpdate(profile_photo=photo_url)
+        updated_employee = service.update_employee(emp_id, update_data)
+        
+        # Verify DB update succeeded
+        db_photo = (updated_employee or {}).get("profile_photo")
+        if not db_photo or db_photo != photo_url:
+            fresh = service.get_employee(emp_id)
+            db_photo = (fresh or {}).get("profile_photo")
+            if not db_photo or db_photo != photo_url:
+                logger.error(f"[ProfilePhoto] DB update failed for employee {emp_id}: profile_photo in DB is '{db_photo}', expected '{photo_url}'")
+                raise HTTPException(
+                    status_code=500,
+                    detail="Database update failed: hrms.employees.profile_photo was not saved successfully."
+                )
+
+        create_audit_log(
+            "EMPLOYEE_PROFILE_PHOTO_UPDATED",
+            "hrms.employees",
+            user_payload,
+            entity_id=str(emp_id),
+            module="HRMS",
+            description=f"Employee profile photo uploaded to Supabase Storage and saved to database for {emp_id}",
+            new_value={"profile_photo": photo_url},
+        )
+
+        return StandardResponse.success_response(
+            data={"employee_id": emp_id, "profile_photo": photo_url, "employee": updated_employee},
+            message="Profile photo uploaded to Storage and saved to database successfully"
+        )
+    except HTTPException:
+        raise
+    except Exception as db_err:
+        logger.error(f"Database update error for employee {emp_id} profile_photo: {db_err}")
+        raise HTTPException(status_code=500, detail=f"Database update failed: {str(db_err)}")
 
 
 @router.delete("/employees/{emp_id}", response_model=StandardResponse)

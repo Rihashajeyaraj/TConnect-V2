@@ -6,6 +6,7 @@ import ChangePassword from './common/ChangePassword.jsx'
 import Signup from './common/Signup.jsx'
 import ProtectedRoute from './common/ProtectedRoute.jsx'
 import { ToastProvider } from './common/ToastContext.jsx'
+import PwaInstallPrompt from './common/PwaInstallPrompt.jsx'
 
 // ── Lazy-loaded Route Components ─────────────────────────────────────
 // CEO Portal
@@ -186,6 +187,7 @@ function App() {
 
           </Routes>
         </Suspense>
+        <PwaInstallPrompt />
       </BrowserRouter>
     </ToastProvider>
   )

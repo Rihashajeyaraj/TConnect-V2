@@ -31,7 +31,7 @@ import { clearUserCache } from '../../utils/userScope.js'
 // Exactly the 9 requested CEO main navigation items
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/ceo' },
-  { label: 'Customers', icon: Users, path: '/ceo/customers' },
+  { label: 'Clients', icon: Users, path: '/ceo/customers' },
   { label: 'Team Management', icon: Users2, path: '/ceo/team-management' },
   { label: 'HRMS', icon: Briefcase, path: '/ceo/hrms' },
   { label: 'Expense Claims', icon: Receipt, path: '/ceo/expenses' },
@@ -44,6 +44,7 @@ const navItems = [
 const resolveOrderedNavItems = (savedLabels) => {
   if (!savedLabels || !Array.isArray(savedLabels)) return navItems
   const normalizedLabels = savedLabels.map((lbl) => {
+    if (lbl === 'Customers') return 'Clients'
     if (lbl === 'Sales Overview' || lbl === 'Revenue & Finance') return 'Sales & Revenue'
     return lbl
   })

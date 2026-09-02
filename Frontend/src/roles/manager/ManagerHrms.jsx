@@ -477,9 +477,9 @@ export default function ManagerHrms() {
         </div>
       </div>
 
-      {/* ── TABS NAVIGATION BAR ── Horizontal Swiping ─────────────────────── */}
-      <div className="bg-white border border-slate-200 p-2.5 rounded-2xl shadow-2xs flex items-center gap-2 overflow-x-auto no-scrollbar max-w-full shrink-0">
-        <div className="flex items-center flex-nowrap gap-1.5">
+      {/* ── TABS NAVIGATION BAR ── Compact & Sleek ─────────────────────── */}
+      <div className="bg-white border border-slate-200 p-1.5 rounded-xl shadow-2xs flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full shrink-0">
+        <div className="flex items-center flex-nowrap gap-1">
           {hrmsTabs.map(({ key, label, icon: Icon }, index) => {
             const active = activeSection === key
             return (
@@ -496,13 +496,13 @@ export default function ManagerHrms() {
               >
                 <button
                   onClick={() => setActiveSection(key)}
-                  className={`mgr-card px-4 py-2.5 rounded-xl text-xs font-black flex items-center gap-2 transition shrink-0 cursor-pointer whitespace-nowrap border ${
+                  className={`mgr-card px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer whitespace-nowrap border ${
                     active 
-                      ? 'bg-[#0b3c5d] text-white border-[#0b3c5d] shadow-sm' 
+                      ? 'bg-[#0b3c5d] text-white border-[#0b3c5d] shadow-2xs' 
                       : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-950'
                   }`}
                 >
-                  <Icon size={14} />
+                  <Icon size={13} />
                   {label}
                 </button>
               </div>
@@ -512,7 +512,7 @@ export default function ManagerHrms() {
         <button
           type="button"
           onClick={resetHrmsTabs}
-          className="mgr-card ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
+          className="mgr-card ml-auto px-2 py-1 text-[9px] font-medium text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
         >
           Reset Order
         </button>
@@ -530,22 +530,22 @@ export default function ManagerHrms() {
               <CalendarOff className="w-5 h-5 text-[#b45309]" /> My Leave Summary (2026)
             </h3>
 
-            {/* Leave Type Breakdown — 3 Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-2">
+            {/* Leave Type Breakdown — 3 Compact Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
               {LEAVE_BALANCE.map((lb) => (
-                <div key={lb.type} className={`p-5 rounded-3xl border shadow-2xs hover:shadow-sm transition ${lb.color} space-y-3`}>
+                <div key={lb.type} className={`p-3.5 rounded-2xl border shadow-2xs hover:shadow-xs transition ${lb.color} space-y-2`}>
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-black text-slate-600 uppercase tracking-wider">{lb.type}</span>
-                    <span className="text-lg">{lb.icon}</span>
+                    <span className="text-[10px] font-extrabold text-slate-600 uppercase tracking-wider">{lb.type}</span>
+                    <span className="text-sm">{lb.icon}</span>
                   </div>
                   <div className="flex items-end justify-between">
-                    <span className="text-3xl font-black text-slate-900">{lb.remaining}</span>
-                    <span className="text-[11px] text-slate-400 font-semibold pb-1">/ {lb.total} left</span>
+                    <span className="text-xl font-black text-slate-900">{lb.remaining}</span>
+                    <span className="text-[10px] text-slate-400 font-semibold pb-0.5">/ {lb.total} left</span>
                   </div>
-                  <div className="w-full bg-white/80 rounded-full h-2 overflow-hidden shadow-inner">
+                  <div className="w-full bg-white/80 rounded-full h-1.5 overflow-hidden shadow-inner">
                     <div className={`h-full rounded-full ${lb.bar} transition-all duration-500`} style={{ width: `${Math.round((lb.remaining / lb.total) * 100)}%` }} />
                   </div>
-                  <span className="text-[11px] text-slate-500 font-semibold">{lb.used} day{lb.used !== 1 ? 's' : ''} used</span>
+                  <span className="text-[10px] text-slate-500 font-semibold block">{lb.used} day{lb.used !== 1 ? 's' : ''} used</span>
                 </div>
               ))}
             </div>
@@ -751,7 +751,7 @@ export default function ManagerHrms() {
 
             return (
               <>
-                <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+                <div className="grid grid-cols-2 md:grid-cols-5 gap-2.5">
                   {leaveCards.map((card) => {
                     const remaining = Math.max(0, card.allowed - card.consumed);
                     const pct = Math.round((remaining / card.allowed) * 100) || 0;
@@ -759,12 +759,12 @@ export default function ManagerHrms() {
                       <div
                         key={card.type}
                         onClick={() => setSelectedLeaveDetailType(card.type)}
-                        className={`${card.color} rounded-2xl p-4 border shadow-xs space-y-1.5 text-xs cursor-pointer hover:scale-102 transition duration-150 active:scale-98`}
+                        className={`${card.color} rounded-xl p-3 border shadow-xs space-y-1.5 text-xs cursor-pointer hover:scale-102 transition duration-150 active:scale-98`}
                       >
-                        <span className="text-[10px] font-black uppercase tracking-wider block opacity-75">{card.type}</span>
+                        <span className="text-[9px] font-black uppercase tracking-wider block opacity-75">{card.type}</span>
                         <div className="flex items-end gap-1">
-                          <span className="text-2xl font-black">{remaining}</span>
-                          <span className="text-[10px] font-bold opacity-60 mb-0.5">{card.unit.toLowerCase()} left</span>
+                          <span className="text-xl font-black">{remaining}</span>
+                          <span className="text-[9px] font-bold opacity-60 mb-0.5">{card.unit.toLowerCase()} left</span>
                         </div>
                         <div className="w-full bg-slate-200/50 rounded-full h-1.5 overflow-hidden">
                           <div className={`h-full rounded-full ${card.barColor}`} style={{ width: `${pct}%` }} />

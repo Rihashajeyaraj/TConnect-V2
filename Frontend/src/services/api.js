@@ -42,7 +42,7 @@ async function request(endpoint, options = {}) {
   const token = getStoredToken()
 
   const headers = {
-    'Content-Type': 'application/json',
+    ...(options.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
     ...options.headers,
   }
@@ -224,6 +224,20 @@ export const hrmsAPI = {
   createEmployee: (data) => request('/hrms/employees', { method: 'POST', body: JSON.stringify(data) }),
   getEmployeeById: (id) => request(`/hrms/employees/${id}`),
   updateEmployee: (id, data) => request(`/hrms/employees/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  uploadAvatar: (id, file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => {
+        const base64Data = reader.result
+        request(`/hrms/employees/${id}/avatar`, {
+          method: 'POST',
+          body: JSON.stringify({ image_base64: base64Data, filename: file.name })
+        }).then(resolve).catch(reject)
+      }
+      reader.onerror = (err) => reject(err)
+      reader.readAsDataURL(file)
+    })
+  },
   deleteEmployee: (id) => request(`/hrms/employees/${id}`, { method: 'DELETE' }),
   getSalaries: () => request('/hrms/salaries'),
   getSalaryByEmployeeId: (empId) => request(`/hrms/employees/${empId}/salary`),

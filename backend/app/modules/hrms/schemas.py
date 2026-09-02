@@ -48,6 +48,11 @@ class EmployeeCreate(BaseModel):
         return cleaned
 
 
+class EmployeeAvatarPayload(BaseModel):
+    image_base64: str
+    filename: Optional[str] = "avatar.png"
+
+
 class EmployeeUpdate(BaseModel):
     name: Optional[str] = None
     first_name: Optional[str] = None

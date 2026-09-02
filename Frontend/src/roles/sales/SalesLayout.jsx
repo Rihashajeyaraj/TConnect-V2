@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import ImageCropperModal from "../../common/ImageCropperModal.jsx";
 import { NavLink, Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -502,31 +503,85 @@ export default function SalesLayout() {
     }
   });
 
+  // Load latest profile photo from Supabase DB on layout mount
+  useEffect(() => {
+    hrmsAPI.getEmployeeById('self')
+      .then(res => {
+        const photo = res?.data?.profile_photo || res?.profile_photo;
+        if (photo) {
+          setProfilePhoto(photo);
+          try { localStorage.setItem('tc_se_photo', photo); } catch (_) {}
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const [cropImageSrc, setCropImageSrc] = useState(null);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+
   const handlePhotoUpload = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    console.log("[ProfilePhoto] File selected");
+    console.log("[ProfilePhoto] File name:", file.name);
+    console.log("[ProfilePhoto] File type:", file.type);
+    console.log("[ProfilePhoto] File size:", file.size);
+
     if (!file.type.startsWith("image/")) {
       showToast("Please upload an image file (JPG, PNG, etc.)", "error");
+      e.target.value = "";
       return;
     }
+
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      const dataUrl = ev.target.result;
-      setProfilePhoto(dataUrl);
-      try {
-        localStorage.setItem("tc_se_photo", dataUrl);
-      } catch (err) { }
-      showToast("Profile photo updated!", "success");
+    reader.onload = () => {
+      setCropImageSrc(reader.result);
     };
     reader.readAsDataURL(file);
+    e.target.value = "";
   };
 
-  const removePhoto = () => {
-    setProfilePhoto(null);
+  const handleCropComplete = async (croppedFile) => {
     try {
-      localStorage.removeItem("tc_se_photo");
-    } catch (err) { }
-    showToast("Profile photo removed.", "info");
+      setIsUploadingPhoto(true);
+      showToast("Uploading cropped profile photo to Storage...", "info");
+      console.log("[ProfilePhoto] Uploading cropped file to Supabase Storage...");
+      const res = await hrmsAPI.uploadAvatar("self", croppedFile);
+      console.log("[ProfilePhoto] Storage & DB Upload response:", res);
+
+      const newPhotoUrl = res?.data?.profile_photo || res?.profile_photo;
+      if (!newPhotoUrl) {
+        throw new Error("Database update failed: profile_photo empty in response");
+      }
+
+      console.log("[ProfilePhoto] Successfully saved photo URL:", newPhotoUrl);
+      setProfilePhoto(newPhotoUrl);
+      try {
+        localStorage.setItem("tc_se_photo", newPhotoUrl);
+      } catch (err) {}
+
+      showToast("Profile photo cropped & saved to Database successfully!", "success");
+      setCropImageSrc(null);
+    } catch (err) {
+      console.error("[ProfilePhoto] Upload failed:", err);
+      showToast(`Failed to update profile photo: ${err.message || err}`, "error");
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  const removePhoto = async () => {
+    try {
+      await hrmsAPI.updateEmployee("self", { profile_photo: null });
+      setProfilePhoto(null);
+      try {
+        localStorage.removeItem("tc_se_photo");
+      } catch (err) {}
+      showToast("Profile photo removed successfully.", "info");
+    } catch (err) {
+      showToast(`Failed to remove profile photo: ${err.message || err}`, "error");
+    }
   };
 
   // ── Profile Data State ────────────────────────────────────────────────────
@@ -770,7 +825,7 @@ export default function SalesLayout() {
     { title: "Dashboard", icon: LayoutDashboard, path: "/sales/dashboard" },
     { title: "Smart Map", icon: MapPin, path: "/sales/map" },
     { title: "Leads", icon: Users, path: "/sales/leads" },
-    { title: "Customers", icon: UserCheck, path: "/sales/customers" },
+    { title: "Clients", icon: UserCheck, path: "/sales/customers" },
     { title: "Client Log", icon: ClipboardList, path: "/sales/client-log" },
     { title: "Expenses", icon: BadgeDollarSign, path: "/sales/expenses" },
     { title: "HRMS", icon: ShieldCheck, path: "/sales/hrms" },
@@ -785,11 +840,12 @@ export default function SalesLayout() {
         const titles = JSON.parse(saved);
         const ordered = [];
         titles.forEach(title => {
-          const match = menus.find(m => m.title === title);
-          if (match) ordered.push(match);
+          const target = title === 'Customers' ? 'Clients' : title;
+          const match = menus.find(m => m.title === target || m.title === title);
+          if (match && !ordered.some(o => o.path === match.path)) ordered.push(match);
         });
         menus.forEach(m => {
-          if (!ordered.some(o => o.title === m.title)) {
+          if (!ordered.some(o => o.path === m.path)) {
             ordered.push(m);
           }
         });
@@ -808,11 +864,12 @@ export default function SalesLayout() {
         const titles = JSON.parse(saved);
         const ordered = [];
         titles.forEach(title => {
-          const match = menus.find(m => m.title === title);
-          if (match) ordered.push(match);
+          const target = title === 'Customers' ? 'Clients' : title;
+          const match = menus.find(m => m.title === target || m.title === title);
+          if (match && !ordered.some(o => o.path === match.path)) ordered.push(match);
         });
         menus.forEach(m => {
-          if (!ordered.some(o => o.title === m.title)) {
+          if (!ordered.some(o => o.path === m.path)) {
             ordered.push(m);
           }
         });
@@ -1516,6 +1573,16 @@ export default function SalesLayout() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* WhatsApp-style Image Cropper Modal */}
+      {cropImageSrc && (
+        <ImageCropperModal
+          imageSrc={cropImageSrc}
+          onCancel={() => setCropImageSrc(null)}
+          onCropComplete={handleCropComplete}
+          isUploading={isUploadingPhoto}
+        />
       )}
     </div>
   );

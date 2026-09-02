@@ -658,7 +658,7 @@ function CeoHrms({ initialTab = 'employees' }) {
       </div>
 
       {/* Primary HRMS Navigation Tabs */}
-      <div className="flex items-center flex-nowrap whitespace-nowrap gap-1.5 overflow-x-auto bg-white p-2 rounded-2xl border border-slate-200/80 shadow-xs scrollbar-thin">
+      <div className="flex items-center flex-nowrap whitespace-nowrap gap-1 overflow-x-auto bg-white p-1.5 rounded-xl border border-slate-200/80 shadow-2xs scrollbar-thin">
         {hrmsTabs.map((tabItem, index) => {
           const Icon = tabItem.icon
           const isActive = activeTab === tabItem.id
@@ -678,12 +678,12 @@ function CeoHrms({ initialTab = 'employees' }) {
             >
               <button
                 onClick={() => setActiveTab(tabItem.id)}
-                className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold transition whitespace-nowrap ${isActive
-                    ? 'bg-[#832D51] text-white shadow-xs'
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap ${isActive
+                    ? 'bg-[#832D51] text-white shadow-2xs'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                   }`}
               >
-                <Icon className="size-4" />
+                <Icon className="size-3.5" />
                 <span>{tabItem.label}</span>
                 {badgeVal !== null && badgeVal !== undefined && (
                   <span

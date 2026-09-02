@@ -764,7 +764,7 @@ export default function ManagerDashboard() {
         {/* Card 3: Total Customers */}
         <div className="mgr-card bg-teal-50 border border-teal-200 p-3.5 rounded-2xl shadow-2xs flex flex-col justify-between space-y-2 hover:bg-teal-100 hover:border-teal-400 hover:shadow-sm transition">
           <div className="flex items-center justify-between">
-            <span className="text-[11px] font-black text-teal-700 uppercase tracking-wider">Customers</span>
+            <span className="text-[11px] font-black text-teal-700 uppercase tracking-wider">Clients</span>
             <div className="w-6 h-6 rounded-lg bg-teal-200 text-teal-700 flex items-center justify-center font-bold">
               <Building2 size={13} />
             </div>
@@ -1189,7 +1189,7 @@ export default function ManagerDashboard() {
                     <th className="py-3 px-3">Contact & Dept</th>
                     <th className="py-3 px-3">Attendance</th>
                     <th className="py-3 px-3 text-center">Leads</th>
-                    <th className="py-3 px-3 text-center">Customers</th>
+                    <th className="py-3 px-3 text-center">Clients</th>
                     <th className="py-3 px-3 text-center">Visits</th>
                     <th className="py-3 px-3 text-right">Won Revenue</th>
                     <th className="py-3 px-3 text-right">Target %</th>
@@ -1439,7 +1439,7 @@ export default function ManagerDashboard() {
                   <p className="text-sm font-black text-violet-950 mt-0.5">{selectedExecutiveDetail.leadsCount}</p>
                 </div>
                 <div className="p-3 bg-teal-50/60 rounded-xl border border-teal-200 text-center">
-                  <span className="text-[10px] font-black text-teal-700 uppercase">Customers</span>
+                  <span className="text-[10px] font-black text-teal-700 uppercase">Clients</span>
                   <p className="text-sm font-black text-teal-950 mt-0.5">{selectedExecutiveDetail.customersCount}</p>
                 </div>
                 <div className="p-3 bg-rose-50/60 rounded-xl border border-rose-200 text-center">

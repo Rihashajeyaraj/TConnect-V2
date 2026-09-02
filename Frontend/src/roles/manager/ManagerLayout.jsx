@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation, Outlet, useNavigate } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
+import ImageCropperModal from '../../common/ImageCropperModal.jsx'
+import PhotoLightboxModal from '../../common/PhotoLightboxModal.jsx'
 import {
   LayoutDashboard,
   Users,
@@ -129,7 +131,7 @@ const navItems = [
   { label: 'Team Lead Reports', icon: Target, path: '/manager/leads' },
   { label: 'Field Visit Audit', icon: CalendarDays, path: '/manager/visits' },
   { label: 'Expense Claims', icon: Receipt, path: '/manager/expenses' },
-  { label: 'Customers', icon: Building2, path: '/manager/customers' },
+  { label: 'Clients', icon: Building2, path: '/manager/customers' },
   { label: 'Team & EOD Reports', icon: Users, path: '/manager/team' },
   { label: 'HRMS', icon: ShieldCheck, path: '/manager/hrms' },
   { label: 'Notifications', icon: Bell, path: '/manager/notifications' },
@@ -196,34 +198,91 @@ export default function ManagerLayout() {
   const [myProfileOpen, setMyProfileOpen] = useState(false)
   const [editMode, setEditMode] = useState(false)
   const [showProfileConfirm, setShowProfileConfirm] = useState(false)
-  // Tracks profile values at panel-open time — used to diff on save
   const originalProfileRef = useRef(null)
   const [previewDoc, setPreviewDoc] = useState(null)
   const [saving, setSaving] = useState(false)
 
+  const managerPhotoInputRef = useRef(null)
+  const [cropImageSrc, setCropImageSrc] = useState(null)
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
+  const [showExpandedHeaderPhoto, setShowExpandedHeaderPhoto] = useState(false)
+
   // ── Profile Photo State ───────────────────────────────────────────────────
   const [profilePhoto, setProfilePhoto] = useState(() => {
-    try { return localStorage.getItem('tc_manager_photo') || null } catch { return null }
+    try { return localStorage.setItem('tc_manager_photo') || null } catch { return null }
   })
+
+  // Load latest profile photo from Supabase DB on layout mount
+  useEffect(() => {
+    hrmsAPI.getEmployeeById('self')
+      .then(res => {
+        const photo = res?.data?.profile_photo || res?.profile_photo
+        if (photo) {
+          setProfilePhoto(photo)
+          try { localStorage.setItem('tc_manager_photo', photo) } catch (_) {}
+        }
+      })
+      .catch(() => {})
+  }, [])
 
   const handlePhotoUpload = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-    if (!file.type.startsWith('image/')) { showToast('Please upload an image file (JPG, PNG, etc.)', 'error'); return }
+
+    console.log("[ProfilePhoto] File selected")
+    console.log("[ProfilePhoto] File name:", file.name)
+    console.log("[ProfilePhoto] File type:", file.type)
+    console.log("[ProfilePhoto] File size:", file.size)
+
+    if (!file.type.startsWith('image/')) {
+      showToast('Please upload an image file (JPG, PNG, etc.)', 'error')
+      e.target.value = ""
+      return
+    }
+
     const reader = new FileReader()
-    reader.onload = (ev) => {
-      const dataUrl = ev.target.result
-      setProfilePhoto(dataUrl)
-      try { localStorage.setItem('tc_manager_photo', dataUrl) } catch (e) { }
-      showToast('Profile photo updated!', 'success')
+    reader.onload = () => {
+      setCropImageSrc(reader.result)
     }
     reader.readAsDataURL(file)
+    e.target.value = ""
   }
 
-  const removePhoto = () => {
-    setProfilePhoto(null)
-    try { localStorage.removeItem('tc_manager_photo') } catch (e) { }
-    showToast('Profile photo removed.', 'info')
+  const handleCropComplete = async (croppedFile) => {
+    try {
+      setIsUploadingPhoto(true)
+      showToast('Uploading cropped profile photo to Storage...', 'info')
+      console.log("[ProfilePhoto] Uploading cropped file to Supabase Storage...")
+      const res = await hrmsAPI.uploadAvatar('self', croppedFile)
+      console.log("[ProfilePhoto] Storage & DB Upload response:", res)
+
+      const newPhotoUrl = res?.data?.profile_photo || res?.profile_photo
+      if (!newPhotoUrl) {
+        throw new Error('Database update failed: profile_photo empty in response')
+      }
+
+      console.log("[ProfilePhoto] Successfully saved photo URL:", newPhotoUrl)
+      setProfilePhoto(newPhotoUrl)
+      try { localStorage.setItem('tc_manager_photo', newPhotoUrl) } catch (e) { }
+      showToast('Profile photo cropped & saved to Database successfully!', 'success')
+      setCropImageSrc(null)
+    } catch (err) {
+      console.error('[ProfilePhoto] Upload failed:', err)
+      showToast(`Failed to update profile photo: ${err.message || err}`, 'error')
+    } finally {
+      setIsUploadingPhoto(false)
+    }
+  }
+
+  const removePhoto = async () => {
+    try {
+      await hrmsAPI.updateEmployee('self', { profile_photo: null })
+      setProfilePhoto(null)
+      try { localStorage.removeItem('tc_manager_photo') } catch (e) { }
+      showToast('Profile photo removed successfully.', 'info')
+    } catch (err) {
+      showToast(`Failed to remove profile photo: ${err.message || err}`, 'error')
+    }
   }
   const location = useLocation()
   const navigate = useNavigate()
@@ -236,11 +295,12 @@ export default function ManagerLayout() {
         const labels = JSON.parse(saved);
         const ordered = [];
         labels.forEach(label => {
-          const match = navItems.find(n => n.label === label);
-          if (match) ordered.push(match);
+          const target = label === 'Customers' ? 'Clients' : label;
+          const match = navItems.find(n => n.label === target || n.label === label);
+          if (match && !ordered.some(o => o.path === match.path)) ordered.push(match);
         });
         navItems.forEach(n => {
-          if (!ordered.some(o => o.label === n.label)) {
+          if (!ordered.some(o => o.path === n.path)) {
             ordered.push(n);
           }
         });
@@ -259,11 +319,12 @@ export default function ManagerLayout() {
         const labels = JSON.parse(saved);
         const ordered = [];
         labels.forEach(label => {
-          const match = navItems.find(n => n.label === label);
-          if (match) ordered.push(match);
+          const target = label === 'Customers' ? 'Clients' : label;
+          const match = navItems.find(n => n.label === target || n.label === label);
+          if (match && !ordered.some(o => o.path === match.path)) ordered.push(match);
         });
         navItems.forEach(n => {
-          if (!ordered.some(o => o.label === n.label)) {
+          if (!ordered.some(o => o.path === n.path)) {
             ordered.push(n);
           }
         });
@@ -641,7 +702,16 @@ export default function ManagerLayout() {
                 <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 p-2 overflow-hidden">
                   {/* Header */}
                   <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-blue-900 to-blue-700 rounded-xl text-white mb-2 shadow-sm">
-                    <div className="w-11 h-11 rounded-full overflow-hidden bg-white text-blue-700 flex items-center justify-center text-base font-black shadow-md border-2 border-white/40 shrink-0">
+                    <div 
+                      onClick={() => {
+                        if (profilePhoto) {
+                          setProfileOpen(false)
+                          setShowExpandedHeaderPhoto(true)
+                        }
+                      }}
+                      className={`w-11 h-11 rounded-full overflow-hidden bg-white text-blue-700 flex items-center justify-center text-base font-black shadow-md border-2 border-white/40 shrink-0 ${profilePhoto ? 'cursor-pointer hover:scale-105 transition' : ''}`}
+                      title={profilePhoto ? "Click to elaborate profile photo" : ""}
+                    >
                       {profilePhoto
                         ? <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
                         : displayInitials
@@ -1187,6 +1257,26 @@ export default function ManagerLayout() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* WhatsApp-style Image Cropper Modal */}
+      {cropImageSrc && (
+        <ImageCropperModal
+          imageSrc={cropImageSrc}
+          onCancel={() => setCropImageSrc(null)}
+          onCropComplete={handleCropComplete}
+          isUploading={isUploadingPhoto}
+        />
+      )}
+
+      {/* Full-Screen Photo Lightbox */}
+      {showExpandedHeaderPhoto && (
+        <PhotoLightboxModal
+          photoUrl={profilePhoto}
+          name={displayName}
+          role={managerRole}
+          onClose={() => setShowExpandedHeaderPhoto(false)}
+        />
       )}
 
     </div>
