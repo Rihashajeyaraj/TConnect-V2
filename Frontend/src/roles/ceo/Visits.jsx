@@ -234,7 +234,9 @@ export default function CEOVisits() {
   }
 
   const fetchTeamAuditData = async () => {
-    setLoading(true)
+    if (!localStorage.getItem('tc_ceo_visits_cache')) {
+      setLoading(true)
+    }
     try {
       const params = {}
       if (selectedSE !== 'All') params.sales_executive_id = selectedSE
@@ -274,6 +276,7 @@ export default function CEOVisits() {
       setVisits(localVisits)
       calculateLocalSummary(localVisits)
     } finally {
+      try { localStorage.setItem('tc_ceo_visits_cache', '1') } catch (_) {}
       setLoading(false)
     }
   }

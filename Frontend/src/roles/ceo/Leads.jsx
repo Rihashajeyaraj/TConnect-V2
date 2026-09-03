@@ -13,7 +13,13 @@ import { useToast } from '../../common/ToastContext.jsx'
 function Leads() {
   const { showToast } = useToast()
   const [leads, setLeads] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !localStorage.getItem('tc_ceo_leads_cache')
+    } catch {
+      return true
+    }
+  })
   const [refreshing, setRefreshing] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState('All') // 'All', 'Hot', 'Warm', 'Cold', 'Not Assigned'
   const [searchQuery, setSearchQuery] = useState('')
@@ -27,7 +33,9 @@ function Leads() {
   const [assigning, setAssigning] = useState(false)
 
   const loadData = async () => {
-    setLoading(true)
+    if (!localStorage.getItem('tc_ceo_leads_cache')) {
+      setLoading(true)
+    }
     try {
       const res = await crmAPI.getLeads().catch(() => null)
       if (res && res.data && Array.isArray(res.data)) {
@@ -53,6 +61,7 @@ function Leads() {
       console.error('Error fetching leads:', e)
       setLeads([])
     } finally {
+      try { localStorage.setItem('tc_ceo_leads_cache', '1') } catch (_) {}
       setLoading(false)
       setRefreshing(false)
     }

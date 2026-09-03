@@ -156,7 +156,9 @@ function TeamManagement() {
 
   useEffect(() => {
     async function loadData() {
-      setLoading(true)
+      if (!localStorage.getItem('tc_ceo_team_cache')) {
+        setLoading(true)
+      }
       try {
         const [usersRes, leadsRes, custRes, settingsRes] = await Promise.all([
           userAPI.getUsers().catch(() => null),
@@ -183,6 +185,7 @@ function TeamManagement() {
         console.warn('Error loading team roster:', err)
         setTeam([])
       } finally {
+        try { localStorage.setItem('tc_ceo_team_cache', '1') } catch (_) {}
         setLoading(false)
       }
     }
@@ -560,9 +563,6 @@ function TeamManagement() {
               Organizational Team Management
             </h1>
           </div>
-          <p className="mt-1 text-xs text-slate-500 font-medium max-w-3xl">
-            Executive Department Directory. Click any Department Card to view Admins, Sales Managers, and Sales Executives hierarchy details.
-          </p>
         </div>
 
         <div className="flex items-center gap-2">

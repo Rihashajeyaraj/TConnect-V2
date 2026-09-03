@@ -97,3 +97,17 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
+// ── Handle Service Worker Badge Messages ─────────────────────────────────────
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SET_BADGE') {
+    const count = Number(event.data.count) || 0;
+    if ('setAppBadge' in self.navigator) {
+      if (count > 0) {
+        self.navigator.setAppBadge(count).catch(() => {});
+      } else {
+        self.navigator.clearAppBadge().catch(() => {});
+      }
+    }
+  }
+});
+

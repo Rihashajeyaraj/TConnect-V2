@@ -9,13 +9,15 @@ if (!API_BASE_URL) {
 // Helpers: read the real session stored by LoginForm at login
 // ─────────────────────────────────────────────────────────────
 function getStoredToken() {
-  return localStorage.getItem('token') || localStorage.getItem('access_token') || null
+  return localStorage.getItem('token') || localStorage.getItem('access_token') || localStorage.getItem('tc_persistent_token') || null
 }
 
 function clearSession() {
   localStorage.removeItem('token')
   localStorage.removeItem('access_token')
   localStorage.removeItem('user')
+  localStorage.removeItem('tc_persistent_token')
+  localStorage.removeItem('tc_persistent_user')
 }
 
 function redirectToLogin() {
@@ -65,12 +67,10 @@ async function request(endpoint, options = {}) {
         data = { message: `HTTP ${response.status}: Failed to parse response` }
       }
 
-      // On 401 — session expired or invalid. Clear storage and redirect to login.
-      // Exclude match-face endpoint, which uses 401 to denote unrecognized face.
+      // On 401 — return rejected promise without wiping out persistent user session
       if (response.status === 401 && !endpoint.includes('/auth/') && !endpoint.includes('/attendance/match-face')) {
-        clearSession()
-        redirectToLogin()
-        return Promise.reject({ message: 'Session expired. Please log in again.', status: 401 })
+        console.warn('[API 401] Unauthorized response:', endpoint)
+        return Promise.reject({ message: 'Unauthorized request', status: 401 })
       }
 
       if (!response.ok) {

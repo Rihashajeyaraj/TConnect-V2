@@ -52,7 +52,13 @@ function SalesOverview({ initialSection }) {
   const [data, setData] = useState(null)
   const [dashboardData, setDashboardData] = useState(null)
   const [rawExpenses, setRawExpenses] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !localStorage.getItem('tc_ceo_sales_cache')
+    } catch {
+      return true
+    }
+  })
   const [error, setError] = useState(null)
 
   // Filters State
@@ -128,7 +134,9 @@ function SalesOverview({ initialSection }) {
 
   const fetchUnifiedData = async () => {
     try {
-      setLoading(true)
+      if (!localStorage.getItem('tc_ceo_sales_cache')) {
+        setLoading(true)
+      }
       setError(null)
 
       let startLimit = null
@@ -185,6 +193,7 @@ function SalesOverview({ initialSection }) {
       setError(err?.message || 'Server error loading sales & revenue summary')
       showToast('Error loading Sales & Revenue data', 'error')
     } finally {
+      try { localStorage.setItem('tc_ceo_sales_cache', '1') } catch (_) {}
       setLoading(false)
     }
   }
@@ -865,7 +874,7 @@ function SalesOverview({ initialSection }) {
                 activeKpi === 'customers' && !wonToggle ? 'text-pink-200' : 'text-[#1E40AF]'
               }`}
             >
-              Total Customers
+              Total Clients
             </span>
             <span
               className={`grid size-7 place-items-center rounded-lg ${
@@ -1201,7 +1210,7 @@ function SalesOverview({ initialSection }) {
                   !wonToggle ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                All Customers ({totalCustomersCount})
+                All Clients ({totalCustomersCount})
               </button>
               <button
                 onClick={() => setWonToggle(true)}
@@ -1299,7 +1308,7 @@ function SalesOverview({ initialSection }) {
                   <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider">
                     <th className="px-5 py-3">Sales Manager</th>
                     <th className="px-5 py-3">Sales Executive</th>
-                    <th className="px-5 py-3">Customer Name</th>
+                    <th className="px-5 py-3">Client Name</th>
                     <th className="px-5 py-3">Company</th>
                     <th className="px-5 py-3">Product / Service</th>
                     <th className="px-5 py-3">Status</th>

@@ -63,12 +63,20 @@ function normalize(e, idx) {
 
 export default function CeoExpenses() {
   const [expenses, setExpenses]   = useState([])
-  const [loading, setLoading]     = useState(true)
+  const [loading, setLoading]     = useState(() => {
+    try {
+      return !localStorage.getItem('tc_ceo_expenses_cache')
+    } catch {
+      return true
+    }
+  })
   const [search, setSearch]       = useState('')
   const [statusFilter, setStatus] = useState('Approved')  // default: show approved
 
   async function fetchData() {
-    setLoading(true)
+    if (!localStorage.getItem('tc_ceo_expenses_cache')) {
+      setLoading(true)
+    }
     try {
       const res = await expenseAPI.getManagerExpenses({ status: '' }) // fetch all
       const raw = Array.isArray(res) ? res : (res?.data?.expenses || res?.data || [])
@@ -84,6 +92,7 @@ export default function CeoExpenses() {
         setExpenses([])
       }
     } finally {
+      try { localStorage.setItem('tc_ceo_expenses_cache', '1') } catch (_) {}
       setLoading(false)
     }
   }
