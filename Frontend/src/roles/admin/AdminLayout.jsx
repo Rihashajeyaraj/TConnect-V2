@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react'
-import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom'
+import { useState, useEffect, useRef } from 'react'
+import { Link, NavLink, useLocation, Outlet, useNavigate } from 'react-router-dom'
+import useNotificationCount from '../../hooks/useNotificationCount.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import ImageCropperModal from '../../common/ImageCropperModal.jsx'
 import PhotoLightboxModal from '../../common/PhotoLightboxModal.jsx'
@@ -186,6 +187,7 @@ const mapFrontendToDb = (prof) => {
 function AdminLayout() {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
+  const { unreadCount } = useNotificationCount()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [notificationsOpen, setNotificationsOpen] = useState(false)
@@ -573,8 +575,6 @@ function AdminLayout() {
     showToast("Sidebar layout reset to default.", "info");
   };
 
-  const unreadCount = notifications.filter((n) => !n.read).length
-
   const handleLogout = () => {
     clearUserCache()
     showToast('Logged out successfully', 'info')
@@ -778,6 +778,20 @@ function AdminLayout() {
           </div>
         </div>
         <div className="flex items-center gap-3">
+          {/* Notification Bell */}
+          <button
+            onClick={() => navigate('/admin/notifications')}
+            className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 relative transition cursor-pointer border border-slate-200"
+            title="Notifications & Messages"
+          >
+            <Bell size={19} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-black shadow-xs ring-2 ring-white animate-pulse">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
+
           {/* System Admin User Profile Dropdown */}
           <div className="relative">
             <button

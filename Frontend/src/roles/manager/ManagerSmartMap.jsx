@@ -347,6 +347,7 @@ export default function ManagerSmartMap() {
       })
       showToast(`Inquiry sent to ${resolveRealName(ex)}`, 'success')
       setCustomInquiryText('')
+      window.dispatchEvent(new Event('tc_notifications_updated'))
     } catch (err) {
       showToast('Failed to send inquiry', 'error')
     }

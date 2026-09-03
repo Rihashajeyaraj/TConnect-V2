@@ -41,8 +41,14 @@ class NotificationRepository:
         row["employee_id"] = recip_id
         row["recipient_email"] = recip_email
         row["recipient_role"] = str(row.get("recipient_role") or "all").lower().strip()
-        row["read"] = bool(row.get("is_read") or row.get("read") or False)
-        row["is_read"] = bool(row.get("is_read") or row.get("read") or False)
+        
+        if "unread" in row and row.get("unread") is not None:
+            is_read_flag = not bool(row.get("unread"))
+        else:
+            is_read_flag = bool(row.get("is_read") or row.get("read") or False)
+            
+        row["read"] = is_read_flag
+        row["is_read"] = is_read_flag
         return row
 
     def get_user_notifications(self, user_id: str, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
@@ -86,8 +92,11 @@ class NotificationRepository:
             role_match = (
                 r_role in ["all", "", "everyone"] or
                 r_role == user_role or
+                (r_role in user_role or user_role in r_role) or
                 ("executive" in r_role and "executive" in user_role) or
-                ("manager" in r_role and "manager" in user_role)
+                ("manager" in r_role and "manager" in user_role) or
+                ("ceo" in r_role and "ceo" in user_role) or
+                ("admin" in r_role and "admin" in user_role)
             )
 
             is_targeted = bool(r_email or r_id)

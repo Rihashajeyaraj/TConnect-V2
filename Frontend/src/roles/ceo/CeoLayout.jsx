@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import TwiteConnectLogo from '../../common/TwiteConnectLogo.jsx'
+import useNotificationCount from '../../hooks/useNotificationCount.js'
 import {
   LayoutDashboard,
   TrendingUp,
@@ -68,6 +69,7 @@ const resolveOrderedNavItems = (savedLabels) => {
 function CeoLayout() {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
+  const { unreadCount } = useNotificationCount()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
   const [searchQuery, setSearchQuery] = useState('')
@@ -346,6 +348,20 @@ function CeoLayout() {
 
         {/* Right Header Navigation & Tools */}
         <div className="flex items-center gap-1.5 sm:gap-3">
+          {/* Notification Bell */}
+          <button
+            onClick={() => navigate('/ceo/notifications')}
+            className="p-1.5 sm:p-2 rounded-xl text-slate-600 hover:bg-slate-100 relative transition cursor-pointer border border-slate-200"
+            title="Notifications & Messages"
+          >
+            <Bell size={18} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] px-1 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-black shadow-xs ring-2 ring-white animate-pulse">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
+
           {/* CEO Profile Avatar + Dropdown */}
           <div className="relative">
             <button

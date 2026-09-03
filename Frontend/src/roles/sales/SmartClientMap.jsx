@@ -357,6 +357,7 @@ export default function SmartClientMap() {
         const notifId = String(targetInquiry.id || targetInquiry.notification_id || '')
         if (notifId) notificationAPI.markRead(notifId).catch(() => null)
       }
+      window.dispatchEvent(new Event('tc_notifications_updated'))
     } catch (e) {
       console.warn('Dismiss inquiry notice:', e)
     }
@@ -394,6 +395,8 @@ export default function SmartClientMap() {
       })
       showToast('Reply sent to Manager!', 'success')
       setReplyText('')
+      setShowInquiryDrawer(false)
+      window.dispatchEvent(new Event('tc_notifications_updated'))
     } catch (err) {
       showToast('Failed to send reply', 'error')
     } finally {

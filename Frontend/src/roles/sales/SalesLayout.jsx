@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import ImageCropperModal from "../../common/ImageCropperModal.jsx";
+import useNotificationCount from "../../hooks/useNotificationCount.js";
 import { NavLink, Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -189,7 +190,7 @@ export default function SalesLayout() {
   const { showToast } = useToast();
   const [open, setOpen] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth < 1024);
-  const [notifCount, setNotifCount] = useState(0);
+  const { unreadCount: notifCount } = useNotificationCount();
   const [gpsActive, setGpsActive] = useState(false);
   const [showUserMenu, setShowUserMenu] = useState(false);
   const [myProfileOpen, setMyProfileOpen] = useState(false);
@@ -970,12 +971,13 @@ export default function SalesLayout() {
 
           <button
             onClick={() => navigate("/sales/notifications")}
-            className="p-1.5 sm:p-2 rounded-xl text-slate-500 hover:bg-slate-100 relative transition cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-xl text-slate-500 hover:bg-slate-100 relative transition cursor-pointer border border-slate-200"
+            title="Notifications & Messages"
           >
             <Bell size={19} />
             {notifCount > 0 && (
-              <span className="absolute top-1 right-1 w-4 h-4 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-black">
-                {notifCount}
+              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-black shadow-xs ring-2 ring-white animate-pulse">
+                {notifCount > 99 ? '99+' : notifCount}
               </span>
             )}
           </button>

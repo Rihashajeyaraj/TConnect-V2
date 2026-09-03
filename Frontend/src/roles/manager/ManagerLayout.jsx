@@ -39,6 +39,7 @@ import {
 import { hrmsAPI } from '../../services/api.js'
 import TwiteConnectLogo from '../../common/TwiteConnectLogo.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
+import useNotificationCount from '../../hooks/useNotificationCount.js'
 import { clearUserCache } from '../../utils/userScope.js'
 
 const mapDbToFrontend = (emp) => {
@@ -193,6 +194,7 @@ const DOCUMENT_DEFAULTS = [
 export default function ManagerLayout() {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
+  const { unreadCount } = useNotificationCount()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [profileOpen, setProfileOpen] = useState(false)
   const [myProfileOpen, setMyProfileOpen] = useState(false)
@@ -667,6 +669,20 @@ export default function ManagerLayout() {
 
         {/* Top-Right Area */}
         <div className="flex items-center gap-1.5 sm:gap-3">
+
+          {/* Notification Bell with Dynamic Counter */}
+          <button
+            onClick={() => navigate('/manager/notifications')}
+            className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 relative transition cursor-pointer border border-slate-200"
+            title="Notifications & Inquiries"
+          >
+            <Bell size={19} />
+            {unreadCount > 0 && (
+              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-black shadow-xs ring-2 ring-white animate-pulse">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </button>
 
           {/* Avatar + Dropdown */}
           <div className="relative">
