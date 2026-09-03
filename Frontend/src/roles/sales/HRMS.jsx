@@ -30,7 +30,7 @@ import {
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { formatDate } from "../../utils/dateUtils.js";
-import { reportAPI, attendanceAPI, hrmsAPI, adminAPI } from "../../services/api.js";
+import { reportAPI, attendanceAPI, hrmsAPI, adminAPI, holidaysAPI, handbookAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import Attendance, { calculateWorkHours } from "./Attendance.jsx";
 
@@ -44,6 +44,7 @@ const NAV_ITEMS = [
   { key: "handbook", label: "Twite Handbook", icon: BookOpen },
   { key: "activity", label: "Activity Logs", icon: Activity },
 ];
+
 
 const HOLIDAYS = [
   { date: "15 Aug 2026", name: "Independence Day", type: "National" },
@@ -102,6 +103,36 @@ export default function SalesHRMS() {
     }
     return NAV_ITEMS;
   });
+
+  const [dbHolidays, setDbHolidays] = useState([]);
+  const [dbHandbook, setDbHandbook] = useState([]);
+  const [loadingHolidays, setLoadingHolidays] = useState(false);
+  const [loadingHandbook, setLoadingHandbook] = useState(false);
+
+  useEffect(() => {
+    async function loadMasterData() {
+      try {
+        setLoadingHolidays(true);
+        const hRes = await holidaysAPI.getHolidays();
+        if (Array.isArray(hRes)) setDbHolidays(hRes);
+      } catch (err) {
+        console.warn("Failed fetching holidays:", err);
+      } finally {
+        setLoadingHolidays(false);
+      }
+
+      try {
+        setLoadingHandbook(true);
+        const hbRes = await handbookAPI.getPublishedDocs();
+        if (Array.isArray(hbRes)) setDbHandbook(hbRes);
+      } catch (err) {
+        console.warn("Failed fetching handbook:", err);
+      } finally {
+        setLoadingHandbook(false);
+      }
+    }
+    loadMasterData();
+  }, []);
 
   useEffect(() => {
     const saved = localStorage.getItem(`tc_hrms_order_sales_${userEmail}`);
@@ -1816,23 +1847,33 @@ export default function SalesHRMS() {
         {/* ── HOLIDAY CALENDAR ── */}
         {activeSection === "calendar" && (
           <div className="max-w-2xl space-y-5">
-            <h1 className="text-2xl font-black text-slate-900">Holiday Calendar 2026–27</h1>
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100">
-              {HOLIDAYS.map(h => (
-                <div key={h.date} className="px-5 py-3.5 flex items-center justify-between gap-3">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-lg shrink-0">
-                      {h.type === "National" ? "🇮🇳" : h.type === "Festival" ? "🎉" : "🌅"}
+            <h1 className="text-2xl font-black text-slate-900">Holiday Calendar</h1>
+            {loadingHolidays ? (
+              <p className="text-slate-400 text-sm font-semibold p-4">Loading holiday calendar...</p>
+            ) : dbHolidays.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+                <CalendarDays size={32} className="mx-auto text-slate-300 mb-2" />
+                <p className="font-bold text-slate-700">No holidays configured</p>
+                <p className="text-xs text-slate-400 font-medium">No company holidays have been scheduled for this period.</p>
+              </div>
+            ) : (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100">
+                {dbHolidays.map(h => (
+                  <div key={h.id || h.date} className="px-5 py-3.5 flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-lg shrink-0">
+                        {h.type === "National" ? "🇮🇳" : h.type === "Festival" ? "🎉" : "🌅"}
+                      </div>
+                      <div>
+                        <p className="text-sm font-black text-slate-900">{h.name}</p>
+                        <p className="text-[11px] text-slate-500 font-semibold">{h.date}</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="text-sm font-black text-slate-900">{h.name}</p>
-                      <p className="text-[11px] text-slate-500 font-semibold">{h.date}</p>
-                    </div>
+                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${h.type === "National" ? "bg-blue-50 text-blue-700 border-blue-200" : h.type === "Festival" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-violet-50 text-violet-700 border-violet-200"}`}>{h.type || "Mandatory"}</span>
                   </div>
-                  <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${h.type === "National" ? "bg-blue-50 text-blue-700 border-blue-200" : h.type === "Festival" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-violet-50 text-violet-700 border-violet-200"}`}>{h.type}</span>
-                </div>
-              ))}
-            </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
 
@@ -1894,16 +1935,27 @@ export default function SalesHRMS() {
           <div className="max-w-3xl space-y-5">
             <h1 className="text-2xl font-black text-slate-900">Twite Sales Handbook</h1>
             <p className="text-slate-500 text-sm font-semibold">Guidelines, processes, and policies for TwiteConnect Sales Executives.</p>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              {HANDBOOK.map(s => (
-                <div key={s.title} className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-2">
-                  <div className="flex items-center gap-2"><span className="text-xl">{s.icon}</span><h3 className="font-black text-slate-900 text-sm">{s.title}</h3></div>
-                  <p className="text-xs text-slate-600 font-semibold leading-relaxed">{s.content}</p>
-                </div>
-              ))}
-            </div>
+            {loadingHandbook ? (
+              <p className="text-slate-400 text-sm font-semibold p-4">Loading handbook policies...</p>
+            ) : dbHandbook.length === 0 ? (
+              <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
+                <BookOpen size={32} className="mx-auto text-slate-300 mb-2" />
+                <p className="font-bold text-slate-700">No published policies found</p>
+                <p className="text-xs text-slate-400 font-medium">Company policy documents have not been published yet.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {dbHandbook.map(s => (
+                  <div key={s.id || s.title} className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-2">
+                    <div className="flex items-center gap-2"><span className="text-xl">{s.icon || "📋"}</span><h3 className="font-black text-slate-900 text-sm">{s.title}</h3></div>
+                    <p className="text-xs text-slate-600 font-semibold leading-relaxed">{s.content}</p>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
         )}
+
 
         {/* ── ACTIVITY LOGS ── */}
         {activeSection === "activity" && (

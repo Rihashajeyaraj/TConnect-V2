@@ -29,8 +29,9 @@ export default function Notifications() {
     try {
       const res = await notificationAPI.getNotifications();
       const raw = Array.isArray(res) ? res : res?.data || [];
+      const sorted = [...raw].sort((a, b) => new Date(b.created_at || b.timestamp || 0) - new Date(a.created_at || a.timestamp || 0));
       setItems(
-        raw.map((n) => ({
+        sorted.map((n) => ({
           ...n,
           status: n.is_read || n.read ? "Read" : "Unread",
           read: n.is_read || n.read || false,
@@ -38,6 +39,7 @@ export default function Notifications() {
           time: n.created_at ? new Date(n.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "Recently",
         }))
       );
+
     } catch (e) {
       console.error("Failed to load notifications", e);
     } finally {

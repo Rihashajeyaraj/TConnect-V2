@@ -13,16 +13,18 @@ import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { MapPin, Search, CheckCircle2, X, AlertCircle, Loader2, Navigation, Crosshair } from 'lucide-react'
 import { settingsAPI } from '../services/api.js'
 import { loadGoogleMaps } from '../utils/loadGoogleMaps.js'
+import MAP_CONFIG from '../config/mapConfig.js'
 
 export default function LocationPickerModal({
   isOpen,
   onClose,
   onConfirm,
-  initialLat = 13.0067,
-  initialLng = 80.2570,
+  initialLat = MAP_CONFIG.DEFAULT_VIEWPORT_CENTER.lat,
+  initialLng = MAP_CONFIG.DEFAULT_VIEWPORT_CENTER.lng,
   initialAddress = '',
   title = 'Pick Location on Map',
 }) {
+
   const mapContainerRef = useRef(null)
   const mapRef          = useRef(null)
   const markerRef       = useRef(null)

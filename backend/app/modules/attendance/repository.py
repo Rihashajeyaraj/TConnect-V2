@@ -321,8 +321,8 @@ class AttendanceRepository:
         emp_id = str(data.get("employee_id") or data.get("employee_code") or data.get("user_id") or "EMP000012")
         emp_name = str(data.get("employee_name") or data.get("user_name") or data.get("name") or "Sales Executive")
 
-        lat = data.get("check_in_latitude") or data.get("latitude") or 13.0067
-        lng = data.get("check_in_longitude") or data.get("longitude") or 80.2570
+        lat = data.get("check_in_latitude") or data.get("latitude")
+        lng = data.get("check_in_longitude") or data.get("longitude")
         addr = data.get("check_in_address") or data.get("work_location") or data.get("location_name") or "Adyar IT Corridor, Chennai"
 
         payload = {
@@ -335,10 +335,10 @@ class AttendanceRepository:
             "punch_in_time": data.get("check_in_time") or data.get("punch_in_time") or "09:00 AM",
             "check_out_time": None,
             "punch_out_time": None,
-            "check_in_latitude": float(lat),
-            "check_in_longitude": float(lng),
-            "latitude": float(lat),
-            "longitude": float(lng),
+            "check_in_latitude": float(lat) if lat else None,
+            "check_in_longitude": float(lng) if lng else None,
+            "latitude": float(lat) if lat else None,
+            "longitude": float(lng) if lng else None,
             "check_out_latitude": None,
             "check_out_longitude": None,
             "check_in_address": addr,
@@ -380,10 +380,11 @@ class AttendanceRepository:
         out_time = data.get("check_out_time") or "06:00 PM"
         today_date = data.get("attendance_date") or data.get("date") or datetime.utcnow().strftime("%Y-%m-%d")
 
-        lat = data.get("check_out_latitude") or data.get("latitude") or 13.0067
-        lng = data.get("check_out_longitude") or data.get("longitude") or 80.2570
-        addr = data.get("check_out_address") or "Adyar IT Corridor, Chennai"
+        lat = data.get("check_out_latitude") or data.get("latitude")
+        lng = data.get("check_out_longitude") or data.get("longitude")
+        addr = data.get("check_out_address") or ("Location Unavailable" if lat is None else "Verified Location")
         hrs = data.get("total_working_hours") or "9.0 hrs"
+
 
         def calculate_duration_backend(in_time: str, out_time: str) -> str:
             from datetime import datetime

@@ -291,7 +291,7 @@ export default function Attendance(props) {
   const getFreshExactPosition = () => {
     return new Promise((resolve) => {
       if (!("geolocation" in navigator)) {
-        resolve({ lat: 13.0067, lng: 80.2570, address: "Adyar IT Corridor, Chennai", accuracy: null });
+        resolve({ lat: null, lng: null, address: "Location Unavailable (Hardware unsupported)", accuracy: null });
         return;
       }
       navigator.geolocation.getCurrentPosition(

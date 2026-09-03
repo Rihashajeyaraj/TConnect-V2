@@ -401,7 +401,13 @@ export default function Customers() {
     const matchesDate = matchesDateFilter(item.onboardDate || item.created_at || item.lastVisit || "");
 
     return matchesSearch && matchesDate;
+  }).sort((a, b) => {
+    const timeA = new Date(a.onboardDate || a.created_at || a.lastVisit || 0).getTime() || 0;
+    const timeB = new Date(b.onboardDate || b.created_at || b.lastVisit || 0).getTime() || 0;
+    if (timeA !== timeB) return timeB - timeA;
+    return String(b.id || '').localeCompare(String(a.id || ''));
   });
+
 
   return (
     <div className="space-y-4 font-sans text-slate-900">
@@ -604,13 +610,14 @@ export default function Customers() {
                   <th className="py-3.5 px-4">Why They Reached Out</th>
                   <th className="py-3.5 px-4">Account Manager / Tier</th>
                   <th className="py-3.5 px-4">Status</th>
+                  <th className="py-3.5 px-4">Date</th>
                   <th className="py-3.5 px-4 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
                 {filteredCustomers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-12 text-center text-slate-400 font-bold">
+                    <td colSpan={7} className="py-12 text-center text-slate-400 font-bold">
                       No customer accounts match selected search or date filters.
                     </td>
                   </tr>
@@ -653,6 +660,14 @@ export default function Customers() {
                           {customer.status}
                         </span>
                       </td>
+
+                      {/* Onboarded Date */}
+                      <td className="py-3.5 px-4 whitespace-nowrap">
+                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200">
+                          📅 {customer.onboardDate ? new Date(customer.onboardDate).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : (customer.created_at ? new Date(customer.created_at).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : 'Today')}
+                        </span>
+                      </td>
+
 
                       {/* Action */}
                       <td className="py-3.5 px-4 text-right">

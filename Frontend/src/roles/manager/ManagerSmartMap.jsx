@@ -12,9 +12,14 @@ import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser, { getStoredUser } from '../../hooks/useCurrentUser.js'
 import { formatDate } from '../../utils/dateUtils.js'
 import { filterUserItems } from '../../utils/userScope.js'
+import MAP_CONFIG from '../../config/mapConfig.js'
 import { detectRouteClients, shouldNotify } from '../../utils/routeProximityUtils.js'
 
-const DEFAULT_CENTER = { lat: 13.0067, lng: 80.2570 }
+const DEFAULT_CENTER = MAP_CONFIG.DEFAULT_VIEWPORT_CENTER
+
+
+
+
 
 function haversineDistance(lat1, lon1, lat2, lon2) {
   const R = 6371
@@ -79,8 +84,10 @@ try {
 } catch { /* Realtime unavailable; fall back to polling */ }
 
 // ── Stale & Offline thresholds ───────────────────────────────────────────────
-const STALE_MS   = 1 * 60 * 1000  // > 1 min → Stale
-const OFFLINE_MS = 5 * 60 * 1000  // > 5 mins → Offline
+const STALE_MS   = 1 * 60 * 1000   // > 1 min → Stale
+const OFFLINE_MS = 5 * 60 * 1000   // > 5 mins → Offline
+const GONE_MS    = 10 * 60 * 1000  // > 10 mins → Gone / No Signal
+
 
 function getTrackingBadge(status, lastUpdatedMs, isOnline = true) {
   if (status === 'ended' || status === 'stopped') return { label: 'Session Ended', color: '#64748b', dot: '⬛' }
@@ -290,13 +297,16 @@ export default function ManagerSmartMap() {
     })
 
     const seen = new Set()
-    return allReplies.filter(r => {
+    const unique = allReplies.filter(r => {
       const id = r.id || r.timestamp
       if (seen.has(id)) return false
       seen.add(id)
       return true
     })
+
+    return unique.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
   }
+
 
   const markRepliesAsRead = (ex) => {
     if (!ex) return
@@ -639,7 +649,7 @@ export default function ManagerSmartMap() {
       if (!document.hidden) {
         fetchData(true)
       }
-    }, 15000) // 15 seconds fallback polling (Supabase Realtime handles instant updates)
+    }, 3000) // Fast 3-second auto-refresh polling for instant manager map updates
     return () => clearInterval(t)
   }, [autoRefresh, fetchData])
 
@@ -1461,7 +1471,7 @@ export default function ManagerSmartMap() {
       } else {
         const dist = haversineDistance(lat, lng, lastRouteRecalcPosRef.current.lat, lastRouteRecalcPosRef.current.lng)
         const timeElapsed = now - lastRouteRecalcTimeRef.current
-        if (dist >= 0.05 || timeElapsed >= 30000) {
+        if (dist >= 0.01 || timeElapsed >= 3000) {
           shouldRecalc = true
         }
       }
@@ -1990,7 +2000,7 @@ export default function ManagerSmartMap() {
       } catch (err) {
         console.warn("Polling error:", err)
       }
-    }, 3000) // Rapid 3 seconds fallback polling (Realtime channel & BroadcastChannel provide sub-second updates)
+    }, 1000) // Ultra-fast 1-second fallback polling for live tracking
   }, [_applyNewCrumb, _handleSessionEnded, fetchData])
 
   // Stale detection timer: re-evaluate badge every 30s
