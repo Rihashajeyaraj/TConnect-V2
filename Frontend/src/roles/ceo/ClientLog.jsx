@@ -22,7 +22,13 @@ export default function ClientLog({ initialSection = 'leads' }) {
   const [leads, setLeads] = useState([])
   const [customers, setCustomers] = useState([])
   const [visits, setVisits] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !localStorage.getItem('tc_ceo_clientlog_cache')
+    } catch {
+      return true
+    }
+  })
   const [refreshing, setRefreshing] = useState(false)
 
   // Pagination states
@@ -39,7 +45,9 @@ export default function ClientLog({ initialSection = 'leads' }) {
   const [isLifecycleModalOpen, setIsLifecycleModalOpen] = useState(false)
 
   const loadData = async () => {
-    setLoading(true)
+    if (!localStorage.getItem('tc_ceo_clientlog_cache')) {
+      setLoading(true)
+    }
     try {
       const res = await reportAPI.getCeoDashboard()
       if (res && res.data) {
@@ -57,6 +65,7 @@ export default function ClientLog({ initialSection = 'leads' }) {
     } catch (e) {
       console.error('Error fetching client log data:', e)
     } finally {
+      try { localStorage.setItem('tc_ceo_clientlog_cache', '1') } catch (_) {}
       setLoading(false)
       setRefreshing(false)
     }

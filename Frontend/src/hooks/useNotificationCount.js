@@ -11,7 +11,7 @@ export default function useNotificationCount() {
       const numCount = Number(count) || 0;
       setUnreadCount(numCount);
 
-      // Update Windows/Mac OS Taskbar App Badge (Just like Microsoft Teams!)
+      // Update Windows/Mac OS Taskbar App Badge & Mobile PWA Badge
       if ('setAppBadge' in navigator) {
         if (numCount > 0) {
           navigator.setAppBadge(numCount).catch(() => {});
@@ -19,8 +19,27 @@ export default function useNotificationCount() {
           navigator.clearAppBadge().catch(() => {});
         }
       }
+
+      // Relay count to Service Worker for Android PWA launcher badging
+      if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+        navigator.serviceWorker.controller.postMessage({
+          type: 'SET_BADGE',
+          count: numCount,
+        });
+      }
     } catch (err) {
       console.warn('[NotificationCount] Failed to fetch unread count:', err);
+    }
+  }, []);
+
+  useEffect(() => {
+    // Automatically trigger browser & mobile OS Notification Permission prompt
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      if (Notification.permission === 'default') {
+        Notification.requestPermission().then((perm) => {
+          console.log('[NotificationPermission] Status:', perm);
+        }).catch(() => {});
+      }
     }
   }, []);
 
@@ -42,5 +61,17 @@ export default function useNotificationCount() {
     };
   }, [fetchUnreadCount]);
 
-  return { unreadCount, refreshCount: fetchUnreadCount };
+  const requestNotificationPermission = useCallback(async () => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      try {
+        const perm = await Notification.requestPermission();
+        return perm;
+      } catch {
+        return Notification.permission;
+      }
+    }
+    return 'denied';
+  }, []);
+
+  return { unreadCount, refreshCount: fetchUnreadCount, requestNotificationPermission };
 }

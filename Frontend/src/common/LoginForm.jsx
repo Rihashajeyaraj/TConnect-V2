@@ -34,10 +34,12 @@ function LoginForm() {
         const token = res.data.access_token
         const userObj = res.data.user || {}
 
-        // Store JWT Access Token & User metadata
+        // Store JWT Access Token & User metadata across persistent keys
         localStorage.setItem('token', token)
         localStorage.setItem('access_token', token)
         localStorage.setItem('user', JSON.stringify(userObj))
+        localStorage.setItem('tc_persistent_token', token)
+        localStorage.setItem('tc_persistent_user', JSON.stringify(userObj))
 
         const roleLower = (userObj.role || '').toLowerCase()
         showToast(`Authentication successful! Welcome ${userObj.full_name || userObj.employee_name || roleLower}.`, 'success')

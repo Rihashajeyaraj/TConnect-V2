@@ -4,10 +4,18 @@ import { useToast } from './ToastContext.jsx'
 
 function ProtectedRoute({ allowedRoles }) {
   const { showToast } = useToast()
-  const rawToken = localStorage.getItem('token') || localStorage.getItem('access_token')
-  const userStr = localStorage.getItem('user')
+  const rawToken = localStorage.getItem('token') || localStorage.getItem('access_token') || localStorage.getItem('tc_persistent_token')
+  const userStr = localStorage.getItem('user') || localStorage.getItem('tc_persistent_user')
 
   const token = rawToken && rawToken !== 'undefined' && rawToken !== 'null' ? rawToken : null
+
+  // Auto-restore active session into primary storage if missing
+  if (token && !localStorage.getItem('token')) {
+    try { localStorage.setItem('token', token) } catch (_) {}
+  }
+  if (userStr && !localStorage.getItem('user')) {
+    try { localStorage.setItem('user', userStr) } catch (_) {}
+  }
 
   let user = null
   try {

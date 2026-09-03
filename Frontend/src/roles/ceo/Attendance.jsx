@@ -5,13 +5,21 @@ import { formatDate } from '../../utils/dateUtils.js'
 
 function Attendance() {
   const [attendance, setAttendance] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !localStorage.getItem('tc_ceo_att_cache')
+    } catch {
+      return true
+    }
+  })
   const [search, setSearch] = useState('')
   const [currentPage, setCurrentPage] = useState(1)
   const ITEMS_PER_PAGE = 10
 
   const loadData = async () => {
-    setLoading(true)
+    if (!localStorage.getItem('tc_ceo_att_cache')) {
+      setLoading(true)
+    }
     try {
       const res = await attendanceAPI.getLogs().catch(() => null)
       if (res && res.data && Array.isArray(res.data)) {
@@ -32,6 +40,7 @@ function Attendance() {
       console.error('Error loading attendance logs:', e)
       setAttendance([])
     } finally {
+      try { localStorage.setItem('tc_ceo_att_cache', '1') } catch (_) {}
       setLoading(false)
     }
   }

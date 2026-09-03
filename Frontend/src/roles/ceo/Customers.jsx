@@ -34,7 +34,13 @@ function CeoCustomers() {
   // Raw Data State
   const [data, setData] = useState(null)
   const [leads, setLeads] = useState([])
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !localStorage.getItem('tc_ceo_customers_cache')
+    } catch {
+      return true
+    }
+  })
   const [error, setError] = useState(null)
 
   // Reassignment & View state
@@ -62,7 +68,9 @@ function CeoCustomers() {
 
   const loadCustomerDirectory = async () => {
     try {
-      setLoading(true)
+      if (!localStorage.getItem('tc_ceo_customers_cache')) {
+        setLoading(true)
+      }
       setError(null)
       const res = await customerAPI.getCeoCustomerDirectory()
       if (res && res.data) {
@@ -104,6 +112,7 @@ function CeoCustomers() {
       setError(err?.message || 'Failed to fetch customer directory')
       showToast('Error loading customer directory', 'error')
     } finally {
+      try { localStorage.setItem('tc_ceo_customers_cache', '1') } catch (_) {}
       setLoading(false)
     }
   }
@@ -288,12 +297,9 @@ function CeoCustomers() {
               <Building2 className="size-4.5" />
             </span>
             <h1 className="text-xl font-black text-slate-900 tracking-tight">
-              Customers Directory
+              Clients Directory
             </h1>
           </div>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Centralized organization-wide customer directory grouped by Sales Manager & Executive hierarchy
-          </p>
         </div>
 
         <button
@@ -325,7 +331,7 @@ function CeoCustomers() {
               : 'text-slate-500 hover:text-slate-900'
           }`}
         >
-          Customers
+          Clients
         </button>
         <button
           onClick={() => {
@@ -363,7 +369,7 @@ function CeoCustomers() {
             className="bg-[#DCFCE7] border-2 border-[#16A34A] rounded-xl p-2.5 shadow-2xs transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900"
           >
             <div className="flex justify-between items-center">
-              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#15803D]">Total Customers</span>
+              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#15803D]">Total Clients</span>
               <span className="p-1 rounded-lg bg-[#16A34A]/20 text-[#15803D]">
                 <Building2 className="size-3.5" />
               </span>
@@ -581,7 +587,7 @@ function CeoCustomers() {
                 <div>
                   <h3 className="text-base sm:text-lg font-black text-slate-900">
                     {activeTab === 'customers' 
-                      ? (selectedManager !== 'All' ? `${selectedManager}'s Customer Accounts` : 'Customer Accounts Directory Table') 
+                      ? (selectedManager !== 'All' ? `${selectedManager}'s Client Accounts` : 'Client Accounts Directory Table') 
                       : (selectedCategory !== 'All' ? `${selectedCategory} Priority Leads Directory` : 'Leads Directory Table')}
                   </h3>
                   <p className="text-xs text-slate-500 font-semibold mt-0.5">
@@ -610,7 +616,7 @@ function CeoCustomers() {
           <Search className="absolute left-3 top-2.5 size-4 text-slate-400" />
           <input
             type="text"
-            placeholder={activeTab === 'leads' ? "Search leads..." : "Search Customer / Company / Executive..."}
+            placeholder={activeTab === 'leads' ? "Search leads..." : "Search Client / Company / Executive..."}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#832D51] transition"
@@ -670,7 +676,7 @@ function CeoCustomers() {
       {selectedCustIds.length > 0 && isAdmin && (
         <div className="flex items-center justify-between bg-[#832D51]/10 border border-[#832D51]/20 rounded-2xl p-4 animate-in slide-in-from-top-2 duration-200">
           <span className="text-xs font-black text-[#832D51]">
-            {selectedCustIds.length} {activeTab === 'leads' ? (selectedCustIds.length === 1 ? 'Lead' : 'Leads') : (selectedCustIds.length === 1 ? 'Customer' : 'Customers')} selected
+            {selectedCustIds.length} {activeTab === 'leads' ? (selectedCustIds.length === 1 ? 'Lead' : 'Leads') : (selectedCustIds.length === 1 ? 'Client' : 'Clients')} selected
           </span>
           <button
             type="button"
@@ -715,7 +721,7 @@ function CeoCustomers() {
                       </th>
                     )}
                     <th className="px-4 py-3">Date</th>
-                    <th className="px-4 py-3">Customer Name</th>
+                    <th className="px-4 py-3">Client Name</th>
                     <th className="px-4 py-3">Company Name</th>
                     <th className="px-4 py-3">Product</th>
                     <th className="px-4 py-3">Sales Manager</th>
@@ -728,7 +734,7 @@ function CeoCustomers() {
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {paginatedCustomers.length === 0 ? (
                     <tr>
-                      <td colSpan="9" className="text-center py-12 text-slate-400 font-semibold italic">No customer records found</td>
+                      <td colSpan="9" className="text-center py-12 text-slate-400 font-semibold italic">No client records found</td>
                     </tr>
                   ) : (
                     paginatedCustomers.map((cust, ci) => {

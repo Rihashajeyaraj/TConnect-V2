@@ -338,7 +338,13 @@ function CeoHrms({ initialTab = 'employees' }) {
     setHrmsTabs(DEFAULT_CEO_TABS);
     showToast("HRMS tabs reset to default.", "info");
   };
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !localStorage.getItem('tc_ceo_hrms_cache')
+    } catch {
+      return false
+    }
+  })
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedEmployee, setSelectedEmployee] = useState(null)
 
@@ -504,7 +510,9 @@ function CeoHrms({ initialTab = 'employees' }) {
   // Load real data from backend
   useEffect(() => {
     async function fetchHrmsData() {
-      setLoading(true)
+      if (!localStorage.getItem('tc_ceo_hrms_cache')) {
+        setLoading(true)
+      }
       try {
         const [empRes, leaveRes, attRes, eodRes] = await Promise.all([
           hrmsAPI.getEmployees().catch(() => null),
@@ -643,6 +651,7 @@ function CeoHrms({ initialTab = 'employees' }) {
       } catch (err) {
         console.warn('HRMS loaded standard dataset:', err)
       } finally {
+        try { localStorage.setItem('tc_ceo_hrms_cache', '1') } catch (_) {}
         setLoading(false)
       }
     }

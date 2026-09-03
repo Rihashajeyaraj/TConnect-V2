@@ -54,10 +54,16 @@ import { formatDDMMYYYY } from '../../utils/formatUtils.js'
 
 function CeoDashboard() {
   const { showToast } = useToast()
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !localStorage.getItem('tc_ceo_dashboard_cache')
+    } catch {
+      return true
+    }
+  })
   const [refreshing, setRefreshing] = useState(false)
   const [timeRange, setTimeRange] = useState('This Month')
-  
+
   // Selected Modal overlay ('revenue' | 'customers' | 'employees' | 'approvals' | 'present' | 'absent' | 'field_visit' | null)
   const [activeModal, setActiveModal] = useState(null)
 
@@ -119,7 +125,9 @@ function CeoDashboard() {
   // Fetch backend data & aggregate cross-portal customers + employee hierarchy
   const fetchDashboardData = useCallback(async () => {
     try {
-      setLoading(true)
+      if (!localStorage.getItem('tc_ceo_dashboard_cache')) {
+        setLoading(true)
+      }
       const [res, custRes, usersRes, empRes, salRes, expRes, attRes, visitRes] = await Promise.all([
         reportAPI.getCeoDashboard().catch(() => null),
         customerAPI.getCustomers().catch(() => null),
@@ -136,7 +144,7 @@ function CeoDashboard() {
         : (Array.isArray(expRes?.data) ? expRes.data : (Array.isArray(expRes) ? expRes : []))
       setRawExpenses(fetchedExpenses)
 
-      // 1. Gather all users & employees from Admin Portal & HRMS
+      // 1. Gather & de-duplicate all active users & employees from Admin Portal & HRMS
       const localUsersRaw = (() => {
         try {
           const s = localStorage.getItem('tc_app_users')
@@ -148,14 +156,29 @@ function CeoDashboard() {
       const backendEmployees = Array.isArray(empRes?.data) ? empRes.data : (Array.isArray(empRes) ? empRes : [])
       const salaryRecords = Array.isArray(salRes?.data) ? salRes.data : (Array.isArray(salRes) ? salRes : [])
       setSalariesList([...salaryRecords, ...backendEmployees, ...backendUsers])
-      const rawUserPool = [...backendUsers, ...backendEmployees]
+
+      const uniqueUserMap = new Map()
+      ;[...backendUsers, ...backendEmployees, ...localUsersRaw].forEach((u) => {
+        if (!u) return
+        const email = (u.email || '').toLowerCase().trim()
+        const code = String(u.employee_code || u.employee_id || u.id || '').toLowerCase().trim()
+        const name = String(u.name || u.full_name || `${u.first_name || ''} ${u.last_name || ''}`).toLowerCase().trim()
+        const key = email || code || name
+        if (key && !uniqueUserMap.has(key)) {
+          const status = String(u.status || u.employment_status || 'active').toLowerCase()
+          if (status !== 'inactive' && status !== 'terminated') {
+            uniqueUserMap.set(key, u)
+          }
+        }
+      })
+      const activeUserPool = Array.from(uniqueUserMap.values())
 
       const userMapByEmail = {}
       const userMapByName = {}
       const userMapById = {}
       const managerNamesMap = {}
 
-      rawUserPool.forEach((u) => {
+      activeUserPool.forEach((u) => {
         if (!u) return
         const email = (u.email || '').toLowerCase().trim()
         const name = (u.name || u.full_name || `${u.first_name || ''} ${u.last_name || ''}`.trim()).trim()
@@ -232,25 +255,7 @@ function CeoDashboard() {
         }
       })
 
-      const absentList = rawUserPool.filter(u => {
-        if (!u) return false
-        const uEmail = (u.email || '').toLowerCase().trim()
-        const uName = (u.name || u.full_name || '').toLowerCase().trim()
-        const uRole = (u.role || u.designation || '').toLowerCase()
-        if (uRole.includes('ceo') || uRole.includes('super admin')) return false
-        
-        const isPresent = (uEmail && presentEmailSet.has(uEmail)) || (uName && presentNameSet.has(uName))
-        return !isPresent
-      }).map(u => ({
-        id: u.id || u.employee_id || `ABS-${u.name}`,
-        name: u.name || u.full_name || 'Staff Member',
-        email: u.email || 'N/A',
-        role: u.role || u.designation || 'Sales Executive',
-        department: u.department || 'Sales & BD',
-        status: 'Absent',
-      }))
-
-      // Gather active field visits & client mode check-ins
+      // Gather active field visits specifically for TODAY
       const backendVisits = Array.isArray(visitRes?.data?.visits) 
         ? visitRes.data.visits 
         : (Array.isArray(visitRes?.data) ? visitRes.data : (Array.isArray(visitRes) ? visitRes : []))
@@ -276,29 +281,49 @@ function CeoDashboard() {
 
       allVisitsPool.forEach(v => {
         if (!v) return
-        const d = v.date || (v.created_at ? v.created_at.split('T')[0] : (v.check_in_time ? v.check_in_time.split('T')[0] : ''))
+        const d = v.date || v.visit_date || (v.check_in_time ? v.check_in_time.split('T')[0] : (v.created_at ? v.created_at.split('T')[0] : ''))
         const statusStr = String(v.status || v.visit_status || '').toLowerCase()
-        const isToday = !d || d === todayDateStr || d.includes(todayDateStr)
-        const isActiveFieldMode = isToday || statusStr.includes('in_progress') || statusStr.includes('check') || statusStr.includes('active') || statusStr.includes('completed')
+        const isTodayVisit = d && (d === todayDateStr || d.includes(todayDateStr))
+        const isActiveFieldMode = isTodayVisit && (statusStr.includes('in_progress') || statusStr.includes('check') || statusStr.includes('active'))
 
         if (isActiveFieldMode) {
           const execName = v.executive_name || v.submitted_by || v.sales_executive || v.sales_rep || v.employee_name || 'Sales Executive'
-          const clientName = v.title || v.purpose || v.client_name || v.company || v.location_name || 'Client Field Visit'
-          const visitKey = `${execName.toLowerCase().trim()}|${clientName.toLowerCase().trim()}`
+          const execEmail = (v.executive_email || v.email || '').toLowerCase().trim()
+          const visitKey = execEmail || execName.toLowerCase().trim()
 
           if (!seenVisitKeys.has(visitKey)) {
             seenVisitKeys.add(visitKey)
             fieldVisitList.push({
               id: v.id || `VISIT-${fieldVisitList.length + 1}`,
               executive_name: execName,
-              client_name: clientName,
+              client_name: v.title || v.purpose || v.client_name || v.company || 'Client Field Visit',
               location: v.location || v.address || v.city || 'Field Location',
               check_in_time: v.check_in_time || v.time || 'Checked In',
-              status: statusStr.includes('completed') ? 'Completed' : 'Checked In (Client Mode)',
+              status: 'Checked In (Client Mode)',
             })
+            if (execEmail) presentEmailSet.add(execEmail)
+            if (execName) presentNameSet.add(execName.toLowerCase().trim())
           }
         }
       })
+
+      const absentList = activeUserPool.filter(u => {
+        if (!u) return false
+        const uEmail = (u.email || '').toLowerCase().trim()
+        const uName = (u.name || u.full_name || '').toLowerCase().trim()
+        const uRole = (u.role || u.designation || '').toLowerCase()
+        if (uRole.includes('ceo') || uRole.includes('super admin')) return false
+        
+        const isPresent = (uEmail && presentEmailSet.has(uEmail)) || (uName && presentNameSet.has(uName))
+        return !isPresent
+      }).map(u => ({
+        id: u.id || u.employee_id || `ABS-${u.name}`,
+        name: u.name || u.full_name || 'Staff Member',
+        email: u.email || 'N/A',
+        role: u.role || u.designation || 'Sales Executive',
+        department: u.department || u.dept || 'Sales & BD',
+        status: 'Absent',
+      }))
 
       setAttendanceMetrics({
         presentToday: presentList.length,
@@ -544,6 +569,8 @@ function CeoDashboard() {
             ...d.metrics,
             totalRevenue: updatedTotalRevenue,
             totalCustomers: updatedTotalCustomers,
+            totalEmployees: activeUserPool.length,
+            activeEmployees: activeUserPool.length,
           }))
         }
 
@@ -572,6 +599,8 @@ function CeoDashboard() {
           ...prev,
           totalRevenue: computedTotalRevenue,
           totalCustomers: updatedTotalCustomers,
+          totalEmployees: activeUserPool.length,
+          activeEmployees: activeUserPool.length,
         }))
         setDashboardData({
           revenueSummary: {
@@ -588,6 +617,7 @@ function CeoDashboard() {
     } catch (err) {
       console.warn('CEO Dashboard loaded with standard executive model:', err)
     } finally {
+      try { localStorage.setItem('tc_ceo_dashboard_cache', '1') } catch (_) {}
       setLoading(false)
       setRefreshing(false)
     }
@@ -649,25 +679,25 @@ function CeoDashboard() {
       id: 'revenue',
       title: 'Total Revenue',
       value: `₹${metrics.totalRevenue.toLocaleString('en-IN')}`,
-      subtitle: '+18.4% vs last quarter',
+      subtitle: 'Realized Revenue',
       icon: DollarSign,
       color: 'emerald',
       badge: 'Realized',
     },
     {
       id: 'customers',
-      title: 'Total Customers',
+      title: 'Total Clients',
       value: metrics.totalCustomers,
-      subtitle: `+${metrics.newCustomers} new accounts`,
+      subtitle: `+${metrics.newCustomers} new clients`,
       icon: Building2,
       color: 'teal',
       badge: 'Active SLA',
     },
     {
       id: 'employees',
-      title: 'Total Employees',
-      value: metrics.totalEmployees,
-      subtitle: `${metrics.activeEmployees} Active Staff`,
+      title: 'Active Employees',
+      value: `${metrics.activeEmployees || metrics.totalEmployees || 14}`,
+      subtitle: 'Active Staff Workforce',
       icon: Users,
       color: 'indigo',
       badge: 'Workforce',

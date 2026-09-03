@@ -40,7 +40,13 @@ function Reports() {
   const [selectedDepartment, setSelectedDepartment] = useState('All Departments')
   const [dateFilter, setDateFilter] = useState('This Month')
   const [searchQuery, setSearchQuery] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(() => {
+    try {
+      return !localStorage.getItem('tc_ceo_reports_cache')
+    } catch {
+      return true
+    }
+  })
   const [availableDepartments, setAvailableDepartments] = useState(DEFAULT_DEPARTMENTS)
 
   // Real Database Reports Datasets State
@@ -73,7 +79,9 @@ function Reports() {
   })
 
   const loadReportData = async () => {
-    setLoading(true)
+    if (!localStorage.getItem('tc_ceo_reports_cache')) {
+      setLoading(true)
+    }
     try {
       const [dashRes, dirRes, pipeRes, visitRes, empRes, settingsRes, custRes, leadsRes] = await Promise.allSettled([
         reportAPI.getCeoDashboard(),
@@ -388,6 +396,7 @@ function Reports() {
     } catch (e) {
       console.error('Error constructing dynamic reports:', e)
     } finally {
+      try { localStorage.setItem('tc_ceo_reports_cache', '1') } catch (_) {}
       setLoading(false)
     }
   }
