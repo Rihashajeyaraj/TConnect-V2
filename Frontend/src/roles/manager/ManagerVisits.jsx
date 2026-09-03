@@ -60,9 +60,9 @@ export default function ManagerVisits() {
   const [selectedVisitStatus, setSelectedVisitStatus] = useState('All')
   const [selectedLeadStatus, setSelectedLeadStatus] = useState('All')
   const [selectedPriority, setSelectedPriority] = useState('All')
-  const [fromDate, setFromDate] = useState(() => new Date().toISOString().split('T')[0])
-  const [toDate, setToDate] = useState(() => new Date().toISOString().split('T')[0])
-  const [dateFilterTab, setDateFilterTab] = useState('Today') // 'All' | 'Today' | 'Yesterday' | 'This Week' | 'This Month' | 'Custom'
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const [dateFilterTab, setDateFilterTab] = useState('All') // 'All' | 'Today' | 'Yesterday' | 'This Week' | 'This Month' | 'Custom'
 
   const handleLinearDateFilter = (tab) => {
     setDateFilterTab(tab)
@@ -362,7 +362,10 @@ export default function ManagerVisits() {
 
   // Fetch Field Visit Audit Data from backend API and LocalStorage
   const fetchTeamAuditData = async () => {
-    setLoading(true)
+    if (!visits || visits.length === 0) {
+      setLoading(true)
+    }
+    const timer = setTimeout(() => setLoading(false), 2500)
     try {
       const params = {}
       if (selectedSE !== 'All') params.sales_executive_id = selectedSE
@@ -397,9 +400,11 @@ export default function ManagerVisits() {
 
       const combined = Array.from(map.values())
       setVisits(combined)
+      calculateLocalSummary(combined)
     } catch (err) {
       const localVisits = getLocalStorageVisits()
       setVisits(localVisits)
+      calculateLocalSummary(localVisits)
     } finally {
       setLoading(false)
     }

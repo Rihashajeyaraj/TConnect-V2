@@ -338,6 +338,20 @@ export default function SalesHRMS() {
       return;
     }
 
+    let calculatedDuration = "1 Day";
+    if (leaveType.includes("Half")) {
+      calculatedDuration = "0.5 Day";
+    } else if (leaveType.includes("Permission")) {
+      calculatedDuration = "2 Hours";
+    } else if (leaveFromDate && leaveToDate) {
+      const start = new Date(leaveFromDate);
+      const end = new Date(leaveToDate);
+      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+        const diffDays = Math.round(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+        calculatedDuration = `${diffDays} ${diffDays === 1 ? 'Day' : 'Days'}`;
+      }
+    }
+
     const payload = {
       id: `leave_${Date.now()}`,
       leave_type: leaveType,
@@ -350,7 +364,7 @@ export default function SalesHRMS() {
       employee_code: empCode,
       status: "Pending",
       role: currentUser.role || profile.role || "Sales Executive",
-      duration: leaveType.includes("Half") ? "0.5 Day" : leaveType.includes("Permission") ? "2 Hours" : "1 Day",
+      duration: calculatedDuration,
       created_at: new Date().toISOString()
     };
 
@@ -1292,15 +1306,29 @@ export default function SalesHRMS() {
           const savedLeaves = userEmailClean ? localStorage.getItem(`tc_leaves_${userEmailClean}`) : null;
           const localAllocation = savedLeaves ? JSON.parse(savedLeaves) : null;
 
+          const getRequestDays = (r) => {
+            if (r.leave_type?.includes("Half") || r.leaveType?.includes("Half")) return 0.5;
+            if (r.leave_type?.includes("Permission") || r.leaveType?.includes("Permission")) return 0;
+            const fDate = r.from_date || r.fromDate;
+            const tDate = r.to_date || r.toDate;
+            if (fDate && tDate) {
+              const start = new Date(fDate);
+              const end = new Date(tDate);
+              if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
+                const diffDays = Math.round(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                if (diffDays > 0) return diffDays;
+              }
+            }
+            const daysStr = String(r.duration || r.days || '1');
+            const match = daysStr.match(/(\d+(?:\.\d+)?)/);
+            return match ? parseFloat(match[1]) : 1.0;
+          };
+
           const leaveCards = [
             {
               type: 'Casual Leave',
               allowed: Number(profile.annual_leaves ?? profile.annualLeaves ?? currentUser.annual_leaves ?? currentUser.annualLeaves ?? localAllocation?.annualLeaves ?? 12),
-              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Casual Leave' || r.leave_type === 'Full Day Leave' || String(r.leave_type || '').includes('Casual') || String(r.leave_type || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => {
-                const daysStr = String(r.duration || '1');
-                const match = daysStr.match(/(\d+)/);
-                return sum + (match ? parseFloat(match[1]) : 1.0);
-              }, 0),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Casual Leave' || r.leave_type === 'Full Day Leave' || String(r.leave_type || '').includes('Casual') || String(r.leave_type || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => sum + getRequestDays(r), 0),
               unit: 'Days',
               color: 'bg-emerald-50 border-emerald-200 text-emerald-950',
               barColor: 'bg-emerald-600',
@@ -1309,11 +1337,7 @@ export default function SalesHRMS() {
             {
               type: 'Sick Leave',
               allowed: Number(profile.sick_leaves ?? profile.sickLeaves ?? currentUser.sick_leaves ?? currentUser.sickLeaves ?? localAllocation?.sickLeaves ?? 10),
-              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Sick Leave' || String(r.leave_type || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => {
-                const daysStr = String(r.duration || '1');
-                const match = daysStr.match(/(\d+)/);
-                return sum + (match ? parseFloat(match[1]) : 1.0);
-              }, 0),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Sick Leave' || String(r.leave_type || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => sum + getRequestDays(r), 0),
               unit: 'Days',
               color: 'bg-rose-50 border-rose-200 text-rose-950',
               barColor: 'bg-rose-600',
@@ -1322,11 +1346,7 @@ export default function SalesHRMS() {
             {
               type: 'Other Leave',
               allowed: Number(profile.other_leaves ?? profile.otherLeaves ?? currentUser.other_leaves ?? currentUser.otherLeaves ?? localAllocation?.otherLeaves ?? 10),
-              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Other Leave' || String(r.leave_type || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => {
-                const daysStr = String(r.duration || '1');
-                const match = daysStr.match(/(\d+)/);
-                return sum + (match ? parseFloat(match[1]) : 1.0);
-              }, 0),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Other Leave' || String(r.leave_type || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => sum + getRequestDays(r), 0),
               unit: 'Days',
               color: 'bg-violet-50 border-violet-200 text-violet-950',
               barColor: 'bg-violet-600',
@@ -1566,8 +1586,15 @@ export default function SalesHRMS() {
                             </span>
                           </td>
                           <td className="py-3.5 px-3 font-mono text-slate-900">
-                            <div>{req.from_date} {req.to_date !== req.from_date ? `to ${req.to_date}` : ""}</div>
-                            <div className="text-[10px] text-slate-400 font-semibold">{req.time_slot || req.duration || "Full Day"}</div>
+                            <div>{req.from_date} {req.to_date && req.to_date !== req.from_date ? `to ${req.to_date}` : ""}</div>
+                            <div className="text-[10px] text-teal-700 font-bold">
+                              {(() => {
+                                const days = getRequestDays(req);
+                                if (req.leave_type?.includes("Half")) return "Half Day (0.5 Day)";
+                                if (req.leave_type?.includes("Permission")) return req.time_slot || req.duration || "2 Hours";
+                                return `${days} ${days === 1 ? 'Day' : 'Days'}`;
+                              })()}
+                            </div>
                           </td>
                           <td className="py-3.5 px-3 max-w-[220px] text-slate-800 font-semibold truncate">
                             {req.raw_reason || req.reason?.split("|")[0]?.strip?.() || req.reason}

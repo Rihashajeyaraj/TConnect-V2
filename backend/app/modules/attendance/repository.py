@@ -641,7 +641,26 @@ class AttendanceRepository:
             resolved_emp_id = user_id if is_uuid(user_id) else str(uuid.uuid4())
 
         time_slot = data.get("time_slot") or data.get("slot") or "Full Day"
-        duration = data.get("duration") or ("0.5 Day" if "Half" in leave_type else "2 Hours" if "Permission" in leave_type else "1 Day")
+        from_d = data.get("from_date") or data.get("date") or today_str
+        to_d = data.get("to_date") or data.get("date") or today_str
+        
+        duration = data.get("duration")
+        if not duration or duration == "1 Day":
+            if "Half" in leave_type:
+                duration = "0.5 Day"
+            elif "Permission" in leave_type:
+                duration = "2 Hours"
+            elif from_d and to_d:
+                try:
+                    d1 = datetime.strptime(from_d, "%Y-%m-%d")
+                    d2 = datetime.strptime(to_d, "%Y-%m-%d")
+                    num_days = abs((d2 - d1).days) + 1
+                    duration = f"{num_days} {'Day' if num_days == 1 else 'Days'}"
+                except Exception:
+                    duration = "1 Day"
+            else:
+                duration = "1 Day"
+
         role = str((user_payload or {}).get("role") or "Sales Manager")
 
         req_obj = {

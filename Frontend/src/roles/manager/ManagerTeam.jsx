@@ -926,7 +926,7 @@ export default function ManagerTeam() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
-                    {loading ? (
+                    {loading && filteredReports.length === 0 ? (
                       <tr>
                         <td colSpan="5" className="text-center py-12 text-slate-400">
                           <RefreshCw className="w-6 h-6 animate-spin mx-auto text-mgr-primary-600 mb-2" />

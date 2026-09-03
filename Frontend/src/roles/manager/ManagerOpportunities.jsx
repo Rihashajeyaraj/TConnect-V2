@@ -110,7 +110,7 @@ export default function ManagerOpportunities() {
       </div>
 
       {/* Opportunities List */}
-      {loading ? (
+      {loading && opportunities.length === 0 ? (
         <div className="text-center py-12 text-slate-400 font-bold text-sm bg-white rounded-3xl border border-slate-200">
           Loading Opportunities from Supabase...
         </div>

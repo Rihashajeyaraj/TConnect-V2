@@ -18,7 +18,8 @@ import {
   Plus,
   Send,
   Save,
-  CheckCircle
+  CheckCircle,
+  X
 } from 'lucide-react'
 import { reportAPI, crmAPI, pipelineAPI, salesAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'

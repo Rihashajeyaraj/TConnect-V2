@@ -162,11 +162,12 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false); // Instant cached render without blocking UI
   const [todoLoading, setTodoLoading] = useState(false);
   const [newTodo, setNewTodo] = useState("");
-  const [selectedMonth, setSelectedMonth] = useState(() => localStorage.getItem("tc_dashboard_date_filter") || "Today");
+  const [selectedMonth, setSelectedMonth] = useState(() => localStorage.getItem("tc_dashboard_date_filter") || "This Month");
   const [customDateVal, setCustomDateVal] = useState(() => localStorage.getItem("tc_dashboard_custom_date") || new Date().toISOString().slice(0, 10));
-  const [managerTarget, setManagerTarget] = useState(() => getCachedValue("managerTarget", { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' }));
+  const [customDateToVal, setCustomDateToVal] = useState(() => localStorage.getItem("tc_dashboard_custom_date_to") || new Date().toISOString().slice(0, 10));
+  const [todayAttRecord, setTodayAttRecord] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
-  const [todayAttRecord, setTodayAttRecord] = useState(null); // null = not yet fetched
+  const [managerTarget, setManagerTarget] = useState(() => getCachedValue("managerTarget", { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' }) || { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' });
 
   const handleDateFilterChange = (val) => {
     setSelectedMonth(val);
@@ -176,6 +177,11 @@ export default function Dashboard() {
   const handleCustomDateChange = (val) => {
     setCustomDateVal(val);
     localStorage.setItem("tc_dashboard_custom_date", val);
+  };
+
+  const handleCustomDateToChange = (val) => {
+    setCustomDateToVal(val);
+    localStorage.setItem("tc_dashboard_custom_date_to", val);
   };
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showLeadsModal, setShowLeadsModal] = useState(false);
@@ -410,9 +416,18 @@ export default function Dashboard() {
           return str.includes(currentYearPrefix) || str.includes(currentYearSuffix);
         }
         if (selectedMonth === "Custom Date") {
-          if (!customDateVal) return true;
-          const customDateFormatted = formatDate(customDateVal);
-          return str.includes(customDateVal) || str.includes(customDateFormatted);
+          if (!customDateVal && !customDateToVal) return true;
+          let itemISO = str.slice(0, 10);
+          if (itemISO.includes('/')) {
+            const parts = itemISO.split('/');
+            if (parts.length === 3) {
+              if (parts[2].length === 4) itemISO = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+              else if (parts[0].length === 4) itemISO = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+            }
+          }
+          if (customDateVal && itemISO < customDateVal) return false;
+          if (customDateToVal && itemISO > customDateToVal) return false;
+          return true;
         }
         // Default: Today
         return str.includes(todayISO) || str.includes(todayFormattedStr);
@@ -818,7 +833,7 @@ export default function Dashboard() {
   const k = kpis || MOCK_KPIS;
 
   // Manager Fixed Sales Target Sync uses managerTarget state fetched dynamically.
-  const revTargetVal = Number(managerTarget.revenueTarget) || 500000;
+  const revTargetVal = Number(managerTarget?.revenueTarget) || 500000;
   const revAchievedVal = k.my_generated_revenue || k.revenue_this_month || 0;
   const revAchievementPct = Math.min(Math.round((revAchievedVal / revTargetVal) * 100), 100);
 
@@ -860,12 +875,26 @@ export default function Dashboard() {
               })}
             </div>
             {selectedMonth === "Custom Date" && (
-              <input
-                type="date"
-                value={customDateVal}
-                onChange={(e) => handleCustomDateChange(e.target.value)}
-                className="h-8 text-xs border border-teal-500/50 rounded-xl px-2 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs w-full sm:w-auto"
-              />
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-bold text-slate-500">From:</span>
+                  <input
+                    type="date"
+                    value={customDateVal}
+                    onChange={(e) => handleCustomDateChange(e.target.value)}
+                    className="h-8 text-xs border border-teal-500/50 rounded-xl px-2 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs w-auto"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-bold text-slate-500">To:</span>
+                  <input
+                    type="date"
+                    value={customDateToVal}
+                    onChange={(e) => handleCustomDateToChange(e.target.value)}
+                    className="h-8 text-xs border border-teal-500/50 rounded-xl px-2 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs w-auto"
+                  />
+                </div>
+              </div>
             )}
           </div>
 

@@ -273,8 +273,15 @@ export default function ManagerLeads() {
 
   // Primary API Data Fetch function
   const fetchTeamLeadReports = async () => {
-    setLoading(true)
+    if (!leads || leads.length === 0) {
+      setLoading(true)
+    }
     setError(null)
+
+    // Safety timeout to ensure loading spinner never hangs indefinitely
+    const timer = setTimeout(() => {
+      setLoading(false)
+    }, 2500)
 
     try {
       const params = {}
@@ -738,7 +745,7 @@ export default function ManagerLeads() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 font-bold">
-                      {loading ? (
+                      {loading && paginatedLeads.length === 0 ? (
                         <tr>
                           <td colSpan="6" className="text-center py-16 text-slate-400">
                             <RefreshCw className="w-8 h-8 animate-spin mx-auto text-emerald-600 mb-3" />
@@ -807,7 +814,7 @@ export default function ManagerLeads() {
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-200 font-bold">
-                      {loading ? (
+                      {loading && paginatedLeads.length === 0 ? (
                         <tr>
                           <td colSpan="6" className="text-center py-16 text-slate-400">
                             <RefreshCw className="w-8 h-8 animate-spin mx-auto text-mgr-primary-600 mb-3" />

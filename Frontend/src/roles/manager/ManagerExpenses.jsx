@@ -333,7 +333,10 @@ export default function ManagerExpenses() {
 
   // Fetch Expense Claims from API only
   const fetchExpensesData = async () => {
-    setLoading(true)
+    if (!expenses || expenses.length === 0) {
+      setLoading(true)
+    }
+    const timer = setTimeout(() => setLoading(false), 2500)
     try {
       const params = {}
       if (selectedSE !== 'All') params.sales_executive_id = selectedSE
@@ -348,7 +351,18 @@ export default function ManagerExpenses() {
       const res = await expenseAPI.getManagerExpenses(params)
       const data = res?.data || res || {}
       
-      const apiExpenses = (data.expenses || []).map((e, idx) => normalizeExpense(e, idx))
+      let apiExpenses = (data.expenses || []).map((e, idx) => normalizeExpense(e, idx))
+
+      // Fallback: Merge with tc_sales_expenses if API returns empty
+      if (apiExpenses.length === 0) {
+        try {
+          const localExp = JSON.parse(localStorage.getItem('tc_sales_expenses') || '[]')
+          if (localExp && localExp.length > 0) {
+            apiExpenses = localExp.map((e, idx) => normalizeExpense(e, idx))
+          }
+        } catch (e) {}
+      }
+
       setExpenses(apiExpenses)
       
       if (data.summary) {
@@ -365,8 +379,17 @@ export default function ManagerExpenses() {
       } catch (e) {}
     } catch (err) {
       console.error("Failed fetching manager expenses:", err)
-      showToast("Failed to retrieve expense requests.", "error")
-      setExpenses([])
+      let fallbackExp = []
+      try {
+        const localExp = JSON.parse(localStorage.getItem('tc_sales_expenses') || '[]')
+        if (localExp && localExp.length > 0) {
+          fallbackExp = localExp.map((e, idx) => normalizeExpense(e, idx))
+        }
+      } catch (e) {}
+      setExpenses(fallbackExp)
+      if (fallbackExp.length > 0) {
+        calculateMetrics(fallbackExp)
+      }
     } finally {
       setLoading(false)
     }
@@ -548,15 +571,19 @@ export default function ManagerExpenses() {
     const matchesMinAmt = !minAmount || e.numeric_amount >= parseFloat(minAmount)
     const matchesMaxAmt = !maxAmount || e.numeric_amount <= parseFloat(maxAmount)
 
-    // Linear Date Sorting & Filter Logic
+    // Dynamic Date Sorting & Filter Logic
     const expDateStr = String(e.submitted_date || e.visit_date || e.created_at || '')
+    const todayISO = new Date().toISOString().slice(0, 10)
+    const yesterdayISO = new Date(Date.now() - 86400000).toISOString().slice(0, 10)
+    const thisMonthISO = new Date().toISOString().slice(0, 7)
+
     let matchesDate = true
     if (dateFilterTab === 'Today') {
-      matchesDate = expDateStr.includes('2026-08-06') || expDateStr.includes('06/08/2026') || expDateStr.includes('Today')
+      matchesDate = expDateStr.includes(todayISO) || expDateStr.includes('Today')
     } else if (dateFilterTab === 'Yesterday') {
-      matchesDate = expDateStr.includes('2026-08-05') || expDateStr.includes('05/08/2026') || expDateStr.includes('Yesterday')
+      matchesDate = expDateStr.includes(yesterdayISO) || expDateStr.includes('Yesterday')
     } else if (dateFilterTab === 'This Month') {
-      matchesDate = expDateStr.includes('2026-08') || expDateStr.includes('/08/')
+      matchesDate = expDateStr.includes(thisMonthISO)
     } else if (dateFilterTab === 'Custom') {
       if (fromDate) matchesDate = matchesDate && expDateStr >= fromDate
       if (toDate) matchesDate = matchesDate && expDateStr <= toDate
@@ -652,7 +679,7 @@ export default function ManagerExpenses() {
               </button>
             </div>
 
-            {/* Toggle Status Buttons & Filters */}
+            {/* Toggle Status Buttons & Search */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 flex-shrink-0">
               {/* Toggles */}
               <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-xl overflow-x-auto max-w-full shrink-0">
@@ -703,6 +730,82 @@ export default function ManagerExpenses() {
               )}
             </div>
 
+            {/* Executive Filter & Date Filter Toolbar */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 flex-shrink-0">
+              
+              {/* 1. Executive Filter */}
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-bold text-slate-600 flex items-center gap-1 shrink-0">
+                  <User size={14} className="text-teal-600" /> Executive:
+                </span>
+                <select
+                  value={selectedSE}
+                  onChange={(e) => {
+                    setSelectedSE(e.target.value)
+                    setPage(1)
+                  }}
+                  className="bg-white border border-slate-200 text-slate-900 text-xs font-bold px-3 py-1.5 rounded-xl focus:outline-none focus:border-teal-500 cursor-pointer shadow-2xs max-w-[220px] truncate"
+                >
+                  <option value="All">All Sales Executives</option>
+                  {executives.map((ex) => (
+                    <option key={ex.id} value={ex.name}>
+                      {ex.name} ({ex.employee_code})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* 2. Date Filter */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold text-slate-600 flex items-center gap-1 shrink-0">
+                  <Calendar size={14} className="text-teal-600" /> Date:
+                </span>
+                <div className="flex items-center gap-1 bg-slate-200/60 p-1 rounded-xl">
+                  {['All Time', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => {
+                        setDateFilterTab(tab)
+                        setPage(1)
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] sm:text-xs font-bold transition cursor-pointer ${
+                        dateFilterTab === tab
+                          ? 'bg-white text-slate-900 shadow-2xs font-black'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+
+                {dateFilterTab === 'Custom' && (
+                  <div className="flex items-center gap-1.5 animate-in fade-in duration-150">
+                    <input
+                      type="date"
+                      value={fromDate}
+                      onChange={(e) => {
+                        setFromDate(e.target.value)
+                        setPage(1)
+                      }}
+                      className="bg-white border border-slate-200 text-xs font-bold px-2 py-1 rounded-xl text-slate-800 focus:outline-none focus:border-teal-500"
+                    />
+                    <span className="text-xs font-bold text-slate-400">to</span>
+                    <input
+                      type="date"
+                      value={toDate}
+                      onChange={(e) => {
+                        setToDate(e.target.value)
+                        setPage(1)
+                      }}
+                      className="bg-white border border-slate-200 text-xs font-bold px-2 py-1 rounded-xl text-slate-800 focus:outline-none focus:border-teal-500"
+                    />
+                  </div>
+                )}
+              </div>
+
+            </div>
+
             {/* Table Container */}
             <div className="overflow-y-auto overflow-x-auto flex-1 min-h-[150px] border border-slate-200 rounded-2xl shadow-2xs">
               <table className="w-full text-left text-sm text-slate-800 min-w-[1000px]">
@@ -716,7 +819,7 @@ export default function ManagerExpenses() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-semibold">
-                  {loading ? (
+                  {loading && paginatedExpenses.length === 0 ? (
                     <tr>
                       <td colSpan="5" className="text-center py-16 text-slate-400">
                         <RefreshCw className="w-8 h-8 animate-spin mx-auto text-teal-600 mb-3" />

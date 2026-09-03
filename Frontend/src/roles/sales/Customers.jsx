@@ -86,6 +86,7 @@ export default function Customers() {
   const [selectedCustomer, setSelectedCustomer] = useState(null);
   const [dateFilterMode, setDateFilterMode] = useState("All"); // "All" | "Today" | "This Month" | "Custom"
   const [customFilterDate, setCustomFilterDate] = useState("");
+  const [customFilterDateTo, setCustomFilterDateTo] = useState("");
   const [viewMode, setViewMode] = useState("table"); // Default View Mode: "table" (Table View) | "grid" (Card View)
 
   // Form states for Logging Remarks & Converting to Visit
@@ -378,9 +379,19 @@ export default function Customers() {
       return dateStr.includes(currentMonth) || dateStr.includes(new Date().toISOString().slice(0, 7)) || dateStr.includes("Just");
     }
 
-    if (dateFilterMode === "Custom" && customFilterDate) {
-      const targetFormatted = formatDate(new Date(customFilterDate));
-      return dateStr.includes(customFilterDate) || dateStr.includes(targetFormatted);
+    if (dateFilterMode === "Custom") {
+      if (!customFilterDate && !customFilterDateTo) return true;
+      let itemISO = dateStr.slice(0, 10);
+      if (itemISO.includes('/')) {
+        const parts = itemISO.split('/');
+        if (parts.length === 3) {
+          if (parts[2].length === 4) itemISO = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          else if (parts[0].length === 4) itemISO = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        }
+      }
+      if (customFilterDate && itemISO < customFilterDate) return false;
+      if (customFilterDateTo && itemISO > customFilterDateTo) return false;
+      return true;
     }
 
     return true;
@@ -453,12 +464,26 @@ export default function Customers() {
             </select>
 
             {dateFilterMode === "Custom" && (
-              <input
-                type="date"
-                value={customFilterDate}
-                onChange={(e) => setCustomFilterDate(e.target.value)}
-                className="h-10 border border-slate-200 rounded-xl px-2.5 bg-white font-bold text-slate-800 focus:outline-none focus:border-teal-500"
-              />
+              <div className="flex items-center gap-1.5 flex-wrap">
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-bold text-slate-500">From:</span>
+                  <input
+                    type="date"
+                    value={customFilterDate}
+                    onChange={(e) => setCustomFilterDate(e.target.value)}
+                    className="h-10 border border-slate-200 rounded-xl px-2.5 bg-white font-bold text-slate-800 focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className="text-[10px] font-bold text-slate-500">To:</span>
+                  <input
+                    type="date"
+                    value={customFilterDateTo}
+                    onChange={(e) => setCustomFilterDateTo(e.target.value)}
+                    className="h-10 border border-slate-200 rounded-xl px-2.5 bg-white font-bold text-slate-800 focus:outline-none focus:border-teal-500"
+                  />
+                </div>
+              </div>
             )}
 
             {/* View Mode Toggle: Grid Cards vs Compact Table List */}

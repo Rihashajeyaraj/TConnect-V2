@@ -230,6 +230,8 @@ export default function ManagerSmartMap() {
   const [inquiryModalEx, setInquiryModalEx] = useState(null)
   const [customInquiryText, setCustomInquiryText] = useState('')
 
+  const isFirstFetchRepliesRef = useRef(true)
+
   // Poll for incoming replies from Sales Executives
   useEffect(() => {
     const fetchReplies = async () => {
@@ -241,30 +243,55 @@ export default function ManagerSmartMap() {
           return cat.includes('REPLY') || String(n.title || '').includes('Reply')
         })
         
+        let newlyAddedToToast = []
         setExecutiveReplies(prev => {
           const next = { ...prev }
           let updated = false
+
           replies.forEach(r => {
             const senderName = r.sender_name || r.title?.replace('💬 Reply from ', '') || 'Executive'
             const empId = String(r.employee_id || r.sender_id || r.user_id || senderName || 'unknown').toLowerCase().trim()
             const existing = next[empId] || []
-            if (!existing.some(e => e.id === r.id || e.timestamp === r.created_at)) {
+            if (!existing.some(e => e.id === r.id || (e.timestamp === r.created_at && e.message === (r.message || r.title)))) {
               updated = true
-              next[empId] = [{
+              const entry = {
                 id: r.id || Date.now(),
                 message: r.message || r.title,
                 sender_name: senderName,
                 sender_email: r.sender_email || r.recipient_email || '',
                 timestamp: r.created_at || new Date().toISOString(),
                 read: false
-              }, ...existing]
-
-              showToast(`💬 Reply from ${senderName}: "${r.message || r.title}"`, 'info')
+              }
+              next[empId] = [entry, ...existing]
+              if (!isFirstFetchRepliesRef.current) {
+                newlyAddedToToast.push(entry)
+              }
             }
           })
-          if (updated) localStorage.setItem('tc_executive_replies', JSON.stringify(next))
+
+          if (updated) {
+            localStorage.setItem('tc_executive_replies', JSON.stringify(next))
+          }
+          isFirstFetchRepliesRef.current = false
           return updated ? next : prev
         })
+
+        // Fire toast notification OUTSIDE state updater to prevent React render-in-render warning
+        if (newlyAddedToToast.length > 0) {
+          if (newlyAddedToToast.length === 1) {
+            const item = newlyAddedToToast[0]
+            showToast(`💬 Reply from ${item.sender_name}: "${item.message}"`, 'info')
+          } else {
+            const senders = Array.from(new Set(newlyAddedToToast.map(i => i.sender_name)))
+            if (senders.length === 1) {
+              const sender = senders[0]
+              const latestMsg = newlyAddedToToast[0].message
+              showToast(`💬 ${newlyAddedToToast.length} replies from ${sender} (Latest: "${latestMsg}")`, 'info')
+            } else {
+              showToast(`💬 ${newlyAddedToToast.length} new replies from ${senders.join(', ')}`, 'info')
+            }
+          }
+        }
       } catch (e) { console.warn('Fetch replies err:', e) }
     }
 

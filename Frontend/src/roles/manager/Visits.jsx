@@ -317,7 +317,10 @@ export default function ManagerVisits() {
 
   // Fetch Field Visit Audit Data from backend API and LocalStorage
   const fetchTeamAuditData = async () => {
-    setLoading(true)
+    if (!visits || visits.length === 0) {
+      setLoading(true)
+    }
+    const timer = setTimeout(() => setLoading(false), 2500)
     try {
       const params = {}
       if (selectedSE !== 'All') params.sales_executive_id = selectedSE
