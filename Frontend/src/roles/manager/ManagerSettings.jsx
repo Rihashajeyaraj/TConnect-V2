@@ -3,6 +3,7 @@ import { Settings, Lock, Bell, Globe, LogOut, ShieldCheck, User } from 'lucide-r
 import { useToast } from '../../common/ToastContext.jsx'
 import { useNavigate } from 'react-router-dom'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
+import { clearUserCache } from '../../utils/userScope.js'
 
 export default function ManagerSettings() {
   const { showToast } = useToast()
@@ -30,12 +31,7 @@ export default function ManagerSettings() {
   }
 
   const handleLogout = () => {
-    localStorage.removeItem('token')
-    localStorage.removeItem('access_token')
-    localStorage.removeItem('user')
-    localStorage.removeItem('role')
-    localStorage.removeItem('user_role')
-    sessionStorage.clear()
+    clearUserCache()
     showToast('Logged out successfully', 'info')
     window.location.href = '/'
   }

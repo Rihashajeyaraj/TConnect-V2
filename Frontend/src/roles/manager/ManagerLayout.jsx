@@ -834,6 +834,11 @@ export default function ManagerLayout() {
                     {isCustomizing && <GripVertical size={15} className="text-slate-400 shrink-0" />}
                     <Icon className={`w-5 h-5 shrink-0 ${!isCustomizing && isActive ? 'text-[#f5ab27]' : 'text-slate-400'}`} />
                     <span className="truncate tracking-tight">{item.label}</span>
+                    {unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
+                      <span className="ml-auto bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
+                        🔴 {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                    )}
                   </Link>
                 </div>
               )

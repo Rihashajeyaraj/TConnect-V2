@@ -1,9 +1,34 @@
+import { useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import BrandPanel from './BrandPanel.jsx'
 import LoginForm from './LoginForm.jsx'
-
+import authSession from '../utils/authSession.js'
 import chennaiMapBg from '../assets/chennai-map-bg.png'
 
 function LoginPage() {
+  const navigate = useNavigate()
+
+  const session = authSession.restoreSession()
+  const isAuthenticated = Boolean(session && session.token && session.user)
+
+  useEffect(() => {
+    if (isAuthenticated && session?.user) {
+      const targetRoute = authSession.getDashboardForUser(session.user)
+      navigate(targetRoute, { replace: true })
+    }
+  }, [isAuthenticated, session, navigate])
+
+  if (isAuthenticated) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-white font-sans">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-2 border-blue-500/20 border-t-blue-500 rounded-full animate-spin"></div>
+          <span className="text-xs font-bold text-slate-400 tracking-wider uppercase">Loading TwiteConnect...</span>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <main className="min-h-screen lg:h-screen lg:max-h-screen overflow-y-auto lg:overflow-hidden bg-sky-50 flex flex-col justify-between p-4 font-sans relative outer-map-grid">
       {/* Map effect style block for outer background */}

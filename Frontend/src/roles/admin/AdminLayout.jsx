@@ -904,6 +904,11 @@ function AdminLayout() {
                     {isCustomizing && <GripVertical size={14} className="text-slate-450 shrink-0" />}
                     <Icon className={`w-4 h-4 ${!isCustomizing && isActive ? 'text-[#0B2545]' : 'text-[#D4ECFC]'}`} />
                     <span>{item.label}</span>
+                    {unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
+                      <span className="ml-auto bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
+                        🔴 {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                    )}
                   </Link>
                 </div>
               )

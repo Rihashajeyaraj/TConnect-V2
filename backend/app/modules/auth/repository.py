@@ -61,3 +61,7 @@ class AuthRepository:
             pass
         return None
 
+    def refresh_session(self, refresh_token: str) -> Dict[str, Any]:
+        return self.supabase.auth.refresh_session(refresh_token)
+
+

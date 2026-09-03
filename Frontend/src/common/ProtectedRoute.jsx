@@ -1,40 +1,27 @@
 import { useEffect } from 'react'
 import { Navigate, Outlet } from 'react-router-dom'
 import { useToast } from './ToastContext.jsx'
+import authSession from '../utils/authSession.js'
 
 function ProtectedRoute({ allowedRoles }) {
   const { showToast } = useToast()
-  const rawToken = localStorage.getItem('token') || localStorage.getItem('access_token') || localStorage.getItem('tc_persistent_token')
-  const userStr = localStorage.getItem('user') || localStorage.getItem('tc_persistent_user')
+  
+  // Restore session synchronously on mount / render
+  const session = authSession.restoreSession()
+  const token = session?.token || null
+  const user = session?.user || null
 
-  const token = rawToken && rawToken !== 'undefined' && rawToken !== 'null' ? rawToken : null
-
-  // Auto-restore active session into primary storage if missing
-  if (token && !localStorage.getItem('token')) {
-    try { localStorage.setItem('token', token) } catch (_) {}
-  }
-  if (userStr && !localStorage.getItem('user')) {
-    try { localStorage.setItem('user', userStr) } catch (_) {}
-  }
-
-  let user = null
-  try {
-    if (userStr && userStr !== 'undefined' && userStr !== 'null') {
-      user = JSON.parse(userStr)
-    }
-  } catch (e) {
-    user = null
-  }
-
-  const userRole = (user?.role || '').toLowerCase()
   const isAuthenticated = Boolean(token && user && typeof user === 'object')
+  const userNormalizedRole = authSession.normalizeRole(user)
+  const rawRoleStr = String(user?.role || user?.designation || '').toLowerCase()
 
   const isAllowed = isAuthenticated && (!allowedRoles || allowedRoles.length === 0 || allowedRoles.some((r) => {
-    const roleLower = r.toLowerCase()
-    if (roleLower === 'ceo' && (userRole.includes('ceo') || userRole.includes('founder') || userRole.includes('chief executive'))) {
-      return true
-    }
-    return userRole.includes(roleLower) || roleLower.includes(userRole)
+    const roleLower = String(r).toLowerCase()
+    if (roleLower === 'ceo' && userNormalizedRole === 'ceo') return true
+    if (roleLower === 'admin' && userNormalizedRole === 'admin') return true
+    if (roleLower === 'manager' && userNormalizedRole === 'manager') return true
+    if ((roleLower === 'sales' || roleLower.includes('executive')) && userNormalizedRole === 'sales') return true
+    return rawRoleStr.includes(roleLower) || roleLower.includes(rawRoleStr) || userNormalizedRole === roleLower
   }))
 
   // ALL HOOKS MUST BE AT THE TOP OF THE COMPONENT (Before any early returns)
@@ -50,16 +37,8 @@ function ProtectedRoute({ allowedRoles }) {
   }
 
   if (!isAllowed) {
-    if (userRole.includes('ceo') || userRole.includes('founder') || userRole.includes('chief executive')) {
-      return <Navigate to="/ceo" replace />
-    } else if (userRole.includes('admin') || userRole.includes('super')) {
-      return <Navigate to="/admin" replace />
-    } else if (userRole.includes('manager')) {
-      return <Navigate to="/manager" replace />
-    } else if (userRole.includes('sales') || userRole.includes('executive')) {
-      return <Navigate to="/sales" replace />
-    }
-    return <Navigate to="/" replace />
+    const fallbackRoute = authSession.getDashboardForUser(user)
+    return <Navigate to={fallbackRoute} replace />
   }
 
   return <Outlet />

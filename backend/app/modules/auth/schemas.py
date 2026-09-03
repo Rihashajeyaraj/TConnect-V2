@@ -17,6 +17,10 @@ class DevTokenRequest(BaseModel):
     role: Optional[str] = "Super Admin"
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str
+
+
 class AuthTokenResponse(BaseModel):
     access_token: str
     refresh_token: Optional[str] = None

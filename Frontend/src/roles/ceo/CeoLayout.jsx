@@ -490,7 +490,12 @@ function CeoLayout() {
                     {!isSidebarCollapsed && (
                       <span className="truncate flex-1 text-left text-xs sm:text-sm">{item.label}</span>
                     )}
-                    {!isSidebarCollapsed && item.badge && (
+                    {!isSidebarCollapsed && unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
+                      <span className="ml-auto bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
+                        🔴 {unreadCount > 99 ? '99+' : unreadCount}
+                      </span>
+                    )}
+                    {!isSidebarCollapsed && item.badge && !(item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
                       <span
                         className={`rounded-full px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-extrabold ${
                           !isCustomizing && active

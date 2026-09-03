@@ -11,13 +11,19 @@ import PwaInstallPrompt from './common/PwaInstallPrompt.jsx'
 // ── Resilient Lazy Import Wrapper ──────────────────────────────────────
 const lazyWithRetry = (componentImport) =>
   lazy(async () => {
+    const pageHasAlreadyBeenReloaded = sessionStorage.getItem('tc_chunk_reloaded')
     try {
-      return await componentImport()
+      const component = await componentImport()
+      sessionStorage.removeItem('tc_chunk_reloaded')
+      return component
     } catch (error) {
-      console.warn('Retrying dynamic module import:', error)
-      // Force page reload on stale HMR chunk if needed
-      window.location.reload()
-      return new Promise(() => {})
+      console.warn('Retrying dynamic module import after deployment update:', error)
+      if (!pageHasAlreadyBeenReloaded) {
+        sessionStorage.setItem('tc_chunk_reloaded', 'true')
+        window.location.reload()
+        return new Promise(() => {})
+      }
+      throw error
     }
   })
 
@@ -35,45 +41,45 @@ const CeoSettings = lazyWithRetry(() => import('./roles/ceo/Settings.jsx'))
 const CeoExpenses = lazyWithRetry(() => import('./roles/ceo/Expenses.jsx'))
 
 // Admin Portal
-const AdminLayout = lazy(() => import('./roles/admin/AdminLayout.jsx'))
-const AdminDashboard = lazy(() => import('./roles/admin/AdminDashboard.jsx'))
-const CompanyOverview = lazy(() => import('./roles/admin/CompanyOverview.jsx'))
-const UserManagement = lazy(() => import('./roles/admin/UserManagement.jsx'))
-const RoleManagement = lazy(() => import('./roles/admin/RoleManagement.jsx'))
-const AdminReports = lazy(() => import('./roles/admin/AdminReports.jsx'))
-const AdminSettings = lazy(() => import('./roles/admin/AdminSettings.jsx'))
+const AdminLayout = lazyWithRetry(() => import('./roles/admin/AdminLayout.jsx'))
+const AdminDashboard = lazyWithRetry(() => import('./roles/admin/AdminDashboard.jsx'))
+const CompanyOverview = lazyWithRetry(() => import('./roles/admin/CompanyOverview.jsx'))
+const UserManagement = lazyWithRetry(() => import('./roles/admin/UserManagement.jsx'))
+const RoleManagement = lazyWithRetry(() => import('./roles/admin/RoleManagement.jsx'))
+const AdminReports = lazyWithRetry(() => import('./roles/admin/AdminReports.jsx'))
+const AdminSettings = lazyWithRetry(() => import('./roles/admin/AdminSettings.jsx'))
 
 // Manager Portal
-const ManagerLayout = lazy(() => import('./roles/manager/ManagerLayout.jsx'))
-const ManagerDashboard = lazy(() => import('./roles/manager/ManagerDashboard.jsx'))
-const ManagerTeam = lazy(() => import('./roles/manager/ManagerTeam.jsx'))
-const ManagerLeads = lazy(() => import('./roles/manager/Leads.jsx'))
-const ManagerCustomers = lazy(() => import('./roles/manager/ManagerCustomers.jsx'))
-const ManagerVisits = lazy(() => import('./roles/manager/ManagerVisits.jsx'))
-const ManagerAttendance = lazy(() => import('./roles/manager/ManagerAttendance.jsx'))
-const ManagerFollowups = lazy(() => import('./roles/manager/ManagerFollowups.jsx'))
-const ManagerOpportunities = lazy(() => import('./roles/manager/ManagerOpportunities.jsx'))
-const ManagerExpenses = lazy(() => import('./roles/manager/ManagerExpenses.jsx'))
-const ManagerReports = lazy(() => import('./roles/manager/ManagerReports.jsx'))
-const ManagerNotifications = lazy(() => import('./roles/manager/ManagerNotifications.jsx'))
-const ManagerLeaderboard = lazy(() => import('./roles/manager/ManagerLeaderboard.jsx'))
-const ManagerCalendar = lazy(() => import('./roles/manager/ManagerCalendar.jsx'))
-const ManagerHrms = lazy(() => import('./roles/manager/ManagerHrms.jsx'))
-const ManagerSettings = lazy(() => import('./roles/manager/ManagerSettings.jsx'))
-const ManagerSmartMap = lazy(() => import('./roles/manager/ManagerSmartMap.jsx'))
+const ManagerLayout = lazyWithRetry(() => import('./roles/manager/ManagerLayout.jsx'))
+const ManagerDashboard = lazyWithRetry(() => import('./roles/manager/ManagerDashboard.jsx'))
+const ManagerTeam = lazyWithRetry(() => import('./roles/manager/ManagerTeam.jsx'))
+const ManagerLeads = lazyWithRetry(() => import('./roles/manager/Leads.jsx'))
+const ManagerCustomers = lazyWithRetry(() => import('./roles/manager/ManagerCustomers.jsx'))
+const ManagerVisits = lazyWithRetry(() => import('./roles/manager/ManagerVisits.jsx'))
+const ManagerAttendance = lazyWithRetry(() => import('./roles/manager/ManagerAttendance.jsx'))
+const ManagerFollowups = lazyWithRetry(() => import('./roles/manager/ManagerFollowups.jsx'))
+const ManagerOpportunities = lazyWithRetry(() => import('./roles/manager/ManagerOpportunities.jsx'))
+const ManagerExpenses = lazyWithRetry(() => import('./roles/manager/ManagerExpenses.jsx'))
+const ManagerReports = lazyWithRetry(() => import('./roles/manager/ManagerReports.jsx'))
+const ManagerNotifications = lazyWithRetry(() => import('./roles/manager/ManagerNotifications.jsx'))
+const ManagerLeaderboard = lazyWithRetry(() => import('./roles/manager/ManagerLeaderboard.jsx'))
+const ManagerCalendar = lazyWithRetry(() => import('./roles/manager/ManagerCalendar.jsx'))
+const ManagerHrms = lazyWithRetry(() => import('./roles/manager/ManagerHrms.jsx'))
+const ManagerSettings = lazyWithRetry(() => import('./roles/manager/ManagerSettings.jsx'))
+const ManagerSmartMap = lazyWithRetry(() => import('./roles/manager/ManagerSmartMap.jsx'))
 
 // Sales Executive Portal
-const SalesLayout = lazy(() => import('./roles/sales/SalesLayout.jsx'))
-const Dashboard = lazy(() => import('./roles/sales/Dashboard.jsx'))
-const Attendance = lazy(() => import('./roles/sales/Attendance.jsx'))
-const Customers = lazy(() => import('./roles/sales/Customers.jsx'))
-const Expenses = lazy(() => import('./roles/sales/Expenses.jsx'))
-const HRMS = lazy(() => import('./roles/sales/HRMS.jsx'))
-const ClientLog = lazy(() => import('./roles/sales/ClientLog.jsx'))
-const Leads = lazy(() => import('./roles/sales/Leads.jsx'))
-const Notifications = lazy(() => import('./roles/sales/Notifications.jsx'))
-const Todo = lazy(() => import('./roles/sales/Todo.jsx'))
-const SmartClientMap = lazy(() => import('./roles/sales/SmartClientMap.jsx'))
+const SalesLayout = lazyWithRetry(() => import('./roles/sales/SalesLayout.jsx'))
+const Dashboard = lazyWithRetry(() => import('./roles/sales/Dashboard.jsx'))
+const Attendance = lazyWithRetry(() => import('./roles/sales/Attendance.jsx'))
+const Customers = lazyWithRetry(() => import('./roles/sales/Customers.jsx'))
+const Expenses = lazyWithRetry(() => import('./roles/sales/Expenses.jsx'))
+const HRMS = lazyWithRetry(() => import('./roles/sales/HRMS.jsx'))
+const ClientLog = lazyWithRetry(() => import('./roles/sales/ClientLog.jsx'))
+const Leads = lazyWithRetry(() => import('./roles/sales/Leads.jsx'))
+const Notifications = lazyWithRetry(() => import('./roles/sales/Notifications.jsx'))
+const Todo = lazyWithRetry(() => import('./roles/sales/Todo.jsx'))
+const SmartClientMap = lazyWithRetry(() => import('./roles/sales/SmartClientMap.jsx'))
 
 const SALES_ROLES = [
   'sales', 'executive', 'Sales Executive',

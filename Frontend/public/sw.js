@@ -1,4 +1,4 @@
-const CACHE_NAME = 'twiteconnect-v1'
+const CACHE_NAME = 'twiteconnect-v3'
 const ASSETS_TO_CACHE = [
   '/',
   '/index.html',
@@ -37,6 +37,24 @@ self.addEventListener('fetch', (event) => {
     return
   }
 
+  // Bypass cache for JS/CSS assets to allow Vite lazy imports & dynamic module reloading
+  if (event.request.url.includes('/assets/') || event.request.url.endsWith('.js')) {
+    event.respondWith(
+      fetch(event.request).then((response) => {
+        const contentType = response.headers.get('content-type') || ''
+        // Prevent SPA server returning HTML fallback (index.html) for a missing JS module chunk
+        if (event.request.url.endsWith('.js') && contentType.includes('text/html')) {
+          return new Response('console.warn("Module chunk updated. Refreshing page...");', {
+            status: 404,
+            headers: { 'Content-Type': 'application/javascript' }
+          })
+        }
+        return response
+      }).catch(() => caches.match(event.request))
+    )
+    return
+  }
+
   event.respondWith(
     fetch(event.request)
       .then((response) => {
@@ -61,6 +79,12 @@ self.addEventListener('push', (event) => {
     } catch (_) {
       data.message = event.data.text();
     }
+  }
+
+  // Update OS Taskbar & App Icon Badge on background Web Push
+  if ('setAppBadge' in self.navigator) {
+    const unread = Number(data.unread_count || data.count) || 1;
+    self.navigator.setAppBadge(unread).catch(() => {});
   }
 
   const options = {

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, status
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
-from app.modules.auth.schemas import LoginRequest, SignUpRequest, DevTokenRequest, AuthTokenResponse, ForgotPasswordRequest, ChangePasswordRequest
+from app.modules.auth.schemas import LoginRequest, SignUpRequest, DevTokenRequest, AuthTokenResponse, ForgotPasswordRequest, ChangePasswordRequest, RefreshTokenRequest
 from app.modules.auth.service import AuthService
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -9,6 +9,19 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 def get_service() -> AuthService:
     return AuthService()
+
+
+@router.post("/refresh", response_model=StandardResponse)
+async def refresh_token(
+    payload: RefreshTokenRequest,
+    service: AuthService = Depends(get_service)
+):
+    """Silently refresh session using a valid refresh token."""
+    token_data = service.refresh_session(payload.refresh_token)
+    return StandardResponse.success_response(
+        data=token_data,
+        message="Session refreshed successfully"
+    )
 
 
 @router.post("/dev-token", response_model=StandardResponse)

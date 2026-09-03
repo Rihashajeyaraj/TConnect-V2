@@ -102,7 +102,11 @@ export function clearUserCache() {
     const keysToRemove = [
       'token',
       'access_token',
+      'refresh_token',
+      'tc_persistent_token',
+      'tc_persistent_refresh_token',
       'user',
+      'tc_persistent_user',
       'role',
       'user_role',
       'tc_sm_leads',

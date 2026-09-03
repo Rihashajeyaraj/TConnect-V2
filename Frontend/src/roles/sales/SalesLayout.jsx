@@ -829,6 +829,7 @@ export default function SalesLayout() {
     { title: "Clients", icon: UserCheck, path: "/sales/customers" },
     { title: "Client Log", icon: ClipboardList, path: "/sales/client-log" },
     { title: "Expenses", icon: BadgeDollarSign, path: "/sales/expenses" },
+    { title: "Messages 💬", icon: Bell, path: "/sales/notifications" },
     { title: "HRMS", icon: ShieldCheck, path: "/sales/hrms" },
     { title: "Tasks", icon: CheckSquare, path: "/sales/todo" },
   ];
@@ -1108,6 +1109,11 @@ export default function SalesLayout() {
                   {isCustomizing && (open || !isMobile) && <GripVertical size={14} className="text-slate-400 shrink-0 mr-1" />}
                   <m.icon size={18} className="flex-shrink-0" />
                   {(open || !isMobile) && <span className="truncate">{m.title}</span>}
+                  {(open || !isMobile) && notifCount > 0 && (m.path.includes("notifications") || m.title.includes("Message")) && (
+                    <span className="ml-auto bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
+                      🔴 {notifCount > 99 ? '99+' : notifCount}
+                    </span>
+                  )}
                 </NavLink>
               </div>
             ))}
