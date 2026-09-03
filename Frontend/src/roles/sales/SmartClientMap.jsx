@@ -270,14 +270,16 @@ export default function SmartClientMap() {
   const [isReplying, setIsReplying] = useState(false)
 
 
+  // In-memory set for instantly dismissed inquiry IDs/keys
+  const dismissedInquiryIdsRef = useRef(new Set())
+
   // Composite fingerprint for an inquiry to avoid ID mismatch or repeat popups
   const getInquiryKey = (n) => {
     if (!n) return ''
     const id = n.id || n.notification_id
     if (id) return String(id).toLowerCase().trim()
     const msg = n.message || n.description || n.title || ''
-    const time = n.created_at || n.timestamp || ''
-    return `${msg}:${time}`.toLowerCase().trim()
+    return String(msg).toLowerCase().trim()
   }
 
   // Helper for persistent handled inquiry keys across page reloads
@@ -286,7 +288,7 @@ export default function SmartClientMap() {
       const raw = localStorage.getItem('tc_handled_inquiry_keys')
       if (!raw) return new Set()
       const arr = JSON.parse(raw)
-      return new Set(arr.map(String).filter(Boolean))
+      return new Set(arr.map(x => String(x).toLowerCase().trim()).filter(Boolean))
     } catch {
       return new Set()
     }
@@ -298,11 +300,15 @@ export default function SmartClientMap() {
       const keys = getHandledInquiryKeys()
       const key = getInquiryKey(inquiry)
       if (key) keys.add(key)
-      if (inquiry.id) keys.add(String(inquiry.id))
-      if (inquiry.notification_id) keys.add(String(inquiry.notification_id))
+      if (inquiry.id) keys.add(String(inquiry.id).toLowerCase().trim())
+      if (inquiry.notification_id) keys.add(String(inquiry.notification_id).toLowerCase().trim())
       if (inquiry.message) keys.add(String(inquiry.message).toLowerCase().trim())
       if (inquiry.title) keys.add(String(inquiry.title).toLowerCase().trim())
-      localStorage.setItem('tc_handled_inquiry_keys', JSON.stringify(Array.from(keys).slice(-200)))
+      
+      // Also record in memory for instant filtering
+      keys.forEach(k => dismissedInquiryIdsRef.current.add(k))
+
+      localStorage.setItem('tc_handled_inquiry_keys', JSON.stringify(Array.from(keys).slice(-300)))
     } catch (e) { console.warn('Save handled inquiry key err:', e) }
   }
 
@@ -320,9 +326,18 @@ export default function SmartClientMap() {
           if (n.read || n.is_read) return false
           
           const key = getInquiryKey(n)
-          const rawId = String(n.id || n.notification_id || '')
+          const rawId = String(n.id || n.notification_id || '').toLowerCase().trim()
           const rawMsg = String(n.message || n.description || '').toLowerCase().trim()
-          if (handledKeys.has(key) || (rawId && handledKeys.has(rawId)) || (rawMsg && handledKeys.has(rawMsg))) return false
+
+          // Check both in-memory dismissals and localStorage
+          if (dismissedInquiryIdsRef.current.has(key) || 
+              (rawId && dismissedInquiryIdsRef.current.has(rawId)) || 
+              (rawMsg && dismissedInquiryIdsRef.current.has(rawMsg)) ||
+              handledKeys.has(key) || 
+              (rawId && handledKeys.has(rawId)) || 
+              (rawMsg && handledKeys.has(rawMsg))) {
+            return false
+          }
           return true
         })
 
@@ -330,8 +345,12 @@ export default function SmartClientMap() {
           const nextInquiry = inquiries[0]
           const nextKey = getInquiryKey(nextInquiry)
           if (activeInquiryRef.current && getInquiryKey(activeInquiryRef.current) === nextKey) return
-          activeInquiryRef.current = nextInquiry
-          setActiveInquiry(nextInquiry)
+          
+          // Only pop up if not recently dismissed
+          if (!dismissedInquiryIdsRef.current.has(nextKey)) {
+            activeInquiryRef.current = nextInquiry
+            setActiveInquiry(nextInquiry)
+          }
         } else if (activeInquiryRef.current) {
           activeInquiryRef.current = null
           setActiveInquiry(null)

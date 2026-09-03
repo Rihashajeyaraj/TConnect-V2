@@ -84,9 +84,7 @@ class NotificationRepository:
             email_match = bool(r_email and user_email and r_email == user_email)
             id_match = bool(r_id and (
                 (user_id_str and r_id == user_id_str) or
-                (user_emp_code and r_id == user_emp_code) or
-                (user_id_str and r_id in user_id_str) or
-                (user_emp_code and r_id in user_emp_code)
+                (user_emp_code and r_id == user_emp_code)
             ))
 
             role_match = (
