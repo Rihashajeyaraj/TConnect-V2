@@ -13,15 +13,14 @@ import { loadGoogleMaps } from '../../utils/loadGoogleMaps.js'
 import { filterUserItems } from '../../utils/userScope.js'
 import { detectRouteClients, shouldNotify } from '../../utils/routeProximityUtils.js'
 
-// ─── Configuration ────────────────────────────────────────────────────────────
-// Minimum GPS movement (km) before re-fetching OSRM route (debounce)
-const ROUTE_REFETCH_DISTANCE_KM    = 0.05  // 50m
-// Distance from route polyline (km) that triggers "off-route" warning
-const OFF_ROUTE_THRESHOLD_KM       = 0.15  // 150m
-// Distance from destination (km) that triggers "near destination" warning
-const ARRIVAL_RADIUS_KM            = 0.05  // 50m
+import MAP_CONFIG from '../../config/mapConfig.js'
 
-const DEFAULT_CENTER = { lat: 13.0067, lng: 80.2570 } // Adyar, Chennai
+// ─── Configuration (Centralized Technical Thresholds & Fallback Viewport) ─────
+const ROUTE_REFETCH_DISTANCE_KM = MAP_CONFIG.ROUTE_REFETCH_DISTANCE_KM
+const OFF_ROUTE_THRESHOLD_KM    = MAP_CONFIG.OFF_ROUTE_THRESHOLD_KM
+const ARRIVAL_RADIUS_KM         = MAP_CONFIG.ARRIVAL_RADIUS_KM
+const DEFAULT_CENTER            = MAP_CONFIG.DEFAULT_VIEWPORT_CENTER
+
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 export function haversineDistance(lat1, lon1, lat2, lon2) {
@@ -267,8 +266,13 @@ export default function SmartClientMap() {
 
   // ── Executive Mobile Inquiry Response State ────────────────────────────────
   const [activeInquiry, setActiveInquiry] = useState(null)
+  const [showInquiryDrawer, setShowInquiryDrawer] = useState(false)
   const [replyText, setReplyText] = useState('')
   const [isReplying, setIsReplying] = useState(false)
+
+
+  // In-memory set for instantly dismissed inquiry IDs/keys
+  const dismissedInquiryIdsRef = useRef(new Set())
 
   // Composite fingerprint for an inquiry to avoid ID mismatch or repeat popups
   const getInquiryKey = (n) => {
@@ -276,8 +280,7 @@ export default function SmartClientMap() {
     const id = n.id || n.notification_id
     if (id) return String(id).toLowerCase().trim()
     const msg = n.message || n.description || n.title || ''
-    const time = n.created_at || n.timestamp || ''
-    return `${msg}:${time}`.toLowerCase().trim()
+    return String(msg).toLowerCase().trim()
   }
 
   // Helper for persistent handled inquiry keys across page reloads
@@ -286,8 +289,7 @@ export default function SmartClientMap() {
       const raw = localStorage.getItem('tc_handled_inquiry_keys')
       if (!raw) return new Set()
       const arr = JSON.parse(raw)
-      const validKeys = arr.filter(k => k && k.length > 5 && !k.startsWith(':'))
-      return new Set(validKeys)
+      return new Set(arr.map(x => String(x).toLowerCase().trim()).filter(Boolean))
     } catch {
       return new Set()
     }
@@ -295,13 +297,19 @@ export default function SmartClientMap() {
 
   const addHandledInquiryKey = (inquiry) => {
     if (!inquiry) return
-    const key = getInquiryKey(inquiry)
     try {
       const keys = getHandledInquiryKeys()
+      const key = getInquiryKey(inquiry)
       if (key) keys.add(key)
-      if (inquiry.id) keys.add(String(inquiry.id))
-      if (inquiry.notification_id) keys.add(String(inquiry.notification_id))
-      localStorage.setItem('tc_handled_inquiry_keys', JSON.stringify(Array.from(keys).slice(-100)))
+      if (inquiry.id) keys.add(String(inquiry.id).toLowerCase().trim())
+      if (inquiry.notification_id) keys.add(String(inquiry.notification_id).toLowerCase().trim())
+      if (inquiry.message) keys.add(String(inquiry.message).toLowerCase().trim())
+      if (inquiry.title) keys.add(String(inquiry.title).toLowerCase().trim())
+      
+      // Also record in memory for instant filtering
+      keys.forEach(k => dismissedInquiryIdsRef.current.add(k))
+
+      localStorage.setItem('tc_handled_inquiry_keys', JSON.stringify(Array.from(keys).slice(-300)))
     } catch (e) { console.warn('Save handled inquiry key err:', e) }
   }
 
@@ -319,8 +327,18 @@ export default function SmartClientMap() {
           if (n.read || n.is_read) return false
           
           const key = getInquiryKey(n)
-          const rawId = String(n.id || n.notification_id || '')
-          if (handledKeys.has(key) || (rawId && handledKeys.has(rawId))) return false
+          const rawId = String(n.id || n.notification_id || '').toLowerCase().trim()
+          const rawMsg = String(n.message || n.description || '').toLowerCase().trim()
+
+          // Check both in-memory dismissals and localStorage
+          if (dismissedInquiryIdsRef.current.has(key) || 
+              (rawId && dismissedInquiryIdsRef.current.has(rawId)) || 
+              (rawMsg && dismissedInquiryIdsRef.current.has(rawMsg)) ||
+              handledKeys.has(key) || 
+              (rawId && handledKeys.has(rawId)) || 
+              (rawMsg && handledKeys.has(rawMsg))) {
+            return false
+          }
           return true
         })
 
@@ -328,8 +346,15 @@ export default function SmartClientMap() {
           const nextInquiry = inquiries[0]
           const nextKey = getInquiryKey(nextInquiry)
           if (activeInquiryRef.current && getInquiryKey(activeInquiryRef.current) === nextKey) return
-          activeInquiryRef.current = nextInquiry
-          setActiveInquiry(nextInquiry)
+          
+          // Only pop up if not recently dismissed
+          if (!dismissedInquiryIdsRef.current.has(nextKey)) {
+            activeInquiryRef.current = nextInquiry
+            setActiveInquiry(nextInquiry)
+          }
+        } else if (activeInquiryRef.current) {
+          activeInquiryRef.current = null
+          setActiveInquiry(null)
         }
       } catch (e) { console.warn('Inquiry check err:', e) }
     }
@@ -340,20 +365,24 @@ export default function SmartClientMap() {
   }, [currentUser?.email])
 
   const handleDismissInquiry = (inquiry) => {
+    const targetInquiry = inquiry || activeInquiry || activeInquiryRef.current
     activeInquiryRef.current = null
     setActiveInquiry(null)
+    setShowInquiryDrawer(false)
     setReplyText('')
 
     try {
-      if (inquiry) {
-        addHandledInquiryKey(inquiry)
-        const notifId = String(inquiry.id || inquiry.notification_id || '')
+      if (targetInquiry) {
+        addHandledInquiryKey(targetInquiry)
+        const notifId = String(targetInquiry.id || targetInquiry.notification_id || '')
         if (notifId) notificationAPI.markRead(notifId).catch(() => null)
       }
+      window.dispatchEvent(new Event('tc_notifications_updated'))
     } catch (e) {
       console.warn('Dismiss inquiry notice:', e)
     }
   }
+
 
   const handleSendReplyToManager = async (chipText) => {
     const textToSend = chipText || replyText
@@ -386,6 +415,8 @@ export default function SmartClientMap() {
       })
       showToast('Reply sent to Manager!', 'success')
       setReplyText('')
+      setShowInquiryDrawer(false)
+      window.dispatchEvent(new Event('tc_notifications_updated'))
     } catch (err) {
       showToast('Failed to send reply', 'error')
     } finally {
@@ -478,9 +509,10 @@ export default function SmartClientMap() {
         setGpsAccuracy(accuracy || null)
         setGpsStatus('active')
 
-        // Throttled backend telemetry - max once per 10 seconds to avoid overloading Supabase
+        // Rapid backend telemetry - max once per 2 seconds for instant tracking updates
         const now = Date.now()
-        if (now - lastTelemetryUpdate.current > 10000) {
+        if (now - lastTelemetryUpdate.current > 2000) {
+
           lastTelemetryUpdate.current = now
           spatialAPI.updateLocation({
             email:         currentUser?.email || 'executive@tconnect.com',
@@ -719,10 +751,10 @@ export default function SmartClientMap() {
         if (savedNav && savedNav.selectedStop && savedNav.selectedStop.has_exact_coords) {
           console.log('[SmartClientMap] Restoring active navigation to:', savedNav.selectedStop.title)
           setSelectedStop(savedNav.selectedStop)
-          setSelectedEntity(savedNav.selectedStop)
           fetchRoute(savedNav.selectedStop)
           setNavMode(true)
           setNavDestination(savedNav.navDestination || { lat: savedNav.selectedStop.latitude, lng: savedNav.selectedStop.longitude })
+
         }
       }
     } catch (e) {
@@ -1387,27 +1419,47 @@ export default function SmartClientMap() {
         </div>
       )}
 
-      {/* ══ DESKTOP: NAV STATUS (top-right) ══ */}
-      {!isMobile && navMode && (
-        <div className="hidden md:block absolute top-4 right-4 z-[1000] space-y-2">
+      {/* ══ DESKTOP & MOBILE TOP-RIGHT CONTROLS (NAV STATUS + MANAGER INQUIRY BUTTON) ══ */}
+      <div className="absolute top-3 right-3 z-[1000] flex flex-col items-end gap-2">
+        {!isMobile && navMode && (
           <div className="bg-blue-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2">
             <Activity size={13} className="animate-pulse" />
             <span className="text-xs font-black">Navigation Active</span>
           </div>
-          {offRoute && (
-            <div className="bg-rose-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2 animate-pulse">
-              <AlertTriangle size={13} />
-              <div><p className="text-[10px] font-black">Off route.</p><p className="text-[9px] text-rose-200">Recalculating…</p></div>
-            </div>
-          )}
-          {nearDestination && !offRoute && (
-            <div className="bg-emerald-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2">
-              <Target size={13} />
-              <p className="text-[10px] font-black">Near destination!</p>
-            </div>
-          )}
-        </div>
-      )}
+        )}
+        <button
+          onClick={() => {
+            if (activeInquiry) setActiveInquiry(activeInquiry)
+            setShowInquiryDrawer(prev => !prev)
+          }}
+          className={`rounded-2xl shadow-2xl px-3.5 py-2 flex items-center gap-2 transition active:scale-95 cursor-pointer border-2 border-white ${
+            activeInquiry
+              ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white animate-bounce'
+              : 'bg-slate-900 hover:bg-slate-800 text-white'
+          }`}
+          title="Click to view & reply to Manager Inquiry"
+        >
+          <MessageSquare size={15} />
+          <span className="text-xs font-black">
+            {activeInquiry ? '⚡ Manager Inquiry (1)' : '💬 Message Manager'}
+          </span>
+          {activeInquiry && <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping" />}
+        </button>
+
+        {!isMobile && offRoute && (
+          <div className="bg-rose-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2 animate-pulse">
+            <AlertTriangle size={13} />
+            <div><p className="text-[10px] font-black">Off route.</p><p className="text-[9px] text-rose-200">Recalculating…</p></div>
+          </div>
+        )}
+        {!isMobile && nearDestination && !offRoute && (
+          <div className="bg-emerald-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2">
+            <Target size={13} />
+            <p className="text-[10px] font-black">Near destination!</p>
+          </div>
+        )}
+      </div>
+
 
       {/* ══ MOBILE: CENTERED TOP BANNERS (nav/off-route) ══ */}
       {isMobile && navMode && offRoute && (
@@ -1675,52 +1727,50 @@ export default function SmartClientMap() {
         </div>
       )}
 
-      {/* ══ MOBILE-FIRST MANAGER INQUIRY POPUP MODAL ══ */}
-      {activeInquiry && (
-        <div
-          onClick={(e) => {
-            if (e.target === e.currentTarget) handleDismissInquiry(activeInquiry)
-          }}
-          className="fixed inset-0 z-[9999] bg-slate-950/70 backdrop-blur-xs flex items-end md:items-center justify-center p-0 md:p-4 cursor-pointer"
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white rounded-t-3xl md:rounded-3xl w-full md:max-w-md p-5 shadow-2xl border border-slate-100 animate-in slide-in-from-bottom duration-200 space-y-4 cursor-default"
-          >
+      {/* ══ DOCKED CORNER FLOATING MANAGER INQUIRY CARD ON EXECUTIVE MAP ══ */}
+      {(activeInquiry || showInquiryDrawer) && (
+        <div className="absolute top-14 right-3 left-3 md:left-auto md:w-[380px] z-[9999] animate-in slide-in-from-top-4 duration-300">
+          <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-4 shadow-2xl border-2 border-amber-400/80 space-y-3">
             
-            {/* Mobile Drag Handle */}
-            <div className="md:hidden flex justify-center pb-1">
-              <div className="w-10 h-1 bg-slate-200 rounded-full" />
-            </div>
-
             {/* Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-amber-500 text-white flex items-center justify-center font-black text-lg shadow-md animate-pulse">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-sm shadow-md animate-pulse">
                   ⚡
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">Manager Status Check</h3>
-                  <p className="text-[10px] font-semibold text-slate-400">Tap 1-Touch Reply Below</p>
+                  <h3 className="text-xs font-black text-slate-900 leading-tight">
+                    {activeInquiry ? 'Manager Status Inquiry' : 'Status Reply to Manager'}
+                  </h3>
+                  <p className="text-[9px] font-bold text-amber-600">Tap quick reply below</p>
                 </div>
               </div>
-              <button onClick={() => handleDismissInquiry(activeInquiry)} className="p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-slate-700">
-                <X size={16} />
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleDismissInquiry(activeInquiry);
+                }}
+                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center transition active:scale-90 cursor-pointer shadow-xs"
+                title="Close"
+              >
+                <X size={18} className="stroke-[2.5]" />
               </button>
             </div>
 
             {/* Manager Question Box */}
-            <div className="bg-amber-50 rounded-2xl p-3.5 border border-amber-200/80">
-              <p className="text-xs font-black text-amber-900">
-                "{activeInquiry.message || 'Why are you stopped at this location?'}"
+            <div className="bg-amber-50 rounded-xl p-2.5 border border-amber-200/80">
+              <p className="text-xs font-black text-amber-950">
+                "{activeInquiry?.message || 'Please send your current location status update.'}"
               </p>
-              <span className="text-[9px] font-bold text-amber-700 mt-1 block">From: Manager</span>
+              <span className="text-[9px] font-bold text-amber-700 mt-0.5 block">From: {activeInquiry?.sender_name || 'Sales Manager'}</span>
             </div>
 
-            {/* Large 1-Tap Touch Chips */}
-            <div className="space-y-2">
-              <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Quick Response (1-Tap)</span>
-              <div className="grid grid-cols-2 gap-2">
+            {/* 1-Tap Quick Action Chips */}
+            <div className="space-y-1.5">
+              <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Quick Response (1-Tap)</span>
+              <div className="grid grid-cols-2 gap-1.5">
                 {[
                   { label: '🚦 In Heavy Traffic', reply: 'In heavy traffic. Moving slowly.' },
                   { label: '🤝 Meeting Client', reply: 'Currently inside client office meeting.' },
@@ -1731,38 +1781,66 @@ export default function SmartClientMap() {
                 ].map(chip => (
                   <button
                     key={chip.label}
-                    onClick={() => handleSendReplyToManager(chip.reply)}
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      handleSendReplyToManager(chip.reply)
+                      setShowInquiryDrawer(false)
+                    }}
                     disabled={isReplying}
-                    className="py-3 px-2.5 rounded-2xl bg-slate-50 hover:bg-blue-600 hover:text-white border border-slate-200 text-left text-xs font-black text-slate-800 transition active:scale-95 shadow-2xs flex items-center justify-between cursor-pointer group"
+                    className="py-2 px-2 rounded-xl bg-slate-50 hover:bg-blue-600 hover:text-white border border-slate-200 text-left text-[11px] font-black text-slate-800 transition active:scale-95 flex items-center justify-between cursor-pointer group"
                   >
-                    <span>{chip.label}</span>
-                    <span className="text-xs group-hover:translate-x-0.5 transition">➔</span>
+                    <span className="truncate">{chip.label}</span>
+                    <span className="text-[10px] group-hover:translate-x-0.5 transition">➔</span>
                   </button>
                 ))}
               </div>
             </div>
 
             {/* Custom Reply Box */}
-            <div className="flex gap-2 pt-2 border-t border-slate-100">
+            <div className="flex gap-1.5 pt-2 border-t border-slate-100">
               <input
                 type="text"
                 value={replyText}
                 onChange={e => setReplyText(e.target.value)}
-                placeholder="Or type custom reason…"
-                className="flex-1 px-3 py-2.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+                placeholder="Custom reason..."
+                className="flex-1 px-2.5 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500/30"
               />
               <button
-                onClick={() => handleSendReplyToManager()}
+                type="button"
+                onClick={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  handleSendReplyToManager()
+                  setShowInquiryDrawer(false)
+                }}
                 disabled={isReplying || !replyText.trim()}
-                className="px-4 py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-black shadow-md active:scale-95 transition cursor-pointer"
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white rounded-xl text-xs font-black shadow-md active:scale-95 transition cursor-pointer"
               >
-                {isReplying ? 'Sending…' : 'Send'}
+                {isReplying ? '...' : 'Send'}
               </button>
             </div>
+
+            {/* Direct Close Button */}
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDismissInquiry(activeInquiry);
+              }}
+              className="w-full py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-bold transition text-center cursor-pointer active:scale-95"
+            >
+              Close Window
+            </button>
+
 
           </div>
         </div>
       )}
+
+
     </div>
   )
 }

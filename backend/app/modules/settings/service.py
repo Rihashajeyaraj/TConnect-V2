@@ -38,3 +38,22 @@ class SettingsService:
     def delete_role(self, role_id: str) -> None:
         self.repo.delete_role(role_id)
 
+    def get_landmarks(self) -> List[Dict[str, Any]]:
+        return self.repo.get_landmarks()
+
+    def create_landmark(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repo.create_landmark(data)
+
+    def get_departments(self) -> List[Dict[str, Any]]:
+        return self.repo.get_departments()
+
+    def create_department(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repo.create_department(data)
+
+    def get_document_types(self) -> List[Dict[str, Any]]:
+        return self.repo.get_document_types()
+
+    def create_document_type(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repo.create_document_type(data)
+
+

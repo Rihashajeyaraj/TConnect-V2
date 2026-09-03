@@ -787,3 +787,93 @@ class SettingsRepository:
         if not res_del.data:
             logger.warning(f"Role delete notice: Role {role_id} not found or already deleted.")
 
+    def get_landmarks(self) -> List[Dict[str, Any]]:
+        for schema_attempt in ["organization", "public"]:
+            try:
+                res = self.client.schema(schema_attempt).table("location_landmarks").select("*").eq("is_active", True).execute()
+                if res.data is not None:
+                    return res.data
+            except Exception as e:
+                logger.debug(f"location_landmarks lookup in {schema_attempt}: {e}")
+        return []
+
+    def create_landmark(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        lnd_id = f"LND-{uuid.uuid4().hex[:8]}"
+        payload = {
+            "id": lnd_id,
+            "name": str(data.get("name") or "").strip(),
+            "aliases": data.get("aliases") if isinstance(data.get("aliases"), list) else [],
+            "latitude": float(data.get("latitude") or 13.0067),
+            "longitude": float(data.get("longitude") or 80.2570),
+            "city": str(data.get("city") or "Chennai"),
+            "area": str(data.get("area") or "Chennai South"),
+            "type": str(data.get("type") or "locality"),
+            "is_active": True,
+        }
+        for schema_attempt in ["organization", "public"]:
+            try:
+                res = self.client.schema(schema_attempt).table("location_landmarks").insert(payload).execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            except Exception as e:
+                logger.warning(f"Failed inserting landmark in {schema_attempt}: {e}")
+        return payload
+
+    def get_departments(self) -> List[Dict[str, Any]]:
+        for schema_attempt in ["organization", "public"]:
+            try:
+                res = self.client.schema(schema_attempt).table("departments").select("*").eq("is_active", True).execute()
+                if res.data is not None:
+                    return res.data
+            except Exception as e:
+                logger.debug(f"departments table lookup in {schema_attempt}: {e}")
+        return []
+
+    def create_department(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        dept_id = f"DEPT-{uuid.uuid4().hex[:8]}"
+        payload = {
+            "id": dept_id,
+            "name": str(data.get("name") or "").strip(),
+            "code": str(data.get("code") or "").strip(),
+            "manager_id": str(data.get("manager_id") or ""),
+            "is_active": True,
+        }
+        for schema_attempt in ["organization", "public"]:
+            try:
+                res = self.client.schema(schema_attempt).table("departments").insert(payload).execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            except Exception as e:
+                logger.warning(f"Failed inserting department in {schema_attempt}: {e}")
+        return payload
+
+    def get_document_types(self) -> List[Dict[str, Any]]:
+        for schema_attempt in ["organization", "public"]:
+            try:
+                res = self.client.schema(schema_attempt).table("document_types").select("*").eq("is_active", True).execute()
+                if res.data is not None:
+                    return res.data
+            except Exception as e:
+                logger.debug(f"document_types lookup in {schema_attempt}: {e}")
+        return []
+
+    def create_document_type(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        dct_id = f"DCT-{uuid.uuid4().hex[:8]}"
+        payload = {
+            "id": dct_id,
+            "name": str(data.get("name") or "").strip(),
+            "description": str(data.get("description") or ""),
+            "required": bool(data.get("required", True)),
+            "applicable_role": str(data.get("applicable_role") or "ALL"),
+            "is_active": True,
+        }
+        for schema_attempt in ["organization", "public"]:
+            try:
+                res = self.client.schema(schema_attempt).table("document_types").insert(payload).execute()
+                if res.data and len(res.data) > 0:
+                    return res.data[0]
+            except Exception as e:
+                logger.warning(f"Failed inserting document type in {schema_attempt}: {e}")
+        return payload
+
+

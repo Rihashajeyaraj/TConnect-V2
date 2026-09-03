@@ -34,8 +34,9 @@ export default function ManagerNotifications() {
     try {
       const res = await notificationAPI.getNotifications()
       const raw = Array.isArray(res) ? res : res?.data || []
+      const sorted = [...raw].sort((a, b) => new Date(b.created_at || b.timestamp || 0) - new Date(a.created_at || a.timestamp || 0))
       setList(
-        raw.map((n) => ({
+        sorted.map((n) => ({
           ...n,
           read: n.is_read || n.read || false,
           type: n.category || n.type || 'info',
@@ -43,6 +44,7 @@ export default function ManagerNotifications() {
           date: n.created_at ? n.created_at.slice(0, 10) : '2026-08-05',
         }))
       )
+
     } catch (e) {
       console.error("Failed to load notifications:", e)
     } finally {

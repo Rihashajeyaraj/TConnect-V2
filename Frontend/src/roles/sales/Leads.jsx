@@ -1407,7 +1407,15 @@ export default function Leads(props) {
     return matchesSearch && matchesCategory && matchesStatus;
   });
 
-  const paginatedLeads = filteredLeads;
+  const sortedFilteredLeads = [...filteredLeads].sort((a, b) => {
+    const timeA = new Date(a.created_at || a.createdAt || a.date || 0).getTime() || 0;
+    const timeB = new Date(b.created_at || b.createdAt || b.date || 0).getTime() || 0;
+    if (timeA !== timeB) return timeB - timeA;
+    return String(b.id || '').localeCompare(String(a.id || ''));
+  });
+
+  const paginatedLeads = sortedFilteredLeads;
+
 
   const filteredConvertedLeads = [];
 
@@ -1649,6 +1657,7 @@ export default function Leads(props) {
                     <th className="py-3.5 px-4">Phone & Location</th>
                     <th className="py-3.5 px-4">Category & Priority</th>
                     <th className="py-3.5 px-4">Current Status</th>
+                    <th className="py-3.5 px-4">Created Date</th>
                     <th className="py-3.5 px-4 text-right">Actions</th>
                   </tr>
                 </thead>
@@ -1705,6 +1714,12 @@ export default function Leads(props) {
                       <td className="py-3.5 px-4">
                         <span className="text-xs font-extrabold text-slate-700">● {lead.status}</span>
                       </td>
+                      <td className="py-3.5 px-4">
+                        <span className="text-xs font-bold text-slate-700 bg-slate-100 px-2.5 py-1 rounded-xl border border-slate-200 whitespace-nowrap">
+                          📅 {lead.created_at ? new Date(lead.created_at).toLocaleDateString('en-US', { day: '2-digit', month: 'short', year: 'numeric' }) : (lead.date || 'Today')}
+                        </span>
+                      </td>
+
                       <td className="py-3.5 px-4 text-right">
                         <div className="flex items-center justify-end gap-2 text-xs font-extrabold">
                           <button

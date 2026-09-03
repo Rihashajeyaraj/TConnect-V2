@@ -379,10 +379,11 @@ export default function AdminDashboard() {
       const [empRes, attRes, auditRes, kpisRes, settingsRes] = await Promise.allSettled([
         hrmsAPI.getEmployees(),
         attendanceAPI.getLogs(),
-        auditAPI.getLogs(),
+        auditAPI.getLogs({ limit: 30 }),
         adminAPI.getKPIs(periodParam),
         settingsAPI.getSettings()
       ])
+
 
       const empsList = empRes.status === 'fulfilled' && empRes.value?.data ? empRes.value.data : []
       const attList = attRes.status === 'fulfilled' && attRes.value?.data ? attRes.value.data : []

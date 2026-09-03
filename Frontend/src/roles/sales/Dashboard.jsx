@@ -51,23 +51,23 @@ import Expenses from "./Expenses.jsx";
 import ClientLog from "./ClientLog.jsx";
 import Todo from "./Todo.jsx";
 
-// ── Mock Data Fallbacks ────────────────────────────────────────────────────────
+// ── Initial KPI State ────────────────────────────────────────────────────────
 
-const MOCK_KPIS = {
+const DEFAULT_KPIS = {
   assigned_leads: 0,
   converted_customers: 0,
   revenue_this_month: 0,
   pending_followups: 0,
   today_visits: 0,
-  today_visits_target: 8,
+  today_visits_target: 0,
   attendance_status: "Not Marked",
   check_in_time: null,
   target_achievement_pct: 0,
   expenses_pending_amount: 0,
   revenue_achievement_pct: 0,
-  revenue_target: 500000,
+  revenue_target: 0,
   visits_done: 0,
-  visits_target: 8,
+  visits_target: 0,
   visits_pct: 0,
   converted_leads: 0,
   total_leads_for_conversion: 0,
@@ -75,6 +75,7 @@ const MOCK_KPIS = {
   recent_activities: [],
   today_schedule: [],
 };
+
 
 
 
@@ -830,7 +831,7 @@ export default function Dashboard() {
     fetchAll();
   };
 
-  const k = kpis || MOCK_KPIS;
+  const k = kpis || DEFAULT_KPIS;
 
   // Manager Fixed Sales Target Sync uses managerTarget state fetched dynamically.
   const revTargetVal = Number(managerTarget?.revenueTarget) || 500000;

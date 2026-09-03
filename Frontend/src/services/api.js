@@ -362,6 +362,36 @@ export const settingsAPI = {
   updateProduct: (id, data) => request(`/settings/products/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteProduct: (id) => request(`/settings/products/${id}`, { method: 'DELETE' }),
   deleteRole: (id) => request(`/settings/roles/${id}`, { method: 'DELETE' }),
+  getDepartments: () => request('/settings/departments'),
+  createDepartment: (data) => request('/settings/departments', { method: 'POST', body: JSON.stringify(data) }),
+  getLandmarks: () => request('/settings/landmarks'),
+  createLandmark: (data) => request('/settings/landmarks', { method: 'POST', body: JSON.stringify(data) }),
+  getDocumentTypes: () => request('/settings/document-types'),
+  createDocumentType: (data) => request('/settings/document-types', { method: 'POST', body: JSON.stringify(data) }),
+}
+
+export const holidaysAPI = {
+  getHolidays: (params = {}) => {
+    const query = new URLSearchParams(params).toString()
+    return request(`/holidays${query ? `?${query}` : ''}`)
+  },
+  createHoliday: (data) => request('/holidays', { method: 'POST', body: JSON.stringify(data) }),
+  updateHoliday: (id, data) => request(`/holidays/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteHoliday: (id) => request(`/holidays/${id}`, { method: 'DELETE' }),
+}
+
+export const handbookAPI = {
+  getPublishedDocs: () => request('/handbook'),
+  getAllDocs: () => request('/handbook/admin'),
+  createDoc: (data) => request('/handbook', { method: 'POST', body: JSON.stringify(data) }),
+  updateDoc: (id, data) => request(`/handbook/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  publishDoc: (id) => request(`/handbook/${id}/publish`, { method: 'POST' }),
+}
+
+export const commissionAPI = {
+  getRules: () => request('/commission/rules'),
+  createRule: (data) => request('/commission/rules', { method: 'POST', body: JSON.stringify(data) }),
+  updateRule: (id, data) => request(`/commission/rules/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
 }
 
 export const spatialAPI = {
@@ -442,3 +472,4 @@ export const draftsAPI = {
 }
 
 export default { request }
+

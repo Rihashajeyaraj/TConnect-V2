@@ -13,16 +13,23 @@ router = APIRouter(prefix="/settings", tags=["Application Settings"])
 async def get_public_config(
     user_payload: dict = Depends(get_current_user_payload)
 ):
-    """Get non-sensitive application settings and configuration."""
+    """Get non-sensitive application settings and technical map/GPS configuration."""
     from app.core.config import settings as app_settings
     return StandardResponse.success_response(
         data={
             "client_route_alert_radius_km": app_settings.CLIENT_ROUTE_ALERT_RADIUS_KM,
             "gps_accuracy_threshold": app_settings.GPS_ACCURACY_THRESHOLD,
             "google_maps_api_key": app_settings.GOOGLE_MAPS_API_KEY,
+            "default_map_latitude": app_settings.DEFAULT_MAP_LATITUDE,
+            "default_map_longitude": app_settings.DEFAULT_MAP_LONGITUDE,
+            "default_map_zoom": app_settings.DEFAULT_MAP_ZOOM,
+            "route_refetch_distance_km": app_settings.ROUTE_REFETCH_DISTANCE_KM,
+            "off_route_threshold_km": app_settings.OFF_ROUTE_THRESHOLD_KM,
+            "arrival_radius_km": app_settings.ARRIVAL_RADIUS_KM,
         },
         message="Public configuration retrieved successfully"
     )
+
 
 
 def get_service() -> SettingsService:
@@ -234,4 +241,95 @@ async def delete_role(
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+# Landmarks CRUD
+@router.get("/landmarks", response_model=StandardResponse)
+async def get_landmarks(
+    user_payload: dict = Depends(get_current_user_payload),
+    service: SettingsService = Depends(get_service)
+):
+    landmarks = service.get_landmarks()
+    return StandardResponse.success_response(
+        data={"landmarks": landmarks},
+        message="Landmarks retrieved successfully"
+    )
+
+@router.post("/landmarks", response_model=StandardResponse)
+async def create_landmark(
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        inserted = service.create_landmark(data)
+        return StandardResponse.success_response(
+            data=inserted,
+            message="Landmark created successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# Departments CRUD
+@router.get("/departments", response_model=StandardResponse)
+async def get_departments(
+    user_payload: dict = Depends(get_current_user_payload),
+    service: SettingsService = Depends(get_service)
+):
+    departments = service.get_departments()
+    return StandardResponse.success_response(
+        data={"departments": departments},
+        message="Departments retrieved successfully"
+    )
+
+@router.post("/departments", response_model=StandardResponse)
+async def create_department(
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        inserted = service.create_department(data)
+        return StandardResponse.success_response(
+            data=inserted,
+            message="Department created successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# Document Types CRUD
+@router.get("/document-types", response_model=StandardResponse)
+async def get_document_types(
+    user_payload: dict = Depends(get_current_user_payload),
+    service: SettingsService = Depends(get_service)
+):
+    document_types = service.get_document_types()
+    return StandardResponse.success_response(
+        data={"document_types": document_types},
+        message="Document types retrieved successfully"
+    )
+
+@router.post("/document-types", response_model=StandardResponse)
+async def create_document_type(
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        inserted = service.create_document_type(data)
+        return StandardResponse.success_response(
+            data=inserted,
+            message="Document type created successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 

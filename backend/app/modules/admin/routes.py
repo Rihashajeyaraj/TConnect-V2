@@ -28,16 +28,28 @@ async def get_admin_dashboard_kpis(
     _access: None = Depends(check_admin_access)
 ):
     """Retrieve dynamic system operations KPIs for the Admin Dashboard."""
-    # 1. Fetch Users and Admin counts
-    user_repo = UserRepository()
-    all_users = user_repo.get_all_users()
-    
-    total_users = len(all_users)
+    # 1. Fetch Users and Admin counts via fast direct DB select
+    client = get_supabase_admin_client() or get_supabase_client()
+    total_users = 0
     administrators_count = 0
-    for u in all_users:
-        u_role = normalize_user_role(u.get("role"))
-        if u_role in ("super_admin", "admin"):
-            administrators_count += 1
+
+    try:
+        emp_res = client.schema("hrms").table("employees").select("id, role", count="exact").execute()
+        total_users = emp_res.count or (len(emp_res.data) if emp_res.data else 0)
+        if emp_res.data:
+            for u in emp_res.data:
+                u_role = normalize_user_role(u.get("role"))
+                if u_role in ("super_admin", "admin"):
+                    administrators_count += 1
+    except Exception:
+        user_repo = UserRepository()
+        all_users = user_repo.get_all_users()
+        total_users = len(all_users)
+        for u in all_users:
+            u_role = normalize_user_role(u.get("role"))
+            if u_role in ("super_admin", "admin"):
+                administrators_count += 1
+
 
     # 2. Fetch Security Audits Count (respected by period)
     # The client timezone is IST (UTC + 5.5 hours)

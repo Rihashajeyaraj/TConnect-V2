@@ -21,10 +21,17 @@ class Settings(BaseSettings):
     # Biometrics
     BIOMETRIC_SERVICE_URL: str = "http://76.13.242.108:8012"
 
-    # Smart Map
+    # Smart Map & Technical GPS Configuration
     CLIENT_ROUTE_ALERT_RADIUS_KM: float = 2.0
     GOOGLE_MAPS_API_KEY: str = ""
     GPS_ACCURACY_THRESHOLD: float = 100.0
+    DEFAULT_MAP_LATITUDE: float = 13.0067
+    DEFAULT_MAP_LONGITUDE: float = 80.2570
+    DEFAULT_MAP_ZOOM: int = 12
+    ROUTE_REFETCH_DISTANCE_KM: float = 0.05
+    OFF_ROUTE_THRESHOLD_KM: float = 0.15
+    ARRIVAL_RADIUS_KM: float = 0.05
+
 
 
     # Security
