@@ -141,8 +141,19 @@ class AuthService:
         )
         token = jose.jwt.encode(token_payload, secret, algorithm=settings.ALGORITHM)
 
+        refresh_exp = datetime.now(timezone.utc) + timedelta(days=30)
+        refresh_payload = {
+            "sub": str(sub_id),
+            "email": payload.email,
+            "role": role_val,
+            "token_type": "refresh_token",
+            "exp": int(refresh_exp.timestamp()),
+        }
+        refresh_token = jose.jwt.encode(refresh_payload, secret, algorithm=settings.ALGORITHM)
+
         return {
             "access_token": token,
+            "refresh_token": refresh_token,
             "token_type": "bearer",
             "user": {
                 "auth_user_id":   token_payload["sub"],
@@ -162,6 +173,120 @@ class AuthService:
                 "first_login":    False,
             },
         }
+
+    def refresh_session(self, refresh_token: str) -> Dict[str, Any]:
+        if not refresh_token or not isinstance(refresh_token, str):
+            raise UnauthorizedException("Invalid or missing refresh token.")
+
+        # 1. Try Supabase GoTrue Auth session refresh
+        try:
+            res = self.repo.refresh_session(refresh_token)
+            if res and getattr(res, "session", None) and getattr(res, "user", None):
+                meta = getattr(res.user, "user_metadata", {}) or {}
+                role_val = meta.get("role") or meta.get("designation") or "Sales Executive"
+                emp_name = meta.get("full_name") or (res.user.email.split("@")[0].replace(".", " ").title() if res.user.email else "User")
+                emp_code = meta.get("employee_code") or "EMP0001"
+                dept = meta.get("department") or "Sales & Business Development"
+                dashboard, permissions = _resolve_role_and_dashboard(role_val)
+
+                logger.info(f"Supabase GoTrue REFRESH SUCCESS for user: {res.user.email}")
+                return {
+                    "access_token": res.session.access_token,
+                    "refresh_token": res.session.refresh_token,
+                    "token_type": "bearer",
+                    "user": {
+                        "auth_user_id": str(res.user.id),
+                        "employee_id": str(res.user.id),
+                        "employee_code": emp_code,
+                        "employee_name": emp_name,
+                        "full_name": emp_name,
+                        "email": res.user.email,
+                        "company_id": "TC-001",
+                        "organization": "TwiteConnect Technologies",
+                        "department": dept,
+                        "designation": role_val,
+                        "role": role_val,
+                        "status": "Active",
+                        "permissions": permissions,
+                        "dashboard": dashboard,
+                    },
+                }
+        except Exception as e:
+            logger.info(f"Supabase GoTrue refresh notice: {e}")
+
+        # 2. Local JWT decode of refresh token
+        secrets_to_try = [
+            settings.SECRET_KEY,
+            "dev-secret-key-12345",
+        ]
+        if settings.SUPABASE_JWT_SECRET and settings.SUPABASE_JWT_SECRET != "your-jwt-secret-from-supabase":
+            secrets_to_try.insert(0, settings.SUPABASE_JWT_SECRET)
+
+        payload = None
+        for secret in secrets_to_try:
+            try:
+                payload = jose.jwt.decode(
+                    refresh_token,
+                    secret,
+                    algorithms=[settings.ALGORITHM],
+                    options={"verify_aud": False}
+                )
+                if payload:
+                    break
+            except Exception:
+                continue
+
+        if not payload and (settings.ENVIRONMENT == "development" or settings.DEBUG):
+            try:
+                payload = jose.jwt.decode(
+                    refresh_token,
+                    key="",
+                    options={"verify_signature": False, "verify_aud": False}
+                )
+            except Exception:
+                pass
+
+        if not payload:
+            raise UnauthorizedException("Invalid or expired refresh token.")
+
+        email = (payload.get("email") or payload.get("user_metadata", {}).get("email") or "").strip().lower()
+        role_val = payload.get("role") or payload.get("user_metadata", {}).get("role") or "Sales Executive"
+
+        if not email:
+            raise UnauthorizedException("Could not identify user from refresh token.")
+
+        # Check if user account is still active in DB / UserRepository / HRMS
+        user_record = None
+        try:
+            from app.modules.users.repository import UserRepository
+            all_users = UserRepository().get_all_users()
+            for u in all_users:
+                if str(u.get("email", "")).strip().lower() == email:
+                    user_record = u
+                    break
+        except Exception:
+            pass
+
+        if not user_record:
+            try:
+                from app.modules.hrms.repository import HRMSRepository
+                all_emps = HRMSRepository().get_all_employees()
+                for emp in all_emps:
+                    if str(emp.get("email", "")).strip().lower() == email:
+                        user_record = emp
+                        break
+            except Exception:
+                pass
+
+        if user_record:
+            status_val = str(user_record.get("status") or user_record.get("employmentStatus") or "Active").strip().lower()
+            if status_val in ["disabled", "inactive", "suspended", "terminated"]:
+                raise UnauthorizedException("Account has been disabled or deactivated. Please log in again.")
+            role_val = user_record.get("role") or user_record.get("designation") or role_val
+
+        logger.info(f"JWT REFRESH SUCCESS: {email} -> {role_val}")
+        return self.generate_dev_token(DevTokenRequest(email=email, role=role_val))
+
 
     def login(self, credentials: LoginRequest) -> Dict[str, Any]:
         email   = (credentials.email or "").strip().lower()

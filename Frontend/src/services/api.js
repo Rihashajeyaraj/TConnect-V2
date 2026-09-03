@@ -1,3 +1,5 @@
+import authSession from '../utils/authSession.js'
+
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
 if (!API_BASE_URL) {
   console.error("VITE_API_BASE_URL is not configured.")
@@ -9,21 +11,17 @@ if (!API_BASE_URL) {
 // Helpers: read the real session stored by LoginForm at login
 // ─────────────────────────────────────────────────────────────
 function getStoredToken() {
-  return localStorage.getItem('token') || localStorage.getItem('access_token') || localStorage.getItem('tc_persistent_token') || null
+  return authSession.getStoredToken()
 }
 
 function clearSession() {
-  localStorage.removeItem('token')
-  localStorage.removeItem('access_token')
-  localStorage.removeItem('user')
-  localStorage.removeItem('tc_persistent_token')
-  localStorage.removeItem('tc_persistent_user')
+  authSession.clearSession()
 }
 
 function redirectToLogin() {
   // Only redirect if we're not already on the login page
   if (!window.location.pathname.startsWith('/login') && window.location.pathname !== '/') {
-    window.location.href = '/login'
+    window.location.href = '/'
   }
 }
 
@@ -32,12 +30,40 @@ function redirectToLogin() {
 // Deduplicates in-flight GET requests to eliminate duplicate network calls
 // ─────────────────────────────────────────────────────────────
 const inFlightRequests = new Map()
+let activeRefreshPromise = null
+
+async function handleSilentRefresh() {
+  if (!activeRefreshPromise) {
+    const refreshToken = authSession.getStoredRefreshToken()
+    if (!refreshToken) {
+      return Promise.reject(new Error('No refresh token available'))
+    }
+    activeRefreshPromise = fetch(`${API_BASE_URL}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+      .then(async (res) => {
+        let data
+        try { data = await res.json() } catch (_) {}
+        if (res.ok && data?.data?.access_token) {
+          authSession.saveSession(data.data)
+          return data.data
+        }
+        throw new Error(data?.message || 'Token refresh failed')
+      })
+      .finally(() => {
+        activeRefreshPromise = null
+      })
+  }
+  return activeRefreshPromise
+}
 
 async function request(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase()
 
   // For GET requests, reuse identical in-flight promises to deduplicate parallel calls
-  if (method === 'GET' && inFlightRequests.has(endpoint)) {
+  if (method === 'GET' && inFlightRequests.has(endpoint) && !options._isRetry) {
     return inFlightRequests.get(endpoint)
   }
 
@@ -67,10 +93,30 @@ async function request(endpoint, options = {}) {
         data = { message: `HTTP ${response.status}: Failed to parse response` }
       }
 
-      // On 401 — return rejected promise without wiping out persistent user session
-      if (response.status === 401 && !endpoint.includes('/auth/') && !endpoint.includes('/attendance/match-face')) {
-        console.warn('[API 401] Unauthorized response:', endpoint)
-        return Promise.reject({ message: 'Unauthorized request', status: 401 })
+      // On 401 — attempt silent refresh once if refresh_token exists
+      if (
+        response.status === 401 &&
+        !options._isRetry &&
+        !endpoint.includes('/auth/') &&
+        !endpoint.includes('/attendance/match-face')
+      ) {
+        console.warn('[API 401] Attempting silent token refresh:', endpoint)
+        try {
+          const refreshed = await handleSilentRefresh()
+          if (refreshed?.access_token) {
+            // Retry original request once with fresh access token
+            const retryHeaders = {
+              ...headers,
+              Authorization: `Bearer ${refreshed.access_token}`,
+            }
+            return request(endpoint, { ...options, headers: retryHeaders, _isRetry: true })
+          }
+        } catch (refreshErr) {
+          console.warn('[API Refresh Failed]:', refreshErr?.message || refreshErr)
+          authSession.clearSession()
+          redirectToLogin()
+          return Promise.reject({ message: 'Session expired. Please log in again.', status: 401 })
+        }
       }
 
       if (!response.ok) {
@@ -90,7 +136,7 @@ async function request(endpoint, options = {}) {
 
   const requestPromise = executeRequest()
 
-  if (method === 'GET') {
+  if (method === 'GET' && !options._isRetry) {
     inFlightRequests.set(endpoint, requestPromise)
     requestPromise.finally(() => {
       inFlightRequests.delete(endpoint)
@@ -105,6 +151,7 @@ export const authAPI = {
   login: (credentials) => request('/auth/login', { method: 'POST', body: JSON.stringify(credentials) }),
   signup: (userData) => request('/auth/signup', { method: 'POST', body: JSON.stringify(userData) }),
   devToken: (payload) => request('/auth/dev-token', { method: 'POST', body: JSON.stringify(payload) }),
+  refreshToken: (refreshToken) => request('/auth/refresh', { method: 'POST', body: JSON.stringify({ refresh_token: refreshToken }), _isRetry: true }),
   me: () => request('/auth/me'),
   forgotPassword: (email) => request('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
   changePassword: (currentPassword, newPassword) => request('/auth/change-password', {

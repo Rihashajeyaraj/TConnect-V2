@@ -5,6 +5,8 @@ import { authAPI } from '../services/api.js'
 import { Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react'
 import TwiteConnectLogo from './TwiteConnectLogo.jsx'
 
+import authSession from '../utils/authSession.js'
+
 function LoginForm() {
   const { showToast } = useToast()
   const [showPassword, setShowPassword] = useState(false)
@@ -31,30 +33,16 @@ function LoginForm() {
       const res = await authAPI.login({ email: email.trim(), password: password.trim() })
 
       if (res && res.data && res.data.access_token) {
-        const token = res.data.access_token
         const userObj = res.data.user || {}
 
-        // Store JWT Access Token & User metadata across persistent keys
-        localStorage.setItem('token', token)
-        localStorage.setItem('access_token', token)
-        localStorage.setItem('user', JSON.stringify(userObj))
-        localStorage.setItem('tc_persistent_token', token)
-        localStorage.setItem('tc_persistent_user', JSON.stringify(userObj))
+        // Save session using canonical authSession utility
+        authSession.saveSession(res.data)
 
-        const roleLower = (userObj.role || '').toLowerCase()
+        const roleLower = (userObj.role || userObj.designation || '').toLowerCase()
         showToast(`Authentication successful! Welcome ${userObj.full_name || userObj.employee_name || roleLower}.`, 'success')
 
         // Redirect strictly to assigned role portal
-        let targetRoute = userObj.dashboard || '/sales'
-        if (roleLower.includes('ceo') || roleLower.includes('founder') || roleLower.includes('chief executive')) {
-          targetRoute = '/ceo'
-        } else if (roleLower.includes('admin') || roleLower.includes('super')) {
-          targetRoute = '/admin'
-        } else if (roleLower.includes('manager')) {
-          targetRoute = '/manager'
-        } else if (roleLower.includes('sales') || roleLower.includes('executive')) {
-          targetRoute = '/sales'
-        }
+        const targetRoute = authSession.getDashboardForUser(userObj)
 
         // 🔐 first_login check — Admin reset password, employee must change before proceeding
         if (userObj.first_login === true) {
@@ -66,7 +54,7 @@ function LoginForm() {
         }
 
         setTimeout(() => {
-          navigate(targetRoute)
+          navigate(targetRoute, { replace: true })
         }, 200)
 
       } else {
@@ -76,9 +64,7 @@ function LoginForm() {
       const errorMsg = err?.message || err?.data?.message || err?.detail || 'Invalid email or password. Please try again.'
       showToast(errorMsg, 'error')
       setErrorMsg(errorMsg)
-      localStorage.removeItem('token')
-      localStorage.removeItem('access_token')
-      localStorage.removeItem('user')
+      authSession.clearSession()
     } finally {
       setLoading(false)
     }
