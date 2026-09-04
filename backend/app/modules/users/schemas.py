@@ -29,10 +29,14 @@ class UserCreate(BaseModel):
     @validator("phone", "emergency_contact", pre=True, allow_reuse=True)
     def validate_phone_number(cls, v):
         if not v:
-            return v
+            return None
         cleaned = re.sub(r"\D", "", str(v))
-        if len(cleaned) != 10:
-            raise ValueError("Enter a valid 10-digit phone number.")
+        if not cleaned:
+            return None
+        if len(cleaned) > 10:
+            cleaned = cleaned[-10:]
+        if len(cleaned) < 10:
+            cleaned = cleaned.zfill(10)
         return cleaned
 
 
@@ -57,10 +61,14 @@ class UserUpdate(BaseModel):
     @validator("phone", pre=True, allow_reuse=True)
     def validate_phone_number(cls, v):
         if not v:
-            return v
+            return None
         cleaned = re.sub(r"\D", "", str(v))
-        if len(cleaned) != 10:
-            raise ValueError("Enter a valid 10-digit phone number.")
+        if not cleaned:
+            return None
+        if len(cleaned) > 10:
+            cleaned = cleaned[-10:]
+        if len(cleaned) < 10:
+            cleaned = cleaned.zfill(10)
         return cleaned
 
 

@@ -1046,6 +1046,10 @@ export default function SmartClientMap() {
         accuracyCircleRef.current.setMap(null)
         accuracyCircleRef.current = null
       }
+      if (trailPolylineRef.current) {
+        trailPolylineRef.current.setMap(null)
+        trailPolylineRef.current = null
+      }
       activeMarkersRef.current.forEach(m => m.setMap(null))
       activeMarkersRef.current = []
       activePolylinesRef.current.forEach(p => p.setMap(null))
@@ -1207,6 +1211,55 @@ export default function SmartClientMap() {
       }
     }
   }, [executivePos, gpsAccuracy, gpsStatus, mapLoaded])
+
+  // ─── 16. Traveled Trail Polyline (Purple dashed line) ───────────────────
+  useEffect(() => {
+    if (!googleMapRef.current || !window.google || !mapLoaded) return
+    if (!executivePos?.lat || !executivePos?.lng) return
+
+    const pts = trailPointsRef.current
+    const lastPt = pts.length > 0 ? pts[pts.length - 1] : null
+
+    let distFromLastM = 0
+    if (lastPt) {
+      distFromLastM = haversineDistance(lastPt.lat, lastPt.lng, executivePos.lat, executivePos.lng) * 1000
+    }
+
+    // Append point if first point or executive moved >= 3 meters
+    if (pts.length === 0 || distFromLastM >= 3) {
+      pts.push({ lat: executivePos.lat, lng: executivePos.lng })
+    }
+
+    if (pts.length > 1) {
+      const gPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
+      
+      if (!trailPolylineRef.current) {
+        trailPolylineRef.current = new window.google.maps.Polyline({
+          path: gPath,
+          geodesic: true,
+          strokeOpacity: 0,
+          icons: [{
+            icon: {
+              path: 'M 0,-2 0,2',
+              strokeOpacity: 1,
+              scale: 2.5,
+              strokeColor: '#9333ea', // Purple dashed line for traveled trail
+              strokeWeight: 4,
+            },
+            offset: '0%',
+            repeat: '14px',
+          }],
+          map: googleMapRef.current,
+          zIndex: 35
+        })
+      } else {
+        trailPolylineRef.current.setPath(gPath)
+        if (!trailPolylineRef.current.getMap()) {
+          trailPolylineRef.current.setMap(googleMapRef.current)
+        }
+      }
+    }
+  }, [executivePos, mapLoaded])
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   const visibleAlerts = onRouteClients.filter(c => !dismissedAlerts.current.has(c.id))

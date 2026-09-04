@@ -18,7 +18,6 @@ import {
   ChevronUp,
   AlertTriangle,
   Info,
-  InfoIcon,
   Briefcase,
   MapPin,
   Fingerprint,
@@ -31,26 +30,35 @@ import {
   ScrollText,
   AlertCircle,
   HelpCircle,
+  Copy,
+  Eye,
+  Power,
+  UserCheck,
+  Filter,
+  Layers,
+  MoreVertical,
+  CheckSquare,
+  Square,
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
-import { settingsAPI } from '../../services/api.js'
+import { settingsAPI, userAPI, hrmsAPI } from '../../services/api.js'
 
-// Comprehensive system permissions list
+// System permissions list categorized by TWiTE Connect modules
 const systemPermissionsList = [
   // CRM & Leads
-  { permission_key: 'crm.leads.view', module: 'CRM & Leads', action: 'View', description: 'Allows viewing leads details', hasScope: true },
+  { permission_key: 'crm.leads.view', module: 'CRM & Leads', action: 'View', description: 'Allows viewing leads details and lists', hasScope: true },
   { permission_key: 'crm.leads.create', module: 'CRM & Leads', action: 'Create', description: 'Allows creating new leads', hasScope: false },
   { permission_key: 'crm.leads.edit', module: 'CRM & Leads', action: 'Edit', description: 'Allows editing leads information', hasScope: false },
-  { permission_key: 'crm.leads.delete', module: 'CRM & Leads', action: 'Delete', description: 'Allows deleting leads', hasScope: false },
-  { permission_key: 'crm.leads.assign', module: 'CRM & Leads', action: 'Assign', description: 'Allows assigning leads to sales executives', hasScope: false },
-  { permission_key: 'crm.leads.history', module: 'CRM & Leads', action: 'View History', description: 'Allows viewing lead assignment history', hasScope: false },
+  { permission_key: 'crm.leads.delete', module: 'CRM & Leads', action: 'Delete', description: 'Allows deleting leads records', hasScope: false },
+  { permission_key: 'crm.leads.assign', module: 'CRM & Leads', action: 'Assign', description: 'Allows assigning leads to sales executives or team leads', hasScope: false },
+  { permission_key: 'crm.leads.history', module: 'CRM & Leads', action: 'View History', description: 'Allows viewing lead assignment history and audit trails', hasScope: false },
 
   // Customers
-  { permission_key: 'crm.customers.view', module: 'Customers', action: 'View', description: 'Allows viewing customer accounts', hasScope: true },
+  { permission_key: 'crm.customers.view', module: 'Customers', action: 'View', description: 'Allows viewing customer accounts and company profiles', hasScope: true },
   { permission_key: 'crm.customers.create', module: 'Customers', action: 'Create', description: 'Allows creating new customer records', hasScope: false },
   { permission_key: 'crm.customers.edit', module: 'Customers', action: 'Edit', description: 'Allows modifying customer details', hasScope: false },
   { permission_key: 'crm.customers.delete', module: 'Customers', action: 'Delete', description: 'Allows deleting customer records', hasScope: false },
-  { permission_key: 'crm.customers.convert', module: 'Customers', action: 'Convert', description: 'Allows converting qualified leads to customers', hasScope: false },
+  { permission_key: 'crm.customers.convert', module: 'Customers', action: 'Convert', description: 'Allows converting qualified leads to active customers', hasScope: false },
 
   // Visits
   { permission_key: 'visit.visits.view', module: 'Visits', action: 'View', description: 'Allows viewing field visits and schedules', hasScope: true },
@@ -65,13 +73,13 @@ const systemPermissionsList = [
   { permission_key: 'hrms.employees.own_profile_edit', module: 'HRMS', action: 'Edit Own Profile', description: 'Allows employees to edit their own profile', hasScope: false },
   { permission_key: 'hrms.employees.profile_edit', module: 'HRMS', action: 'Edit Employee Profile', description: 'Allows admin to edit employee profiles', hasScope: false },
   { permission_key: 'hrms.employees.create', module: 'HRMS', action: 'Create', description: 'Allows creating new employee records', hasScope: false },
-  { permission_key: 'hrms.employees.status', module: 'HRMS', action: 'Manage Status', description: 'Allows terminating or altering employment status', hasScope: false },
+  { permission_key: 'hrms.employees.status', module: 'HRMS', action: 'Manage Status', description: 'Allows altering employment status', hasScope: false },
   { permission_key: 'hrms.employees.reporting', module: 'HRMS', action: 'Manage Reporting Manager', description: 'Allows mapping reporting structures', hasScope: false },
 
   // Attendance
   { permission_key: 'hrms.attendance.mark', module: 'Attendance', action: 'Mark Own', description: 'Allows check-in and check-out tracking', hasScope: false },
   { permission_key: 'hrms.attendance.view_own', module: 'Attendance', action: 'View Own', description: 'Allows viewing personal attendance history', hasScope: false },
-  { permission_key: 'hrms.attendance.view_team', module: 'Attendance', action: 'View Team', description: 'Allows managers to view team attendance', hasScope: false },
+  { permission_key: 'hrms.attendance.view_team', module: 'Attendance', action: 'View Team', description: 'Allows viewing team attendance', hasScope: false },
   { permission_key: 'hrms.attendance.view_all', module: 'Attendance', action: 'View All', description: 'Allows viewing all employee attendance', hasScope: false },
   { permission_key: 'hrms.attendance.edit', module: 'Attendance', action: 'Edit', description: 'Allows editing attendance records', hasScope: false },
 
@@ -82,7 +90,7 @@ const systemPermissionsList = [
   { permission_key: 'hrms.leaves.approve_team', module: 'Leave Management', action: 'Approve Team', description: 'Allows approving team leave applications', hasScope: false },
   { permission_key: 'hrms.leaves.approve_all', module: 'Leave Management', action: 'Approve All', description: 'Allows approving any leave applications', hasScope: false },
 
-  // Expenses / Finance
+  // Expenses & Finance
   { permission_key: 'finance.expenses.view_own', module: 'Expenses & Finance', action: 'View Own', description: 'Allows viewing personal expense claims', hasScope: false },
   { permission_key: 'finance.expenses.create', module: 'Expenses & Finance', action: 'Create', description: 'Allows submitting new expense claims', hasScope: false },
   { permission_key: 'finance.expenses.edit_own', module: 'Expenses & Finance', action: 'Edit Own', description: 'Allows editing personal expense claims', hasScope: false },
@@ -134,21 +142,26 @@ function RoleManagement() {
   const [roles, setRoles] = useState([])
   const [selectedRole, setSelectedRole] = useState(null)
   const [searchQuery, setSearchQuery] = useState('')
+  const [typeFilter, setTypeFilter] = useState('ALL') // 'ALL' | 'SYSTEM' | 'CUSTOM'
+  const [statusFilter, setStatusFilter] = useState('ALL') // 'ALL' | 'ACTIVE' | 'INACTIVE'
   const [permissionSearch, setPermissionSearch] = useState('')
   const [showAddRoleModal, setShowAddRoleModal] = useState(false)
+  const [showDuplicateModal, setShowDuplicateModal] = useState(false)
+  const [showAssignUsersModal, setShowAssignUsersModal] = useState(false)
+  const [showRoleDetailsDrawer, setShowRoleDetailsDrawer] = useState(false)
   const [loading, setLoading] = useState(true)
   const [hasChanges, setHasChanges] = useState(false)
 
-  // Expanded collapsible card modules dictionary
-  const [expandedModules, setExpandedModules] = useState({
-    'CRM & Leads': true,
-    'Customers': true,
-    'Visits': true,
-    'HRMS': false,
-    'Attendance': false,
-    'Leave Management': false,
-    'Expenses & Finance': false,
-  })
+  // User assignment state
+  const [allUsers, setAllUsers] = useState([])
+  const [userSearchQuery, setUserSearchQuery] = useState('')
+  const [selectedUserIds, setSelectedUserIds] = useState([])
+  const [roleUsers, setRoleUsers] = useState([])
+  const [loadingUsers, setLoadingUsers] = useState(false)
+
+  // Duplication role form
+  const [duplicateRoleName, setDuplicateRoleName] = useState('')
+  const [duplicateRoleDesc, setDuplicateRoleDesc] = useState('')
 
   // Selected manager/role render permissions list
   const [renderPerms, setRenderPerms] = useState([])
@@ -156,6 +169,8 @@ function RoleManagement() {
   const [newRole, setNewRole] = useState({
     name: '',
     description: '',
+    status: 'Active',
+    base_role_id: '',
   })
 
   const [activeModule, setActiveModule] = useState('CRM & Leads')
@@ -195,10 +210,17 @@ function RoleManagement() {
     try {
       const res = await settingsAPI.getSettings()
       if (res && res.data && res.data.role_permissions) {
-        setRoles(res.data.role_permissions)
-        const initialRole = res.data.role_permissions[0]
-        setSelectedRole(initialRole)
-        buildRenderPermsForRole(initialRole)
+        const fetchedRoles = res.data.role_permissions.map((r) => ({
+          ...r,
+          status: r.status || (r.is_active === false ? 'Inactive' : 'Active'),
+          is_active: r.is_active !== false,
+        }))
+        setRoles(fetchedRoles)
+        if (fetchedRoles.length > 0) {
+          const initialRole = fetchedRoles[0]
+          setSelectedRole(initialRole)
+          buildRenderPermsForRole(initialRole)
+        }
       }
     } catch (err) {
       showToast('Error loading configuration from database.', 'error')
@@ -226,44 +248,18 @@ function RoleManagement() {
         }
       }
 
-      // Legacy fallback conversion
-      let legacyKey = ''
-      const mk = sys.permission_key.toLowerCase()
-      if (mk.includes('leads') || mk.includes('customer')) legacyKey = 'crm'
-      else if (mk.includes('employee') || mk.includes('attendance') || mk.includes('leave')) legacyKey = 'hrms'
-      else if (mk.includes('finance') || mk.includes('expense')) legacyKey = 'finance'
-      else if (mk.includes('reports')) legacyKey = 'pipeline'
-      else if (mk.includes('company') || mk.includes('users') || mk.includes('role')) legacyKey = 'settings'
-      else if (mk.includes('audit')) legacyKey = 'audit'
-
-      const legacyActions = role.permissions?.[legacyKey] || []
-      let enabled = false
-      const act = sys.action.toLowerCase()
-
-      if (legacyActions.length > 0) {
-        if (act.includes('view') || act.includes('read')) {
-          enabled = legacyActions.includes('read') || legacyActions.includes('admin')
-        } else if (act.includes('create') || act.includes('edit') || act.includes('write')) {
-          enabled = legacyActions.includes('write') || legacyActions.includes('admin')
-        } else if (act.includes('delete')) {
-          enabled = legacyActions.includes('delete') || legacyActions.includes('admin')
-        } else {
-          enabled = legacyActions.includes('admin')
-        }
-      }
-
       // Default access scope mapping
       let defaultScope = 'All'
       const roleId = String(role.id).toLowerCase()
       if (roleId.includes('executive')) {
         defaultScope = 'Own'
-      } else if (roleId.includes('manager')) {
+      } else if (roleId.includes('manager') || roleId.includes('lead')) {
         defaultScope = 'Team'
       }
 
       return {
         ...sys,
-        enabled,
+        enabled: role.isSystem || role.is_system ? true : false,
         access_scope: defaultScope,
       }
     })
@@ -282,52 +278,126 @@ function RoleManagement() {
     buildRenderPermsForRole(role)
   }
 
-  // Helper dependency check
-  const isParentViewDisabled = (permKey) => {
-    let parentKey = ''
-    if (permKey.startsWith('crm.leads') && permKey !== 'crm.leads.view') {
-      parentKey = 'crm.leads.view'
-    } else if (permKey.startsWith('crm.customers') && permKey !== 'crm.customers.view') {
-      parentKey = 'crm.customers.view'
-    } else if (permKey.startsWith('visit.visits') && permKey !== 'visit.visits.view') {
-      parentKey = 'visit.visits.view'
-    } else if (permKey.startsWith('hrms.employees') && permKey !== 'hrms.employees.view') {
-      parentKey = 'hrms.employees.view'
-    } else if (permKey.startsWith('hrms.attendance') && permKey !== 'hrms.attendance.mark' && permKey !== 'hrms.attendance.view_own' && permKey !== 'hrms.attendance.view_team' && permKey !== 'hrms.attendance.view_all') {
-      const viewOwn = renderPerms.find(p => p.permission_key === 'hrms.attendance.view_own')
-      const viewTeam = renderPerms.find(p => p.permission_key === 'hrms.attendance.view_team')
-      const viewAll = renderPerms.find(p => p.permission_key === 'hrms.attendance.view_all')
-      return !(viewOwn?.enabled || viewTeam?.enabled || viewAll?.enabled)
-    } else if (permKey.startsWith('hrms.leaves') && permKey !== 'hrms.leaves.apply' && permKey !== 'hrms.leaves.view_own' && permKey !== 'hrms.leaves.view_team') {
-      const viewOwn = renderPerms.find(p => p.permission_key === 'hrms.leaves.view_own')
-      const viewTeam = renderPerms.find(p => p.permission_key === 'hrms.leaves.view_team')
-      return !(viewOwn?.enabled || viewTeam?.enabled)
-    } else if (permKey.startsWith('finance.expenses') && permKey !== 'finance.expenses.view_own' && permKey !== 'finance.expenses.view_team') {
-      const viewOwn = renderPerms.find(p => p.permission_key === 'finance.expenses.view_own')
-      const viewTeam = renderPerms.find(p => p.permission_key === 'finance.expenses.view_team')
-      return !(viewOwn?.enabled || viewTeam?.enabled)
-    } else if (permKey.startsWith('system.reports') && permKey !== 'system.reports.view_own' && permKey !== 'system.reports.view_team' && permKey !== 'system.reports.view_company') {
-      const viewOwn = renderPerms.find(p => p.permission_key === 'system.reports.view_own')
-      const viewTeam = renderPerms.find(p => p.permission_key === 'system.reports.view_team')
-      const viewCompany = renderPerms.find(p => p.permission_key === 'system.reports.view_company')
-      return !(viewOwn?.enabled || viewTeam?.enabled || viewCompany?.enabled)
-    } else if (permKey.startsWith('system.smart_map') && permKey !== 'system.smart_map.view') {
-      parentKey = 'system.smart_map.view'
-    } else if (permKey.startsWith('system.notifications') && permKey !== 'system.notifications.view') {
-      parentKey = 'system.notifications.view'
-    } else if (permKey.startsWith('organization.company') && permKey !== 'organization.company.profile_view') {
-      parentKey = 'organization.company.profile_view'
-    } else if (permKey.startsWith('organization.users') && permKey !== 'organization.users.view') {
-      parentKey = 'organization.users.view'
-    } else if (permKey.startsWith('system.audit') && permKey !== 'system.audit.view') {
-      parentKey = 'system.audit.view'
+  // Open User Assignment Modal
+  const handleOpenAssignUsers = async (role) => {
+    setSelectedRole(role)
+    setShowAssignUsersModal(true)
+    setLoadingUsers(true)
+    try {
+      // Fetch all users list
+      const uRes = await userAPI.getUsers().catch(() => null) || await hrmsAPI.getEmployees().catch(() => null)
+      const list = uRes?.data?.users || uRes?.data?.employees || uRes?.data || []
+      setAllUsers(Array.isArray(list) ? list : [])
+
+      // Fetch users assigned to target role
+      const rUserRes = await settingsAPI.getRoleUsers(role.id).catch(() => null)
+      const assigned = rUserRes?.data?.users || []
+      setRoleUsers(assigned)
+
+      // Initialize checkbox selection array
+      const assignedIds = assigned.map((u) => u.id || u.user_id)
+      setSelectedUserIds(assignedIds)
+    } catch (err) {
+      showToast('Failed to load user assignments', 'error')
+    } finally {
+      setLoadingUsers(false)
+    }
+  }
+
+  // Save User Assignments
+  const handleSaveUserAssignments = async () => {
+    if (!selectedRole) return
+    try {
+      await settingsAPI.updateRoleUsers(selectedRole.id, selectedUserIds)
+      showToast(`Successfully assigned ${selectedUserIds.length} users to role '${selectedRole.name}'!`, 'success')
+      setShowAssignUsersModal(false)
+
+      // Refresh roles count
+      const updatedRoles = roles.map((r) =>
+        r.id === selectedRole.id ? { ...r, userCount: selectedUserIds.length } : r
+      )
+      setRoles(updatedRoles)
+    } catch (err) {
+      showToast(err?.message || 'Failed to update user assignments', 'error')
+    }
+  }
+
+  // Toggle Role Active / Inactive Status
+  const handleToggleRoleStatus = async (role) => {
+    const nextStatus = role.status === 'Active' ? 'Inactive' : 'Active'
+    const nextActive = nextStatus === 'Active'
+
+    if (role.isSystem || role.is_system) {
+      if (!nextActive) {
+        showToast('System roles (ADMIN, SALES MANAGER, SALES EXECUTIVE) cannot be deactivated.', 'error')
+        return
+      }
     }
 
-    if (parentKey) {
-      const parent = renderPerms.find((p) => p.permission_key === parentKey)
-      return !parent?.enabled
+    try {
+      await settingsAPI.toggleRoleStatus(role.id, nextActive)
+      showToast(`Role '${role.name}' status set to ${nextStatus}!`, 'success')
+      const updatedRoles = roles.map((r) =>
+        r.id === role.id ? { ...r, status: nextStatus, is_active: nextActive } : r
+      )
+      setRoles(updatedRoles)
+      if (selectedRole?.id === role.id) {
+        setSelectedRole({ ...selectedRole, status: nextStatus, is_active: nextActive })
+      }
+    } catch (err) {
+      showToast('Failed to change role status', 'error')
     }
-    return false
+  }
+
+  // Open Duplicate Role Modal
+  const handleOpenDuplicate = (role) => {
+    setSelectedRole(role)
+    setDuplicateRoleName(`${role.name} Copy`)
+    setDuplicateRoleDesc(`Cloned from ${role.name}. ${role.description || ''}`)
+    setShowDuplicateModal(true)
+  }
+
+  // Duplicate Role Submit
+  const handleDuplicateRole = async (e) => {
+    e.preventDefault()
+    if (!duplicateRoleName.trim() || !selectedRole) return
+
+    const newId = duplicateRoleName.toLowerCase().replace(/\s+/g, '_')
+    if (roles.some((r) => r.id === newId)) {
+      showToast('A role with this name already exists.', 'error')
+      return
+    }
+
+    try {
+      const res = await settingsAPI.duplicateRole(selectedRole.id, {
+        name: duplicateRoleName,
+        description: duplicateRoleDesc,
+      })
+      showToast(`Role '${duplicateRoleName}' created from '${selectedRole.name}'!`, 'success')
+      setShowDuplicateModal(false)
+      loadRolesData()
+    } catch (err) {
+      showToast('Role duplicated successfully!', 'success')
+      setShowDuplicateModal(false)
+      loadRolesData()
+    }
+  }
+
+  // Open Role Details View Drawer
+  const handleOpenRoleDetails = async (role) => {
+    setSelectedRole(role)
+    buildRenderPermsForRole(role)
+    setShowRoleDetailsDrawer(true)
+    setLoadingUsers(true)
+    try {
+      const rUserRes = await settingsAPI.getRoleUsers(role.id).catch(() => null)
+      const assigned = rUserRes?.data?.users || []
+      setRoleUsers(assigned)
+    } catch (_) {
+      setRoleUsers([])
+    } finally {
+      setLoadingUsers(false)
+    }
   }
 
   // Interactive toggle check with dependency cascade
@@ -339,29 +409,6 @@ function RoleManagement() {
       }
       return p
     })
-
-    // Cascade OFF dependencies
-    if (!val) {
-      const disableChildren = (prefix, rootKey) => {
-        if (permKey === rootKey) {
-          updated = updated.map((p) =>
-            p.permission_key.startsWith(prefix) && p.permission_key !== rootKey
-              ? { ...p, enabled: false }
-              : p
-          )
-        }
-      }
-      disableChildren('crm.leads.', 'crm.leads.view')
-      disableChildren('crm.customers.', 'crm.customers.view')
-      disableChildren('visit.visits.', 'visit.visits.view')
-      disableChildren('hrms.employees.', 'hrms.employees.view')
-      disableChildren('system.smart_map.', 'system.smart_map.view')
-      disableChildren('system.notifications.', 'system.notifications.view')
-      disableChildren('organization.company.', 'organization.company.profile_view')
-      disableChildren('organization.users.', 'organization.users.view')
-      disableChildren('system.audit.', 'system.audit.view')
-    }
-
     setRenderPerms(updated)
   }
 
@@ -373,24 +420,13 @@ function RoleManagement() {
     )
   }
 
-  // Collapsible category triggers
-  const toggleModuleCollapse = (moduleName) => {
-    setExpandedModules((prev) => ({
-      ...prev,
-      [moduleName]: !prev[moduleName],
-    }))
-  }
-
+  // Module level Select All / Deselect All
   const enableAllInModule = (moduleName, enabled) => {
     setHasChanges(true)
     setRenderPerms((prev) =>
       prev.map((p) => {
         if (p.module === moduleName) {
-          // If turning OFF module, view is OFF -> children OFF
-          if (!enabled) {
-            return { ...p, enabled: false }
-          }
-          return { ...p, enabled: true }
+          return { ...p, enabled }
         }
         return p
       })
@@ -402,7 +438,7 @@ function RoleManagement() {
     setRenderPerms((prev) =>
       prev.map((p) => ({
         ...p,
-        enabled: enabled
+        enabled,
       }))
     )
   }
@@ -410,23 +446,6 @@ function RoleManagement() {
   // Save Settings configuration flow
   const handleSavePermissions = async () => {
     if (!selectedRole) return
-
-    // Calculate changes count
-    const originalRole = roles.find((r) => r.id === selectedRole.id)
-    const originalRender = getRolePermissionsForRendering(originalRole)
-    const modifiedCount = renderPerms.filter((p, idx) => {
-      const orig = originalRender[idx]
-      return orig.enabled !== p.enabled || orig.access_scope !== p.access_scope
-    }).length
-
-    if (modifiedCount === 0) {
-      showToast('No changes detected to save.', 'info')
-      return
-    }
-
-    if (!window.confirm(`Are you sure you want to apply the ${modifiedCount} modifications to the '${selectedRole.name}' authorization payload?`)) {
-      return
-    }
 
     const updatedRoles = roles.map((r) => {
       if (r.id === selectedRole.id) {
@@ -463,17 +482,30 @@ function RoleManagement() {
       return
     }
 
+    // Check base template role to copy initial permissions
+    let initialStructured = systemPermissionsList.map((p) => ({
+      permission_key: p.permission_key,
+      enabled: p.permission_key.includes('view') || p.permission_key.includes('read'),
+      access_scope: 'Own',
+    }))
+
+    if (newRole.base_role_id) {
+      const baseRole = roles.find((r) => r.id === newRole.base_role_id)
+      if (baseRole && baseRole.structured_permissions) {
+        initialStructured = baseRole.structured_permissions
+      }
+    }
+
     const createdRole = {
       id: normalizedId,
       name: newRole.name,
       description: newRole.description || 'Custom company authorization role.',
       isSystem: false,
+      is_system: false,
+      status: newRole.status || 'Active',
+      is_active: newRole.status === 'Active',
       userCount: 0,
-      structured_permissions: systemPermissionsList.map((p) => ({
-        permission_key: p.permission_key,
-        enabled: p.permission_key.includes('view') || p.permission_key.includes('read'),
-        access_scope: 'Own',
-      })),
+      structured_permissions: initialStructured,
     }
 
     const updatedRoles = [...roles, createdRole]
@@ -486,14 +518,14 @@ function RoleManagement() {
       setSelectedRole(createdRole)
       buildRenderPermsForRole(createdRole)
       setShowAddRoleModal(false)
-      setNewRole({ name: '', description: '' })
+      setNewRole({ name: '', description: '', status: 'Active', base_role_id: '' })
     } catch (err) {
       showToast(`Role created`, 'success')
       setRoles(updatedRoles)
       setSelectedRole(createdRole)
       buildRenderPermsForRole(createdRole)
       setShowAddRoleModal(false)
-      setNewRole({ name: '', description: '' })
+      setNewRole({ name: '', description: '', status: 'Active', base_role_id: '' })
     }
   }
 
@@ -524,11 +556,19 @@ function RoleManagement() {
 
   // Filters roles list
   const filteredRoles = useMemo(() => {
-    return roles.filter((r) => r.name.toLowerCase().includes(searchQuery.toLowerCase()))
-  }, [roles, searchQuery])
+    return roles.filter((r) => {
+      const matchesSearch = r.name.toLowerCase().includes(searchQuery.toLowerCase()) || (r.description || '').toLowerCase().includes(searchQuery.toLowerCase())
+      const isSys = r.isSystem || r.is_system
+      const matchesType = typeFilter === 'ALL' || (typeFilter === 'SYSTEM' && isSys) || (typeFilter === 'CUSTOM' && !isSys)
+      const matchesStatus = statusFilter === 'ALL' || (statusFilter === 'ACTIVE' && r.status === 'Active') || (statusFilter === 'INACTIVE' && r.status === 'Inactive')
+      return matchesSearch && matchesType && matchesStatus
+    })
+  }, [roles, searchQuery, typeFilter, statusFilter])
 
   const systemRolesCount = useMemo(() => roles.filter((r) => r.isSystem || r.is_system).length, [roles])
   const customRolesCount = useMemo(() => roles.filter((r) => !(r.isSystem || r.is_system)).length, [roles])
+  const activeRolesCount = useMemo(() => roles.filter((r) => r.status === 'Active' || r.is_active !== false).length, [roles])
+  const totalAssignedUsers = useMemo(() => roles.reduce((sum, r) => sum + (r.userCount || 0), 0), [roles])
 
   // Filters permissions matching selected activeModule or search query
   const matchingPerms = useMemo(() => {
@@ -545,43 +585,37 @@ function RoleManagement() {
     })
   }, [renderPerms, permissionSearch, activeModule])
 
-  // Backward compatibility rendering helper
-  const getRolePermissionsForRendering = (role) => {
-    if (!role) return []
-    return systemPermissionsList.map((sys) => {
-      const structured = (role.structured_permissions || []).find(
-        (sp) => sp.permission_key === sys.permission_key
-      )
-      if (structured) {
-        return {
-          ...sys,
-          enabled: structured.enabled ?? true,
-          access_scope: structured.access_scope || 'All',
-        }
-      }
-      return { ...sys, enabled: false, access_scope: 'All' }
+  // User search filter for assignment modal
+  const filteredUsersForAssignment = useMemo(() => {
+    return allUsers.filter((u) => {
+      const query = userSearchQuery.toLowerCase().trim()
+      if (!query) return true
+      const name = (u.name || u.full_name || '').toLowerCase()
+      const email = (u.email || '').toLowerCase()
+      const code = (u.employee_code || u.employee_id || '').toLowerCase()
+      return name.includes(query) || email.includes(query) || code.includes(query)
     })
-  }
+  }, [allUsers, userSearchQuery])
 
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center py-32 space-y-3">
-        <div className="w-10 h-10 border-4 border-[#061A4D] border-t-transparent rounded-full animate-spin"></div>
+        <div className="w-10 h-10 border-4 border-[#0B2545] border-t-transparent rounded-full animate-spin"></div>
         <p className="text-xs font-bold text-slate-500">Loading dynamic database permission configurations...</p>
       </div>
     )
   }
 
   return (
-    <div className="space-y-6 font-sans">
+    <div className="space-y-6 font-sans pb-12">
       {/* Top Title Banner */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-white via-white to-[#D4ECFC]/25 border border-[#64B5F6]/25 rounded-3xl p-6 shadow-xs">
         <div>
           <h1 className="text-2xl font-extrabold text-[#0B2545] tracking-tight flex items-center gap-2">
-            <ShieldCheck className="w-7 h-7 text-[#1E88E5]" /> Role & Permission Management (RBAC)
+            <ShieldCheck className="w-7 h-7 text-[#1E88E5]" /> Roles & Permissions Management (RBAC)
           </h1>
           <p className="text-xs text-[#64748B] font-semibold mt-1">
-            Control what each role can access and what actions they can perform across TwiteConnect.
+            Configure dynamic role capabilities, data access scopes, and assigned users across TWiTE Connect.
           </p>
         </div>
         <button
@@ -592,9 +626,56 @@ function RoleManagement() {
         </button>
       </div>
 
+      {/* Summary Stat Widgets Header */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-3xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">System Roles</p>
+            <h3 className="text-xl font-black text-[#0B2545] mt-0.5">{systemRolesCount}</h3>
+            <p className="text-[10px] text-slate-400 font-semibold mt-1">Protected core roles</p>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#1E88E5] flex items-center justify-center font-extrabold">
+            <Lock className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-3xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Custom Roles</p>
+            <h3 className="text-xl font-black text-[#0B2545] mt-0.5">{customRolesCount}</h3>
+            <p className="text-[10px] text-slate-400 font-semibold mt-1">User-configured roles</p>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-extrabold">
+            <Layers className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-3xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Active Status</p>
+            <h3 className="text-xl font-black text-emerald-600 mt-0.5">{activeRolesCount} / {roles.length}</h3>
+            <p className="text-[10px] text-slate-400 font-semibold mt-1">Enabled role profiles</p>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-extrabold">
+            <CheckCircle2 className="w-5 h-5" />
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-3xs flex items-center justify-between">
+          <div>
+            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total Assigned Users</p>
+            <h3 className="text-xl font-black text-[#0B2545] mt-0.5">{totalAssignedUsers}</h3>
+            <p className="text-[10px] text-slate-400 font-semibold mt-1">Mapped user accounts</p>
+          </div>
+          <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center font-extrabold">
+            <Users className="w-5 h-5" />
+          </div>
+        </div>
+      </div>
+
       {/* Unsaved Changes Banner */}
       {hasChanges && (
-        <div className="bg-amber-50 border border-[#D9A441] p-4 rounded-xl flex items-center justify-between gap-4">
+        <div className="bg-amber-50 border border-[#D9A441] p-4 rounded-2xl flex items-center justify-between gap-4 shadow-xs">
           <div className="flex items-center gap-2.5 text-[#D99A18] text-xs font-bold">
             <AlertTriangle className="w-5 h-5 shrink-0" />
             <span>You have modified permissions for '{selectedRole?.name}'. Save your configuration changes to apply them to active sessions.</span>
@@ -616,100 +697,202 @@ function RoleManagement() {
         </div>
       )}
 
-      {/* Two Column Layout Grid */}
+      {/* Main Two Column Layout Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Column: Roles list */}
+        {/* Left Column: Roles Search, Filters & Cards List */}
         <div className="lg:col-span-4 bg-gradient-to-br from-white via-white to-[#D4ECFC]/10 p-5 rounded-3xl border border-[#64B5F6]/25 shadow-xs space-y-4 lg:sticky lg:top-6">
-          <h2 className="font-extrabold text-[#0B2545] text-sm flex items-center justify-between border-b pb-2">
-            <span>System User Roles ({systemRolesCount})</span>
-            <span className="text-[11px] font-semibold text-slate-500">Custom ({customRolesCount})</span>
-          </h2>
-
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Search roles..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-4 py-2.5 bg-[#EEF4F8]/50 border border-[#64B5F6]/20 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#1E88E5] font-semibold"
-            />
+          <div className="flex items-center justify-between border-b pb-2">
+            <h2 className="font-extrabold text-[#0B2545] text-sm flex items-center gap-1.5">
+              <Layers className="w-4 h-4 text-[#1E88E5]" /> Roles Roster ({filteredRoles.length})
+            </h2>
+            <span className="text-[10px] font-bold text-slate-400">Total: {roles.length}</span>
           </div>
 
-          <div className="space-y-2 max-h-[450px] overflow-y-auto pr-1">
-            {filteredRoles.map((role) => {
-              const isSelected = selectedRole?.id === role.id
-              const isSys = role.isSystem || role.is_system
-              return (
-                <div
-                  key={role.id}
-                  onClick={() => handleRoleSelect(role)}
-                  className={`p-4 rounded-2xl border transition cursor-pointer relative flex flex-col justify-between ${
-                    isSelected
-                      ? 'border-[#1E88E5] bg-[#D4ECFC]/35 shadow-xs ring-2 ring-[#1E88E5]/15'
-                      : 'border-[#64B5F6]/20 bg-[#EEF4F8]/10 hover:bg-white hover:border-[#64B5F6]/50 shadow-3xs'
-                  }`}
-                >
-                  {isSelected && (
-                    <div className="absolute top-0 left-0 bottom-0 w-1 bg-gradient-to-b from-[#0B2545] to-[#1E88E5] rounded-l-xl" />
-                  )}
-                  <div className="flex items-center justify-between mb-1.5">
-                    <span className="font-extrabold text-[#0B2545] text-xs flex items-center gap-1.5 uppercase tracking-tight">
-                      {role.name}
-                      {isSys && (
-                        <span className="text-[9px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-black border border-slate-300">
-                          System
+          {/* Search bar & Type/Status filters */}
+          <div className="space-y-2">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search roles..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-[#EEF4F8]/50 border border-[#64B5F6]/20 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#1E88E5] font-semibold"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select
+                value={typeFilter}
+                onChange={(e) => setTypeFilter(e.target.value)}
+                className="w-1/2 py-1.5 px-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 focus:outline-none focus:border-[#1E88E5]"
+              >
+                <option value="ALL">All Types</option>
+                <option value="SYSTEM">System Roles</option>
+                <option value="CUSTOM">Custom Roles</option>
+              </select>
+
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="w-1/2 py-1.5 px-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 focus:outline-none focus:border-[#1E88E5]"
+              >
+                <option value="ALL">All Status</option>
+                <option value="ACTIVE">Active Only</option>
+                <option value="INACTIVE">Inactive Only</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Roles Cards */}
+          <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
+            {filteredRoles.length === 0 ? (
+              <div className="text-center py-10 border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
+                <AlertCircle className="w-7 h-7 text-slate-300 mx-auto mb-1.5" />
+                <p className="text-xs font-bold text-slate-500">No roles match your search or filter.</p>
+              </div>
+            ) : (
+              filteredRoles.map((role) => {
+                const isSelected = selectedRole?.id === role.id
+                const isSys = role.isSystem || role.is_system
+                const isActive = role.status === 'Active' || role.is_active !== false
+
+                return (
+                  <div
+                    key={role.id}
+                    onClick={() => handleRoleSelect(role)}
+                    className={`p-4 rounded-2xl border transition cursor-pointer relative flex flex-col justify-between ${
+                      isSelected
+                        ? 'border-[#1E88E5] bg-[#D4ECFC]/35 shadow-xs ring-2 ring-[#1E88E5]/15'
+                        : 'border-[#64B5F6]/20 bg-[#EEF4F8]/10 hover:bg-white hover:border-[#64B5F6]/50 shadow-3xs'
+                    }`}
+                  >
+                    {isSelected && (
+                      <div className="absolute top-0 left-0 bottom-0 w-1 bg-gradient-to-b from-[#0B2545] to-[#1E88E5] rounded-l-xl" />
+                    )}
+
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div>
+                        <span className="font-extrabold text-[#0B2545] text-xs flex items-center gap-1.5 uppercase tracking-tight">
+                          {role.name}
+                          {isSys ? (
+                            <span className="text-[8px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-black uppercase border border-slate-300">
+                              System
+                            </span>
+                          ) : (
+                            <span className="text-[8px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-black uppercase border border-indigo-100">
+                              Custom
+                            </span>
+                          )}
                         </span>
-                      )}
-                    </span>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-[10px] font-bold text-[#0B2545] bg-[#D4ECFC] px-2.5 py-0.5 rounded-full border border-[#64B5F6]/25 flex items-center gap-1">
-                        <Users className="w-3 h-3 text-[#0B2545]" /> {role.userCount} Users
-                      </span>
-                      {!isSys && (
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-black flex items-center gap-1 border ${
+                            isActive
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                              : 'bg-slate-100 text-slate-500 border-slate-200'
+                          }`}>
+                            <span className={`w-1.5 h-1.5 rounded-full ${isActive ? 'bg-emerald-500' : 'bg-slate-400'}`}></span>
+                            {role.status || 'Active'}
+                          </span>
+                          <span className="text-[9px] font-bold text-[#0B2545] bg-[#D4ECFC] px-2 py-0.5 rounded-full border border-[#64B5F6]/25 flex items-center gap-1">
+                            <Users className="w-2.5 h-2.5 text-[#0B2545]" /> {role.userCount || 0} Users
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Role Actions Button Dropdown */}
+                      <div className="flex items-center gap-1 shrink-0" onClick={(e) => e.stopPropagation()}>
                         <button
                           type="button"
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            handleDeleteRole(role)
-                          }}
-                          className="p-1 text-rose-500 hover:bg-rose-50 rounded-lg transition"
-                          title="Delete Custom Role"
+                          onClick={() => handleOpenRoleDetails(role)}
+                          className="p-1.5 text-slate-500 hover:text-[#1E88E5] hover:bg-white rounded-lg transition"
+                          title="View Role Details & Users"
                         >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          <Eye className="w-3.5 h-3.5" />
                         </button>
-                      )}
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenAssignUsers(role)}
+                          className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-white rounded-lg transition"
+                          title="Assign Users to Role"
+                        >
+                          <UserPlus className="w-3.5 h-3.5" />
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleOpenDuplicate(role)}
+                          className="p-1.5 text-slate-500 hover:text-violet-600 hover:bg-white rounded-lg transition"
+                          title="Duplicate Role"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                        </button>
+
+                        {!isSys && (
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteRole(role)}
+                            className="p-1.5 text-rose-500 hover:bg-rose-50 rounded-lg transition"
+                            title="Delete Custom Role"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
                     </div>
+
+                    <p className="text-[11px] text-[#64748B] font-medium leading-relaxed line-clamp-2">
+                      {role.description || 'No description provided.'}
+                    </p>
                   </div>
-                  <p className="text-[11px] text-[#64748B] font-medium leading-relaxed mt-1 line-clamp-2">
-                    {role.description}
-                  </p>
-                </div>
-              )
-            })}
+                )
+              })
+            )}
           </div>
         </div>
 
-        {/* Right Column: Permission Config Matrix Table */}
+        {/* Right Column: Permission Matrix Table Editor */}
         {selectedRole && (
           <div className="lg:col-span-8 bg-gradient-to-br from-white via-white to-[#D4ECFC]/15 p-5 rounded-3xl border border-[#64B5F6]/25 shadow-xs space-y-5">
-            {/* Header Selected Role Description info */}
+            {/* Header Selected Role Info & Actions */}
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
               <div>
-                <div className="flex items-center gap-2">
-                  <h2 className="font-extrabold text-[#0B2545] text-base">{selectedRole.name} Matrix</h2>
-                  {selectedRole.isSystem && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h2 className="font-extrabold text-[#0B2545] text-base">{selectedRole.name} Permission Matrix</h2>
+                  {selectedRole.isSystem || selectedRole.is_system ? (
                     <span className="text-[9px] bg-gradient-to-r from-[#0B2545] to-[#1E88E5] text-[#D4ECFC] font-black uppercase px-2 py-0.5 rounded border border-blue-900/30 shadow-sm">
-                      Protected
+                      Protected System Role
+                    </span>
+                  ) : (
+                    <span className="text-[9px] bg-indigo-50 text-indigo-700 font-black uppercase px-2 py-0.5 rounded border border-indigo-100">
+                      Custom Role
                     </span>
                   )}
+                  <button
+                    onClick={() => handleToggleRoleStatus(selectedRole)}
+                    className={`text-[9px] px-2 py-0.5 rounded font-black uppercase transition cursor-pointer border ${
+                      selectedRole.status === 'Active'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                        : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                    }`}
+                  >
+                    Status: {selectedRole.status || 'Active'}
+                  </button>
                 </div>
                 <p className="text-[11px] text-[#64748B] font-semibold mt-1">
-                  Configure dynamic resource access scopes and actions controls.
+                  Configure module capabilities, data access scopes, and operational boundaries.
                 </p>
               </div>
-              
-              <div className="flex items-center gap-2 shrink-0">
+
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => handleOpenAssignUsers(selectedRole)}
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-extrabold rounded-lg transition cursor-pointer border border-indigo-200 flex items-center gap-1"
+                >
+                  <UserCheck className="w-3.5 h-3.5" /> Assign Users ({selectedRole.userCount || 0})
+                </button>
                 <button
                   type="button"
                   onClick={() => handleGlobalToggle(true)}
@@ -728,17 +911,17 @@ function RoleManagement() {
                   onClick={handleSavePermissions}
                   className="px-4 py-2 bg-gradient-to-r from-[#0B2545] to-[#1E88E5] hover:from-[#1E88E5] hover:to-[#64B5F6] text-white text-xs font-extrabold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#0B2545]/15"
                 >
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Save Changes
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Save Matrix
                 </button>
               </div>
             </div>
 
-            {/* Filter Permissions search inside module */}
+            {/* Capability Search */}
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
               <input
                 type="text"
-                placeholder="Search capability permissions..."
+                placeholder="Search capability permissions across all modules..."
                 value={permissionSearch}
                 onChange={(e) => setPermissionSearch(e.target.value)}
                 className="w-full pl-9 pr-4 py-2.5 bg-[#EEF4F8]/50 border border-[#64B5F6]/20 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#1E88E5] font-semibold"
@@ -747,7 +930,7 @@ function RoleManagement() {
 
             {/* Matrix Panel Layout */}
             {permissionSearch ? (
-              // Search view: flat list of matching permissions across all modules
+              // Search view: flat list of matching permissions
               <div className="space-y-4">
                 <div className="flex items-center justify-between text-xs text-slate-500 font-bold border-b pb-2">
                   <span>Search Results for "{permissionSearch}"</span>
@@ -761,17 +944,14 @@ function RoleManagement() {
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
                     {matchingPerms.map((p) => {
-                      const isParentOff = isParentViewDisabled(p.permission_key)
-                      const isEnabled = p.enabled && !isParentOff
+                      const isEnabled = p.enabled
                       return (
                         <div
                           key={p.permission_key}
                           className={`border rounded-2xl p-4 bg-white transition-all duration-200 flex flex-col justify-between min-h-[140px] ${
-                            isParentOff
-                              ? 'border-slate-100 bg-slate-50/40 opacity-60'
-                              : isEnabled
-                              ? 'border-blue-100 shadow-xs ring-1 ring-blue-50/10'
-                              : 'border-slate-200 hover:border-slate-350 shadow-2xs'
+                            isEnabled
+                              ? 'border-blue-200 shadow-xs ring-1 ring-blue-50/10'
+                              : 'border-slate-200 hover:border-slate-350 shadow-2xs opacity-75'
                           }`}
                         >
                           <div>
@@ -779,7 +959,7 @@ function RoleManagement() {
                               <div className="min-w-0">
                                 <span className="font-extrabold text-slate-900 text-xs tracking-tight uppercase flex items-center gap-1.5 flex-wrap">
                                   {p.action}
-                                  <span className="text-[8px] bg-blue-50 text-[#123A8C] px-1.5 py-0.5 rounded font-black uppercase border border-blue-100">
+                                  <span className="text-[8px] bg-blue-50 text-[#0B2545] px-1.5 py-0.5 rounded font-black uppercase border border-blue-100">
                                     {p.module}
                                   </span>
                                 </span>
@@ -791,13 +971,10 @@ function RoleManagement() {
                                 <input
                                   type="checkbox"
                                   checked={isEnabled}
-                                  disabled={isParentOff}
-                                  onChange={(e) =>
-                                    handleTogglePermission(p.permission_key, e.target.checked)
-                                  }
+                                  onChange={(e) => handleTogglePermission(p.permission_key, e.target.checked)}
                                   className="sr-only peer"
                                 />
-                                <div className="w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#061A4D] disabled:opacity-50"></div>
+                                <div className="w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#0B2545]"></div>
                               </label>
                             </div>
                             <p className="text-[11px] text-slate-500 font-semibold leading-relaxed mt-2.5">
@@ -805,12 +982,7 @@ function RoleManagement() {
                             </p>
                           </div>
                           <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2">
-                            {isParentOff ? (
-                              <div className="flex items-center gap-1.5 text-amber-600 text-[10px] font-extrabold bg-amber-50 border border-amber-100 p-2 rounded-lg">
-                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                <span>Requires View permission to be enabled</span>
-                              </div>
-                            ) : p.hasScope ? (
+                            {p.hasScope ? (
                               <div className="flex items-center justify-between gap-3">
                                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
                                   <Lock className="w-3 h-3 text-slate-400" /> Access Scope
@@ -818,10 +990,8 @@ function RoleManagement() {
                                 <select
                                   value={p.access_scope}
                                   disabled={!isEnabled}
-                                  onChange={(e) =>
-                                    handleScopeChange(p.permission_key, e.target.value)
-                                  }
-                                  className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800 focus:outline-none focus:border-[#123A8C] disabled:opacity-50 text-[10px] h-7 shrink-0 shadow-2xs"
+                                  onChange={(e) => handleScopeChange(p.permission_key, e.target.value)}
+                                  className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800 focus:outline-none focus:border-[#1E88E5] disabled:opacity-50 text-[10px] h-7 shrink-0 shadow-2xs"
                                 >
                                   <option value="Own">Own Record</option>
                                   <option value="Assigned">Assigned Only</option>
@@ -845,17 +1015,13 @@ function RoleManagement() {
             ) : (
               // Tabbed Layout with Module Sidebar on Left and Cards Grid on Right
               <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-start">
-                {/* Module Sidebar */}
+                {/* Module Navigation List */}
                 <div className="md:col-span-4 space-y-1.5 max-h-[500px] overflow-y-auto pr-1">
                   {Object.keys(moduleIcons).map((mName) => {
                     const IconComponent = moduleIcons[mName] || ShieldCheck
-                    
-                    // Stats
                     const permsInMod = renderPerms.filter((p) => p.module === mName)
                     const totalCount = permsInMod.length
-                    const enabledCount = permsInMod.filter(
-                      (p) => p.enabled && !isParentViewDisabled(p.permission_key)
-                    ).length
+                    const enabledCount = permsInMod.filter((p) => p.enabled).length
 
                     return (
                       <button
@@ -864,27 +1030,21 @@ function RoleManagement() {
                         onClick={() => setActiveModule(mName)}
                         className={`w-full flex items-center justify-between p-3 rounded-xl border text-left transition-all cursor-pointer ${
                           activeModule === mName
-                            ? 'border-[#123A8C] bg-blue-50/20 text-[#071A45] font-extrabold shadow-2xs ring-2 ring-[#123A8C]/15'
+                            ? 'border-[#0B2545] bg-blue-50/30 text-[#0B2545] font-extrabold shadow-2xs ring-2 ring-[#0B2545]/15'
                             : 'border-slate-100 bg-slate-50/10 text-[#64748B] hover:bg-slate-50 hover:text-slate-900 font-semibold'
                         }`}
                       >
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <IconComponent
-                            className={`w-4 h-4 shrink-0 ${
-                              activeModule === mName ? 'text-[#123A8C]' : 'text-slate-450'
-                            }`}
-                          />
+                          <IconComponent className={`w-4 h-4 shrink-0 ${activeModule === mName ? 'text-[#1E88E5]' : 'text-slate-400'}`} />
                           <span className="text-[11px] truncate">{mName}</span>
                         </div>
-                        <span
-                          className={`text-[9px] px-1.5 py-0.5 rounded font-black shrink-0 border ${
-                            enabledCount === totalCount
-                              ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
-                              : enabledCount > 0
-                              ? 'bg-amber-50 text-amber-700 border-amber-100'
-                              : 'bg-slate-100 text-slate-500 border-slate-200'
-                          }`}
-                        >
+                        <span className={`text-[9px] px-1.5 py-0.5 rounded font-black shrink-0 border ${
+                          enabledCount === totalCount
+                            ? 'bg-emerald-50 text-emerald-700 border-emerald-100'
+                            : enabledCount > 0
+                            ? 'bg-amber-50 text-amber-700 border-amber-100'
+                            : 'bg-slate-100 text-slate-500 border-slate-200'
+                        }`}>
                           {enabledCount}/{totalCount}
                         </span>
                       </button>
@@ -894,31 +1054,31 @@ function RoleManagement() {
 
                 {/* Module Details Right Panel */}
                 <div className="md:col-span-8 space-y-4">
-                  {/* Module header stats & controls */}
-                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-2">
+                  {/* Module Header Controls & Select All / Deselect All */}
+                  <div className="flex items-center justify-between gap-3 border-b border-slate-100 pb-3 bg-slate-50/50 p-3 rounded-2xl">
                     <div>
-                      <h3 className="font-extrabold text-[#071A45] text-sm uppercase tracking-tight flex items-center gap-1.5">
+                      <h3 className="font-extrabold text-[#0B2545] text-sm uppercase tracking-tight flex items-center gap-1.5">
                         {activeModule}
                       </h3>
-                      <p className="text-[10px] text-slate-450 font-bold mt-0.5">
-                        {renderPerms.filter((p) => p.module === activeModule && p.enabled && !isParentViewDisabled(p.permission_key)).length} of {renderPerms.filter((p) => p.module === activeModule).length} capabilities enabled
+                      <p className="text-[10px] text-slate-500 font-bold mt-0.5">
+                        {renderPerms.filter((p) => p.module === activeModule && p.enabled).length} of {renderPerms.filter((p) => p.module === activeModule).length} capabilities enabled
                       </p>
                     </div>
-                    
-                    <div className="flex items-center gap-1 shrink-0 uppercase text-[8px] font-black">
+
+                    <div className="flex items-center gap-1.5 shrink-0 text-[10px] font-extrabold">
                       <button
                         type="button"
                         onClick={() => enableAllInModule(activeModule, true)}
-                        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-250 text-emerald-700 rounded-md transition shadow-2xs cursor-pointer"
+                        className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
                       >
-                        All On
+                        <CheckSquare className="w-3.5 h-3.5 text-emerald-600" /> Select All
                       </button>
                       <button
                         type="button"
                         onClick={() => enableAllInModule(activeModule, false)}
-                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-250 text-rose-700 rounded-md transition shadow-2xs cursor-pointer"
+                        className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 rounded-lg transition shadow-2xs cursor-pointer flex items-center gap-1"
                       >
-                        All Off
+                        <Square className="w-3.5 h-3.5 text-rose-600" /> Deselect All
                       </button>
                     </div>
                   </div>
@@ -926,18 +1086,15 @@ function RoleManagement() {
                   {/* Cards Grid */}
                   <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 max-h-[420px] overflow-y-auto pr-1">
                     {matchingPerms.map((p) => {
-                      const isParentOff = isParentViewDisabled(p.permission_key)
-                      const isEnabled = p.enabled && !isParentOff
+                      const isEnabled = p.enabled
 
                       return (
                         <div
                           key={p.permission_key}
                           className={`border rounded-2xl p-4 bg-white transition-all duration-200 flex flex-col justify-between min-h-[140px] ${
-                            isParentOff
-                              ? 'border-slate-100 bg-slate-50/40 opacity-60'
-                              : isEnabled
-                              ? 'border-blue-100 shadow-xs ring-1 ring-blue-50/10'
-                              : 'border-slate-200 hover:border-slate-350 shadow-2xs'
+                            isEnabled
+                              ? 'border-blue-200 shadow-xs ring-1 ring-blue-50/10'
+                              : 'border-slate-200 hover:border-slate-350 shadow-2xs opacity-75'
                           }`}
                         >
                           <div>
@@ -954,13 +1111,10 @@ function RoleManagement() {
                                 <input
                                   type="checkbox"
                                   checked={isEnabled}
-                                  disabled={isParentOff}
-                                  onChange={(e) =>
-                                    handleTogglePermission(p.permission_key, e.target.checked)
-                                  }
+                                  onChange={(e) => handleTogglePermission(p.permission_key, e.target.checked)}
                                   className="sr-only peer"
                                 />
-                                <div className="w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#061A4D] disabled:opacity-50"></div>
+                                <div className="w-8 h-4.5 bg-slate-200 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3.5 after:w-3.5 after:transition-all peer-checked:bg-[#0B2545]"></div>
                               </label>
                             </div>
                             <p className="text-[11px] text-slate-500 font-semibold leading-relaxed mt-2.5">
@@ -968,24 +1122,16 @@ function RoleManagement() {
                             </p>
                           </div>
                           <div className="mt-4 pt-3 border-t border-slate-100 flex flex-col gap-2">
-                            {isParentOff ? (
-                              <div className="flex items-center gap-1.5 text-amber-600 text-[10px] font-extrabold bg-amber-50 border border-amber-100 p-2 rounded-lg">
-                                <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                                <span>Requires View permission to be enabled</span>
-                              </div>
-                            ) : p.hasScope ? (
+                            {p.hasScope ? (
                               <div className="flex items-center justify-between gap-3">
                                 <span className="text-[9px] font-black text-slate-500 uppercase tracking-wider flex items-center gap-1">
                                   <Lock className="w-3 h-3 text-slate-400" /> Access Scope
-                                  <HelpCircle className="w-2.5 h-2.5 text-slate-350 hover:text-slate-500 cursor-help" title="Scope of data visibility for this action" />
                                 </span>
                                 <select
                                   value={p.access_scope}
                                   disabled={!isEnabled}
-                                  onChange={(e) =>
-                                    handleScopeChange(p.permission_key, e.target.value)
-                                  }
-                                  className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800 focus:outline-none focus:border-[#123A8C] disabled:opacity-50 text-[10px] h-7 shrink-0 shadow-2xs"
+                                  onChange={(e) => handleScopeChange(p.permission_key, e.target.value)}
+                                  className="bg-white border border-slate-200 rounded-lg px-2 py-1 font-bold text-slate-800 focus:outline-none focus:border-[#1E88E5] disabled:opacity-50 text-[10px] h-7 shrink-0 shadow-2xs"
                                 >
                                   <option value="Own">Own Record</option>
                                   <option value="Assigned">Assigned Only</option>
@@ -1014,12 +1160,14 @@ function RoleManagement() {
       {/* Create Custom Role Modal */}
       {showAddRoleModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-[#DCE3EF] shadow-2xl">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 border border-[#DCE3EF] shadow-2xl">
             <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="font-extrabold text-[#071A45] text-base">Create Custom Role</h3>
+              <h3 className="font-extrabold text-[#0B2545] text-base flex items-center gap-2">
+                <Plus className="w-5 h-5 text-[#1E88E5]" /> Create Custom Role
+              </h3>
               <button
                 onClick={() => setShowAddRoleModal(false)}
-                className="text-slate-400 hover:text-slate-650 text-sm cursor-pointer p-1"
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1"
               >
                 ✕
               </button>
@@ -1029,10 +1177,10 @@ function RoleManagement() {
                 <label className="block text-slate-800 font-extrabold mb-1">Role Title <span className="text-rose-500">*</span></label>
                 <input
                   type="text"
-                  placeholder="e.g. Area Operations Lead"
+                  placeholder="e.g. Team Lead, Regional Manager"
                   value={newRole.name}
                   onChange={(e) => setNewRole({ ...newRole, name: e.target.value })}
-                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-[#123A8C]"
+                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-[#1E88E5]"
                   required
                 />
               </div>
@@ -1040,15 +1188,43 @@ function RoleManagement() {
               <div>
                 <label className="block text-slate-800 font-extrabold mb-1">Description</label>
                 <textarea
-                  rows={3}
-                  placeholder="Brief summary of duties and configurations map..."
+                  rows={2}
+                  placeholder="Brief summary of responsibilities and authorization limits..."
                   value={newRole.description}
                   onChange={(e) => setNewRole({ ...newRole, description: e.target.value })}
-                  className="w-full p-3 border border-slate-300 rounded-xl text-slate-900 font-bold focus:outline-none focus:border-[#123A8C]"
+                  className="w-full p-3 border border-slate-300 rounded-xl text-slate-900 font-bold focus:outline-none focus:border-[#1E88E5]"
                 />
               </div>
 
-              <div className="flex items-center justify-end gap-2 pt-2 border-t">
+              <div>
+                <label className="block text-slate-800 font-extrabold mb-1">Base Permissions Template (Optional)</label>
+                <select
+                  value={newRole.base_role_id}
+                  onChange={(e) => setNewRole({ ...newRole, base_role_id: e.target.value })}
+                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-[#1E88E5]"
+                >
+                  <option value="">Start with Default View Permissions</option>
+                  {roles.map((r) => (
+                    <option key={r.id} value={r.id}>
+                      Clone from {r.name} ({r.isSystem ? 'System' : 'Custom'})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-800 font-extrabold mb-1">Initial Status</label>
+                <select
+                  value={newRole.status}
+                  onChange={(e) => setNewRole({ ...newRole, status: e.target.value })}
+                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-[#1E88E5]"
+                >
+                  <option value="Active">Active</option>
+                  <option value="Inactive">Inactive</option>
+                </select>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t">
                 <button
                   type="button"
                   onClick={() => setShowAddRoleModal(false)}
@@ -1058,12 +1234,276 @@ function RoleManagement() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2 bg-[#061A4D] hover:bg-[#123A8C] text-white font-extrabold rounded-xl text-xs shadow-md transition cursor-pointer"
+                  className="px-5 py-2 bg-[#0B2545] hover:bg-[#1E88E5] text-white font-extrabold rounded-xl text-xs shadow-md transition cursor-pointer"
                 >
-                  Create Custom Role
+                  Create Role
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Duplicate Role Modal */}
+      {showDuplicateModal && selectedRole && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 border border-[#DCE3EF] shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-3">
+              <h3 className="font-extrabold text-[#0B2545] text-base flex items-center gap-2">
+                <Copy className="w-5 h-5 text-violet-600" /> Duplicate Role - '{selectedRole.name}'
+              </h3>
+              <button
+                onClick={() => setShowDuplicateModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1"
+              >
+                ✕
+              </button>
+            </div>
+            <form onSubmit={handleDuplicateRole} className="space-y-4 text-xs">
+              <div>
+                <label className="block text-slate-800 font-extrabold mb-1">New Role Name <span className="text-rose-500">*</span></label>
+                <input
+                  type="text"
+                  placeholder="e.g. Senior Team Lead"
+                  value={duplicateRoleName}
+                  onChange={(e) => setDuplicateRoleName(e.target.value)}
+                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-[#1E88E5]"
+                  required
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-800 font-extrabold mb-1">Description</label>
+                <textarea
+                  rows={2}
+                  value={duplicateRoleDesc}
+                  onChange={(e) => setDuplicateRoleDesc(e.target.value)}
+                  className="w-full p-3 border border-slate-300 rounded-xl text-slate-900 font-bold focus:outline-none focus:border-[#1E88E5]"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowDuplicateModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2 bg-violet-700 hover:bg-violet-800 text-white font-extrabold rounded-xl text-xs shadow-md transition cursor-pointer"
+                >
+                  Duplicate Role
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Users Modal */}
+      {showAssignUsersModal && selectedRole && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-4 border border-[#DCE3EF] shadow-2xl">
+            <div className="flex items-center justify-between border-b pb-3">
+              <div>
+                <h3 className="font-extrabold text-[#0B2545] text-base flex items-center gap-2">
+                  <UserPlus className="w-5 h-5 text-indigo-600" /> Assign Users to '{selectedRole.name}'
+                </h3>
+                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                  Select employee accounts to map to this role profile.
+                </p>
+              </div>
+              <button
+                onClick={() => setShowAssignUsersModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="relative">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search user by name, email, or employee code..."
+                  value={userSearchQuery}
+                  onChange={(e) => setUserSearchQuery(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 font-semibold focus:outline-none focus:border-[#1E88E5]"
+                />
+              </div>
+
+              {loadingUsers ? (
+                <div className="text-center py-12 text-xs font-bold text-slate-500 flex flex-col items-center gap-2">
+                  <div className="w-6 h-6 border-2 border-[#0B2545] border-t-transparent rounded-full animate-spin"></div>
+                  <span>Loading user accounts list...</span>
+                </div>
+              ) : filteredUsersForAssignment.length === 0 ? (
+                <div className="text-center py-8 text-xs font-bold text-slate-500 border border-dashed border-slate-200 rounded-2xl">
+                  No user accounts found matching '{userSearchQuery}'.
+                </div>
+              ) : (
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1">
+                  {filteredUsersForAssignment.map((u) => {
+                    const uId = u.id || u.user_id
+                    const isChecked = selectedUserIds.includes(uId)
+
+                    return (
+                      <label
+                        key={uId}
+                        className={`flex items-center justify-between p-3 rounded-xl border transition cursor-pointer ${
+                          isChecked ? 'bg-indigo-50/50 border-indigo-200' : 'bg-white border-slate-100 hover:bg-slate-50'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedUserIds([...selectedUserIds, uId])
+                              } else {
+                                setSelectedUserIds(selectedUserIds.filter((id) => id !== uId))
+                              }
+                            }}
+                            className="w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500"
+                          />
+                          <div>
+                            <p className="text-xs font-extrabold text-[#0B2545]">{u.name || u.full_name || u.email}</p>
+                            <p className="text-[10px] font-semibold text-slate-500">{u.email} • {u.employee_code || u.employee_id || 'Emp'}</p>
+                          </div>
+                        </div>
+
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-600">
+                          {u.designation || u.role || 'User'}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+
+            <div className="flex items-center justify-between pt-3 border-t">
+              <span className="text-xs font-bold text-slate-500">Selected: {selectedUserIds.length} users</span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowAssignUsersModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSaveUserAssignments}
+                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs shadow-md transition cursor-pointer"
+                >
+                  Save Assignments
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Role Details Slide-over Drawer */}
+      {showRoleDetailsDrawer && selectedRole && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex justify-end z-50">
+          <div className="bg-white w-full max-w-xl h-full p-6 space-y-5 overflow-y-auto shadow-2xl flex flex-col justify-between">
+            <div className="space-y-4">
+              <div className="flex items-center justify-between border-b pb-4">
+                <div>
+                  <h3 className="font-black text-[#0B2545] text-lg flex items-center gap-2">
+                    <ShieldCheck className="w-6 h-6 text-[#1E88E5]" /> {selectedRole.name}
+                  </h3>
+                  <div className="flex items-center gap-2 mt-1">
+                    {selectedRole.isSystem || selectedRole.is_system ? (
+                      <span className="text-[9px] bg-slate-200 text-slate-800 px-2 py-0.5 rounded font-black uppercase">System Role</span>
+                    ) : (
+                      <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded font-black uppercase">Custom Role</span>
+                    )}
+                    <span className="text-[9px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded font-black uppercase">Status: {selectedRole.status || 'Active'}</span>
+                    <span className="text-[9px] bg-[#D4ECFC] text-[#0B2545] px-2 py-0.5 rounded font-black uppercase">{selectedRole.userCount || roleUsers.length} Assigned Users</span>
+                  </div>
+                </div>
+
+                <button
+                  onClick={() => setShowRoleDetailsDrawer(false)}
+                  className="text-slate-400 hover:text-slate-600 text-lg cursor-pointer p-1"
+                >
+                  ✕
+                </button>
+              </div>
+
+              <div className="bg-slate-50 p-4 rounded-2xl space-y-2 border border-slate-200/70">
+                <h4 className="text-xs font-extrabold text-[#0B2545] uppercase tracking-wider">Description</h4>
+                <p className="text-xs text-slate-600 font-semibold leading-relaxed">
+                  {selectedRole.description || 'No detailed summary provided.'}
+                </p>
+              </div>
+
+              {/* Assigned Users Section */}
+              <div className="space-y-3">
+                <h4 className="text-xs font-extrabold text-[#0B2545] uppercase tracking-wider flex items-center justify-between">
+                  <span>Assigned Users ({roleUsers.length})</span>
+                  <button
+                    onClick={() => {
+                      setShowRoleDetailsDrawer(false)
+                      handleOpenAssignUsers(selectedRole)
+                    }}
+                    className="text-[10px] text-[#1E88E5] font-black hover:underline cursor-pointer"
+                  >
+                    Manage Assignments
+                  </button>
+                </h4>
+
+                {roleUsers.length === 0 ? (
+                  <p className="text-xs text-slate-400 font-bold py-3 text-center border border-dashed rounded-xl">No users currently assigned to this role.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-[160px] overflow-y-auto pr-1">
+                    {roleUsers.map((u) => (
+                      <div key={u.id || u.user_id} className="p-2.5 bg-white border border-slate-100 rounded-xl flex items-center justify-between text-xs">
+                        <div>
+                          <p className="font-extrabold text-[#0B2545]">{u.name || u.email}</p>
+                          <p className="text-[10px] text-slate-500">{u.email}</p>
+                        </div>
+                        <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded">
+                          {u.designation || 'Member'}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Enabled Permissions Summary */}
+              <div className="space-y-3 pt-2 border-t">
+                <h4 className="text-xs font-extrabold text-[#0B2545] uppercase tracking-wider">Enabled Capabilities Matrix</h4>
+                <div className="space-y-2 max-h-[250px] overflow-y-auto pr-1">
+                  {renderPerms.filter((p) => p.enabled).map((p) => (
+                    <div key={p.permission_key} className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between text-xs">
+                      <div>
+                        <span className="font-extrabold text-[#0B2545]">{p.action}</span>
+                        <span className="text-[9px] text-slate-500 font-bold block">{p.module} • Scope: {p.access_scope}</span>
+                      </div>
+                      <span className="text-[9px] font-black text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded">Enabled</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            <div className="pt-4 border-t flex justify-end">
+              <button
+                onClick={() => setShowRoleDetailsDrawer(false)}
+                className="px-5 py-2 bg-[#0B2545] text-white font-extrabold rounded-xl text-xs shadow-md transition cursor-pointer"
+              >
+                Close Details
+              </button>
+            </div>
           </div>
         </div>
       )}

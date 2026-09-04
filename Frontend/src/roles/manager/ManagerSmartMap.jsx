@@ -1401,36 +1401,33 @@ export default function ManagerSmartMap() {
           })
         }
 
-        // Render purple dashed line if executive takes a different / deviated route
-        if (destRoutePathRef.current && destRoutePathRef.current.length > 2 && gPath.length >= 2) {
-          const distToCorridor = distanceToPolyline(lat, lng, destRoutePathRef.current)
-          if (distToCorridor > 0.3) {
-            const purpleSymbol = {
-              path: 'M 0,-2 0,2',
-              strokeOpacity: 1,
-              scale: 2.5,
-              strokeColor: '#9333ea', // Purple dashed line for off-route deviation
-              strokeWeight: 4
+        // Always render purple dashed line for executive traveled trail
+        if (gPath.length >= 2) {
+          const purpleSymbol = {
+            path: 'M 0,-2 0,2',
+            strokeOpacity: 1,
+            scale: 2.5,
+            strokeColor: '#9333ea', // Purple dashed line for traveled trail
+            strokeWeight: 4
+          }
+          if (offRoutePolylineRef.current) {
+            offRoutePolylineRef.current.setPath(gPath)
+            if (!offRoutePolylineRef.current.getMap()) {
+              offRoutePolylineRef.current.setMap(googleMapRef.current)
             }
-            if (offRoutePolylineRef.current) {
-              offRoutePolylineRef.current.setPath(gPath)
-            } else {
-              offRoutePolylineRef.current = new window.google.maps.Polyline({
-                path: gPath,
-                geodesic: true,
-                strokeOpacity: 0,
-                icons: [{
-                  icon: purpleSymbol,
-                  offset: '0%',
-                  repeat: '16px',
-                }],
-                map: googleMapRef.current,
-                zIndex: 20
-              })
-            }
-          } else if (offRoutePolylineRef.current) {
-            offRoutePolylineRef.current.setMap(null)
-            offRoutePolylineRef.current = null
+          } else {
+            offRoutePolylineRef.current = new window.google.maps.Polyline({
+              path: gPath,
+              geodesic: true,
+              strokeOpacity: 0,
+              icons: [{
+                icon: purpleSymbol,
+                offset: '0%',
+                repeat: '14px',
+              }],
+              map: googleMapRef.current,
+              zIndex: 20
+            })
           }
         }
       }
@@ -1736,6 +1733,26 @@ export default function ManagerSmartMap() {
             geodesic: true,
             map: map,
             zIndex: 15
+          })
+
+          const purpleSymbol = {
+            path: 'M 0,-2 0,2',
+            strokeOpacity: 1,
+            scale: 2.5,
+            strokeColor: '#9333ea', // Purple dashed line for traveled trail
+            strokeWeight: 4
+          }
+          offRoutePolylineRef.current = new window.google.maps.Polyline({
+            path: pathCoords,
+            geodesic: true,
+            strokeOpacity: 0,
+            icons: [{
+              icon: purpleSymbol,
+              offset: '0%',
+              repeat: '14px',
+            }],
+            map: map,
+            zIndex: 20
           })
         }
       } catch (trailErr) {

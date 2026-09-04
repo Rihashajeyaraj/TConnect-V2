@@ -876,4 +876,107 @@ class SettingsRepository:
                 logger.warning(f"Failed inserting document type in {schema_attempt}: {e}")
         return payload
 
+    def toggle_role_status(self, role_id: str, is_active: bool) -> Dict[str, Any]:
+        company_id = self._get_company_id()
+        try:
+            res = self.client.schema("organization").table("roles").update({"is_active": is_active, "status": "Active" if is_active else "Inactive"}).eq("id", role_id).eq("organization_id", company_id).execute()
+            if res.data and len(res.data) > 0:
+                return res.data[0]
+        except Exception as e:
+            logger.warning(f"Failed to toggle role status for {role_id}: {e}")
+        return {"id": role_id, "is_active": is_active}
+
+    def get_role_users(self, role_id: str) -> List[Dict[str, Any]]:
+        company_id = self._get_company_id()
+        users_list = []
+        try:
+            # 1. Fetch user mappings from organization.user_roles
+            ur_res = self.client.schema("organization").table("user_roles").select("user_id").eq("role_id", role_id).execute()
+            user_ids = [r["user_id"] for r in (ur_res.data or []) if r.get("user_id")]
+
+            # 2. Fetch user details from hrms.employees or public.profiles
+            emp_res = self.client.schema("hrms").table("employees").select("*").execute()
+            all_emps = emp_res.data or []
+
+            for emp in all_emps:
+                emp_id = str(emp.get("id") or emp.get("user_id") or emp.get("employee_id") or "").lower()
+                emp_role = str(emp.get("role") or "").lower().strip()
+                target_role = str(role_id).lower().strip()
+
+                if emp_id in [str(u).lower() for u in user_ids] or emp_role == target_role or target_role in emp_role or emp_role in target_role:
+                    users_list.append({
+                        "id": emp.get("id") or emp.get("user_id"),
+                        "user_id": emp.get("user_id") or emp.get("id"),
+                        "employee_id": emp.get("employee_id") or emp.get("employee_code"),
+                        "name": emp.get("name") or emp.get("full_name") or emp.get("email", "").split("@")[0],
+                        "email": emp.get("email"),
+                        "designation": emp.get("designation") or emp.get("role"),
+                        "department": emp.get("department") or emp.get("dept"),
+                        "status": emp.get("status") or "Active",
+                        "assigned": True
+                    })
+        except Exception as err:
+            logger.warning(f"Error in get_role_users for role {role_id}: {err}")
+
+        return users_list
+
+    def update_role_users(self, role_id: str, user_ids: List[str]) -> Dict[str, Any]:
+        company_id = self._get_company_id()
+        clean_user_ids = [str(u).strip() for u in user_ids if u]
+
+        try:
+            # 1. Clear existing user_roles for this role
+            self.client.schema("organization").table("user_roles").delete().eq("role_id", role_id).execute()
+            
+            # 2. Insert new user_roles mappings
+            for u_id in clean_user_ids:
+                try:
+                    self.client.schema("organization").table("user_roles").upsert({"user_id": u_id, "role_id": role_id}).execute()
+                    
+                    # Update employee role in hrms.employees or public.profiles
+                    self.client.schema("hrms").table("employees").update({"role": role_id}).or_(f"id.eq.{u_id},user_id.eq.{u_id}").execute()
+                except Exception as ie:
+                    logger.debug(f"Failed to update employee role for user {u_id}: {ie}")
+        except Exception as e:
+            logger.warning(f"Failed updating role users for role {role_id}: {e}")
+
+        return {"role_id": role_id, "assigned_users_count": len(clean_user_ids), "user_ids": clean_user_ids}
+
+    def duplicate_role(self, role_id: str, new_name: str, new_description: str = None) -> Dict[str, Any]:
+        company_id = self._get_company_id()
+        new_role_id = new_name.lower().replace(" ", "_")
+
+        # 1. Fetch target role
+        res = self.client.schema("organization").table("roles").select("*").eq("id", role_id).eq("organization_id", company_id).execute()
+        if not res.data:
+            raise ValueError(f"Target role '{role_id}' not found.")
+
+        # 2. Insert new custom role
+        new_role = {
+            "id": new_role_id,
+            "organization_id": company_id,
+            "name": new_name,
+            "description": new_description or f"Cloned from {res.data[0].get('name')}.",
+            "is_system": False,
+            "is_active": True,
+            "status": "Active"
+        }
+        self.client.schema("organization").table("roles").upsert(new_role).execute()
+
+        # 3. Copy permissions from source role
+        rp_res = self.client.schema("organization").table("role_permissions").select("*").eq("role_id", role_id).eq("organization_id", company_id).execute()
+        for rp in (rp_res.data or []):
+            new_rp = {
+                "id": str(uuid.uuid4()),
+                "role_id": new_role_id,
+                "organization_id": company_id,
+                "module_key": rp.get("module_key"),
+                "feature_key": rp.get("feature_key"),
+                "action_key": rp.get("action_key"),
+                "data_scope": rp.get("data_scope")
+            }
+            self.client.schema("organization").table("role_permissions").insert(new_rp).execute()
+
+        return new_role
+
 

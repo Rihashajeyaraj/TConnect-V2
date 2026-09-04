@@ -236,11 +236,95 @@ async def delete_role(
     from fastapi import HTTPException
     try:
         service.delete_role(role_id)
+        create_audit_log("ROLE_DELETED", "organization.roles", user_payload, module="Roles & Permissions", description=f"Role '{role_id}' deleted")
         return StandardResponse.success_response(
             message=f"Role '{role_id}' deleted successfully"
         )
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.patch("/roles/{role_id}/status", response_model=StandardResponse)
+async def toggle_role_status(
+    role_id: str,
+    payload: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        is_active = bool(payload.get("is_active", payload.get("active", True)))
+        res = service.toggle_role_status(role_id, is_active)
+        create_audit_log("ROLE_STATUS_CHANGED", "organization.roles", user_payload, module="Roles & Permissions", description=f"Role '{role_id}' status set to {'Active' if is_active else 'Inactive'}")
+        return StandardResponse.success_response(
+            data=res,
+            message=f"Role '{role_id}' status updated successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/roles/{role_id}/users", response_model=StandardResponse)
+async def get_role_users(
+    role_id: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        users = service.get_role_users(role_id)
+        return StandardResponse.success_response(
+            data={"users": users, "total": len(users)},
+            message=f"Assigned users for role '{role_id}' retrieved successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.put("/roles/{role_id}/users", response_model=StandardResponse)
+async def update_role_users(
+    role_id: str,
+    payload: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        user_ids = payload.get("user_ids") or payload.get("users") or []
+        res = service.update_role_users(role_id, user_ids)
+        create_audit_log("ROLE_USERS_UPDATED", "organization.user_roles", user_payload, module="Roles & Permissions", description=f"Updated assigned users for role '{role_id}' ({len(user_ids)} users assigned)")
+        return StandardResponse.success_response(
+            data=res,
+            message=f"Assigned users for role '{role_id}' updated successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/roles/{role_id}/duplicate", response_model=StandardResponse)
+async def duplicate_role(
+    role_id: str,
+    payload: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        new_name = payload.get("name") or payload.get("role_name") or f"{role_id}_copy"
+        new_desc = payload.get("description")
+        res = service.duplicate_role(role_id, new_name, new_desc)
+        create_audit_log("ROLE_DUPLICATED", "organization.roles", user_payload, module="Roles & Permissions", description=f"Cloned role '{role_id}' to create new custom role '{new_name}'")
+        return StandardResponse.success_response(
+            data=res,
+            message=f"Role '{role_id}' duplicated as '{new_name}' successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 
 # Landmarks CRUD
