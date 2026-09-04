@@ -82,8 +82,8 @@ self.addEventListener('push', (event) => {
   }
 
   // Update OS Taskbar & App Icon Badge on background Web Push
+  const unread = Number(data.unread_count || data.count) || 1;
   if ('setAppBadge' in self.navigator) {
-    const unread = Number(data.unread_count || data.count) || 1;
     self.navigator.setAppBadge(unread).catch(() => {});
   }
 
@@ -92,8 +92,11 @@ self.addEventListener('push', (event) => {
     icon: '/pwa-192x192.png',
     badge: '/favicon.svg',
     vibrate: [200, 100, 200],
+    tag: `twiteconnect-push-${Date.now()}`,
+    renotify: true,
     data: {
-      url: data.url || '/'
+      url: data.url || '/',
+      count: unread
     }
   };
 
@@ -121,9 +124,11 @@ self.addEventListener('notificationclick', (event) => {
   );
 });
 
-// ── Handle Service Worker Badge Messages ─────────────────────────────────────
+// ── Handle Service Worker Messages (Badging & Notifications) ──────────────────
 self.addEventListener('message', (event) => {
-  if (event.data && event.data.type === 'SET_BADGE') {
+  if (!event.data) return;
+
+  if (event.data.type === 'SET_BADGE') {
     const count = Number(event.data.count) || 0;
     if ('setAppBadge' in self.navigator) {
       if (count > 0) {
@@ -133,5 +138,19 @@ self.addEventListener('message', (event) => {
       }
     }
   }
+
+  if (event.data.type === 'TRIGGER_NOTIFICATION') {
+    const { title, options } = event.data;
+    if (title && self.registration && self.registration.showNotification) {
+      self.registration.showNotification(title, {
+        icon: '/pwa-192x192.png',
+        badge: '/favicon.svg',
+        vibrate: [200, 100, 200],
+        renotify: true,
+        ...options,
+      }).catch(() => {});
+    }
+  }
 });
+
 

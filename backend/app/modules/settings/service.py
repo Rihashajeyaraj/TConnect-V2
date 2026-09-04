@@ -38,8 +38,21 @@ class SettingsService:
     def delete_role(self, role_id: str) -> None:
         self.repo.delete_role(role_id)
 
+    def toggle_role_status(self, role_id: str, is_active: bool) -> Dict[str, Any]:
+        return self.repo.toggle_role_status(role_id, is_active)
+
+    def get_role_users(self, role_id: str) -> List[Dict[str, Any]]:
+        return self.repo.get_role_users(role_id)
+
+    def update_role_users(self, role_id: str, user_ids: List[str]) -> Dict[str, Any]:
+        return self.repo.update_role_users(role_id, user_ids)
+
+    def duplicate_role(self, role_id: str, new_name: str, new_description: str = None) -> Dict[str, Any]:
+        return self.repo.duplicate_role(role_id, new_name, new_description)
+
     def get_landmarks(self) -> List[Dict[str, Any]]:
         return self.repo.get_landmarks()
+
 
     def create_landmark(self, data: Dict[str, Any]) -> Dict[str, Any]:
         return self.repo.create_landmark(data)

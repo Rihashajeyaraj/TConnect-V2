@@ -851,27 +851,25 @@ function AdminLayout() {
         )}
         {/* Sidebar Navigation */}
         <aside
-          className={`fixed inset-y-0 left-0 z-20 w-64 bg-gradient-to-b from-[#0B2545] to-[#225F9F] border-r border-[#64B5F6]/25 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 flex flex-col ${
+          className={`fixed inset-y-0 left-0 z-20 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 flex flex-col shadow-xs ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
           {/* Mobile-only Sidebar Close Header */}
-          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-[#64B5F6]/35 bg-[#0B2545] shrink-0">
+          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-slate-200 bg-slate-50 shrink-0">
             <div className="flex items-center gap-2">
-              <span className="bg-gradient-to-tr from-[#D4ECFC] to-[#64B5F6] text-[#0B2545] px-2 py-0.5 rounded-lg text-xs font-black shadow-sm">TC</span>
-              <span className="text-xs font-black text-white uppercase tracking-widest">Admin Portal</span>
+              <span className="bg-[#0B2545] text-white px-2 py-0.5 rounded-lg text-xs font-black shadow-sm">TC</span>
+              <span className="text-xs font-black text-slate-800 uppercase tracking-widest">Admin Portal</span>
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="p-1.5 rounded-xl text-slate-300 hover:bg-white/10 hover:text-white transition cursor-pointer"
+              className="p-1.5 rounded-xl text-slate-500 hover:bg-slate-200 hover:text-slate-800 transition cursor-pointer"
               aria-label="Close sidebar"
             >
               <X className="w-4.5 h-4.5" />
             </button>
           </div>
-          <div className="p-3 border-b border-[#64B5F6]/20 bg-[#0B2545]/45 font-bold text-[11px] admin-sidebar-header uppercase tracking-wider text-[#D4ECFC] px-4">
-            Module Navigation
-          </div>
+
           <div className="flex-1 p-3 space-y-1 overflow-y-auto">
             {sidebarItems.map((item, index) => {
               const Icon = item.icon
@@ -884,7 +882,7 @@ function AdminLayout() {
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDrop={(e) => handleDrop(e, index)}
                   onDragEnd={handleDragEnd}
-                  className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-[#64B5F6]/20 rounded-xl" : ""}`}
+                  className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-slate-300 rounded-xl" : ""}`}
                 >
                   <Link
                     to={isCustomizing ? "#" : item.path}
@@ -897,12 +895,12 @@ function AdminLayout() {
                     }}
                     className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold text-xs admin-sidebar-link transition-all ${
                       !isCustomizing && isActive
-                        ? 'bg-gradient-to-r from-[#D4ECFC] to-[#64B5F6] text-[#0B2545] shadow-md shadow-[#64B5F6]/20'
-                        : 'text-slate-100 hover:bg-gradient-to-r hover:from-[#64B5F6]/15 hover:to-[#225F9F]/15 hover:text-white'
+                        ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                     }`}
                   >
-                    {isCustomizing && <GripVertical size={14} className="text-slate-450 shrink-0" />}
-                    <Icon className={`w-4 h-4 ${!isCustomizing && isActive ? 'text-[#0B2545]' : 'text-[#D4ECFC]'}`} />
+                    {isCustomizing && <GripVertical size={14} className="text-slate-400 shrink-0" />}
+                    <Icon className={`w-4 h-4 ${!isCustomizing && isActive ? 'text-white' : 'text-slate-450'}`} />
                     <span>{item.label}</span>
                     {unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
                       <span className="ml-auto bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
@@ -915,18 +913,18 @@ function AdminLayout() {
             })}
             <div className="pt-2">
               {isCustomizing ? (
-                <div className="pt-2 border-t border-[#64B5F6]/30 space-y-1.5 px-1">
+                <div className="pt-2 border-t border-slate-200 space-y-1.5 px-1">
                   <button
                     type="button"
                     onClick={saveCustomization}
-                    className="w-full py-2 px-3 bg-gradient-to-r from-[#D4ECFC] to-[#64B5F6] text-[#0B2545] rounded-xl text-xs font-black transition cursor-pointer"
+                    className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition cursor-pointer"
                   >
                     Save Order
                   </button>
                   <button
                     type="button"
                     onClick={resetCustomization}
-                    className="w-full py-2 px-3 bg-[#64B5F6]/20 hover:bg-[#64B5F6]/30 text-white rounded-xl text-xs font-black transition cursor-pointer"
+                    className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black transition cursor-pointer"
                   >
                     Reset Default
                   </button>
@@ -935,7 +933,7 @@ function AdminLayout() {
                 <button
                   type="button"
                   onClick={() => setIsCustomizing(true)}
-                  className="w-full py-2 px-3 border border-dashed border-[#64B5F6]/35 hover:border-[#D4ECFC] text-slate-350 hover:text-white rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                  className="w-full py-2 px-3 border border-dashed border-slate-300 hover:border-slate-400 text-slate-500 hover:text-slate-800 rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
                 >
                   <span>⚙️ Customize Sidebar</span>
                 </button>

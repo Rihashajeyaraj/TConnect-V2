@@ -354,7 +354,7 @@ function CeoCustomers() {
         </button>
       </div>
 
-      {/* Summary KPI Cards Grid (Compact, Solid Pastel & 2px Border) */}
+      {/* Summary KPI Cards Grid */}
       {activeTab === 'customers' ? (
         <div className="grid gap-2.5 sm:gap-3 sm:grid-cols-2 lg:grid-cols-4">
           {/* Card 1: Emerald Theme - Total Customers */}
@@ -385,33 +385,62 @@ function CeoCustomers() {
             </div>
           </div>
 
-          {/* Card 2: Blue Theme - Total Revenue Portfolio */}
-          <div 
-            onClick={() => {
-              setSelectedManager('All')
-              setSelectedExecutive('All')
-              setSelectedProduct('All')
-              setSearchQuery('')
-              setIsTableModalOpen(true)
-            }}
-            className="bg-[#DBEAFE] border-2 border-[#2563EB] rounded-xl p-2.5 shadow-2xs transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900"
-          >
-            <div className="flex justify-between items-center">
-              <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#1E40AF]">Total Revenue Portfolio</span>
-              <span className="p-1 rounded-lg bg-[#2563EB]/20 text-[#1E40AF]">
-                <DollarSign className="size-3.5" />
-              </span>
+          {/* Card 2: Blue Theme - Total Revenue Portfolio (CEO Only) or Assignment Summary (Admin) */}
+          {!isAdmin ? (
+            <div 
+              onClick={() => {
+                setSelectedManager('All')
+                setSelectedExecutive('All')
+                setSelectedProduct('All')
+                setSearchQuery('')
+                setIsTableModalOpen(true)
+              }}
+              className="bg-[#DBEAFE] border-2 border-[#2563EB] rounded-xl p-2.5 shadow-2xs transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900"
+            >
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#1E40AF]">Total Revenue Portfolio</span>
+                <span className="p-1 rounded-lg bg-[#2563EB]/20 text-[#1E40AF]">
+                  <DollarSign className="size-3.5" />
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between mt-1">
+                <p className="text-base sm:text-lg font-black tracking-tight text-slate-950">
+                  ₹{totalCompanyRevenue.toLocaleString()}
+                </p>
+                <span className="text-[9px] font-bold text-[#1D4ED8]">Portfolio</span>
+              </div>
+              <div className="mt-1.5 pt-1 border-t border-[#2563EB]/25 flex items-center gap-1 text-[9px] font-bold text-[#1E40AF]">
+                <span>▶ Click card to view pop-up table</span>
+              </div>
             </div>
-            <div className="flex items-baseline justify-between mt-1">
-              <p className="text-base sm:text-lg font-black tracking-tight text-slate-950">
-                ₹{totalCompanyRevenue.toLocaleString()}
-              </p>
-              <span className="text-[9px] font-bold text-[#1D4ED8]">Portfolio</span>
+          ) : (
+            <div 
+              onClick={() => {
+                setSelectedManager('All')
+                setSelectedExecutive('All')
+                setSelectedProduct('All')
+                setSearchQuery('')
+                setIsTableModalOpen(true)
+              }}
+              className="bg-[#DBEAFE] border-2 border-[#2563EB] rounded-xl p-2.5 shadow-2xs transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900"
+            >
+              <div className="flex justify-between items-center">
+                <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider text-[#1E40AF]">Unassigned Client Accounts</span>
+                <span className="p-1 rounded-lg bg-[#2563EB]/20 text-[#1E40AF]">
+                  <UserCheck className="size-3.5" />
+                </span>
+              </div>
+              <div className="flex items-baseline justify-between mt-1">
+                <p className="text-base sm:text-lg font-black tracking-tight text-slate-950">
+                  {rawCustomers.filter(c => !c.executive_id || c.executive_name === 'Unassigned' || c.executive_name === 'Direct / Unassigned').length}
+                </p>
+                <span className="text-[9px] font-bold text-[#1D4ED8]">Pending Assign</span>
+              </div>
+              <div className="mt-1.5 pt-1 border-t border-[#2563EB]/25 flex items-center gap-1 text-[9px] font-bold text-[#1E40AF]">
+                <span>▶ Click card to assign accounts</span>
+              </div>
             </div>
-            <div className="mt-1.5 pt-1 border-t border-[#2563EB]/25 flex items-center gap-1 text-[9px] font-bold text-[#1E40AF]">
-              <span>▶ Click card to view pop-up table</span>
-            </div>
-          </div>
+          )}
         </div>
       ) : (
         <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -558,10 +587,17 @@ function CeoCustomers() {
 
                   <h4 className="text-sm font-black text-slate-950 mt-2">{mgr}</h4>
 
-                  <div className="mt-2.5 pt-2 border-t border-black/10 flex items-center justify-between text-xs">
-                    <span className="text-[10px] font-bold text-slate-700">Portfolio Value:</span>
-                    <span className="font-black text-slate-950">₹{totalVal.toLocaleString()}</span>
-                  </div>
+                  {!isAdmin ? (
+                    <div className="mt-2.5 pt-2 border-t border-black/10 flex items-center justify-between text-xs">
+                      <span className="text-[10px] font-bold text-slate-700">Portfolio Value:</span>
+                      <span className="font-black text-slate-950">₹{totalVal.toLocaleString()}</span>
+                    </div>
+                  ) : (
+                    <div className="mt-2.5 pt-2 border-t border-black/10 flex items-center justify-between text-xs">
+                      <span className="text-[10px] font-bold text-slate-700">Client Accounts:</span>
+                      <span className="font-black text-slate-950">{mgrCusts.length} Managed</span>
+                    </div>
+                  )}
 
                   <div className={`mt-2 pt-1 border-t border-black/10 flex items-center justify-between text-[10px] font-black ${theme.text}`}>
                     <span>Click to view {mgr}'s deals</span>
@@ -727,8 +763,9 @@ function CeoCustomers() {
                     <th className="px-4 py-3">Sales Manager</th>
                     <th className="px-4 py-3">Sales Executive</th>
                     <th className="px-4 py-3 text-center">Assignment Status</th>
-                    <th className="px-4 py-3 text-right">Amount</th>
+                    {!isAdmin && <th className="px-4 py-3 text-right">Amount</th>}
                     {isAdmin && <th className="px-4 py-3 text-center">Action</th>}
+
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -797,9 +834,12 @@ function CeoCustomers() {
                               {!hasExec ? 'Not Assigned' : (cust.reassigned_at ? 'Reassigned' : 'Assigned')}
                             </span>
                           </td>
-                          <td className="px-4 py-3 text-right font-black text-slate-950">
-                            ₹{(cust.amount || 0).toLocaleString()}
-                          </td>
+                          {!isAdmin && (
+                            <td className="px-4 py-3 text-right font-black text-slate-950">
+                              ₹{(cust.amount || 0).toLocaleString()}
+                            </td>
+                          )}
+
                           {isAdmin && (
                             <td className="px-4 py-3 text-center" onClick={(e) => e.stopPropagation()}>
                               <button
@@ -1080,14 +1120,17 @@ function CeoCustomers() {
                   <span className="text-slate-500">Product / Service:</span>
                   <span className="text-slate-900 font-bold">{selectedCust.product}</span>
                 </div>
-                <div className="flex justify-between pb-2 border-b border-slate-100">
-                  <span className="text-slate-500">Contract / Deal Value:</span>
-                  <span className="text-[#832D51] font-black text-sm">₹{(selectedCust.amount || 0).toLocaleString()}</span>
-                </div>
+                {!isAdmin && (
+                  <div className="flex justify-between pb-2 border-b border-slate-100">
+                    <span className="text-slate-500">Contract / Deal Value:</span>
+                    <span className="text-[#832D51] font-black text-sm">₹{(selectedCust.amount || 0).toLocaleString()}</span>
+                  </div>
+                )}
                 <div className="flex justify-between pb-2 border-b border-slate-100">
                   <span className="text-slate-500">Account Status:</span>
                   <span className="text-emerald-700 font-black">{selectedCust.status}</span>
                 </div>
+
                 <div className="flex justify-between pb-2 border-b border-slate-100">
                   <span className="text-slate-500">Onboarding Date:</span>
                   <span className="text-slate-900 font-bold">{selectedCust.date || 'N/A'}</span>

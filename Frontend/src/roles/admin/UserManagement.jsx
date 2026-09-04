@@ -25,6 +25,7 @@ import {
   Network,
   UserPlus,
   ChevronRight,
+  ChevronLeft,
   ArrowRight,
   Sparkles,
   Briefcase,
@@ -296,7 +297,506 @@ const isProtectedRole = (roleName) => {
 }
 
 // ======================================================
-// UserDirectoryTable — simple expandable row table
+// ThreeTierHierarchyView — Manager -> Team Lead -> Executive Drill-Down
+// ======================================================
+function ThreeTierHierarchyView({
+  users,
+  searchQuery = '',
+  isProtectedRole,
+  ROLE_BADGE_CLASSES,
+  toggleUserStatus,
+  handleOpenEditModal,
+  handleDeleteUser,
+  handleOpenReassignModal,
+  setSelectedEnrollUser,
+  setShowEnrollFaceModal,
+  setSelectedEmployeeProfile,
+}) {
+  const [expandedManagers, setExpandedManagers] = useState([])
+  const [expandedTeamLeads, setExpandedTeamLeads] = useState([])
+
+  const matchesReportingManager = (child, parent) => {
+    if (!child || !parent) return false
+    const pId = String(parent.id || '').toLowerCase()
+    const pCode = String(parent.employee_code || parent.employee_id || '').toLowerCase()
+    const pEmail = String(parent.email || '').toLowerCase()
+
+    const cRepId = String(child.reporting_manager_id || child.reporting_manager || '').toLowerCase()
+    const cRepEmail = String(child.reporting_manager_email || '').toLowerCase()
+    const cRepName = String(child.reporting_manager_name || '').toLowerCase()
+
+    if (cRepId && (cRepId === pId || cRepId === pCode)) return true
+    if (cRepEmail && cRepEmail === pEmail) return true
+    if (cRepName && pEmail && cRepName.includes(pEmail)) return true
+    if (cRepName && parent.name && cRepName.toLowerCase() === parent.name.toLowerCase()) return true
+    return false
+  }
+
+  const isTopAdminOrCeoRole = (roleStr) => {
+    const r = (roleStr || '').toLowerCase().trim()
+    return r.includes('ceo') || r.includes('founder') || r.includes('admin')
+  }
+
+  const isManagerRole = (roleStr) => {
+    const r = (roleStr || '').toLowerCase().trim()
+    if (isTopAdminOrCeoRole(r)) return false
+    return r.includes('manager')
+  }
+
+  const isTeamLeadRole = (roleStr) => {
+    const r = (roleStr || '').toLowerCase().trim()
+    if (isTopAdminOrCeoRole(r)) return false
+    if (r.includes('manager')) return false
+    return r.includes('lead')
+  }
+
+  // Pre-indexed O(1) Reporting Map for instant tree rendering without O(N^2) scans
+  const { managers, reportingMap } = useMemo(() => {
+    const rMap = new Map()
+    const mgrs = []
+
+    const addReport = (key, child) => {
+      if (!key) return
+      const k = String(key).toLowerCase().trim()
+      if (!rMap.has(k)) rMap.set(k, [])
+      rMap.get(k).push(child)
+    }
+
+    users.forEach((u) => {
+      if (isManagerRole(u.role)) {
+        mgrs.push(u)
+      }
+      if (u.reporting_manager_id) addReport(u.reporting_manager_id, u)
+      if (u.reporting_manager_email) addReport(u.reporting_manager_email, u)
+      if (u.reporting_manager_name) addReport(u.reporting_manager_name, u)
+    })
+
+    const sortedMgrs = mgrs.sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+    return { managers: sortedMgrs, reportingMap: rMap }
+  }, [users])
+
+  // Fast O(1) subordinate lookup for any manager
+  const getSubordinates = useCallback((mgr) => {
+    const keys = [
+      mgr.id,
+      mgr.employee_code,
+      mgr.employee_id,
+      mgr.email,
+      mgr.name
+    ].filter(Boolean).map(k => String(k).toLowerCase().trim())
+
+    const seen = new Set()
+    const result = []
+    keys.forEach(k => {
+      const children = reportingMap.get(k) || []
+      children.forEach(c => {
+        if (c.id !== mgr.id && !seen.has(c.id)) {
+          seen.add(c.id)
+          result.push(c)
+        }
+      })
+    })
+    return result
+  }, [reportingMap])
+
+  const toggleManager = (mId) => {
+    setExpandedManagers((prev) =>
+      prev.includes(mId) ? prev.filter((id) => id !== mId) : [...prev, mId]
+    )
+  }
+
+  const toggleTeamLead = (tlId) => {
+    setExpandedTeamLeads((prev) =>
+      prev.includes(tlId) ? prev.filter((id) => id !== tlId) : [...prev, tlId]
+    )
+  }
+
+  const expandAll = () => {
+    setExpandedManagers(managers.map((m) => m.id))
+    const allTLs = users.filter((u) => (u.role || '').toLowerCase().includes('lead')).map((u) => u.id)
+    setExpandedTeamLeads(allTLs)
+  }
+
+  const collapseAll = () => {
+    setExpandedManagers([])
+    setExpandedTeamLeads([])
+  }
+
+  const q = (searchQuery || '').toLowerCase().trim()
+
+  return (
+    <div className="space-y-4 font-sans text-xs">
+      {/* Top Header / Expand-Collapse Controls Bar */}
+      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+        <div className="flex items-center gap-2">
+          <span className="p-2 bg-blue-100 text-blue-700 rounded-xl font-bold">🏢</span>
+          <div>
+            <h4 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">Team View</h4>
+            <p className="text-[10px] text-slate-500 font-semibold">Sales Manager ➔ Team Lead ➔ Sales Executive</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={expandAll}
+            className="px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-xl text-[11px] font-extrabold transition cursor-pointer flex items-center gap-1 shadow-2xs"
+          >
+            <ChevronDown className="w-3.5 h-3.5" /> Expand All
+          </button>
+          <button
+            type="button"
+            onClick={collapseAll}
+            className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-xl text-[11px] font-extrabold transition cursor-pointer flex items-center gap-1 shadow-2xs"
+          >
+            <ChevronUp className="w-3.5 h-3.5" /> Collapse All
+          </button>
+        </div>
+      </div>
+
+      {/* Managers Grid / List */}
+      <div className="space-y-3">
+        {managers.length === 0 ? (
+          <div className="p-12 text-center bg-white rounded-2xl border border-dashed border-slate-200 text-slate-400 font-semibold">
+            No Sales Managers found in system database.
+          </div>
+        ) : (
+          managers.map((mgr) => {
+            const isMgrExpanded = expandedManagers.includes(mgr.id) || !!q
+
+            // Fast O(1) indexed subordinates lookup for Manager
+            const subordinates = getSubordinates(mgr)
+            const teamLeads = subordinates.filter((u) => isTeamLeadRole(u.role))
+            const directExecs = subordinates.filter((u) => {
+              const r = (u.role || '').toLowerCase()
+              return !isTopAdminOrCeoRole(r) && !isManagerRole(r) && !isTeamLeadRole(r)
+            })
+
+            const initials = (mgr.name || 'M').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+
+            if (q) {
+              const mgrMatches = (mgr.name || '').toLowerCase().includes(q) || (mgr.email || '').toLowerCase().includes(q)
+              const anyChildMatches = teamLeads.some((tl) => (tl.name || '').toLowerCase().includes(q) || (tl.email || '').toLowerCase().includes(q)) ||
+                directExecs.some((e) => (e.name || '').toLowerCase().includes(q) || (e.email || '').toLowerCase().includes(q))
+              if (!mgrMatches && !anyChildMatches) return null
+            }
+
+            return (
+              <div
+                key={mgr.id}
+                className={`rounded-2xl transition-all shadow-xs overflow-hidden ${
+                  isMgrExpanded ? 'bg-blue-50/70 border border-blue-300 ring-2 ring-blue-500/20' : 'bg-blue-50/40 border border-blue-200/80 hover:border-blue-300 hover:shadow-sm'
+                }`}
+              >
+                {/* TIER 1: Manager Row (Blue Theme) */}
+                <div className="p-4 bg-gradient-to-r from-blue-100/70 via-blue-50/40 to-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-blue-200/60">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <div className="relative w-10 h-10 shrink-0">
+                      {getUserPhoto(mgr) && (
+                        <img
+                          src={getUserPhoto(mgr)}
+                          alt={mgr.name}
+                          onError={(e) => { e.currentTarget.style.display = 'none' }}
+                          className="w-10 h-10 rounded-xl object-cover border border-white shadow-xs absolute inset-0 z-10"
+                        />
+                      )}
+                      <div className="w-10 h-10 rounded-xl bg-blue-600 text-white font-extrabold text-xs flex items-center justify-center border border-white shadow-xs">
+                        {initials}
+                      </div>
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-blue-600 text-white shadow-2xs">
+                          👔 {mgr.role || 'Sales Manager'}
+                        </span>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${mgr.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-rose-50 text-rose-700 border-rose-200'}`}>
+                          {mgr.status || 'Active'}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-400">({mgr.employee_code || mgr.employee_id || 'ID'})</span>
+                      </div>
+                      <h3 className="font-extrabold text-sm text-blue-950 leading-tight mt-0.5 truncate">{mgr.name}</h3>
+                      <p className="text-[11px] text-blue-700/80 font-medium truncate">{mgr.email}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+                    <span className="text-[11px] font-extrabold text-blue-800 bg-blue-100/80 px-3 py-1 rounded-xl border border-blue-200/80">
+                      {teamLeads.length} Team Lead{teamLeads.length === 1 ? '' : 's'} · {directExecs.length} Exec{directExecs.length === 1 ? '' : 's'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => toggleManager(mgr.id)}
+                      className={`px-3.5 py-1.5 rounded-xl border text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
+                        isMgrExpanded
+                          ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                          : 'bg-white text-blue-700 border-blue-300 hover:bg-blue-100'
+                      }`}
+                    >
+                      <span>{isMgrExpanded ? 'Hide Team Leads' : 'View Team Leads'}</span>
+                      <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMgrExpanded ? 'rotate-180' : ''}`} />
+                    </button>
+                  </div>
+                </div>
+
+                {/* TIER 2 & TIER 3 CONTAINER */}
+                {isMgrExpanded && (
+                  <div className="p-4 bg-white/60 space-y-3.5 border-t border-blue-200/60 animate-in fade-in zoom-in-95 duration-150">
+                    
+                    {/* Team Leads List & Team Lead (Assign) Placeholder */}
+                    {teamLeads.length === 0 && directExecs.length === 0 ? (
+                      <div className="rounded-xl p-3.5 bg-purple-50/40 border-2 border-dashed border-purple-300 text-center space-y-2">
+                        <div className="inline-flex items-center justify-center px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-purple-100 text-purple-800 border border-purple-200">
+                          🔰 Team Lead (Assign)
+                        </div>
+                        <p className="text-xs text-purple-700 font-semibold">
+                          No Team Leads or Sales Executives assigned to {mgr.name} yet.
+                        </p>
+                      </div>
+                    ) : (
+                      <>
+                        {/* Render Assigned Team Leads (Tier 2 - Purple Theme) */}
+                        {teamLeads.map((tl) => {
+                          const isTLExpanded = expandedTeamLeads.includes(tl.id) || !!q
+
+                          // Fast O(1) Executives under this Team Lead (Tier 3)
+                          const execsUnderTL = getSubordinates(tl).filter((u) => {
+                            const r = (u.role || '').toLowerCase()
+                            return !isTopAdminOrCeoRole(r) && !isManagerRole(r) && !isTeamLeadRole(r)
+                          })
+
+                          const tlInitials = (tl.name || 'TL').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+
+                          return (
+                            <div
+                              key={tl.id}
+                              className={`rounded-xl p-3.5 space-y-3 transition-all shadow-2xs ${
+                                isTLExpanded ? 'bg-purple-50/80 border border-purple-300 ring-2 ring-purple-500/20' : 'bg-purple-50/50 border border-purple-200/80 hover:border-purple-300'
+                              }`}
+                            >
+                              {/* Team Lead Card Row Header (Purple Theme) */}
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <div className="relative w-8 h-8 shrink-0">
+                                    {getUserPhoto(tl) && (
+                                      <img
+                                        src={getUserPhoto(tl)}
+                                        alt={tl.name}
+                                        onError={(e) => { e.currentTarget.style.display = 'none' }}
+                                        className="w-8 h-8 rounded-lg object-cover border border-purple-100 shadow-xs absolute inset-0 z-10"
+                                      />
+                                    )}
+                                    <div className="w-8 h-8 rounded-lg bg-purple-600 text-white font-extrabold text-[11px] flex items-center justify-center">
+                                      {tlInitials}
+                                    </div>
+                                  </div>
+                                  <div className="min-w-0">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-purple-600 text-white shadow-2xs">
+                                        🔰 Team Lead
+                                      </span>
+                                      <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${tl.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
+                                        {tl.status || 'Active'}
+                                      </span>
+                                      <span className="text-[9px] font-mono text-purple-400">({tl.employee_code || tl.employee_id || 'ID'})</span>
+                                    </div>
+                                    <h4 className="font-extrabold text-xs text-purple-950 mt-0.5 truncate">{tl.name}</h4>
+                                    <p className="text-[10px] text-purple-700/80 font-medium truncate">{tl.email}</p>
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                  <span className="text-[10px] font-bold text-purple-800 bg-purple-100/80 px-2.5 py-1 rounded-lg border border-purple-200/80">
+                                    {execsUnderTL.length} Executive{execsUnderTL.length === 1 ? '' : 's'}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => toggleTeamLead(tl.id)}
+                                    className={`px-3 py-1 rounded-lg border text-[11px] font-extrabold flex items-center gap-1 transition cursor-pointer ${
+                                      isTLExpanded
+                                        ? 'bg-purple-600 text-white border-purple-600'
+                                        : 'bg-white text-purple-700 border-purple-300 hover:bg-purple-100'
+                                    }`}
+                                  >
+                                    <span>{isTLExpanded ? 'Hide Executives' : 'View Executives'}</span>
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isTLExpanded ? 'rotate-180' : ''}`} />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* TIER 3: Sales Executives under Team Lead (Green Theme) */}
+                              {isTLExpanded && (
+                                <div className="pt-2 border-t border-purple-200/60 space-y-2 animate-in fade-in duration-150 pl-2 sm:pl-4 border-l-2 border-purple-300">
+                                  <div className="text-[10px] font-black uppercase tracking-wider text-purple-700 flex items-center gap-1">
+                                    <span>⚡ Direct Sales Executives under {tl.name} ({execsUnderTL.length})</span>
+                                  </div>
+
+                                  {execsUnderTL.length === 0 ? (
+                                    <div className="p-3 text-center text-[11px] text-purple-400 font-medium bg-purple-50/30 rounded-lg border border-dashed border-purple-200">
+                                      No Sales Executives assigned to {tl.name} yet.
+                                    </div>
+                                  ) : (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                      {execsUnderTL.map((exec) => {
+                                        const execInitials = (exec.name || 'E').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+                                        return (
+                                          <div
+                                            key={exec.id}
+                                            className="p-2.5 bg-emerald-50/70 border border-emerald-200/80 hover:border-emerald-300 rounded-xl flex items-center justify-between gap-2.5 transition shadow-2xs"
+                                          >
+                                            <div className="flex items-center gap-2.5 min-w-0">
+                                              <div className="relative w-7 h-7 shrink-0">
+                                                {getUserPhoto(exec) && (
+                                                  <img
+                                                    src={getUserPhoto(exec)}
+                                                    alt={exec.name}
+                                                    onError={(e) => { e.currentTarget.style.display = 'none' }}
+                                                    className="w-7 h-7 rounded-md object-cover border border-emerald-200 absolute inset-0 z-10"
+                                                  />
+                                                )}
+                                                <div className="w-7 h-7 rounded-md bg-emerald-600 text-white font-extrabold text-[10px] flex items-center justify-center">
+                                                  {execInitials}
+                                                </div>
+                                              </div>
+                                              <div className="min-w-0">
+                                                <p className="font-extrabold text-xs text-emerald-950 truncate">{exec.name}</p>
+                                                <p className="text-[9px] text-emerald-700/80 truncate">{exec.email}</p>
+                                              </div>
+                                            </div>
+
+                                            <div className="flex items-center gap-1.5 shrink-0">
+                                              <button
+                                                type="button"
+                                                onClick={() => setSelectedEmployeeProfile && setSelectedEmployeeProfile(exec)}
+                                                className="px-2 py-1 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold cursor-pointer transition"
+                                                title="View Profile"
+                                              >
+                                                Profile
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={() => handleOpenReassignModal && handleOpenReassignModal(exec)}
+                                                className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-600 rounded-lg text-[10px] font-bold cursor-pointer transition shadow-2xs"
+                                                title="Reassign Team Lead / Manager"
+                                              >
+                                                Reassign
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          )
+                        })}
+
+                        {/* Render Team Lead (Assign) Card if Team Lead is not assigned yet OR if there are direct executives */}
+                        {(teamLeads.length === 0 || directExecs.length > 0) && (
+                          <div className="rounded-xl p-3.5 space-y-3 bg-purple-50/40 border-2 border-dashed border-purple-300 transition-all shadow-2xs">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+                              <div className="flex items-center gap-2.5 min-w-0">
+                                <div className="w-8 h-8 rounded-lg bg-purple-100 border border-purple-300 text-purple-700 font-extrabold text-[11px] flex items-center justify-center">
+                                  🔰
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-purple-600 text-white shadow-2xs">
+                                      Team Lead (Assign)
+                                    </span>
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold border bg-amber-50 text-amber-700 border-amber-200">
+                                      {teamLeads.length === 0 ? 'Not Assigned Yet' : 'Unassigned to Team Lead'}
+                                    </span>
+                                  </div>
+                                  <h4 className="font-extrabold text-xs text-purple-950 mt-0.5 truncate">
+                                    {teamLeads.length === 0 ? `Team Lead not assigned under ${mgr.name}` : `Executives without Team Lead (${directExecs.length})`}
+                                  </h4>
+                                </div>
+                              </div>
+
+                              <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
+                                <span className="text-[10px] font-bold text-purple-800 bg-purple-100/80 px-2.5 py-1 rounded-lg border border-purple-200/80">
+                                  {directExecs.length} Exec{directExecs.length === 1 ? '' : 's'}
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Direct Executives under Team Lead (Assign) */}
+                            {directExecs.length > 0 && (
+                              <div className="pt-2 border-t border-purple-200/60 space-y-2 pl-2 sm:pl-4 border-l-2 border-purple-300">
+                                <div className="text-[10px] font-black uppercase tracking-wider text-purple-700 flex items-center justify-between">
+                                  <span>⚡ Sales Executives under {mgr.name} ({directExecs.length})</span>
+                                </div>
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                                  {directExecs.map((exec) => {
+                                    const execInitials = (exec.name || 'E').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+                                    return (
+                                      <div
+                                        key={exec.id}
+                                        className="p-2.5 bg-emerald-50/70 border border-emerald-200/80 hover:border-emerald-300 rounded-xl flex items-center justify-between gap-2.5 transition shadow-2xs"
+                                      >
+                                        <div className="flex items-center gap-2.5 min-w-0">
+                                          <div className="relative w-7 h-7 shrink-0">
+                                            {getUserPhoto(exec) && (
+                                              <img
+                                                src={getUserPhoto(exec)}
+                                                alt={exec.name}
+                                                onError={(e) => { e.currentTarget.style.display = 'none' }}
+                                                className="w-7 h-7 rounded-md object-cover border border-emerald-200 absolute inset-0 z-10"
+                                              />
+                                            )}
+                                            <div className="w-7 h-7 rounded-md bg-emerald-600 text-white font-extrabold text-[10px] flex items-center justify-center">
+                                              {execInitials}
+                                            </div>
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className="font-extrabold text-xs text-emerald-950 truncate">{exec.name}</p>
+                                            <p className="text-[9px] text-emerald-700/80 truncate">{exec.email}</p>
+                                          </div>
+                                        </div>
+
+                                        <div className="flex items-center gap-1.5 shrink-0">
+                                          <button
+                                            type="button"
+                                            onClick={() => setSelectedEmployeeProfile && setSelectedEmployeeProfile(exec)}
+                                            className="px-2 py-1 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-lg text-[10px] font-bold cursor-pointer transition"
+                                            title="View Profile"
+                                          >
+                                            Profile
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenReassignModal && handleOpenReassignModal(exec)}
+                                            className="px-2 py-1 bg-purple-600 hover:bg-purple-700 text-white border border-purple-600 rounded-lg text-[10px] font-bold cursor-pointer transition shadow-2xs flex items-center gap-1"
+                                            title="Assign Team Lead / Manager"
+                                          >
+                                            Assign TL
+                                          </button>
+                                        </div>
+                                      </div>
+                                    )
+                                  })}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+            )
+          })
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ======================================================
+// UserDirectoryTable — simple expandable row table with 10 rows per page pagination
 // ======================================================
 function UserDirectoryTable({
   filteredUsers, isProtectedRole, ROLE_BADGE_CLASSES,
@@ -306,6 +806,21 @@ function UserDirectoryTable({
   setSelectedEmployeeProfile, setShowCredentialsModal,
 }) {
   const [expandedId, setExpandedId] = useState(null)
+  const [currentPage, setCurrentPage] = useState(1)
+  const itemsPerPage = 10
+
+  // Reset page to 1 when filteredUsers composition or count changes
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [filteredUsers.length, filteredUsers[0]?.id])
+
+  const totalPages = Math.ceil(filteredUsers.length / itemsPerPage) || 1
+  const validCurrentPage = Math.min(Math.max(1, currentPage), totalPages)
+
+  const paginatedUsers = useMemo(() => {
+    const startIndex = (validCurrentPage - 1) * itemsPerPage
+    return filteredUsers.slice(startIndex, startIndex + itemsPerPage)
+  }, [filteredUsers, validCurrentPage])
 
   if (filteredUsers.length === 0) {
     return (
@@ -316,6 +831,9 @@ function UserDirectoryTable({
       </div>
     )
   }
+
+  const startRowIndex = (validCurrentPage - 1) * itemsPerPage + 1
+  const endRowIndex = Math.min(validCurrentPage * itemsPerPage, filteredUsers.length)
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
@@ -331,7 +849,7 @@ function UserDirectoryTable({
             </tr>
           </thead>
           <tbody>
-            {filteredUsers.map((user) => {
+            {paginatedUsers.map((user) => {
               const isProtected = isProtectedRole(user.role)
               const isExpanded = expandedId === user.id
               const roleBadge = ROLE_BADGE_CLASSES[user.role] || 'bg-slate-100 text-slate-700 border-slate-200'
@@ -535,6 +1053,52 @@ function UserDirectoryTable({
           </tbody>
         </table>
       </div>
+
+      {/* Pagination Footer Bar */}
+      <div className="px-4 py-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs font-semibold text-slate-600">
+        <div>
+          Showing <span className="font-extrabold text-slate-900">{startRowIndex}</span> to{' '}
+          <span className="font-extrabold text-slate-900">{endRowIndex}</span> of{' '}
+          <span className="font-extrabold text-slate-900">{filteredUsers.length}</span> Total Employees
+        </div>
+
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            disabled={validCurrentPage === 1}
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer flex items-center gap-1"
+          >
+            <ChevronLeft className="w-3.5 h-3.5" /> Previous
+          </button>
+
+          <div className="flex items-center gap-1">
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((pg) => (
+              <button
+                key={pg}
+                type="button"
+                onClick={() => setCurrentPage(pg)}
+                className={`w-7 h-7 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center justify-center ${
+                  pg === validCurrentPage
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                }`}
+              >
+                {pg}
+              </button>
+            ))}
+          </div>
+
+          <button
+            type="button"
+            disabled={validCurrentPage === totalPages}
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            className="px-3 py-1.5 bg-white border border-slate-200 rounded-lg text-xs font-bold text-slate-700 hover:bg-slate-100 disabled:opacity-40 disabled:cursor-not-allowed transition shadow-2xs cursor-pointer flex items-center gap-1"
+          >
+            Next <ChevronRight className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
@@ -544,7 +1108,7 @@ function UserManagement() {
   const location = useLocation()
   const searchInputRef = useRef(null)
   const [users, setUsers] = useState([])
-  const [activeTab, setActiveTab] = useState(null) // null | 'hierarchy' | 'password-resets'
+  const [activeTab, setActiveTab] = useState('directory') // 'directory' | 'hierarchy' | 'password-resets'
   const [showDirectoryModal, setShowDirectoryModal] = useState(false)
   const [showUnassignedPoolModal, setShowUnassignedPoolModal] = useState(false)
   const [selectedHierarchyDept, setSelectedHierarchyDept] = useState('ALL')
@@ -574,17 +1138,48 @@ function UserManagement() {
     fetchDepartments()
   }, [])
 
-  const defaultDepts = [
-    'Sales & Business Development',
-    'Inside Sales',
-    'Field Sales',
-    'IT & System Admin'
-  ]
-  const deptOptions = departmentsList.length > 0 ? departmentsList : defaultDepts
+  // Derive real active departments dynamically from Settings & User Records (no hardcoding)
+  const realDepartments = useMemo(() => {
+    const list = []
+    const addedNames = new Set()
+
+    if (Array.isArray(departmentsList)) {
+      departmentsList.forEach((d) => {
+        const name = typeof d === 'string' ? d.trim() : (d?.name || '').trim()
+        if (name && !addedNames.has(name.toLowerCase())) {
+          addedNames.add(name.toLowerCase())
+          list.push(name)
+        }
+      })
+    }
+
+    users.forEach((u) => {
+      const dName = (u.department || u.dept || '').trim()
+      if (dName && !addedNames.has(dName.toLowerCase())) {
+        addedNames.add(dName.toLowerCase())
+        list.push(dName)
+      }
+    })
+
+    return list
+  }, [departmentsList, users])
+
+  // Derive real active roles dynamically from User Records (including custom roles)
+  const realRoles = useMemo(() => {
+    const set = new Set()
+    users.forEach((u) => {
+      const r = (u.role || u.designation || '').trim()
+      if (r) set.add(r)
+    })
+    return Array.from(set).sort()
+  }, [users])
+
+  const deptOptions = realDepartments.length > 0 ? realDepartments : ['General']
 
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedRole, setSelectedRole] = useState('ALL')
   const [selectedStatus, setSelectedStatus] = useState('ALL')
+  const [directoryViewMode, setDirectoryViewMode] = useState('hierarchy') // 'hierarchy' | 'table'
   const [showAddModal, setShowAddModal] = useState(false)
 
   // Auto-open modal or focus search if requested via navigation state (e.g. from Admin Dashboard Quick Action)
@@ -620,6 +1215,7 @@ function UserManagement() {
     dept: deptOptions[0] || 'Sales & Business Development',
     status: 'Active',
     reporting_manager_id: '',
+    reporting_team_lead_id: '',
     reporting_manager_name: '',
     reporting_manager_email: '',
   })
@@ -1207,7 +1803,13 @@ function UserManagement() {
         reporting_manager_email: '',
       }
     }
-    setNewUser({ ...newUser, role: selectedRole, ...extra })
+    const isExec = (selectedRole || '').toLowerCase().includes('executive')
+    setNewUser({
+      ...newUser,
+      role: selectedRole,
+      ...extra,
+      ...(isExec ? {} : { reporting_team_lead_id: '' })
+    })
   }
 
   // Set default reporting manager when role is changed to Sales Manager / Team Lead in Edit form
@@ -1317,6 +1919,27 @@ function UserManagement() {
       return
     }
 
+    // Determine hierarchy assignment
+    let targetRepId = null
+    let targetRepName = null
+    let targetRepEmail = null
+
+    if (newUser.reporting_team_lead_id) {
+      const tl = users.find(u => String(u.id) === String(newUser.reporting_team_lead_id) || String(u.employee_code) === String(newUser.reporting_team_lead_id))
+      if (tl) {
+        targetRepId = tl.id || tl.employee_code
+        targetRepName = tl.name
+        targetRepEmail = tl.email
+      }
+    } else if (newUser.reporting_manager_id) {
+      const mgr = users.find(u => String(u.id) === String(newUser.reporting_manager_id) || String(u.employee_code) === String(newUser.reporting_manager_id))
+      if (mgr) {
+        targetRepId = mgr.id || mgr.employee_code
+        targetRepName = mgr.name
+        targetRepEmail = mgr.email
+      }
+    }
+
     const created = {
       id: `usr_${Date.now()}`,
       first_name: newUser.first_name || fullName.split(' ')[0],
@@ -1325,13 +1948,16 @@ function UserManagement() {
       gender: newUser.gender || 'Male',
       date_of_birth: newUser.date_of_birth,
       email: newUser.email,
-      phone: newUser.phone || '+91 99999 99999',
-      emergency_contact: newUser.emergency_contact,
+      phone: normalizePhoneNumber(newUser.phone) || '9999999999',
+      emergency_contact: normalizePhoneNumber(newUser.emergency_contact) || '9999999999',
       role: newUser.role,
       dept: newUser.dept,
       status: newUser.status,
       lastLogin: 'Just now',
       accessPassword: newUser.password,
+      reporting_manager_id: targetRepId,
+      reporting_manager_name: targetRepName,
+      reporting_manager_email: targetRepEmail,
       annualLeaves: Number(newUser.annualLeaves || 12),
       halfDayPermissions: Number(newUser.halfDayPermissions || 6),
       shortPermissions: Number(newUser.shortPermissions || 2)
@@ -1365,6 +1991,7 @@ function UserManagement() {
       dept: deptOptions[0] || 'Sales & Business Development',
       status: 'Active',
       reporting_manager_id: '',
+      reporting_team_lead_id: '',
       reporting_manager_name: '',
       reporting_manager_email: '',
       annualLeaves: 12,
@@ -1388,9 +2015,9 @@ function UserManagement() {
         password: created.accessPassword,
         role: created.role,
         dept: created.dept,
-        reporting_manager_id: newUser.reporting_manager_id || null,
-        reporting_manager_name: newUser.reporting_manager_name || null,
-        reporting_manager_email: newUser.reporting_manager_email || null,
+        reporting_manager_id: targetRepId,
+        reporting_manager_name: targetRepName,
+        reporting_manager_email: targetRepEmail,
         annual_leaves: created.annualLeaves,
         half_day_permissions: created.halfDayPermissions,
         short_permissions: created.shortPermissions,
@@ -1453,24 +2080,64 @@ function UserManagement() {
     showToast(`${label} copied to clipboard!`, 'success')
   }
 
-  // Filter Users List
-  const filteredUsers = users.filter((u) => {
-    const matchesSearch =
-      u.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      u.dept.toLowerCase().includes(searchQuery.toLowerCase())
+  // Filter Users List & Sort Alphabetically by Name
+  const filteredUsers = useMemo(() => {
+    const deptFilter = (selectedHierarchyDept || 'ALL').toLowerCase().trim()
+    return users
+      .filter((u) => {
+        const q = (searchQuery || '').toLowerCase().trim()
+        const matchesSearch =
+          !q ||
+          (u.name || '').toLowerCase().includes(q) ||
+          (u.email || '').toLowerCase().includes(q) ||
+          (u.dept || u.department || '').toLowerCase().includes(q) ||
+          (u.employee_code || u.employee_id || '').toLowerCase().includes(q)
 
-    const matchesRole = selectedRole === 'ALL' || u.role === selectedRole
-    const matchesStatus = selectedStatus === 'ALL' || u.status === selectedStatus
+        const matchesRole = selectedRole === 'ALL' || u.role === selectedRole
+        const matchesStatus = selectedStatus === 'ALL' || u.status === selectedStatus
+        const matchesDept = selectedHierarchyDept === 'ALL' || (u.department || u.dept || '').toLowerCase().includes(deptFilter)
 
-    return matchesSearch && matchesRole && matchesStatus
-  })
+        return matchesSearch && matchesRole && matchesStatus && matchesDept
+      })
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }, [users, searchQuery, selectedRole, selectedStatus, selectedHierarchyDept])
 
-  // Role Statistics
-  const activeCount = users.filter((u) => u.status === 'Active').length
-  const inactiveCount = users.filter((u) => u.status === 'Inactive').length
-  const salesManagersCount = users.filter((u) => u.role === 'Sales Manager' || u.role === 'Team Lead').length
-  const executivesCount = users.filter((u) => u.role === 'Sales Executive').length
+  // Pre-indexed Department User Counts for O(1) Department Cards rendering
+  const deptCounts = useMemo(() => {
+    const map = {}
+    users.forEach((u) => {
+      const uDept = (u.department || u.dept || '').toLowerCase().trim()
+      if (uDept) {
+        map[uDept] = (map[uDept] || 0) + 1
+      }
+    })
+    return map
+  }, [users])
+
+  // Single-pass Role & Status Statistics
+  const { activeCount, inactiveCount, salesManagersCount, executivesCount } = useMemo(() => {
+    let active = 0
+    let inactive = 0
+    let managers = 0
+    let execs = 0
+
+    users.forEach((u) => {
+      const status = u.status || 'Active'
+      if (status === 'Active') active++
+      else if (status === 'Inactive') inactive++
+
+      const role = (u.role || '').toLowerCase()
+      if (role.includes('manager') || role.includes('lead')) managers++
+      else if (role.includes('executive') || role.includes('sales')) execs++
+    })
+
+    return {
+      activeCount: active,
+      inactiveCount: inactive,
+      salesManagersCount: managers,
+      executivesCount: execs,
+    }
+  }, [users])
 
   return (
     <div className="mx-auto max-w-[1400px] space-y-6 font-sans">
@@ -1499,200 +2166,290 @@ function UserManagement() {
         </div>
       </div>
 
-      {/* KPI Stats Panel (Interactive Cards -> Click to open Users Directory Modal) */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      {/* Quick KPI Stats Summary Cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        {/* Card 1: Total Users */}
         <button
           type="button"
-          onClick={() => {
-            setSelectedRole('ALL')
-            setSelectedStatus('ALL')
-            setShowDirectoryModal(true)
-          }}
-          className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs hover:shadow-md hover:border-blue-400 transition-all flex items-center gap-3 cursor-pointer text-left group"
-          title="Click to view total users directory modal"
+          onClick={() => setActiveTab('directory')}
+          className={`p-4 rounded-2xl border transition-all text-left flex items-center gap-3.5 cursor-pointer shadow-2xs ${
+            activeTab === 'directory'
+              ? 'bg-blue-50/50 border-blue-300 ring-2 ring-blue-500/20'
+              : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-xs'
+          }`}
         >
-          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-100 group-hover:scale-105 transition-transform">
+          <div className="p-3 bg-blue-100/80 text-blue-700 rounded-xl border border-blue-200">
             <Users className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-blue-600 transition-colors">Total Users</p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <p className="text-2xl font-extrabold text-slate-900">{users.length}</p>
-              <span className="text-[10px] font-bold text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100">View ↗</span>
-            </div>
+            <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Total Accounts</p>
+            <p className="text-2xl font-black text-slate-900 mt-0.5">{users.length}</p>
           </div>
         </button>
 
+        {/* Card 2: Active Accounts */}
         <button
           type="button"
           onClick={() => {
-            setActiveTab(prev => prev === 'hierarchy' ? null : 'hierarchy')
+            setSelectedStatus('Active')
+            setActiveTab('directory')
           }}
-          className={`p-4 rounded-2xl border shadow-xs hover:shadow-md transition-all flex items-center gap-3 cursor-pointer text-left group ${
-            activeTab === 'hierarchy'
-              ? 'bg-indigo-50/60 border-indigo-300 ring-2 ring-indigo-500/20'
-              : 'bg-white border-slate-200 hover:border-indigo-400'
-          }`}
-          title="Click to toggle Team Hierarchy view"
+          className="p-4 bg-white rounded-2xl border border-slate-200 hover:border-emerald-300 transition-all text-left flex items-center gap-3.5 cursor-pointer shadow-2xs hover:shadow-xs"
         >
-          <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 group-hover:scale-105 transition-transform">
+          <div className="p-3 bg-emerald-100/80 text-emerald-700 rounded-xl border border-emerald-200">
+            <UserCheck className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Active Employees</p>
+            <p className="text-2xl font-black text-slate-900 mt-0.5">{activeCount}</p>
+          </div>
+        </button>
+
+        {/* Card 3: Team View */}
+        <button
+          type="button"
+          onClick={() => setActiveTab('hierarchy')}
+          className={`p-4 rounded-2xl border transition-all text-left flex items-center gap-3.5 cursor-pointer shadow-2xs ${
+            activeTab === 'hierarchy'
+              ? 'bg-indigo-50/50 border-indigo-300 ring-2 ring-indigo-500/20'
+              : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-xs'
+          }`}
+        >
+          <div className="p-3 bg-indigo-100/80 text-indigo-700 rounded-xl border border-indigo-200">
             <Network className="w-5 h-5" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-indigo-600 transition-colors">Team Hierarchy</p>
-            <div className="flex items-center gap-1.5 mt-0.5">
-              <p className="text-2xl font-extrabold text-slate-900">{hierarchyManagers.length}</p>
-              <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-100">
-                {activeTab === 'hierarchy' ? `${hierarchyManagers.length} Managers (Open)` : `${hierarchyManagers.length} Managers (Click to View ↗)`}
-              </span>
-            </div>
+            <p className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider">Team Hierarchy</p>
+            <p className="text-2xl font-black text-slate-900 mt-0.5">{hierarchyManagers.length} Managers</p>
+          </div>
+        </button>
+
+        {/* Card 4: Unassigned Pool */}
+        <button
+          type="button"
+          onClick={() => setShowUnassignedPoolModal(true)}
+          className="p-4 bg-gradient-to-br from-amber-50 to-orange-50/40 rounded-2xl border border-amber-200 hover:border-amber-400 transition-all text-left flex items-center gap-3.5 cursor-pointer shadow-2xs hover:shadow-xs"
+        >
+          <div className="p-3 bg-amber-100 text-amber-800 rounded-xl border border-amber-200">
+            <UserX className="w-5 h-5" />
+          </div>
+          <div>
+            <p className="text-[11px] font-extrabold text-amber-800 uppercase tracking-wider">Unassigned Pool</p>
+            <p className="text-2xl font-black text-amber-950 mt-0.5">{unassignedExecutives.length} Execs ↗</p>
           </div>
         </button>
       </div>
 
-      {/* View Switcher Bar */}
-      <div className="flex items-center justify-end gap-3 border-b border-slate-200 pb-2">
+      {/* Main Tab Navigation Bar */}
+      <div className="bg-slate-100/80 p-1.5 rounded-2xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div className="flex items-center gap-1.5 w-full sm:w-auto">
+          <button
+            type="button"
+            onClick={() => setActiveTab('directory')}
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-2 ${
+              activeTab === 'directory'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-transparent text-slate-600 hover:bg-slate-200/60'
+            }`}
+          >
+            <Users className="w-4 h-4" />
+            <span>📋 All Employees Directory</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('hierarchy')}
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-2 ${
+              activeTab === 'hierarchy'
+                ? 'bg-blue-600 text-white shadow-sm'
+                : 'bg-transparent text-slate-600 hover:bg-slate-200/60'
+            }`}
+          >
+            <Network className="w-4 h-4" />
+            <span>🏢 Team View</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('password-resets')}
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-2 ${
+              activeTab === 'password-resets'
+                ? 'bg-amber-500 text-white shadow-sm'
+                : 'bg-transparent text-slate-600 hover:bg-slate-200/60'
+            }`}
+          >
+            <Key className="w-4 h-4" />
+            <span>🔑 Password Reset Requests</span>
+          </button>
+        </div>
+
         <button
-          onClick={() => setActiveTab(activeTab === 'password-resets' ? 'hierarchy' : 'password-resets')}
-          className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition cursor-pointer relative ${
-            activeTab === 'password-resets'
-              ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
-              : 'bg-white text-slate-600 hover:bg-slate-100 border border-slate-200'
-          }`}
+          type="button"
+          onClick={() => setShowDirectoryModal(true)}
+          className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition cursor-pointer shadow-2xs flex items-center gap-1.5"
         >
-          <Key className="w-4 h-4" /> {activeTab === 'password-resets' ? 'Back to Hierarchy' : 'Password Requests'}
+          <span>↗ Open Fullscreen View</span>
         </button>
       </div>
 
       {/* ======================================================== */}
-      {/* VIEW 3: PASSWORD RESET REQUESTS                          */}
+      {/* TAB 1: ALL EMPLOYEES DIRECTORY (MAIN PAGE TABLE VIEW)    */}
       {/* ======================================================== */}
-      {activeTab === 'password-resets' && (
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
-          <PasswordResetRequestsPanel />
+      {activeTab === 'directory' && (
+        <div className="space-y-4 animate-in fade-in duration-150">
+          {/* Search & Multi-Filter Bar */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row gap-3 items-center justify-between">
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search by name, email, employee ID..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="w-full pl-10 pr-8 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-semibold transition"
+              />
+              {searchQuery && (
+                <button
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2.5 w-full md:w-auto flex-wrap justify-end">
+              {/* Department Selector */}
+              <select
+                value={selectedHierarchyDept}
+                onChange={(e) => setSelectedHierarchyDept(e.target.value)}
+                className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-extrabold text-slate-700 focus:outline-none cursor-pointer"
+              >
+                <option value="ALL">All Departments</option>
+                {realDepartments.map(d => (
+                  <option key={d} value={d}>{d}</option>
+                ))}
+              </select>
+
+              {/* Role Selector */}
+              <select
+                value={selectedRole}
+                onChange={(e) => setSelectedRole(e.target.value)}
+                className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-extrabold text-slate-700 focus:outline-none cursor-pointer"
+              >
+                <option value="ALL">All Roles</option>
+                {realRoles.map((r) => (
+                  <option key={r} value={r}>{r}</option>
+                ))}
+              </select>
+
+              {/* Status Selector */}
+              <select
+                value={selectedStatus}
+                onChange={(e) => setSelectedStatus(e.target.value)}
+                className="px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-extrabold text-slate-700 focus:outline-none cursor-pointer"
+              >
+                <option value="ALL">All Statuses</option>
+                <option value="Active">Active</option>
+                <option value="Inactive">Inactive</option>
+              </select>
+
+              {/* Reset Filters */}
+              <button
+                type="button"
+                onClick={() => {
+                  setSearchQuery('')
+                  setSelectedRole('ALL')
+                  setSelectedStatus('ALL')
+                  setSelectedHierarchyDept('ALL')
+                }}
+                className="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
+                Reset
+              </button>
+            </div>
+          </div>
+
+          {/* Results Summary Bar */}
+          <div className="flex items-center justify-between text-xs font-bold text-slate-500 px-1">
+            <span>Showing {filteredUsers.length} of {users.length} Total Employees</span>
+          </div>
+
+          {/* Inline Employee Table */}
+          <UserDirectoryTable
+            filteredUsers={filteredUsers}
+            isProtectedRole={isProtectedRole}
+            ROLE_BADGE_CLASSES={ROLE_BADGE_CLASSES}
+            toggleUserStatus={toggleUserStatus}
+            handleOpenEditModal={handleOpenEditModal}
+            handleDeleteUser={handleDeleteUser}
+            handleOpenReassignModal={handleOpenReassignModal}
+            setSelectedEnrollUser={setSelectedEnrollUser}
+            setDuplicateErrorUser={setDuplicateErrorUser}
+            setShowEnrollFaceModal={setShowEnrollFaceModal}
+            setSelectedEmployeeProfile={setSelectedEmployeeProfile}
+            setShowCredentialsModal={setShowCredentialsModal}
+          />
         </div>
       )}
 
       {/* ======================================================== */}
-      {/* ======================================================== */}
-      {/* VIEW 1: MANAGER & EXECUTIVE HIERARCHY / ORG FLOWCHART    */}
+      {/* TAB 2: TEAM VIEW (ORGANIZATION TREE / HIERARCHY)         */}
       {/* ======================================================== */}
       {activeTab === 'hierarchy' && (
-        <div className="space-y-6">
-
+        <div className="space-y-6 animate-in fade-in duration-150">
           {/* Department Cards Bar */}
           <div>
             <div className="flex items-center justify-between gap-3 mb-3">
               <div className="flex items-center gap-2">
                 <Building className="w-4 h-4 text-[#123A8C]" />
-                <h3 className="font-extrabold text-sm text-[#071A45]">Department Hierarchy Filter</h3>
+                <h3 className="font-extrabold text-sm text-[#071A45]">Department Team View Filter</h3>
               </div>
             </div>
 
-            {/* Department Cards Grid */}
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-3">
-              {/* Card 1: All Departments */}
-              <button
-                type="button"
-                onClick={() => setSelectedHierarchyDept('ALL')}
-                className={`p-3.5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs ${
-                  selectedHierarchyDept === 'ALL'
-                    ? 'bg-gradient-to-br from-[#061A4D] to-[#123A8C] text-white border-transparent ring-2 ring-[#061A4D]/30 shadow-md scale-[1.02]'
-                    : 'bg-white text-slate-800 border-slate-200 hover:border-blue-400 hover:shadow-sm'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className={`p-2 rounded-xl border ${selectedHierarchyDept === 'ALL' ? 'bg-white/10 border-white/20 text-white' : 'bg-blue-50 border-blue-100 text-blue-600'}`}>
-                    <Layers className="w-4 h-4" />
-                  </div>
-                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${selectedHierarchyDept === 'ALL' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                    All ({users.length})
-                  </span>
-                </div>
-                <div className="mt-3">
-                  <p className="font-extrabold text-xs leading-tight">All Departments</p>
-                  <p className={`text-[10px] font-semibold mt-0.5 ${selectedHierarchyDept === 'ALL' ? 'text-blue-200' : 'text-slate-500'}`}>Full Org Chart</p>
-                </div>
-              </button>
+            {/* Department Cards Grid (Dynamic Real Data Only) */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+              {realDepartments.map((deptName) => {
+                const targetLower = deptName.toLowerCase().trim()
+                let count = deptCounts[targetLower] || 0
+                if (!count) {
+                  Object.keys(deptCounts).forEach((key) => {
+                    if (key.includes(targetLower) || targetLower.includes(key)) {
+                      count += deptCounts[key]
+                    }
+                  })
+                }
+                const isSelected = selectedHierarchyDept.toLowerCase().trim() === targetLower
 
-              {/* Card 2: Sales & Business */}
-              <button
-                type="button"
-                onClick={() => setSelectedHierarchyDept('Sales')}
-                className={`p-3.5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs ${
-                  selectedHierarchyDept === 'Sales'
-                    ? 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-transparent ring-2 ring-blue-500/30 shadow-md scale-[1.02]'
-                    : 'bg-white text-slate-800 border-slate-200 hover:border-indigo-400 hover:shadow-sm'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className={`p-2 rounded-xl border ${selectedHierarchyDept === 'Sales' ? 'bg-white/10 border-white/20 text-white' : 'bg-indigo-50 border-indigo-100 text-indigo-600'}`}>
-                    <Users className="w-4 h-4" />
-                  </div>
-                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${selectedHierarchyDept === 'Sales' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                    {users.filter(u => (u.department || u.dept || 'Sales').toLowerCase().includes('sales')).length}
-                  </span>
-                </div>
-                <div className="mt-3">
-                  <p className="font-extrabold text-xs leading-tight">Sales & Business</p>
-                  <p className={`text-[10px] font-semibold mt-0.5 ${selectedHierarchyDept === 'Sales' ? 'text-blue-100' : 'text-slate-500'}`}>Sales & Exec Teams</p>
-                </div>
-              </button>
-
-              {/* Card 3: Management */}
-              <button
-                type="button"
-                onClick={() => setSelectedHierarchyDept('Management')}
-                className={`p-3.5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs ${
-                  selectedHierarchyDept === 'Management'
-                    ? 'bg-gradient-to-br from-amber-600 to-amber-800 text-white border-transparent ring-2 ring-amber-500/30 shadow-md scale-[1.02]'
-                    : 'bg-white text-slate-800 border-slate-200 hover:border-amber-400 hover:shadow-sm'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className={`p-2 rounded-xl border ${selectedHierarchyDept === 'Management' ? 'bg-white/10 border-white/20 text-white' : 'bg-amber-50 border-amber-100 text-amber-600'}`}>
-                    <ShieldCheck className="w-4 h-4" />
-                  </div>
-                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${selectedHierarchyDept === 'Management' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                    {users.filter(u => {
-                      const d = (u.department || u.dept || '').toLowerCase()
-                      const r = (u.role || '').toLowerCase()
-                      return d.includes('mgmt') || d.includes('management') || r.includes('ceo') || r.includes('admin')
-                    }).length}
-                  </span>
-                </div>
-                <div className="mt-3">
-                  <p className="font-extrabold text-xs leading-tight">Management & Admin</p>
-                  <p className={`text-[10px] font-semibold mt-0.5 ${selectedHierarchyDept === 'Management' ? 'text-amber-100' : 'text-slate-500'}`}>Leadership Node</p>
-                </div>
-              </button>
-
-              {/* Card 4: Operations & IT */}
-              <button
-                type="button"
-                onClick={() => setSelectedHierarchyDept('Operations')}
-                className={`p-3.5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs ${
-                  selectedHierarchyDept === 'Operations'
-                    ? 'bg-gradient-to-br from-emerald-600 to-teal-700 text-white border-transparent ring-2 ring-emerald-500/30 shadow-md scale-[1.02]'
-                    : 'bg-white text-slate-800 border-slate-200 hover:border-emerald-400 hover:shadow-sm'
-                }`}
-              >
-                <div className="flex items-center justify-between">
-                  <div className={`p-2 rounded-xl border ${selectedHierarchyDept === 'Operations' ? 'bg-white/10 border-white/20 text-white' : 'bg-emerald-50 border-emerald-100 text-emerald-600'}`}>
-                    <Briefcase className="w-4 h-4" />
-                  </div>
-                  <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${selectedHierarchyDept === 'Operations' ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
-                    {users.filter(u => {
-                      const d = (u.department || u.dept || '').toLowerCase()
-                      return d.includes('op') || d.includes('it') || d.includes('tech')
-                    }).length}
-                  </span>
-                </div>
-                <div className="mt-3">
-                  <p className="font-extrabold text-xs leading-tight">Operations & IT</p>
-                  <p className={`text-[10px] font-semibold mt-0.5 ${selectedHierarchyDept === 'Operations' ? 'text-emerald-100' : 'text-slate-500'}`}>Tech & Operations</p>
-                </div>
-              </button>
+                return (
+                  <button
+                    key={deptName}
+                    type="button"
+                    onClick={() => setSelectedHierarchyDept(isSelected ? 'ALL' : deptName)}
+                    className={`p-3.5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs ${
+                      isSelected
+                        ? 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-transparent ring-2 ring-blue-500/30 shadow-md scale-[1.02]'
+                        : 'bg-white text-slate-800 border-slate-200 hover:border-indigo-400 hover:shadow-sm'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className={`p-2 rounded-xl border ${isSelected ? 'bg-white/10 border-white/20 text-white' : 'bg-indigo-50 border-indigo-100 text-indigo-600'}`}>
+                        <Briefcase className="w-4 h-4" />
+                      </div>
+                      <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded-full ${isSelected ? 'bg-white/20 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                        {count} {count === 1 ? 'User' : 'Users'}
+                      </span>
+                    </div>
+                    <div className="mt-3">
+                      <p className="font-extrabold text-xs leading-tight truncate">{deptName}</p>
+                      <p className={`text-[10px] font-semibold mt-0.5 ${isSelected ? 'text-blue-100' : 'text-slate-500'}`}>
+                        {isSelected ? 'Filter Active (Click to Clear)' : 'Click to Filter Hierarchy'}
+                      </p>
+                    </div>
+                  </button>
+                )
+              })}
 
               {/* Card 5: Unassigned Pool */}
               <button
@@ -1716,212 +2473,30 @@ function UserManagement() {
             </div>
           </div>
 
-          {/* HIERARCHY FLOWCHART CHART VIEW */}
-          <div className="bg-white border border-[#DCE3EF] rounded-3xl p-6 shadow-xs space-y-8 overflow-x-auto">
-              
-              {/* LEVEL 1: CEO / TOP LEADERSHIP APEX NODE */}
-              <div className="flex flex-col items-center">
-                <div className="bg-gradient-to-br from-amber-500/15 via-yellow-500/10 to-amber-500/20 border border-amber-400/80 px-4 py-2.5 rounded-2xl shadow-md max-w-xs w-full text-center relative group hover:border-amber-500 transition-all">
-                  <div className="absolute -top-2.5 left-1/2 -translate-x-1/2 bg-gradient-to-r from-amber-500 to-yellow-500 text-white text-[9px] font-black uppercase tracking-widest px-2.5 py-0.5 rounded-full shadow-xs flex items-center gap-1 shrink-0 whitespace-nowrap">
-                    <Sparkles className="w-2.5 h-2.5" /> Executive Leadership (CEO)
-                  </div>
-                  
-                  {(() => {
-                    const ceoObj = users.find(u => (u.role || '').toLowerCase().includes('ceo') || (u.role || '').toLowerCase().includes('founder')) || users.find(u => (u.role || '').toLowerCase().includes('admin')) || { name: 'CEO & Founder', email: 'ceo@twiteconnect.com', role: 'CEO' }
-                    return (
-                      <div className="mt-1 flex flex-col items-center">
-                        <div className="relative w-9 h-9 shrink-0 mb-1">
-                          {getUserPhoto(ceoObj) && (
-                            <img
-                              src={getUserPhoto(ceoObj)}
-                              alt={ceoObj.name}
-                              onError={(e) => { e.currentTarget.style.display = 'none' }}
-                              className="w-9 h-9 rounded-xl object-cover border border-white shadow-xs absolute inset-0 z-10"
-                            />
-                          )}
-                          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-500 to-yellow-400 text-white font-extrabold text-xs flex items-center justify-center border border-white shadow-xs">
-                            {(ceoObj.name || '').split(' ').map(n => n[0]).join('')}
-                          </div>
-                        </div>
-                        <h4 className="font-extrabold text-xs text-slate-900 leading-tight">{ceoObj.name}</h4>
-                        <p className="text-[10px] text-amber-700 font-extrabold">{ceoObj.role || 'Chief Executive Officer'}</p>
-                        <p className="text-[9px] text-slate-500 font-medium">{ceoObj.email}</p>
-                      </div>
-                    )
-                  })()}
-                </div>
+          {/* HIERARCHY 3-TIER VIEW */}
+          <ThreeTierHierarchyView
+            users={users.filter(u => selectedHierarchyDept === 'ALL' || (u.department || u.dept || 'Sales').toLowerCase().includes(selectedHierarchyDept.toLowerCase()))}
+            searchQuery={searchQuery}
+            isProtectedRole={isProtectedRole}
+            ROLE_BADGE_CLASSES={ROLE_BADGE_CLASSES}
+            toggleUserStatus={toggleUserStatus}
+            handleOpenEditModal={handleOpenEditModal}
+            handleDeleteUser={handleDeleteUser}
+            handleOpenReassignModal={handleOpenReassignModal}
+            setSelectedEnrollUser={setSelectedEnrollUser}
+            setShowEnrollFaceModal={setShowEnrollFaceModal}
+            setSelectedEmployeeProfile={setSelectedEmployeeProfile}
+          />
+        </div>
+      )}
 
-                {/* Connecting Line from CEO down to Level 2 */}
-                <div className="w-0.5 h-4 bg-gradient-to-b from-amber-400 to-indigo-500 my-0.5"></div>
-              </div>
-
-              {/* LEVEL 2: ADMINS & MANAGERS FLOWCHART BRANCHES */}
-              <div className="flex flex-col items-center">
-                {/* Horizontal branch bar & Expand/Collapse Controls */}
-                <div className="w-full max-w-4xl border-t-2 border-indigo-400 relative flex flex-col items-center justify-center mb-6 pt-3">
-                  <span className="bg-indigo-100 text-indigo-900 border border-indigo-200 text-[10px] font-black uppercase tracking-wider px-3 py-0.5 rounded-full shadow-xs">
-                    Reporting Manager Flow Chart: CEO → Admins → Managers → Executives
-                  </span>
-                  
-                  <div className="flex items-center gap-2 mt-3">
-                    <button
-                      type="button"
-                      onClick={() => setExpandedManagerIds(hierarchyManagers.map(m => m.id))}
-                      className="px-3 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 text-[11px] font-extrabold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                    >
-                      <ChevronDown className="w-3.5 h-3.5" /> Expand All Managers ({hierarchyManagers.length})
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setExpandedManagerIds([])}
-                      className="px-3 py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-[11px] font-extrabold rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                    >
-                      <ChevronUp className="w-3.5 h-3.5" /> Collapse All
-                    </button>
-                  </div>
-                </div>
-
-                {/* MANAGER & EXECUTIVE TEAM FLOW CARDS */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4 w-full">
-                  {hierarchyManagers.length === 0 ? (
-                    <div className="col-span-full py-12 text-center text-xs text-slate-500 font-semibold border border-dashed border-slate-200 rounded-2xl bg-slate-50">
-                      No Sales Managers configured for hierarchy chart.
-                    </div>
-                  ) : (
-                    hierarchyManagers
-                      .filter(m => selectedHierarchyDept === 'ALL' || (m.department || m.dept || 'Sales').toLowerCase().includes(selectedHierarchyDept.toLowerCase()))
-                      .map((mgr) => {
-                        const relationship = managerHierarchy.find(h => String(h.manager.id) === String(mgr.id))
-                        const assigned = relationship ? relationship.assignedExecutives : []
-                        const isExpanded = expandedManagerIds.includes(mgr.id)
-                        
-                        return (
-                          <div key={mgr.id} className="bg-slate-50/70 border-2 border-indigo-200 hover:border-indigo-400 rounded-3xl p-4 shadow-xs transition-all flex flex-col justify-between">
-                            
-                            {/* Manager Level Card (Always Compact & Clean) */}
-                            <div className="bg-white border border-indigo-100 rounded-2xl p-4 shadow-xs space-y-3">
-                              <div className="flex items-center justify-between">
-                                <span className="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
-                                  👔 Sales Manager
-                                </span>
-                                <span className={`px-2 py-0.5 rounded-full text-[9px] font-extrabold border ${mgr.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'}`}>
-                                  {mgr.status || 'Active'}
-                                </span>
-                              </div>
-
-                              <div className="flex items-center gap-3 pt-0.5">
-                                <div className="relative w-10 h-10 shrink-0">
-                                  {getUserPhoto(mgr) && (
-                                    <img
-                                      src={getUserPhoto(mgr)}
-                                      alt={mgr.name}
-                                      onError={(e) => { e.currentTarget.style.display = 'none' }}
-                                      className="w-10 h-10 rounded-xl object-cover border border-white shadow-md absolute inset-0 z-10"
-                                    />
-                                  )}
-                                  <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-[#061A4D] to-[#123A8C] text-white flex items-center justify-center font-extrabold text-xs shadow-md border border-white">
-                                    {(mgr.name || '').split(' ').map(n => n[0]).join('')}
-                                  </div>
-                                </div>
-                                <div className="min-w-0 flex-1">
-                                  <h4 className="font-extrabold text-xs text-slate-900 truncate">{mgr.name}</h4>
-                                  <p className="text-[10px] text-slate-500 font-medium truncate">{mgr.email}</p>
-                                </div>
-                              </div>
-
-                              {/* Expand / Collapse Subordinates Button */}
-                              <button
-                                type="button"
-                                onClick={() => toggleExpandManager(mgr.id)}
-                                className={`w-full py-2 px-3 rounded-xl border text-xs font-bold flex items-center justify-between transition cursor-pointer ${
-                                  isExpanded
-                                    ? 'bg-[#061A4D] text-white border-[#061A4D] shadow-xs'
-                                    : 'bg-indigo-50/80 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
-                                }`}
-                              >
-                                <span className="flex items-center gap-1.5 text-[11px]">
-                                  <Users className="w-3.5 h-3.5" />
-                                  {assigned.length} Direct Subordinate{assigned.length === 1 ? '' : 's'}
-                                </span>
-                                <span className="text-[10px] font-extrabold flex items-center gap-1">
-                                  {isExpanded ? (
-                                    <>Collapse <ChevronUp className="w-3.5 h-3.5" /></>
-                                  ) : (
-                                    <>Expand <ChevronDown className="w-3.5 h-3.5" /></>
-                                  )}
-                                </span>
-                              </button>
-                            </div>
-
-                            {/* Subordinate Executives Cards Container (Visible when Expanded) */}
-                            {isExpanded && (
-                              <div className="animate-in fade-in zoom-in-95 duration-150">
-                                {/* Connecting vertical node line */}
-                                <div className="flex justify-center my-2">
-                                  <div className="w-0.5 h-5 bg-indigo-300"></div>
-                                </div>
-
-                                <div className="bg-white border border-slate-200/90 rounded-2xl p-3.5 space-y-2.5">
-                                  <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                                    <span className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                                      <Users className="w-3 h-3 text-indigo-600" /> Direct Subordinates ({assigned.length})
-                                    </span>
-                                  </div>
-
-                                  {assigned.length === 0 ? (
-                                    <div className="py-4 text-center text-[11px] text-slate-400 font-medium bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                                      No executives reporting yet.
-                                    </div>
-                                  ) : (
-                                    <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                                      {assigned.map((exec) => (
-                                        <div
-                                          key={exec.id}
-                                          className="p-2.5 bg-emerald-50/40 border border-emerald-100 hover:border-emerald-300 rounded-xl flex items-center justify-between gap-2 transition"
-                                        >
-                                          <div className="flex items-center gap-2 min-w-0">
-                                            <div className="relative w-7 h-7 shrink-0">
-                                              {getUserPhoto(exec) && (
-                                                <img
-                                                  src={getUserPhoto(exec)}
-                                                  alt={exec.name}
-                                                  onError={(e) => { e.currentTarget.style.display = 'none' }}
-                                                  className="w-7 h-7 rounded-lg object-cover border border-emerald-200 absolute inset-0 z-10"
-                                                />
-                                              )}
-                                              <div className="w-7 h-7 rounded-lg bg-emerald-600 text-white font-extrabold text-[10px] flex items-center justify-center">
-                                                {(exec.name || '').split(' ').map(n => n[0]).join('')}
-                                              </div>
-                                            </div>
-                                            <div className="min-w-0">
-                                              <p className="font-bold text-xs text-slate-900 truncate">{exec.name}</p>
-                                              <p className="text-[9px] text-slate-500 truncate">{exec.email}</p>
-                                            </div>
-                                          </div>
-                                          <button
-                                            onClick={() => handleOpenReassignModal(exec)}
-                                            className="p-1 text-blue-600 hover:bg-blue-50 rounded-lg text-[9px] font-extrabold px-1.5 border border-blue-200 cursor-pointer transition shrink-0"
-                                            title="Reassign Reporting Manager"
-                                          >
-                                            Reassign
-                                          </button>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            )}
-
-                          </div>
-                        )
-                      })
-                  )}
-                </div>
-              </div>
-
-            </div>
-          </div>
+      {/* ======================================================== */}
+      {/* TAB 3: PASSWORD RESET REQUESTS                          */}
+      {/* ======================================================== */}
+      {activeTab === 'password-resets' && (
+        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs animate-in fade-in duration-150">
+          <PasswordResetRequestsPanel />
+        </div>
       )}
 
       {/* ======================================================== */}
@@ -2056,19 +2631,19 @@ function UserManagement() {
           <div className="bg-white rounded-3xl max-w-6xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
             
             {/* Modal Header */}
-            <div className="bg-[#061A4D] text-white p-5 flex items-center justify-between border-b border-slate-800 shrink-0">
+            <div className="bg-gradient-to-r from-slate-50 via-[#F0F4FF] to-slate-50 text-slate-900 p-5 flex items-center justify-between border-b border-slate-200 shrink-0">
               <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-md">
+                <div className="p-2.5 bg-blue-600 text-white rounded-xl shadow-xs">
                   <Users className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-base text-slate-100 flex items-center gap-2">
+                  <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
                     All Users Directory
-                    <span className="text-xs bg-blue-500/30 border border-blue-400/40 text-blue-200 px-2.5 py-0.5 rounded-full font-bold">
+                    <span className="text-xs bg-blue-100 border border-blue-200 text-blue-700 px-2.5 py-0.5 rounded-full font-bold">
                       {filteredUsers.length} Users Found
                     </span>
                   </h3>
-                  <p className="text-[11px] text-slate-300 font-medium mt-0.5">
+                  <p className="text-[11px] text-slate-500 font-medium mt-0.5">
                     Full system database directory. Filter by Role/Status or Search by Name/Email.
                   </p>
                 </div>
@@ -2076,7 +2651,7 @@ function UserManagement() {
               <button
                 type="button"
                 onClick={() => setShowDirectoryModal(false)}
-                className="text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5"
+                className="text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer flex items-center gap-1.5 shadow-2xs"
               >
                 <span>✕ Close</span>
               </button>
@@ -2084,37 +2659,54 @@ function UserManagement() {
 
             {/* Search & Filter Bar inside Modal */}
             <div className="p-4 bg-slate-50/80 border-b border-slate-200 flex flex-col sm:flex-row gap-3 items-center justify-between shrink-0">
-              <div className="relative w-full sm:w-80">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  ref={searchInputRef}
-                  type="text"
-                  placeholder="Search name, email, department..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-white border border-slate-250 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-bold shadow-2xs"
-                />
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDirectoryViewMode('hierarchy')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 ${
+                    directoryViewMode === 'hierarchy'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  <span>🏢 Team View (Manager ➔ Team Lead ➔ Exec)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDirectoryViewMode('table')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 ${
+                    directoryViewMode === 'table'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+                  }`}
+                >
+                  <span>📋 Directory List</span>
+                </button>
               </div>
 
               <div className="flex items-center gap-2.5 w-full sm:w-auto justify-end flex-wrap">
+                <div className="relative w-full sm:w-64">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                  <input
+                    ref={searchInputRef}
+                    type="text"
+                    placeholder="Search name, email..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 bg-white border border-slate-250 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-blue-600 font-bold shadow-2xs"
+                  />
+                </div>
+
                 <select
                   value={selectedRole}
                   onChange={(e) => setSelectedRole(e.target.value)}
-                  className="px-3.5 py-2 bg-white border border-slate-250 rounded-xl text-xs font-extrabold text-slate-700 focus:outline-none cursor-pointer shadow-2xs"
+                  className="px-3 py-1.5 bg-white border border-slate-250 rounded-xl text-xs font-extrabold text-slate-700 focus:outline-none cursor-pointer shadow-2xs"
                 >
                   <option value="ALL">All Roles</option>
                   <option value="Super Admin">Super Admin</option>
                   <option value="Sales Manager">Sales Manager</option>
+                  <option value="Team Lead">Team Lead</option>
                   <option value="Sales Executive">Sales Executive</option>
-                </select>
-                <select
-                  value={selectedStatus}
-                  onChange={(e) => setSelectedStatus(e.target.value)}
-                  className="px-3.5 py-2 bg-white border border-slate-250 rounded-xl text-xs font-extrabold text-slate-700 focus:outline-none cursor-pointer shadow-2xs"
-                >
-                  <option value="ALL">All Statuses</option>
-                  <option value="Active">Active</option>
-                  <option value="Inactive">Inactive</option>
                 </select>
                 <button
                   type="button"
@@ -2123,29 +2715,45 @@ function UserManagement() {
                     setSelectedRole('ALL')
                     setSelectedStatus('ALL')
                   }}
-                  className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
+                  className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
                 >
-                  Reset Filters
+                  Reset
                 </button>
               </div>
             </div>
 
-            {/* Table Body */}
+            {/* Modal Body */}
             <div className="flex-1 overflow-y-auto p-4">
-              <UserDirectoryTable
-                filteredUsers={filteredUsers}
-                isProtectedRole={isProtectedRole}
-                ROLE_BADGE_CLASSES={ROLE_BADGE_CLASSES}
-                toggleUserStatus={toggleUserStatus}
-                handleOpenEditModal={handleOpenEditModal}
-                handleDeleteUser={handleDeleteUser}
-                handleOpenReassignModal={handleOpenReassignModal}
-                setSelectedEnrollUser={setSelectedEnrollUser}
-                setDuplicateErrorUser={setDuplicateErrorUser}
-                setShowEnrollFaceModal={setShowEnrollFaceModal}
-                setSelectedEmployeeProfile={setSelectedEmployeeProfile}
-                setShowCredentialsModal={setShowCredentialsModal}
-              />
+              {directoryViewMode === 'hierarchy' ? (
+                <ThreeTierHierarchyView
+                  users={filteredUsers}
+                  searchQuery={searchQuery}
+                  isProtectedRole={isProtectedRole}
+                  ROLE_BADGE_CLASSES={ROLE_BADGE_CLASSES}
+                  toggleUserStatus={toggleUserStatus}
+                  handleOpenEditModal={handleOpenEditModal}
+                  handleDeleteUser={handleDeleteUser}
+                  handleOpenReassignModal={handleOpenReassignModal}
+                  setSelectedEnrollUser={setSelectedEnrollUser}
+                  setShowEnrollFaceModal={setShowEnrollFaceModal}
+                  setSelectedEmployeeProfile={setSelectedEmployeeProfile}
+                />
+              ) : (
+                <UserDirectoryTable
+                  filteredUsers={filteredUsers}
+                  isProtectedRole={isProtectedRole}
+                  ROLE_BADGE_CLASSES={ROLE_BADGE_CLASSES}
+                  toggleUserStatus={toggleUserStatus}
+                  handleOpenEditModal={handleOpenEditModal}
+                  handleDeleteUser={handleDeleteUser}
+                  handleOpenReassignModal={handleOpenReassignModal}
+                  setSelectedEnrollUser={setSelectedEnrollUser}
+                  setDuplicateErrorUser={setDuplicateErrorUser}
+                  setShowEnrollFaceModal={setShowEnrollFaceModal}
+                  setSelectedEmployeeProfile={setSelectedEmployeeProfile}
+                  setShowCredentialsModal={setShowCredentialsModal}
+                />
+              )}
             </div>
 
             {/* Modal Footer */}
@@ -2154,7 +2762,7 @@ function UserManagement() {
               <button
                 type="button"
                 onClick={() => setShowDirectoryModal(false)}
-                className="px-5 py-2 bg-[#061A4D] hover:bg-[#123A8C] text-white rounded-xl font-extrabold shadow-sm transition cursor-pointer"
+                className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-xl font-extrabold shadow-xs transition cursor-pointer"
               >
                 Close Modal
               </button>
@@ -2164,285 +2772,328 @@ function UserManagement() {
       )}
 
       {/* Add User Modal (Admin Creates Access Email & Password) */}
-      {/* Add User Modal (Admin Creates Access Email & Password) */}
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 space-y-4 border border-slate-200 shadow-2xl overflow-y-auto max-h-[90vh]">
-            <h3 className="font-extrabold text-slate-900 text-lg flex items-center justify-between border-b border-slate-100 pb-3">
-              <span className="flex items-center gap-2">
-                <UserCheck className="w-5 h-5 text-blue-600" /> Create Portal Access Account
-              </span>
-              <button onClick={() => setShowAddModal(false)} className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer">
+          <div className="bg-white rounded-3xl max-w-3xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
+            
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-[#071A45] via-[#0D2866] to-[#14398A] text-white p-5 flex items-center justify-between border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-blue-500/20 border border-blue-400/30 text-blue-300 rounded-2xl shadow-inner">
+                  <UserCheck className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-base text-white tracking-tight">Create System Employee Portal Account</h3>
+                  <p className="text-[11px] text-slate-300 font-medium mt-0.5">Creates credentials, employee profile, and assigns team hierarchy.</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-xl text-xs font-bold transition cursor-pointer"
+              >
                 ✕
               </button>
-            </h3>
-
-            <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl text-[11px] font-semibold text-blue-900 flex items-start gap-2">
-              <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-              <span>
-                Enter the employee's <strong>Access Email</strong> and assign a <strong>Portal Access Password</strong>. The employee will use these exact credentials to log in to their Sales Manager or Executive portal.
-              </span>
             </div>
 
-            <form onSubmit={handleAddUser} autoComplete="off" className="space-y-4 text-xs">
+            <form onSubmit={handleAddUser} autoComplete="off" className="flex-1 overflow-y-auto p-6 space-y-6">
               {/* Fake hidden input traps to block browser autofill */}
               <input type="text" name="fake_usernamenotremembered" style={{ display: 'none' }} tabIndex={-1} />
               <input type="password" name="fake_passwordnotremembered" style={{ display: 'none' }} tabIndex={-1} />
 
-              {/* Account Access Fields Group */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Employee ID (Auto-Generated)</label>
-                  <input
-                    type="text"
-                    value={`EMP${String(users.length + 1).padStart(6, '0')}`}
-                    disabled
-                    className="w-full h-10 border border-slate-200 bg-slate-50/50 rounded-xl px-3 text-slate-700 font-extrabold cursor-not-allowed"
-                  />
+              {/* SECTION 1: Personal & Account Credentials */}
+              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 space-y-3.5">
+                <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
+                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 font-black text-[10px] flex items-center justify-center">1</span>
+                  <h4 className="font-extrabold text-xs text-[#071A45] uppercase tracking-wider">Personal & Account Credentials</h4>
                 </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Access Email Address (Portal Login Email)</label>
-                  <input
-                    type="email"
-                    name="new_user_login_email"
-                    id="new_user_login_email"
-                    placeholder="e.g. employee.name@company.com"
-                    value={newUser.email}
-                    onChange={(e) => setNewUser({ ...newUser, email: e.target.value, name: `${newUser.first_name} ${newUser.last_name}`.trim() })}
-                    className="w-full h-10 border border-slate-350 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
-                    autoComplete="off"
-                    required
-                  />
-                </div>
-              </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Portal Access Password</label>
-                  <div className="relative">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">First Name *</label>
                     <input
-                      type={showAddPassword ? 'text' : 'password'}
-                      name="new_user_login_password"
-                      id="new_user_login_password"
-                      placeholder="Assign login password (e.g. Sales2026#)"
-                      value={newUser.password}
-                      onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                      className="w-full h-10 border border-slate-350 rounded-xl pl-3 pr-10 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
-                      autoComplete="new-password"
-                      required
+                      type="text" required
+                      placeholder="e.g. Arun"
+                      value={newUser.first_name}
+                      onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value, name: `${e.target.value} ${newUser.last_name}`.trim() })}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-2xs"
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowAddPassword(!showAddPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                    >
-                      {showAddPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Last Name</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. Kumar"
+                      value={newUser.last_name}
+                      onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value, name: `${newUser.first_name} ${e.target.value}`.trim() })}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
+                    />
                   </div>
                 </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Assigned Role</label>
-                  <select
-                    value={newUser.role}
-                    onChange={(e) => handleAddRoleChange(e.target.value)}
-                    className="w-full h-10 border border-slate-350 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 font-bold bg-white focus:ring-1 focus:ring-blue-100"
-                  >
-                    <option value="Sales Manager">Sales Manager</option>
-                    <option value="Team Lead">Team Lead</option>
-                    <option value="Sales Executive">Sales Executive</option>
-                    <option value="System Admin">System Admin</option>
-                  </select>
-                </div>
-              </div>
 
-              <div className="border-t border-slate-100 my-2" />
-
-              {/* Personal Details Group */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">First Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Arun"
-                    value={newUser.first_name}
-                    onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value, name: `${e.target.value} ${newUser.last_name}`.trim() })}
-                    className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
-                    required
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Last Name</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Kumar"
-                    value={newUser.last_name}
-                    onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value, name: `${newUser.first_name} ${e.target.value}`.trim() })}
-                    className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Gender</label>
-                  <select
-                    value={newUser.gender}
-                    onChange={(e) => setNewUser({ ...newUser, gender: e.target.value })}
-                    className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white focus:ring-1 focus:ring-blue-100"
-                  >
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Date of Birth</label>
-                  <input
-                    type="date"
-                    value={newUser.date_of_birth}
-                    onChange={(e) => setNewUser({ ...newUser, date_of_birth: e.target.value })}
-                    className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
-                  />
-                </div>
-              </div>
-
-              <div className="border-t border-slate-100 my-2" />
-
-              {/* Contact and Reporting Group */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Phone Number</label>
-                  <input
-                    type="tel"
-                    placeholder="10-digit number e.g. 9876543210"
-                    value={newUser.phone}
-                    maxLength={10}
-                    onChange={(e) => setNewUser({ ...newUser, phone: normalizePhoneNumber(e.target.value) })}
-                    className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
-                  />
-                </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Emergency Contact</label>
-                  <input
-                    type="tel"
-                    placeholder="10-digit emergency contact"
-                    value={newUser.emergency_contact}
-                    maxLength={10}
-                    onChange={(e) => setNewUser({ ...newUser, emergency_contact: normalizePhoneNumber(e.target.value) })}
-                    className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Department</label>
-                  <select
-                    value={newUser.dept}
-                    onChange={(e) => setNewUser({ ...newUser, dept: e.target.value })}
-                    className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 font-bold bg-white focus:ring-1 focus:ring-blue-100"
-                  >
-                    {deptOptions.map((dept) => (
-                      <option key={dept} value={dept}>
-                        {dept}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {newUser.role !== 'System Admin' ? (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
-                    <label className="block text-slate-700 font-bold mb-1">Reporting Manager</label>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Access Email Address *</label>
+                    <input
+                      type="email" required
+                      name="new_user_login_email"
+                      id="new_user_login_email"
+                      placeholder="e.g. employee.name@company.com"
+                      value={newUser.email}
+                      onChange={(e) => setNewUser({ ...newUser, email: e.target.value, name: `${newUser.first_name} ${newUser.last_name}`.trim() })}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Portal Login Password *</label>
+                    <div className="relative">
+                      <input
+                        type={showAddPassword ? 'text' : 'password'}
+                        name="new_user_login_password"
+                        id="new_user_login_password"
+                        placeholder="Min 6 characters"
+                        value={newUser.password}
+                        onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                        className="w-full h-10 pl-3 pr-10 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
+                        autoComplete="new-password"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAddPassword(!showAddPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      >
+                        {showAddPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Gender</label>
                     <select
-                      value={newUser.reporting_manager_id || ''}
-                      onChange={(e) => {
-                        const selectedId = e.target.value
-                        if (!selectedId) {
-                          setNewUser({
-                            ...newUser,
-                            reporting_manager_id: '',
-                            reporting_manager_name: '',
-                            reporting_manager_email: '',
-                          })
-                        } else {
-                          const mgr = users.find(u => String(u.id) === String(selectedId))
-                          setNewUser({
-                            ...newUser,
-                            reporting_manager_id: selectedId,
-                            reporting_manager_name: mgr?.name || '',
-                            reporting_manager_email: mgr?.email || '',
-                          })
-                        }
-                      }}
-                      className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white focus:ring-1 focus:ring-blue-100"
+                      value={newUser.gender}
+                      onChange={(e) => setNewUser({ ...newUser, gender: e.target.value })}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer shadow-2xs"
                     >
-                      <option value="">-- No Reporting Manager Assigned --</option>
-                      {potentialReportingManagers.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ({m.role})
+                      <option value="Male">Male</option>
+                      <option value="Female">Female</option>
+                      <option value="Other">Other</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Phone Number</label>
+                    <input
+                      type="tel"
+                      maxLength={10}
+                      value={newUser.phone}
+                      onChange={(e) => setNewUser({ ...newUser, phone: normalizePhoneNumber(e.target.value) })}
+                      placeholder="10-digit phone"
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Emergency Contact</label>
+                    <input
+                      type="tel"
+                      maxLength={10}
+                      value={newUser.emergency_contact}
+                      onChange={(e) => setNewUser({ ...newUser, emergency_contact: normalizePhoneNumber(e.target.value) })}
+                      placeholder="Emergency contact"
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* SECTION 2: Role & Department Assignment */}
+              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 space-y-3.5">
+                <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
+                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 font-black text-[10px] flex items-center justify-center">2</span>
+                  <h4 className="font-extrabold text-xs text-[#071A45] uppercase tracking-wider">Role & Department Assignment</h4>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Assigned Role *</label>
+                    <select
+                      value={newUser.role}
+                      onChange={(e) => handleAddRoleChange(e.target.value)}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer shadow-2xs"
+                    >
+                      <option value="Sales Executive">Sales Executive</option>
+                      <option value="Team Lead">Team Lead</option>
+                      <option value="Sales Manager">Sales Manager</option>
+                      <option value="System Admin">System Admin</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Work Department</label>
+                    <select
+                      value={newUser.dept}
+                      onChange={(e) => setNewUser({ ...newUser, dept: e.target.value })}
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer shadow-2xs"
+                    >
+                      {deptOptions.map((dept) => (
+                        <option key={dept} value={dept}>
+                          {dept}
                         </option>
                       ))}
                     </select>
                   </div>
-                ) : (
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1 opacity-50">Reporting Manager</label>
-                    <input
-                      type="text"
-                      value="Not Applicable (System Admin)"
-                      disabled
-                      className="w-full h-10 border border-slate-200 bg-slate-100 rounded-xl px-3 text-slate-400 font-medium cursor-not-allowed"
-                    />
-                  </div>
-                )}
+                </div>
               </div>
 
-              <div className="border-t border-slate-100 my-2" />
-              
-              <div className="space-y-2">
-                <h4 className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wider">Leave & Permission Allocation</h4>
-                <div className="grid grid-cols-3 gap-3">
+              {/* SECTION 3: Reporting Hierarchy (Manager & Team Lead Assignment) */}
+              {(() => {
+                const r = (newUser.role || '').toLowerCase().trim()
+                const isExec = r.includes('executive') || r.includes('sales executive')
+                const isTopRole = r.includes('admin') || r.includes('ceo') || r.includes('founder')
+
+                if (isTopRole) {
+                  return (
+                    <div className="bg-indigo-50/40 border border-indigo-200/80 rounded-2xl p-4 space-y-2">
+                      <div className="flex items-center gap-2 border-b border-indigo-200/60 pb-2">
+                        <span className="w-6 h-6 rounded-full bg-indigo-600 text-white font-black text-[10px] flex items-center justify-center">3</span>
+                        <h4 className="font-extrabold text-xs text-indigo-950 uppercase tracking-wider">Reporting Hierarchy Assignment</h4>
+                      </div>
+                      <p className="text-xs text-indigo-700 font-semibold italic">
+                        👑 {newUser.role} is a top-level organization role (No reporting manager or team lead required).
+                      </p>
+                    </div>
+                  )
+                }
+
+                return (
+                  <div className="bg-indigo-50/40 border border-indigo-200/80 rounded-2xl p-4 space-y-3.5">
+                    <div className="flex items-center justify-between border-b border-indigo-200/60 pb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="w-6 h-6 rounded-full bg-indigo-600 text-white font-black text-[10px] flex items-center justify-center">3</span>
+                        <h4 className="font-extrabold text-xs text-indigo-950 uppercase tracking-wider">Reporting Hierarchy Assignment</h4>
+                      </div>
+                      <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-100/80 px-2.5 py-0.5 rounded-full">
+                        {isExec ? '3-Tier Structure (Manager & Team Lead)' : '2-Tier Structure (Sales Manager)'}
+                      </span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
+                      {isExec
+                        ? 'Assign a Sales Manager and/or Team Lead during creation to link this Executive into the hierarchy.'
+                        : `Assign a Sales Manager for this ${newUser.role}.`}
+                    </p>
+
+                    <div className={`grid grid-cols-1 ${isExec ? 'sm:grid-cols-2' : 'sm:grid-cols-1'} gap-4`}>
+                      {/* Select Sales Manager */}
+                      <div>
+                        <label className="block text-[10px] font-black text-indigo-900 uppercase tracking-wider mb-1">
+                          👔 Assign Sales Manager
+                        </label>
+                        <select
+                          value={newUser.reporting_manager_id || ''}
+                          onChange={(e) => setNewUser({ ...newUser, reporting_manager_id: e.target.value })}
+                          className="w-full h-10 px-3 border border-indigo-200 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-600 cursor-pointer shadow-2xs"
+                        >
+                          <option value="">-- No Manager Assigned (Unassigned) --</option>
+                          {potentialReportingManagers
+                            .filter(m => {
+                              const roleLower = (m.role || '').toLowerCase()
+                              return roleLower.includes('manager') || roleLower.includes('admin') || roleLower.includes('ceo')
+                            })
+                            .map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name} ({m.role}) - {m.email}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+
+                      {/* Select Team Lead (ONLY when creating Sales Executive) */}
+                      {isExec && (
+                        <div>
+                          <label className="block text-[10px] font-black text-indigo-900 uppercase tracking-wider mb-1">
+                            🔰 Assign Team Lead
+                          </label>
+                          <select
+                            value={newUser.reporting_team_lead_id || ''}
+                            onChange={(e) => setNewUser({ ...newUser, reporting_team_lead_id: e.target.value })}
+                            className="w-full h-10 px-3 border border-indigo-200 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-600 cursor-pointer shadow-2xs"
+                          >
+                            <option value="">-- No Team Lead Assigned (Direct to Manager) --</option>
+                            {users
+                              .filter(u => {
+                                const roleLower = (u.role || '').toLowerCase()
+                                return roleLower.includes('lead') || roleLower.includes('tl')
+                              })
+                              .map((tl) => (
+                                <option key={tl.id} value={tl.id}>
+                                  {tl.name} (Team Lead) - {tl.email}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })()}
+
+              {/* SECTION 4: Leaves Quota & Permissions */}
+              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 space-y-3.5">
+                <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
+                  <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 font-black text-[10px] flex items-center justify-center">4</span>
+                  <h4 className="font-extrabold text-xs text-[#071A45] uppercase tracking-wider">Leave & Permission Quotas</h4>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                   <div>
-                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Annual Leaves</label>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Annual Leaves Quota</label>
                     <input
                       type="number"
                       min={0}
                       value={newUser.annualLeaves || 12}
                       onChange={(e) => setNewUser({ ...newUser, annualLeaves: Number(e.target.value) })}
-                      className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Half-Day Slots</label>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Half-Day Slots</label>
                     <input
                       type="number"
                       min={0}
                       value={newUser.halfDayPermissions || 6}
                       onChange={(e) => setNewUser({ ...newUser, halfDayPermissions: Number(e.target.value) })}
-                      className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
                     />
                   </div>
                   <div>
-                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Short Perm (Hrs)</label>
+                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Short Perm (Hrs)</label>
                     <input
                       type="number"
                       min={0}
                       value={newUser.shortPermissions || 2}
                       onChange={(e) => setNewUser({ ...newUser, shortPermissions: Number(e.target.value) })}
-                      className="w-full h-10 border border-slate-355 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-100 bg-white"
+                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
                     />
                   </div>
                 </div>
               </div>
 
-
-
-              <div className="pt-2">
+              {/* Modal Footer Actions */}
+              <div className="flex items-center gap-3 pt-4 justify-end border-t border-slate-200 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowAddModal(false)}
+                  className="px-5 py-2.5 border border-slate-300 rounded-xl text-slate-700 font-extrabold text-xs hover:bg-slate-100 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
                 <button
                   type="submit"
-                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md shadow-blue-600/10 cursor-pointer transition duration-150"
+                  className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-2"
                 >
-                  Create Account & Generate Access Keys
+                  <span>✓ Create Account & Assign Team Hierarchy</span>
                 </button>
               </div>
             </form>
