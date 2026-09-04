@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@supabase/supabase-js';
 import { notificationAPI } from '../services/api.js';
 import authSession from '../utils/authSession.js';
+import { requestNotificationPermission as reqNotifPerm, triggerSystemNotification } from '../utils/webPushManager.js';
 
 const STORAGE_KEY = 'tc_unread_message_count';
 
@@ -65,11 +66,7 @@ export default function useNotificationCount() {
 
   // Request browser Notification permissions once
   useEffect(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      if (Notification.permission === 'default') {
-        Notification.requestPermission().catch(() => {});
-      }
-    }
+    reqNotifPerm();
   }, []);
 
   // Initial fetch and polling fallback
@@ -147,6 +144,16 @@ export default function useNotificationCount() {
             setUnreadCount((prev) => {
               const next = prev + 1;
               updateAppBadge(next);
+              
+              // Trigger system notification so Android OS adds a notification shade card
+              // and renders the badge counter on the PWA homescreen icon (matching WhatsApp).
+              triggerSystemNotification({
+                title: newNotif.title || 'TwiteConnect Notification',
+                body: newNotif.message || newNotif.body || 'You have a new update in TwiteConnect.',
+                count: next,
+                url: newNotif.url || newNotif.link || '/'
+              });
+
               return next;
             });
           }
