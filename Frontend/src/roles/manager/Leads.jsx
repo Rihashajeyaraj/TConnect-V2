@@ -31,6 +31,7 @@ import { crmAPI, hrmsAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { formatDate } from '../../utils/dateUtils.js'
+import { collectManagerSubordinates } from '../../utils/managerScoping.js'
 
 const getStoredUser = () => {
   try {
@@ -87,11 +88,13 @@ export default function ManagerLeads() {
   })
   const [error, setError] = useState(null)
 
-  // Executive List State
+  // Executive & Team Lead List State
+  const [teamLeads, setTeamLeads] = useState([])
   const [executives, setExecutives] = useState([])
 
   // Filter & Search State
   const [search, setSearch] = useState('')
+  const [selectedTL, setSelectedTL] = useState('All')
   const [selectedSE, setSelectedSE] = useState('All')
   const [customSEInput, setCustomSEInput] = useState('')
   const [selectedStatus, setSelectedStatus] = useState('All')
@@ -144,67 +147,83 @@ export default function ManagerLeads() {
   const [selectedLeadModal, setSelectedLeadModal] = useState(null)
   const [showAddModal, setShowAddModal] = useState(false)
 
-  // Helper to filter ONLY assigned executives under current manager
-  const getAssignedExecutivesList = (rawEmployees) => {
+  // Process employees to extract Team Leads & Sales Executives
+  const processSubordinates = (rawEmployees) => {
     const mgrUser = getStoredUser()
-    const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
-    const mgrId = (mgrUser.id || mgrUser.employee_id || mgrUser.user_id || '').toLowerCase().trim()
-    const mgrName = (mgrUser.name || mgrUser.full_name || '').toLowerCase().trim()
+    const subordinates = collectManagerSubordinates(rawEmployees, mgrUser)
+    const listToProcess = subordinates.length > 0 ? subordinates : rawEmployees
 
-    // 1. Check local assignment map from Admin Assignment page
-    let assignedSet = new Set()
-    try {
-      const assignMap = JSON.parse(localStorage.getItem('tc_manager_assignments') || '{}')
-      Object.keys(assignMap).forEach((key) => {
-        const kLower = key.toLowerCase().trim()
-        if (kLower === mgrEmail || kLower === mgrId || (mgrName && kLower.includes(mgrName.split(' ')[0]))) {
-          const list = assignMap[key] || []
-          list.forEach((item) => assignedSet.add(String(item).toLowerCase().trim()))
-        }
-      })
-    } catch (e) {}
+    const tlsMap = new Map()
+    const execsMap = new Map()
 
-    // 2. Filter employees matching reporting_manager fields or assignedSet
-    const assignedOnly = rawEmployees.filter((e) => {
-      const rId = String(e.reporting_manager_id || e.manager_id || '').toLowerCase().trim()
-      const rEmail = String(e.reporting_manager_email || e.manager_email || '').toLowerCase().trim()
-      const rName = String(e.reporting_manager_name || e.manager_name || '').toLowerCase().trim()
-      const eId = String(e.id || e.employee_id || '').toLowerCase().trim()
-      const eEmail = String(e.email || '').toLowerCase().trim()
-      const eCode = String(e.employee_code || e.emp_code || '').toLowerCase().trim()
+    listToProcess.forEach((e, idx) => {
+      const roleLower = String(e.role || e.designation || '').toLowerCase()
+      const isTL = roleLower.includes('team lead') || roleLower.includes('tl') || roleLower.includes('lead')
+      const isMgr = roleLower.includes('manager') || roleLower.includes('admin') || roleLower.includes('ceo')
+      if (isMgr) return
 
-      const isReportingManagerMatch =
-        (rEmail && mgrEmail && (rEmail === mgrEmail || rEmail.includes(mgrEmail))) ||
-        (rId && mgrId && (rId === mgrId || rId.includes(mgrId))) ||
-        (rName && mgrName && (rName.includes(mgrName.split(' ')[0]) || mgrName.includes(rName.split(' ')[0])))
+      const empObj = {
+        id: e.id || e.employee_id || `emp_${idx}`,
+        name: e.name || e.full_name || (isTL ? 'Team Lead' : 'Sales Executive'),
+        email: e.email || '',
+        employee_code: e.employee_code || e.employee_id || e.emp_code || `EMP${String(idx + 101).padStart(3, '0')}`,
+        role: e.role || (isTL ? 'Team Lead' : 'Sales Executive'),
+        reporting_manager_name: e.reporting_manager_name || e.reporting_manager || e.manager_name || '',
+        reporting_manager_email: e.reporting_manager_email || e.manager_email || '',
+      }
 
-      const isAssignmentMapMatch = assignedSet.has(eId) || assignedSet.has(eEmail) || assignedSet.has(eCode)
-
-      return isReportingManagerMatch || isAssignmentMapMatch
+      if (isTL) {
+        tlsMap.set(empObj.email || empObj.name, empObj)
+      } else {
+        execsMap.set(empObj.email || empObj.name, empObj)
+      }
     })
 
-    return assignedOnly
+    // Also extract any Team Lead names from raw employees reporting_manager_name
+    rawEmployees.forEach((e) => {
+      const rName = String(e.reporting_manager_name || e.reporting_manager || '').trim()
+      const rEmail = String(e.reporting_manager_email || '').trim()
+      if (
+        rName &&
+        !rName.toLowerCase().includes('manager') &&
+        !rName.toLowerCase().includes('admin') &&
+        !rName.toLowerCase().includes('ceo') &&
+        !rName.toLowerCase().includes('twite') &&
+        !rName.toLowerCase().includes('executive') &&
+        rName.toLowerCase() !== 'not assigned' &&
+        rName.toLowerCase() !== 'none'
+      ) {
+        if (!tlsMap.has(rEmail || rName)) {
+          tlsMap.set(rEmail || rName, {
+            id: `tl_${tlsMap.size}`,
+            name: rName,
+            email: rEmail,
+            employee_code: 'TL',
+            role: 'Team Lead',
+          })
+        }
+      }
+    })
+
+    const finalTLs = Array.from(tlsMap.values()).filter(t => {
+      const tName = (t.name || '').toLowerCase()
+      return !tName.includes('twite') && !tName.includes('dr.') && !tName.includes('executive')
+    })
+    const finalExecs = Array.from(execsMap.values())
+
+    setTeamLeads(finalTLs)
+    setExecutives(finalExecs.length > 0 ? finalExecs : (finalTLs.length > 0 ? finalTLs : []))
   }
 
-  // Load Sales Executives from backend HRMS API or localStorage
+  // Load Sales Executives & Team Leads from backend HRMS API or localStorage
   useEffect(() => {
     hrmsAPI
       .getEmployees()
       .then((res) => {
         const raw = Array.isArray(res) ? res : res?.data || []
         if (raw && raw.length > 0) {
-          const execsOnly = getAssignedExecutivesList(raw)
-          if (execsOnly.length > 0) {
-            setExecutives(
-              execsOnly.map((e, idx) => ({
-                id: e.id || e.employee_id || `se_${idx}`,
-                name: e.name || e.full_name || 'Sales Executive',
-                email: e.email || '',
-                employee_code: e.employee_code || e.employee_id || e.emp_code || `EMP${String(idx + 101).padStart(3, '0')}`,
-              }))
-            )
-            return
-          }
+          processSubordinates(raw)
+          return
         }
         fallbackLoadExecutives()
       })
@@ -216,23 +235,29 @@ export default function ManagerLeads() {
       const savedUsersStr = localStorage.getItem('tc_app_users')
       if (savedUsersStr) {
         const parsed = JSON.parse(savedUsersStr)
-        const execsOnly = getAssignedExecutivesList(parsed)
-        if (execsOnly.length > 0) {
-          setExecutives(
-            execsOnly.map((u, idx) => ({
-              id: u.id || `se_${idx}`,
-              name: u.name || u.full_name || 'Sales Executive',
-              email: u.email || '',
-              employee_code: u.employee_code || u.employee_id || u.emp_code || `EMP${String(idx + 101).padStart(3, '0')}`,
-            }))
-          )
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          processSubordinates(parsed)
           return
         }
       }
     } catch (e) { }
 
+    setTeamLeads([])
     setExecutives([])
   }
+
+  // Executives list dynamically filtered by selected Team Lead
+  const availableExecutives = React.useMemo(() => {
+    if (selectedTL === 'All') return executives
+    const targetTL = selectedTL.toLowerCase().trim()
+    const matched = executives.filter((ex) => {
+      const rName = (ex.reporting_manager_name || '').toLowerCase()
+      const rEmail = (ex.reporting_manager_email || '').toLowerCase()
+      const exName = (ex.name || '').toLowerCase()
+      return rName.includes(targetTL) || rEmail.includes(targetTL) || exName.includes(targetTL)
+    })
+    return matched.length > 0 ? matched : executives
+  }, [executives, selectedTL])
 
   const enrichLeads = (leadArr) => {
     return leadArr.map((l) => {
@@ -487,7 +512,39 @@ export default function ManagerLeads() {
         }
       }
 
-      return matchesSearch && matchesPriority && matchesStatus && matchesSE && matchesDate
+      // Team Lead filter check
+      let matchesTL = selectedTL === 'All'
+      if (!matchesTL) {
+        const targetTL = selectedTL.toLowerCase().trim()
+        const targetClean = targetTL.includes('@') ? targetTL.split('@')[0] : targetTL
+
+        const seName = (l.assigned_to || l.assignedTo || l.created_by_name || '').toLowerCase()
+        const seEmail = (l.assigned_to_email || l.assignedToEmail || '').toLowerCase()
+        const seCode = (l.employee_code || l.employee_id || '').toLowerCase()
+        const tlName = (l.team_lead_name || l.reporting_manager_name || '').toLowerCase()
+        const tlEmail = (l.team_lead_email || l.reporting_manager_email || '').toLowerCase()
+
+        const matchedExec = executives.find(
+          (ex) =>
+            (ex.email && ex.email.toLowerCase() === seEmail) ||
+            (ex.name && ex.name.toLowerCase() === seName) ||
+            (ex.employee_code && ex.employee_code.toLowerCase() === seCode)
+        )
+
+        const execTLName = (matchedExec?.reporting_manager_name || '').toLowerCase()
+        const execTLEmail = (matchedExec?.reporting_manager_email || '').toLowerCase()
+
+        matchesTL =
+          seName === targetTL ||
+          seName.includes(targetClean) ||
+          seEmail.includes(targetClean) ||
+          tlName.includes(targetClean) ||
+          tlEmail.includes(targetClean) ||
+          execTLName.includes(targetClean) ||
+          execTLEmail.includes(targetClean)
+      }
+
+      return matchesSearch && matchesPriority && matchesStatus && matchesTL && matchesSE && matchesDate
     })
 
     // Deduplicate leads to avoid duplicate double-clicks
@@ -503,7 +560,7 @@ export default function ManagerLeads() {
       seen.add(key)
       return true
     })
-  }, [leads, search, selectedPriority, selectedStatus, fromDate, toDate, selectedSE, customSEInput, executives])
+  }, [leads, search, selectedPriority, selectedStatus, fromDate, toDate, selectedTL, selectedSE, customSEInput, executives])
 
   const getLeadCategory = React.useCallback((lead) => {
     if (!lead) return 'cold'
@@ -559,10 +616,10 @@ export default function ManagerLeads() {
       <div className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
         <div>
           <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-            <Target className="w-7 h-7 text-[#0c4160]" /> Team Lead Reports
+            <Target className="w-7 h-7 text-[#0c4160]" /> Total Leads
           </h1>
           <p className="text-xs text-slate-500 font-semibold mt-1">
-            Real-time combined report of all Sales Executives under your management. Total sum of all assigned team leads.
+            Real-time pipeline and status report of all sales leads under your management.
           </p>
         </div>
 
@@ -587,7 +644,7 @@ export default function ManagerLeads() {
         >
           <div className="space-y-0.5">
             <p className="text-[10px] font-black uppercase tracking-wider text-slate-500">
-              Assigned Team Leads
+              Total Leads
             </p>
             <h3 className="text-xl font-black text-slate-900">{tabCounts.total - tabCounts.customer} Active Leads</h3>
             <p className="text-[10px] font-semibold text-slate-400">
@@ -616,14 +673,14 @@ export default function ManagerLeads() {
                     </>
                   ) : (
                     <>
-                      <Target className="w-5 h-5 text-mgr-primary-600" /> Active Team Leads Pipeline
+                      <Target className="w-5 h-5 text-mgr-primary-600" /> Active Total Leads Pipeline
                     </>
                   )}
                 </h2>
                 <p className="text-xs text-slate-500 font-semibold mt-0.5">
                   {activeTableModal === 'customer' 
                     ? 'Monitor converted deals, contract values, and onboard details.' 
-                    : 'Filter, review status categories, and inspect active team leads.'}
+                    : 'Filter, review status categories, and inspect active leads.'}
                 </p>
               </div>
               <button
@@ -635,36 +692,59 @@ export default function ManagerLeads() {
             </div>
 
             {/* ── FILTERS & SEARCH CONTROL BAR ── clean flat strip ──────────── */}
-            <div className="flex flex-col md:flex-row md:items-center gap-3 pb-3 border-b border-slate-100">
-              {/* Sales Executive Filter — inline, no box */}
-              <div className="flex items-center gap-2 text-sm shrink-0">
-                <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Executive:</span>
-                <select
-                  value={selectedSE}
-                  onChange={(e) => {
-                    setSelectedSE(e.target.value)
-                    if (e.target.value !== 'Other') setCustomSEInput('')
-                    setPage(1)
-                  }}
-                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition"
-                >
-                  <option value="All">All Executives</option>
-                  {executives.map((ex) => (
-                    <option key={ex.email || ex.id} value={ex.email || ex.name}>
-                      {ex.name} ({ex.employee_code || 'EMP'})
-                    </option>
-                  ))}
-                  <option value="Other">Custom Search...</option>
-                </select>
-                {selectedSE === 'Other' && (
-                  <input
-                    type="text"
-                    value={customSEInput}
-                    onChange={(e) => { setCustomSEInput(e.target.value); setPage(1) }}
-                    placeholder="SE Name / Code..."
-                    className="w-32 h-7 px-2 bg-slate-100 rounded-lg focus:outline-none font-bold text-xs"
-                  />
-                )}
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Team Lead Filter */}
+                <div className="flex items-center gap-2 text-sm shrink-0">
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Team Lead:</span>
+                  <select
+                    value={selectedTL}
+                    onChange={(e) => {
+                      setSelectedTL(e.target.value)
+                      setSelectedSE('All')
+                      setPage(1)
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition"
+                  >
+                    <option value="All">All Team Leads</option>
+                    {teamLeads.map((tl) => (
+                      <option key={tl.email || tl.id} value={tl.name || tl.email}>
+                        👤 {tl.name} ({tl.employee_code || 'TL'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Sales Executive Filter */}
+                <div className="flex items-center gap-2 text-sm shrink-0">
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Executive:</span>
+                  <select
+                    value={selectedSE}
+                    onChange={(e) => {
+                      setSelectedSE(e.target.value)
+                      if (e.target.value !== 'Other') setCustomSEInput('')
+                      setPage(1)
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition"
+                  >
+                    <option value="All">All Executives</option>
+                    {availableExecutives.map((ex) => (
+                      <option key={ex.email || ex.id} value={ex.email || ex.name}>
+                        {ex.name} ({ex.employee_code || 'EMP'})
+                      </option>
+                    ))}
+                    <option value="Other">Custom Search...</option>
+                  </select>
+                  {selectedSE === 'Other' && (
+                    <input
+                      type="text"
+                      value={customSEInput}
+                      onChange={(e) => { setCustomSEInput(e.target.value); setPage(1) }}
+                      placeholder="SE Name / Code..."
+                      className="w-32 h-7 px-2 bg-slate-100 rounded-lg focus:outline-none font-bold text-xs"
+                    />
+                  )}
+                </div>
               </div>
 
               {/* Date filter pills — inline */}
@@ -708,10 +788,10 @@ export default function ManagerLeads() {
               </div>
 
               {/* Reset — only when filters active */}
-              {(selectedSE !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || search || fromDate || toDate || selectedLeadTab !== 'Leads') && (
+              {(selectedTL !== 'All' || selectedSE !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || search || fromDate || toDate || selectedLeadTab !== 'Leads') && (
                 <button
                   onClick={() => {
-                    setSelectedSE('All'); setSelectedStatus('All'); setSelectedPriority('All')
+                    setSelectedTL('All'); setSelectedSE('All'); setSelectedStatus('All'); setSelectedPriority('All')
                     setSearch(''); setFromDate(''); setToDate(''); setSelectedLeadTab('Leads'); setPage(1)
                   }}
                   className="mgr-card text-xs font-black text-rose-600 hover:text-rose-800 cursor-pointer transition shrink-0"

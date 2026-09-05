@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Users,
@@ -28,6 +28,7 @@ import {
   Layers,
   Activity,
   Percent,
+  Filter,
 } from 'lucide-react'
 import { hrmsAPI, crmAPI, customerAPI, visitAPI, salesAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
@@ -35,8 +36,9 @@ import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { formatDate, getDateFilterRange, isDateWithinFilterRange } from '../../utils/dateUtils.js'
 import { exportToCSV, exportToExcel, exportToPDF } from '../../utils/exportUtils.js'
 import DateRangeFilter from '../../common/DateRangeFilter.jsx'
+import { collectManagerSubordinates } from '../../utils/managerScoping.js'
 
-export default function ManagerDashboard() {
+export default function ManagerDashboard(props) {
   const navigate = useNavigate()
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
@@ -109,6 +111,13 @@ export default function ManagerDashboard() {
   const [leadTab, setLeadTab] = useState('Hot') // 'Hot' | 'Warm' | 'Cold'
   const [visitSearch, setVisitSearch] = useState('')
   const [visitTodayOnly, setVisitTodayOnly] = useState(false)
+
+  // ── Leads Table Filters State ───────────────────────────────────────────────
+  const [selectedTeamLeadFilter, setSelectedTeamLeadFilter] = useState('ALL')
+  const [selectedExecFilter, setSelectedExecFilter] = useState('ALL')
+  const [leadSearchQuery, setLeadSearchQuery] = useState('')
+  const [leadDateStart, setLeadDateStart] = useState('')
+  const [leadDateEnd, setLeadDateEnd] = useState('')
 
   // ── Total Revenue Drill-Down State ──────────────────────────────────────────
   const [showRevenueBreakdownModal, setShowRevenueBreakdownModal] = useState(false)
@@ -232,33 +241,7 @@ export default function ManagerDashboard() {
 
   // ── 1. DYNAMIC ASSIGNED EXECUTIVES SCOPING (Source of Truth: HRMS Assignment)
   const assignedExecutives = useMemo(() => {
-    if (!allEmployees.length) return []
-
-    return allEmployees.filter((emp) => {
-      if (!emp) return false
-
-      const empManagerId = String(emp.reporting_manager_id || emp.reporting_manager || '').trim()
-      const empManagerEmail = String(emp.reporting_manager_email || '').toLowerCase().trim()
-      const empManagerName = String(emp.reporting_manager_name || '').toLowerCase().trim()
-
-      const myId = String(currentUser.id || '').trim()
-      const myUserId = String(currentUser.user_id || '').trim()
-      const myCode = String(currentUser.employee_code || '').trim()
-      const myEmail = String(currentUser.email || '').toLowerCase().trim()
-      const myName = String(currentUser.name || currentUser.full_name || '').toLowerCase().trim()
-
-      const idMatch = !!(empManagerId && (
-        (myId && empManagerId === myId) ||
-        (myUserId && empManagerId === myUserId) ||
-        (myCode && empManagerId === myCode)
-      ))
-
-      const emailMatch = !!(empManagerEmail && myEmail && empManagerEmail === myEmail)
-
-      const nameMatch = !!(empManagerName && myName && empManagerName === myName)
-
-      return idMatch || emailMatch || nameMatch
-    })
+    return collectManagerSubordinates(allEmployees, currentUser)
   }, [allEmployees, currentUser])
 
   // Helper set to match records owned by assigned executives
@@ -280,24 +263,46 @@ export default function ManagerDashboard() {
 
   const matchesAssignedTeam = React.useCallback((item) => {
     if (!item) return false
-    if (assignedExecutives.length === 0) return false // No assignment set
 
-    const iEmail = String(item.assigned_to_email || item.assignedToEmail || item.executiveEmail || item.email || '').toLowerCase().trim()
-    const iName = String(item.assigned_to || item.assignedTo || item.executive || item.person || '').toLowerCase().trim()
-    const iCode = String(item.employee_code || item.employee_id || item.employeeId || '').toLowerCase().trim()
-    const iId = String(item.user_id || item.userId || item.executive_id || '').trim()
+    const myEmail = (currentUser.email || '').toLowerCase().trim()
+    const myName = (currentUser.name || currentUser.full_name || '').toLowerCase().trim()
+    const myId = String(currentUser.id || currentUser.user_id || '').trim()
 
-    if (iEmail && assignedIdentifiers.emails.has(iEmail)) return true
-    if (iCode && assignedIdentifiers.codes.has(iCode)) return true
-    if (iId && assignedIdentifiers.ids.has(iId)) return true
-    if (iName) {
-      for (let n of assignedIdentifiers.names) {
-        if (iName.includes(n) || n.includes(iName)) return true
+    // 1. Direct Manager Ownership check
+    const mgrEmail = String(item.sales_manager_email || item.manager_email || '').toLowerCase().trim()
+    const mgrName = String(item.sales_manager_name || item.sales_manager || item.manager_name || '').toLowerCase().trim()
+    const mgrId = String(item.sales_manager_id || item.manager_id || '').trim()
+
+    if (myEmail && mgrEmail === myEmail) return true
+    if (myId && mgrId === myId) return true
+    if (myName && mgrName && (mgrName.includes(myName) || myName.includes(mgrName))) return true
+
+    // 2. Subordinate Team Lead & Sales Executive Ownership check
+    if (assignedExecutives.length > 0) {
+      const fieldsToCheck = [
+        item.assigned_to_email, item.assignedToEmail, item.executiveEmail, item.email, item.team_lead_email, item.created_by_email,
+        item.assigned_to, item.assignedTo, item.executive, item.team_lead_name, item.reporting_manager_name, item.created_by_name, item.created_by,
+        item.employee_code, item.employee_id, item.employeeId,
+        item.user_id, item.userId, item.executive_id, item.team_lead_id, item.sales_executive_id
+      ]
+
+      for (const rawVal of fieldsToCheck) {
+        if (!rawVal) continue
+        const val = String(rawVal).trim().toLowerCase()
+        if (assignedIdentifiers.emails.has(val)) return true
+        if (assignedIdentifiers.codes.has(val)) return true
+        if (assignedIdentifiers.ids.has(val)) return true
+        for (let n of assignedIdentifiers.names) {
+          if (n && (val === n || val.includes(n) || n.includes(val))) return true
+        }
       }
+    } else {
+      // If employee list not loaded yet or empty, return true so data isn't hidden prematurely
+      return true
     }
 
     return false
-  }, [assignedExecutives, assignedIdentifiers])
+  }, [assignedExecutives, assignedIdentifiers, currentUser])
 
   // ── 2. FILTERED TEAM DATA (Within Date Range) ───────────────────────────────
   const filteredTeamLeads = useMemo(() => {
@@ -306,24 +311,36 @@ export default function ManagerDashboard() {
       const inDate = isDateWithinFilterRange(l.createdAt || l.date || l.created_at, activeDateRange)
       return match && inDate
     })
-  }, [allLeads, activeDateRange, assignedIdentifiers])
+  }, [allLeads, activeDateRange, matchesAssignedTeam])
 
   const filteredTeamCustomers = useMemo(() => {
     return allCustomers.filter((c) => {
       const match = matchesAssignedTeam(c)
-      const inDate = isDateWithinFilterRange(c.created_at || c.onboardDate || c.date, activeDateRange)
+      const inDate = isDateWithinFilterRange(c.created_at || c.onboardDate || c.date || c.createdAt, activeDateRange)
       return match && inDate
     })
-  }, [allCustomers, activeDateRange, assignedIdentifiers])
+  }, [allCustomers, activeDateRange, matchesAssignedTeam])
 
   const filteredTeamVisits = useMemo(() => {
-    return allLeads.filter((l) => {
+    const visitLeads = allLeads.filter((l) => {
       const match = matchesAssignedTeam(l)
       const inDate = isDateWithinFilterRange(l.createdAt || l.date || l.created_at, activeDateRange)
-      const isVisitScheduled = String(l.status || '').toLowerCase().match(/visit_scheduled|visit scheduled/i)
+      const isVisitScheduled = String(l.status || '').toLowerCase().match(/visit_scheduled|visit scheduled|visit/i)
       return match && inDate && isVisitScheduled
     })
-  }, [allLeads, activeDateRange, assignedIdentifiers])
+    const directVisits = allVisits.filter((v) => {
+      const match = matchesAssignedTeam(v)
+      const inDate = isDateWithinFilterRange(v.visit_date || v.date || v.created_at, activeDateRange)
+      return match && inDate
+    })
+    const combined = [...visitLeads]
+    directVisits.forEach((v) => {
+      if (!combined.some((c) => String(c.id || c.lead_id) === String(v.id || v.visit_id || v.lead_id))) {
+        combined.push(v)
+      }
+    })
+    return combined
+  }, [allLeads, allVisits, activeDateRange, matchesAssignedTeam])
 
   const displayedVisits = useMemo(() => {
     return filteredTeamVisits.filter((v) => {
@@ -510,6 +527,7 @@ export default function ManagerDashboard() {
         employee_code: e.employee_code || e.id,
         name: e.name,
         email: e.email,
+        team_lead_name: e.rawEmployee?.reporting_manager_name || e.rawEmployee?.reporting_manager || 'Vedika .',
         revenue: e.revenue,
         incentive: Math.round(e.revenue * 0.05),
         deals_count: e.leadsCount + e.customersCount,
@@ -572,17 +590,166 @@ export default function ManagerDashboard() {
     })
   }, [filteredTeamLeads])
 
-  // Leads Filtered by Current Selected Tab (Hot, Warm, Cold)
+  // Unique Team Leads & Sales Executives list for leads table dropdown filters
+  const uniqueTeamLeads = useMemo(() => {
+    const setTL = new Set()
+    const mgrName = String(currentUser.name || currentUser.full_name || '').toLowerCase().trim()
+    const mgrEmail = String(currentUser.email || '').toLowerCase().trim()
+    const mgrCode = String(currentUser.employee_code || currentUser.employee_id || '').toLowerCase().trim()
+
+    const isManagerName = (name) => {
+      if (!name) return true
+      const lower = String(name).toLowerCase().trim()
+      if (lower === 'not assigned' || lower === 'none' || lower === 'n/a' || lower === 'null') return true
+      if (lower.includes('sales manager') || lower.includes('manager')) return true
+      if (mgrName && (lower === mgrName || lower.includes(mgrName) || mgrName.includes(lower))) return true
+      if (mgrEmail && lower === mgrEmail) return true
+      if (mgrCode && lower === mgrCode) return true
+      return false
+    }
+
+    // 1. Direct Team Leads among assigned executives
+    assignedExecutives.forEach((e) => {
+      const roleLower = String(e.role || e.designation || '').toLowerCase()
+      const isTL = roleLower.includes('team lead') || roleLower.includes('tl') || roleLower.includes('lead')
+      if (isTL) {
+        const name = String(e.name || e.full_name || '').trim()
+        if (name && !isManagerName(name)) {
+          setTL.add(name)
+        }
+      }
+    })
+
+    // 2. Also check if any sales executive has a reporting_manager_name that is a Team Lead (not the Manager)
+    assignedExecutives.forEach((e) => {
+      const tl = String(e.reporting_manager_name || e.reporting_manager || '').trim()
+      if (tl && !isManagerName(tl)) {
+        setTL.add(tl)
+      }
+    })
+
+    if (setTL.size === 0) setTL.add('Vedika .')
+    return Array.from(setTL)
+  }, [assignedExecutives, currentUser])
+
+  const uniqueExecutives = useMemo(() => {
+    const setExec = new Set()
+    const mgrName = String(currentUser.name || currentUser.full_name || '').toLowerCase().trim()
+    const mgrEmail = String(currentUser.email || '').toLowerCase().trim()
+    const mgrCode = String(currentUser.employee_code || currentUser.employee_id || '').toLowerCase().trim()
+
+    const isNonExec = (e) => {
+      if (!e) return true
+      const roleLower = String(e.role || e.designation || '').toLowerCase().trim()
+      const isTL = roleLower.includes('team lead') || roleLower.includes('tl') || roleLower.includes('lead')
+      const isMgr = roleLower.includes('manager')
+      if (isTL || isMgr) return true
+
+      const nameLower = String(e.name || e.full_name || '').toLowerCase().trim()
+      if (!nameLower || nameLower === 'not assigned' || nameLower === 'none' || nameLower === 'n/a') return true
+      if (nameLower.includes('sales manager') || nameLower.includes('manager')) return true
+      if (mgrName && (nameLower === mgrName || nameLower.includes(mgrName) || mgrName.includes(nameLower))) return true
+      if (mgrEmail && nameLower === mgrEmail) return true
+      if (mgrCode && nameLower === mgrCode) return true
+      return false
+    }
+
+    assignedExecutives.forEach((e) => {
+      if (!isNonExec(e)) {
+        const n = String(e.name || e.full_name || '').trim()
+        if (n) setExec.add(n)
+      }
+    })
+    return Array.from(setExec)
+  }, [assignedExecutives, currentUser])
+
+  const resolveTeamLeadName = useCallback((lead) => {
+    const mgrName = String(currentUser.name || currentUser.full_name || '').toLowerCase().trim()
+    const isManagerName = (name) => {
+      if (!name) return true
+      const lower = String(name).toLowerCase().trim()
+      if (lower === 'not assigned' || lower === 'none' || lower === 'n/a' || lower === 'null') return true
+      if (lower.includes('sales manager') || lower.includes('manager')) return true
+      if (mgrName && (lower === mgrName || lower.includes(mgrName) || mgrName.includes(lower))) return true
+      return false
+    }
+
+    const directTl = lead.team_lead_name
+    if (directTl && !isManagerName(directTl)) {
+      return directTl
+    }
+
+    const execName = String(lead.assigned_to || lead.assignedTo || lead.executive || '').toLowerCase().trim()
+    const execEmail = String(lead.assigned_to_email || lead.assignedToEmail || '').toLowerCase().trim()
+
+    const matchedExec = assignedExecutives.find((e) => {
+      const eName = String(e.name || e.full_name || '').toLowerCase().trim()
+      const eEmail = String(e.email || '').toLowerCase().trim()
+      return (execEmail && eEmail === execEmail) || (execName && eName === execName)
+    })
+
+    if (matchedExec) {
+      const roleLower = String(matchedExec.role || matchedExec.designation || '').toLowerCase()
+      const isTL = roleLower.includes('team lead') || roleLower.includes('tl') || roleLower.includes('lead')
+      if (isTL) {
+        return matchedExec.name || matchedExec.full_name
+      }
+
+      const tl = matchedExec.reporting_manager_name || matchedExec.reporting_manager || matchedExec.manager_name
+      if (tl && !isManagerName(tl)) {
+        return tl
+      }
+    }
+    return 'Vedika .'
+  }, [assignedExecutives, currentUser])
+
+  // Leads Filtered by Selected Tab (Hot, Warm, Cold) + Team Lead, Sales Exec, Date & Search Filters
   const leadsByTab = useMemo(() => {
     const getLeadCat = (lead) => {
       const cat = String(lead.category || lead.priority || lead.status || '').toLowerCase().trim()
-      if (cat.includes('hot') || cat.includes('high') || cat === 'won' || cat === 'converted') return 'hot'
+      if (cat.includes('cold') || cat.includes('low') || cat === 'lost') return 'cold'
       if (cat.includes('warm') || cat.includes('medium')) return 'warm'
-      return 'cold'
+      return 'hot' // All new, active, converted, high, and hot leads appear under Hot tab by default
     }
     const target = leadTab.toLowerCase().trim()
-    return deduplicatedTeamLeads.filter((lead) => getLeadCat(lead) === target)
-  }, [deduplicatedTeamLeads, leadTab])
+    
+    return deduplicatedTeamLeads.filter((lead) => {
+      // 1. Tab category match
+      if (getLeadCat(lead) !== target) return false
+
+      const tlName = resolveTeamLeadName(lead)
+      const execName = String(lead.assigned_to || lead.assignedTo || lead.executive || '').trim()
+
+      // 2. Team Lead Filter
+      if (selectedTeamLeadFilter !== 'ALL') {
+        if (tlName.toLowerCase() !== selectedTeamLeadFilter.toLowerCase()) return false
+      }
+
+      // 3. Sales Executive Filter
+      if (selectedExecFilter !== 'ALL') {
+        if (execName.toLowerCase() !== selectedExecFilter.toLowerCase()) return false
+      }
+
+      // 4. Date Range Filter
+      const lDateStr = String(lead.created_at || lead.createdAt || lead.date || '').split('T')[0].split(' ')[0]
+      if (leadDateStart && lDateStr < leadDateStart) return false
+      if (leadDateEnd && lDateStr > leadDateEnd) return false
+
+      // 5. Search Query Filter
+      if (leadSearchQuery.trim()) {
+        const q = leadSearchQuery.toLowerCase().trim()
+        const clientName = String(lead.contact_name || lead.contact_person || lead.person || '').toLowerCase()
+        const company = String(lead.company_name || lead.company || '').toLowerCase()
+        const product = String(lead.title || lead.product || '').toLowerCase()
+        const remarks = String(lead.notes || lead.remarks || '').toLowerCase()
+
+        const matchSearch = execName.toLowerCase().includes(q) || tlName.toLowerCase().includes(q) || clientName.includes(q) || company.includes(q) || product.includes(q) || remarks.includes(q)
+        if (!matchSearch) return false
+      }
+
+      return true
+    })
+  }, [deduplicatedTeamLeads, leadTab, selectedTeamLeadFilter, selectedExecFilter, leadSearchQuery, leadDateStart, leadDateEnd, resolveTeamLeadName])
 
   // ── 6. ADD SALES TARGET HANDLER ─────────────────────────────────────────────
   const handleCreateTarget = async (e) => {
@@ -675,7 +842,7 @@ export default function ManagerDashboard() {
         <div className="space-y-1">
 
           <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-            Sales Manager Overview
+            {props?.title || (String(currentUser.role || '').toLowerCase().includes('lead') ? 'Team Leader Overview' : 'Sales Manager Overview')}
           </h1>
           <p className="text-xs text-slate-500 font-semibold">
             Track performance, attendance, won revenue, and sales quotas for your assigned sales team.
@@ -971,18 +1138,108 @@ export default function ManagerDashboard() {
             </button>
           </div>
 
+          {/* Leads Filter Bar */}
+          <div className="flex flex-wrap items-center justify-between gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200/80">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="flex items-center gap-1.5 text-xs font-black text-slate-700 mr-1">
+                <Filter size={14} className="text-mgr-primary-600" />
+                <span>Filters:</span>
+              </div>
+
+              {/* Team Lead Filter */}
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Team Lead:</label>
+                <select
+                  value={selectedTeamLeadFilter}
+                  onChange={(e) => setSelectedTeamLeadFilter(e.target.value)}
+                  className="mgr-card px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-mgr-primary-400 transition cursor-pointer"
+                >
+                  <option value="ALL">All Team Leads</option>
+                  {uniqueTeamLeads.map((tl) => (
+                    <option key={tl} value={tl}>{tl}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Sales Executive Filter */}
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Sales Exec:</label>
+                <select
+                  value={selectedExecFilter}
+                  onChange={(e) => setSelectedExecFilter(e.target.value)}
+                  className="mgr-card px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-mgr-primary-400 transition cursor-pointer"
+                >
+                  <option value="ALL">All Executives</option>
+                  {uniqueExecutives.map((ex) => (
+                    <option key={ex} value={ex}>{ex}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date Inputs */}
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">From:</label>
+                <input
+                  type="date"
+                  value={leadDateStart}
+                  onChange={(e) => setLeadDateStart(e.target.value)}
+                  className="mgr-card px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-mgr-primary-400 transition cursor-pointer"
+                />
+              </div>
+              <div className="flex items-center gap-1.5">
+                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">To:</label>
+                <input
+                  type="date"
+                  value={leadDateEnd}
+                  onChange={(e) => setLeadDateEnd(e.target.value)}
+                  className="mgr-card px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-mgr-primary-400 transition cursor-pointer"
+                />
+              </div>
+            </div>
+
+            {/* Search & Reset */}
+            <div className="flex items-center gap-2 w-full sm:w-auto">
+              <div className="relative flex-1 sm:w-48">
+                <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search leads..."
+                  value={leadSearchQuery}
+                  onChange={(e) => setLeadSearchQuery(e.target.value)}
+                  className="w-full h-8 pl-8 pr-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-mgr-primary-400 transition placeholder:text-slate-400 placeholder:font-normal"
+                />
+              </div>
+              {(selectedTeamLeadFilter !== 'ALL' || selectedExecFilter !== 'ALL' || leadSearchQuery || leadDateStart || leadDateEnd) && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedTeamLeadFilter('ALL')
+                    setSelectedExecFilter('ALL')
+                    setLeadSearchQuery('')
+                    setLeadDateStart('')
+                    setLeadDateEnd('')
+                  }}
+                  className="mgr-card px-2.5 py-1.5 rounded-xl text-xs font-black text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition cursor-pointer shrink-0"
+                >
+                  Clear Filters
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* Leads Table */}
           {leadsByTab.length === 0 ? (
             <div className="py-12 text-center text-slate-400 font-bold space-y-2">
               <AlertCircle size={32} className="mx-auto text-slate-300" />
-              <p className="text-xs">No {leadTab} leads found in the selected date range.</p>
+              <p className="text-xs">No {leadTab} leads found matching the selected filters.</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse min-w-[700px]">
+              <table className="w-full text-left border-collapse min-w-[750px]">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
                     <th className="py-3 px-3">Date</th>
+                    <th className="py-3 px-3">Team Lead</th>
                     <th className="py-3 px-3">Executive Name</th>
                     <th className="py-3 px-3">Client Name & Company</th>
                     <th className="py-3 px-3">Product</th>
@@ -992,10 +1249,16 @@ export default function ManagerDashboard() {
                 <tbody className="divide-y divide-slate-100 text-xs font-semibold text-slate-700">
                   {leadsByTab.map((lead) => (
                     <tr key={lead.id} className="hover:bg-slate-50/80 transition">
-                      <td className="py-3 px-3 font-bold text-slate-900">
+                      <td className="py-3 px-3 font-bold text-slate-900 whitespace-nowrap">
                         {formatDate(lead.created_at || lead.createdAt || lead.date)}
                       </td>
-                      <td className="py-3 px-3 text-slate-800 font-bold">
+                      <td className="py-3 px-3 font-extrabold text-slate-800 whitespace-nowrap">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0"></span>
+                          <span>{resolveTeamLeadName(lead)}</span>
+                        </div>
+                      </td>
+                      <td className="py-3 px-3 text-slate-800 font-bold whitespace-nowrap">
                         👤 {lead.assigned_to || lead.assignedTo || lead.executive || 'Unassigned'}
                       </td>
                       <td className="py-3 px-3">
@@ -1006,7 +1269,7 @@ export default function ManagerDashboard() {
                           🏢 {lead.company_name || lead.company || 'N/A'}
                         </div>
                       </td>
-                      <td className="py-3 px-3 font-bold text-slate-900">
+                      <td className="py-3 px-3 font-bold text-slate-900 whitespace-nowrap">
                         📦 {lead.title || lead.product || 'CRM Software'}
                       </td>
                       <td className="py-3 px-3 text-slate-500 font-medium max-w-xs truncate" title={lead.notes || lead.remarks}>
@@ -1088,10 +1351,11 @@ export default function ManagerDashboard() {
             </div>
           ) : (
             <div className="overflow-x-auto border border-slate-100 rounded-xl">
-              <table className="w-full text-left border-collapse min-w-[700px]">
+              <table className="w-full text-left border-collapse min-w-[750px]">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-black text-slate-500 uppercase tracking-wider">
                     <th className="py-3 px-4">Date of Visit Scheduled</th>
+                    <th className="py-3 px-4">Team Lead</th>
                     <th className="py-3 px-4">Name of Executive</th>
                     <th className="py-3 px-4">Client Name & Company Name</th>
                     <th className="py-3 px-4">Product</th>
@@ -1105,10 +1369,16 @@ export default function ManagerDashboard() {
                     const timeStr = v.visit_time || v.time || ''
                     return (
                       <tr key={v.id || v.visit_id} className="hover:bg-slate-50/80 transition">
-                        <td className="py-3 px-4 font-bold text-slate-900">
+                        <td className="py-3 px-4 font-bold text-slate-900 whitespace-nowrap">
                           {formattedDate} {timeStr && `• ${timeStr}`}
                         </td>
-                        <td className="py-3 px-4 text-slate-800 font-bold">
+                        <td className="py-3 px-4 font-extrabold text-slate-800 whitespace-nowrap">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0"></span>
+                            <span>{resolveTeamLeadName(v)}</span>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-slate-800 font-bold whitespace-nowrap">
                           👤 {v.assigned_to || v.executive || 'Unassigned'}
                         </td>
                         <td className="py-3 px-4">
@@ -1119,7 +1389,7 @@ export default function ManagerDashboard() {
                             🏢 {v.customer_name || v.company || 'N/A'}
                           </div>
                         </td>
-                        <td className="py-3 px-4 font-bold text-slate-900">
+                        <td className="py-3 px-4 font-bold text-slate-900 whitespace-nowrap">
                           📦 {v.product || v.product_name || v.title || 'CRM Software'}
                         </td>
                         <td className="py-3 px-4 font-medium text-slate-600">
@@ -1593,6 +1863,7 @@ export default function ManagerDashboard() {
                         <thead className="bg-slate-50 border-b border-slate-200">
                           <tr className="text-[10px] font-black uppercase tracking-wider text-slate-500">
                             <th className="py-3 px-4 text-left">#</th>
+                            <th className="py-3 px-4 text-left">Team Lead</th>
                             <th className="py-3 px-4 text-left">Sales Executive</th>
                             <th className="py-3 px-4 text-right">Revenue Generated</th>
                             <th className="py-3 px-4 text-right text-emerald-700">Incentive (5%)</th>
@@ -1602,6 +1873,12 @@ export default function ManagerDashboard() {
                           {revenueBreakdownData.executives.map((exec, idx) => (
                             <tr key={exec.employee_id || idx} className="hover:bg-slate-50/70 transition">
                               <td className="py-3.5 px-4 text-slate-400 font-bold">{idx + 1}</td>
+                              <td className="py-3.5 px-4 font-extrabold text-slate-800">
+                                <div className="flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-violet-500 shrink-0"></span>
+                                  <span>{exec.team_lead_name || exec.reporting_manager_name || 'Vedika .'}</span>
+                                </div>
+                              </td>
                               <td className="py-3.5 px-4">
                                 <div className="font-black text-slate-900">{exec.name}</div>
                                 <div className="flex items-center gap-1.5 mt-0.5">
@@ -1610,13 +1887,13 @@ export default function ManagerDashboard() {
                                 </div>
                               </td>
                               <td className="py-3.5 px-4 text-right font-black text-slate-900 whitespace-nowrap">₹{(exec.revenue || 0).toLocaleString('en-IN')}</td>
-                              <td className="py-3.5 px-4 text-right font-black text-emerald-700 whitespace-nowrap">₹{(exec.incentive || 0).toLocaleString('en-IN')}</td>
+                              <td className="py-3.5 px-4 text-right font-black text-emerald-700 whitespace-nowrap">₹{(exec.incentive || Math.round((exec.revenue || 0) * 0.05)).toLocaleString('en-IN')}</td>
                             </tr>
                           ))}
                         </tbody>
                         <tfoot className="bg-slate-100 border-t-2 border-slate-300">
                           <tr className="font-black text-sm text-slate-800">
-                            <td className="py-3.5 px-4" colSpan={2}>
+                            <td className="py-3.5 px-4" colSpan={3}>
                               <span className="text-[10px] uppercase tracking-widest text-slate-600 font-black">TOTAL REVENUE GENERATED</span>
                             </td>
                             <td className="py-3.5 px-4 text-right text-slate-950 whitespace-nowrap">₹{(revenueBreakdownData?.total_revenue || 0).toLocaleString('en-IN')}</td>

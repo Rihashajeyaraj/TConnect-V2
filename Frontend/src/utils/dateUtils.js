@@ -122,6 +122,12 @@ export function getDateFilterRange(mode, customStart = null, customEnd = null) {
     return { start: monthStart, end: monthEnd, mode: 'This Month' }
   }
 
+  if (normalized === 'thisyear') {
+    const yearStart = new Date(now.getFullYear(), 0, 1, 0, 0, 0, 0)
+    const yearEnd = new Date(now.getFullYear(), 11, 31, 23, 59, 59, 999)
+    return { start: yearStart, end: yearEnd, mode: 'This Year' }
+  }
+
   if (normalized === 'custom' && (customStart || customEnd)) {
     const s = parseDateInput(customStart) || new Date(2000, 0, 1)
     s.setHours(0, 0, 0, 0)

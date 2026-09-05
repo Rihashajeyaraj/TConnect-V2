@@ -65,6 +65,13 @@ export function normalizeRole(user) {
   if (roleStr.includes('admin') || roleStr.includes('super')) {
     return 'admin'
   }
+  if (
+    roleStr.includes('team lead') ||
+    roleStr.includes('lead') ||
+    roleStr.includes('tl')
+  ) {
+    return 'team_lead'
+  }
   if (roleStr.includes('manager')) {
     return 'manager'
   }
@@ -76,11 +83,16 @@ export function normalizeRole(user) {
   ) {
     return 'sales'
   }
-  return ''
+  return 'sales'
 }
 
 export function getDashboardForUser(user) {
   if (!user) return '/sales'
+
+  const roleStr = String(user.role || user.designation || '').toLowerCase().trim()
+  if (roleStr.includes('team lead') || roleStr.includes('lead') || roleStr.includes('tl')) {
+    return '/team-lead/dashboard'
+  }
 
   if (user.dashboard && typeof user.dashboard === 'string' && user.dashboard.startsWith('/')) {
     return user.dashboard
@@ -92,11 +104,13 @@ export function getDashboardForUser(user) {
       return '/ceo'
     case 'admin':
       return '/admin'
+    case 'team_lead':
+      return '/team-lead/dashboard'
     case 'manager':
       return '/manager'
     case 'sales':
     default:
-      return '/sales'
+      return '/sales/dashboard'
   }
 }
 

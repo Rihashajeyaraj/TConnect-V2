@@ -299,11 +299,14 @@ class SalesTargetRepository:
             total_team_revenue += exec_revenue
             total_team_incentive += exec_incentive
 
+            tl_name = str(exec_user.get("reporting_manager_name") or exec_user.get("reporting_manager") or exec_user.get("manager_name") or "Vedika .").strip()
+
             executives_result.append({
                 "employee_id": exec_id or exec_code or "EMP-000",
                 "employee_code": exec_code or exec_id or "EMP-000",
                 "name": exec_name,
                 "email": exec_email,
+                "team_lead_name": tl_name,
                 "revenue": round(exec_revenue, 2),
                 "incentive": exec_incentive,
                 "deals_count": deals_count,

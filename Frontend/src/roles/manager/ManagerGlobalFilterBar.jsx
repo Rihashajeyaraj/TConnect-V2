@@ -11,6 +11,7 @@ import {
 import { useManagerFilter } from './ManagerFilterContext.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { hrmsAPI } from '../../services/api.js'
+import { collectManagerSubordinates } from '../../utils/managerScoping.js'
 
 export default function ManagerGlobalFilterBar() {
   const {
@@ -36,31 +37,7 @@ export default function ManagerGlobalFilterBar() {
       .getEmployees()
       .then((res) => {
         const raw = Array.isArray(res) ? res : res?.data || []
-        const filtered = raw.filter((emp) => {
-          if (!emp) return false
-
-          const empManagerId = String(emp.reporting_manager_id || emp.reporting_manager || '').trim()
-          const empManagerEmail = String(emp.reporting_manager_email || '').toLowerCase().trim()
-          const empManagerName = String(emp.reporting_manager_name || '').toLowerCase().trim()
-
-          const myId = String(currentUser.id || '').trim()
-          const myUserId = String(currentUser.user_id || '').trim()
-          const myCode = String(currentUser.employee_code || '').trim()
-          const myEmail = String(currentUser.email || '').toLowerCase().trim()
-          const myName = String(currentUser.name || currentUser.full_name || '').toLowerCase().trim()
-
-          const idMatch = !!(empManagerId && (
-            (myId && empManagerId === myId) ||
-            (myUserId && empManagerId === myUserId) ||
-            (myCode && empManagerId === myCode)
-          ))
-
-          const emailMatch = !!(empManagerEmail && myEmail && empManagerEmail === myEmail)
-
-          const nameMatch = !!(empManagerName && myName && empManagerName === myName)
-
-          return idMatch || emailMatch || nameMatch
-        })
+        const filtered = collectManagerSubordinates(raw, currentUser)
         setAssignedExecutives(filtered)
       })
       .catch(() => {})

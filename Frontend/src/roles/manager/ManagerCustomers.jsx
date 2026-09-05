@@ -32,7 +32,8 @@ import { formatDate } from '../../utils/dateUtils.js'
 import { exportToCSV, exportToExcel, exportToPDF } from '../../utils/exportUtils.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import { useManagerFilter } from './ManagerFilterContext.jsx'
-import { customerAPI, userAPI } from '../../services/api.js'
+import { customerAPI, crmAPI, hrmsAPI } from '../../services/api.js'
+import { collectManagerSubordinates } from '../../utils/managerScoping.js'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 
 const DEFAULT_MANAGER_CUSTOMERS = []
@@ -110,28 +111,16 @@ export default function ManagerCustomers() {
   // Load executives and customers from backend API
   useEffect(() => {
     // 1. Fetch executives reporting to manager
-    userAPI.getUsers()
+    hrmsAPI.getEmployees()
       .then(res => {
-        const raw = res?.data || []
-        const mgrUser = getStoredUser()
-        const mgrEmail = (mgrUser.email || currentUser?.email || '').toLowerCase().trim()
-        const mgrId = (mgrUser.id || mgrUser.employee_id || mgrUser.user_id || currentUser?.id || '').toLowerCase().trim()
-        const mgrName = (mgrUser.name || mgrUser.full_name || currentUser?.name || '').toLowerCase().trim()
-
-        const assigned = raw.filter(e => {
-          const rId = String(e.reporting_manager_id || '').toLowerCase().trim()
-          const rEmail = String(e.reporting_manager_email || '').toLowerCase().trim()
-          const rName = String(e.reporting_manager_name || '').toLowerCase().trim()
-          
-          return (
-            (rId && rId === mgrId) ||
-            (rEmail && rEmail === mgrEmail) ||
-            (rName && mgrName && rName.includes(mgrName.split(' ')[0]))
-          )
+        const raw = Array.isArray(res) ? res : (res?.data || [])
+        const assigned = collectManagerSubordinates(raw, currentUser).filter(e => {
+          const roleLower = String(e.role || e.designation || '').toLowerCase()
+          return !roleLower.includes('team lead') && !roleLower.includes('lead') && !roleLower.includes('tl') && !roleLower.includes('manager')
         })
         setExecutives(assigned)
         if (assigned.length > 0) {
-          setNewCust(prev => ({ ...prev, assignedExecutive: assigned[0].name }))
+          setNewCust(prev => ({ ...prev, assignedExecutive: assigned[0].name || assigned[0].full_name }))
         }
       })
       .catch(err => {
@@ -233,20 +222,34 @@ export default function ManagerCustomers() {
       matchesStatus = cust.status === statusFilter
     }
 
-    // Linear Date Sorting & Filter Logic
-    const lastDateStr = String(cust.lastVisitDate || cust.date || '')
+    // Linear Date Sorting & Filter Logic (dynamic, always uses current date)
+    const lastDateStr = String(cust.lastVisitDate || cust.date || cust.created_at || '')
     let matchesDate = true
+    const nowDt = new Date()
+    const todayISO = nowDt.toISOString().slice(0, 10)
+    const yesterdayISO = new Date(nowDt.getFullYear(), nowDt.getMonth(), nowDt.getDate() - 1).toISOString().slice(0, 10)
+    const monthStartISO = new Date(nowDt.getFullYear(), nowDt.getMonth(), 1).toISOString().slice(0, 10)
+    const monthEndISO = new Date(nowDt.getFullYear(), nowDt.getMonth() + 1, 0).toISOString().slice(0, 10)
+    // Normalize lastDateStr to YYYY-MM-DD for comparison
+    let normDate = lastDateStr
+    if (normDate && normDate.includes('/')) {
+      const parts = normDate.split('/').map(p => p.split('T')[0])
+      if (parts.length === 3) {
+        if (parts[2].length === 4) normDate = `${parts[2]}-${parts[1].padStart(2,'0')}-${parts[0].padStart(2,'0')}`
+        else if (parts[0].length === 4) normDate = `${parts[0]}-${parts[1].padStart(2,'0')}-${parts[2].padStart(2,'0')}`
+      }
+    } else if (normDate && normDate.includes('T')) {
+      normDate = normDate.split('T')[0]
+    }
     if (dateFilterTab === 'Today') {
-      matchesDate = lastDateStr.includes('2026-08-06') || lastDateStr.includes('06/08/2026') || lastDateStr.includes('02/08/2026')
+      matchesDate = !normDate || normDate === todayISO
     } else if (dateFilterTab === 'Yesterday') {
-      matchesDate = lastDateStr.includes('2026-08-05') || lastDateStr.includes('05/08/2026') || lastDateStr.includes('01/08/2026')
-    } else if (dateFilterTab === 'Tomorrow') {
-      matchesDate = lastDateStr.includes('2026-08-07') || lastDateStr.includes('07/08/2026')
+      matchesDate = !normDate || normDate === yesterdayISO
     } else if (dateFilterTab === 'This Month') {
-      matchesDate = lastDateStr.includes('2026-08') || lastDateStr.includes('/08/') || lastDateStr.includes('/07/')
+      matchesDate = !normDate || (normDate >= monthStartISO && normDate <= monthEndISO)
     } else if (dateFilterTab === 'Custom') {
-      if (fromDate) matchesDate = matchesDate && lastDateStr >= fromDate
-      if (toDate) matchesDate = matchesDate && lastDateStr <= toDate
+      if (fromDate) matchesDate = matchesDate && (!normDate || normDate >= fromDate)
+      if (toDate) matchesDate = matchesDate && (!normDate || normDate <= toDate)
     }
 
     return matchesSearch && matchesExec && matchesStatus && matchesDate

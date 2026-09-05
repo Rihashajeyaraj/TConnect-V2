@@ -6,6 +6,15 @@ from app.core.constants import SchemaEnum
 from app.core.logger import logger
 
 _in_memory_customers: List[Dict[str, Any]] = []
+_CUSTOMERS_CACHE: Optional[List[Dict[str, Any]]] = None
+_CUSTOMERS_CACHE_TIMESTAMP: float = 0.0
+_CUSTOMERS_CACHE_TTL: float = 30.0
+
+
+def _clear_customers_cache():
+    global _CUSTOMERS_CACHE, _CUSTOMERS_CACHE_TIMESTAMP
+    _CUSTOMERS_CACHE = None
+    _CUSTOMERS_CACHE_TIMESTAMP = 0.0
 
 
 def is_valid_uuid(val: Any) -> bool:
@@ -24,6 +33,17 @@ class CustomerRepository:
         self.helper = get_schema_helper()
 
     def get_all_customers(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        global _CUSTOMERS_CACHE, _CUSTOMERS_CACHE_TIMESTAMP
+        import time
+        now = time.time()
+        if _CUSTOMERS_CACHE is not None and (now - _CUSTOMERS_CACHE_TIMESTAMP) < _CUSTOMERS_CACHE_TTL:
+            # Cache hit — apply per-request scoping on the cached unscoped list
+            from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
+            allowed = get_allowed_user_identifiers(user_payload)
+            if allowed is None:
+                return list(_CUSTOMERS_CACHE)
+            return [c for c in _CUSTOMERS_CACHE if is_record_accessible(c, allowed)]
+
         fetched_customers = []
         for schema_attempt in ["crm", "public"]:
             try:
@@ -33,27 +53,33 @@ class CustomerRepository:
                     res = self.supabase.table("customers").select("*").execute()
 
                 if res.data is not None and len(res.data) > 0:
+                    lead_ids = [str(c["lead_id"]) for c in res.data if c.get("lead_id") and is_valid_uuid(c.get("lead_id"))]
+                    lead_map = {}
+                    if lead_ids:
+                        try:
+                            leads_res = self.supabase.schema("crm").table("leads").select(
+                                "lead_id,company_name,contact_person,mobile,email,city,category,assigned_to"
+                            ).in_("lead_id", lead_ids).execute()
+                            if leads_res.data:
+                                for ld in leads_res.data:
+                                    lead_map[str(ld["lead_id"])] = ld
+                        except Exception as le:
+                            logger.debug(f"Batch leads lookup notice: {le}")
+
                     enriched = []
                     for c in res.data:
                         row = dict(c)
-                        lid = row.get("lead_id")
-                        if lid and is_valid_uuid(lid):
-                            try:
-                                lead_res = self.supabase.schema("crm").table("leads").select(
-                                    "company_name,contact_person,mobile,email,city,category,assigned_to"
-                                ).eq("lead_id", str(lid)).single().execute()
-                                if lead_res.data:
-                                    ld = lead_res.data
-                                    row["name"] = row.get("name") or ld.get("company_name")
-                                    row["company"] = row.get("company") or ld.get("company_name")
-                                    row["person"] = row.get("person") or ld.get("contact_person")
-                                    row["phone"] = row.get("phone") or ld.get("mobile")
-                                    row["email"] = row.get("email") or ld.get("email")
-                                    row["city"] = row.get("city") or ld.get("city")
-                                    row["leadNumber"] = row.get("leadNumber") or str(lid)[:8].upper()
-                                    row["assigned_to"] = row.get("assigned_to") or ld.get("assigned_to")
-                            except Exception:
-                                pass
+                        lid = str(row.get("lead_id") or "")
+                        if lid and lid in lead_map:
+                            ld = lead_map[lid]
+                            row["name"] = row.get("name") or ld.get("company_name")
+                            row["company"] = row.get("company") or ld.get("company_name")
+                            row["person"] = row.get("person") or ld.get("contact_person")
+                            row["phone"] = row.get("phone") or ld.get("mobile")
+                            row["email"] = row.get("email") or ld.get("email")
+                            row["city"] = row.get("city") or ld.get("city")
+                            row["leadNumber"] = row.get("leadNumber") or str(lid)[:8].upper()
+                            row["assigned_to"] = row.get("assigned_to") or ld.get("assigned_to")
                         row.setdefault("status", "Active Customer")
                         enriched.append(row)
                     fetched_customers = enriched
@@ -231,12 +257,15 @@ class CustomerRepository:
 
         from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
         allowed = get_allowed_user_identifiers(user_payload)
-        if allowed is not None:
-            scoped = [c for c in res_list if is_record_accessible(c, allowed)]
-            return scoped
-        return res_list
+        # Store ALL (unscoped) enriched customers in cache — scoping applied per-request above
+        _CUSTOMERS_CACHE = res_list
+        _CUSTOMERS_CACHE_TIMESTAMP = time.time()
+        if allowed is None:
+            return list(res_list)
+        return [c for c in res_list if is_record_accessible(c, allowed)]
 
     def create_customer(self, data: Dict[str, Any]) -> Dict[str, Any]:
+        _clear_customers_cache()
         # 1. Resolve valid lead_id
         raw_lead_id = data.get("lead_id") or data.get("leadId")
         valid_lead_id = None

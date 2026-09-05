@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   MapPin, Radio, Users, Activity, Clock, RefreshCw,
   Search, Shield, Map as MapIcon, Eye, Compass, Navigation,
-  AlertCircle, ChevronRight, Phone, Mail, Award, CheckCircle2, X,
+  AlertCircle, ChevronRight, ChevronLeft, Phone, Mail, Award, CheckCircle2, X,
   Route, Milestone, Minimize2, Maximize2, ArrowLeft, MessageSquare, Send, MessageCircle
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 import { spatialAPI, authAPI, settingsAPI, crmAPI, customerAPI, visitAPI, auditAPI, notificationAPI } from '../../services/api.js'
-import { loadGoogleMaps } from '../../utils/loadGoogleMaps.js'
+import { loadGoogleMaps, purgeGoogleMapsBillingModal } from '../../utils/loadGoogleMaps.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser, { getStoredUser } from '../../hooks/useCurrentUser.js'
 import { formatDate } from '../../utils/dateUtils.js'
@@ -210,6 +210,8 @@ export default function ManagerSmartMap() {
   const [stats,            setStats]             = useState({ total: 0, online: 0, offline: 0 })
   const [initialFitDone,   setInitialFitDone]    = useState(false)
   const [isTrackingMinimized, setIsTrackingMinimized] = useState(false)
+  const [selectedTeamLeadIndex, setSelectedTeamLeadIndex] = useState(0)
+  const [activeTeamFilter,      setActiveTeamFilter]      = useState('all') // 'all' (paginated team lead) | 'all_combined' | specific key
 
   // Live-tracking panel state
   const [trackSession,     setTrackSession]      = useState(null)
@@ -639,6 +641,15 @@ export default function ManagerSmartMap() {
         setMapLoaded(true)
       })
       .catch(err => console.error('Failed to load Google Maps:', err))
+  }, [])
+
+  // Auto-purge Google Maps billing error modal overlay popups
+  useEffect(() => {
+    purgeGoogleMapsBillingModal()
+    const timer = setInterval(() => {
+      purgeGoogleMapsBillingModal()
+    }, 150)
+    return () => clearInterval(timer)
   }, [])
 
 
@@ -2092,9 +2103,112 @@ export default function ManagerSmartMap() {
   const hb = getHeartbeatStatus()
 
   // ─── 8. Render ────────────────────────────────────────────────────────────
-  const filteredExecutives = executives.filter(ex =>
-    resolveRealName(ex).toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  // Group executives by Team Lead
+  const teamGroups = useMemo(() => {
+    if (!executives || executives.length === 0) return []
+
+    const groupsMap = new Map()
+
+    // 1. Identify all Team Leads in the payload
+    executives.forEach(ex => {
+      const roleLower = (ex.role || ex.designation || '').toLowerCase()
+      const isTL = roleLower.includes('team lead') || roleLower.includes('tl') || roleLower.includes('lead')
+      if (isTL) {
+        const name = resolveRealName(ex)
+        const key = (ex.email || ex.employee_id || name).toLowerCase().trim()
+        if (!groupsMap.has(key)) {
+          groupsMap.set(key, {
+            key,
+            title: `${name}'s Team`,
+            leadName: name,
+            leadEmail: ex.email || '',
+            leadRole: ex.role || 'Team Lead',
+            executives: []
+          })
+        }
+      }
+    })
+
+    // 2. Classify members under their Team Leads
+    executives.forEach(ex => {
+      const roleLower = (ex.role || ex.designation || '').toLowerCase()
+      const isTL = roleLower.includes('team lead') || roleLower.includes('tl') || roleLower.includes('lead')
+
+      if (isTL) {
+        const name = resolveRealName(ex)
+        const key = (ex.email || ex.employee_id || name).toLowerCase().trim()
+        if (groupsMap.has(key)) {
+          const group = groupsMap.get(key)
+          if (!group.executives.some(e => (e.employee_id || e.id) === (ex.employee_id || ex.id))) {
+            group.executives.push(ex)
+          }
+        }
+        return
+      }
+
+      const repName = (ex.reporting_manager_name || ex.reporting_manager || '').trim()
+      const repEmail = (ex.reporting_manager_email || '').toLowerCase().trim()
+
+      let matchedKey = null
+      for (const [key, group] of groupsMap.entries()) {
+        if ((repEmail && group.leadEmail && repEmail === group.leadEmail.toLowerCase()) ||
+            (repName && group.leadName && repName.toLowerCase().includes(group.leadName.toLowerCase())) ||
+            (repName && group.leadName && group.leadName.toLowerCase().includes(repName.toLowerCase()))) {
+          matchedKey = key
+          break
+        }
+      }
+
+      if (matchedKey && groupsMap.has(matchedKey)) {
+        groupsMap.get(matchedKey).executives.push(ex)
+      } else if (repName && !['not assigned', 'none', 'n/a', ''].includes(repName.toLowerCase())) {
+        const cleanKey = repName.toLowerCase().trim()
+        if (!['jeeva', 'manager', 'admin', 'ceo', 'super admin'].some(ignored => cleanKey.includes(ignored))) {
+          if (!groupsMap.has(cleanKey)) {
+            groupsMap.set(cleanKey, {
+              key: cleanKey,
+              title: repName.endsWith("'s Team") ? repName : `${repName}'s Team`,
+              leadName: repName,
+              leadEmail: repEmail,
+              leadRole: 'Team Lead',
+              executives: []
+            })
+          }
+          groupsMap.get(cleanKey).executives.push(ex)
+        }
+      }
+    })
+
+    return Array.from(groupsMap.values()).filter(g => g.executives.length > 0)
+  }, [executives])
+
+  // Current active team group when paginated or tabbed
+  const currentTeamGroup = useMemo(() => {
+    if (teamGroups.length === 0) return null
+    if (activeTeamFilter === 'all_combined') return null
+    const validIdx = Math.min(Math.max(0, selectedTeamLeadIndex), teamGroups.length - 1)
+    if (activeTeamFilter === 'all' || !activeTeamFilter) {
+      return teamGroups[validIdx] || teamGroups[0]
+    }
+    return teamGroups.find(g => g.key === activeTeamFilter) || teamGroups[validIdx] || teamGroups[0]
+  }, [teamGroups, selectedTeamLeadIndex, activeTeamFilter])
+
+  // Filter executives based on searchQuery AND active Team Lead filter
+  const filteredExecutives = useMemo(() => {
+    let list = executives
+    if (activeTeamFilter !== 'all_combined' && currentTeamGroup) {
+      list = currentTeamGroup.executives || []
+    }
+    if (!searchQuery.trim()) return list
+    const q = searchQuery.toLowerCase()
+    return list.filter(e => {
+      const name = resolveRealName(e).toLowerCase()
+      const email = (e.email || '').toLowerCase()
+      const role = (e.role || e.designation || '').toLowerCase()
+      const code = (e.employee_code || e.employee_id || '').toLowerCase()
+      return name.includes(q) || email.includes(q) || role.includes(q) || code.includes(q)
+    })
+  }, [executives, currentTeamGroup, activeTeamFilter, searchQuery])
 
   return (
     <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-slate-900 font-sans">
@@ -2165,6 +2279,107 @@ export default function ManagerSmartMap() {
                 </div>
               ))}
             </div>
+
+            {/* Team Lead Selector & Pagination Control */}
+            {teamGroups.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pb-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center font-black text-lg shadow-sm">
+                      👑
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-black text-slate-900">
+                          {activeTeamFilter === 'all_combined' ? 'All Assigned Teams' : (currentTeamGroup?.title || 'Team Lead View')}
+                        </h3>
+                        <span className="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-black px-2.5 py-0.5 rounded-full">
+                          {filteredExecutives.length} Executives
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                        {activeTeamFilter === 'all_combined'
+                          ? 'Displaying combined list across all team leads'
+                          : `Reporting to Team Lead: ${currentTeamGroup?.leadName || 'Team Lead'}`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Pagination Controls (shown when there are multiple Team Leads) */}
+                  {teamGroups.length > 1 && (
+                    <div className="flex items-center gap-2 bg-slate-100/80 border border-slate-200 rounded-xl p-1">
+                      <button
+                        onClick={() => {
+                          const nextIdx = (selectedTeamLeadIndex - 1 + teamGroups.length) % teamGroups.length
+                          setSelectedTeamLeadIndex(nextIdx)
+                          setActiveTeamFilter(teamGroups[nextIdx].key)
+                        }}
+                        className="p-2 rounded-lg text-slate-700 hover:text-blue-600 hover:bg-white hover:shadow-xs transition flex items-center gap-1 text-xs font-black"
+                        title="Previous Team Lead"
+                      >
+                        <ChevronLeft className="w-4 h-4" /> Prev Team
+                      </button>
+
+                      <div className="text-xs font-black text-slate-800 px-3 py-1 bg-white border border-slate-200 rounded-lg shadow-2xs min-w-[110px] text-center select-none">
+                        {activeTeamFilter === 'all_combined' ? 'All Teams' : `Team ${selectedTeamLeadIndex + 1} of ${teamGroups.length}`}
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          const nextIdx = (selectedTeamLeadIndex + 1) % teamGroups.length
+                          setSelectedTeamLeadIndex(nextIdx)
+                          setActiveTeamFilter(teamGroups[nextIdx].key)
+                        }}
+                        className="p-2 rounded-lg text-slate-700 hover:text-blue-600 hover:bg-white hover:shadow-xs transition flex items-center gap-1 text-xs font-black"
+                        title="Next Team Lead"
+                      >
+                        Next Team <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Team Lead Tabs (shown when there are multiple Team Leads) */}
+                {teamGroups.length > 1 && (
+                  <div className="flex items-center gap-2 overflow-x-auto pt-2 border-t border-slate-100 scrollbar-none">
+                    <button
+                      onClick={() => setActiveTeamFilter('all_combined')}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap border ${
+                        activeTeamFilter === 'all_combined'
+                          ? 'bg-[#0b3c5d] text-white border-[#0b3c5d] shadow-sm scale-102'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>🌐 All Teams Combined</span>
+                      <span className="opacity-80 text-[10px] font-bold">({executives.length})</span>
+                    </button>
+
+                    {teamGroups.map((group, idx) => {
+                      const isActive = activeTeamFilter !== 'all_combined' && (activeTeamFilter === group.key || selectedTeamLeadIndex === idx)
+                      return (
+                        <button
+                          key={group.key}
+                          onClick={() => {
+                            setSelectedTeamLeadIndex(idx)
+                            setActiveTeamFilter(group.key)
+                          }}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap border ${
+                            isActive
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-md scale-102'
+                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>👑 {group.title}</span>
+                          <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                            {group.executives.length}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Search */}
             <div className="relative">

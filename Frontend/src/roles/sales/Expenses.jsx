@@ -94,7 +94,8 @@ export default function Expenses(props) {
             reporting_manager_email: e.reporting_manager_email || "",
           };
         });
-        setExpenseList(normalized);
+        const userOnlyExpenses = normalized.filter((item) => isItemOwnedByUser(item, currentUser));
+        setExpenseList(userOnlyExpenses);
       } else {
         setExpenseList([]);
       }

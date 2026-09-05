@@ -51,6 +51,9 @@ export function isItemOwnedByUser(item, user) {
     item.executive ||
     item.accountManager ||
     item.sales_executive ||
+    item.employee_name ||
+    item.employeeName ||
+    item.submitted_by ||
     ''
   ).toLowerCase().trim()
 

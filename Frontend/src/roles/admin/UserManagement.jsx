@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef, Fragment } from 'react'
+import React, { useState, useEffect, useMemo, useCallback, useRef, Fragment } from 'react'
 import { useLocation } from 'react-router-dom'
 import {
   Users,
@@ -37,6 +37,7 @@ import {
   X,
   ChevronDown,
   ChevronUp,
+  Filter,
 } from 'lucide-react'
 import { hrmsAPI, userAPI, settingsAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
@@ -1409,11 +1410,14 @@ function UserManagement() {
   const [showAssignToManagerModal, setShowAssignToManagerModal] = useState(false)
   const [assigningToManager, setAssigningToManager] = useState(false)
 
-  // Reassign Manager Modal State
+  // Reassign Manager Modal State & Filters
   const [showReassignModal, setShowReassignModal] = useState(false)
   const [reassignUser, setReassignUser] = useState(null)
   const [selectedNewManagerId, setSelectedNewManagerId] = useState('')
   const [reassigning, setReassigning] = useState(false)
+  const [reassignDeptFilter, setReassignDeptFilter] = useState('ALL')
+  const [reassignRoleFilter, setReassignRoleFilter] = useState('ALL')
+  const [reassignSearchQuery, setReassignSearchQuery] = useState('')
 
   // Derived lists
   const salesManagers = useMemo(() => {
@@ -1449,6 +1453,53 @@ function UserManagement() {
       return r.includes('manager') || r.includes('admin') || r.includes('ceo') || r.includes('founder') || r.includes('team lead') || r.includes('tl')
     })
   }, [users])
+
+  // Filtered Potential Reporting Managers for Reassign Modal
+  const filteredReassignManagers = useMemo(() => {
+    return potentialReportingManagers.filter((m) => {
+      // Don't list the employee being reassigned as their own manager
+      if (reassignUser && String(m.id || m.employee_id) === String(reassignUser.id || reassignUser.employee_id)) {
+        return false
+      }
+
+      // Department filter
+      if (reassignDeptFilter !== 'ALL') {
+        const mDept = (m.department || m.dept || 'Sales').toLowerCase().trim()
+        const targetDept = reassignDeptFilter.toLowerCase().trim()
+        if (mDept !== targetDept && !mDept.includes(targetDept)) {
+          return false
+        }
+      }
+
+      // Role filter
+      if (reassignRoleFilter !== 'ALL') {
+        const mRole = (m.role || '').toLowerCase().trim()
+        if (reassignRoleFilter === 'TEAM_LEAD') {
+          if (!mRole.includes('team lead') && !mRole.includes('tl')) return false
+        } else if (reassignRoleFilter === 'MANAGER') {
+          if (!mRole.includes('manager') || mRole.includes('team lead') || mRole.includes('tl')) return false
+        } else if (reassignRoleFilter === 'ADMIN_CEO') {
+          if (!mRole.includes('admin') && !mRole.includes('ceo') && !mRole.includes('founder')) return false
+        }
+      }
+
+      // Search query
+      if (reassignSearchQuery.trim()) {
+        const q = reassignSearchQuery.toLowerCase().trim()
+        const name = (m.name || '').toLowerCase()
+        const email = (m.email || '').toLowerCase()
+        const code = (m.employee_code || m.employee_id || '').toLowerCase()
+        const dept = (m.department || m.dept || '').toLowerCase()
+        const role = (m.role || '').toLowerCase()
+
+        if (!name.includes(q) && !email.includes(q) && !code.includes(q) && !dept.includes(q) && !role.includes(q)) {
+          return false
+        }
+      }
+
+      return true
+    })
+  }, [potentialReportingManagers, reassignUser, reassignDeptFilter, reassignRoleFilter, reassignSearchQuery])
 
   // Manager -> Assigned Executives Hierarchy Data
   const managerHierarchy = useMemo(() => {
@@ -1568,6 +1619,9 @@ function UserManagement() {
   const handleOpenReassignModal = (user) => {
     setReassignUser(user)
     setSelectedNewManagerId(user.reporting_manager_id || user.reporting_manager || '')
+    setReassignDeptFilter('ALL')
+    setReassignRoleFilter('ALL')
+    setReassignSearchQuery('')
     setShowReassignModal(true)
   }
 
@@ -3813,9 +3867,9 @@ function UserManagement() {
       )}
       {/* Reassign Reporting Manager Modal */}
       {showReassignModal && reassignUser && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-slate-200 shadow-2xl">
-            <div className="flex items-center justify-between border-b pb-3">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl max-w-lg sm:max-w-xl w-full p-6 space-y-4 border border-slate-200 shadow-2xl">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
                   <Network className="w-5 h-5 text-blue-600" /> Reassign Reporting Manager
@@ -3829,7 +3883,7 @@ function UserManagement() {
                   setShowReassignModal(false)
                   setReassignUser(null)
                 }}
-                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1"
+                className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1 rounded-lg hover:bg-slate-100 transition"
               >
                 ✕
               </button>
@@ -3837,10 +3891,16 @@ function UserManagement() {
 
             <form onSubmit={handleSaveReassignment} className="space-y-4 text-xs">
               {/* Employee Summary Card */}
-              <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl space-y-1.5">
+              <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl space-y-1.5">
                 <div className="flex justify-between items-center">
                   <span className="font-bold text-slate-500">Employee:</span>
                   <span className="font-extrabold text-slate-900">{reassignUser.name}</span>
+                </div>
+                <div className="flex justify-between items-center">
+                  <span className="font-bold text-slate-500">Department:</span>
+                  <span className="font-extrabold text-slate-700 bg-slate-200/60 px-2 py-0.5 rounded-md text-[11px]">
+                    {reassignUser.department || reassignUser.dept || 'Sales & Business Development'}
+                  </span>
                 </div>
                 <div className="flex justify-between items-center">
                   <span className="font-bold text-slate-500">Role:</span>
@@ -3856,6 +3916,89 @@ function UserManagement() {
                 </div>
               </div>
 
+              {/* Filter Controls Bar */}
+              <div className="space-y-2.5 bg-blue-50/50 border border-blue-100 p-3 rounded-xl">
+                <div className="flex items-center justify-between">
+                  <label className="text-slate-800 font-extrabold text-xs flex items-center gap-1.5">
+                    <Filter className="w-3.5 h-3.5 text-blue-600" /> Filter Manager List
+                  </label>
+                  <div className="flex items-center gap-2">
+                    {(reassignDeptFilter !== 'ALL' || reassignRoleFilter !== 'ALL' || reassignSearchQuery) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReassignDeptFilter('ALL')
+                          setReassignRoleFilter('ALL')
+                          setReassignSearchQuery('')
+                        }}
+                        className="text-[10px] text-blue-600 hover:text-blue-800 font-bold hover:underline cursor-pointer"
+                      >
+                        Reset Filters
+                      </button>
+                    )}
+                    <span className="text-[10px] font-extrabold bg-white px-2 py-0.5 rounded-full border border-blue-200 text-blue-700 shadow-2xs">
+                      {filteredReassignManagers.length} matching
+                    </span>
+                  </div>
+                </div>
+
+                {/* Filter Inputs Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  {/* Department Filter */}
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-500 block mb-1">Department:</span>
+                    <select
+                      value={reassignDeptFilter}
+                      onChange={(e) => setReassignDeptFilter(e.target.value)}
+                      className="w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer"
+                    >
+                      <option value="ALL">🏢 All Departments</option>
+                      {realDepartments.map((d) => (
+                        <option key={d} value={d}>
+                          {d}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Role Filter */}
+                  <div>
+                    <span className="text-[10px] font-extrabold text-slate-500 block mb-1">Role Type:</span>
+                    <select
+                      value={reassignRoleFilter}
+                      onChange={(e) => setReassignRoleFilter(e.target.value)}
+                      className="w-full h-8 border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-blue-500 shadow-2xs cursor-pointer"
+                    >
+                      <option value="ALL">👥 All Manager Roles</option>
+                      <option value="TEAM_LEAD">⭐ Team Leads Only</option>
+                      <option value="MANAGER">👔 Sales Managers Only</option>
+                      <option value="ADMIN_CEO">🛡️ Admins & Leadership</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Search Input Box */}
+                <div className="relative pt-0.5">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+                  <input
+                    type="text"
+                    placeholder="Search by manager name, email, employee code..."
+                    value={reassignSearchQuery}
+                    onChange={(e) => setReassignSearchQuery(e.target.value)}
+                    className="w-full h-8 pl-8 pr-7 bg-white border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 shadow-2xs"
+                  />
+                  {reassignSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setReassignSearchQuery('')}
+                      className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
               {/* Select New Reporting Manager */}
               <div>
                 <label className="block text-slate-800 font-extrabold mb-1.5">
@@ -3864,17 +4007,22 @@ function UserManagement() {
                 <select
                   value={selectedNewManagerId}
                   onChange={(e) => setSelectedNewManagerId(e.target.value)}
-                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-blue-600 bg-white"
+                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-blue-600 bg-white text-xs"
                 >
                   <option value="">-- No Reporting Manager (Unassign) --</option>
-                  {potentialReportingManagers
-                    .filter(m => String(m.id) !== String(reassignUser.id))
-                    .map((m) => (
-                      <option key={m.id} value={m.id}>
-                        👤 {m.name} ({m.email}) [{m.role}]
-                      </option>
-                    ))}
+                  {filteredReassignManagers.map((m) => (
+                    <option key={m.id || m.employee_id} value={m.id || m.employee_id}>
+                      👤 {m.name} ({m.email}) · [{m.role || 'Manager'}] · Dept: {m.department || m.dept || 'Sales'}
+                    </option>
+                  ))}
                 </select>
+
+                {filteredReassignManagers.length === 0 && (
+                  <p className="text-[11px] text-amber-600 font-extrabold mt-1.5 flex items-center gap-1">
+                    ⚠️ No managers or team leads match the selected department/role filters. Try resetting filters.
+                  </p>
+                )}
+
                 <p className="text-[10px] text-slate-400 font-semibold mt-1">
                   Once saved, reporting lines, live map tracking, and approvals will instantly route to the selected manager in Supabase.
                 </p>

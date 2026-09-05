@@ -120,9 +120,12 @@ const LEAVE_BALANCE = [
   { type: 'Other Leave',   total: 10, used: 0, remaining: 10, color: 'bg-gradient-to-br from-violet-50 to-fuchsia-50/50 border-violet-200/60 shadow-xs', bar: 'bg-violet-600',  icon: '📋' },
 ]
 
-export default function ManagerHrms() {
+export default function ManagerHrms(props) {
   const currentUser = useCurrentUser()
   const { showToast } = useToast()
+
+  const userRole = String(currentUser.role || '').toLowerCase().trim();
+  const headerTitle = props?.portalTitle || (userRole.includes('lead') ? 'TwiteHRMS Team Lead Portal' : 'TwiteHRMS Manager Portal');
 
   const [profile, setProfile] = useState({})
   const [selectedLeaveDetailType, setSelectedLeaveDetailType] = useState(null)
@@ -458,7 +461,7 @@ export default function ManagerHrms() {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
           <div className="space-y-1.5">
             <h1 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 text-white">
-              <ShieldCheck className="w-6.5 h-6.5 text-[#F2C76E]" /> TwiteHRMS Manager Portal
+              <ShieldCheck className="w-6.5 h-6.5 text-[#F2C76E]" /> {headerTitle}
             </h1>
             <div className="flex flex-wrap items-center gap-2 text-slate-300 text-xs font-semibold">
               <span>{managerName}</span>

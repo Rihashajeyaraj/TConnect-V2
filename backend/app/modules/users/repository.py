@@ -797,13 +797,52 @@ class UserRepository:
     def get_assigned_executives_for_manager(self, manager_id: str) -> List[Dict[str, Any]]:
         all_users = self.get_all_users()
         m_clean = str(manager_id).lower().strip()
+        
+        mgr_user = None
+        for u in all_users:
+            uid = str(u.get("id") or u.get("auth_user_id") or u.get("employee_id") or "").lower().strip()
+            uemail = str(u.get("email") or "").lower().strip()
+            ucode = str(u.get("employee_code") or "").lower().strip()
+            uname = str(u.get("name") or "").lower().strip()
+            if m_clean in (uid, uemail, ucode, uname):
+                mgr_user = u
+                break
+
+        user_payload = {
+            "sub": (mgr_user.get("id") if mgr_user else manager_id),
+            "email": (mgr_user.get("email") if mgr_user else manager_id),
+            "role": (mgr_user.get("role") if mgr_user else "Sales Manager"),
+            "name": (mgr_user.get("name") if mgr_user else manager_id),
+            "employee_code": (mgr_user.get("employee_code") if mgr_user else manager_id),
+        }
+
+        from app.core.scoping import get_allowed_user_identifiers
+        allowed = get_allowed_user_identifiers(user_payload)
+        if allowed is None:
+            return all_users
+
         assigned = []
         for u in all_users:
-            r_id = str(u.get("reporting_manager_id") or "").lower().strip()
-            r_email = str(u.get("reporting_manager_email") or "").lower().strip()
-            r_name = str(u.get("reporting_manager_name") or "").lower().strip()
-            if r_id == m_clean or r_email == m_clean or r_name == m_clean:
+            u_id = str(u.get("id") or u.get("auth_user_id") or u.get("employee_id") or "").strip()
+            u_email = str(u.get("email") or "").lower().strip()
+            u_code = str(u.get("employee_code") or u.get("employee_id") or "").strip()
+            
+            if u_id and u_id == str(user_payload.get("sub")):
+                continue
+            if u_email and u_email == str(user_payload.get("email")).lower():
+                continue
+
+            is_match = False
+            if u_id and u_id in allowed.get("ids", set()):
+                is_match = True
+            elif u_email and u_email in allowed.get("emails", set()):
+                is_match = True
+            elif u_code and u_code in allowed.get("codes", set()):
+                is_match = True
+
+            if is_match:
                 assigned.append(u)
+
         return assigned
 
     def get_manager_executive_hierarchy(self) -> Dict[str, Any]:

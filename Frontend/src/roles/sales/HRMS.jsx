@@ -64,7 +64,7 @@ const HANDBOOK = [
   { title: "Daily Reporting", icon: "📊", content: "Submit Daily Work Report before 6:30 PM every working day. Include calls, visits, pipeline updates." },
 ];
 
-export default function SalesHRMS() {
+export default function SalesHRMS(props) {
   const toastCtx = useToast();
   const showToast = (msg, type) => {
     if (toastCtx && toastCtx.showToast) toastCtx.showToast(msg, type);
@@ -599,7 +599,7 @@ export default function SalesHRMS() {
         <div className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              {isUserAdmin ? "TwiteHRMS Admin Portal" : "TwiteHRMS Employee Portal"}
+              {props?.portalTitle || (isUserAdmin ? "TwiteHRMS Admin Portal" : "TwiteHRMS Employee Portal")}
             </h1>
           </div>
         </div>

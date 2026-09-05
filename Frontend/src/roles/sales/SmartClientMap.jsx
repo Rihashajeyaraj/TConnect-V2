@@ -1212,26 +1212,57 @@ export default function SmartClientMap() {
     }
   }, [executivePos, gpsAccuracy, gpsStatus, mapLoaded])
 
-  // ─── 16. Traveled Trail Polyline (Purple dashed line) ───────────────────
+  // ─── 16. Traveled Trail Polyline (Purple dashed line - Track real executive travel only) ───
   useEffect(() => {
     if (!googleMapRef.current || !window.google || !mapLoaded) return
     if (!executivePos?.lat || !executivePos?.lng) return
 
+    // 1. Do NOT track or render polyline unless GPS fix is active
+    if (gpsStatus !== 'active') {
+      if (trailPolylineRef.current) {
+        trailPolylineRef.current.setMap(null)
+        trailPolylineRef.current = null
+      }
+      return
+    }
+
+    // 2. Ignore default fallback center (DEFAULT_CENTER) completely
+    const isDefaultCenter =
+      Math.abs(executivePos.lat - DEFAULT_CENTER.lat) < 0.0001 &&
+      Math.abs(executivePos.lng - DEFAULT_CENTER.lng) < 0.0001
+
+    if (isDefaultCenter) {
+      return
+    }
+
+    // 3. Purge any accidental DEFAULT_CENTER points from trail history
     const pts = trailPointsRef.current
-    const lastPt = pts.length > 0 ? pts[pts.length - 1] : null
+    if (pts.length > 0) {
+      const filtered = pts.filter(p => !(
+        Math.abs(p.lat - DEFAULT_CENTER.lat) < 0.0001 &&
+        Math.abs(p.lng - DEFAULT_CENTER.lng) < 0.0001
+      ))
+      if (filtered.length !== pts.length) {
+        trailPointsRef.current = filtered
+      }
+    }
+
+    const validPts = trailPointsRef.current
+    const lastPt = validPts.length > 0 ? validPts[validPts.length - 1] : null
 
     let distFromLastM = 0
     if (lastPt) {
       distFromLastM = haversineDistance(lastPt.lat, lastPt.lng, executivePos.lat, executivePos.lng) * 1000
     }
 
-    // Append point if first point or executive moved >= 3 meters
-    if (pts.length === 0 || distFromLastM >= 3) {
-      pts.push({ lat: executivePos.lat, lng: executivePos.lng })
+    // Append point ONLY if first real acquired point or executive moved >= 5 meters
+    if (validPts.length === 0 || distFromLastM >= 5) {
+      validPts.push({ lat: executivePos.lat, lng: executivePos.lng })
     }
 
-    if (pts.length > 1) {
-      const gPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
+    // 4. ONLY draw traveled polyline if executive has AT LEAST 2 REAL traveled points
+    if (validPts.length > 1) {
+      const gPath = validPts.map(p => ({ lat: p.lat, lng: p.lng }))
       
       if (!trailPolylineRef.current) {
         trailPolylineRef.current = new window.google.maps.Polyline({
@@ -1258,8 +1289,12 @@ export default function SmartClientMap() {
           trailPolylineRef.current.setMap(googleMapRef.current)
         }
       }
+    } else {
+      if (trailPolylineRef.current) {
+        trailPolylineRef.current.setMap(null)
+      }
     }
-  }, [executivePos, mapLoaded])
+  }, [executivePos, gpsStatus, mapLoaded])
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   const visibleAlerts = onRouteClients.filter(c => !dismissedAlerts.current.has(c.id))

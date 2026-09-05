@@ -17,6 +17,7 @@ import {
   ChevronUp,
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
+import { crmAPI } from '../../services/api.js'
 
 const DEFAULT_FOLLOWUPS = []
 
@@ -42,36 +43,53 @@ export default function ManagerFollowups() {
   const [selectedItem, setSelectedItem] = useState(null)
 
   const [followups, setFollowups] = useState([])
+  const [loading, setLoading] = useState(false)
+
+  const normalizeFollowup = (f, idx) => ({
+    id: f.id || f.follow_up_id || `fol_${2000 + idx}`,
+    customer: f.customer || f.company || f.clientName || 'Client Account',
+    contactPerson: f.contactPerson || f.person || f.contactName || 'Contact Person',
+    executive: f.executive || f.assignedTo || f.assigned_to || f.executiveName || 'Sales Executive',
+    employeeCode: f.employeeCode || f.employee_code || f.empCode || 'EMP000012',
+    type: f.type || f.follow_up_type || f.followUpType || f.purpose || 'Follow-up Call',
+    status: f.status || 'Pending',
+    scheduledTime: f.scheduledDate || f.scheduledTime || f.date || f.follow_up_date || 'TBD',
+    priority: f.priority || 'Medium',
+    reminder: f.reminder || 'No reminder set',
+    notes: f.remark || f.notes || f.remarks || f.description || 'Client follow-up scheduled.',
+  })
 
   useEffect(() => {
-    let combined = [...DEFAULT_FOLLOWUPS]
+    setLoading(true)
+    // 1. Load from backend API
+    crmAPI.getFollowupsAll()
+      .then(res => {
+        const raw = Array.isArray(res) ? res : (res?.data || [])
+        if (raw.length > 0) {
+          setFollowups(raw.map(normalizeFollowup))
+          setLoading(false)
+          return
+        }
+        // 2. Fallback to localStorage if empty
+        loadFromLocalStorage()
+      })
+      .catch(() => loadFromLocalStorage())
+      .finally(() => setLoading(false))
+  }, [])
+
+  const loadFromLocalStorage = () => {
+    let combined = []
     try {
       const savedStr = localStorage.getItem('tc_sales_followups')
       if (savedStr) {
         const parsed = JSON.parse(savedStr)
         if (Array.isArray(parsed) && parsed.length > 0) {
-          const normalized = parsed.map((f, idx) => ({
-            id: f.id || `fol_${2000 + idx}`,
-            customer: f.customer || f.clientName || f.company || 'Client Account',
-            contactPerson: f.contactPerson || f.contactName || 'Contact Person',
-            executive: f.executive || f.assigned_to || f.executiveName || 'Sales Executive',
-            employeeCode: f.employeeCode || f.employee_code || f.empCode || 'EMP000012',
-            type: f.type || f.followUpType || f.purpose || 'Follow-up Call',
-            status: f.status || 'Pending',
-            scheduledTime: f.scheduledTime || f.scheduledDate || f.date || 'TBD',
-            priority: f.priority || 'Medium',
-            reminder: f.reminder || 'No reminder set',
-            notes: f.notes || f.remarks || f.description || 'Client follow-up scheduled.',
-          }))
-          const map = new Map()
-          combined.forEach((d) => map.set(`${d.customer}_${d.executive}`, d))
-          normalized.forEach((n) => map.set(`${n.customer}_${n.executive}`, n))
-          combined = Array.from(map.values())
+          combined = parsed.map(normalizeFollowup)
         }
       }
     } catch (e) {}
     setFollowups(combined)
-  }, [])
+  }
 
   const filteredFollowups = followups.filter((f) => {
     const q = search.toLowerCase()

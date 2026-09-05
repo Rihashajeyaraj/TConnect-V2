@@ -52,48 +52,77 @@ def get_allowed_user_identifiers(user_payload: Dict[str, Any] = None) -> Optiona
     meta = user_payload.get("user_metadata") or {}
     user_name = str(meta.get("full_name") or user_payload.get("name") or "").lower().strip()
     if user_name:
+        clean_user_name = user_name.replace("(sales manager)", "").replace("(manager)", "").replace("(team lead)", "").strip()
         allowed_names.add(user_name)
+        if clean_user_name:
+            allowed_names.add(clean_user_name)
 
-    # 2. Sales Manager -> Include assigned Sales Executives
+    # 2. Sales Manager -> Include assigned Sales Executives and Team Leads recursively
     if norm_role == "sales_manager":
         try:
+            from app.modules.hrms.repository import HRMSRepository
             repo = UserRepository()
-            all_users = repo.get_all_users()
+            hrms_repo = HRMSRepository()
+            user_list = repo.get_all_users()
+            emp_list = hrms_repo.get_all_employees()
+
+            # Combine and deduplicate users
+            all_users = []
+            seen_keys = set()
+            for u in (user_list + emp_list):
+                u_email = str(u.get("email") or "").lower().strip()
+                u_id = str(u.get("employee_id") or u.get("id") or u.get("auth_user_id") or "").strip()
+                key = u_email or u_id
+                if key and key in seen_keys:
+                    continue
+                if key:
+                    seen_keys.add(key)
+                all_users.append(u)
 
             def collect_subordinates(manager_ids: Set[str], manager_emails: Set[str], manager_codes: Set[str]) -> bool:
                 found_new = False
                 for u in all_users:
                     exec_email = str(u.get("email") or "").lower().strip()
                     exec_code = str(u.get("employee_code") or u.get("employee_id") or "").strip()
-                    exec_id = str(u.get("id") or u.get("auth_user_id") or u.get("user_id") or "").strip()
+                    exec_id = str(u.get("id") or u.get("auth_user_id") or u.get("employee_id") or "").strip()
+                    exec_name = str(u.get("name") or u.get("full_name") or "").lower().strip()
+                    clean_exec_name = exec_name.replace("(sales manager)", "").replace("(manager)", "").replace("(team lead)", "").strip()
 
-                    # Skip if already in the allowed sets
-                    if (exec_id and exec_id in manager_ids) or (exec_email and exec_email in manager_emails) or (exec_code and exec_code in manager_codes):
+                    # Skip self or already collected
+                    if (user_email and exec_email == user_email) or (user_id and exec_id == user_id):
+                        continue
+                    if (exec_id and exec_id in manager_ids) or (exec_email and exec_email in manager_emails):
                         continue
 
-                    r_id = str(u.get("reporting_manager_id") or u.get("reporting_manager") or "").strip()
-                    r_email = str(u.get("reporting_manager_email") or "").lower().strip()
+                    r_id = str(u.get("reporting_manager_id") or u.get("reporting_manager") or u.get("reporting_team_lead_id") or u.get("reporting_tl_id") or "").strip()
+                    r_email = str(u.get("reporting_manager_email") or u.get("reporting_team_lead_email") or u.get("reporting_tl_email") or u.get("reporting_email") or "").lower().strip()
+                    r_name = str(u.get("reporting_manager_name") or u.get("reporting_team_lead_name") or u.get("reporting_tl_name") or "").lower().strip()
+                    clean_r_name = r_name.replace("(sales manager)", "").replace("(manager)", "").replace("(team lead)", "").strip()
+
+                    if clean_r_name in ("not assigned", "none", "n/a", "null", ""):
+                        clean_r_name = ""
 
                     is_assigned = (
                         (r_id and r_id in manager_ids)
                         or (r_email and r_email in manager_emails)
-                        or (r_id and r_id in manager_codes)
+                        or (clean_r_name and any(an in clean_r_name or clean_r_name in an for an in allowed_names if len(an) >= 3))
                     )
 
                     if is_assigned:
-                        exec_name = str(u.get("name") or u.get("full_name") or "").lower().strip()
                         if exec_email:
                             manager_emails.add(exec_email)
                         if exec_code:
                             manager_codes.add(exec_code)
                         if exec_id:
                             manager_ids.add(exec_id)
-                        if exec_name:
+                        if exec_name and exec_name not in ("not assigned", "none", "n/a", "null"):
                             allowed_names.add(exec_name)
+                            if clean_exec_name:
+                                allowed_names.add(clean_exec_name)
                         found_new = True
                 return found_new
 
-            # Keep collecting down the hierarchy tree until no more subordinates are found
+            # Keep collecting down the hierarchy tree (Manager -> Team Lead -> Sales Executives)
             while collect_subordinates(allowed_ids, allowed_emails, allowed_codes):
                 pass
 
@@ -121,32 +150,35 @@ def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[s
     allowed_ids = allowed.get("ids", set())
     allowed_names = allowed.get("names", set())
 
-    # Extract all emails on record (assigned, creator, employee, reporting manager)
+    # Extract all emails on record (assigned, creator, employee, reporting manager, team lead)
     emails_to_check = {
         str(item.get("assigned_to_email") or "").lower().strip(),
         str(item.get("assignedToEmail") or "").lower().strip(),
         str(item.get("executive_email") or "").lower().strip(),
         str(item.get("executiveEmail") or "").lower().strip(),
+        str(item.get("sales_executive_email") or "").lower().strip(),
         str(item.get("employee_email") or "").lower().strip(),
         str(item.get("email") or "").lower().strip(),
         str(item.get("owner_email") or "").lower().strip(),
         str(item.get("created_by_email") or "").lower().strip(),
         str(item.get("reporting_manager_email") or "").lower().strip(),
+        str(item.get("team_lead_email") or "").lower().strip(),
+        str(item.get("sales_manager_email") or "").lower().strip(),
     } - {""}
 
     # Extract IDs / Codes on record.
-    # IMPORTANT: created_by and assigned_to are Supabase auth UUIDs — they must be
-    # compared against allowed_ids (not just allowed_codes). We include them in
-    # codes_to_check because that set is tested against BOTH allowed_codes AND allowed_ids.
     codes_to_check = {
         str(item.get("employee_id") or "").strip(),
         str(item.get("employee_code") or "").strip(),
         str(item.get("emp_code") or "").strip(),
         str(item.get("visitor_id") or "").strip(),
         str(item.get("user_id") or "").strip(),
-        str(item.get("created_by") or "").strip(),   # auth UUID — checked vs allowed_ids below
-        str(item.get("assigned_to") or "").strip(),  # auth UUID — checked vs allowed_ids below
+        str(item.get("created_by") or "").strip(),
+        str(item.get("assigned_to") or "").strip(),
         str(item.get("reporting_manager_id") or "").strip(),
+        str(item.get("team_lead_id") or "").strip(),
+        str(item.get("sales_executive_id") or "").strip(),
+        str(item.get("sales_manager_id") or "").strip(),
     } - {""}
 
     # Extract Names on record
@@ -158,8 +190,11 @@ def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[s
         str(item.get("employee_name") or "").lower().strip(),
         str(item.get("created_by_name") or "").lower().strip(),
         str(item.get("reporting_manager_name") or "").lower().strip(),
+        str(item.get("team_lead_name") or "").lower().strip(),
         str(item.get("sales_executive") or "").lower().strip(),
+        str(item.get("sales_executive_name") or "").lower().strip(),
         str(item.get("sales_manager") or "").lower().strip(),
+        str(item.get("sales_manager_name") or "").lower().strip(),
     } - {""}
 
     # Parse metadata tags embedded in notes/description (e.g. "Email: xyz | EMP: 123")

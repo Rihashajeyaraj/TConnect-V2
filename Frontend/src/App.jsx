@@ -68,6 +68,16 @@ const ManagerHrms = lazyWithRetry(() => import('./roles/manager/ManagerHrms.jsx'
 const ManagerSettings = lazyWithRetry(() => import('./roles/manager/ManagerSettings.jsx'))
 const ManagerSmartMap = lazyWithRetry(() => import('./roles/manager/ManagerSmartMap.jsx'))
 
+// Team Lead Portal
+const TeamLeadLayout = lazyWithRetry(() => import('./roles/teamlead/TeamLeadLayout.jsx'))
+const TeamLeadDashboard = lazyWithRetry(() => import('./roles/teamlead/TeamLeadDashboard.jsx'))
+const TeamLeadAttendance = lazyWithRetry(() => import('./roles/teamlead/TeamLeadAttendance.jsx'))
+const TeamLeadLeads = lazyWithRetry(() => import('./roles/teamlead/TeamLeadLeads.jsx'))
+const TeamLeadVisits = lazyWithRetry(() => import('./roles/teamlead/TeamLeadVisits.jsx'))
+const TeamLeadExpenses = lazyWithRetry(() => import('./roles/teamlead/TeamLeadExpenses.jsx'))
+const TeamLeadSmartMap = lazyWithRetry(() => import('./roles/teamlead/TeamLeadSmartMap.jsx'))
+const TeamLeadHrms = lazyWithRetry(() => import('./roles/teamlead/TeamLeadHrms.jsx'))
+
 // Sales Executive Portal
 const SalesLayout = lazyWithRetry(() => import('./roles/sales/SalesLayout.jsx'))
 const Dashboard = lazyWithRetry(() => import('./roles/sales/Dashboard.jsx'))
@@ -83,6 +93,7 @@ const SmartClientMap = lazyWithRetry(() => import('./roles/sales/SmartClientMap.
 
 const SALES_ROLES = [
   'sales', 'executive', 'Sales Executive',
+  'team lead', 'Team Lead', 'lead', 'tl',
   'manager', 'Sales Manager',
   'admin', 'Admin', 'ceo',
 ]
@@ -159,7 +170,7 @@ function App() {
             </Route>
 
             {/* ── Manager Portal ──────────────────────────────── */}
-            <Route element={<ProtectedRoute allowedRoles={['manager', 'Sales Manager', 'admin', 'Admin']} />}>
+            <Route element={<ProtectedRoute allowedRoles={['manager', 'Sales Manager', 'team lead', 'Team Lead', 'lead', 'tl', 'admin', 'Admin']} />}>
               <Route path="/manager" element={<ManagerLayout />}>
                 <Route index element={<ManagerDashboard />} />
                 <Route path="dashboard" element={<ManagerDashboard />} />
@@ -181,13 +192,32 @@ function App() {
               </Route>
             </Route>
 
-            {/* ── Sales Executive Portal ──────────────────────── */}
+            {/* ── Team Lead Portal (Clean Sales Manager UI Clone) ───────── */}
+            <Route element={<ProtectedRoute allowedRoles={['team_lead', 'team lead', 'Team Lead', 'lead', 'tl', 'manager', 'admin', 'ceo']} />}>
+              <Route path="/team-lead" element={<TeamLeadLayout />}>
+                <Route index element={<TeamLeadDashboard />} />
+                <Route path="dashboard" element={<TeamLeadDashboard />} />
+                <Route path="map" element={<TeamLeadSmartMap />} />
+                <Route path="attendance" element={<TeamLeadAttendance />} />
+                <Route path="visits" element={<TeamLeadVisits />} />
+                <Route path="leads" element={<TeamLeadLeads />} />
+                <Route path="customers" element={<ManagerCustomers />} />
+                <Route path="expenses" element={<TeamLeadExpenses />} />
+                <Route path="team" element={<ManagerTeam />} />
+                <Route path="reports" element={<ManagerReports />} />
+                <Route path="hrms" element={<TeamLeadHrms />} />
+                <Route path="notifications" element={<ManagerNotifications />} />
+                <Route path="settings" element={<ManagerSettings />} />
+              </Route>
+            </Route>
+
+            {/* ── Unified Sales Portal ───────── */}
             <Route element={<ProtectedRoute allowedRoles={SALES_ROLES} />}>
               <Route path="/sales" element={<SalesLayout />}>
                 <Route index element={<Dashboard />} />
                 <Route path="dashboard" element={<Dashboard />} />
                 <Route path="map" element={<SmartClientMap />} />
-                <Route path="attendance" element={<Navigate to="/sales/hrms?tab=attendance" replace />} />
+                <Route path="attendance" element={<Attendance />} />
                 <Route path="customers" element={<Customers />} />
                 <Route path="client-log" element={<ClientLog />} />
                 <Route path="visits" element={<ClientLog />} />
@@ -198,6 +228,14 @@ function App() {
                 <Route path="notifications" element={<Notifications />} />
                 <Route path="hrms" element={<HRMS />} />
                 <Route path="todo" element={<Todo />} />
+
+                {/* Team Management pages directly under /sales */}
+                <Route path="team" element={<ManagerTeam />} />
+                <Route path="team-map" element={<ManagerSmartMap />} />
+                <Route path="team-attendance" element={<ManagerAttendance />} />
+                <Route path="team-visits" element={<ManagerVisits />} />
+                <Route path="team-expenses" element={<ManagerExpenses />} />
+                <Route path="team-reports" element={<ManagerReports />} />
               </Route>
             </Route>
 

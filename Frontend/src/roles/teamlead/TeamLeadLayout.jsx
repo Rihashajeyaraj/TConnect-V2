@@ -6,10 +6,8 @@ import PhotoLightboxModal from '../../common/PhotoLightboxModal.jsx'
 import {
   LayoutDashboard,
   Users,
-  UserCheck,
   Target,
   CalendarDays,
-  GitBranch,
   Receipt,
   Bell,
   LogOut,
@@ -19,22 +17,21 @@ import {
   ShieldCheck,
   Settings,
   UserCircle,
-  Upload,
-  Eye,
-  FileUp,
-  Mail,
-  Phone,
   MapPin,
   Building2,
+  GripVertical,
+  Pencil,
+  Save,
+  Camera,
+  FileUp,
   Briefcase,
   CreditCard,
   HeartPulse,
   Code2,
   AlertCircle,
-  Pencil,
-  Save,
-  Camera,
-  GripVertical,
+  Upload,
+  Eye,
+  UserCheck,
 } from 'lucide-react'
 import { hrmsAPI } from '../../services/api.js'
 import TwiteConnectLogo from '../../common/TwiteConnectLogo.jsx'
@@ -43,22 +40,22 @@ import useNotificationCount from '../../hooks/useNotificationCount.js'
 import { clearUserCache } from '../../utils/userScope.js'
 
 const mapDbToFrontend = (emp) => {
-  if (!emp) return {};
+  if (!emp) return {}
   return {
     fullName: emp.name ?? `${emp.first_name || ""} ${emp.last_name || ""}`.trim() ?? "",
-    employeeId: emp.employee_code ?? emp.employee_id ?? "MGR-001",
+    employeeId: emp.employee_code ?? emp.employee_id ?? "TL-001",
     officialEmail: emp.email ?? "",
     phone: emp.phone ?? emp.mobile ?? "+91 98765 00099",
-    role: emp.role ?? "Sales Manager",
+    role: emp.role ?? "Team Lead",
     team: emp.department ?? emp.dept ?? "Sales & Business Development",
-    designation: emp.designation ?? "Senior Sales Manager",
+    designation: emp.designation ?? "Sales Team Lead",
     gender: emp.gender ?? "Male",
     employmentType: emp.employment_type ?? "Full-time",
     employmentStatus: emp.status ?? "Active",
     joinDate: emp.joining_date ?? "2024-01-01",
     workMode: emp.work_mode ?? "In Office",
     workLocation: emp.work_location ?? "Chennai, Tamil Nadu",
-    reportingManager: emp.reporting_manager_name ?? emp.reporting_manager_email ?? "CEO / Founder (CEO)",
+    reportingManager: emp.reporting_manager_name ?? emp.reporting_manager_email ?? "Sales Manager",
     dob: emp.date_of_birth ?? "",
     maritalStatus: emp.marital_status ?? "Married",
     bloodGroup: emp.blood_group ?? "O+",
@@ -71,7 +68,7 @@ const mapDbToFrontend = (emp) => {
     state: emp.state ?? "Tamil Nadu",
     country: emp.country ?? "India",
     postalCode: emp.postal_code ?? "600020",
-    primarySkills: emp.primary_skills ?? "Sales Leadership, CRM Systems",
+    primarySkills: emp.primary_skills ?? "Team Leadership, Field Operations",
     secondarySkills: emp.secondary_skills ?? "Business Development, Analytics",
     tools: emp.tools ?? "TwiteConnect, Excel, Google Workspace",
     emergencyName: emp.emergency_name ?? "",
@@ -83,59 +80,19 @@ const mapDbToFrontend = (emp) => {
     ifsc: emp.ifsc ?? "",
     branch: emp.branch ?? "",
     incentivePercentage: emp.incentive_percentage !== undefined && emp.incentive_percentage !== null ? Number(emp.incentive_percentage) : 5.0,
-  };
-};
-
-const mapFrontendToDb = (prof) => {
-  const [first_name, ...last_name_parts] = (prof.fullName || "").split(" ");
-  const last_name = last_name_parts.join(" ") || ".";
-  return {
-    first_name: first_name || "Sales",
-    last_name: last_name || "Manager",
-    name: prof.fullName,
-    phone: prof.phone,
-    mobile: prof.phone,
-    gender: prof.gender,
-    employment_type: prof.employmentType,
-    work_mode: prof.workMode,
-    work_location: prof.workLocation,
-    date_of_birth: prof.dob,
-    marital_status: prof.maritalStatus,
-    blood_group: prof.bloodGroup,
-    pan_id: prof.panId,
-    personal_email: prof.personalEmail,
-    alternate_contact: prof.alternateContact,
-    current_address: prof.currentAddress,
-    permanent_address: prof.permanentAddress,
-    city: prof.city,
-    state: prof.state,
-    country: prof.country,
-    postal_code: prof.postalCode,
-    primary_skills: prof.primarySkills,
-    secondary_skills: prof.secondarySkills,
-    tools: prof.tools,
-    emergency_name: prof.emergencyName,
-    emergency_relationship: prof.emergencyRelationship,
-    emergency_contact: prof.emergencyContact,
-    account_holder: prof.accountHolder,
-    bank_name: prof.bankName,
-    account_number: prof.accountNumber,
-    ifsc: prof.ifsc,
-    branch: prof.branch,
-    incentive_percentage: prof.incentive_percentage !== undefined && prof.incentive_percentage !== null ? Number(prof.incentive_percentage) : 5.0,
-  };
-};
+  }
+}
 
 const navItems = [
-  { label: 'Dashboard', icon: LayoutDashboard, path: '/manager' },
-  { label: 'Smart Radar Map', icon: MapPin, path: '/manager/map' },
-  { label: 'Total Leads', icon: Target, path: '/manager/leads' },
-  { label: 'Field Visit Audit', icon: CalendarDays, path: '/manager/visits' },
-  { label: 'Expense Claims', icon: Receipt, path: '/manager/expenses' },
-  { label: 'Clients', icon: Building2, path: '/manager/customers' },
-  { label: 'Team & EOD Reports', icon: Users, path: '/manager/team' },
-  { label: 'HRMS', icon: ShieldCheck, path: '/manager/hrms' },
-  { label: 'Notifications', icon: Bell, path: '/manager/notifications' },
+  { label: 'Dashboard', icon: LayoutDashboard, path: '/team-lead/dashboard' },
+  { label: 'Smart Radar Map', icon: MapPin, path: '/team-lead/map' },
+  { label: 'Total Leads', icon: Target, path: '/team-lead/leads' },
+  { label: 'Field Visit Audit', icon: CalendarDays, path: '/team-lead/visits' },
+  { label: 'Expense Claims', icon: Receipt, path: '/team-lead/expenses' },
+  { label: 'Clients', icon: Building2, path: '/team-lead/customers' },
+  { label: 'Team & EOD Reports', icon: Users, path: '/team-lead/team' },
+  { label: 'HRMS', icon: ShieldCheck, path: '/team-lead/hrms' },
+  { label: 'Notifications', icon: Bell, path: '/team-lead/notifications' },
 ]
 
 const PROFILE_DEFAULTS = {
@@ -143,18 +100,17 @@ const PROFILE_DEFAULTS = {
   employeeId: '',
   officialEmail: '',
   phone: '',
-  role: 'Sales Manager',
+  role: 'Team Lead',
   team: 'Sales & Business Development',
-  designation: 'Senior Sales Manager',
+  designation: 'Sales Team Lead',
   gender: 'Male',
   employmentType: 'Full-time',
   employmentStatus: 'Active',
   joinDate: '2024-01-01',
   workMode: 'In Office',
   workLocation: 'Chennai, Tamil Nadu',
-  reportingManager: 'CEO / Founder (CEO)',
+  reportingManager: 'Sales Manager',
   incentivePercentage: 5.0,
-  // Personal
   dob: '',
   maritalStatus: 'Married',
   bloodGroup: 'O+',
@@ -167,15 +123,12 @@ const PROFILE_DEFAULTS = {
   state: "Tamil Nadu",
   country: "India",
   postalCode: "600020",
-  // Skills
-  primarySkills: 'Sales Leadership, CRM Systems',
+  primarySkills: 'Team Leadership, Field Operations',
   secondarySkills: 'Business Development, Analytics',
   tools: 'TwiteConnect, Excel, Google Workspace',
-  // Emergency
   emergencyName: '',
   emergencyRelationship: 'Spouse',
   emergencyContact: '',
-  // Bank
   accountHolder: '',
   bankName: '',
   accountNumber: '',
@@ -184,14 +137,14 @@ const PROFILE_DEFAULTS = {
 }
 
 const DOCUMENT_DEFAULTS = [
-  { id: 'doc_m1', name: 'Aadhar Card', status: 'pending', fileUrl: null, fileName: '' },
-  { id: 'doc_m2', name: 'Offer / Appointment Letter', status: 'pending', fileUrl: null, fileName: '' },
-  { id: 'doc_m3', name: 'PAN Card', status: 'pending', fileUrl: null, fileName: '' },
-  { id: 'doc_m4', name: 'Manager Agreement', status: 'pending', fileUrl: null, fileName: '' },
-  { id: 'doc_m5', name: 'Bank Passbook / Cheque', status: 'pending', fileUrl: null, fileName: '' },
+  { id: 'doc_tl1', name: 'Aadhar Card', status: 'pending', fileUrl: null, fileName: '' },
+  { id: 'doc_tl2', name: 'Offer / Appointment Letter', status: 'pending', fileUrl: null, fileName: '' },
+  { id: 'doc_tl3', name: 'PAN Card', status: 'pending', fileUrl: null, fileName: '' },
+  { id: 'doc_tl4', name: 'Team Lead Agreement', status: 'pending', fileUrl: null, fileName: '' },
+  { id: 'doc_tl5', name: 'Bank Passbook / Cheque', status: 'pending', fileUrl: null, fileName: '' },
 ]
 
-export default function ManagerLayout() {
+export default function TeamLeadLayout() {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
   const { unreadCount } = useNotificationCount()
@@ -204,24 +157,24 @@ export default function ManagerLayout() {
   const [previewDoc, setPreviewDoc] = useState(null)
   const [saving, setSaving] = useState(false)
 
-  const managerPhotoInputRef = useRef(null)
   const [cropImageSrc, setCropImageSrc] = useState(null)
   const [isUploadingPhoto, setIsUploadingPhoto] = useState(false)
   const [showExpandedHeaderPhoto, setShowExpandedHeaderPhoto] = useState(false)
 
-  // ── Profile Photo State ───────────────────────────────────────────────────
+  const location = useLocation()
+  const navigate = useNavigate()
+
   const [profilePhoto, setProfilePhoto] = useState(() => {
-    try { return localStorage.setItem('tc_manager_photo') || null } catch { return null }
+    try { return localStorage.getItem('tc_tl_photo') || null } catch { return null }
   })
 
-  // Load latest profile photo from Supabase DB on layout mount
   useEffect(() => {
     hrmsAPI.getEmployeeById('self')
       .then(res => {
         const photo = res?.data?.profile_photo || res?.profile_photo
         if (photo) {
           setProfilePhoto(photo)
-          try { localStorage.setItem('tc_manager_photo', photo) } catch (_) {}
+          try { localStorage.setItem('tc_tl_photo', photo) } catch (_) {}
         }
       })
       .catch(() => {})
@@ -230,11 +183,6 @@ export default function ManagerLayout() {
   const handlePhotoUpload = (e) => {
     const file = e.target.files?.[0]
     if (!file) return
-
-    console.log("[ProfilePhoto] File selected")
-    console.log("[ProfilePhoto] File name:", file.name)
-    console.log("[ProfilePhoto] File type:", file.type)
-    console.log("[ProfilePhoto] File size:", file.size)
 
     if (!file.type.startsWith('image/')) {
       showToast('Please upload an image file (JPG, PNG, etc.)', 'error')
@@ -254,18 +202,15 @@ export default function ManagerLayout() {
     try {
       setIsUploadingPhoto(true)
       showToast('Uploading cropped profile photo to Storage...', 'info')
-      console.log("[ProfilePhoto] Uploading cropped file to Supabase Storage...")
       const res = await hrmsAPI.uploadAvatar('self', croppedFile)
-      console.log("[ProfilePhoto] Storage & DB Upload response:", res)
 
       const newPhotoUrl = res?.data?.profile_photo || res?.profile_photo
       if (!newPhotoUrl) {
         throw new Error('Database update failed: profile_photo empty in response')
       }
 
-      console.log("[ProfilePhoto] Successfully saved photo URL:", newPhotoUrl)
       setProfilePhoto(newPhotoUrl)
-      try { localStorage.setItem('tc_manager_photo', newPhotoUrl) } catch (e) { }
+      try { localStorage.setItem('tc_tl_photo', newPhotoUrl) } catch (e) { }
       showToast('Profile photo cropped & saved to Database successfully!', 'success')
       setCropImageSrc(null)
     } catch (err) {
@@ -280,18 +225,16 @@ export default function ManagerLayout() {
     try {
       await hrmsAPI.updateEmployee('self', { profile_photo: null })
       setProfilePhoto(null)
-      try { localStorage.removeItem('tc_manager_photo') } catch (e) { }
+      try { localStorage.removeItem('tc_tl_photo') } catch (e) { }
       showToast('Profile photo removed successfully.', 'info')
     } catch (err) {
       showToast(`Failed to remove profile photo: ${err.message || err}`, 'error')
     }
   }
-  const location = useLocation()
-  const navigate = useNavigate()
 
   const userEmail = (currentUser?.email || "").toLowerCase().trim();
   const [sidebarItems, setSidebarItems] = useState(() => {
-    const saved = localStorage.getItem(`tc_sidebar_order_manager_${userEmail}`);
+    const saved = localStorage.getItem(`tc_sidebar_order_tl_${userEmail}`);
     if (saved) {
       try {
         const labels = JSON.parse(saved);
@@ -313,31 +256,6 @@ export default function ManagerLayout() {
     }
     return navItems;
   });
-
-  useEffect(() => {
-    const saved = localStorage.getItem(`tc_sidebar_order_manager_${userEmail}`);
-    if (saved) {
-      try {
-        const labels = JSON.parse(saved);
-        const ordered = [];
-        labels.forEach(label => {
-          const target = label === 'Customers' ? 'Clients' : label;
-          const match = navItems.find(n => n.label === target || n.label === label);
-          if (match && !ordered.some(o => o.path === match.path)) ordered.push(match);
-        });
-        navItems.forEach(n => {
-          if (!ordered.some(o => o.path === n.path)) {
-            ordered.push(n);
-          }
-        });
-        setSidebarItems(ordered);
-      } catch (e) {
-        setSidebarItems(navItems);
-      }
-    } else {
-      setSidebarItems(navItems);
-    }
-  }, [userEmail]);
 
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState(null);
@@ -362,46 +280,43 @@ export default function ManagerLayout() {
   };
   const saveCustomization = () => {
     const labels = sidebarItems.map(item => item.label);
-    localStorage.setItem(`tc_sidebar_order_manager_${userEmail}`, JSON.stringify(labels));
+    localStorage.setItem(`tc_sidebar_order_tl_${userEmail}`, JSON.stringify(labels));
     setIsCustomizing(false);
     showToast("Sidebar layout order saved successfully!", "success");
   };
   const resetCustomization = () => {
-    localStorage.removeItem(`tc_sidebar_order_manager_${userEmail}`);
+    localStorage.removeItem(`tc_sidebar_order_tl_${userEmail}`);
     setSidebarItems(navItems);
     setIsCustomizing(false);
     showToast("Sidebar layout reset to default.", "info");
   };
 
-  const managerName = currentUser.name || currentUser.full_name || 'Sales Manager'
-  const managerRole = currentUser.role || 'Sales Manager'
-  const managerEmail = currentUser.email || ''
-  const managerInitials = currentUser.initials || (managerName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()) || 'SM'
-  const empCode = currentUser.employee_code || currentUser.employee_id || ''
+  const tlName = currentUser?.name || currentUser?.full_name || 'Team Lead'
+  const tlRole = currentUser?.role || 'Team Lead'
+  const tlEmail = currentUser?.email || ''
+  const empCode = currentUser?.employee_code || currentUser?.employee_id || ''
 
-  // ── Profile State ──────────────────────────────────────────────────────────
   const [profile, setProfile] = useState(() => {
     try {
-      const saved = JSON.parse(localStorage.getItem('tc_manager_profile') || '{}')
+      const saved = JSON.parse(localStorage.getItem('tc_tl_profile') || '{}')
       return {
         ...PROFILE_DEFAULTS,
-        fullName: managerName,
-        officialEmail: managerEmail,
+        fullName: tlName,
+        officialEmail: tlEmail,
         employeeId: empCode,
-        role: managerRole,
+        role: tlRole,
         ...saved,
       }
-    } catch { return { ...PROFILE_DEFAULTS, fullName: managerName, officialEmail: managerEmail, employeeId: empCode, role: managerRole } }
+    } catch { return { ...PROFILE_DEFAULTS, fullName: tlName, officialEmail: tlEmail, employeeId: empCode, role: tlRole } }
   })
 
-  const displayName = profile?.fullName || managerName
-  const displayInitials = (displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()) || 'SM'
+  const displayName = profile?.fullName || tlName
+  const displayInitials = (displayName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase()) || 'TL'
 
   useEffect(() => {
     if (!myProfileOpen) return
 
-    const code = 'self'
-    hrmsAPI.getEmployeeById(code)
+    hrmsAPI.getEmployeeById('self')
       .then((res) => {
         if (res && res.data) {
           const emp = res.data
@@ -412,34 +327,33 @@ export default function ManagerLayout() {
           }
           setProfile(mapped)
           originalProfileRef.current = { ...mapped }
-          localStorage.setItem('tc_manager_profile', JSON.stringify(mapped))
+          localStorage.setItem('tc_tl_profile', JSON.stringify(mapped))
           setProfilePhoto(emp.profile_photo || null)
           if (emp.profile_photo) {
-            localStorage.setItem('tc_manager_photo', emp.profile_photo)
+            localStorage.setItem('tc_tl_photo', emp.profile_photo)
           } else {
-            localStorage.removeItem('tc_manager_photo')
+            localStorage.removeItem('tc_tl_photo')
           }
           if (emp.documents) {
             try {
               const parsed = JSON.parse(emp.documents)
               if (Array.isArray(parsed) && parsed.length > 0) {
                 setDocumentsList(parsed)
-                localStorage.setItem('tc_manager_documents', JSON.stringify(parsed))
+                localStorage.setItem('tc_tl_documents', JSON.stringify(parsed))
               }
             } catch (err) {}
           }
         }
       })
       .catch((err) => {
-        console.warn("Could not retrieve online manager profile data:", err)
+        console.warn("Could not retrieve online team lead profile data:", err)
       })
 
     return () => {
       originalProfileRef.current = null
     }
-  }, [myProfileOpen, empCode, currentUser.employee_code, currentUser.id])
+  }, [myProfileOpen, empCode])
 
-  // Capture original profile once data is loaded (only when entering view mode)
   useEffect(() => {
     if (myProfileOpen && !editMode && originalProfileRef.current === null) {
       originalProfileRef.current = { ...profile }
@@ -459,10 +373,7 @@ export default function ManagerLayout() {
     setSaving(true)
     try {
       const code = 'self'
-      if (!code) throw new Error("No employee identifier found.")
 
-      // ── Build change diff ─────────────────────────────────────────────────
-      // Map frontend field names → DB field names (mirrors mapFrontendToDb)
       const EDITABLE_FIELD_MAP = {
         fullName:             "name",
         phone:                "phone",
@@ -510,19 +421,17 @@ export default function ManagerLayout() {
         }
       }
 
-      // Handle name split into first_name / last_name
       if (dbPayload.name) {
         const [firstName, ...rest] = (dbPayload.name || "").split(" ")
-        dbPayload.first_name = firstName || "Manager"
-        dbPayload.last_name  = rest.join(" ") || "."
+        dbPayload.first_name = firstName || "Team"
+        dbPayload.last_name  = rest.join(" ") || "Lead"
       }
 
-      // Always include documents and profile_photo in payload
       dbPayload.documents = JSON.stringify(documentsList)
       dbPayload.profile_photo = profilePhoto || null
 
-      const isPhotoChanged = profilePhoto !== localStorage.getItem('tc_manager_photo')
-      const isDocsChanged = JSON.stringify(documentsList) !== localStorage.getItem('tc_manager_documents')
+      const isPhotoChanged = profilePhoto !== localStorage.getItem('tc_tl_photo')
+      const isDocsChanged = JSON.stringify(documentsList) !== localStorage.getItem('tc_tl_documents')
 
       if (changedLabels.length === 0 && !isPhotoChanged && !isDocsChanged) {
         showToast('No changes to save.', 'info')
@@ -531,10 +440,7 @@ export default function ManagerLayout() {
         return
       }
 
-      // ── Send update ───────────────────────────────────────────────────────
       const res = await hrmsAPI.updateEmployee(code, dbPayload)
-
-      // ── Fetch fresh employee record from DB ───────────────────────────────
       const freshRes = await hrmsAPI.getEmployeeById(code)
       const freshEmployee = (freshRes && freshRes.data) ? freshRes.data : ((res && res.data) ? res.data : {})
 
@@ -543,24 +449,14 @@ export default function ManagerLayout() {
         ...mapDbToFrontend(freshEmployee),
       }
       setProfile(freshProfile)
-      // Update the original reference so next save diffs from the saved state
       originalProfileRef.current = { ...freshProfile }
-      localStorage.setItem('tc_manager_profile', JSON.stringify(freshProfile))
+      localStorage.setItem('tc_tl_profile', JSON.stringify(freshProfile))
 
       setProfilePhoto(freshEmployee.profile_photo || null)
       if (freshEmployee.profile_photo) {
-        localStorage.setItem('tc_manager_photo', freshEmployee.profile_photo)
+        localStorage.setItem('tc_tl_photo', freshEmployee.profile_photo)
       } else {
-        localStorage.removeItem('tc_manager_photo')
-      }
-      if (freshEmployee.documents) {
-        try {
-          const parsed = JSON.parse(freshEmployee.documents)
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setDocumentsList(parsed)
-            localStorage.setItem('tc_manager_documents', JSON.stringify(parsed))
-          }
-        } catch (_) {}
+        localStorage.removeItem('tc_tl_photo')
       }
 
       const fieldList = changedLabels.slice(0, 4).join(', ') + (changedLabels.length > 4 ? ` +${changedLabels.length - 4} more` : '')
@@ -568,15 +464,7 @@ export default function ManagerLayout() {
       if (!keepEditing) setEditMode(false)
     } catch (err) {
       console.error(err)
-      let errMsg = "Failed to save profile"
-      if (err.errors && Array.isArray(err.errors) && err.errors.length > 0) {
-        errMsg = err.errors.map(e => `${e.field || "field"}: ${e.message}`).join(", ")
-      } else if (err.detail) {
-        errMsg = typeof err.detail === "string" ? err.detail : JSON.stringify(err.detail)
-      } else if (err.message) {
-        errMsg = err.message
-      }
-      showToast(`Error: ${errMsg}`, 'error')
+      showToast(`Error: ${err.message || 'Failed to save profile'}`, 'error')
     } finally {
       setSaving(false)
     }
@@ -585,31 +473,18 @@ export default function ManagerLayout() {
   const handleProfileKeyDown = (e) => {
     if (!editMode) return;
     if (e.key === 'Enter') {
-      // Keep textarea Enter behavior normal (new line)
-      if (e.target && e.target.tagName === 'TEXTAREA') {
-        return;
-      }
-      // Only apply on desktop/laptop physical keyboards
+      if (e.target && e.target.tagName === 'TEXTAREA') return;
       const isMobileDevice = /Mobi|Android|iPhone|iPad|Windows Phone/i.test(navigator.userAgent);
-      if (isMobileDevice) {
-        return;
-      }
+      if (isMobileDevice) return;
       e.preventDefault();
-      // Open confirmation modal
       setShowProfileConfirm(true);
     }
   };
 
-
-  // ── Documents State ────────────────────────────────────────────────────────
   const [documentsList, setDocumentsList] = useState(() => {
-    const saved = JSON.parse(localStorage.getItem('tc_manager_documents') || '[]')
+    const saved = JSON.parse(localStorage.getItem('tc_tl_documents') || '[]')
     return saved.length > 0 ? saved : DOCUMENT_DEFAULTS
   })
-  // NOTE: Documents are intentionally NOT auto-synced to the backend on every
-  // change. They are saved explicitly when the user confirms via the modal
-  // (Continue Editing / Save & Exit). This prevents noisy background API calls
-  // and avoids creating spurious audit log entries on every document upload.
 
   const handleLogout = () => {
     clearUserCache()
@@ -617,36 +492,35 @@ export default function ManagerLayout() {
     window.location.href = '/'
   }
 
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
+    <div className="min-h-screen bg-[#FAF6F0] text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
 
       {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
-      <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
+      <header className="relative h-16 bg-[#FCF9F5] border-b border-[#E8D8C8] flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="mgr-card lg:hidden p-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
+            className="mgr-card lg:hidden p-2 rounded-lg text-[#6B4E3D] hover:bg-[#F3ECE2] cursor-pointer"
             aria-label="Toggle Navigation Sidebar"
           >
             {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
-          <Link to="/manager" className="flex items-center gap-2.5">
+          <Link to="/team-lead" className="flex items-center gap-2.5">
             <TwiteConnectLogo className="w-9 h-9" />
           </Link>
         </div>
 
-        {/* Center: Sleek Metallic Shimmer Indicator (Larger & Centered Absolutely) */}
+        {/* Center: Metallic Shimmer Indicator */}
         <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
-          <div className="flex items-center gap-3 bg-white border border-slate-200 rounded-full px-6 py-2.5 shadow-sm pointer-events-auto">
+          <div className="flex items-center gap-3 bg-[#FAF3EB] border border-[#E0D0C0] rounded-full px-6 py-2.5 shadow-xs pointer-events-auto">
             <span className="relative flex h-3 w-3">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D49A6A] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-[#D49A6A]"></span>
             </span>
             <span
               className="text-sm uppercase tracking-[0.3em] font-black"
               style={{
-                background: 'linear-gradient(to right, #475569 20%, #2563eb 40%, #60a5fa 60%, #475569 80%)',
+                background: 'linear-gradient(to right, #543D30 20%, #D49A6A 40%, #E2B284 60%, #543D30 80%)',
                 backgroundSize: '200% auto',
                 color: 'transparent',
                 WebkitBackgroundClip: 'text',
@@ -655,7 +529,7 @@ export default function ManagerLayout() {
                 display: 'inline-block'
               }}
             >
-              Sales Manager
+              Team Lead Portal
             </span>
             <style>{`
               @keyframes tc-shimmer {
@@ -669,16 +543,15 @@ export default function ManagerLayout() {
 
         {/* Top-Right Area */}
         <div className="flex items-center gap-1.5 sm:gap-3">
-
-          {/* Notification Bell with Dynamic Counter */}
+          {/* Notification Bell */}
           <button
-            onClick={() => navigate('/manager/notifications')}
-            className="p-2 rounded-xl text-slate-600 hover:bg-slate-100 relative transition cursor-pointer border border-slate-200"
+            onClick={() => navigate('/team-lead/notifications')}
+            className="p-2 rounded-xl text-[#6B4E3D] hover:bg-[#F3ECE2] relative transition cursor-pointer border border-[#E8D8C8]"
             title="Notifications & Inquiries"
           >
             <Bell size={19} />
             {unreadCount > 0 && (
-              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 rounded-full bg-rose-500 text-white text-[10px] flex items-center justify-center font-black shadow-xs ring-2 ring-white animate-pulse">
+              <span className="absolute -top-1.5 -right-1.5 min-w-[20px] h-[20px] px-1 rounded-full bg-[#D49A6A] text-white text-[10px] flex items-center justify-center font-black shadow-xs ring-2 ring-white animate-pulse">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </span>
             )}
@@ -688,25 +561,24 @@ export default function ManagerLayout() {
           <div className="relative">
             <button
               onClick={() => setProfileOpen(!profileOpen)}
-              className="mgr-card flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-blue-50 transition cursor-pointer"
+              className="mgr-card flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-[#F3ECE2] transition cursor-pointer"
             >
-              <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center text-white font-black text-sm shadow-xs ring-2 ring-blue-500/20 shrink-0">
+              <div className="w-9 h-9 rounded-full overflow-hidden bg-gradient-to-br from-[#543D30] to-[#966038] flex items-center justify-center text-white font-black text-sm shadow-xs ring-2 ring-[#D49A6A]/30 shrink-0">
                 {profilePhoto
                   ? <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
                   : displayInitials
                 }
               </div>
               <div className="hidden md:flex flex-col text-left">
-                <span className="font-extrabold text-xs text-slate-800 leading-tight flex items-center gap-1">
-                  {displayName} <ChevronDown size={13} className="text-slate-400" />
+                <span className="font-extrabold text-xs text-[#543D30] leading-tight flex items-center gap-1">
+                  {displayName} <ChevronDown size={13} className="text-[#966038]" />
                 </span>
-                <span className="text-[10px] text-blue-700 font-extrabold leading-tight truncate max-w-[140px]">{managerRole}</span>
+                <span className="text-[10px] text-[#966038] font-extrabold leading-tight truncate max-w-[140px]">{tlRole}</span>
               </div>
             </button>
 
             {profileOpen && (
               <>
-                {/* Backdrop to close dropdown when clicking outside */}
                 <div
                   className="fixed inset-0 z-40"
                   onClick={(e) => {
@@ -715,9 +587,8 @@ export default function ManagerLayout() {
                   }}
                 />
 
-                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 p-2 overflow-hidden">
-                  {/* Header */}
-                  <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-blue-900 to-blue-700 rounded-xl text-white mb-2 shadow-sm">
+                <div className="absolute right-0 mt-2 w-64 bg-white border border-[#E8D8C8] rounded-2xl shadow-2xl z-50 p-2 overflow-hidden">
+                  <div className="flex items-center gap-3 p-3 bg-gradient-to-r from-[#543D30] via-[#6B4E3D] to-[#966038] rounded-xl text-white mb-2 shadow-sm">
                     <div 
                       onClick={() => {
                         if (profilePhoto) {
@@ -725,8 +596,7 @@ export default function ManagerLayout() {
                           setShowExpandedHeaderPhoto(true)
                         }
                       }}
-                      className={`w-11 h-11 rounded-full overflow-hidden bg-white text-blue-700 flex items-center justify-center text-base font-black shadow-md border-2 border-white/40 shrink-0 ${profilePhoto ? 'cursor-pointer hover:scale-105 transition' : ''}`}
-                      title={profilePhoto ? "Click to elaborate profile photo" : ""}
+                      className={`w-11 h-11 rounded-full overflow-hidden bg-white text-[#543D30] flex items-center justify-center text-base font-black shadow-md border-2 border-white/40 shrink-0 ${profilePhoto ? 'cursor-pointer hover:scale-105 transition' : ''}`}
                     >
                       {profilePhoto
                         ? <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
@@ -735,8 +605,8 @@ export default function ManagerLayout() {
                     </div>
                     <div className="min-w-0">
                       <h4 className="font-extrabold text-sm truncate leading-tight">{displayName}</h4>
-                      <p className="text-[11px] opacity-90 truncate leading-tight mt-0.5">{managerEmail}</p>
-                      <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-white/20 text-[9px] font-bold tracking-wider uppercase">{managerRole}</span>
+                      <p className="text-[11px] opacity-90 truncate leading-tight mt-0.5">{tlEmail}</p>
+                      <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-white/20 text-[9px] font-bold tracking-wider uppercase">{tlRole}</span>
                     </div>
                   </div>
 
@@ -748,17 +618,10 @@ export default function ManagerLayout() {
                         setMyProfileOpen(true)
                         setEditMode(false)
                       }}
-                      className="mgr-card w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50/40 hover:text-blue-900 text-slate-700 font-bold text-xs transition cursor-pointer"
+                      className="mgr-card w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-[#F3ECE2] hover:text-[#543D30] text-[#6B4E3D] font-bold text-xs transition cursor-pointer"
                     >
-                      <UserCircle size={15} className="text-[#0c4160]" /> My Profile
+                      <UserCircle size={15} className="text-[#966038]" /> My Profile
                     </button>
-                    <Link
-                      to="/manager/settings"
-                      onClick={() => setProfileOpen(false)}
-                      className="flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-blue-50/40 hover:text-blue-900 text-slate-700 font-bold text-xs transition"
-                    >
-                      <Settings size={15} className="text-blue-600" /> Account & Security Settings
-                    </Link>
                   </div>
 
                   <div className="my-1.5 border-t border-slate-100" />
@@ -788,119 +651,104 @@ export default function ManagerLayout() {
           <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 lg:hidden transition-opacity" />
         )}
 
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-[#0b3c5d] border-r border-[#0b3c5d]/80 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 shrink-0 flex flex-col shadow-xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
-          {/* Mobile-only Sidebar Close Header */}
-          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#072438] shrink-0">
+        <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-[#543D30] border-r border-[#422E22] transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 shrink-0 flex flex-col shadow-xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+          <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#422E22] shrink-0">
             <div className="flex items-center gap-2">
-              <span className="w-6 h-6 rounded-lg bg-[#f5ab27] flex items-center justify-center text-[#0b3c5d] text-[10px] font-black">TC</span>
-              <span className="text-xs font-black text-white uppercase tracking-widest">Sales Manager</span>
+              <span className="w-6 h-6 rounded-lg bg-[#D49A6A] flex items-center justify-center text-[#422E22] text-[10px] font-black">TC</span>
+              <span className="text-xs font-black text-white uppercase tracking-widest">Team Lead Manager</span>
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
               className="p-1.5 rounded-xl text-slate-300 hover:bg-white/10 hover:text-white transition cursor-pointer"
-              aria-label="Close sidebar"
             >
               <X size={18} />
             </button>
           </div>
-          <div className="flex-1 p-4 space-y-1.5 overflow-y-auto pt-4 lg:pt-5">
-            {sidebarItems.map((item, index) => {
-              const Icon = item.icon
-              const isActive = location.pathname === item.path
-              return (
-                <div
-                  key={item.path}
-                  draggable={isCustomizing}
-                  onDragStart={(e) => handleDragStart(e, index)}
-                  onDragOver={(e) => handleDragOver(e, index)}
-                  onDrop={(e) => handleDrop(e, index)}
-                  onDragEnd={handleDragEnd}
-                  className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-[#0b3c5d]/20 rounded-2xl" : ""}`}
-                >
-                  <Link
-                    to={isCustomizing ? "#" : item.path}
-                    onClick={(e) => {
-                      if (isCustomizing) {
-                        e.preventDefault();
-                        return;
-                      }
-                      setSidebarOpen(false);
-                    }}
-                    className={`flex items-center gap-3.5 px-4 py-3 rounded-2xl font-semibold text-sm transition ${!isCustomizing && isActive
-                        ? 'bg-white/15 text-white shadow-md border-l-4 border-[#f5ab27]'
-                        : 'text-slate-300 hover:bg-white/10 hover:text-white'
-                      }`}
-                  >
-                    {isCustomizing && <GripVertical size={15} className="text-slate-400 shrink-0" />}
-                    <Icon className={`w-5 h-5 shrink-0 ${!isCustomizing && isActive ? 'text-[#f5ab27]' : 'text-slate-400'}`} />
-                    <span className="truncate tracking-tight">{item.label}</span>
-                    {unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
-                      <span className="ml-auto bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
-                        🔴 {unreadCount > 99 ? '99+' : unreadCount}
-                      </span>
-                    )}
-                  </Link>
-                </div>
-              )
-            })}
-            <div className="pt-2">
-              {isCustomizing ? (
-                <div className="pt-2 border-t border-white/10 space-y-1.5 px-1">
-                  <button
-                    type="button"
-                    onClick={saveCustomization}
-                    className="mgr-card w-full py-2 px-3 bg-[#0b3c5d] hover:bg-[#072438] text-white rounded-xl text-xs font-black transition cursor-pointer"
-                  >
-                    Save Order
-                  </button>
-                  <button
-                    type="button"
-                    onClick={resetCustomization}
-                    className="mgr-card w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black transition cursor-pointer"
-                  >
-                    Reset Default
-                  </button>
-                </div>
-              ) : (
+
+          <div className="p-4 flex-1 overflow-y-auto space-y-6 flex flex-col">
+            <div className="flex items-center justify-between px-2 pt-2">
+              <span className="text-[10px] font-extrabold text-[#E8D8C8]/80 uppercase tracking-widest">Navigation</span>
+              {!isCustomizing ? (
                 <button
-                  type="button"
                   onClick={() => setIsCustomizing(true)}
-                  className="mgr-card w-full py-2 px-3 border border-dashed border-white/20 hover:border-[#f5ab27] text-slate-400 hover:text-white rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                  className="text-[10px] font-extrabold text-amber-200 hover:text-white transition flex items-center gap-1 cursor-pointer bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md"
                 >
-                  <span>⚙️ Customize Sidebar</span>
+                  <GripVertical size={11} /> Reorder
                 </button>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={saveCustomization}
+                    className="text-[10px] font-extrabold text-emerald-300 hover:text-white bg-emerald-700/60 hover:bg-emerald-600 px-2 py-0.5 rounded-md cursor-pointer transition"
+                  >
+                    Save
+                  </button>
+                  <button
+                    onClick={resetCustomization}
+                    className="text-[10px] font-extrabold text-slate-300 hover:text-white bg-slate-700/60 px-1.5 py-0.5 rounded-md cursor-pointer transition"
+                  >
+                    Reset
+                  </button>
+                </div>
               )}
+            </div>
+
+            <nav className="space-y-1 flex-1">
+              {sidebarItems.map((item, index) => {
+                const Icon = item.icon
+                const isActive = location.pathname === item.path || (item.path === '/team-lead/dashboard' && (location.pathname === '/team-lead' || location.pathname === '/team-lead/'))
+                
+                return (
+                  <div
+                    key={item.path}
+                    draggable={isCustomizing}
+                    onDragStart={(e) => handleDragStart(e, index)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDrop={(e) => handleDrop(e, index)}
+                    onDragEnd={handleDragEnd}
+                    className={`relative group ${isCustomizing ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                  >
+                    <NavLink
+                      to={item.path}
+                      onClick={(e) => {
+                        if (isCustomizing) e.preventDefault()
+                        else setSidebarOpen(false)
+                      }}
+                      className={`flex items-center gap-3 px-3.5 py-3 rounded-xl font-bold text-xs transition duration-150 ${
+                        isActive
+                          ? 'bg-[#966038] text-white shadow-sm shadow-[#966038]/40 font-black'
+                          : 'text-[#E8D8C8] hover:bg-[#6B4E3D]/60 hover:text-white'
+                      }`}
+                    >
+                      {isCustomizing && (
+                        <GripVertical size={14} className="text-amber-200/50 shrink-0 animate-pulse" />
+                      )}
+                      <Icon className={`w-4 h-4 shrink-0 transition ${isActive ? 'text-[#FFF8F0]' : 'text-[#D49A6A] group-hover:text-[#FFF8F0]'}`} />
+                      <span className="truncate">{item.label}</span>
+                    </NavLink>
+                  </div>
+                )
+              })}
+            </nav>
+
+            <div className="pt-4 border-t border-white/10 mt-auto">
+              <div className="bg-[#422E22]/60 rounded-2xl p-3 border border-[#D49A6A]/30 flex items-center gap-3">
+                <div className="w-8 h-8 rounded-xl bg-[#966038] text-white flex items-center justify-center font-black text-xs shrink-0">
+                  {displayInitials}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-xs font-black text-white truncate">{displayName}</p>
+                  <p className="text-[10px] text-amber-200/90 font-bold">Team Lead Manager</p>
+                </div>
+              </div>
             </div>
           </div>
         </aside>
 
-        <main className="flex-1 p-4 lg:p-6 min-w-0 overflow-y-auto w-full pb-20 lg:pb-6 bg-[#F0F4F8]">
+        {/* Workspace Content */}
+        <main className="flex-1 min-w-0 p-4 lg:p-6 overflow-y-auto">
           <Outlet />
         </main>
-
-        {/* ── Mobile Bottom Navigation Dock ────────────────────────── */}
-        <div className="lg:hidden fixed bottom-0 inset-x-0 bg-[#0b3c5d] border-t border-white/10 z-40 px-2 py-1.5 flex items-center justify-around shadow-lg">
-          <NavLink to="/manager/dashboard" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
-            <LayoutDashboard size={18} />
-            <span>Home</span>
-          </NavLink>
-          <NavLink to="/manager/map" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
-            <MapPin size={18} />
-            <span>Map</span>
-          </NavLink>
-          <NavLink to="/manager/attendance" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
-            <UserCheck size={18} />
-            <span>Attendance</span>
-          </NavLink>
-          <NavLink to="/manager/leads" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
-            <Users size={18} />
-            <span>Leads</span>
-          </NavLink>
-          <NavLink to="/manager/hrms" className={({ isActive }) => `flex flex-col items-center gap-0.5 p-1 rounded-xl font-black text-[10px] transition ${isActive ? 'text-[#f5ab27]' : 'text-slate-400 hover:text-white'}`}>
-            <ShieldCheck size={18} />
-            <span>HRMS</span>
-          </NavLink>
-        </div>
       </div>
 
       {/* ══════════════════════════════════════════════════════════════════════
@@ -914,13 +762,13 @@ export default function ManagerLayout() {
           {/* Panel */}
           <div 
             onKeyDown={handleProfileKeyDown}
-            className="w-full max-w-2xl bg-slate-50 h-full overflow-y-auto flex flex-col shadow-2xl border-l border-slate-200"
+            className="w-full max-w-2xl bg-[#FAF6F0] h-full overflow-y-auto flex flex-col shadow-2xl border-l border-[#E8D8C8]"
           >
 
             {/* PANEL HEADER */}
-            <div className="bg-white border-b border-slate-200 px-5 py-4 flex items-center justify-between sticky top-0 z-10">
+            <div className="bg-white border-b border-[#E8D8C8] px-5 py-4 flex items-center justify-between sticky top-0 z-10">
               <div className="flex items-center gap-2">
-                <UserCircle size={20} className="text-blue-600" />
+                <UserCircle size={20} className="text-[#8B5E3C]" />
                 <h2 className="text-base font-black text-slate-900">My Profile</h2>
               </div>
               <div className="flex items-center gap-2">
@@ -935,7 +783,7 @@ export default function ManagerLayout() {
                         }
                         setEditMode(false)
                       }} 
-                      className="mgr-card px-3 py-1.5 rounded-xl text-xs font-extrabold bg-slate-100 text-slate-600 hover:bg-slate-200 transition cursor-pointer"
+                      className="mgr-card px-3 py-1.5 rounded-xl text-xs font-extrabold bg-[#F3ECE2] text-[#523A2B] hover:bg-[#E8D8C8] transition cursor-pointer"
                     >
                       Cancel
                     </button>
@@ -943,7 +791,7 @@ export default function ManagerLayout() {
                       type="button"
                       disabled={saving}
                       onClick={() => setShowProfileConfirm(true)} 
-                      className="mgr-card px-3 py-1.5 rounded-xl text-xs font-extrabold bg-blue-600 text-white cursor-pointer hover:bg-blue-700 transition flex items-center gap-1"
+                      className="mgr-card px-3 py-1.5 rounded-xl text-xs font-extrabold bg-[#8B5E3C] text-white cursor-pointer hover:bg-[#744C2E] transition flex items-center gap-1"
                       title="Click or press Enter to choose save action"
                     >
                       <Save size={13} /> {saving ? 'Saving...' : 'Done'}
@@ -953,7 +801,7 @@ export default function ManagerLayout() {
                   <button 
                     type="button"
                     onClick={() => setEditMode(true)} 
-                    className="mgr-card px-3 py-1.5 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-700 text-white cursor-pointer transition flex items-center gap-1 shadow-md shadow-blue-500/20"
+                    className="mgr-card px-3 py-1.5 rounded-xl text-xs font-black bg-[#8B5E3C] hover:bg-[#744C2E] text-white cursor-pointer transition flex items-center gap-1 shadow-md shadow-[#8B5E3C]/20"
                   >
                     <Pencil size={13} /> Edit Profile
                   </button>
@@ -961,7 +809,7 @@ export default function ManagerLayout() {
                 <button 
                   type="button"
                   onClick={closeProfilePanel} 
-                  className="mgr-card p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-slate-100 cursor-pointer"
+                  className="mgr-card p-1.5 rounded-xl text-slate-400 hover:text-slate-600 hover:bg-[#F3ECE2] cursor-pointer"
                 >
                   <X size={20} />
                 </button>
@@ -969,20 +817,17 @@ export default function ManagerLayout() {
             </div>
 
             {/* PROFILE AVATAR CARD */}
-            <div className="bg-white border-b border-slate-200 px-6 py-5 flex items-center gap-5">
-
-              {/* Avatar with Camera Upload Overlay */}
+            <div className="bg-white border-b border-[#E8D8C8] px-6 py-5 flex items-center gap-5">
               <div className="relative shrink-0 group">
-                <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-blue-900 to-blue-700 flex items-center justify-center text-white font-black text-3xl shadow-xl ring-4 ring-blue-500/20">
+                <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-[#3D2B1F] to-[#8B5E3C] flex items-center justify-center text-white font-black text-3xl shadow-xl ring-4 ring-[#C68B59]/30">
                   {profilePhoto
                     ? <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
                     : displayInitials
                   }
                 </div>
 
-                {/* Camera Overlay Button */}
                 <label
-                  htmlFor="manager_profile_photo"
+                  htmlFor="tl_profile_photo"
                   className="mgr-card absolute inset-0 rounded-full flex items-center justify-center bg-slate-900/50 opacity-0 group-hover:opacity-100 transition cursor-pointer"
                   title="Upload profile photo"
                 >
@@ -993,13 +838,12 @@ export default function ManagerLayout() {
                 </label>
                 <input
                   type="file"
-                  id="manager_profile_photo"
+                  id="tl_profile_photo"
                   className="hidden"
                   accept="image/jpeg,image/png,image/webp,image/gif"
                   onChange={handlePhotoUpload}
                 />
 
-                {/* Remove photo X badge — shown only when photo exists */}
                 {profilePhoto && (
                   <button
                     onClick={removePhoto}
@@ -1011,9 +855,8 @@ export default function ManagerLayout() {
                 )}
               </div>
 
-              {/* Name & Meta */}
               <div className="space-y-1">
-                <h2 className="text-xl font-black text-slate-900">{profile.fullName || managerName}</h2>
+                <h2 className="text-xl font-black text-slate-900">{profile.fullName || tlName}</h2>
                 <p className="text-sm text-slate-500 font-semibold">
                   {profile.employeeId} · {profile.team} · {profile.designation}
                 </p>
@@ -1022,7 +865,7 @@ export default function ManagerLayout() {
                 </span>
                 <div className="pt-0.5">
                   <label
-                    htmlFor="manager_profile_photo"
+                    htmlFor="tl_profile_photo"
                     className="mgr-card inline-flex items-center gap-1.5 text-[10px] font-extrabold text-blue-800 bg-blue-50 hover:bg-blue-100 border border-blue-300 px-2.5 py-1 rounded-lg cursor-pointer transition"
                   >
                     <Camera size={11} /> {profilePhoto ? 'Change Photo' : 'Upload Profile Photo'}
@@ -1033,8 +876,6 @@ export default function ManagerLayout() {
 
             {/* CONTENT SECTIONS */}
             <div className="p-5 space-y-4">
-
-              {/* Work Details */}
               <Section icon={Briefcase} title="Work Details">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                   <Field label="Full Name" value={profile.fullName} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, fullName: val }))} />
@@ -1054,7 +895,6 @@ export default function ManagerLayout() {
                 </div>
               </Section>
 
-              {/* Personal Details */}
               <Section icon={HeartPulse} title="Personal Details">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                   <Field label="Date of Birth" value={profile.dob} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, dob: val }))} />
@@ -1074,7 +914,6 @@ export default function ManagerLayout() {
                 </div>
               </Section>
 
-              {/* Skills & Technologies */}
               <Section icon={Code2} title="Skills & Technologies">
                 <div className="grid grid-cols-1 gap-4">
                   <Field label="Primary Skills" value={profile.primarySkills} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, primarySkills: val }))} />
@@ -1083,7 +922,6 @@ export default function ManagerLayout() {
                 </div>
               </Section>
 
-              {/* Emergency Contact */}
               <Section icon={AlertCircle} title="Emergency Contact" color="rose">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                   <Field label="Name" value={profile.emergencyName} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, emergencyName: val }))} />
@@ -1092,7 +930,6 @@ export default function ManagerLayout() {
                 </div>
               </Section>
 
-              {/* Bank Details */}
               <Section icon={CreditCard} title="Bank Details" color="emerald">
                 <div className="grid grid-cols-2 gap-x-6 gap-y-4">
                   <Field label="Account Holder" value={profile.accountHolder} editMode={editMode} onChange={(val) => setProfile(p => ({ ...p, accountHolder: val }))} />
@@ -1103,7 +940,6 @@ export default function ManagerLayout() {
                 </div>
               </Section>
 
-              {/* ── MY DOCUMENTS ─────────────────────────────────────────── */}
               <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">
                 <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
                   <FileUp size={16} className="text-blue-600" />
@@ -1145,7 +981,7 @@ export default function ManagerLayout() {
                       </div>
                       <div className="flex items-center gap-1.5">
                         <input
-                          type="file" id={`profile_doc_${doc.id}`} className="hidden"
+                          type="file" id={`profile_doc_tl_${doc.id}`} className="hidden"
                           accept=".pdf,.png,.jpg,.jpeg,.doc,.docx"
                           onChange={(e) => {
                             const file = e.target.files?.[0]; if (!file) return
@@ -1168,7 +1004,7 @@ export default function ManagerLayout() {
                         )}
                         {doc.status !== 'approved' && (
                           <button
-                            onClick={() => document.getElementById(`profile_doc_${doc.id}`)?.click()}
+                            onClick={() => document.getElementById(`profile_doc_tl_${doc.id}`)?.click()}
                             className="mgr-card text-xs font-extrabold px-2.5 py-1.5 rounded-xl bg-slate-900 text-white cursor-pointer flex items-center gap-1 hover:bg-slate-700 transition"
                           >
                             <Upload size={12} /> {doc.status === 'uploaded' ? 'Re-upload' : 'Upload'}
@@ -1179,14 +1015,13 @@ export default function ManagerLayout() {
                   ))}
                 </div>
 
-                {/* Custom Upload Drop Zone */}
-                <input type="file" id="profile_doc_custom" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
+                <input type="file" id="tl_profile_doc_custom" className="hidden" accept=".pdf,.png,.jpg,.jpeg,.doc,.docx,.xls,.xlsx"
                   onChange={(e) => {
                     const file = e.target.files?.[0]; if (!file) return
                     const reader = new FileReader()
                     reader.onload = (ev) => {
                       setDocumentsList((prev) => [...prev, {
-                        id: `doc_m_${Date.now()}`, name: file.name.split('.')[0],
+                        id: `doc_tl_${Date.now()}`, name: file.name.split('.')[0],
                         status: 'uploaded', fileName: file.name, fileUrl: ev.target.result,
                       }])
                       showToast(`${file.name} uploaded!`, 'success')
@@ -1195,7 +1030,7 @@ export default function ManagerLayout() {
                   }}
                 />
                 <div
-                  onClick={() => document.getElementById('profile_doc_custom')?.click()}
+                  onClick={() => document.getElementById('tl_profile_doc_custom')?.click()}
                   className="mgr-card border-2 border-dashed border-blue-300 hover:border-blue-500 bg-blue-50/30 hover:bg-blue-50/60 rounded-2xl p-6 text-center transition cursor-pointer group"
                 >
                   <FileUp size={28} className="text-blue-600 group-hover:scale-110 transition mx-auto mb-2" />
@@ -1209,7 +1044,6 @@ export default function ManagerLayout() {
         </div>
       )}
 
-      {/* ── Document Preview Modal ─────────────────────────────────────────── */}
       {previewDoc && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-[60]">
           <div className="bg-white rounded-3xl max-w-xl w-full p-6 space-y-4 shadow-2xl border border-slate-200">
@@ -1231,7 +1065,6 @@ export default function ManagerLayout() {
         </div>
       )}
 
-      {/* Profile Changes Confirmation Modal */}
       {showProfileConfirm && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-slate-200 space-y-4">
@@ -1272,15 +1105,11 @@ export default function ManagerLayout() {
               >
                 Cancel
               </button>
-              <p className="text-center text-[10px] text-slate-400 font-medium pt-1">
-                Cancel keeps edit mode active — no changes are saved.
-              </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* WhatsApp-style Image Cropper Modal */}
       {cropImageSrc && (
         <ImageCropperModal
           imageSrc={cropImageSrc}
@@ -1290,12 +1119,11 @@ export default function ManagerLayout() {
         />
       )}
 
-      {/* Full-Screen Photo Lightbox */}
       {showExpandedHeaderPhoto && (
         <PhotoLightboxModal
           photoUrl={profilePhoto}
           name={displayName}
-          role={managerRole}
+          role={tlRole}
           onClose={() => setShowExpandedHeaderPhoto(false)}
         />
       )}
@@ -1303,11 +1131,6 @@ export default function ManagerLayout() {
     </div>
   )
 }
-
-// ── Root Level Sub-Components (fixes React focus loss bug) ──────────────────
-// IMPORTANT: These MUST be at module level (outside ManagerLayout).
-// If defined inside the component function, React creates a new component
-// type on every render, causing inputs to unmount/remount and lose focus.
 
 const Section = ({ icon: Icon, title, color = 'blue', children }) => (
   <div className="bg-white rounded-2xl border border-slate-200 p-5 space-y-4">

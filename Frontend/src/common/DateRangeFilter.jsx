@@ -20,7 +20,7 @@ export default function DateRangeFilter({
   const [tempEnd, setTempEnd] = useState(customEndDate)
   const [isCustomOpen, setIsCustomOpen] = useState(selectedMode === 'Custom')
 
-  const modes = ['Today', 'This Week', 'This Month', 'Custom']
+  const modes = ['Today', 'This Week', 'This Month', 'This Year', 'Custom']
 
   const handleSelectMode = (mode) => {
     if (mode === 'Custom') {

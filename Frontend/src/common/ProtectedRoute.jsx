@@ -17,10 +17,11 @@ function ProtectedRoute({ allowedRoles }) {
 
   const isAllowed = isAuthenticated && (!allowedRoles || allowedRoles.length === 0 || allowedRoles.some((r) => {
     const roleLower = String(r).toLowerCase()
-    if (roleLower === 'ceo' && userNormalizedRole === 'ceo') return true
-    if (roleLower === 'admin' && userNormalizedRole === 'admin') return true
-    if (roleLower === 'manager' && userNormalizedRole === 'manager') return true
-    if ((roleLower === 'sales' || roleLower.includes('executive')) && userNormalizedRole === 'sales') return true
+    if (roleLower === 'ceo' && (userNormalizedRole === 'ceo' || rawRoleStr.includes('ceo'))) return true
+    if (roleLower === 'admin' && (userNormalizedRole === 'admin' || rawRoleStr.includes('admin'))) return true
+    if ((roleLower === 'team_lead' || roleLower === 'team lead' || roleLower === 'lead' || roleLower === 'tl') && (userNormalizedRole === 'team_lead' || userNormalizedRole === 'manager' || rawRoleStr.includes('lead') || rawRoleStr.includes('tl'))) return true
+    if ((roleLower === 'manager' || roleLower.includes('lead') || roleLower === 'tl') && (userNormalizedRole === 'manager' || userNormalizedRole === 'team_lead' || rawRoleStr.includes('manager') || rawRoleStr.includes('lead') || rawRoleStr.includes('tl'))) return true
+    if ((roleLower === 'sales' || roleLower.includes('executive')) && (userNormalizedRole === 'sales' || userNormalizedRole === 'manager' || userNormalizedRole === 'team_lead' || rawRoleStr.includes('sales') || rawRoleStr.includes('executive') || rawRoleStr.includes('lead') || rawRoleStr.includes('tl'))) return true
     return rawRoleStr.includes(roleLower) || roleLower.includes(rawRoleStr) || userNormalizedRole === roleLower
   }))
 

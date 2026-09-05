@@ -38,7 +38,7 @@ export function hasPermission(permissionKey, userPayload = null) {
 
   // Fallback role-level heuristics for legacy sessions
   const keyLower = permissionKey.toLowerCase()
-  if (roleNorm === 'manager') {
+  if (roleNorm === 'manager' || roleNorm === 'team_lead') {
     if (keyLower.includes('delete') && (keyLower.includes('users') || keyLower.includes('company'))) {
       return false
     }
@@ -81,7 +81,7 @@ export function getAccessScope(permissionKey, userPayload = null) {
 
   const roleNorm = authSession.normalizeRole(user)
   if (roleNorm === 'admin' || roleNorm === 'ceo') return 'All'
-  if (roleNorm === 'manager') return 'Team'
+  if (roleNorm === 'manager' || roleNorm === 'team_lead') return 'Team'
 
   const userPermissions = user.permissions || user.structured_permissions || []
   if (Array.isArray(userPermissions)) {
