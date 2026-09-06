@@ -17,6 +17,13 @@ import {
   Sparkles,
   Wrench,
   Users,
+  X,
+  Eye,
+  Download,
+  Trash2,
+  AlertCircle,
+  Calendar,
+  BookOpen,
 } from 'lucide-react'
 import { settingsAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
@@ -93,6 +100,41 @@ const ACTION_KEYS = [
   { key: 'delete', label: 'Delete', icon: '🗑️' },
   { key: 'export', label: 'Export', icon: '📥' },
 ]
+
+const SUB_ACTION_ITEMS = {
+  view: [
+    { key: 'open_page', label: 'Open Page', desc: 'Allow user to open page route' },
+    { key: 'view_cards', label: 'View Cards', desc: 'Display summary KPI cards' },
+    { key: 'view_details', label: 'View Details', desc: 'Open full record detail views' },
+  ],
+  create_edit: [
+    { key: 'create_records', label: 'Create Records', desc: 'Add new visits, leads, or claims' },
+    { key: 'edit_records', label: 'Edit Fields', desc: 'Modify existing record information' },
+    { key: 'update_status', label: 'Update Status', desc: 'Change lead stage or request status' },
+  ],
+  approve: [
+    { key: 'approve_leaves', label: 'Leave Approvals', desc: 'Approve or reject leave requests' },
+    { key: 'approve_expenses', label: 'Expense Approvals', desc: 'Approve or reject expense claims' },
+    { key: 'approve_attendance', label: 'Attendance Approvals', desc: 'Validate check-in & punch logs' },
+    { key: 'acknowledge_eod', label: 'EOD Acknowledgment', desc: 'Acknowledge end-of-day reports' },
+  ],
+  assign: [
+    { key: 'assign_leads', label: 'Assign Leads', desc: 'Distribute leads to sales executives' },
+    { key: 'assign_customers', label: 'Assign Customers', desc: 'Map customer accounts to reps' },
+    { key: 'map_hierarchy', label: 'Map Hierarchy', desc: 'Assign reporting manager & TL' },
+  ],
+  delete: [
+    { key: 'delete_leads', label: 'Delete Leads', desc: 'Remove lead/opportunity records' },
+    { key: 'delete_customers', label: 'Delete Customers', desc: 'Remove customer accounts' },
+    { key: 'delete_expenses', label: 'Delete Expenses', desc: 'Purge expense claim entries' },
+    { key: 'delete_users', label: 'Delete Users', desc: 'Deactivate or delete user accounts' },
+  ],
+  export: [
+    { key: 'export_excel', label: 'Export Excel (.xlsx)', desc: 'Download Excel spreadsheet' },
+    { key: 'export_csv', label: 'Export CSV (.csv)', desc: 'Download CSV raw dataset' },
+    { key: 'export_pdf', label: 'Export PDF Reports', desc: 'Generate printable PDF reports' },
+  ],
+}
 
 const MODULE_SPECIFIC_SUB_ACTIONS = {
   dashboard: {
@@ -432,8 +474,12 @@ function SettingsPermissionMatrixEditor({ role = 'Sales Executive', permissions 
 function AdminSettings() {
   const { showToast } = useToast()
   const fileInputRef = useRef(null)
+  const holidayPdfInputRef = useRef(null)
+  const handbookPdfInputRef = useRef(null)
+
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [previewPdfModal, setPreviewPdfModal] = useState(null)
 
   // System settings state
   const [settingsData, setSettingsData] = useState({
@@ -450,76 +496,170 @@ function AdminSettings() {
     currency: 'INR (₹)',
     time_zone: 'Asia/Kolkata (IST)',
     allow_self_signup: false,
-    rate_limit_per_min: 60
+    rate_limit_per_min: 60,
+    holiday_calendar_pdf: '',
+    holiday_calendar_filename: '',
+    holiday_calendar_uploaded_at: '',
+    twite_handbook_pdf: '',
+    twite_handbook_filename: '',
+    twite_handbook_uploaded_at: '',
   })
 
   // Role Permissions Master Defaults State
   const [rolePermissionsList, setRolePermissionsList] = useState([])
   const [selectedRoleKey, setSelectedRoleKey] = useState('Sales Executive')
 
-  // Default Roles Master Templates list
-  const defaultRolesList = [
-    { id: 'sales_executive', name: 'Sales Executive', icon: '🎯', desc: 'Field sales rep permissions' },
-    { id: 'team_lead', name: 'Team Lead', icon: '🔰', desc: 'Team oversight permissions' },
-    { id: 'sales_manager', name: 'Sales Manager', icon: '👔', desc: 'Departmental manager permissions' },
-    { id: 'super_admin', name: 'Super Admin', icon: '🛡️', desc: 'Full administrative access' },
-    { id: 'ceo_founder', name: 'CEO / Founder', icon: '👑', desc: 'Executive dashboard & company view' },
+  const DEFAULT_ROLES_LIST = [
+    { id: 'se', name: 'Sales Executive', icon: '💼' },
+    { id: 'tl', name: 'Team Lead', icon: '👥' },
+    { id: 'sm', name: 'Sales Manager', icon: '📊' },
+    { id: 'ceo', name: 'CEO / Founder', icon: '👑' },
   ]
 
-  // Combine default roles with any custom roles from DB
-  const availableRoles = useMemo(() => {
-    const map = new Map()
-    defaultRolesList.forEach(r => map.set(r.name, r))
-    rolePermissionsList.forEach(rp => {
-      if (rp.name && !map.has(rp.name)) {
-        map.set(rp.name, {
-          id: rp.id || rp.name.toLowerCase().replace(/\s+/g, '_'),
-          name: rp.name,
-          icon: '✨',
-          desc: 'Custom organization role'
+  const availableRoles = rolePermissionsList.length > 0
+    ? rolePermissionsList.map(r => ({
+        id: r.id || r.role_name || r.name,
+        name: r.role_name || r.name || 'Custom Role',
+        icon: (r.role_name || r.name || '').includes('Manager') ? '📊' : (r.role_name || r.name || '').includes('Lead') ? '👥' : (r.role_name || r.name || '').includes('CEO') ? '👑' : '💼',
+        ...r
+      }))
+    : DEFAULT_ROLES_LIST
+
+  const currentRoleObj = rolePermissionsList.find(r => (r.role_name || r.name) === selectedRoleKey) || { name: selectedRoleKey, custom_permissions: {} }
+
+  const handlePdfUpload = (e, targetType) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    if (!file.type.includes('pdf') && !file.name.toLowerCase().endsWith('.pdf')) {
+      showToast('Please select a valid PDF file (.pdf)!', 'error')
+      return
+    }
+
+    const reader = new FileReader()
+    reader.onload = (event) => {
+      const dataUrl = event.target?.result
+      if (typeof dataUrl === 'string') {
+        const nowIso = new Date().toISOString()
+        let updatedPayload = {}
+        if (targetType === 'holiday') {
+          updatedPayload = {
+            holiday_calendar_pdf: dataUrl,
+            holiday_calendar_filename: file.name,
+            holiday_calendar_uploaded_at: nowIso
+          }
+          try {
+            localStorage.setItem('tc_holiday_calendar_pdf', dataUrl)
+            localStorage.setItem('tc_holiday_calendar_meta', JSON.stringify({ name: file.name, date: nowIso }))
+          } catch (_) {}
+        } else if (targetType === 'handbook') {
+          updatedPayload = {
+            twite_handbook_pdf: dataUrl,
+            twite_handbook_filename: file.name,
+            twite_handbook_uploaded_at: nowIso
+          }
+          try {
+            localStorage.setItem('tc_twite_handbook_pdf', dataUrl)
+            localStorage.setItem('tc_twite_handbook_meta', JSON.stringify({ name: file.name, date: nowIso }))
+          } catch (_) {}
+        }
+
+        setSettingsData(prev => {
+          const next = { ...prev, ...updatedPayload }
+          settingsAPI.updateSettings(next)
+            .then(() => {
+              showToast(`✅ ${targetType === 'holiday' ? 'Holiday Calendar' : 'Twite Handbook'} PDF published to all Employee HRMS portals!`, 'success')
+            })
+            .catch(err => console.warn('Failed publishing settings PDF:', err))
+          return next
         })
       }
-    })
-    return Array.from(map.values())
-  }, [rolePermissionsList])
-
-  // Selected Role Object
-  const currentRoleObj = useMemo(() => {
-    return rolePermissionsList.find(r => r.name === selectedRoleKey || r.id === selectedRoleKey) || {
-      name: selectedRoleKey,
-      custom_permissions: {}
     }
-  }, [rolePermissionsList, selectedRoleKey])
+    reader.readAsDataURL(file)
+  }
+
+  const handleRemovePdf = (targetType) => {
+    let updatedPayload = {}
+    if (targetType === 'holiday') {
+      updatedPayload = {
+        holiday_calendar_pdf: '',
+        holiday_calendar_filename: '',
+        holiday_calendar_uploaded_at: ''
+      }
+      try {
+        localStorage.removeItem('tc_holiday_calendar_pdf')
+        localStorage.removeItem('tc_holiday_calendar_meta')
+      } catch (_) {}
+    } else if (targetType === 'handbook') {
+      updatedPayload = {
+        twite_handbook_pdf: '',
+        twite_handbook_filename: '',
+        twite_handbook_uploaded_at: ''
+      }
+      try {
+        localStorage.removeItem('tc_twite_handbook_pdf')
+        localStorage.removeItem('tc_twite_handbook_meta')
+      } catch (_) {}
+    }
+
+    setSettingsData(prev => {
+      const next = { ...prev, ...updatedPayload }
+      settingsAPI.updateSettings(next)
+        .then(() => showToast(`${targetType === 'holiday' ? 'Holiday Calendar' : 'Twite Handbook'} PDF removed.`, 'info'))
+        .catch(err => console.warn('Failed updating settings on PDF remove:', err))
+      return next
+    })
+  }
 
   // Load Settings on mount
   const loadSettings = async () => {
     setLoading(true)
     try {
-      const res = await settingsAPI.getSettings()
-      if (res && res.data) {
-        const d = res.data
-        setSettingsData({
-          company_name: d.company_name || '',
-          legal_name: d.legal_name || '',
-          tax_id_gstin: d.tax_id_gstin || '',
-          pan_no: d.pan_no || '',
-          registration_no: d.registration_no || '',
-          email: d.email || '',
-          phone: d.phone || '',
-          website: d.website || '',
-          address: d.address || '',
-          logo_url: d.logo_url || '',
+      const res = await settingsAPI.getSettings().catch(() => null)
+      const d = res?.data || res || {}
+      if (d) {
+        setSettingsData(prev => ({
+          ...prev,
+          company_name: d.company_name || prev.company_name || '',
+          legal_name: d.legal_name || prev.legal_name || '',
+          tax_id_gstin: d.tax_id_gstin || prev.tax_id_gstin || '',
+          pan_no: d.pan_no || prev.pan_no || '',
+          registration_no: d.registration_no || prev.registration_no || '',
+          email: d.email || prev.email || '',
+          phone: d.phone || prev.phone || '',
+          website: d.website || prev.website || '',
+          address: d.address || prev.address || '',
+          logo_url: d.logo_url || prev.logo_url || '',
           currency: d.currency || 'INR (₹)',
           time_zone: d.time_zone || 'Asia/Kolkata (IST)',
           allow_self_signup: d.allow_self_signup === true,
-          rate_limit_per_min: d.rate_limit_per_min || 60
-        })
+          rate_limit_per_min: d.rate_limit_per_min || 60,
+          holiday_calendar_pdf: d.holiday_calendar_pdf || localStorage.getItem('tc_holiday_calendar_pdf') || '',
+          holiday_calendar_filename: d.holiday_calendar_filename || (localStorage.getItem('tc_holiday_calendar_meta') ? JSON.parse(localStorage.getItem('tc_holiday_calendar_meta')).name : 'Holiday_Calendar_2026.pdf'),
+          holiday_calendar_uploaded_at: d.holiday_calendar_uploaded_at || '',
+          twite_handbook_pdf: d.twite_handbook_pdf || localStorage.getItem('tc_twite_handbook_pdf') || '',
+          twite_handbook_filename: d.twite_handbook_filename || (localStorage.getItem('tc_twite_handbook_meta') ? JSON.parse(localStorage.getItem('tc_twite_handbook_meta')).name : 'Twite_Employee_Handbook.pdf'),
+          twite_handbook_uploaded_at: d.twite_handbook_uploaded_at || '',
+        }))
+
+        if (d.holiday_calendar_pdf) {
+          try {
+            localStorage.setItem('tc_holiday_calendar_pdf', d.holiday_calendar_pdf)
+            localStorage.setItem('tc_holiday_calendar_meta', JSON.stringify({ name: d.holiday_calendar_filename, date: d.holiday_calendar_uploaded_at }))
+          } catch (_) {}
+        }
+        if (d.twite_handbook_pdf) {
+          try {
+            localStorage.setItem('tc_twite_handbook_pdf', d.twite_handbook_pdf)
+            localStorage.setItem('tc_twite_handbook_meta', JSON.stringify({ name: d.twite_handbook_filename, date: d.twite_handbook_uploaded_at }))
+          } catch (_) {}
+        }
+
         if (d.role_permissions && Array.isArray(d.role_permissions)) {
           setRolePermissionsList(d.role_permissions)
         }
       }
     } catch (err) {
-      showToast('Error retrieving system settings', 'error')
+      console.warn('Error retrieving system settings:', err)
     } finally {
       setLoading(false)
     }
@@ -583,10 +723,18 @@ function AdminSettings() {
     e.preventDefault()
     setSaving(true)
     try {
-      await settingsAPI.updateSettings({
+      const payload = {
         ...settingsData,
         role_permissions: rolePermissionsList
-      })
+      }
+      if (payload.holiday_calendar_pdf && payload.holiday_calendar_pdf.length > 500000) {
+        payload.holiday_calendar_pdf = payload.holiday_calendar_pdf.substring(0, 300)
+      }
+      if (payload.twite_handbook_pdf && payload.twite_handbook_pdf.length > 500000) {
+        payload.twite_handbook_pdf = payload.twite_handbook_pdf.substring(0, 300)
+      }
+
+      await settingsAPI.updateSettings(payload)
       showToast('System settings and Role Default Master Templates saved successfully!', 'success')
     } catch (err) {
       showToast('Failed to save settings to database', 'error')
@@ -736,6 +884,168 @@ function AdminSettings() {
             </div>
           </div>
 
+          {/* NEW SECTION: OFFICIAL DOCUMENTATION PDF MANAGEMENT (Holiday Calendar & Twite Handbook) */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+            <h3 className="text-xs font-black uppercase text-slate-900 tracking-wider flex items-center gap-2 border-b border-slate-100 pb-3">
+              <FileText className="w-4 h-4 text-blue-600" /> Official Documentation PDF Uploads (HRMS Portal Sync)
+            </h3>
+            <p className="text-xs text-slate-500 font-semibold -mt-2">
+              Upload company PDF documents. Once saved, these PDFs automatically display in every employee's HRMS portal under <u className="font-extrabold text-slate-700">Holiday Calendar</u> and <u className="font-extrabold text-slate-700">Twite Handbook</u>.
+            </p>
+
+            <div className="grid md:grid-cols-2 gap-4 pt-2">
+              {/* CARD 1: HOLIDAY CALENDAR PDF */}
+              <div className="p-5 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-3 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-black text-slate-900 flex items-center gap-2">
+                      📅 Official Holiday Calendar PDF
+                    </span>
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border uppercase ${
+                      settingsData.holiday_calendar_pdf 
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {settingsData.holiday_calendar_pdf ? 'Uploaded' : 'Not Uploaded'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
+                    Upload official holiday schedule PDF for all employee HRMS portals.
+                  </p>
+
+                  {settingsData.holiday_calendar_pdf ? (
+                    <div className="mt-3 p-3 bg-white rounded-xl border border-slate-200 space-y-1">
+                      <p className="text-xs font-extrabold text-slate-900 truncate">
+                        📄 {settingsData.holiday_calendar_filename || 'Holiday_Calendar.pdf'}
+                      </p>
+                      {settingsData.holiday_calendar_uploaded_at && (
+                        <p className="text-[10px] text-slate-400 font-semibold">
+                          Uploaded: {new Date(settingsData.holiday_calendar_uploaded_at).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-3 p-3 bg-white/60 rounded-xl border border-dashed border-slate-300 text-center text-xs text-slate-400 font-bold">
+                      No PDF uploaded yet
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 border-t border-slate-200/80">
+                  <input
+                    type="file"
+                    ref={holidayPdfInputRef}
+                    onChange={(e) => handlePdfUpload(e, 'holiday')}
+                    accept="application/pdf"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => holidayPdfInputRef.current?.click()}
+                    className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition cursor-pointer shadow-2xs flex items-center gap-1.5"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    {settingsData.holiday_calendar_pdf ? 'Replace PDF' : 'Upload PDF'}
+                  </button>
+
+                  {settingsData.holiday_calendar_pdf && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewPdfModal({ title: 'Holiday Calendar PDF Preview', url: settingsData.holiday_calendar_pdf })}
+                        className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+                      >
+                        👁️ Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePdf('holiday')}
+                        className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition cursor-pointer"
+                      >
+                        🗑️ Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* CARD 2: TWITE HANDBOOK PDF */}
+              <div className="p-5 rounded-2xl border border-slate-200 bg-slate-50/70 space-y-3 flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between gap-2 mb-2">
+                    <span className="text-xs font-black text-slate-900 flex items-center gap-2">
+                      📖 Twite Employee Handbook PDF
+                    </span>
+                    <span className={`text-[9px] font-black px-2 py-0.5 rounded-full border uppercase ${
+                      settingsData.twite_handbook_pdf 
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                        : 'bg-amber-50 text-amber-700 border-amber-200'
+                    }`}>
+                      {settingsData.twite_handbook_pdf ? 'Uploaded' : 'Not Uploaded'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 font-semibold leading-relaxed">
+                    Upload official company handbook PDF policy document for all employee HRMS portals.
+                  </p>
+
+                  {settingsData.twite_handbook_pdf ? (
+                    <div className="mt-3 p-3 bg-white rounded-xl border border-slate-200 space-y-1">
+                      <p className="text-xs font-extrabold text-slate-900 truncate">
+                        📄 {settingsData.twite_handbook_filename || 'Twite_Employee_Handbook.pdf'}
+                      </p>
+                      {settingsData.twite_handbook_uploaded_at && (
+                        <p className="text-[10px] text-slate-400 font-semibold">
+                          Uploaded: {new Date(settingsData.twite_handbook_uploaded_at).toLocaleString()}
+                        </p>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="mt-3 p-3 bg-white/60 rounded-xl border border-dashed border-slate-300 text-center text-xs text-slate-400 font-bold">
+                      No PDF uploaded yet
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex items-center gap-2 pt-2 border-t border-slate-200/80">
+                  <input
+                    type="file"
+                    ref={handbookPdfInputRef}
+                    onChange={(e) => handlePdfUpload(e, 'handbook')}
+                    accept="application/pdf"
+                    className="hidden"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => handbookPdfInputRef.current?.click()}
+                    className="px-3.5 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-black text-xs transition cursor-pointer shadow-2xs flex items-center gap-1.5"
+                  >
+                    <Upload className="w-3.5 h-3.5" />
+                    {settingsData.twite_handbook_pdf ? 'Replace PDF' : 'Upload PDF'}
+                  </button>
+
+                  {settingsData.twite_handbook_pdf && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setPreviewPdfModal({ title: 'Twite Employee Handbook PDF Preview', url: settingsData.twite_handbook_pdf })}
+                        className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
+                      >
+                        👁️ Preview
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRemovePdf('handbook')}
+                        className="px-3 py-2 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-600 font-bold text-xs transition cursor-pointer"
+                      >
+                        🗑️ Delete
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* NEW CARD: ROLE-BASED ACCESS CONTROL (RBAC DEFAULTS) */}
           <div className="bg-gradient-to-br from-white via-white to-blue-50/30 p-6 rounded-2xl border border-blue-200/80 shadow-xs space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
@@ -798,6 +1108,50 @@ function AdminSettings() {
             </button>
           </div>
         </form>
+      )}
+
+      {/* PDF PREVIEW MODAL */}
+      {previewPdfModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-5xl h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150">
+            <div className="px-6 py-4 border-b border-slate-100 bg-slate-50 flex items-center justify-between">
+              <div>
+                <h3 className="text-base font-black text-slate-900">{previewPdfModal.title}</h3>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">PDF Preview Window</p>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewPdfModal.url}
+                  download={previewPdfModal.title.replace(/\s+/g, '_') + '.pdf'}
+                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1 cursor-pointer"
+                >
+                  📥 Download PDF
+                </a>
+                <button
+                  onClick={() => setPreviewPdfModal(null)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:bg-slate-200 text-slate-700 transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 bg-slate-100 p-2 overflow-hidden">
+              <iframe
+                src={previewPdfModal.url}
+                className="w-full h-full rounded-2xl border border-slate-200 bg-white"
+                title={previewPdfModal.title}
+              />
+            </div>
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => setPreviewPdfModal(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-black cursor-pointer"
+              >
+                Close Preview
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

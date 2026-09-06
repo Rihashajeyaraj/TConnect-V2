@@ -83,8 +83,8 @@ async function request(endpoint, options = {}) {
   } else if (!options.bypassCache && !options._isRetry && apiCache.has(endpoint)) {
     const cached = apiCache.get(endpoint)
     if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
-      // Background revalidate if cache is >15s old
-      if (Date.now() - cached.timestamp > 15000) {
+      // Background revalidate if cache is >5s old for zero-latency page transitions
+      if (Date.now() - cached.timestamp > 5000) {
         setTimeout(() => {
           request(endpoint, { ...options, bypassCache: true }).catch(() => {})
         }, 10)
@@ -94,7 +94,7 @@ async function request(endpoint, options = {}) {
   }
 
   // For GET requests, reuse identical in-flight promises to deduplicate parallel calls
-  if (method === 'GET' && inFlightRequests.has(endpoint) && !options._isRetry) {
+  if (method === 'GET' && !options.bypassCache && inFlightRequests.has(endpoint) && !options._isRetry) {
     return inFlightRequests.get(endpoint)
   }
 
@@ -433,7 +433,7 @@ export const userAPI = {
 
 
 export const settingsAPI = {
-  getSettings: () => request('/settings/business'),
+  getSettings: (options = {}) => request('/settings/business', options),
   updateSettings: (data) => request('/settings/business', { method: 'PUT', body: JSON.stringify(data) }),
   getConfig: () => request('/settings/config'),
   getProducts: () => request('/settings/products'),

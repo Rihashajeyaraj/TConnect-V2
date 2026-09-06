@@ -30,7 +30,7 @@ import {
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { formatDate, getLeaveRequestDays, parseDateInput } from "../../utils/dateUtils.js";
-import { reportAPI, attendanceAPI, hrmsAPI, adminAPI, holidaysAPI, handbookAPI } from "../../services/api.js";
+import { reportAPI, attendanceAPI, hrmsAPI, adminAPI, holidaysAPI, handbookAPI, settingsAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import Attendance, { calculateWorkHours } from "./Attendance.jsx";
 
@@ -109,8 +109,69 @@ export default function SalesHRMS(props) {
   const [loadingHolidays, setLoadingHolidays] = useState(false);
   const [loadingHandbook, setLoadingHandbook] = useState(false);
 
+  const [holidayPdfData, setHolidayPdfData] = useState(() => {
+    try {
+      const pdf = localStorage.getItem('tc_holiday_calendar_pdf');
+      const meta = JSON.parse(localStorage.getItem('tc_holiday_calendar_meta') || '{}');
+      return pdf ? { url: pdf, name: meta.name || 'Holiday_Calendar_2026.pdf', date: meta.date } : null;
+    } catch { return null; }
+  });
+
+  const [handbookPdfData, setHandbookPdfData] = useState(() => {
+    try {
+      const pdf = localStorage.getItem('tc_twite_handbook_pdf');
+      const meta = JSON.parse(localStorage.getItem('tc_twite_handbook_meta') || '{}');
+      return pdf ? { url: pdf, name: meta.name || 'Twite_Employee_Handbook.pdf', date: meta.date } : null;
+    } catch { return null; }
+  });
+
   useEffect(() => {
+    function syncLocalPdfs() {
+      try {
+        const hPdf = localStorage.getItem('tc_holiday_calendar_pdf');
+        const hMeta = JSON.parse(localStorage.getItem('tc_holiday_calendar_meta') || '{}');
+        if (hPdf) {
+          setHolidayPdfData({ url: hPdf, name: hMeta.name || 'Holiday_Calendar_2026.pdf', date: hMeta.date });
+        }
+        const hbPdf = localStorage.getItem('tc_twite_handbook_pdf');
+        const hbMeta = JSON.parse(localStorage.getItem('tc_twite_handbook_meta') || '{}');
+        if (hbPdf) {
+          setHandbookPdfData({ url: hbPdf, name: hbMeta.name || 'Twite_Employee_Handbook.pdf', date: hbMeta.date });
+        }
+      } catch (_) {}
+    }
+
+    syncLocalPdfs();
+    window.addEventListener('storage', syncLocalPdfs);
+
     async function loadMasterData() {
+      try {
+        const sRes = await settingsAPI.getSettings().catch(() => null);
+        const d = sRes?.data || sRes || {};
+        if (d.holiday_calendar_pdf) {
+          setHolidayPdfData({
+            url: d.holiday_calendar_pdf,
+            name: d.holiday_calendar_filename || 'Holiday_Calendar_2026.pdf',
+            date: d.holiday_calendar_uploaded_at
+          });
+          try {
+            localStorage.setItem('tc_holiday_calendar_pdf', d.holiday_calendar_pdf);
+            localStorage.setItem('tc_holiday_calendar_meta', JSON.stringify({ name: d.holiday_calendar_filename, date: d.holiday_calendar_uploaded_at }));
+          } catch (_) {}
+        }
+        if (d.twite_handbook_pdf) {
+          setHandbookPdfData({
+            url: d.twite_handbook_pdf,
+            name: d.twite_handbook_filename || 'Twite_Employee_Handbook.pdf',
+            date: d.twite_handbook_uploaded_at
+          });
+          try {
+            localStorage.setItem('tc_twite_handbook_pdf', d.twite_handbook_pdf);
+            localStorage.setItem('tc_twite_handbook_meta', JSON.stringify({ name: d.twite_handbook_filename, date: d.twite_handbook_uploaded_at }));
+          } catch (_) {}
+        }
+      } catch (_) {}
+
       try {
         setLoadingHolidays(true);
         const hRes = await holidaysAPI.getHolidays();
@@ -132,6 +193,7 @@ export default function SalesHRMS(props) {
       }
     }
     loadMasterData();
+    return () => window.removeEventListener('storage', syncLocalPdfs);
   }, []);
 
   useEffect(() => {
@@ -677,20 +739,18 @@ export default function SalesHRMS(props) {
 
         {/* Horizontal Navigation Tabs Bar */}
         <div className="flex items-center flex-nowrap whitespace-nowrap gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5 scrollbar-thin">
-          {hrmsTabs.filter(tab => !(isCurrentUserAdmin && tab.key === "dashboard")).map(({ key, label, icon: Icon }, index) => (
+          {hrmsTabs.filter(tab => !(isCurrentUserAdmin && tab.key === "dashboard")).map(({ key, label, icon: Icon }) => (
             <div
               key={key}
-              draggable="true"
-              onDragStart={(e) => handleTabDragStart(e, index)}
-              onDragOver={(e) => handleTabDragOver(e, index)}
-              onDrop={(e) => handleTabDrop(e, index)}
-              onDragEnd={handleTabDragEnd}
-              className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
-                draggedTabKey === index ? "opacity-40" : ""
-              }`}
+              onClick={() => setActiveSection(key)}
+              className="flex items-center shrink-0 whitespace-nowrap transition cursor-pointer"
             >
               <button
-                onClick={() => setActiveSection(key)}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSection(key);
+                }}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer whitespace-nowrap ${activeSection === key
                     ? "bg-[#1a1f36] text-white shadow-2xs"
                     : "text-slate-600 hover:bg-slate-100"
@@ -1979,8 +2039,57 @@ export default function SalesHRMS(props) {
 
         {/* ── HOLIDAY CALENDAR ── */}
         {activeSection === "calendar" && (
-          <div className="max-w-2xl space-y-5">
-            <h1 className="text-2xl font-black text-slate-900">Holiday Calendar</h1>
+          <div className="max-w-4xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <div>
+                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <CalendarDays className="w-5 h-5 text-teal-600" /> Holiday Calendar
+                </h1>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  Official company holiday list and admin-uploaded holiday schedule document.
+                </p>
+              </div>
+
+              {holidayPdfData && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={holidayPdfData.url}
+                    download={holidayPdfData.name || "Holiday_Calendar.pdf"}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    📥 Download PDF
+                  </a>
+                  <button
+                    onClick={() => {
+                      const win = window.open();
+                      if (win) win.document.write(`<iframe src="${holidayPdfData.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                    }}
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    🔍 Fullscreen
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {holidayPdfData ? (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-500 font-bold px-1">
+                  <span>📄 Official Document: <strong>{holidayPdfData.name}</strong></span>
+                  {holidayPdfData.date && <span>Uploaded by Admin on: {new Date(holidayPdfData.date).toLocaleDateString()}</span>}
+                </div>
+                <iframe
+                  src={holidayPdfData.url}
+                  className="w-full h-[650px] rounded-xl border border-slate-200 bg-slate-50"
+                  title="Holiday Calendar PDF"
+                />
+              </div>
+            ) : (
+              <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 text-xs font-bold text-amber-900 flex items-center gap-2">
+                <span>📄 Official Holiday Calendar PDF has not been uploaded by Admin yet. Below is the active holiday list:</span>
+              </div>
+            )}
+
             {loadingHolidays ? (
               <p className="text-slate-400 text-sm font-semibold p-4">Loading holiday calendar...</p>
             ) : dbHolidays.length === 0 ? (
@@ -1991,6 +2100,9 @@ export default function SalesHRMS(props) {
               </div>
             ) : (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100">
+                <div className="p-4 bg-slate-50 border-b border-slate-100 font-black text-xs text-slate-700 uppercase tracking-wider">
+                  Annual Company Holidays
+                </div>
                 {dbHolidays.map(h => (
                   <div key={h.id || h.date} className="px-5 py-3.5 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -2065,9 +2177,57 @@ export default function SalesHRMS(props) {
 
         {/* ── HANDBOOK ── */}
         {activeSection === "handbook" && (
-          <div className="max-w-3xl space-y-5">
-            <h1 className="text-2xl font-black text-slate-900">Twite Sales Handbook</h1>
-            <p className="text-slate-500 text-sm font-semibold">Guidelines, processes, and policies for TwiteConnect Sales Executives.</p>
+          <div className="max-w-4xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <div>
+                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-teal-600" /> Twite Employee Handbook
+                </h1>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  Official company policy, rules, and guidelines handbook document.
+                </p>
+              </div>
+
+              {handbookPdfData && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={handbookPdfData.url}
+                    download={handbookPdfData.name || "Twite_Handbook.pdf"}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    📥 Download Handbook PDF
+                  </a>
+                  <button
+                    onClick={() => {
+                      const win = window.open();
+                      if (win) win.document.write(`<iframe src="${handbookPdfData.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                    }}
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    🔍 Fullscreen
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {handbookPdfData ? (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-500 font-bold px-1">
+                  <span>📄 Official Document: <strong>{handbookPdfData.name}</strong></span>
+                  {handbookPdfData.date && <span>Uploaded by Admin on: {new Date(handbookPdfData.date).toLocaleDateString()}</span>}
+                </div>
+                <iframe
+                  src={handbookPdfData.url}
+                  className="w-full h-[700px] rounded-xl border border-slate-200 bg-slate-50"
+                  title="Twite Employee Handbook PDF"
+                />
+              </div>
+            ) : (
+              <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 text-xs font-bold text-amber-900 flex items-center gap-2">
+                <span>📄 Twite Employee Handbook PDF has not been uploaded by Admin yet. Below is the general policies summary:</span>
+              </div>
+            )}
+
             {loadingHandbook ? (
               <p className="text-slate-400 text-sm font-semibold p-4">Loading handbook policies...</p>
             ) : dbHandbook.length === 0 ? (

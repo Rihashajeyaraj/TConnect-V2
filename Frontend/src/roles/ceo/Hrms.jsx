@@ -917,7 +917,7 @@ function CeoHrms({ initialTab = 'employees' }) {
 
       {/* Primary HRMS Navigation Tabs */}
       <div className="flex items-center flex-nowrap whitespace-nowrap gap-1 overflow-x-auto bg-white p-1.5 rounded-xl border border-slate-200/80 shadow-2xs scrollbar-thin">
-        {hrmsTabs.map((tabItem, index) => {
+        {hrmsTabs.map((tabItem) => {
           const Icon = tabItem.icon
           const isActive = activeTab === tabItem.id
           const badgeVal = getBadgeValue ? getBadgeValue(tabItem.id) : (tabItem.id === 'employees' ? employees.length : tabItem.id === 'leaves' ? pendingLeaves.length : tabItem.id === 'permissions' ? pendingPermissions.length : null)
@@ -925,17 +925,15 @@ function CeoHrms({ initialTab = 'employees' }) {
           return (
             <div
               key={tabItem.id}
-              draggable="true"
-              onDragStart={(e) => handleTabDragStart(e, index)}
-              onDragOver={(e) => handleTabDragOver(e, index)}
-              onDrop={(e) => handleTabDrop(e, index)}
-              onDragEnd={handleTabDragEnd}
-              className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
-                draggedTabKey === index ? 'opacity-40' : ''
-              }`}
+              onClick={() => setActiveTab(tabItem.id)}
+              className="flex items-center shrink-0 whitespace-nowrap transition cursor-pointer"
             >
               <button
-                onClick={() => setActiveTab(tabItem.id)}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveTab(tabItem.id);
+                }}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap ${isActive
                     ? 'bg-[#832D51] text-white shadow-2xs'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'

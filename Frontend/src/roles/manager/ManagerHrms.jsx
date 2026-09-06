@@ -39,7 +39,7 @@ import {
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { useSearchParams } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
-import { attendanceAPI, hrmsAPI } from '../../services/api.js'
+import { attendanceAPI, hrmsAPI, settingsAPI } from '../../services/api.js'
 import { calculateWorkHours } from '../sales/Attendance.jsx'
 import { formatDate, getLeaveRequestDays, parseDateInput } from '../../utils/dateUtils.js'
 
@@ -130,6 +130,21 @@ export default function ManagerHrms(props) {
   const [profile, setProfile] = useState({})
   const [selectedLeaveDetailType, setSelectedLeaveDetailType] = useState(null)
 
+  const [holidayPdfData, setHolidayPdfData] = useState(() => {
+    try {
+      const pdf = localStorage.getItem('tc_holiday_calendar_pdf');
+      const meta = JSON.parse(localStorage.getItem('tc_holiday_calendar_meta') || '{}');
+      return pdf ? { url: pdf, name: meta.name || 'Holiday_Calendar.pdf', date: meta.date } : null;
+    } catch(e) { return null; }
+  });
+  const [handbookPdfData, setHandbookPdfData] = useState(() => {
+    try {
+      const pdf = localStorage.getItem('tc_twite_handbook_pdf');
+      const meta = JSON.parse(localStorage.getItem('tc_twite_handbook_meta') || '{}');
+      return pdf ? { url: pdf, name: meta.name || 'Twite_Employee_Handbook.pdf', date: meta.date } : null;
+    } catch(e) { return null; }
+  });
+
   useEffect(() => {
     hrmsAPI.getEmployeeById("self")
       .then(res => {
@@ -138,6 +153,30 @@ export default function ManagerHrms(props) {
         }
       })
       .catch(() => null)
+
+    settingsAPI.getSettings()
+      .then(res => {
+        const d = res?.data || res || {};
+        if (d.holiday_calendar_pdf) {
+          setHolidayPdfData({
+            url: d.holiday_calendar_pdf,
+            name: d.holiday_calendar_filename || 'Holiday_Calendar.pdf',
+            date: d.holiday_calendar_uploaded_at
+          });
+          localStorage.setItem('tc_holiday_calendar_pdf', d.holiday_calendar_pdf);
+          localStorage.setItem('tc_holiday_calendar_meta', JSON.stringify({ name: d.holiday_calendar_filename, date: d.holiday_calendar_uploaded_at }));
+        }
+        if (d.twite_handbook_pdf) {
+          setHandbookPdfData({
+            url: d.twite_handbook_pdf,
+            name: d.twite_handbook_filename || 'Twite_Employee_Handbook.pdf',
+            date: d.twite_handbook_uploaded_at
+          });
+          localStorage.setItem('tc_twite_handbook_pdf', d.twite_handbook_pdf);
+          localStorage.setItem('tc_twite_handbook_meta', JSON.stringify({ name: d.twite_handbook_filename, date: d.twite_handbook_uploaded_at }));
+        }
+      })
+      .catch(err => console.warn('Failed fetching settings PDFs:', err));
   }, [])
 
   const managerName = currentUser.name || currentUser.full_name || 'Sales Manager'
@@ -483,22 +522,20 @@ export default function ManagerHrms(props) {
       {/* ── TABS NAVIGATION BAR ── Compact & Sleek ─────────────────────── */}
       <div className="bg-white border border-slate-200 p-1.5 rounded-xl shadow-2xs flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full shrink-0">
         <div className="flex items-center flex-nowrap gap-1">
-          {hrmsTabs.map(({ key, label, icon: Icon }, index) => {
+          {hrmsTabs.map(({ key, label, icon: Icon }) => {
             const active = activeSection === key
             return (
               <div
                 key={key}
-                draggable="true"
-                onDragStart={(e) => handleTabDragStart(e, index)}
-                onDragOver={(e) => handleTabDragOver(e, index)}
-                onDrop={(e) => handleTabDrop(e, index)}
-                onDragEnd={handleTabDragEnd}
-                className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
-                  draggedTabKey === index ? 'opacity-40' : ''
-                }`}
+                onClick={() => setActiveSection(key)}
+                className="flex items-center shrink-0 whitespace-nowrap transition cursor-pointer"
               >
                 <button
-                  onClick={() => setActiveSection(key)}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveSection(key);
+                  }}
                   className={`mgr-card px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer whitespace-nowrap border ${
                     active 
                       ? 'bg-[#0b3c5d] text-white border-[#0b3c5d] shadow-2xs' 
@@ -1165,8 +1202,58 @@ export default function ManagerHrms(props) {
 
       {/* 6. HOLIDAY CALENDAR */}
       {activeSection === 'calendar' && (
-        <div className="max-w-2xl space-y-5">
-          <h2 className="text-2xl font-black text-slate-900">Holiday Calendar 2026–27</h2>
+        <div className="max-w-4xl space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                <CalendarDays className="w-6 h-6 text-mgr-primary-600" /> Holiday Calendar 2026–27
+              </h2>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                Official holiday schedule published by HR & Management.
+              </p>
+            </div>
+            {holidayPdfData && (
+              <div className="flex items-center gap-2">
+                <a
+                  href={holidayPdfData.url}
+                  download={holidayPdfData.name || "Holiday_Calendar.pdf"}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                >
+                  <Download className="w-4 h-4" /> Download PDF
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const win = window.open('', '_blank');
+                    if (win) win.document.write(`<iframe src="${holidayPdfData.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                  }}
+                  className="px-4 py-2 bg-mgr-primary-600 hover:bg-mgr-primary-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                >
+                  <Eye className="w-4 h-4" /> View Fullscreen
+                </button>
+              </div>
+            )}
+          </div>
+
+          {holidayPdfData ? (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1">
+                <span>📄 Official Document: <strong>{holidayPdfData.name}</strong></span>
+                {holidayPdfData.date && <span>Uploaded by Admin on: {new Date(holidayPdfData.date).toLocaleDateString()}</span>}
+              </div>
+              <iframe
+                src={holidayPdfData.url}
+                className="w-full h-[650px] rounded-xl border border-slate-200 shadow-inner bg-slate-900/5"
+                title="Official Holiday Calendar PDF"
+              />
+            </div>
+          ) : (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs font-semibold text-amber-800 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>📄 Official Holiday Calendar PDF has not been uploaded by Admin yet. Below is the general holiday list:</span>
+            </div>
+          )}
+
           <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100">
             {HOLIDAYS.map((h) => (
               <div key={h.date} className="px-5 py-3.5 flex items-center justify-between gap-3">
@@ -1186,8 +1273,58 @@ export default function ManagerHrms(props) {
 
       {/* 7. MANAGER HANDBOOK */}
       {activeSection === 'handbook' && (
-        <div className="max-w-3xl space-y-4">
-          <h2 className="text-2xl font-black text-slate-900">Manager Handbook</h2>
+        <div className="max-w-4xl space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+            <div>
+              <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                <BookOpen className="w-6 h-6 text-mgr-primary-600" /> Twite Employee Handbook
+              </h2>
+              <p className="text-xs text-slate-500 font-medium mt-1">
+                Official company policy, rules, and guidelines handbook document.
+              </p>
+            </div>
+            {handbookPdfData && (
+              <div className="flex items-center gap-2">
+                <a
+                  href={handbookPdfData.url}
+                  download={handbookPdfData.name || "Twite_Handbook.pdf"}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                >
+                  <Download className="w-4 h-4" /> Download Handbook PDF
+                </a>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const win = window.open('', '_blank');
+                    if (win) win.document.write(`<iframe src="${handbookPdfData.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                  }}
+                  className="px-4 py-2 bg-mgr-primary-600 hover:bg-mgr-primary-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                >
+                  <Eye className="w-4 h-4" /> View Fullscreen
+                </button>
+              </div>
+            )}
+          </div>
+
+          {handbookPdfData ? (
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
+              <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1">
+                <span>📄 Official Document: <strong>{handbookPdfData.name}</strong></span>
+                {handbookPdfData.date && <span>Uploaded by Admin on: {new Date(handbookPdfData.date).toLocaleDateString()}</span>}
+              </div>
+              <iframe
+                src={handbookPdfData.url}
+                className="w-full h-[650px] rounded-xl border border-slate-200 shadow-inner bg-slate-900/5"
+                title="Twite Employee Handbook PDF"
+              />
+            </div>
+          ) : (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs font-semibold text-amber-800 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+              <span>📄 Twite Employee Handbook PDF has not been uploaded by Admin yet. Below is the general policies summary:</span>
+            </div>
+          )}
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {HANDBOOK.map((item) => (
               <div key={item.title} className="bg-white rounded-2xl border border-slate-200 shadow-xs p-5 space-y-2">
