@@ -31,7 +31,7 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true)
   const [dateRange, setDateRange] = useState('Today')
   const [roleFilter, setRoleFilter] = useState('All')
-  
+
   // Incentive modal state
   const [showIncentiveModal, setShowIncentiveModal] = useState(false)
   const [selectedIncentiveEmp, setSelectedIncentiveEmp] = useState(null)
@@ -260,7 +260,7 @@ export default function AdminDashboard() {
     const empCodeVal = `EMP${String(allEmployees.length + 1).padStart(6, '0')}`
     const [firstName, ...lastNameParts] = createEmpForm.name.split(' ')
     const lastName = lastNameParts.join(' ') || '.'
-    
+
     // Determine hierarchy assignment
     let targetRepId = null
     let targetRepName = null
@@ -372,7 +372,7 @@ export default function AdminDashboard() {
     e.preventDefault()
     if (!editEmpForm.name || !editEmpForm.email) return
     setModalSaving(true)
-    
+
     try {
       const updatePayload = {
         name: editEmpForm.name,
@@ -388,9 +388,9 @@ export default function AdminDashboard() {
       if (editEmpForm.password) {
         updatePayload.accessPassword = editEmpForm.password
       }
-      
+
       await userAPI.updateUser(editEmpForm.id, updatePayload)
-      
+
       await hrmsAPI.updateEmployee(editEmpForm.employee_code || editEmpForm.id, {
         annual_leaves: Number(editEmpForm.annualLeaves),
         sick_leaves: Number(editEmpForm.sickLeaves),
@@ -398,13 +398,13 @@ export default function AdminDashboard() {
         half_day_permissions: Number(editEmpForm.halfDayPermissions),
         short_permissions: Number(editEmpForm.shortPermissions),
       })
-      
+
       if (editEmpForm.monthlySalary !== undefined) {
         await hrmsAPI.updateSalary(editEmpForm.employee_code || editEmpForm.id, {
           monthly_salary: Number(editEmpForm.monthlySalary)
         })
       }
-      
+
       showToast('Employee profile updated successfully!', 'success')
       setShowEditEmpModal(false)
       await loadAdminDashboardData()
@@ -420,7 +420,7 @@ export default function AdminDashboard() {
     e.preventDefault()
     if (!selectedRoleForPermissions) return
     setModalSaving(true)
-    
+
     const updatedRoles = systemRoles.map(r => {
       if (r.id === selectedRoleForPermissions.id) {
         return {
@@ -430,7 +430,7 @@ export default function AdminDashboard() {
       }
       return r
     })
-    
+
     try {
       await settingsAPI.updateSettings({
         role_permissions: updatedRoles
@@ -458,7 +458,7 @@ export default function AdminDashboard() {
   }
 
   const handleToggleRolePermission = (permKey) => {
-    setRolePermsList(prev => prev.map(p => 
+    setRolePermsList(prev => prev.map(p =>
       p.permission_key === permKey ? { ...p, enabled: !p.enabled } : p
     ))
   }
@@ -505,10 +505,10 @@ export default function AdminDashboard() {
   }
 
   async function loadAdminDashboardData() {
-    setLoading(true)
+    if (allEmployees.length === 0) setLoading(true)
     try {
       const periodParam = dateRange === 'Today' ? 'today' : (dateRange === 'This Week' ? 'week' : (dateRange === 'This Month' ? 'month' : 'all'));
-      
+
       const [empRes, attRes, auditRes, kpisRes, settingsRes] = await Promise.allSettled([
         hrmsAPI.getEmployees(),
         attendanceAPI.getLogs(),
@@ -527,7 +527,7 @@ export default function AdminDashboard() {
       setAllEmployees(empsList)
       setAllAuditLogs(auditList)
       setAttendanceLogs(attList)
-      
+
       if (settingsObj && settingsObj.role_permissions) {
         setSystemRoles(settingsObj.role_permissions)
       }
@@ -640,7 +640,7 @@ export default function AdminDashboard() {
       await hrmsAPI.updateEmployee(doc.employeeCode, {
         documents: JSON.stringify(updatedDocs)
       })
-      
+
       try {
         await notificationAPI.sendNotification({
           employee_code: doc.employeeCode,
@@ -746,7 +746,7 @@ export default function AdminDashboard() {
       {activeWidgets.systemStats && (
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
           {/* Total Registered Users */}
-          <div 
+          <div
             onClick={() => setShowTotalUsersPage(true)}
             className="relative overflow-hidden bg-gradient-to-br from-[#D4ECFC] via-blue-50/50 to-white border border-[#64B5F6]/40 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer select-none group"
           >
@@ -762,7 +762,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Document Approvals Card */}
-          <div 
+          <div
             onClick={() => setShowApprovalsPage(true)}
             className="relative overflow-hidden bg-gradient-to-br from-[#1E88E5]/15 via-blue-50/30 to-white border border-[#1E88E5]/30 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer select-none group"
           >
@@ -780,7 +780,7 @@ export default function AdminDashboard() {
           </div>
 
           {/* Security Audits total */}
-          <div 
+          <div
             onClick={() => setShowSecurityAuditsPage(true)}
             className="relative overflow-hidden bg-gradient-to-br from-[#225F9F]/15 via-slate-50/30 to-white border border-[#225F9F]/30 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer select-none group"
           >
@@ -825,14 +825,14 @@ export default function AdminDashboard() {
             <span className="text-[11px] text-slate-500 font-bold">{kpiData.server_health.status}</span>
           </div>
         </div>
-      ) }
+      )}
 
       {/* SECTION 1.5: Quick Actions Panel */}
       <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs space-y-3">
         <h3 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5 uppercase tracking-wider">
           Quick Actions
         </h3>
-        
+
         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
           {[
             {
@@ -958,8 +958,8 @@ export default function AdminDashboard() {
             {/* Modal Content / Preview Area */}
             <div className="flex-1 bg-slate-100 p-6 overflow-y-auto flex items-center justify-center min-h-[300px]">
               {previewDoc.fileUrl ? (
-                previewDoc.fileUrl.startsWith('data:image/') || 
-                /\.(jpg|jpeg|png|webp|gif)$/i.test(previewDoc.fileName) ? (
+                previewDoc.fileUrl.startsWith('data:image/') ||
+                  /\.(jpg|jpeg|png|webp|gif)$/i.test(previewDoc.fileName) ? (
                   <img
                     src={previewDoc.fileUrl}
                     className="max-h-[60vh] max-w-full rounded-xl object-contain shadow-md"
@@ -1029,7 +1029,7 @@ export default function AdminDashboard() {
                 <div className="w-2.5 h-2.5 rounded-full bg-amber-500 animate-pulse" />
                 <h3 className="font-black text-slate-900 text-base">Document Approval Requests</h3>
               </div>
-              <button 
+              <button
                 onClick={() => setShowApprovalsPage(false)}
                 className="text-slate-400 hover:text-slate-700 font-extrabold text-lg p-1.5 hover:bg-slate-200/60 rounded-xl cursor-pointer transition flex items-center justify-center"
                 title="Close Approvals"
@@ -1114,7 +1114,7 @@ export default function AdminDashboard() {
                 <Users className="w-5 h-5 text-[#123A8C]" />
                 <h3 className="font-black text-[#071A45] text-base">Registered System Employees</h3>
               </div>
-              <button 
+              <button
                 onClick={() => setShowTotalUsersPage(false)}
                 className="text-slate-450 hover:text-slate-700 font-extrabold text-lg p-1.5 hover:bg-slate-200/60 rounded-xl cursor-pointer transition flex items-center justify-center"
                 title="Close Users List"
@@ -1136,11 +1136,10 @@ export default function AdminDashboard() {
                         key={tab}
                         type="button"
                         onClick={() => setSelectedRoleTab(tab)}
-                        className={`px-3 py-1.5 text-xs font-black rounded-xl transition duration-200 cursor-pointer ${
-                          isActive
-                            ? 'bg-[#061A4D] text-white shadow-xs'
-                            : 'bg-slate-100 text-slate-650 hover:bg-slate-200'
-                        }`}
+                        className={`px-3 py-1.5 text-xs font-black rounded-xl transition duration-200 cursor-pointer ${isActive
+                          ? 'bg-[#061A4D] text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-650 hover:bg-slate-200'
+                          }`}
                       >
                         {tab}
                       </button>
@@ -1202,11 +1201,10 @@ export default function AdminDashboard() {
                               {emp.department || emp.dept || 'Sales & Business Development'}
                             </td>
                             <td className="px-5 py-4 text-center">
-                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
-                                isActive 
-                                  ? 'bg-emerald-50 text-[#168A55] border-emerald-200' 
-                                  : 'bg-rose-50 text-[#DC3E3E] border-rose-200'
-                              }`}>
+                              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-black border ${isActive
+                                ? 'bg-emerald-50 text-[#168A55] border-emerald-200'
+                                : 'bg-rose-50 text-[#DC3E3E] border-rose-200'
+                                }`}>
                                 {emp.status || 'Active'}
                               </span>
                             </td>
@@ -1232,7 +1230,7 @@ export default function AdminDashboard() {
                 <Terminal className="w-5 h-5 text-[#123A8C]" />
                 <h3 className="font-black text-[#071A45] text-base">Security & Operation Audit Logs</h3>
               </div>
-              <button 
+              <button
                 onClick={() => setShowSecurityAuditsPage(false)}
                 className="text-slate-450 hover:text-slate-700 font-extrabold text-lg p-1.5 hover:bg-slate-200/60 rounded-xl cursor-pointer transition flex items-center justify-center"
                 title="Close Audit Logs"
@@ -1250,11 +1248,10 @@ export default function AdminDashboard() {
                     <button
                       key={tab}
                       onClick={() => setSelectedAuditModuleTab(tab)}
-                      className={`px-4 py-2 text-xs font-black rounded-xl transition duration-200 cursor-pointer ${
-                        isActive
-                          ? 'bg-[#061A4D] text-white shadow-md shadow-[#061A4D]/20'
-                          : 'bg-slate-100 text-slate-650 hover:bg-slate-200'
-                      }`}
+                      className={`px-4 py-2 text-xs font-black rounded-xl transition duration-200 cursor-pointer ${isActive
+                        ? 'bg-[#061A4D] text-white shadow-md shadow-[#061A4D]/20'
+                        : 'bg-slate-100 text-slate-650 hover:bg-slate-200'
+                        }`}
                     >
                       {tab}
                     </button>
@@ -1492,22 +1489,20 @@ export default function AdminDashboard() {
               <button
                 type="button"
                 onClick={() => setAttendanceModalTab('mark')}
-                className={`py-3.5 px-6 font-black text-xs border-b-2 transition cursor-pointer select-none flex items-center gap-2 ${
-                  attendanceModalTab === 'mark'
-                    ? 'border-emerald-500 text-emerald-400'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
-                }`}
+                className={`py-3.5 px-6 font-black text-xs border-b-2 transition cursor-pointer select-none flex items-center gap-2 ${attendanceModalTab === 'mark'
+                  ? 'border-emerald-500 text-emerald-400'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
               >
                 <span>📹 Mark My Attendance</span>
               </button>
               <button
                 type="button"
                 onClick={() => setAttendanceModalTab('logs')}
-                className={`py-3.5 px-6 font-black text-xs border-b-2 transition cursor-pointer select-none flex items-center gap-2 ${
-                  attendanceModalTab === 'logs'
-                    ? 'border-emerald-500 text-emerald-400'
-                    : 'border-transparent text-slate-400 hover:text-slate-200'
-                }`}
+                className={`py-3.5 px-6 font-black text-xs border-b-2 transition cursor-pointer select-none flex items-center gap-2 ${attendanceModalTab === 'logs'
+                  ? 'border-emerald-500 text-emerald-400'
+                  : 'border-transparent text-slate-400 hover:text-slate-200'
+                  }`}
               >
                 <span>📋 Team Attendance Registers</span>
               </button>
@@ -1636,9 +1631,8 @@ export default function AdminDashboard() {
                                 {/* Status */}
                                 <td className="px-6 py-4 text-center align-middle">
                                   {isPresent ? (
-                                    <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-[10px] font-black border uppercase tracking-wider ${
-                                      hasClockedOut ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-emerald-50 text-emerald-800 border-emerald-250'
-                                    }`}>
+                                    <span className={`inline-flex items-center justify-center px-3 py-1 rounded-full text-[10px] font-black border uppercase tracking-wider ${hasClockedOut ? 'bg-slate-100 text-slate-700 border-slate-300' : 'bg-emerald-50 text-emerald-800 border-emerald-250'
+                                      }`}>
                                       {hasClockedOut ? 'Checked Out' : 'Present'}
                                     </span>
                                   ) : (
@@ -1734,7 +1728,7 @@ export default function AdminDashboard() {
                     <input
                       type="text" required
                       value={createEmpForm.name}
-                      onChange={(e) => setCreateEmpForm({...createEmpForm, name: e.target.value})}
+                      onChange={(e) => setCreateEmpForm({ ...createEmpForm, name: e.target.value })}
                       placeholder="E.g. John Doe"
                       className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 shadow-2xs"
                     />
@@ -1743,7 +1737,7 @@ export default function AdminDashboard() {
                     <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Gender</label>
                     <select
                       value={createEmpForm.gender}
-                      onChange={(e) => setCreateEmpForm({...createEmpForm, gender: e.target.value})}
+                      onChange={(e) => setCreateEmpForm({ ...createEmpForm, gender: e.target.value })}
                       className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-2xs"
                     >
                       <option value="Male">Male</option>
@@ -1762,7 +1756,7 @@ export default function AdminDashboard() {
                       id="new_sys_emp_email"
                       autoComplete="off"
                       value={createEmpForm.email}
-                      onChange={(e) => setCreateEmpForm({...createEmpForm, email: e.target.value})}
+                      onChange={(e) => setCreateEmpForm({ ...createEmpForm, email: e.target.value })}
                       placeholder="e.g. employee.name@company.com"
                       className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 shadow-2xs"
                     />
@@ -1775,7 +1769,7 @@ export default function AdminDashboard() {
                       id="new_sys_emp_password"
                       autoComplete="new-password"
                       value={createEmpForm.password}
-                      onChange={(e) => setCreateEmpForm({...createEmpForm, password: e.target.value})}
+                      onChange={(e) => setCreateEmpForm({ ...createEmpForm, password: e.target.value })}
                       placeholder="Min 6 characters"
                       className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 shadow-2xs"
                     />
@@ -1789,7 +1783,7 @@ export default function AdminDashboard() {
                       type="tel"
                       maxLength={10}
                       value={createEmpForm.phone}
-                      onChange={(e) => setCreateEmpForm({...createEmpForm, phone: normalizePhoneNumber(e.target.value)})}
+                      onChange={(e) => setCreateEmpForm({ ...createEmpForm, phone: normalizePhoneNumber(e.target.value) })}
                       placeholder="10-digit number e.g. 9876543210"
                       className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 shadow-2xs"
                     />
@@ -1799,7 +1793,7 @@ export default function AdminDashboard() {
                     <input
                       type="text"
                       value={createEmpForm.employee_code || ''}
-                      onChange={(e) => setCreateEmpForm({...createEmpForm, employee_code: e.target.value})}
+                      onChange={(e) => setCreateEmpForm({ ...createEmpForm, employee_code: e.target.value })}
                       placeholder={`Auto-gen e.g. EMP${String(allEmployees.length + 1).padStart(6, '0')}`}
                       className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 shadow-2xs"
                     />
@@ -1840,7 +1834,7 @@ export default function AdminDashboard() {
                     <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Work Department</label>
                     <select
                       value={createEmpForm.dept}
-                      onChange={(e) => setCreateEmpForm({...createEmpForm, dept: e.target.value})}
+                      onChange={(e) => setCreateEmpForm({ ...createEmpForm, dept: e.target.value })}
                       className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 cursor-pointer shadow-2xs"
                     >
                       <option value="Sales & Business Development">Sales & Business Development</option>
@@ -1958,7 +1952,7 @@ export default function AdminDashboard() {
                     <input
                       type="number"
                       value={createEmpForm.annualLeaves}
-                      onChange={(e) => setCreateEmpForm({...createEmpForm, annualLeaves: e.target.value})}
+                      onChange={(e) => setCreateEmpForm({ ...createEmpForm, annualLeaves: e.target.value })}
                       className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 shadow-2xs"
                     />
                   </div>
@@ -1967,7 +1961,7 @@ export default function AdminDashboard() {
                     <input
                       type="number"
                       value={createEmpForm.sickLeaves}
-                      onChange={(e) => setCreateEmpForm({...createEmpForm, sickLeaves: e.target.value})}
+                      onChange={(e) => setCreateEmpForm({ ...createEmpForm, sickLeaves: e.target.value })}
                       className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 shadow-2xs"
                     />
                   </div>
@@ -1976,7 +1970,7 @@ export default function AdminDashboard() {
                     <input
                       type="number"
                       value={createEmpForm.monthlySalary}
-                      onChange={(e) => setCreateEmpForm({...createEmpForm, monthlySalary: e.target.value})}
+                      onChange={(e) => setCreateEmpForm({ ...createEmpForm, monthlySalary: e.target.value })}
                       className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-500 shadow-2xs"
                     />
                   </div>
@@ -2121,7 +2115,7 @@ export default function AdminDashboard() {
                       <input
                         type="text" required
                         value={editEmpForm.name}
-                        onChange={(e) => setEditEmpForm({...editEmpForm, name: e.target.value})}
+                        onChange={(e) => setEditEmpForm({ ...editEmpForm, name: e.target.value })}
                         className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
                       />
                     </div>
@@ -2129,7 +2123,7 @@ export default function AdminDashboard() {
                       <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Gender</label>
                       <select
                         value={editEmpForm.gender}
-                        onChange={(e) => setEditEmpForm({...editEmpForm, gender: e.target.value})}
+                        onChange={(e) => setEditEmpForm({ ...editEmpForm, gender: e.target.value })}
                         className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer shadow-2xs"
                       >
                         <option value="Male">Male</option>
@@ -2145,7 +2139,7 @@ export default function AdminDashboard() {
                       <input
                         type="email" required
                         value={editEmpForm.email}
-                        onChange={(e) => setEditEmpForm({...editEmpForm, email: e.target.value})}
+                        onChange={(e) => setEditEmpForm({ ...editEmpForm, email: e.target.value })}
                         className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
                       />
                     </div>
@@ -2154,7 +2148,7 @@ export default function AdminDashboard() {
                       <input
                         type="password"
                         value={editEmpForm.password}
-                        onChange={(e) => setEditEmpForm({...editEmpForm, password: e.target.value})}
+                        onChange={(e) => setEditEmpForm({ ...editEmpForm, password: e.target.value })}
                         placeholder="Leave blank to retain existing password"
                         className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
                       />
@@ -2168,7 +2162,7 @@ export default function AdminDashboard() {
                         type="tel"
                         maxLength={10}
                         value={editEmpForm.phone}
-                        onChange={(e) => setEditEmpForm({...editEmpForm, phone: normalizePhoneNumber(e.target.value)})}
+                        onChange={(e) => setEditEmpForm({ ...editEmpForm, phone: normalizePhoneNumber(e.target.value) })}
                         placeholder="10-digit number e.g. 9876543210"
                         className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
                       />
@@ -2177,7 +2171,7 @@ export default function AdminDashboard() {
                       <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Employment Status</label>
                       <select
                         value={editEmpForm.status}
-                        onChange={(e) => setEditEmpForm({...editEmpForm, status: e.target.value})}
+                        onChange={(e) => setEditEmpForm({ ...editEmpForm, status: e.target.value })}
                         className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer shadow-2xs"
                       >
                         <option value="Active">Active</option>
@@ -2199,7 +2193,7 @@ export default function AdminDashboard() {
                       <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Work Role</label>
                       <select
                         value={editEmpForm.role}
-                        onChange={(e) => setEditEmpForm({...editEmpForm, role: e.target.value})}
+                        onChange={(e) => setEditEmpForm({ ...editEmpForm, role: e.target.value })}
                         className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer shadow-2xs"
                       >
                         <option value="Sales Executive">Sales Executive</option>
@@ -2212,7 +2206,7 @@ export default function AdminDashboard() {
                       <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Work Department</label>
                       <select
                         value={editEmpForm.dept}
-                        onChange={(e) => setEditEmpForm({...editEmpForm, dept: e.target.value})}
+                        onChange={(e) => setEditEmpForm({ ...editEmpForm, dept: e.target.value })}
                         className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer shadow-2xs"
                       >
                         <option value="Sales & Business Development">Sales & Business Development</option>
@@ -2237,7 +2231,7 @@ export default function AdminDashboard() {
                       <input
                         type="number"
                         value={editEmpForm.annualLeaves}
-                        onChange={(e) => setEditEmpForm({...editEmpForm, annualLeaves: e.target.value})}
+                        onChange={(e) => setEditEmpForm({ ...editEmpForm, annualLeaves: e.target.value })}
                         className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
                       />
                     </div>
@@ -2246,7 +2240,7 @@ export default function AdminDashboard() {
                       <input
                         type="number"
                         value={editEmpForm.sickLeaves}
-                        onChange={(e) => setEditEmpForm({...editEmpForm, sickLeaves: e.target.value})}
+                        onChange={(e) => setEditEmpForm({ ...editEmpForm, sickLeaves: e.target.value })}
                         className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
                       />
                     </div>
@@ -2255,7 +2249,7 @@ export default function AdminDashboard() {
                       <input
                         type="number"
                         value={editEmpForm.monthlySalary}
-                        onChange={(e) => setEditEmpForm({...editEmpForm, monthlySalary: e.target.value})}
+                        onChange={(e) => setEditEmpForm({ ...editEmpForm, monthlySalary: e.target.value })}
                         className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
                       />
                     </div>
@@ -2337,10 +2331,10 @@ export default function AdminDashboard() {
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">
                   Active Permissions for '{selectedRoleForPermissions.name}'
                 </p>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-[40vh] overflow-y-auto pr-1">
                   {rolePermsList.map((perm) => (
-                    <div 
+                    <div
                       key={perm.permission_key}
                       onClick={() => handleToggleRolePermission(perm.permission_key)}
                       className="flex items-center justify-between p-3 bg-slate-50/50 border border-slate-200 rounded-xl cursor-pointer hover:bg-slate-50 transition"

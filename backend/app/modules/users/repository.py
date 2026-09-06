@@ -247,8 +247,9 @@ class UserRepository:
             if str(auth_u["id"]) not in merged_ids and str(auth_u["email"]).lower() not in merged_emails:
                 all_combined.append(auth_u)
                 
-        _USERS_CACHE = all_combined
-        _USERS_CACHE_TIMESTAMP = time.time()
+        if len(all_combined) > 0:
+            _USERS_CACHE = all_combined
+            _USERS_CACHE_TIMESTAMP = time.time()
         return all_combined
 
     def create_user(self, user_data: Dict[str, Any]) -> Dict[str, Any]:
@@ -300,6 +301,7 @@ class UserRepository:
             "half_day_permissions": user_data.get("half_day_permissions", 6),
             "short_permissions": user_data.get("short_permissions", 2),
             "incentive_percentage": float(user_data.get("incentive_percentage", 5.0)),
+            "custom_permissions": user_data.get("custom_permissions") or user_data.get("permissions"),
         }
 
         # ── Step 1: Create user in Supabase Auth (auth.users) ──────────────────
@@ -332,6 +334,7 @@ class UserRepository:
                         "half_day_permissions": new_user["half_day_permissions"],
                         "short_permissions": new_user["short_permissions"],
                         "incentive_percentage": new_user["incentive_percentage"],
+                        "custom_permissions": new_user.get("custom_permissions"),
                     }
                 })
                 if auth_res and hasattr(auth_res, "user") and auth_res.user:
@@ -370,6 +373,7 @@ class UserRepository:
                 "half_day_permissions": new_user["half_day_permissions"],
                 "short_permissions": new_user["short_permissions"],
                 "incentive_percentage": new_user["incentive_percentage"],
+                "custom_permissions": new_user.get("custom_permissions"),
             }
             hrms_record = hrms_repo.sync_employee_from_user(hrms_payload)
             logger.info(f"✅ HRMS employee record synced for {email} (emp_code: {emp_code})")

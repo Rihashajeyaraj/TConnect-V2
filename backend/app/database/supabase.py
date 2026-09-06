@@ -64,10 +64,12 @@ def check_db_health() -> dict:
         }
     try:
         client = get_supabase_client()
-        client.table("_health_check_dummy").select("*").limit(1).execute()
+        client.schema("hrms").table("employees").select("id").limit(1).execute()
         return {"status": "connected", "message": "Successfully connected to Supabase"}
     except Exception as e:
-        err_str = str(e)
-        if "PGRST" in err_str or "404" in err_str or "relation" in err_str.lower() or "table" in err_str.lower() or "not found" in err_str.lower():
+        try:
+            client.table("employees").select("id").limit(1).execute()
             return {"status": "connected", "message": "Successfully connected to Supabase database server"}
-        return {"status": "error", "message": err_str}
+        except Exception as inner_e:
+            return {"status": "error", "message": str(inner_e)}
+

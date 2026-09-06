@@ -27,9 +27,24 @@ function redirectToLogin() {
 
 // ─────────────────────────────────────────────────────────────
 // Core request function — uses only real Supabase session token
-// Deduplicates in-flight GET requests to eliminate duplicate network calls
+// In-Memory SWR Cache & Deduplication for zero-latency page transitions
 // ─────────────────────────────────────────────────────────────
 const inFlightRequests = new Map()
+const apiCache = new Map()
+const CACHE_TTL_MS = 60000 // 60 seconds memory cache
+
+export function invalidateApiCache(prefix = '') {
+  if (!prefix) {
+    apiCache.clear()
+    return
+  }
+  for (const key of apiCache.keys()) {
+    if (key.includes(prefix)) {
+      apiCache.delete(key)
+    }
+  }
+}
+
 let activeRefreshPromise = null
 
 async function handleSilentRefresh() {
@@ -61,6 +76,22 @@ async function handleSilentRefresh() {
 
 async function request(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase()
+
+  // Invalidate cache on mutations (POST, PUT, PATCH, DELETE)
+  if (method !== 'GET') {
+    invalidateApiCache()
+  } else if (!options.bypassCache && !options._isRetry && apiCache.has(endpoint)) {
+    const cached = apiCache.get(endpoint)
+    if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+      // Background revalidate if cache is >15s old
+      if (Date.now() - cached.timestamp > 15000) {
+        setTimeout(() => {
+          request(endpoint, { ...options, bypassCache: true }).catch(() => {})
+        }, 10)
+      }
+      return Promise.resolve(cached.data)
+    }
+  }
 
   // For GET requests, reuse identical in-flight promises to deduplicate parallel calls
   if (method === 'GET' && inFlightRequests.has(endpoint) && !options._isRetry) {
@@ -125,6 +156,10 @@ async function request(endpoint, options = {}) {
           console.error("[VISIT API] response:", JSON.stringify(data));
         }
         return Promise.reject(data || { message: `HTTP Error ${response.status}` })
+      }
+
+      if (method === 'GET') {
+        apiCache.set(endpoint, { data, timestamp: Date.now() })
       }
 
       return data
@@ -378,8 +413,8 @@ export const todoAPI = {
 
 
 export const userAPI = {
-  getUsers: () => request('/users'),
-  getHierarchy: () => request('/users/hierarchy'),
+  getUsers: (options = {}) => request('/users', options),
+  getHierarchy: (options = {}) => request('/users/hierarchy', options),
   createUser: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
   updateUser: (id, data) => request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),

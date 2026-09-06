@@ -164,6 +164,95 @@ export function clearSession() {
   clearUserCache()
 }
 
+export const DEFAULT_ROLE_PERMISSIONS = {
+  sales: {
+    dashboard: { view: true, create_edit: false, approve: false, delete: false, export: false },
+    map: { view: true, create_edit: true, approve: false, delete: false, export: false },
+    attendance: { view: true, create_edit: true, approve: false, delete: false, export: false },
+    customers: { view: true, create_edit: true, approve: false, delete: false, export: true },
+    leads: { view: true, create_edit: true, approve: false, delete: false, export: true },
+    expenses: { view: true, create_edit: true, approve: false, delete: false, export: false },
+    hrms: { view: true, create_edit: true, approve: false, delete: false, export: false },
+    todo: { view: true, create_edit: true, approve: false, delete: true, export: false },
+  },
+  team_lead: {
+    dashboard: { view: true, create_edit: false, approve: false, delete: false, export: false },
+    map: { view: true, create_edit: true, approve: false, delete: false, export: false },
+    team: { view: true, create_edit: true, approve: false, delete: false, export: true },
+    leads: { view: true, create_edit: true, approve: false, delete: false, export: true },
+    visits: { view: true, create_edit: true, approve: false, delete: false, export: true },
+    attendance: { view: true, create_edit: true, approve: true, delete: false, export: true },
+    expenses: { view: true, create_edit: true, approve: true, delete: false, export: true },
+    hrms: { view: true, create_edit: true, approve: false, delete: false, export: false },
+  },
+  manager: {
+    dashboard: { view: true, create_edit: false, approve: false, delete: false, export: false },
+    map: { view: true, create_edit: true, approve: false, delete: false, export: true },
+    team: { view: true, create_edit: true, approve: true, delete: false, export: true },
+    leads: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    customers: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    visits: { view: true, create_edit: true, approve: false, delete: false, export: true },
+    attendance: { view: true, create_edit: true, approve: true, delete: false, export: true },
+    followups: { view: true, create_edit: true, approve: false, delete: false, export: false },
+    opportunities: { view: true, create_edit: true, approve: true, delete: false, export: true },
+    expenses: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    reports: { view: true, create_edit: false, approve: false, delete: false, export: true },
+    notifications: { view: true, create_edit: true, approve: false, delete: false, export: false },
+    leaderboard: { view: true, create_edit: false, approve: false, delete: false, export: false },
+    calendar: { view: true, create_edit: true, approve: false, delete: false, export: false },
+    hrms: { view: true, create_edit: true, approve: true, delete: false, export: true },
+    settings: { view: true, create_edit: true, approve: false, delete: false, export: false },
+  },
+  admin: {
+    dashboard: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    company: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    users: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    customers: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    roles: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    hrms: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    reports: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    notifications: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    settings: { view: true, create_edit: true, approve: true, delete: true, export: true },
+  },
+  ceo: {
+    dashboard: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    customers: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    team_management: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    hrms: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    sales_revenue: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    reports: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    notifications: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    settings: { view: true, create_edit: true, approve: true, delete: true, export: true },
+    expenses: { view: true, create_edit: true, approve: true, delete: true, export: true },
+  }
+}
+
+export function hasPermission(user, moduleKey, actionKey = 'view') {
+  if (!user) return false
+  const role = normalizeRole(user)
+  if (role === 'ceo' || role === 'admin') return true
+
+  const customPerms = user.custom_permissions || user.permissions
+  if (customPerms && typeof customPerms === 'object' && customPerms[moduleKey]) {
+    const modPerm = customPerms[moduleKey]
+    if (typeof modPerm === 'boolean') return modPerm
+    if (typeof modPerm === 'object' && modPerm[actionKey] !== undefined) {
+      return Boolean(modPerm[actionKey])
+    }
+  }
+
+  const roleDefaults = DEFAULT_ROLE_PERMISSIONS[role]
+  if (roleDefaults && roleDefaults[moduleKey]) {
+    const defaultMod = roleDefaults[moduleKey]
+    if (typeof defaultMod === 'boolean') return defaultMod
+    if (typeof defaultMod === 'object' && defaultMod[actionKey] !== undefined) {
+      return Boolean(defaultMod[actionKey])
+    }
+  }
+
+  return true
+}
+
 export default {
   getStoredToken,
   getStoredRefreshToken,
@@ -173,4 +262,6 @@ export default {
   saveSession,
   restoreSession,
   clearSession,
+  DEFAULT_ROLE_PERMISSIONS,
+  hasPermission,
 }

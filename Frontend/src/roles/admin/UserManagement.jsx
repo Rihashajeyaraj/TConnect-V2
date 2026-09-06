@@ -67,7 +67,7 @@ const EmployeeProfileModal = ({ employee, onClose }) => {
             setFullProfile(prev => ({ ...prev, ...res.data }));
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
     return () => { isMounted = false; };
   }, [employee]);
@@ -297,6 +297,313 @@ const isProtectedRole = (roleName) => {
   return roleName === 'CEO / Founder' || roleName === 'Super Admin'
 }
 
+const MODULE_LABELS_BY_ROLE = {
+  'Sales Executive': [
+    { key: 'dashboard', label: '📊 Sales Dashboard' },
+    { key: 'map', label: '🗺️ Live Client Map' },
+    { key: 'attendance', label: '⏱️ Attendance & Punch' },
+    { key: 'customers', label: '👥 Customers / Clients' },
+    { key: 'leads', label: '🎯 Leads & Visits' },
+    { key: 'expenses', label: '💵 Expense Claims' },
+    { key: 'hrms', label: '📄 HRMS & Leaves' },
+    { key: 'todo', label: '📝 Tasks & Todos' },
+  ],
+  'Team Lead': [
+    { key: 'dashboard', label: '📊 Team Lead Dashboard' },
+    { key: 'map', label: '🗺️ Team Smart Map' },
+    { key: 'team', label: '👨‍💼 Team Management' },
+    { key: 'leads', label: '🎯 Leads & Pipeline' },
+    { key: 'visits', label: '📍 Team Visits Log' },
+    { key: 'attendance', label: '⏱️ Attendance Approvals' },
+    { key: 'expenses', label: '💵 Expense Approvals' },
+    { key: 'hrms', label: '📄 Team Lead HRMS' },
+  ],
+  'Sales Manager': [
+    { key: 'dashboard', label: '📊 Manager Dashboard' },
+    { key: 'map', label: '🗺️ Manager Smart Map' },
+    { key: 'team', label: '👨‍💼 Team Management' },
+    { key: 'leads', label: '🎯 Team Leads & Pipeline' },
+    { key: 'customers', label: '👥 Customer Accounts' },
+    { key: 'visits', label: '📍 Team Visits' },
+    { key: 'attendance', label: '⏱️ Attendance Approvals' },
+    { key: 'followups', label: '📞 Follow-ups' },
+    { key: 'opportunities', label: '💼 Deals & Opportunities' },
+    { key: 'expenses', label: '💵 Expense Approvals' },
+    { key: 'reports', label: '📈 Sales & HR Reports' },
+    { key: 'notifications', label: '🔔 Notifications' },
+    { key: 'leaderboard', label: '🏆 Leaderboard' },
+    { key: 'calendar', label: '📅 Team Calendar' },
+    { key: 'hrms', label: '📄 Manager HRMS' },
+    { key: 'settings', label: '⚙️ Manager Settings' },
+  ],
+  'Super Admin': [
+    { key: 'dashboard', label: '📊 System Dashboard' },
+    { key: 'company', label: '🏢 Company Master Data' },
+    { key: 'users', label: '👥 User Management' },
+    { key: 'customers', label: '💼 Customer Accounts' },
+    { key: 'roles', label: '🛡️ Role & Access Controls' },
+    { key: 'hrms', label: '📄 System HRMS' },
+    { key: 'reports', label: '📜 Audit Logs & Reports' },
+    { key: 'notifications', label: '🔔 Notifications' },
+    { key: 'settings', label: '⚙️ System Settings' },
+  ],
+  'CEO / Founder': [
+    { key: 'dashboard', label: '📊 Executive Dashboard' },
+    { key: 'customers', label: '👥 Customer Portfolio' },
+    { key: 'team_management', label: '👨‍💼 Team Management' },
+    { key: 'sales_revenue', label: '📈 Revenue & Sales Overview' },
+    { key: 'hrms', label: '📄 Executive HRMS' },
+    { key: 'reports', label: '📜 Executive Reports' },
+    { key: 'notifications', label: '🔔 Notifications' },
+    { key: 'settings', label: '⚙️ Executive Settings' },
+    { key: 'expenses', label: '💵 Expense Management' },
+  ]
+}
+
+const ACTION_KEYS = [
+  { key: 'view', label: 'View', icon: '👀', color: 'blue' },
+  { key: 'create_edit', label: 'Edit', icon: '✏️', color: 'indigo' },
+  { key: 'approve', label: 'Approve', icon: '✅', color: 'emerald' },
+  { key: 'assign', label: 'Assign', icon: '🔄', color: 'amber' },
+  { key: 'delete', label: 'Delete', icon: '🗑️', color: 'rose' },
+  { key: 'export', label: 'Export', icon: '📥', color: 'purple' },
+]
+
+const SUB_ACTION_ITEMS = {
+  view: [
+    { key: 'open_page', label: 'Open Page', desc: 'Allow user to open page route' },
+    { key: 'view_cards', label: 'View Cards', desc: 'Display summary KPI cards' },
+    { key: 'view_details', label: 'View Details', desc: 'Open full record detail views' },
+  ],
+  create_edit: [
+    { key: 'create_records', label: 'Create Records', desc: 'Add new visits, leads, or claims' },
+    { key: 'edit_records', label: 'Edit Fields', desc: 'Modify existing record information' },
+    { key: 'update_status', label: 'Update Status', desc: 'Change lead stage or request status' },
+  ],
+  approve: [
+    { key: 'approve_leaves', label: 'Leave Approvals', desc: 'Approve or reject leave requests' },
+    { key: 'approve_expenses', label: 'Expense Approvals', desc: 'Approve or reject expense claims' },
+    { key: 'approve_attendance', label: 'Attendance Approvals', desc: 'Validate check-in & punch logs' },
+    { key: 'acknowledge_eod', label: 'EOD Acknowledgment', desc: 'Acknowledge end-of-day reports' },
+  ],
+  assign: [
+    { key: 'assign_leads', label: 'Assign Leads', desc: 'Distribute leads to sales executives' },
+    { key: 'assign_customers', label: 'Assign Customers', desc: 'Map customer accounts to reps' },
+    { key: 'map_hierarchy', label: 'Map Hierarchy', desc: 'Assign reporting manager & TL' },
+  ],
+  delete: [
+    { key: 'delete_leads', label: 'Delete Leads', desc: 'Remove lead/opportunity records' },
+    { key: 'delete_customers', label: 'Delete Customers', desc: 'Remove customer accounts' },
+    { key: 'delete_expenses', label: 'Delete Expenses', desc: 'Purge expense claim entries' },
+    { key: 'delete_users', label: 'Delete Users', desc: 'Deactivate or delete user accounts' },
+  ],
+  export: [
+    { key: 'export_excel', label: 'Export Excel (.xlsx)', desc: 'Download Excel spreadsheet' },
+    { key: 'export_csv', label: 'Export CSV (.csv)', desc: 'Download CSV raw dataset' },
+    { key: 'export_pdf', label: 'Export PDF Reports', desc: 'Generate printable PDF reports' },
+  ],
+}
+
+function PermissionMatrixEditor({ role = 'Sales Executive', permissions = {}, onChange }) {
+  const [selectedDept, setSelectedDept] = useState('ALL')
+  const [activePopover, setActivePopover] = useState(null) // { modKey, actKey }
+
+  const normRole = (role || '').toLowerCase().includes('ceo') ? 'CEO / Founder'
+    : (role || '').toLowerCase().includes('admin') ? 'Super Admin'
+      : (role || '').toLowerCase().includes('lead') ? 'Team Lead'
+        : (role || '').toLowerCase().includes('manager') ? 'Sales Manager'
+          : 'Sales Executive';
+
+  const allModules = MODULE_LABELS_BY_ROLE[normRole] || MODULE_LABELS_BY_ROLE['Sales Executive'];
+
+  const filteredModules = useMemo(() => {
+    if (selectedDept === 'ALL') return allModules;
+    return allModules.filter(m => {
+      const k = m.key;
+      if (selectedDept === 'sales') return ['dashboard', 'map', 'leads', 'customers', 'visits', 'opportunities', 'followups', 'sales_revenue', 'todo'].includes(k);
+      if (selectedDept === 'hrms') return ['attendance', 'hrms', 'team', 'users', 'team_management'].includes(k);
+      if (selectedDept === 'finance') return ['expenses', 'company', 'reports'].includes(k);
+      if (selectedDept === 'ops') return ['map', 'visits', 'notifications', 'calendar', 'leaderboard'].includes(k);
+      if (selectedDept === 'it') return ['roles', 'users', 'settings', 'reports', 'company'].includes(k);
+      return true;
+    });
+  }, [allModules, selectedDept]);
+
+  const handleToggleAction = (modKey, actKey) => {
+    const currentMod = permissions[modKey] || {};
+    const currentState = currentMod[actKey];
+    const isCurrentlyActive = typeof currentState === 'boolean' ? currentState : (currentState?.enabled ?? (actKey === 'view'));
+
+    const updatedMod = {
+      ...currentMod,
+      [actKey]: !isCurrentlyActive
+    };
+
+    onChange({
+      ...permissions,
+      [modKey]: updatedMod
+    });
+  };
+
+  const handleToggleSubAction = (modKey, actKey, subKey) => {
+    const currentMod = permissions[modKey] || {};
+    const currentAct = currentMod[actKey];
+    let subObj = typeof currentAct === 'object' && currentAct !== null ? { ...currentAct } : { enabled: true };
+
+    subObj[subKey] = !Boolean(subObj[subKey] !== undefined ? subObj[subKey] : true);
+
+    onChange({
+      ...permissions,
+      [modKey]: {
+        ...currentMod,
+        [actKey]: subObj
+      }
+    });
+  };
+
+  return (
+    <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3 font-sans relative text-left">
+      {/* Header with Department Selector */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
+        <div className="flex items-center gap-2">
+          <span className="w-7 h-7 rounded-xl bg-blue-600 text-white font-black text-xs flex items-center justify-center shadow-2xs">🔐</span>
+          <div>
+            <h4 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">
+              TwiteConnect Permission Matrix ({normRole})
+            </h4>
+            <p className="text-[10px] text-slate-500 font-semibold">Click any action pill to toggle or customize sub-actions.</p>
+          </div>
+        </div>
+
+        {/* Department Filter Selector */}
+        <div className="flex items-center gap-2">
+          <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Dept:</label>
+          <select
+            value={selectedDept}
+            onChange={(e) => setSelectedDept(e.target.value)}
+            className="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-extrabold text-slate-800 focus:outline-none focus:border-blue-600 shadow-2xs cursor-pointer"
+          >
+            <option value="ALL">🏢 All Departments</option>
+            <option value="sales">🎯 Sales & BD</option>
+            <option value="hrms">👥 Human Resources (HR)</option>
+            <option value="finance">💵 Finance & Accounts</option>
+            <option value="ops">📍 Operations & Field Ops</option>
+            <option value="it">⚙️ IT & System Admin</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Pages & 6 Action Pills Grid */}
+      <div className="space-y-2 max-h-72 overflow-y-auto pr-1">
+        {filteredModules.map((mod) => {
+          const modPerm = permissions[mod.key] || {};
+
+          return (
+            <div key={mod.key} className="bg-white border border-slate-200/90 rounded-xl p-2.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shadow-2xs">
+              <div className="flex items-center gap-2 min-w-[170px]">
+                <span className="font-bold text-xs text-slate-900">{mod.label}</span>
+              </div>
+
+              <div className="flex items-center gap-1.5 flex-wrap relative">
+                {ACTION_KEYS.map((act) => {
+                  const actVal = modPerm[act.key];
+                  const isActive = typeof actVal === 'boolean' ? actVal : (actVal?.enabled ?? (act.key === 'view'));
+                  const isPopoverOpen = activePopover?.modKey === mod.key && activePopover?.actKey === act.key;
+                  const subItems = SUB_ACTION_ITEMS[act.key] || [];
+
+                  return (
+                    <div key={act.key} className="relative">
+                      <div className="flex items-center">
+                        <button
+                          type="button"
+                          onClick={() => handleToggleAction(mod.key, act.key)}
+                          className={`px-2.5 py-1 rounded-l-lg text-[10px] font-extrabold transition cursor-pointer border-y border-l flex items-center gap-1 ${isActive
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-2xs'
+                              : 'bg-slate-100 text-slate-500 border-slate-200 hover:bg-slate-200'
+                            }`}
+                        >
+                          <span>{act.icon}</span>
+                          <span>{act.label}</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isPopoverOpen) {
+                              setActivePopover(null);
+                            } else {
+                              setActivePopover({ modKey: mod.key, actKey: act.key });
+                            }
+                          }}
+                          className={`px-1.5 py-1 rounded-r-lg text-[9px] font-black border transition cursor-pointer ${isActive
+                              ? 'bg-blue-700 text-white border-blue-600 hover:bg-blue-800'
+                              : 'bg-slate-200 text-slate-600 border-slate-300 hover:bg-slate-300'
+                            }`}
+                          title="Customize sub-actions"
+                        >
+                          ▼
+                        </button>
+                      </div>
+
+                      {/* Interactive Sub-Action Popover Checklist */}
+                      {isPopoverOpen && (
+                        <div className="absolute right-0 top-full mt-1.5 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-3 text-left space-y-2 animate-in fade-in zoom-in-95 duration-150">
+                          <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
+                            <span className="font-extrabold text-[11px] text-slate-900 flex items-center gap-1">
+                              {act.icon} {act.label} Sub-Actions
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setActivePopover(null)}
+                              className="text-slate-400 hover:text-slate-700 text-xs cursor-pointer"
+                            >
+                              ✕
+                            </button>
+                          </div>
+
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                            {subItems.map((sub) => {
+                              const subVal = typeof actVal === 'object' && actVal !== null && actVal[sub.key] !== undefined ? actVal[sub.key] : true;
+                              return (
+                                <label
+                                  key={sub.key}
+                                  className="flex items-start gap-2 p-1.5 rounded-lg hover:bg-slate-50 cursor-pointer border border-transparent hover:border-slate-100 transition"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={Boolean(subVal)}
+                                    onChange={() => handleToggleSubAction(mod.key, act.key, sub.key)}
+                                    className="mt-0.5 rounded text-blue-600 focus:ring-blue-500 cursor-pointer"
+                                  />
+                                  <div>
+                                    <p className="font-bold text-[11px] text-slate-800 leading-tight">{sub.label}</p>
+                                    <p className="text-[9px] text-slate-400 font-medium leading-tight">{sub.desc}</p>
+                                  </div>
+                                </label>
+                              );
+                            })}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setActivePopover(null)}
+                            className="w-full py-1.5 bg-blue-600 text-white rounded-lg text-[10px] font-bold shadow-2xs hover:bg-blue-700 transition cursor-pointer"
+                          >
+                            Done
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 // ======================================================
 // ThreeTierHierarchyView — Manager -> Team Lead -> Executive Drill-Down
 // ======================================================
@@ -485,9 +792,8 @@ function ThreeTierHierarchyView({
             return (
               <div
                 key={mgr.id}
-                className={`rounded-2xl transition-all shadow-xs overflow-hidden ${
-                  isMgrExpanded ? 'bg-blue-50/70 border border-blue-300 ring-2 ring-blue-500/20' : 'bg-blue-50/40 border border-blue-200/80 hover:border-blue-300 hover:shadow-sm'
-                }`}
+                className={`rounded-2xl transition-all shadow-xs overflow-hidden ${isMgrExpanded ? 'bg-blue-50/70 border border-blue-300 ring-2 ring-blue-500/20' : 'bg-blue-50/40 border border-blue-200/80 hover:border-blue-300 hover:shadow-sm'
+                  }`}
               >
                 {/* TIER 1: Manager Row (Blue Theme) */}
                 <div className="p-4 bg-gradient-to-r from-blue-100/70 via-blue-50/40 to-white flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-blue-200/60">
@@ -527,11 +833,10 @@ function ThreeTierHierarchyView({
                     <button
                       type="button"
                       onClick={() => toggleManager(mgr.id)}
-                      className={`px-3.5 py-1.5 rounded-xl border text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${
-                        isMgrExpanded
+                      className={`px-3.5 py-1.5 rounded-xl border text-xs font-extrabold flex items-center gap-1.5 transition cursor-pointer ${isMgrExpanded
                           ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
                           : 'bg-white text-blue-700 border-blue-300 hover:bg-blue-100'
-                      }`}
+                        }`}
                     >
                       <span>{isMgrExpanded ? 'Hide Team Leads' : 'View Team Leads'}</span>
                       <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isMgrExpanded ? 'rotate-180' : ''}`} />
@@ -542,7 +847,7 @@ function ThreeTierHierarchyView({
                 {/* TIER 2 & TIER 3 CONTAINER */}
                 {isMgrExpanded && (
                   <div className="p-4 bg-white/60 space-y-3.5 border-t border-blue-200/60 animate-in fade-in zoom-in-95 duration-150">
-                    
+
                     {/* Team Leads List & Team Lead (Assign) Placeholder */}
                     {teamLeads.length === 0 && directExecs.length === 0 ? (
                       <div className="rounded-xl p-3.5 bg-purple-50/40 border-2 border-dashed border-purple-300 text-center space-y-2">
@@ -570,9 +875,8 @@ function ThreeTierHierarchyView({
                           return (
                             <div
                               key={tl.id}
-                              className={`rounded-xl p-3.5 space-y-3 transition-all shadow-2xs ${
-                                isTLExpanded ? 'bg-purple-50/80 border border-purple-300 ring-2 ring-purple-500/20' : 'bg-purple-50/50 border border-purple-200/80 hover:border-purple-300'
-                              }`}
+                              className={`rounded-xl p-3.5 space-y-3 transition-all shadow-2xs ${isTLExpanded ? 'bg-purple-50/80 border border-purple-300 ring-2 ring-purple-500/20' : 'bg-purple-50/50 border border-purple-200/80 hover:border-purple-300'
+                                }`}
                             >
                               {/* Team Lead Card Row Header (Purple Theme) */}
                               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
@@ -612,11 +916,10 @@ function ThreeTierHierarchyView({
                                   <button
                                     type="button"
                                     onClick={() => toggleTeamLead(tl.id)}
-                                    className={`px-3 py-1 rounded-lg border text-[11px] font-extrabold flex items-center gap-1 transition cursor-pointer ${
-                                      isTLExpanded
+                                    className={`px-3 py-1 rounded-lg border text-[11px] font-extrabold flex items-center gap-1 transition cursor-pointer ${isTLExpanded
                                         ? 'bg-purple-600 text-white border-purple-600'
                                         : 'bg-white text-purple-700 border-purple-300 hover:bg-purple-100'
-                                    }`}
+                                      }`}
                                   >
                                     <span>{isTLExpanded ? 'Hide Executives' : 'View Executives'}</span>
                                     <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-200 ${isTLExpanded ? 'rotate-180' : ''}`} />
@@ -862,9 +1165,8 @@ function UserDirectoryTable({
                   {/* Main Row */}
                   <tr
                     key={user.id}
-                    className={`border-b border-slate-100 hover:bg-slate-50/60 transition ${
-                      isExpanded ? 'bg-slate-50/60' : ''
-                    }`}
+                    className={`border-b border-slate-100 hover:bg-slate-50/60 transition ${isExpanded ? 'bg-slate-50/60' : ''
+                      }`}
                   >
                     {/* Emp ID */}
                     <td className="px-4 py-3 font-mono text-[11px] text-slate-500 font-semibold">
@@ -874,19 +1176,19 @@ function UserDirectoryTable({
                     {/* Name */}
                     <td className="px-4 py-3">
                       <div className="flex items-center gap-2.5">
-                      <div className="relative w-7 h-7 shrink-0">
-                        {getUserPhoto(user) && (
-                          <img
-                            src={getUserPhoto(user)}
-                            alt={user.name}
-                            onError={(e) => { e.currentTarget.style.display = 'none' }}
-                            className="w-7 h-7 rounded-lg object-cover border border-slate-200 absolute inset-0 z-10"
-                          />
-                        )}
-                        <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-black text-[10px] flex items-center justify-center">
-                          {initials}
+                        <div className="relative w-7 h-7 shrink-0">
+                          {getUserPhoto(user) && (
+                            <img
+                              src={getUserPhoto(user)}
+                              alt={user.name}
+                              onError={(e) => { e.currentTarget.style.display = 'none' }}
+                              className="w-7 h-7 rounded-lg object-cover border border-slate-200 absolute inset-0 z-10"
+                            />
+                          )}
+                          <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-black text-[10px] flex items-center justify-center">
+                            {initials}
+                          </div>
                         </div>
-                      </div>
                         <div className="min-w-0">
                           <p className="font-extrabold text-slate-900 text-xs truncate flex items-center gap-1">
                             {user.name}
@@ -921,11 +1223,10 @@ function UserDirectoryTable({
                     <td className="px-4 py-3 text-center">
                       <button
                         onClick={() => setExpandedId(isExpanded ? null : user.id)}
-                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition cursor-pointer ${
-                          isExpanded
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border transition cursor-pointer ${isExpanded
                             ? 'bg-slate-900 text-white border-slate-900'
                             : 'bg-white text-slate-700 border-slate-200 hover:border-slate-400 hover:bg-slate-50'
-                        }`}
+                          }`}
                       >
                         <ChevronRight className={`w-3 h-3 transition-transform ${isExpanded ? 'rotate-90' : ''}`} />
                         {isExpanded ? 'Close' : 'View'}
@@ -964,13 +1265,12 @@ function UserDirectoryTable({
                             <button
                               onClick={() => toggleUserStatus(user.id)}
                               disabled={isProtected}
-                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-extrabold transition cursor-pointer ${
-                                user.status === 'Active'
+                              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-extrabold transition cursor-pointer ${user.status === 'Active'
                                   ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
                                   : 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                              } ${isProtected ? 'opacity-60 cursor-not-allowed' : ''}`}
+                                } ${isProtected ? 'opacity-60 cursor-not-allowed' : ''}`}
                             >
-                              <span className={`w-1.5 h-1.5 rounded-full ${ user.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500' }`} />
+                              <span className={`w-1.5 h-1.5 rounded-full ${user.status === 'Active' ? 'bg-emerald-500 animate-pulse' : 'bg-rose-500'}`} />
                               {user.status === 'Active' ? 'Active — click to deactivate' : 'Inactive — click to activate'}
                             </button>
                           </div>
@@ -1079,11 +1379,10 @@ function UserDirectoryTable({
                 key={pg}
                 type="button"
                 onClick={() => setCurrentPage(pg)}
-                className={`w-7 h-7 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center justify-center ${
-                  pg === validCurrentPage
+                className={`w-7 h-7 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center justify-center ${pg === validCurrentPage
                     ? 'bg-blue-600 text-white shadow-2xs'
                     : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                }`}
+                  }`}
               >
                 {pg}
               </button>
@@ -1228,13 +1527,13 @@ function UserManagement() {
   const [showEnrollFaceModal, setShowEnrollFaceModal] = useState(false)
   const [isEnrolling, setIsEnrolling] = useState(false)
   const [duplicateErrorUser, setDuplicateErrorUser] = useState(null)
-  
+
   // Liveness engine states
   const [livenessStatus, setLivenessStatus] = useState('PENDING') // PENDING | VERIFYING | PASSED
   const [isFaceAligned, setIsFaceAligned] = useState(false)
   const [blinkCount, setBlinkCount] = useState(0)
   const [livenessProgress, setLivenessProgress] = useState(0)
-  
+
   const videoRef = useRef(null)
   const streamRef = useRef(null)
   const canvasRef = useRef(null)
@@ -1309,12 +1608,12 @@ function UserManagement() {
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
         const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
         setLivenessProgress(60)
-        
+
         const res = await attendanceAPI.verifyLiveness({
           challenge_type: "blink",
           face_data_url: dataUrl
         })
-        
+
         setLivenessProgress(100)
         setIsEnrolling(false)
         if (res && res.data && res.data.liveness_verified) {
@@ -1348,7 +1647,7 @@ function UserManagement() {
         const dataUrl = canvas.toDataURL('image/jpeg', 0.9)
         stopCamera()
         setIsEnrolling(true)
-        
+
         if (selectedEnrollUser) {
           // Call backend enrollment API immediately using correct, fetched employee code
           await attendanceAPI.enroll({
@@ -1603,7 +1902,7 @@ function UserManagement() {
       showToast(`Assigned ${selectedUnassignedExec.name} to ${mName} successfully!`, 'success')
       setShowAssignToManagerModal(false)
       setSelectedUnassignedExec(null)
-      
+
       // Refresh list from database
       const freshRes = await userAPI.getUsers()
       if (freshRes && freshRes.data) {
@@ -1692,7 +1991,7 @@ function UserManagement() {
         reporting_manager_email: null
       })
       showToast(`Removed ${execName} from ${managerName}'s team.`, 'info')
-      
+
       // Refresh list from database
       const freshRes = await userAPI.getUsers()
       if (freshRes && freshRes.data) {
@@ -1748,7 +2047,7 @@ function UserManagement() {
         const assignMap = JSON.parse(localStorage.getItem('tc_manager_assignments') || '{}')
         assignMap[mId] = selectedExecIds
         localStorage.setItem('tc_manager_assignments', JSON.stringify(assignMap))
-      } catch (err) {}
+      } catch (err) { }
 
       showToast(`Assigned ${selectedExecIds.length} Sales Executives to ${mName}!`, 'success')
       setShowAssignModal(false)
@@ -1772,7 +2071,7 @@ function UserManagement() {
         if (saved) {
           try {
             setUsers(JSON.parse(saved))
-          } catch (e) {}
+          } catch (e) { }
         }
       }
     }
@@ -1791,13 +2090,13 @@ function UserManagement() {
   useEffect(() => {
     try {
       localStorage.setItem('tc_app_users', JSON.stringify(users))
-    } catch (e) {}
+    } catch (e) { }
   }, [users])
 
   const handleOpenEditModal = async (user) => {
     const saved = localStorage.getItem(`tc_leaves_${user.email.toLowerCase().trim()}`)
     const leaveAllocation = saved ? JSON.parse(saved) : { annualLeaves: 12, sickLeaves: 10, otherLeaves: 10, halfDayPermissions: 6, shortPermissions: 2 }
-    
+
     // Load from database properties first, fallback to localStorage/defaults
     const annualLeaves = user.annual_leaves ?? user.annualLeaves ?? leaveAllocation.annualLeaves;
     const sickLeaves = user.sick_leaves ?? user.sickLeaves ?? leaveAllocation.sickLeaves ?? 10;
@@ -2226,11 +2525,10 @@ function UserManagement() {
         <button
           type="button"
           onClick={() => setActiveTab('directory')}
-          className={`p-4 rounded-2xl border transition-all text-left flex items-center gap-3.5 cursor-pointer shadow-2xs ${
-            activeTab === 'directory'
+          className={`p-4 rounded-2xl border transition-all text-left flex items-center gap-3.5 cursor-pointer shadow-2xs ${activeTab === 'directory'
               ? 'bg-blue-50/50 border-blue-300 ring-2 ring-blue-500/20'
               : 'bg-white border-slate-200 hover:border-blue-300 hover:shadow-xs'
-          }`}
+            }`}
         >
           <div className="p-3 bg-blue-100/80 text-blue-700 rounded-xl border border-blue-200">
             <Users className="w-5 h-5" />
@@ -2263,11 +2561,10 @@ function UserManagement() {
         <button
           type="button"
           onClick={() => setActiveTab('hierarchy')}
-          className={`p-4 rounded-2xl border transition-all text-left flex items-center gap-3.5 cursor-pointer shadow-2xs ${
-            activeTab === 'hierarchy'
+          className={`p-4 rounded-2xl border transition-all text-left flex items-center gap-3.5 cursor-pointer shadow-2xs ${activeTab === 'hierarchy'
               ? 'bg-indigo-50/50 border-indigo-300 ring-2 ring-indigo-500/20'
               : 'bg-white border-slate-200 hover:border-indigo-300 hover:shadow-xs'
-          }`}
+            }`}
         >
           <div className="p-3 bg-indigo-100/80 text-indigo-700 rounded-xl border border-indigo-200">
             <Network className="w-5 h-5" />
@@ -2300,11 +2597,10 @@ function UserManagement() {
           <button
             type="button"
             onClick={() => setActiveTab('directory')}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-2 ${
-              activeTab === 'directory'
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-2 ${activeTab === 'directory'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'bg-transparent text-slate-600 hover:bg-slate-200/60'
-            }`}
+              }`}
           >
             <Users className="w-4 h-4" />
             <span>📋 All Employees Directory</span>
@@ -2313,11 +2609,10 @@ function UserManagement() {
           <button
             type="button"
             onClick={() => setActiveTab('hierarchy')}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-2 ${
-              activeTab === 'hierarchy'
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-2 ${activeTab === 'hierarchy'
                 ? 'bg-blue-600 text-white shadow-sm'
                 : 'bg-transparent text-slate-600 hover:bg-slate-200/60'
-            }`}
+              }`}
           >
             <Network className="w-4 h-4" />
             <span>🏢 Team View</span>
@@ -2326,11 +2621,10 @@ function UserManagement() {
           <button
             type="button"
             onClick={() => setActiveTab('password-resets')}
-            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-2 ${
-              activeTab === 'password-resets'
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-2 ${activeTab === 'password-resets'
                 ? 'bg-amber-500 text-white shadow-sm'
                 : 'bg-transparent text-slate-600 hover:bg-slate-200/60'
-            }`}
+              }`}
           >
             <Key className="w-4 h-4" />
             <span>🔑 Password Reset Requests</span>
@@ -2481,11 +2775,10 @@ function UserManagement() {
                     key={deptName}
                     type="button"
                     onClick={() => setSelectedHierarchyDept(isSelected ? 'ALL' : deptName)}
-                    className={`p-3.5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs ${
-                      isSelected
+                    className={`p-3.5 rounded-2xl border transition-all text-left flex flex-col justify-between cursor-pointer group shadow-xs ${isSelected
                         ? 'bg-gradient-to-br from-blue-600 to-indigo-700 text-white border-transparent ring-2 ring-blue-500/30 shadow-md scale-[1.02]'
                         : 'bg-white text-slate-800 border-slate-200 hover:border-indigo-400 hover:shadow-sm'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between">
                       <div className={`p-2 rounded-xl border ${isSelected ? 'bg-white/10 border-white/20 text-white' : 'bg-indigo-50 border-indigo-100 text-indigo-600'}`}>
@@ -2559,7 +2852,7 @@ function UserManagement() {
       {showUnassignedPoolModal && (
         <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-5xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800 animate-in fade-in zoom-in-95 duration-150">
-            
+
             {/* Modal Header */}
             <div className="bg-[#061A4D] text-white p-5 flex items-center justify-between border-b border-slate-800 shrink-0">
               <div className="flex items-center gap-3">
@@ -2636,9 +2929,8 @@ function UserManagement() {
                         </div>
                       </div>
                       <div className="flex items-center gap-2 shrink-0">
-                        <span className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold border transition ${
-                          exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
-                        }`}>
+                        <span className={`px-2 py-0.5 rounded-md text-[9px] font-extrabold border transition ${exec.status === 'Active' ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-rose-50 text-rose-700 border-rose-100'
+                          }`}>
                           {exec.status || 'Active'}
                         </span>
                         <button
@@ -2683,7 +2975,7 @@ function UserManagement() {
       {showDirectoryModal && (
         <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-6xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
-            
+
             {/* Modal Header */}
             <div className="bg-gradient-to-r from-slate-50 via-[#F0F4FF] to-slate-50 text-slate-900 p-5 flex items-center justify-between border-b border-slate-200 shrink-0">
               <div className="flex items-center gap-3">
@@ -2717,22 +3009,20 @@ function UserManagement() {
                 <button
                   type="button"
                   onClick={() => setDirectoryViewMode('hierarchy')}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 ${
-                    directoryViewMode === 'hierarchy'
+                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 ${directoryViewMode === 'hierarchy'
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-                  }`}
+                    }`}
                 >
                   <span>🏢 Team View (Manager ➔ Team Lead ➔ Exec)</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setDirectoryViewMode('table')}
-                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 ${
-                    directoryViewMode === 'table'
+                  className={`px-3.5 py-2 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5 ${directoryViewMode === 'table'
                       ? 'bg-blue-600 text-white shadow-xs'
                       : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
-                  }`}
+                    }`}
                 >
                   <span>📋 Directory List</span>
                 </button>
@@ -2829,7 +3119,7 @@ function UserManagement() {
       {showAddModal && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl max-w-3xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
-            
+
             {/* Modal Header */}
             <div className="bg-gradient-to-r from-[#071A45] via-[#0D2866] to-[#14398A] text-white p-5 flex items-center justify-between border-b border-slate-800 shrink-0">
               <div className="flex items-center gap-3">
@@ -3134,6 +3424,13 @@ function UserManagement() {
                 </div>
               </div>
 
+              {/* SECTION 5: Granular Page & Action Permissions */}
+              <PermissionMatrixEditor
+                role={newUser.role}
+                permissions={newUser.custom_permissions || {}}
+                onChange={(perms) => setNewUser({ ...newUser, custom_permissions: perms })}
+              />
+
               {/* Modal Footer Actions */}
               <div className="flex items-center gap-3 pt-4 justify-end border-t border-slate-200 shrink-0">
                 <button
@@ -3335,7 +3632,7 @@ function UserManagement() {
               )}
 
               <div className="border-t border-slate-100 my-2" />
-              
+
               <div className="space-y-2">
                 <h4 className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wider">Leave & Permission Allocation</h4>
                 <div className="grid grid-cols-3 gap-3">
@@ -3403,6 +3700,12 @@ function UserManagement() {
                   </div>
                 </div>
               </div>
+
+              <PermissionMatrixEditor
+                role={editingUser.role}
+                permissions={editingUser.custom_permissions || editingUser.permissions || {}}
+                onChange={(perms) => setEditingUser({ ...editingUser, custom_permissions: perms })}
+              />
 
               <button
                 type="submit"
@@ -3535,11 +3838,10 @@ function UserManagement() {
                       return (
                         <label
                           key={exec.id}
-                          className={`flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer ${
-                            isChecked
+                          className={`flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer ${isChecked
                               ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 shadow-xs'
                               : 'bg-white border-slate-200 hover:bg-slate-100/70 text-slate-800'
-                          }`}
+                            }`}
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <input
@@ -3554,11 +3856,10 @@ function UserManagement() {
                             </div>
                           </div>
                           <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                              currManager !== 'Unassigned'
+                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${currManager !== 'Unassigned'
                                 ? 'bg-blue-100 text-blue-800'
                                 : 'bg-slate-200 text-slate-600'
-                            }`}
+                              }`}
                           >
                             {currManager !== 'Unassigned' ? `Reports to: ${currManager}` : 'Unassigned'}
                           </span>
@@ -3682,7 +3983,7 @@ function UserManagement() {
             <div className="w-12 h-12 bg-amber-50 rounded-full flex items-center justify-center mx-auto text-amber-500 border border-amber-100 animate-bounce">
               <AlertCircle className="w-6 h-6" />
             </div>
-            
+
             <div className="space-y-2">
               <h3 className="text-base font-black text-slate-950">Face Already Registered</h3>
               <p className="text-xs text-slate-500 font-semibold leading-relaxed">
@@ -3717,9 +4018,9 @@ function UserManagement() {
       {showEnrollFaceModal && selectedEnrollUser && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-2xl space-y-6 max-w-md w-full relative">
-            
+
             {/* Close Button */}
-            <button 
+            <button
               onClick={() => {
                 if (isEnrolling) return
                 setShowEnrollFaceModal(false)
@@ -3727,7 +4028,7 @@ function UserManagement() {
                 setEnrollFaceUrl(null)
                 setDuplicateErrorUser(null)
                 stopCamera()
-              }} 
+              }}
               disabled={isEnrolling}
               className="absolute top-4 right-4 text-slate-400 hover:text-slate-650 text-sm cursor-pointer font-bold p-1 hover:bg-slate-100 rounded-full transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
@@ -3749,7 +4050,7 @@ function UserManagement() {
                     playsInline
                     className="w-full h-full object-cover scale-x-[-1]"
                   />
-                  
+
                   {/* Liveness HUD overlay */}
                   <div className="absolute top-3 left-1/2 -translate-x-1/2 bg-slate-900/85 px-3.5 py-1 rounded-full text-white text-[9px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-lg border border-slate-800 pointer-events-none select-none z-10">
                     <span>Liveness:</span>
@@ -3760,20 +4061,18 @@ function UserManagement() {
 
                   {/* Face Guide oval frame */}
                   <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                    <div className={`w-[180px] h-[240px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
-                      isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
-                    }`} />
+                    <div className={`w-[180px] h-[240px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
+                      }`} />
                   </div>
 
                   {/* Live instruction prompt */}
                   <div className="absolute bottom-3 left-0 right-0 text-center pointer-events-none z-10">
-                    <span className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase shadow-lg border ${
-                      isFaceAligned 
-                        ? "bg-emerald-600/90 border-emerald-500 text-white animate-pulse" 
+                    <span className={`px-2.5 py-1 rounded-md text-[9px] font-black uppercase shadow-lg border ${isFaceAligned
+                        ? "bg-emerald-600/90 border-emerald-500 text-white animate-pulse"
                         : "bg-amber-600/90 border-amber-500 text-white"
-                    }`}>
-                      {isFaceAligned 
-                        ? (livenessStatus === "PASSED" ? "Liveness Passed — Ready to Enroll" : "Face Aligned — Click 'Verify Liveness'") 
+                      }`}>
+                      {isFaceAligned
+                        ? (livenessStatus === "PASSED" ? "Liveness Passed — Ready to Enroll" : "Face Aligned — Click 'Verify Liveness'")
                         : "Position face inside guide"}
                     </span>
                   </div>
