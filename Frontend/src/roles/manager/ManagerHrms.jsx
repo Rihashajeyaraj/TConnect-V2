@@ -41,7 +41,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import { attendanceAPI, hrmsAPI } from '../../services/api.js'
 import { calculateWorkHours } from '../sales/Attendance.jsx'
-import { formatDate } from '../../utils/dateUtils.js'
+import { formatDate, getLeaveRequestDays, parseDateInput } from '../../utils/dateUtils.js'
 
 const NAV_ITEMS = [
   { key: 'dashboard', label: 'My Dashboard', icon: LayoutDashboard },
@@ -692,11 +692,7 @@ export default function ManagerHrms(props) {
               {
                 type: 'Casual Leave',
                 allowed: Number((profile && (profile.annual_leaves ?? profile.annualLeaves)) ?? 12),
-                consumed: myLeaves.filter(r => (r.leaveType === 'Casual Leave' || r.leaveType === 'Full Day Leave' || String(r.leaveType || '').includes('Casual') || String(r.leaveType || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => {
-                  const daysStr = String(r.days || r.duration || '1');
-                  const match = daysStr.match(/(\d+)/);
-                  return sum + (match ? parseFloat(match[1]) : 1.0);
-                }, 0),
+                consumed: myLeaves.filter(r => (r.leaveType === 'Casual Leave' || r.leaveType === 'Full Day Leave' || String(r.leaveType || '').includes('Casual') || String(r.leaveType || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
                 unit: 'Days',
                 color: 'bg-emerald-50 border-emerald-200 text-emerald-955',
                 barColor: 'bg-emerald-600',
@@ -705,11 +701,7 @@ export default function ManagerHrms(props) {
               {
                 type: 'Sick Leave',
                 allowed: Number((profile && (profile.sick_leaves ?? profile.sickLeaves)) ?? 10),
-                consumed: myLeaves.filter(r => (r.leaveType === 'Sick Leave' || String(r.leaveType || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => {
-                  const daysStr = String(r.days || r.duration || '1');
-                  const match = daysStr.match(/(\d+)/);
-                  return sum + (match ? parseFloat(match[1]) : 1.0);
-                }, 0),
+                consumed: myLeaves.filter(r => (r.leaveType === 'Sick Leave' || String(r.leaveType || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
                 unit: 'Days',
                 color: 'bg-rose-50 border-rose-200 text-rose-955',
                 barColor: 'bg-rose-600',
@@ -718,11 +710,7 @@ export default function ManagerHrms(props) {
               {
                 type: 'Other Leave',
                 allowed: Number((profile && (profile.other_leaves ?? profile.otherLeaves)) ?? 10),
-                consumed: myLeaves.filter(r => (r.leaveType === 'Other Leave' || String(r.leaveType || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => {
-                  const daysStr = String(r.days || r.duration || '1');
-                  const match = daysStr.match(/(\d+)/);
-                  return sum + (match ? parseFloat(match[1]) : 1.0);
-                }, 0),
+                consumed: myLeaves.filter(r => (r.leaveType === 'Other Leave' || String(r.leaveType || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
                 unit: 'Days',
                 color: 'bg-violet-50 border-violet-200 text-violet-955',
                 barColor: 'bg-violet-600',
@@ -740,11 +728,7 @@ export default function ManagerHrms(props) {
               {
                 type: 'Short Permission',
                 allowed: Number((profile && (profile.short_permissions ?? profile.shortPermissions)) ?? 2),
-                consumed: myLeaves.filter(r => (r.leaveType === 'Short Permission' || r.leaveType === 'Short Permission (2 Hours)' || String(r.leaveType || '').includes('Short')) && r.status !== 'Rejected').reduce((sum, r) => {
-                  const durationStr = String(r.days || r.duration || '2');
-                  const match = durationStr.match(/(\d+)/);
-                  return sum + (match ? parseFloat(match[1]) : 2.0);
-                }, 0),
+                consumed: myLeaves.filter(r => (r.leaveType === 'Short Permission' || r.leaveType === 'Short Permission (2 Hours)' || String(r.leaveType || '').includes('Short')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
                 unit: 'Hours',
                 color: 'bg-sky-50 border-sky-200 text-sky-955',
                 barColor: 'bg-sky-600',

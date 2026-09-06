@@ -29,7 +29,7 @@ import {
 } from "lucide-react";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
-import { formatDate } from "../../utils/dateUtils.js";
+import { formatDate, getLeaveRequestDays, parseDateInput } from "../../utils/dateUtils.js";
 import { reportAPI, attendanceAPI, hrmsAPI, adminAPI, holidaysAPI, handbookAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import Attendance, { calculateWorkHours } from "./Attendance.jsx";
@@ -247,9 +247,13 @@ export default function SalesHRMS(props) {
             reportingManager: emp.reporting_manager_name || "Not Assigned",
             reportingManagerEmail: emp.reporting_manager_email || "",
             annualLeaves: emp.annual_leaves ?? emp.annualLeaves,
+            sickLeaves: emp.sick_leaves ?? emp.sickLeaves,
+            otherLeaves: emp.other_leaves ?? emp.otherLeaves,
             halfDayPermissions: emp.half_day_permissions ?? emp.halfDayPermissions,
             shortPermissions: emp.short_permissions ?? emp.shortPermissions,
             annual_leaves: emp.annual_leaves ?? emp.annualLeaves,
+            sick_leaves: emp.sick_leaves ?? emp.sickLeaves,
+            other_leaves: emp.other_leaves ?? emp.otherLeaves,
             half_day_permissions: emp.half_day_permissions ?? emp.halfDayPermissions,
             short_permissions: emp.short_permissions ?? emp.shortPermissions,
           };
@@ -351,6 +355,72 @@ export default function SalesHRMS(props) {
       return;
     }
 
+    let reqDays = 1;
+    if (leaveType.includes("Half")) {
+      reqDays = 0.5;
+    } else if (leaveType.includes("Permission")) {
+      reqDays = 2.0;
+    } else if (leaveFromDate && leaveToDate) {
+      const d1 = parseDateInput(leaveFromDate);
+      const d2 = parseDateInput(leaveToDate);
+      if (d1 && d2) {
+        const diffMs = Math.abs(d2.getTime() - d1.getTime());
+        reqDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
+      }
+    }
+
+    // Quota Validation Check
+    const userEmailClean = String(userEmail || currentUser.email || profile.officialEmail || '').toLowerCase().trim();
+    const savedLeaves = userEmailClean ? localStorage.getItem(`tc_leaves_${userEmailClean}`) : null;
+    const localAlloc = savedLeaves ? JSON.parse(savedLeaves) : null;
+
+    let targetCardAllowed = 10;
+    let categoryKey = 'Sick Leave';
+
+    if (leaveType.includes("Casual")) {
+      categoryKey = "Casual Leave";
+      targetCardAllowed = Number(profile.annual_leaves ?? profile.annualLeaves ?? currentUser.annual_leaves ?? currentUser.annualLeaves ?? localAlloc?.annualLeaves ?? 12);
+    } else if (leaveType.includes("Sick")) {
+      categoryKey = "Sick Leave";
+      targetCardAllowed = Number(profile.sick_leaves ?? profile.sickLeaves ?? currentUser.sick_leaves ?? currentUser.sickLeaves ?? localAlloc?.sickLeaves ?? 10);
+    } else if (leaveType.includes("Other")) {
+      categoryKey = "Other Leave";
+      targetCardAllowed = Number(profile.other_leaves ?? profile.otherLeaves ?? currentUser.other_leaves ?? currentUser.otherLeaves ?? localAlloc?.otherLeaves ?? 10);
+    } else if (leaveType.includes("Half")) {
+      categoryKey = "Half-Day Permission";
+      targetCardAllowed = Number(profile.half_day_permissions ?? profile.halfDayPermissions ?? currentUser.half_day_permissions ?? currentUser.halfDayPermissions ?? localAlloc?.halfDayPermissions ?? 6);
+    } else if (leaveType.includes("Permission")) {
+      categoryKey = "Short Permission";
+      targetCardAllowed = Number(profile.short_permissions ?? profile.shortPermissions ?? currentUser.short_permissions ?? currentUser.shortPermissions ?? localAlloc?.shortPermissions ?? 2);
+    }
+
+    const currentConsumed = myLeaveRequests
+      .filter(r => {
+        if (r.status === 'Rejected') return false;
+        const rType = String(r.leave_type || r.leaveType || '');
+        if (categoryKey.includes('Casual')) return rType.includes('Casual') || rType.includes('Full');
+        if (categoryKey.includes('Sick')) return rType.includes('Sick');
+        if (categoryKey.includes('Other')) return rType.includes('Other');
+        if (categoryKey.includes('Half')) return rType.includes('Half');
+        if (categoryKey.includes('Short')) return rType.includes('Short') || rType.includes('Permission');
+        return false;
+      })
+      .reduce((sum, r) => sum + getLeaveRequestDays(r), 0);
+
+    const remainingQuota = Math.max(0, targetCardAllowed - currentConsumed);
+    const unitLabel = leaveType.includes("Permission") ? "Hours" : "Days";
+
+    if (reqDays > remainingQuota) {
+      showToast(`⚠️ Quota Exceeded! You have only ${remainingQuota} ${unitLabel} remaining for ${leaveType}, but you requested ${reqDays} ${unitLabel} (${formatDate(leaveFromDate)} to ${formatDate(leaveToDate)}). Please adjust your request!`, "error");
+      return;
+    }
+
+    const formattedDuration = leaveType.includes("Half") 
+      ? "0.5 Day" 
+      : leaveType.includes("Permission") 
+        ? "2 Hours" 
+        : `${reqDays} ${reqDays === 1 ? 'Day' : 'Days'}`;
+
     const payload = {
       id: `leave_${Date.now()}`,
       leave_type: leaveType,
@@ -363,7 +433,8 @@ export default function SalesHRMS(props) {
       employee_code: empCode,
       status: "Pending",
       role: currentUser.role || profile.role || "Sales Executive",
-      duration: leaveType.includes("Half") ? "0.5 Day" : leaveType.includes("Permission") ? "2 Hours" : "1 Day",
+      duration: formattedDuration,
+      total_days: reqDays,
       created_at: new Date().toISOString()
     };
 
@@ -373,7 +444,7 @@ export default function SalesHRMS(props) {
 
     try {
       await attendanceAPI.submitLeaveRequest(payload);
-      showToast(`🏖️ ${leaveType} Request submitted successfully!`, "success");
+      showToast(`🏖️ ${leaveType} Request (${formattedDuration}) submitted successfully!`, "success");
     } catch (err) {
       showToast(`Notice: Request submitted.`, "info");
     }
@@ -1309,39 +1380,27 @@ export default function SalesHRMS(props) {
             {
               type: 'Casual Leave',
               allowed: Number(profile.annual_leaves ?? profile.annualLeaves ?? currentUser.annual_leaves ?? currentUser.annualLeaves ?? localAllocation?.annualLeaves ?? 12),
-              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Casual Leave' || r.leave_type === 'Full Day Leave' || String(r.leave_type || '').includes('Casual') || String(r.leave_type || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => {
-                const daysStr = String(r.duration || '1');
-                const match = daysStr.match(/(\d+)/);
-                return sum + (match ? parseFloat(match[1]) : 1.0);
-              }, 0),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Casual Leave' || r.leave_type === 'Full Day Leave' || String(r.leave_type || '').includes('Casual') || String(r.leave_type || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
               unit: 'Days',
-              color: 'bg-emerald-50 border-emerald-200 text-emerald-950',
+              color: 'bg-emerald-50 border-emerald-200 text-emerald-955',
               barColor: 'bg-emerald-600',
               description: 'General full-day casual leaves'
             },
             {
               type: 'Sick Leave',
               allowed: Number(profile.sick_leaves ?? profile.sickLeaves ?? currentUser.sick_leaves ?? currentUser.sickLeaves ?? localAllocation?.sickLeaves ?? 10),
-              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Sick Leave' || String(r.leave_type || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => {
-                const daysStr = String(r.duration || '1');
-                const match = daysStr.match(/(\d+)/);
-                return sum + (match ? parseFloat(match[1]) : 1.0);
-              }, 0),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Sick Leave' || String(r.leave_type || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
               unit: 'Days',
-              color: 'bg-rose-50 border-rose-200 text-rose-950',
+              color: 'bg-rose-50 border-rose-200 text-rose-955',
               barColor: 'bg-rose-600',
               description: 'Medical rest / Sick leave balance'
             },
             {
               type: 'Other Leave',
               allowed: Number(profile.other_leaves ?? profile.otherLeaves ?? currentUser.other_leaves ?? currentUser.otherLeaves ?? localAllocation?.otherLeaves ?? 10),
-              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Other Leave' || String(r.leave_type || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => {
-                const daysStr = String(r.duration || '1');
-                const match = daysStr.match(/(\d+)/);
-                return sum + (match ? parseFloat(match[1]) : 1.0);
-              }, 0),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Other Leave' || String(r.leave_type || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
               unit: 'Days',
-              color: 'bg-violet-50 border-violet-200 text-violet-950',
+              color: 'bg-violet-50 border-violet-200 text-violet-955',
               barColor: 'bg-violet-600',
               description: 'Special leaves / WFH / Others'
             },
@@ -1350,18 +1409,14 @@ export default function SalesHRMS(props) {
               allowed: Number(profile.half_day_permissions ?? profile.halfDayPermissions ?? currentUser.half_day_permissions ?? currentUser.halfDayPermissions ?? localAllocation?.halfDayPermissions ?? 6),
               consumed: myLeaveRequests.filter(r => (r.leave_type === 'Half-Day Permission' || String(r.leave_type || '').includes('Half')) && r.status !== 'Rejected').reduce((sum, r) => sum + 0.5, 0),
               unit: 'Days',
-              color: 'bg-amber-50 border-amber-200 text-amber-950',
+              color: 'bg-amber-50 border-amber-200 text-amber-955',
               barColor: 'bg-amber-600',
               description: 'Half-day permissions quota'
             },
             {
               type: 'Short Permission',
               allowed: Number(profile.short_permissions ?? profile.shortPermissions ?? currentUser.short_permissions ?? currentUser.shortPermissions ?? localAllocation?.shortPermissions ?? 2),
-              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Short Permission' || String(r.leave_type || '').includes('Short')) && r.status !== 'Rejected').reduce((sum, r) => {
-                const durationStr = String(r.duration || '2');
-                const match = durationStr.match(/(\d+)/);
-                return sum + (match ? parseFloat(match[1]) : 2.0);
-              }, 0),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Short Permission' || String(r.leave_type || '').includes('Short')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
               unit: 'Hours',
               color: 'bg-sky-50 border-sky-200 text-sky-950',
               barColor: 'bg-sky-600',
@@ -1579,8 +1634,19 @@ export default function SalesHRMS(props) {
                             </span>
                           </td>
                           <td className="py-3.5 px-3 font-mono text-slate-900">
-                            <div>{req.from_date} {req.to_date !== req.from_date ? `to ${req.to_date}` : ""}</div>
-                            <div className="text-[10px] text-slate-400 font-semibold">{req.time_slot || req.duration || "Full Day"}</div>
+                            <div className="font-bold text-slate-900">
+                              {formatDate(req.from_date || req.fromDate || req.start_date)}
+                              {(req.to_date || req.toDate || req.end_date) && (req.to_date || req.toDate || req.end_date) !== (req.from_date || req.fromDate || req.start_date)
+                                ? ` to ${formatDate(req.to_date || req.toDate || req.end_date)}`
+                                : ""}
+                            </div>
+                            <div className="text-[10px] text-teal-700 font-extrabold mt-0.5">
+                              {req.leave_type?.includes("Half")
+                                ? "Half Day (0.5 Day)"
+                                : req.leave_type?.includes("Permission")
+                                  ? `Short Permission (${req.duration || "2 Hours"})`
+                                  : `Full Day (${getLeaveRequestDays(req)} ${getLeaveRequestDays(req) === 1 ? "Day" : "Days"})`}
+                            </div>
                           </td>
                           <td className="py-3.5 px-3 max-w-[220px] text-slate-800 font-semibold truncate">
                             {req.raw_reason || req.reason?.split("|")[0]?.strip?.() || req.reason}
@@ -1805,6 +1871,73 @@ export default function SalesHRMS(props) {
                         </div>
                       </div>
                     )}
+
+                    {/* Dynamic Quota Warning / Summary Banner */}
+                    {(() => {
+                      let reqDays = 1;
+                      if (leaveType.includes("Half")) reqDays = 0.5;
+                      else if (leaveType.includes("Permission")) reqDays = 2.0;
+                      else if (leaveFromDate && leaveToDate) {
+                        const d1 = parseDateInput(leaveFromDate);
+                        const d2 = parseDateInput(leaveToDate);
+                        if (d1 && d2) {
+                          const diffMs = Math.abs(d2.getTime() - d1.getTime());
+                          reqDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
+                        }
+                      }
+
+                      const userEmailClean = String(userEmail || currentUser.email || profile.officialEmail || '').toLowerCase().trim();
+                      const savedLeaves = userEmailClean ? localStorage.getItem(`tc_leaves_${userEmailClean}`) : null;
+                      const localAlloc = savedLeaves ? JSON.parse(savedLeaves) : null;
+
+                      let targetCardAllowed = 10;
+                      if (leaveType.includes("Casual")) {
+                        targetCardAllowed = Number(profile.annual_leaves ?? profile.annualLeaves ?? currentUser.annual_leaves ?? currentUser.annualLeaves ?? localAlloc?.annualLeaves ?? 12);
+                      } else if (leaveType.includes("Sick")) {
+                        targetCardAllowed = Number(profile.sick_leaves ?? profile.sickLeaves ?? currentUser.sick_leaves ?? currentUser.sickLeaves ?? localAlloc?.sickLeaves ?? 10);
+                      } else if (leaveType.includes("Other")) {
+                        targetCardAllowed = Number(profile.other_leaves ?? profile.otherLeaves ?? currentUser.other_leaves ?? currentUser.otherLeaves ?? localAlloc?.otherLeaves ?? 10);
+                      } else if (leaveType.includes("Half")) {
+                        targetCardAllowed = Number(profile.half_day_permissions ?? profile.halfDayPermissions ?? currentUser.half_day_permissions ?? currentUser.halfDayPermissions ?? localAlloc?.halfDayPermissions ?? 6);
+                      } else if (leaveType.includes("Permission")) {
+                        targetCardAllowed = Number(profile.short_permissions ?? profile.shortPermissions ?? currentUser.short_permissions ?? currentUser.shortPermissions ?? localAlloc?.shortPermissions ?? 2);
+                      }
+
+                      const currentConsumed = myLeaveRequests
+                        .filter(r => {
+                          if (r.status === 'Rejected') return false;
+                          const rType = String(r.leave_type || r.leaveType || '');
+                          if (leaveType.includes('Casual')) return rType.includes('Casual') || rType.includes('Full');
+                          if (leaveType.includes('Sick')) return rType.includes('Sick');
+                          if (leaveType.includes('Other')) return rType.includes('Other');
+                          if (leaveType.includes('Half')) return rType.includes('Half');
+                          if (leaveType.includes('Permission')) return rType.includes('Short') || rType.includes('Permission');
+                          return false;
+                        })
+                        .reduce((sum, r) => sum + getLeaveRequestDays(r), 0);
+
+                      const rem = Math.max(0, targetCardAllowed - currentConsumed);
+                      const isOver = reqDays > rem;
+                      const unitLabel = leaveType.includes("Permission") ? "Hours" : "Days";
+
+                      return (
+                        <div className={`rounded-2xl p-3.5 border text-xs font-bold transition-all ${
+                          isOver 
+                            ? "bg-rose-50 border-rose-300 text-rose-900" 
+                            : "bg-teal-50/80 border-teal-200 text-teal-900"
+                        }`}>
+                          <div className="flex flex-wrap items-center justify-between gap-1">
+                            <span>Duration: <u className="font-extrabold">{reqDays} {unitLabel}</u> ({formatDate(leaveFromDate)} {leaveToDate && leaveToDate !== leaveFromDate ? `to ${formatDate(leaveToDate)}` : ''})</span>
+                            <span>Remaining: <u className="font-extrabold">{rem} {unitLabel}</u></span>
+                          </div>
+                          {isOver && (
+                            <p className="text-[11px] font-black text-rose-600 mt-1 flex items-center gap-1">
+                              ⚠️ Selected duration exceeds your available quota! Please adjust your dates.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     {/* Reason */}
                     <div>

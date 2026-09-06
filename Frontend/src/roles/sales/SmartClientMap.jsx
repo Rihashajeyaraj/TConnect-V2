@@ -359,7 +359,7 @@ export default function SmartClientMap() {
     }
 
     checkInquiries()
-    const interval = setInterval(checkInquiries, 3000)
+    const interval = setInterval(checkInquiries, 15000)
     return () => clearInterval(interval)
   }, [currentUser?.email])
 

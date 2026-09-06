@@ -278,7 +278,7 @@ export default function ManagerSmartMap() {
     }
 
     fetchReplies()
-    const interval = setInterval(fetchReplies, 3000)
+    const interval = setInterval(fetchReplies, 15000)
     return () => clearInterval(interval)
   }, [showToast])
 
@@ -648,7 +648,7 @@ export default function ManagerSmartMap() {
     purgeGoogleMapsBillingModal()
     const timer = setInterval(() => {
       purgeGoogleMapsBillingModal()
-    }, 150)
+    }, 3000)
     return () => clearInterval(timer)
   }, [])
 
@@ -661,7 +661,7 @@ export default function ManagerSmartMap() {
       if (!document.hidden) {
         fetchData(true)
       }
-    }, 3000) // Fast 3-second auto-refresh polling for instant manager map updates
+    }, 10000) // Optimized 10-second auto-refresh polling
     return () => clearInterval(t)
   }, [autoRefresh, fetchData])
 
@@ -2029,7 +2029,7 @@ export default function ManagerSmartMap() {
       } catch (err) {
         console.warn("Polling error:", err)
       }
-    }, 1000) // Ultra-fast 1-second fallback polling for live tracking
+    }, 5000) // Optimized 5-second fallback polling for live tracking
   }, [_applyNewCrumb, _handleSessionEnded, fetchData])
 
   // Stale detection timer: re-evaluate badge every 30s

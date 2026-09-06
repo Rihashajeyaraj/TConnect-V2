@@ -1,14 +1,18 @@
 export function purgeGoogleMapsBillingModal() {
   if (typeof window === 'undefined' || typeof document === 'undefined') return;
+  // Fast exit: if no auth failure flag and no error container elements exist on screen, exit immediately
+  if (!window.__google_maps_auth_failed && !document.querySelector('.gm-err-container, .gm-err-content, .gm-style-moc')) {
+    return;
+  }
 
   // 1. Remove dark overlay elements
   document.querySelectorAll('.gm-style-moc, .gm-err-container, .gm-err-content, [aria-labelledby*="gm-err"]').forEach(el => {
     try { el.remove(); } catch (e) {}
   });
 
-  // 2. Scan all divs for Google Maps billing error modal text
-  const allDivs = document.querySelectorAll('div');
-  allDivs.forEach(el => {
+  // 2. Scan map container divs for Google Maps billing error modal text
+  const targets = document.querySelectorAll('.gm-style div, [aria-labelledby*="gm-err"]');
+  targets.forEach(el => {
     const text = el.textContent || '';
     if (text.includes("This page can't load Google Maps correctly") || text.includes("Do you own this website?")) {
       let modalWrapper = el;
@@ -39,7 +43,7 @@ if (typeof window !== 'undefined') {
   };
 
   // Standing background loop to catch any deferred Google Maps error popups
-  setInterval(purgeGoogleMapsBillingModal, 300);
+  setInterval(purgeGoogleMapsBillingModal, 3000);
 }
 
 let googleMapsPromise = typeof window !== 'undefined' ? (window.__googleMapsPromise || null) : null;

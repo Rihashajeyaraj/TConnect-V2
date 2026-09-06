@@ -2206,7 +2206,10 @@ function UserManagement() {
 
     const updatedUserObj = {
       ...editingUser,
-      accessPassword: editingUser.newPassword?.trim() ? editingUser.newPassword.trim() : (editingUser.accessPassword || editingUser.password)
+    }
+    if (editingUser.newPassword && editingUser.newPassword.trim().length > 0) {
+      updatedUserObj.accessPassword = editingUser.newPassword.trim()
+      updatedUserObj.password = editingUser.newPassword.trim()
     }
     delete updatedUserObj.newPassword
 
@@ -2247,6 +2250,16 @@ function UserManagement() {
         half_day_permissions: Number(editingUser.halfDayPermissions || 6),
         short_permissions: Number(editingUser.shortPermissions || 2),
       })
+
+      if (editingUser.email) {
+        localStorage.setItem(`tc_leaves_${editingUser.email.toLowerCase().trim()}`, JSON.stringify({
+          annualLeaves: Number(editingUser.annualLeaves || 12),
+          sickLeaves: Number(editingUser.sickLeaves || 10),
+          otherLeaves: Number(editingUser.otherLeaves || 10),
+          halfDayPermissions: Number(editingUser.halfDayPermissions || 6),
+          shortPermissions: Number(editingUser.shortPermissions || 2),
+        }))
+      }
 
       // Update salary directly in hrms.salaries
       if (editingUser.monthlySalary !== undefined) {
@@ -3497,222 +3510,273 @@ function UserManagement() {
 
       {/* Edit User Modal */}
       {showEditModal && editingUser && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 space-y-4 border border-slate-200 shadow-2xl">
-            <h3 className="font-extrabold text-slate-900 text-lg flex items-center justify-between">
-              <span>Edit Employee Account</span>
-              <button onClick={() => setShowEditModal(false)} className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer">
+        <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-3xl max-w-5xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[92vh] text-left text-xs font-semibold text-slate-800 animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="bg-gradient-to-r from-[#071A45] via-[#0D2866] to-[#14398A] text-white p-5 flex items-center justify-between border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-white/10 rounded-xl border border-white/20">
+                  <UserCheck className="w-5 h-5 text-blue-300" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-white text-base">Edit Employee Account</h3>
+                  <p className="text-[11px] text-blue-200 font-medium">Update profile credentials, leave quotas, and access permissions for {editingUser.name}</p>
+                </div>
+              </div>
+              <button onClick={() => setShowEditModal(false)} className="text-white/70 hover:text-white text-lg font-black p-1.5 hover:bg-white/10 rounded-xl transition cursor-pointer">
                 ✕
               </button>
-            </h3>
-            <form onSubmit={handleSaveEditedUser} className="space-y-3 text-xs">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Full Name</label>
-                <input
-                  type="text"
-                  value={editingUser.name}
-                  onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
-                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
-                  required
-                />
-              </div>
+            </div>
 
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Access Email Address</label>
-                <input
-                  type="email"
-                  value={editingUser.email}
-                  onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
-                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
-                  required
-                />
-              </div>
+            {/* Modal Form Scroll Body */}
+            <form onSubmit={handleSaveEditedUser} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-6 overflow-y-auto space-y-5 flex-1 max-h-[calc(92vh-130px)]">
+                {/* Section 1: User Account Details */}
+                <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80 space-y-4">
+                  <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-blue-600"></span> Profile & Login Credentials
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">Full Name</label>
+                      <input
+                        type="text"
+                        value={editingUser.name}
+                        onChange={(e) => setEditingUser({ ...editingUser, name: e.target.value })}
+                        className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white"
+                        required
+                      />
+                    </div>
 
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">
-                  New Portal Access Password <span className="text-slate-400 font-normal text-xs ml-1">(Leave blank to keep existing password)</span>
-                </label>
-                <div className="relative">
-                  <input
-                    type={showEditPassword ? 'text' : 'password'}
-                    placeholder="Leave empty to retain existing password"
-                    value={editingUser.newPassword || ''}
-                    onChange={(e) => setEditingUser({ ...editingUser, newPassword: e.target.value })}
-                    className="w-full h-10 border border-slate-300 rounded-xl pl-3 pr-10 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">Access Email Address</label>
+                      <input
+                        type="email"
+                        value={editingUser.email}
+                        onChange={(e) => setEditingUser({ ...editingUser, email: e.target.value })}
+                        className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">
+                        New Access Password
+                      </label>
+                      <div className="relative">
+                        <input
+                          type={showEditPassword ? 'text' : 'password'}
+                          name="admin_new_portal_password"
+                          id="admin_new_portal_password"
+                          autoComplete="new-password"
+                          placeholder="Leave blank to keep existing password"
+                          value={editingUser.newPassword || ''}
+                          onChange={(e) => setEditingUser({ ...editingUser, newPassword: e.target.value })}
+                          className="w-full h-10 border border-slate-300 rounded-xl pl-3 pr-10 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowEditPassword(!showEditPassword)}
+                          className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                        >
+                          {showEditPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">Phone Number</label>
+                      <input
+                        type="tel"
+                        placeholder="10-digit number e.g. 9876543210"
+                        value={editingUser.phone}
+                        maxLength={10}
+                        onChange={(e) => setEditingUser({ ...editingUser, phone: normalizePhoneNumber(e.target.value) })}
+                        className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 2: Role & Hierarchy */}
+                <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80 space-y-4">
+                  <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-indigo-600"></span> Role & Reporting Hierarchy
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">Role</label>
+                      <select
+                        value={editingUser.role}
+                        onChange={(e) => handleEditRoleChange(e.target.value)}
+                        className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-blue-600 bg-white cursor-pointer"
+                      >
+                        <option value="Sales Manager">Sales Manager</option>
+                        <option value="Team Lead">Team Lead</option>
+                        <option value="Sales Executive">Sales Executive</option>
+                        <option value="System Admin">System Admin</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-700 font-bold mb-1">Department</label>
+                      <select
+                        value={editingUser.dept}
+                        onChange={(e) => setEditingUser({ ...editingUser, dept: e.target.value })}
+                        className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-blue-600 bg-white cursor-pointer"
+                      >
+                        {deptOptions.map((dept) => (
+                          <option key={dept} value={dept}>
+                            {dept}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {(editingUser.role === 'Sales Manager' || editingUser.role === 'Sales Executive') ? (
+                      <div>
+                        <label className="block text-slate-700 font-bold mb-1">Reporting Manager</label>
+                        <select
+                          value={editingUser.reporting_manager_id || ''}
+                          onChange={(e) => {
+                            const selectedId = e.target.value
+                            if (!selectedId) {
+                              setEditingUser({
+                                ...editingUser,
+                                reporting_manager_id: null,
+                                reporting_manager_name: null,
+                                reporting_manager_email: null,
+                              })
+                            } else {
+                              const mgr = users.find(u => String(u.id) === String(selectedId))
+                              setEditingUser({
+                                ...editingUser,
+                                reporting_manager_id: selectedId,
+                                reporting_manager_name: mgr?.name || '',
+                                reporting_manager_email: mgr?.email || '',
+                              })
+                            }
+                          }}
+                          className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white cursor-pointer"
+                        >
+                          <option value="">-- No Reporting Manager Assigned --</option>
+                          {potentialReportingManagers
+                            .filter(m => String(m.id) !== String(editingUser.id))
+                            .map((m) => (
+                              <option key={m.id} value={m.id}>
+                                {m.name} ({m.role})
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="flex items-center text-slate-400 font-medium text-xs pt-5">
+                        <span>Higher tier roles report directly to CEO/Super Admin</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Section 3: Leave & Salary Quotas */}
+                <div className="bg-slate-50/70 p-4 rounded-2xl border border-slate-200/80 space-y-4">
+                  <h4 className="font-black text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600"></span> Leave & Permission Allocation Quota
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+                    <div>
+                      <label className="block text-slate-600 font-bold mb-1 text-[10px]">Annual Leaves</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={editingUser.annualLeaves || 12}
+                        onChange={(e) => setEditingUser({ ...editingUser, annualLeaves: Number(e.target.value) })}
+                        className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-600 font-bold mb-1 text-[10px]">Sick Leaves</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={editingUser.sickLeaves || 10}
+                        onChange={(e) => setEditingUser({ ...editingUser, sickLeaves: Number(e.target.value) })}
+                        className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-600 font-bold mb-1 text-[10px]">Other Leaves</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={editingUser.otherLeaves || 10}
+                        onChange={(e) => setEditingUser({ ...editingUser, otherLeaves: Number(e.target.value) })}
+                        className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-600 font-bold mb-1 text-[10px]">Half-Day Slots</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={editingUser.halfDayPermissions || 6}
+                        onChange={(e) => setEditingUser({ ...editingUser, halfDayPermissions: Number(e.target.value) })}
+                        className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-600 font-bold mb-1 text-[10px]">Short Perm (Hrs)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={editingUser.shortPermissions || 2}
+                        onChange={(e) => setEditingUser({ ...editingUser, shortPermissions: Number(e.target.value) })}
+                        className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-white"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-slate-600 font-bold mb-1 text-[10px]">Monthly Salary (₹)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={editingUser.monthlySalary || 0}
+                        onChange={(e) => setEditingUser({ ...editingUser, monthlySalary: Number(e.target.value) })}
+                        className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-amber-50"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Section 4: Permission Matrix */}
+                <div className="space-y-2 pt-2">
+                  <PermissionMatrixEditor
+                    role={editingUser.role}
+                    permissions={editingUser.custom_permissions || editingUser.permissions || {}}
+                    onChange={(perms) => setEditingUser({ ...editingUser, custom_permissions: perms })}
                   />
-                  <button
-                    type="button"
-                    onClick={() => setShowEditPassword(!showEditPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    {showEditPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Phone Number</label>
-                <input
-                  type="tel"
-                  placeholder="10-digit number e.g. 9876543210"
-                  value={editingUser.phone}
-                  maxLength={10}
-                  onChange={(e) => setEditingUser({ ...editingUser, phone: normalizePhoneNumber(e.target.value) })}
-                  className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
-                />
+              {/* Sticky Footer Action Bar */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setShowEditModal(false)}
+                  className="px-5 py-2.5 rounded-xl border border-slate-300 bg-white text-slate-700 font-extrabold text-xs hover:bg-slate-100 transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black rounded-xl text-xs shadow-md shadow-blue-600/20 transition cursor-pointer flex items-center gap-2"
+                >
+                  <CheckCircle2 className="w-4 h-4" /> Save Account & Password Changes
+                </button>
               </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Role</label>
-                  <select
-                    value={editingUser.role}
-                    onChange={(e) => handleEditRoleChange(e.target.value)}
-                    className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-blue-600"
-                  >
-                    <option value="Sales Manager">Sales Manager</option>
-                    <option value="Team Lead">Team Lead</option>
-                    <option value="Sales Executive">Sales Executive</option>
-                    <option value="System Admin">System Admin</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Department</label>
-                  <select
-                    value={editingUser.dept}
-                    onChange={(e) => setEditingUser({ ...editingUser, dept: e.target.value })}
-                    className="w-full h-10 border border-[#DCE3EF] rounded-xl px-3 text-slate-900 focus:outline-none focus:border-blue-600 font-bold bg-white focus:ring-1 focus:ring-blue-100"
-                  >
-                    {deptOptions.map((dept) => (
-                      <option key={dept} value={dept}>
-                        {dept}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              {(editingUser.role === 'Sales Manager' || editingUser.role === 'Sales Executive') && (
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Reporting Manager</label>
-                  <select
-                    value={editingUser.reporting_manager_id || ''}
-                    onChange={(e) => {
-                      const selectedId = e.target.value
-                      if (!selectedId) {
-                        setEditingUser({
-                          ...editingUser,
-                          reporting_manager_id: null,
-                          reporting_manager_name: null,
-                          reporting_manager_email: null,
-                        })
-                      } else {
-                        const mgr = users.find(u => String(u.id) === String(selectedId))
-                        setEditingUser({
-                          ...editingUser,
-                          reporting_manager_id: selectedId,
-                          reporting_manager_name: mgr?.name || '',
-                          reporting_manager_email: mgr?.email || '',
-                        })
-                      }
-                    }}
-                    className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
-                  >
-                    <option value="">-- No Reporting Manager Assigned --</option>
-                    {potentialReportingManagers
-                      .filter(m => String(m.id) !== String(editingUser.id))
-                      .map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} ({m.role})
-                        </option>
-                      ))}
-                  </select>
-                </div>
-              )}
-
-              <div className="border-t border-slate-100 my-2" />
-
-              <div className="space-y-2">
-                <h4 className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wider">Leave & Permission Allocation</h4>
-                <div className="grid grid-cols-3 gap-3">
-                  <div>
-                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Annual Leaves</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={editingUser.annualLeaves || 12}
-                      onChange={(e) => setEditingUser({ ...editingUser, annualLeaves: Number(e.target.value) })}
-                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Sick Leaves</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={editingUser.sickLeaves || 10}
-                      onChange={(e) => setEditingUser({ ...editingUser, sickLeaves: Number(e.target.value) })}
-                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Other Leaves</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={editingUser.otherLeaves || 10}
-                      onChange={(e) => setEditingUser({ ...editingUser, otherLeaves: Number(e.target.value) })}
-                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
-                    />
-                  </div>
-                </div>
-                <div className="grid grid-cols-3 gap-3 mt-2">
-                  <div>
-                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Half-Day Slots</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={editingUser.halfDayPermissions || 6}
-                      onChange={(e) => setEditingUser({ ...editingUser, halfDayPermissions: Number(e.target.value) })}
-                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Short Perm (Hrs)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={editingUser.shortPermissions || 2}
-                      onChange={(e) => setEditingUser({ ...editingUser, shortPermissions: Number(e.target.value) })}
-                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-600 font-bold mb-1 text-[10px]">Monthly Salary (₹)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={editingUser.monthlySalary || 0}
-                      onChange={(e) => setEditingUser({ ...editingUser, monthlySalary: Number(e.target.value) })}
-                      className="w-full h-10 border border-slate-300 rounded-xl px-3 text-slate-900 font-semibold focus:outline-none focus:border-blue-600 bg-amber-50/55"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <PermissionMatrixEditor
-                role={editingUser.role}
-                permissions={editingUser.custom_permissions || editingUser.permissions || {}}
-                onChange={(perms) => setEditingUser({ ...editingUser, custom_permissions: perms })}
-              />
-
-              <button
-                type="submit"
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-xl text-xs shadow-md mt-2 cursor-pointer"
-              >
-                Save Account & Password Changes
-              </button>
             </form>
           </div>
         </div>

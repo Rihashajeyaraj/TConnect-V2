@@ -34,7 +34,7 @@ import {
 } from 'lucide-react'
 import { hrmsAPI, reportAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
-import { formatDate } from '../../utils/dateUtils.js'
+import { formatDate, getLeaveRequestDays } from '../../utils/dateUtils.js'
 import { collectManagerSubordinates } from '../../utils/managerScoping.js'
 
 const DEFAULT_EOD_REPORTS = []
@@ -1499,9 +1499,17 @@ export default function ManagerTeam() {
                       </tr>
                     ) : (
                       filteredLeaveRequests.map((req, idx) => {
-                        const rawDate = req.start_date || req.leave_date || req.date || req.from_date || (req.created_at ? String(req.created_at).split('T')[0] : '2026-09-02');
-                        const reqDate = formatDate(rawDate);
-                        const endDateStr = req.end_date && req.end_date !== req.start_date ? ` to ${req.end_date}` : "";
+                        const fromDateStr = req.from_date || req.start_date || req.leave_date || req.date;
+                        const toDateStr = req.to_date || req.end_date || fromDateStr;
+                        const formattedFrom = formatDate(fromDateStr);
+                        const formattedTo = formatDate(toDateStr);
+                        const dateDisplay = (formattedFrom && formattedTo && formattedFrom !== formattedTo) ? `${formattedFrom} to ${formattedTo}` : formattedFrom;
+                        const daysCount = getLeaveRequestDays(req);
+                        const durationLabel = req.leave_type?.includes("Half")
+                          ? "Half Day (0.5 Day)"
+                          : req.leave_type?.includes("Permission")
+                            ? `Short Permission (${req.duration || "2 Hours"})`
+                            : `Full Day (${daysCount} ${daysCount === 1 ? 'Day' : 'Days'})`;
                         return (
                           <tr key={req.id || idx} className="hover:bg-mgr-primary-50/40 transition-colors">
                             <td 
@@ -1525,12 +1533,12 @@ export default function ManagerTeam() {
                             </td>
                             {/* Separate Date Column */}
                             <td className="px-4 py-3.5 text-slate-900 font-mono font-bold">
-                              🗓️ {reqDate}{endDateStr}
+                              🗓️ {dateDisplay}
                             </td>
                             {/* Separate Duration / Slot Column */}
                             <td className="px-4 py-3.5 text-slate-700">
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 font-extrabold border border-slate-200">
-                                ⏱ {req.duration || req.slot || "1 Day"}
+                                ⏱ {durationLabel}
                               </span>
                             </td>
                             <td className="px-4 py-3.5 max-w-[220px]">
