@@ -444,18 +444,26 @@ export default function Attendance(props) {
     setMatchedEmployeeId("");
   };
 
-  // Real-Time Oval Face guide alignment loop
+  // Real-Time Oval Face guide alignment loop (throttled to ~5 FPS to prevent unresponsiveness)
   useEffect(() => {
     let animId;
-    const analyzeFrame = () => {
+    let lastAnalyzeTime = 0;
+    const analyzeFrame = (time) => {
       if (isCameraActive && videoRef.current && canvasRef.current) {
-        const evalResult = engineRef.current.evaluateAlignment(videoRef.current, canvasRef.current);
-        setIsFaceAligned(evalResult.isAligned);
-        if (evalResult.brightness) setFaceBrightness(evalResult.brightness);
+        if (time - lastAnalyzeTime > 200) {
+          lastAnalyzeTime = time;
+          const evalResult = engineRef.current.evaluateAlignment(videoRef.current, canvasRef.current);
+          setIsFaceAligned(prev => prev !== evalResult.isAligned ? evalResult.isAligned : prev);
+          if (evalResult.brightness) {
+            setFaceBrightness(prev => Math.abs(prev - evalResult.brightness) > 5 ? evalResult.brightness : prev);
+          }
+        }
       }
       animId = requestAnimationFrame(analyzeFrame);
     };
-    animId = requestAnimationFrame(analyzeFrame);
+    if (isCameraActive) {
+      animId = requestAnimationFrame(analyzeFrame);
+    }
     return () => cancelAnimationFrame(animId);
   }, [isCameraActive]);
 
@@ -930,21 +938,21 @@ export default function Attendance(props) {
       </div>
 
       {activeTab === "punch" ? (
-        <div className="max-w-4xl mx-auto bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-8 shadow-md space-y-6">
+        <div className="max-w-6xl w-full mx-auto bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-10 shadow-lg space-y-8">
           {/* Header section (Title & Location) */}
-          <div className="text-center border-b border-slate-100 pb-4">
-            <h2 className="text-lg font-black text-slate-900">My Attendance</h2>
-            <div className="mt-2 flex items-center justify-center gap-2">
+          <div className="text-center border-b border-slate-100 pb-5">
+            <h2 className="text-xl font-black text-slate-900">My Attendance</h2>
+            <div className="mt-3 flex items-center justify-center gap-2">
               {locationError ? (
-                <span className="text-xs text-rose-600 font-bold bg-rose-50 border border-rose-200 px-3 py-1 rounded-full">
+                <span className="text-xs text-rose-600 font-bold bg-rose-50 border border-rose-200 px-4 py-1.5 rounded-full">
                   ⚠️ {locationError}
                 </span>
               ) : (
-                <div className="inline-flex items-center gap-2 bg-slate-50 border border-slate-200/80 px-3.5 py-1.5 rounded-full text-xs font-bold text-slate-700 max-w-2xl">
+                <div className="inline-flex items-center gap-2 bg-slate-50 border border-slate-200/80 px-4 py-2 rounded-full text-xs sm:text-sm font-bold text-slate-700 max-w-3xl">
                   <span className="text-emerald-600">📍</span>
                   <span className="truncate">{currentLocation}</span>
                   {gpsAccuracy && (
-                    <span className="text-[10px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                    <span className="text-[11px] font-black bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
                       ±{gpsAccuracy}m
                     </span>
                   )}
@@ -955,9 +963,9 @@ export default function Attendance(props) {
                 onClick={captureLocation}
                 disabled={loadingLocation}
                 title="Refresh Live Location"
-                className="p-1.5 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition cursor-pointer disabled:opacity-50"
+                className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition cursor-pointer disabled:opacity-50"
               >
-                <RefreshCw size={14} className={loadingLocation ? "animate-spin text-emerald-600" : ""} />
+                <RefreshCw size={16} className={loadingLocation ? "animate-spin text-emerald-600" : ""} />
               </button>
             </div>
           </div>
@@ -975,62 +983,62 @@ export default function Attendance(props) {
           )}
 
           {/* 2-Column Grid Layout: Camera (Left) and Controls (Right) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-10 items-start">
             
             {/* Left Column: Camera and Face Guide */}
             <div className="space-y-4">
               {/* Camera Section */}
-              <div className="relative w-full aspect-[4/3] rounded-2xl bg-slate-950 overflow-hidden shadow-inner border border-slate-200 flex items-center justify-center">
+              <div className="relative w-full aspect-[4/3] min-h-[320px] sm:min-h-[380px] rounded-2xl bg-slate-950 overflow-hidden shadow-inner border border-slate-200 flex items-center justify-center">
                 {isCameraActive ? (
                   <>
                     <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
                     
                     {/* Face Guide oval frame */}
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                      <div className={`w-[180px] h-[240px] sm:w-[200px] sm:h-[260px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
+                      <div className={`w-[210px] h-[280px] sm:w-[240px] sm:h-[320px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
                         isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
                       }`} />
                     </div>
                   </>
                 ) : (
-                  <div className="flex flex-col items-center gap-2 text-slate-500 font-semibold text-xs py-12">
-                    <VideoOff size={32} />
+                  <div className="flex flex-col items-center gap-3 text-slate-500 font-semibold text-sm py-16">
+                    <VideoOff size={40} />
                     <span>{isEnrolled ? "Camera is Off" : "🔒 Biometrics Required"}</span>
                   </div>
                 )}
               </div>
 
               {/* Face Guide / Status Feedback */}
-              <div className="text-center py-2 bg-slate-50 rounded-xl border border-slate-100">
+              <div className="text-center py-2.5 px-3 bg-slate-50 rounded-xl border border-slate-100">
                 {matchStatus === "MATCHED" ? (
-                  <div className="text-emerald-600 font-black text-xs flex items-center justify-center gap-1">
-                    <CheckCircle2 size={14} /> Face verified ✓
+                  <div className="text-emerald-600 font-black text-xs sm:text-sm flex items-center justify-center gap-1.5">
+                    <CheckCircle2 size={16} /> Face verified ✓
                   </div>
                 ) : matchStatus === "FALLBACK" ? (
                   <div className="space-y-1">
-                    <div className="text-amber-600 font-black text-xs flex items-center justify-center gap-1">
-                      <AlertCircle size={13} /> Biometric Unavailable
+                    <div className="text-amber-600 font-black text-xs sm:text-sm flex items-center justify-center gap-1.5">
+                      <AlertCircle size={15} /> Biometric Unavailable
                     </div>
-                    <div className="text-[10px] text-slate-500 font-bold">Using identity fallback — proceed with Login</div>
+                    <div className="text-xs text-slate-500 font-bold">Using identity fallback — proceed with Login</div>
                   </div>
                 ) : matchStatus === "FAILED" ? (
-                  <div className="text-rose-600 font-black text-xs flex items-center justify-center gap-1">
-                    <AlertCircle size={13} /> Face not recognized. Retry.
+                  <div className="text-rose-600 font-black text-xs sm:text-sm flex items-center justify-center gap-1.5">
+                    <AlertCircle size={15} /> Face not recognized. Retry.
                   </div>
                 ) : livenessStatus === "VERIFYING" && isFaceAligned ? (
                   <div className="space-y-1">
-                    <div className="flex items-center justify-center gap-1.5 text-xs text-slate-700 font-bold select-none">
+                    <div className="flex items-center justify-center gap-2 text-xs sm:text-sm text-slate-700 font-bold select-none">
                       <span>Blink Progress:</span>
-                      <span className="text-sm font-black">
+                      <span className="text-base font-black">
                         {blinkCount === 0 && "○ ○"}
                         {blinkCount === 1 && "● ○"}
                         {blinkCount >= 2 && "● ●"}
                       </span>
                     </div>
-                    <div className="text-[10px] text-slate-550 font-bold">Blink naturally</div>
+                    <div className="text-xs text-slate-500 font-bold">Blink naturally</div>
                   </div>
                 ) : (
-                  <div className="text-[11px] text-slate-455 font-bold">
+                  <div className="text-xs sm:text-sm text-slate-500 font-bold">
                     Position your face inside the oval guide
                   </div>
                 )}

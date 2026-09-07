@@ -265,6 +265,7 @@ export default function SmartClientMap() {
 
   // ── Executive Mobile Inquiry Response State ────────────────────────────────
   const [activeInquiry, setActiveInquiry] = useState(null)
+  const activeInquiryRef = useRef(null)
   const [showInquiryDrawer, setShowInquiryDrawer] = useState(false)
   const [replyText, setReplyText] = useState('')
   const [isReplying, setIsReplying] = useState(false)
@@ -747,13 +748,12 @@ export default function SmartClientMap() {
       const savedNavStr = localStorage.getItem('tc_active_nav_session')
       if (savedNavStr) {
         const savedNav = JSON.parse(savedNavStr)
-        if (savedNav && savedNav.selectedStop && savedNav.selectedStop.has_exact_coords) {
+        if (savedNav && savedNav.navMode === true && savedNav.selectedStop && savedNav.selectedStop.has_exact_coords) {
           console.log('[SmartClientMap] Restoring active navigation to:', savedNav.selectedStop.title)
           setSelectedStop(savedNav.selectedStop)
           fetchRoute(savedNav.selectedStop)
           setNavMode(true)
           setNavDestination(savedNav.navDestination || { lat: savedNav.selectedStop.latitude, lng: savedNav.selectedStop.longitude })
-
         }
       }
     } catch (e) {
@@ -782,48 +782,7 @@ export default function SmartClientMap() {
 
     setSelectedStop(entity)
     fetchRoute(entity)
-
-    // Persist active navigation session in localStorage until Executive clicks Stop Nav
-    try {
-      localStorage.setItem('tc_active_nav_session', JSON.stringify({
-        selectedStop: entity,
-        navMode: true,
-        navDestination: { lat: entity.latitude, lng: entity.longitude },
-        timestamp: Date.now()
-      }))
-    } catch (e) { console.warn('Save active nav err:', e) }
-
-    // Push new client destination & notify Manager instantly
-    const clientData = {
-      client_id: entity.id,
-      client_name: entity.title,
-      company_name: entity.title,
-      client_address: entity.address,
-      client_phone: entity.phone,
-      client_latitude: entity.latitude,
-      client_longitude: entity.longitude,
-    };
-
-    spatialAPI.startSession(executivePos.lat, executivePos.lng, clientData)
-      .then(res => {
-        const data = res?.data || res;
-        const sessId = data?.session?.id || data?.id || data?.session_id;
-        if (sessId) localStorage.setItem('tc_tracking_session', sessId);
-        window.dispatchEvent(new CustomEvent('tc:start-tracking', {
-          detail: { lat: executivePos.lat, lng: executivePos.lng, clientData, sessionId: sessId }
-        }));
-      })
-      .catch(() => null);
-
-    notificationAPI.sendNotification({
-      title: "📍 Destination Changed",
-      message: `${currentUser?.name || 'Sales Executive'} set destination to ${entity.category || 'Client'} "${entity.title}".`,
-      category: "VISIT",
-      type: "VISIT",
-      recipient_role: "manager"
-    }).catch(() => null);
-
-  }, [fetchRoute, showToast, executivePos, currentUser])
+  }, [fetchRoute, showToast])
 
   // ─── 8. Start Navigation Mode ───────────────────────────────────────────
   const startNavigation = useCallback(async () => {

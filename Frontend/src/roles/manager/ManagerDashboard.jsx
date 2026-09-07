@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useLocation } from 'react-router-dom'
 import {
   Users,
   IndianRupee,
@@ -40,8 +40,12 @@ import { collectManagerSubordinates } from '../../utils/managerScoping.js'
 
 export default function ManagerDashboard(props) {
   const navigate = useNavigate()
+  const location = useLocation()
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
+
+  const isTeamLeadPortal = location.pathname.startsWith('/team-lead') || String(currentUser.role || '').toLowerCase().includes('lead')
+  const basePortalPath = isTeamLeadPortal ? '/team-lead' : '/manager'
 
   const managerId = String(currentUser.id || currentUser.user_id || currentUser.employee_code || '').trim()
   const managerEmail = (currentUser.email || '').toLowerCase().trim()
@@ -812,7 +816,7 @@ export default function ManagerDashboard(props) {
       icon: Clock,
       color: 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100 hover:border-emerald-400',
       iconBg: 'bg-emerald-200 text-emerald-700',
-      action: () => navigate('/manager/attendance'),
+      action: () => navigate(`${basePortalPath}/attendance`),
     },
     {
       title: 'Add Sales Target',
@@ -831,7 +835,7 @@ export default function ManagerDashboard(props) {
       icon: FileText,
       color: 'bg-mgr-secondary-50 text-mgr-secondary-700 border-mgr-secondary-200 hover:bg-mgr-secondary-100 hover:border-mgr-secondary-400',
       iconBg: 'bg-mgr-secondary-200 text-mgr-secondary-700',
-      action: () => navigate('/manager/reports'),
+      action: () => navigate(`${basePortalPath}/reports`),
     },
   ]
 
@@ -1146,20 +1150,22 @@ export default function ManagerDashboard(props) {
                 <span>Filters:</span>
               </div>
 
-              {/* Team Lead Filter */}
-              <div className="flex items-center gap-1.5">
-                <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Team Lead:</label>
-                <select
-                  value={selectedTeamLeadFilter}
-                  onChange={(e) => setSelectedTeamLeadFilter(e.target.value)}
-                  className="mgr-card px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-mgr-primary-400 transition cursor-pointer"
-                >
-                  <option value="ALL">All Team Leads</option>
-                  {uniqueTeamLeads.map((tl) => (
-                    <option key={tl} value={tl}>{tl}</option>
-                  ))}
-                </select>
-              </div>
+              {/* Team Lead Filter (Manager Portal Only) */}
+              {!isTeamLeadPortal && (
+                <div className="flex items-center gap-1.5">
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Team Lead:</label>
+                  <select
+                    value={selectedTeamLeadFilter}
+                    onChange={(e) => setSelectedTeamLeadFilter(e.target.value)}
+                    className="mgr-card px-2.5 py-1.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:ring-2 focus:ring-mgr-primary-400 transition cursor-pointer"
+                  >
+                    <option value="ALL">All Team Leads</option>
+                    {uniqueTeamLeads.map((tl) => (
+                      <option key={tl} value={tl}>{tl}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
 
               {/* Sales Executive Filter */}
               <div className="flex items-center gap-1.5">

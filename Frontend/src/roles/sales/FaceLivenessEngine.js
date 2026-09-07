@@ -31,12 +31,17 @@ export class FaceLivenessEngine {
     const width = videoElement.videoWidth || 640;
     const height = videoElement.videoHeight || 480;
 
-    canvasElement.width = width;
-    canvasElement.height = height;
+    // Only update canvas dimensions if they changed to prevent buffer reallocation
+    if (canvasElement.width !== width) canvasElement.width = width;
+    if (canvasElement.height !== height) canvasElement.height = height;
+
     const ctx = canvasElement.getContext("2d", { willReadFrequently: true });
     ctx.drawImage(videoElement, 0, 0, width, height);
 
-    const frameData = ctx.getImageData(0, 0, width, height);
+    // Sample downscaled area for brightness calculation to minimize CPU memory overhead
+    const sampleWidth = Math.min(320, width);
+    const sampleHeight = Math.min(240, height);
+    const frameData = ctx.getImageData(0, 0, sampleWidth, sampleHeight);
     const data = frameData.data;
 
     // 1. Calculate Average Brightness

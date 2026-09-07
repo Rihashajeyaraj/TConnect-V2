@@ -164,8 +164,9 @@ class SalesTargetRepository:
         caller_email = str((user_payload or {}).get("email") or "").lower().strip()
         caller_role = str((user_payload or {}).get("role") or "").strip()
 
-        is_manager = caller_role in ("Sales Manager", "sales_manager", "Manager")
-        is_admin_or_ceo = caller_role in ("Admin", "Super Admin", "System Admin", "CEO", "ceo")
+        caller_role_lower = caller_role.lower()
+        is_manager = any(r in caller_role_lower for r in ("manager", "lead", "tl"))
+        is_admin_or_ceo = any(r in caller_role_lower for r in ("admin", "ceo", "super"))
 
         if is_manager:
             effective_mgr_identifier = caller_id or caller_email

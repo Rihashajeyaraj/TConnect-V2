@@ -68,7 +68,7 @@ def get_team_revenue_breakdown(
         return {"success": True, "message": "Team revenue breakdown retrieved successfully", "data": breakdown}
     except Exception as e:
         logger.warning(f"Revenue breakdown error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        return {"success": False, "message": str(e), "data": None}
 
 @router.post("/activities", response_model=Dict[str, Any], status_code=status.HTTP_201_CREATED)
 def log_activity(

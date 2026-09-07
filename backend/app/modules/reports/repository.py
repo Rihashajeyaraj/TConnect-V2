@@ -1753,6 +1753,21 @@ class ReportsRepository:
                     sm_id = str(sm_user.get("id") or sm_user.get("auth_user_id") or "")
 
             # Store resolved names in the opportunity record
+            tl_name_opp = str(o.get("team_lead_name") or o.get("team_lead") or "").strip()
+            if not tl_name_opp and se_user:
+                tl_id_of_exec = str(se_user.get("reporting_team_lead_id") or se_user.get("team_lead_id") or "").strip()
+                tl_user = user_map_by_id.get(tl_id_of_exec) if tl_id_of_exec else None
+                tl_name_opp = (tl_user.get("name") if tl_user else (se_user.get("reporting_team_lead_name") or se_user.get("team_lead_name") or se_user.get("team_lead"))) or ""
+                if not tl_name_opp:
+                    mgr_name_str = str(se_user.get("reporting_manager_name") or se_user.get("reporting_manager") or "").strip()
+                    if mgr_name_str:
+                        m_user = user_map_by_name.get(mgr_name_str.lower())
+                        if m_user:
+                            m_role = str(m_user.get("role") or m_user.get("designation") or "").lower()
+                            if "lead" in m_role or "tl" in m_role:
+                                tl_name_opp = m_user.get("name") or mgr_name_str
+
+            o["_resolved_team_lead_name"] = tl_name_opp if tl_name_opp and tl_name_opp.lower() not in ("unassigned", "direct/unassigned") else ""
             o["_resolved_executive_name"] = exec_name
             o["_resolved_executive_id"] = exec_id
             o["_resolved_manager_name"] = sm_name
@@ -1811,6 +1826,21 @@ class ReportsRepository:
             if executive_id and exec_id != executive_id:
                 continue
 
+            tl_name_cust = str(c.get("team_lead_name") or c.get("team_lead") or "").strip()
+            if not tl_name_cust and se_user:
+                tl_id_of_exec = str(se_user.get("reporting_team_lead_id") or se_user.get("team_lead_id") or "").strip()
+                tl_user = user_map_by_id.get(tl_id_of_exec) if tl_id_of_exec else None
+                tl_name_cust = (tl_user.get("name") if tl_user else (se_user.get("reporting_team_lead_name") or se_user.get("team_lead_name") or se_user.get("team_lead"))) or ""
+                if not tl_name_cust:
+                    mgr_name_str = str(se_user.get("reporting_manager_name") or se_user.get("reporting_manager") or "").strip()
+                    if mgr_name_str:
+                        m_user = user_map_by_name.get(mgr_name_str.lower())
+                        if m_user:
+                            m_role = str(m_user.get("role") or m_user.get("designation") or "").lower()
+                            if "lead" in m_role or "tl" in m_role:
+                                tl_name_cust = m_user.get("name") or mgr_name_str
+
+            c["_resolved_team_lead_name"] = tl_name_cust if tl_name_cust and tl_name_cust.lower() not in ("unassigned", "direct/unassigned") else ""
             c["_resolved_executive_name"] = exec_name
             c["_resolved_executive_id"] = exec_id
             c["_resolved_manager_name"] = sm_name
@@ -1863,6 +1893,8 @@ class ReportsRepository:
                 "id": str(o.get("id") or o.get("opportunity_id") or o.get("lead_id") or ""),
                 "date": o["_resolved_date_obj"].isoformat() if hasattr(o.get("_resolved_date_obj"), "isoformat") else str(o["_resolved_date"]),
                 "sales_manager": o["_resolved_manager_name"],
+                "team_lead": o.get("_resolved_team_lead_name") or "",
+                "team_lead_name": o.get("_resolved_team_lead_name") or "",
                 "sales_executive": o["_resolved_executive_name"],
                 "customer": o.get("company") or o.get("title") or "Corporate Account",
                 "amount": o["_resolved_amount"],
@@ -1885,6 +1917,8 @@ class ReportsRepository:
                 "id": str(c.get("id") or c.get("customer_id") or ""),
                 "date": c["_resolved_date_obj"].isoformat() if hasattr(c.get("_resolved_date_obj"), "isoformat") else today_str,
                 "sales_manager": c["_resolved_manager_name"],
+                "team_lead": c.get("_resolved_team_lead_name") or "",
+                "team_lead_name": c.get("_resolved_team_lead_name") or "",
                 "sales_executive": c["_resolved_executive_name"],
                 "customer": c.get("customer_name") or c.get("company") or "Corporate Account",
                 "amount": c["_resolved_amount"],
@@ -1906,6 +1940,8 @@ class ReportsRepository:
 
             customers_details.append({
                 "sales_manager": c["_resolved_manager_name"],
+                "team_lead": c.get("_resolved_team_lead_name") or "",
+                "team_lead_name": c.get("_resolved_team_lead_name") or "",
                 "sales_executive": c["_resolved_executive_name"],
                 "customer_name": c.get("customer_name") or c.get("name") or "Unnamed Customer",
                 "company": c.get("company") or c.get("company_name") or "Enterprise",

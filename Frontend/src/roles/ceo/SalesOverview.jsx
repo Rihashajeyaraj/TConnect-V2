@@ -468,6 +468,7 @@ function SalesOverview({ initialSection }) {
       const matchesSearch =
         (row.customer || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (row.sales_executive || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (row.team_lead || row.team_lead_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (row.sales_manager || '').toLowerCase().includes(searchQuery.toLowerCase())
       const matchesManager = managerFilter === 'All' || row.sales_manager === managerFilter
       const matchesExecutive = executiveFilter === 'All' || row.sales_executive === executiveFilter
@@ -482,6 +483,7 @@ function SalesOverview({ initialSection }) {
         (row.customer_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (row.company || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (row.sales_executive || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (row.team_lead || row.team_lead_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
         (row.sales_manager || '').toLowerCase().includes(searchQuery.toLowerCase())
       const matchesManager = managerFilter === 'All' || row.sales_manager === managerFilter
       const matchesExecutive = executiveFilter === 'All' || row.sales_executive === executiveFilter
@@ -1236,27 +1238,37 @@ function SalesOverview({ initialSection }) {
               <table className="w-full text-left border-collapse text-xs">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider">
-                    <th className="px-5 py-3">Sales Manager</th>
-                    <th className="px-5 py-3">Sales Executive</th>
-                    <th className="px-5 py-3">Client Name</th>
-                    <th className="px-5 py-3">Company</th>
-                    <th className="px-5 py-3">Product / Service</th>
-                    <th className="px-5 py-3">Status</th>
-                    <th className="px-5 py-3 text-right">Contract Value</th>
+                    <th className="px-5 py-3 whitespace-nowrap">Sales Manager</th>
+                    <th className="px-5 py-3 whitespace-nowrap">Team Lead</th>
+                    <th className="px-5 py-3 whitespace-nowrap">Sales Executive</th>
+                    <th className="px-5 py-3 whitespace-nowrap">Client Name</th>
+                    <th className="px-5 py-3 whitespace-nowrap">Company</th>
+                    <th className="px-5 py-3 whitespace-nowrap">Product / Service</th>
+                    <th className="px-5 py-3 whitespace-nowrap">Status</th>
+                    <th className="px-5 py-3 text-right whitespace-nowrap">Contract Value</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {filteredCustomers.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-slate-400 font-bold">
+                      <td colSpan={8} className="py-12 text-center text-slate-400 font-bold">
                         No customer accounts found for the applied filter.
                       </td>
                     </tr>
                   ) : (
                     filteredCustomers.map((row, i) => (
                       <tr key={i} className="hover:bg-slate-50/50">
-                        <td className="px-5 py-3.5 text-slate-600">{row.sales_manager}</td>
-                        <td className="px-5 py-3.5 text-slate-600">{row.sales_executive}</td>
+                        <td className="px-5 py-3.5 text-slate-600 whitespace-nowrap">{row.sales_manager}</td>
+                        <td className="px-5 py-3.5 whitespace-nowrap">
+                          {(row.team_lead || row.team_lead_name) && !['Unassigned', 'Direct/Unassigned', 'N/A', '—'].includes(row.team_lead || row.team_lead_name) ? (
+                            <span className="inline-flex items-center bg-violet-50 text-violet-700 border border-violet-200 rounded-md px-2 py-0.5 text-[10px] font-bold">
+                              {row.team_lead || row.team_lead_name}
+                            </span>
+                          ) : (
+                            <span className="text-slate-400 font-semibold text-[11px]">—</span>
+                          )}
+                        </td>
+                        <td className="px-5 py-3.5 text-slate-600 whitespace-nowrap">{row.sales_executive}</td>
                         <td className="px-5 py-3.5 font-bold text-slate-900">{row.customer_name}</td>
                         <td className="px-5 py-3.5 text-slate-500">{row.company}</td>
                         <td className="px-5 py-3.5 text-slate-600">{row.product}</td>
@@ -1521,7 +1533,7 @@ function SalesOverview({ initialSection }) {
       {/* ── DETAIL FINANCIAL PROFIT & LOSS BREAKDOWN MODAL ── */}
       {showFinancialReportModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
+          <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-7xl max-h-[93vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-[#832D51] text-white">
               <div className="flex items-center gap-2.5">
@@ -1695,7 +1707,11 @@ function SalesOverview({ initialSection }) {
                             <React.Fragment key={group.date}>
                               {/* Daily Summary Row */}
                               <tr className="bg-slate-50/70 border-b border-slate-200">
-                                <td className="px-4 py-2 font-black text-slate-900">{group.date}</td>
+                                <td className="px-4 py-2 font-black text-slate-900">
+                                  {group.date
+                                    ? group.date.split('-').reverse().join('/')
+                                    : '—'}
+                                </td>
                                 <td colSpan={2} className="px-4 py-2 text-slate-400 font-bold text-[10px] uppercase">Daily Subtotal</td>
                                 <td className="px-4 py-2 text-right font-black text-slate-950">
                                   {group.totalRevenue > 0 ? `₹${group.totalRevenue.toLocaleString()}` : '—'}

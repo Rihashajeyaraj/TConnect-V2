@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   Target,
   Search,
@@ -43,9 +44,12 @@ const getStoredUser = () => {
 export default function ManagerLeads() {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
+  const location = useLocation()
 
   const mgrUser = getStoredUser()
   const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
+  const userRoleStr = String(currentUser.role || mgrUser.role || '').toLowerCase().trim()
+  const isTeamLead = location.pathname.startsWith('/team-lead') || userRoleStr.includes('lead')
 
   // API State with Cache
   const [leads, setLeads] = useState(() => {
@@ -694,26 +698,28 @@ export default function ManagerLeads() {
             {/* ── FILTERS & SEARCH CONTROL BAR ── clean flat strip ──────────── */}
             <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div className="flex flex-wrap items-center gap-3">
-                {/* Team Lead Filter */}
-                <div className="flex items-center gap-2 text-sm shrink-0">
-                  <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Team Lead:</span>
-                  <select
-                    value={selectedTL}
-                    onChange={(e) => {
-                      setSelectedTL(e.target.value)
-                      setSelectedSE('All')
-                      setPage(1)
-                    }}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition"
-                  >
-                    <option value="All">All Team Leads</option>
-                    {teamLeads.map((tl) => (
-                      <option key={tl.email || tl.id} value={tl.name || tl.email}>
-                        👤 {tl.name} ({tl.employee_code || 'TL'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {/* Team Lead Filter (Sales Manager Only) */}
+                {!isTeamLead && (
+                  <div className="flex items-center gap-2 text-sm shrink-0">
+                    <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Team Lead:</span>
+                    <select
+                      value={selectedTL}
+                      onChange={(e) => {
+                        setSelectedTL(e.target.value)
+                        setSelectedSE('All')
+                        setPage(1)
+                      }}
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition"
+                    >
+                      <option value="All">All Team Leads</option>
+                      {teamLeads.map((tl) => (
+                        <option key={tl.email || tl.id} value={tl.name || tl.email}>
+                          👤 {tl.name} ({tl.employee_code || 'TL'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Sales Executive Filter */}
                 <div className="flex items-center gap-2 text-sm shrink-0">

@@ -1,5 +1,6 @@
 // Sales Manager Team & Reports Module
 import React, { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   Users,
   Search,
@@ -50,6 +51,7 @@ const getStoredUser = () => {
 
 export default function ManagerTeam() {
   const { showToast } = useToast()
+  const location = useLocation()
 
   // View Mode State: 'table' (default) or 'cards'
   const [viewMode, setViewMode] = useState('table')
@@ -73,6 +75,7 @@ export default function ManagerTeam() {
 
   const mgrUser = getStoredUser()
   const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
+  const isTeamLeadPortal = location.pathname.startsWith('/team-lead') || String(mgrUser.role || '').toLowerCase().includes('lead')
 
   // EOD Reports List & Executives with Local Caching
   const [reports, setReports] = useState(() => {
@@ -1047,93 +1050,95 @@ export default function ManagerTeam() {
         </div>
       </div>
 
-      {/* ── ROW 2: TEAM LEADERS CARDS WITH HEADING ── */}
-      <div className="space-y-2 pt-2">
-        <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm tracking-tight pl-1">
-          <Award className="w-4 h-4 text-amber-600" /> Team Leaders
-          <span className="text-[10px] font-extrabold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200 shadow-2xs">
-            {teamLeads.length} Assigned Leads
-          </span>
+      {/* ── ROW 2: TEAM LEADERS CARDS WITH HEADING (Sales Manager Portal Only) ── */}
+      {!isTeamLeadPortal && (
+        <div className="space-y-2 pt-2">
+          <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm tracking-tight pl-1">
+            <Award className="w-4 h-4 text-amber-600" /> Team Leaders
+            <span className="text-[10px] font-extrabold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200 shadow-2xs">
+              {teamLeads.length} Assigned Leads
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl">
+            {/* CARD 1: TEAM LEAD EOD REPORTS - EMERALD */}
+            <div
+              onClick={() => {
+                setIsTLOnlyMode(true)
+                setSelectedTL('All')
+                setSelectedSE('All')
+                setActiveTab('attendance')
+              }}
+              className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-emerald-50 to-teal-50/50 text-emerald-950 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+            >
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800/80">
+                  Team Lead EOD Reports
+                </p>
+                <h3 className="text-xl font-bold text-emerald-950">{tlReportsCount} Reports</h3>
+                <p className="text-[10px] font-normal text-emerald-600/90">
+                  Click to view Team Lead EOD logs
+                </p>
+              </div>
+              <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-300/60">
+                <FileText className="w-5 h-5" />
+              </div>
+            </div>
+
+            {/* CARD 2: TEAM LEAD LEAVE & PERMISSIONS - ROSE */}
+            <div
+              onClick={() => {
+                setIsTLOnlyMode(true)
+                setLeaveTLFilter('All')
+                setLeaveExecutiveFilter('All')
+                setActiveTab('permissions')
+              }}
+              className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-rose-50 to-pink-50/50 text-rose-950 border-rose-200 hover:border-rose-400 hover:bg-rose-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+            >
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-black uppercase tracking-wider text-rose-800/85">
+                  Team Lead Leaves
+                </p>
+                <h3 className="text-xl font-black text-rose-950">
+                  {tlPendingLeavesCount} Pending
+                </h3>
+                <p className="text-[10px] font-semibold text-rose-600/90">
+                  Click to view Team Lead leave requests
+                </p>
+              </div>
+              <div className="p-2.5 rounded-xl bg-rose-100 text-rose-700 border border-rose-300/60">
+                <Calendar className="w-5 h-5" />
+              </div>
+            </div>
+
+            {/* CARD 3: TEAM LEAD ATTENDANCE - SKY */}
+            <div
+              onClick={() => {
+                setIsTLOnlyMode(true)
+                setAttendanceTLFilter('All')
+                setAttendanceExecutiveFilter('All')
+                setActiveTab('team_attendance')
+              }}
+              className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-sky-50 to-cyan-50/50 text-sky-950 border-sky-200 hover:border-sky-400 hover:bg-sky-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+            >
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-black uppercase tracking-wider text-sky-800/85">
+                  Team Lead Attendance
+                </p>
+                <h3 className="text-xl font-black text-sky-950">
+                  {teamLeads.length} Team Leads
+                </h3>
+                <p className="text-[10px] font-semibold text-sky-600/90">
+                  Click to view Team Lead login/logout history
+                </p>
+              </div>
+              <div className="p-2.5 rounded-xl bg-sky-100 text-sky-700 border border-sky-300/60">
+                <UserCheck className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
         </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl">
-          {/* CARD 1: TEAM LEAD EOD REPORTS - EMERALD */}
-          <div
-            onClick={() => {
-              setIsTLOnlyMode(true)
-              setSelectedTL('All')
-              setSelectedSE('All')
-              setActiveTab('attendance')
-            }}
-            className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-emerald-50 to-teal-50/50 text-emerald-950 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
-          >
-            <div className="space-y-0.5">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800/80">
-                Team Lead EOD Reports
-              </p>
-              <h3 className="text-xl font-bold text-emerald-950">{tlReportsCount} Reports</h3>
-              <p className="text-[10px] font-normal text-emerald-600/90">
-                Click to view Team Lead EOD logs
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-300/60">
-              <FileText className="w-5 h-5" />
-            </div>
-          </div>
-
-          {/* CARD 2: TEAM LEAD LEAVE & PERMISSIONS - ROSE */}
-          <div
-            onClick={() => {
-              setIsTLOnlyMode(true)
-              setLeaveTLFilter('All')
-              setLeaveExecutiveFilter('All')
-              setActiveTab('permissions')
-            }}
-            className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-rose-50 to-pink-50/50 text-rose-950 border-rose-200 hover:border-rose-400 hover:bg-rose-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
-          >
-            <div className="space-y-0.5">
-              <p className="text-[10px] font-black uppercase tracking-wider text-rose-800/85">
-                Team Lead Leaves
-              </p>
-              <h3 className="text-xl font-black text-rose-950">
-                {tlPendingLeavesCount} Pending
-              </h3>
-              <p className="text-[10px] font-semibold text-rose-600/90">
-                Click to view Team Lead leave requests
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-rose-100 text-rose-700 border border-rose-300/60">
-              <Calendar className="w-5 h-5" />
-            </div>
-          </div>
-
-          {/* CARD 3: TEAM LEAD ATTENDANCE - SKY */}
-          <div
-            onClick={() => {
-              setIsTLOnlyMode(true)
-              setAttendanceTLFilter('All')
-              setAttendanceExecutiveFilter('All')
-              setActiveTab('team_attendance')
-            }}
-            className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-sky-50 to-cyan-50/50 text-sky-950 border-sky-200 hover:border-sky-400 hover:bg-sky-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
-          >
-            <div className="space-y-0.5">
-              <p className="text-[10px] font-black uppercase tracking-wider text-sky-800/85">
-                Team Lead Attendance
-              </p>
-              <h3 className="text-xl font-black text-sky-950">
-                {teamLeads.length} Team Leads
-              </h3>
-              <p className="text-[10px] font-semibold text-sky-600/90">
-                Click to view Team Lead login/logout history
-              </p>
-            </div>
-            <div className="p-2.5 rounded-xl bg-sky-100 text-sky-700 border border-sky-300/60">
-              <UserCheck className="w-5 h-5" />
-            </div>
-          </div>
-        </div>
-      </div>
+      )}
 
       {/* ── ATTENDANCE DETAILS MODAL POPUP ───────────────────────────────────── */}
       {activeTab === 'attendance' && (
@@ -1161,7 +1166,8 @@ export default function ManagerTeam() {
             <div className="bg-white border border-slate-200 rounded-3xl p-4 space-y-4 shadow-xs">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex flex-wrap items-center gap-3">
-                  {/* Team Lead Filter */}
+                {/* Team Lead Filter (Manager Portal Only) */}
+                {!isTeamLeadPortal && (
                   <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3.5 py-1.5 text-xs font-bold text-slate-700">
                     <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider">Team Lead:</span>
                     <select
@@ -1180,6 +1186,7 @@ export default function ManagerTeam() {
                       ))}
                     </select>
                   </div>
+                )}
 
                   {/* Sales Executive Filter - ONLY IF NOT TL mode */}
                   {!isTLOnlyMode && (
@@ -1371,25 +1378,27 @@ export default function ManagerTeam() {
               {/* Filter Strip */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div className="flex flex-wrap items-center gap-3">
-                  {/* Team Lead Filter */}
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Team Lead:</span>
-                    <select
-                      value={leaveTLFilter}
-                      onChange={(e) => {
-                        setLeaveTLFilter(e.target.value)
-                        setLeaveExecutiveFilter('All')
-                      }}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-xl px-3 py-1.5 text-xs border border-slate-200 transition"
-                    >
-                      <option value="All">All Team Leads</option>
-                      {teamLeads.map((tl) => (
-                        <option key={tl.id || tl.employee_code} value={tl.name || tl.full_name}>
-                          👤 {tl.name || tl.full_name} ({tl.employee_code || 'TL'})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Team Lead Filter (Manager Portal Only) */}
+                  {!isTeamLeadPortal && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Team Lead:</span>
+                      <select
+                        value={leaveTLFilter}
+                        onChange={(e) => {
+                          setLeaveTLFilter(e.target.value)
+                          setLeaveExecutiveFilter('All')
+                        }}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-xl px-3 py-1.5 text-xs border border-slate-200 transition"
+                      >
+                        <option value="All">All Team Leads</option>
+                        {teamLeads.map((tl) => (
+                          <option key={tl.id || tl.employee_code} value={tl.name || tl.full_name}>
+                            👤 {tl.name || tl.full_name} ({tl.employee_code || 'TL'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {/* Executive Filter Dropdown - ONLY IF NOT TL mode */}
                   {!isTLOnlyMode && (
@@ -1793,25 +1802,27 @@ export default function ManagerTeam() {
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                {/* Team Lead Dropdown Filter */}
-                <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs font-bold text-slate-700 min-w-[200px]">
-                  <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider whitespace-nowrap">Team Lead:</span>
-                  <select
-                    value={attendanceTLFilter}
-                    onChange={(e) => {
-                      setAttendanceTLFilter(e.target.value)
-                      setAttendanceExecutiveFilter('All')
-                    }}
-                    className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-black text-xs w-full"
-                  >
-                    <option value="All">All Team Leads</option>
-                    {teamLeads.map((tl) => (
-                      <option key={tl.id || tl.employee_code || tl.email} value={tl.name || tl.full_name}>
-                        👤 {tl.name || tl.full_name} ({tl.employee_code || 'TL'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
+                {/* Team Lead Dropdown Filter (Manager Portal Only) */}
+                {!isTeamLeadPortal && (
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs font-bold text-slate-700 min-w-[200px]">
+                    <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider whitespace-nowrap">Team Lead:</span>
+                    <select
+                      value={attendanceTLFilter}
+                      onChange={(e) => {
+                        setAttendanceTLFilter(e.target.value)
+                        setAttendanceExecutiveFilter('All')
+                      }}
+                      className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-black text-xs w-full"
+                    >
+                      <option value="All">All Team Leads</option>
+                      {teamLeads.map((tl) => (
+                        <option key={tl.id || tl.employee_code || tl.email} value={tl.name || tl.full_name}>
+                          👤 {tl.name || tl.full_name} ({tl.employee_code || 'TL'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
 
                 {/* Executive Dropdown Filter - ONLY IF NOT TL mode */}
                 {!isTLOnlyMode && (

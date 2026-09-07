@@ -194,6 +194,8 @@ function App() {
 
             {/* ── Team Lead Portal (Clean Sales Manager UI Clone) ───────── */}
             <Route element={<ProtectedRoute allowedRoles={['team_lead', 'team lead', 'Team Lead', 'lead', 'tl', 'manager', 'admin', 'ceo']} />}>
+              <Route path="/teamlead" element={<Navigate to="/team-lead/dashboard" replace />} />
+              <Route path="/teamlead/*" element={<Navigate to="/team-lead/dashboard" replace />} />
               <Route path="/team-lead" element={<TeamLeadLayout />}>
                 <Route index element={<TeamLeadDashboard />} />
                 <Route path="dashboard" element={<TeamLeadDashboard />} />

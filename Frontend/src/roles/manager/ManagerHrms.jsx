@@ -37,7 +37,7 @@ import {
   PlusCircle,
 } from 'lucide-react'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate, useLocation } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import { attendanceAPI, hrmsAPI, settingsAPI } from '../../services/api.js'
 import { calculateWorkHours } from '../sales/Attendance.jsx'
@@ -122,9 +122,13 @@ const LEAVE_BALANCE = [
 
 export default function ManagerHrms(props) {
   const currentUser = useCurrentUser()
+  const navigate = useNavigate()
+  const location = useLocation()
   const { showToast } = useToast()
 
   const userRole = String(currentUser.role || '').toLowerCase().trim();
+  const isTeamLead = location.pathname.startsWith('/team-lead') || userRole.includes('lead');
+  const attendanceRoute = isTeamLead ? '/team-lead/attendance' : '/manager/attendance';
   const headerTitle = props?.portalTitle || (userRole.includes('lead') ? 'TwiteHRMS Team Lead Portal' : 'TwiteHRMS Manager Portal');
 
   const [profile, setProfile] = useState({})
@@ -601,7 +605,7 @@ export default function ManagerHrms(props) {
 
               <button
                 type="button"
-                onClick={() => window.location.href = "/manager/attendance"}
+                onClick={() => navigate(attendanceRoute)}
                 className="mgr-card px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center gap-1.5 active:scale-95 shrink-0"
               >
                 📹 Mark Attendance Now

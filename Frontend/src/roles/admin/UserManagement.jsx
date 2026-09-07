@@ -1577,13 +1577,17 @@ function UserManagement() {
     }
   }
 
-  // Real-time face alignment loop for Admin Create Modal
+  // Real-time face alignment loop for Admin Create Modal (throttled to ~5 FPS)
   useEffect(() => {
     let animId
-    const analyzeFrame = () => {
+    let lastAnalyzeTime = 0
+    const analyzeFrame = (time) => {
       if (cameraActive && videoRef.current && canvasRef.current) {
-        const evalResult = engineRef.current.evaluateAlignment(videoRef.current, canvasRef.current)
-        setIsFaceAligned(evalResult.isAligned)
+        if (time - lastAnalyzeTime > 200) {
+          lastAnalyzeTime = time
+          const evalResult = engineRef.current.evaluateAlignment(videoRef.current, canvasRef.current)
+          setIsFaceAligned(prev => prev !== evalResult.isAligned ? evalResult.isAligned : prev)
+        }
       }
       animId = requestAnimationFrame(analyzeFrame)
     }
