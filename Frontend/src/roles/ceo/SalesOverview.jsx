@@ -27,7 +27,8 @@ import {
   Receipt,
   PieChart as PieChartIcon,
   Layers,
-  Check
+  Check,
+  ArrowUpDown
 } from 'lucide-react'
 import {
   AreaChart,
@@ -73,6 +74,7 @@ function SalesOverview({ initialSection }) {
   const [modalTimeFilter, setModalTimeFilter] = useState('Monthly') // 'Monthly' | 'Yearly' | 'Custom'
   const [modalFromDate, setModalFromDate] = useState('')
   const [modalToDate, setModalToDate] = useState('')
+  const [modalSortAsc, setModalSortAsc] = useState(true) // true: Oldest first (Start to End), false: Newest first (End to Start)
   
   // CEO Reports Review state
   const [ceoActiveTab, setCeoActiveTab] = useState('overview') // 'overview' | 'reports'
@@ -437,8 +439,10 @@ function SalesOverview({ initialSection }) {
       grouped[d].totalSalary += (item.salary || 0)
       grouped[d].transactions.push(item)
     })
-    return Object.values(grouped).sort((a, b) => b.date.localeCompare(a.date))
-  }, [modalRevenueRecords, modalReimbursementRecords, salariesList, modalTimeFilter, modalFromDate, modalToDate, modalRange.end])
+    return Object.values(grouped).sort((a, b) => {
+      return modalSortAsc ? a.date.localeCompare(b.date) : b.date.localeCompare(a.date)
+    })
+  }, [modalRevenueRecords, modalReimbursementRecords, salariesList, modalTimeFilter, modalFromDate, modalToDate, modalRange.end, modalSortAsc])
 
   // Key Financial & Sales Metrics (Realized, Pipeline, Target, Net Margin)
   // Safe numeric helpers
@@ -549,23 +553,19 @@ function SalesOverview({ initialSection }) {
     // Pull from customers_details (has product field)
     const custList = data?.customers_details || []
     for (const c of custList) {
-      const prod = (c.product || 'Unlisted Product').trim()
+      let rawProd = (c.product || c.product_name || c.service || '').trim()
+      if (!rawProd || rawProd === 'Software License' || rawProd === 'Unlisted Product') {
+        rawProd = 'TwiteConnect CRM'
+      }
+      const prod = rawProd
       if (!map[prod]) map[prod] = { product: prod, revenue: 0, deals: 0, customers: [], executives: new Set(), managers: new Set(), amounts: [] }
-      const amt = safeNum(c.amount)
+      const amt = safeNum(c.amount || c.contract_value || c.revenue)
       map[prod].revenue += amt
       map[prod].deals += 1
       map[prod].amounts.push(amt)
       if (c.customer_name) map[prod].customers.push({ name: c.customer_name, company: c.company || '', amount: amt, executive: c.sales_executive || '—', manager: c.sales_manager || '—' })
       if (c.sales_executive) map[prod].executives.add(c.sales_executive)
       if (c.sales_manager) map[prod].managers.add(c.sales_manager)
-    }
-
-    // Also pull from revenue_details if product is available
-    const revList = data?.revenue_details || []
-    for (const r of revList) {
-      const prod = (r.product || r.customer || 'Won Deal').trim()
-      // Only add if not already counted via customers_details (prevent dup)
-      // We skip this to avoid double counting — customers_details is primary
     }
 
     const maxRev = Math.max(...Object.values(map).map(p => p.revenue), 1)
@@ -712,36 +712,9 @@ function SalesOverview({ initialSection }) {
             Unified executive command center: Sales pipeline, won revenue, targets, operational expenses, and net margin
           </p>
         </div>
-
-        {/* Sub-tab switcher */}
-        <div className="flex border-b border-slate-200/50 mt-1 gap-5 px-1.5 pb-0.5">
-          <button
-            onClick={() => setCeoActiveTab('overview')}
-            className={`pb-2 text-xs font-black border-b-2 transition cursor-pointer ${
-              ceoActiveTab === 'overview'
-                ? 'border-[#832D51] text-[#832D51]'
-                : 'border-transparent text-slate-400 hover:text-slate-700'
-            }`}
-          >
-            Overview Dashboard
-          </button>
-          <button
-            onClick={() => setCeoActiveTab('reports')}
-            className={`pb-2 text-xs font-black border-b-2 transition cursor-pointer ${
-              ceoActiveTab === 'reports'
-                ? 'border-[#832D51] text-[#832D51]'
-                : 'border-transparent text-slate-400 hover:text-slate-700'
-            }`}
-          >
-            Sales Manager Reports
-          </button>
-        </div>
-
       </div>
 
-      {ceoActiveTab === 'overview' ? (
-        <>
-          <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex items-center gap-2 flex-wrap">
           {/* Date range switcher (Compact & Interactive) */}
           <div className="flex items-center bg-slate-100 rounded-xl p-0.5 sm:p-1 text-[11px] font-bold border border-slate-200">
             {['Today', 'This Week', 'This Month', 'Custom Date'].map((t) => (
@@ -805,197 +778,154 @@ function SalesOverview({ initialSection }) {
         </form>
       )}
 
-      {/* ── 1. Top Summary Cards (Compact, Solid Pastel & 2px Border) ── */}
-      <div className="grid gap-3 sm:gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      {/* ── 1. Top Summary Cards (Compact 4-Column Grid) ── */}
+      <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-4">
         {/* Card 1: Total Revenue (Emerald Theme) */}
         <button
           onClick={() => {
             setShowFinancialReportModal(true)
           }}
-          className={`text-left rounded-2xl p-3.5 sm:p-4 transition-all duration-150 relative overflow-hidden group cursor-pointer active:scale-95 ${
+          className={`text-left rounded-xl p-2.5 sm:p-3 transition-all duration-150 relative overflow-hidden group cursor-pointer active:scale-95 ${
             activeKpi === 'revenue' && wonToggle
               ? 'bg-[#832D51] text-white border-2 border-[#832D51] shadow-md'
-              : 'bg-[#DCFCE7] text-slate-900 border-2 border-[#16A34A] shadow-sm hover:shadow-md'
+              : 'bg-[#DCFCE7] text-slate-900 border-2 border-[#16A34A] shadow-xs hover:shadow-sm'
           }`}
         >
           <div className="flex justify-between items-center">
             <span
-              className={`text-[10px] font-black uppercase tracking-wider ${
+              className={`text-[9px] font-black uppercase tracking-wider ${
                 activeKpi === 'revenue' && wonToggle ? 'text-pink-200' : 'text-[#15803D]'
               }`}
             >
               Total Revenue
             </span>
             <span
-              className={`grid size-7 place-items-center rounded-lg ${
+              className={`grid size-6 place-items-center rounded-md ${
                 activeKpi === 'revenue' && wonToggle
                   ? 'bg-white/20 text-white'
                   : 'bg-[#16A34A]/20 text-[#15803D]'
               }`}
             >
-              <DollarSign className="size-4" />
+              <DollarSign className="size-3.5" />
             </span>
           </div>
-          <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
+          <p className="text-lg sm:text-xl font-black tracking-tight mt-1 text-slate-950">
             ₹{totalRevenue.toLocaleString()}
           </p>
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
+          <div className="flex items-center justify-between mt-1 pt-1 border-t border-black/10">
             <span
-              className={`text-[10px] font-bold ${
+              className={`text-[9px] font-bold ${
                 activeKpi === 'revenue' && wonToggle ? 'text-pink-100' : 'text-[#166534]'
               }`}
             >
               Realized won deals
             </span>
-            <span className="inline-flex items-center rounded-md bg-[#16A34A]/20 px-1.5 py-0.5 text-[9px] font-black text-[#15803D]">
+            <span className="inline-flex items-center rounded-md bg-[#16A34A]/20 px-1 py-0.2 text-[8px] font-black text-[#15803D]">
               Won
             </span>
           </div>
-          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#15803D]">
+          <div className="mt-1 pt-0.5 border-t border-black/10 flex items-center gap-1 text-[9px] font-bold text-[#15803D]">
             <span>▼ Showing list</span>
           </div>
         </button>
 
-        {/* Card 2: Total Customers (Blue Theme) */}
+        {/* Card 2: Total Clients (Blue Theme) */}
         <button
           onClick={() => {
             setActiveKpi('customers')
             setWonToggle(false)
           }}
-          className={`text-left rounded-2xl p-3.5 sm:p-4 transition-all duration-150 relative overflow-hidden group cursor-pointer active:scale-95 ${
+          className={`text-left rounded-xl p-2.5 sm:p-3 transition-all duration-150 relative overflow-hidden group cursor-pointer active:scale-95 ${
             activeKpi === 'customers' && !wonToggle
               ? 'bg-[#832D51] text-white border-2 border-[#832D51] shadow-md'
-              : 'bg-[#DBEAFE] text-slate-900 border-2 border-[#2563EB] shadow-sm hover:shadow-md'
+              : 'bg-[#DBEAFE] text-slate-900 border-2 border-[#2563EB] shadow-xs hover:shadow-sm'
           }`}
         >
           <div className="flex justify-between items-center">
             <span
-              className={`text-[10px] font-black uppercase tracking-wider ${
+              className={`text-[9px] font-black uppercase tracking-wider ${
                 activeKpi === 'customers' && !wonToggle ? 'text-pink-200' : 'text-[#1E40AF]'
               }`}
             >
               Total Clients
             </span>
             <span
-              className={`grid size-7 place-items-center rounded-lg ${
+              className={`grid size-6 place-items-center rounded-md ${
                 activeKpi === 'customers' && !wonToggle
                   ? 'bg-white/20 text-white'
                   : 'bg-[#2563EB]/20 text-[#1E40AF]'
               }`}
             >
-              <Building2 className="size-4" />
+              <Building2 className="size-3.5" />
             </span>
           </div>
-          <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
+          <p className="text-lg sm:text-xl font-black tracking-tight mt-1 text-slate-950">
             {totalCustomersCount}
           </p>
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
+          <div className="flex items-center justify-between mt-1 pt-1 border-t border-black/10">
             <span
-              className={`text-[10px] font-bold ${
+              className={`text-[9px] font-bold ${
                 activeKpi === 'customers' && !wonToggle ? 'text-pink-100' : 'text-[#1D4ED8]'
               }`}
             >
               Accounts in period
             </span>
-            <span className="text-[9px] font-black text-[#1E40AF]">Directory</span>
+            <span className="text-[8px] font-black text-[#1E40AF]">Directory</span>
           </div>
-          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#1E40AF]">
+          <div className="mt-1 pt-0.5 border-t border-black/10 flex items-center gap-1 text-[9px] font-bold text-[#1E40AF]">
             <span>▼ Showing list</span>
           </div>
         </button>
 
-        {/* Card 3: Won Deals (Teal / Cyan Theme) */}
-        <div className="bg-[#CFFAFE] border-2 border-[#0891B2] text-slate-900 rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase tracking-wider text-[#155E75]">
-              Won Deals
-            </span>
-            <span className="grid size-7 place-items-center rounded-lg bg-[#0891B2]/20 text-[#155E75]">
-              <CheckCircle2 className="size-4" />
-            </span>
-          </div>
-          <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
-            {totalWonDealsCount}
-          </p>
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
-            <span className="text-[10px] font-bold text-[#0E7490]">Converted orders</span>
-            <span className="text-[9px] font-bold text-[#155E75]">Closed</span>
-          </div>
-          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#155E75]">
-            <span>▼ Showing list</span>
-          </div>
-        </div>
-
-        {/* Card 4: Net Margin (Yellow / Amber Theme) */}
-        <div className="bg-[#FEF08A] border-2 border-[#CA8A04] text-slate-900 rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer">
-          <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase tracking-wider text-[#854D0E]">Net Margin</span>
-            <span className="grid size-7 place-items-center rounded-lg bg-[#CA8A04]/20 text-[#854D0E]">
-              <TrendingUp className="size-4" />
-            </span>
-          </div>
-          <div className="flex items-baseline gap-1.5 mt-2">
-            <p className="text-xl sm:text-2xl font-black tracking-tight text-slate-950">{netProfitMargin}%</p>
-            <span className="text-xs font-bold text-[#854D0E]">margin</span>
-          </div>
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
-            <span className="text-[10px] font-bold text-[#A16207]">₹{netProfit.toLocaleString()} net</span>
-            <span className="text-[9px] font-bold text-[#854D0E]">After Expenses</span>
-          </div>
-          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#854D0E]">
-            <span>▼ Showing list</span>
-          </div>
-        </div>
-
-        {/* Card 5: Target Achieved (Purple Theme) */}
+        {/* Card 3: Target Achieved (Purple Theme) */}
         <button
           onClick={() => setShowTargetsModal(true)}
-          className="text-left bg-[#F3E8FF] border-2 border-[#9333EA] text-slate-900 rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 active:scale-95 cursor-pointer"
+          className="text-left bg-[#F3E8FF] border-2 border-[#9333EA] text-slate-900 rounded-xl p-2.5 sm:p-3 shadow-xs transition-all duration-150 active:scale-95 cursor-pointer hover:shadow-sm"
         >
           <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase tracking-wider text-[#6B21A8]">
+            <span className="text-[9px] font-black uppercase tracking-wider text-[#6B21A8]">
               Target Achieved
             </span>
-            <span className="grid size-7 place-items-center rounded-lg bg-[#9333EA]/20 text-[#6B21A8]">
-              <Target className="size-4" />
+            <span className="grid size-6 place-items-center rounded-md bg-[#9333EA]/20 text-[#6B21A8]">
+              <Target className="size-3.5" />
             </span>
           </div>
-          <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
+          <p className="text-lg sm:text-xl font-black tracking-tight mt-1 text-slate-950">
             {targetAchievementRate}%
           </p>
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
-            <span className="text-[10px] font-bold text-[#7E22CE]">YTD Target Progress</span>
-            <span className="inline-flex items-center rounded-md bg-[#9333EA]/20 px-1.5 py-0.5 text-[9px] font-black text-[#6B21A8]">
+          <div className="flex items-center justify-between mt-1 pt-1 border-t border-black/10">
+            <span className="text-[9px] font-bold text-[#7E22CE]">YTD Target Progress</span>
+            <span className="inline-flex items-center rounded-md bg-[#9333EA]/20 px-1 py-0.2 text-[8px] font-black text-[#6B21A8]">
               Target
             </span>
           </div>
-          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#6B21A8]">
+          <div className="mt-1 pt-0.5 border-t border-black/10 flex items-center gap-1 text-[9px] font-bold text-[#6B21A8]">
             <span>▼ Showing list</span>
           </div>
         </button>
 
-        {/* Card 6: Approved Expenses (Rose Theme) */}
-        <div className="bg-[#FFE4E6] border-2 border-[#E11D48] text-slate-900 rounded-2xl p-3.5 sm:p-4 shadow-sm transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer">
+        {/* Card 4: Approved Expenses (Rose Theme) */}
+        <div className="bg-[#FFE4E6] border-2 border-[#E11D48] text-slate-900 rounded-xl p-2.5 sm:p-3 shadow-xs transition-all duration-150 hover:scale-[1.01] active:scale-95 cursor-pointer">
           <div className="flex justify-between items-center">
-            <span className="text-[10px] font-black uppercase tracking-wider text-[#9F1239]">
+            <span className="text-[9px] font-black uppercase tracking-wider text-[#9F1239]">
               Approved Expense Claims
             </span>
-            <span className="grid size-7 place-items-center rounded-lg bg-[#E11D48]/20 text-[#9F1239]">
-              <Wallet className="size-4" />
+            <span className="grid size-6 place-items-center rounded-md bg-[#E11D48]/20 text-[#9F1239]">
+              <Wallet className="size-3.5" />
             </span>
           </div>
-          <p className="text-xl sm:text-2xl font-black tracking-tight mt-2 text-slate-950">
+          <p className="text-lg sm:text-xl font-black tracking-tight mt-1 text-slate-950">
             ₹{totalOperationalExpenses.toLocaleString()}
           </p>
-          <div className="flex items-center justify-between mt-1.5 pt-1.5 border-t border-black/10">
-            <span className="text-[10px] font-bold text-[#BE123C]">
+          <div className="flex items-center justify-between mt-1 pt-1 border-t border-black/10">
+            <span className="text-[9px] font-bold text-[#BE123C]">
               {approvedExpenseCount > 0
                 ? `${approvedExpenseCount} approved claim${approvedExpenseCount !== 1 ? 's' : ''}`
                 : 'Executive field claims'}
             </span>
-            <span className="text-[9px] font-bold text-[#9F1239]">Approved</span>
+            <span className="text-[8px] font-bold text-[#9F1239]">Approved</span>
           </div>
-          <div className="mt-2 pt-1 border-t border-black/10 flex items-center gap-1 text-[10px] font-bold text-[#9F1239]">
+          <div className="mt-1 pt-0.5 border-t border-black/10 flex items-center gap-1 text-[9px] font-bold text-[#9F1239]">
             <span>▼ Showing list</span>
           </div>
         </div>
@@ -1372,97 +1302,6 @@ function SalesOverview({ initialSection }) {
           </div>
         </div>
       </div>
-        </>
-      ) : (
-        /* ── CEO REPORTS REVIEW PANEL ── */
-        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs space-y-5">
-          <div className="flex justify-between items-center border-b border-slate-100 pb-4">
-            <div>
-              <h2 className="text-sm font-black text-slate-900">Submitted Manager Sales Reports</h2>
-              <p className="text-[11px] font-bold text-slate-400 mt-1">Review weekly and monthly performance reports submitted by Sales Managers.</p>
-            </div>
-            <button
-              onClick={fetchCeoReports}
-              disabled={loadingCeoReports}
-              className="flex items-center gap-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-750 transition cursor-pointer disabled:opacity-50"
-            >
-              <RefreshCw className={`size-3.5 ${loadingCeoReports ? 'animate-spin' : ''}`} />
-              Sync Reports
-            </button>
-          </div>
-
-          {loadingCeoReports ? (
-            <div className="py-20 text-center text-slate-400 font-bold flex flex-col items-center justify-center gap-2 text-xs">
-              <RefreshCw className="size-8 animate-spin text-[#832D51]" />
-              Loading submitted reports...
-            </div>
-          ) : ceoReportsList.length === 0 ? (
-            <div className="py-20 text-center text-slate-400 font-bold text-xs">
-              No sales reports have been submitted by Sales Managers yet.
-            </div>
-          ) : (
-            <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-2xs">
-              <table className="w-full text-left border-collapse text-xs">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-150 text-slate-450 font-black uppercase tracking-wider">
-                    <th className="px-4 py-3">Reporting Period</th>
-                    <th className="px-4 py-3">Report Type</th>
-                    <th className="px-4 py-3">Submitted By</th>
-                    <th className="px-4 py-3 text-right">Target</th>
-                    <th className="px-4 py-3 text-right">Revenue Won</th>
-                    <th className="px-4 py-3 text-right">Achievement %</th>
-                    <th className="px-4 py-3">Status</th>
-                    <th className="px-4 py-3 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-bold text-slate-700 bg-white">
-                  {ceoReportsList.map((rep) => {
-                    const met = rep.metrics || {}
-                    const isWeekly = rep.report_type === 'weekly'
-                    return (
-                      <tr key={rep.id} className="hover:bg-slate-50/40">
-                        <td className="px-4 py-3 font-black text-slate-900">
-                          {isWeekly ? `Week ${rep.report_period.replace('-W', ' W')}` : rep.report_period}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span className={`px-2 py-0.5 rounded-md text-[9px] font-black border uppercase tracking-wider ${
-                            isWeekly ? 'bg-sky-50 text-sky-800 border-sky-100' : 'bg-violet-50 text-violet-800 border-violet-100'
-                          }`}>
-                            {rep.report_type}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 font-semibold">{rep.manager_name}</td>
-                        <td className="px-4 py-3 text-right font-semibold">₹{Number(met.target || 0).toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-black text-slate-950">₹{Number(met.actualRevenue || 0).toLocaleString()}</td>
-                        <td className="px-4 py-3 text-right font-black text-slate-950">{met.achievementPct || 0}%</td>
-                        <td className="px-4 py-3">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-black border ${
-                            rep.status === 'Reviewed' ? 'bg-emerald-50 text-emerald-800 border-emerald-200' :
-                            'bg-amber-50 text-amber-800 border-amber-200'
-                          }`}>
-                            {rep.status === 'Reviewed' ? '✅ Reviewed' : '⏳ Submitted'}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            onClick={() => {
-                              setViewingCeoReport(rep)
-                              setCeoRemarks(rep.ceo_remarks || '')
-                            }}
-                            className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-[10px] px-3.5 py-1.5 rounded-lg shadow-2xs transition cursor-pointer"
-                          >
-                            Review & Remarks
-                          </button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
 
       {/* ── CEO REPORT DETAIL REVIEW MODAL ── */}
       {viewingCeoReport && (() => {
@@ -1810,14 +1649,24 @@ function SalesOverview({ initialSection }) {
 
               {/* Date-wise Sales Ledger List */}
               <div className="space-y-3.5">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2 flex-wrap gap-2">
                   <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
                     <Calendar className="size-4 text-slate-400" />
                     Date-wise Transaction Ledger ({modalRevenueRecords.length + modalReimbursementRecords.length + salariesList.length} records)
                   </h4>
-                  <span className="text-[10px] font-black text-[#832D51] bg-[#F8CAE4]/25 px-2.5 py-1 rounded-md">
-                    Total Revenue: ₹{modalTotalRevenue.toLocaleString()}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setModalSortAsc(prev => !prev)}
+                      className="flex items-center gap-1.5 px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-[11px] rounded-lg border border-slate-200 transition cursor-pointer"
+                      title="Toggle transaction order between Oldest First and Newest First"
+                    >
+                      <ArrowUpDown className="size-3.5 text-[#832D51]" />
+                      <span>{modalSortAsc ? 'Order: Start → End (Oldest First)' : 'Order: End → Start (Newest First)'}</span>
+                    </button>
+                    <span className="text-[10px] font-black text-[#832D51] bg-[#F8CAE4]/25 px-2.5 py-1 rounded-md">
+                      Total Revenue: ₹{modalTotalRevenue.toLocaleString()}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="border border-slate-100 rounded-2xl overflow-hidden shadow-2xs">

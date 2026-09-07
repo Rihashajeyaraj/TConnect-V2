@@ -166,7 +166,7 @@ class CustomerRepository:
                 se_name = ""
                 sm_email = ""
                 sm_name = ""
-                product_val = "Software License"
+                product_val = "TwiteConnect CRM"
                 cust_notes = str(row.get("notes") or "")
                 if "|" in cust_notes:
                     for part in cust_notes.split("|"):
@@ -377,7 +377,7 @@ class CustomerRepository:
         if not product_val and lead_info:
             product_val = lead_info.get("product_name") or lead_info.get("product")
         if not product_val:
-            product_val = "Software License"
+            product_val = "TwiteConnect CRM"
 
         notes_raw = str(data.get("notes") or data.get("reachOutReason") or data.get("onboardingRemarks") or f"Customer account for {comp_name}")
         full_notes = f"{notes_raw} | AssignedTo: {assigned_to} | Product: {product_val}"

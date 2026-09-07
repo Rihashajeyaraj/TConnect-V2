@@ -157,18 +157,46 @@ function CeoDashboard() {
       const salaryRecords = Array.isArray(salRes?.data) ? salRes.data : (Array.isArray(salRes) ? salRes : [])
       setSalariesList([...salaryRecords, ...backendEmployees, ...backendUsers])
 
+      const isUserInactive = (u) => {
+        if (!u) return true
+        if (u.is_active === false || u.is_active === 0 || String(u.is_active).toLowerCase() === 'false') return true
+        const status = String(u.status || u.employment_status || u.account_status || '').toLowerCase().trim()
+        const inactiveStatuses = ['inactive', 'deactivated', 'deactive', 'disabled', 'terminated', 'resigned', 'left', 'suspended']
+        if (inactiveStatuses.includes(status)) return true
+        return false
+      }
+
+      const rawUserPool = [...backendUsers, ...backendEmployees, ...localUsersRaw]
+
+      // Identify all keys for users marked as inactive in ANY record source
+      const inactiveUserKeys = new Set()
+      rawUserPool.forEach((u) => {
+        if (!u) return
+        if (isUserInactive(u)) {
+          const email = (u.email || '').toLowerCase().trim()
+          const code = String(u.employee_code || u.employee_id || u.id || '').toLowerCase().trim()
+          const name = String(u.name || u.full_name || `${u.first_name || ''} ${u.last_name || ''}`).toLowerCase().trim()
+          if (email) inactiveUserKeys.add(email)
+          if (code) inactiveUserKeys.add(code)
+          if (name) inactiveUserKeys.add(name)
+        }
+      })
+
       const uniqueUserMap = new Map()
-      ;[...backendUsers, ...backendEmployees, ...localUsersRaw].forEach((u) => {
+      rawUserPool.forEach((u) => {
         if (!u) return
         const email = (u.email || '').toLowerCase().trim()
         const code = String(u.employee_code || u.employee_id || u.id || '').toLowerCase().trim()
         const name = String(u.name || u.full_name || `${u.first_name || ''} ${u.last_name || ''}`).toLowerCase().trim()
         const key = email || code || name
-        if (key && !uniqueUserMap.has(key)) {
-          const status = String(u.status || u.employment_status || 'active').toLowerCase()
-          if (status !== 'inactive' && status !== 'terminated') {
-            uniqueUserMap.set(key, u)
-          }
+        if (!key) return
+
+        // Skip deactivated / inactive users
+        if (inactiveUserKeys.has(email) || inactiveUserKeys.has(code) || inactiveUserKeys.has(name)) return
+        if (isUserInactive(u)) return
+
+        if (!uniqueUserMap.has(key)) {
+          uniqueUserMap.set(key, u)
         }
       })
       const activeUserPool = Array.from(uniqueUserMap.values())
@@ -696,7 +724,7 @@ function CeoDashboard() {
     {
       id: 'employees',
       title: 'Active Employees',
-      value: `${metrics.activeEmployees || metrics.totalEmployees || 14}`,
+      value: `${(metrics.activeEmployees !== undefined && metrics.activeEmployees !== null && metrics.activeEmployees > 0) ? metrics.activeEmployees : (metrics.totalEmployees || 0)}`,
       subtitle: 'Active Staff Workforce',
       icon: Users,
       color: 'indigo',
@@ -804,7 +832,7 @@ function CeoDashboard() {
           date: c.date || (c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
           sales_manager: c.sales_manager || c.manager_name || 'Jeeva kumar',
           sales_executive: c.sales_executive || c.executive_name || 'Sales Executive',
-          product: c.product || c.product_name || 'Software License',
+          product: c.product || c.product_name || 'TwiteConnect CRM',
           amount: c.amount || 0,
         })
       }
@@ -1150,7 +1178,7 @@ function CeoDashboard() {
                   date: r.date || '2026-08-20',
                   sales_manager: r.sales_manager || r.manager_name || 'Jeeva kumar',
                   sales_executive: r.sales_executive || r.executive_name || 'Aaron Fdo',
-                  product: r.product || r.product_name || (r.customer_name ? `Deal - ${r.customer_name}` : 'Software License'),
+                  product: r.product || r.product_name || (r.customer_name ? `Deal - ${r.customer_name}` : 'TwiteConnect CRM'),
                   revenue: Number(r.amount || 0),
                   reimbursement: 0,
                   salary: 0,
@@ -1590,7 +1618,7 @@ function CeoDashboard() {
                                           {cust.details || cust.email || ''}
                                         </div>
                                       </td>
-                                      <td className="px-4 py-3.5 text-slate-700 font-medium">{cust.product || 'Software License'}</td>
+                                      <td className="px-4 py-3.5 text-slate-700 font-medium">{cust.product || 'TwiteConnect CRM'}</td>
                                       <td className="px-4 py-3.5 text-right font-black text-slate-950">₹{(cust.amount || 0).toLocaleString()}</td>
                                       <td className="px-4 py-3.5 text-center">
                                         <Link

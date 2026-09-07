@@ -330,8 +330,15 @@ class ReportsRepository:
             }
 
             # 3. Employee Summary Calculations
+            inactive_statuses = ("inactive", "deactivated", "deactive", "disabled", "terminated", "resigned", "left", "suspended")
             total_emp = len(employees)
-            active_emp = len([e for e in employees if str(e.get("status", "")).lower() in ("active", "on field", "on_field", "")])
+            active_emp = len([
+                e for e in employees 
+                if str(e.get("status", "")).lower() not in inactive_statuses 
+                and e.get("is_active") is not False 
+                and e.get("is_active") != 0 
+                and str(e.get("is_active")).lower() != "false"
+            ])
             inactive_emp = total_emp - active_emp
             
             # Attendance metrics
@@ -433,7 +440,7 @@ class ReportsRepository:
                 
                 cust = o.get("customer_name") or o.get("company") or "Direct"
                 comp = o.get("company") or "Direct"
-                prod = o.get("product_name") or o.get("service_type") or "Software License"
+                prod = o.get("product_name") or o.get("service_type") or "TwiteConnect CRM"
 
                 # Update breakdowns
                 rev_by_manager[mgr] = rev_by_manager.get(mgr, 0.0) + val
@@ -479,7 +486,7 @@ class ReportsRepository:
                 mgr = _format_name_with_status(mgr, mgr_user)
                 cust = c.get("name") or c.get("company") or "Customer Account"
                 comp = c.get("company") or "Direct"
-                prod = c.get("product") or "Software License"
+                prod = c.get("product") or "TwiteConnect CRM"
 
                 # Update breakdowns
                 rev_by_manager[mgr] = rev_by_manager.get(mgr, 0.0) + val
@@ -594,6 +601,10 @@ class ReportsRepository:
             # 1. Employees List
             employees_list = []
             for e in employees:
+                status_lower = str(e.get("status") or "").lower().strip()
+                is_act = e.get("is_active")
+                if status_lower in inactive_statuses or is_act is False or is_act == 0 or str(is_act).lower() == "false":
+                    continue
                 emp_id = e.get("employee_code") or e.get("employee_id") or e.get("id") or "EMP"
                 emp_name = e.get("name") or f"{e.get('first_name', '')} {e.get('last_name', '')}".strip() or e.get("fullName") or "Unnamed Employee"
                 emp_role = e.get("role") or e.get("designation") or "Staff"
@@ -612,7 +623,7 @@ class ReportsRepository:
                     "sales_executive": c.get("sales_executive") or "Direct/Unassigned",
                     "name": c.get("name") or c.get("company") or "Unnamed Customer",
                     "details": f"Email: {c.get('email', 'N/A')}, Phone: {c.get('phone', 'N/A')}, City: {c.get('city', 'N/A')}",
-                    "product": c.get("product") or c.get("product_name") or "Software License",
+                    "product": c.get("product") or c.get("product_name") or "TwiteConnect CRM",
                     "amount": float(c.get("contract_value") or 0.0),
                     "date": str(c.get("onboarding_date") or (c.get("created_at")[:10] if c.get("created_at") else today_str)),
                     "onboarding_date": str(c.get("onboarding_date") or (c.get("created_at")[:10] if c.get("created_at") else today_str)),
@@ -653,7 +664,7 @@ class ReportsRepository:
                     "sales_manager": mgr,
                     "sales_executive": exec_name,
                     "client_name_details": f"{o.get('company', 'Direct')} ({o.get('customer_name') or 'N/A'})",
-                    "product": o.get("product_name") or o.get("service_type") or "Software License",
+                    "product": o.get("product_name") or o.get("service_type") or "TwiteConnect CRM",
                     "amount": val
                 })
 
@@ -1898,7 +1909,7 @@ class ReportsRepository:
                 "sales_executive": c["_resolved_executive_name"],
                 "customer_name": c.get("customer_name") or c.get("name") or "Unnamed Customer",
                 "company": c.get("company") or c.get("company_name") or "Enterprise",
-                "product": c.get("product") or "Software License",
+                "product": c.get("product") or "TwiteConnect CRM",
                 "amount": c["_resolved_amount"],
                 "status": c.get("status") or "Active Customer",
                 "incentive": incentive_val,
@@ -2104,25 +2115,26 @@ class ReportsRepository:
                 user_by_name_lower[uname] = u
 
         # ── 2. Identify all distinct Sales Managers ────────────────────────────
-        # Managers: users whose role contains 'manager'
+        # Managers: users whose role contains 'manager' (excluding Team Leads)
         sales_managers_map: Dict[str, Dict] = {}
         for u in all_users:
-            role_str = str(u.get("role") or "").lower()
+            role_str = str(u.get("role") or u.get("designation") or "").lower()
             uid = str(u.get("id") or u.get("auth_user_id") or "").strip()
             if "manager" in role_str and uid:
-                if "ceo" in role_str or "founder" in role_str or "admin" in role_str:
+                if "ceo" in role_str or "founder" in role_str or "admin" in role_str or "lead" in role_str or "tl" in role_str:
                     continue
                 sales_managers_map[uid] = u
 
-        # Also find any user referenced as a reporting_manager_id
+        # Also find any user referenced as a reporting_manager_id (if strictly a manager)
         for u in all_users:
             mgr_id = str(u.get("reporting_manager_id") or "").strip()
             if mgr_id and mgr_id != "None" and mgr_id in user_by_id:
                 mgr_user = user_by_id[mgr_id]
-                mgr_role = str(mgr_user.get("role") or "").lower()
-                if "ceo" in mgr_role or "founder" in mgr_role or "admin" in mgr_role:
+                mgr_role = str(mgr_user.get("role") or mgr_user.get("designation") or "").lower()
+                if "ceo" in mgr_role or "founder" in mgr_role or "admin" in mgr_role or "lead" in mgr_role or "tl" in mgr_role:
                     continue
-                sales_managers_map[mgr_id] = mgr_user
+                if "manager" in mgr_role:
+                    sales_managers_map[mgr_id] = mgr_user
 
         # ── 3. Build manager_id → list of executive user dicts ────────────────
         mgr_to_executives: Dict[str, list] = {mid: [] for mid in sales_managers_map}
@@ -2206,7 +2218,7 @@ class ReportsRepository:
             amount = float(raw_c.get("contract_value") or raw_c.get("amount") or raw_c.get("revenue") or 0.0)
             status = raw_c.get("status") or "Active Customer"
             onboard_date = str(raw_c.get("onboarding_date") or raw_c.get("created_at") or "")[:10]
-            product = raw_c.get("product") or raw_c.get("service") or "Software License"
+            product = raw_c.get("product") or raw_c.get("service") or "TwiteConnect CRM"
 
             lid = str(raw_c.get("lead_id") or "").strip()
             lead = lead_by_id.get(lid) if lid and lid != "None" else None
@@ -2295,9 +2307,40 @@ class ReportsRepository:
                 customer_record["executive_id"] = eid
                 customer_record["executive_name"] = exec_user.get("name") or "Unnamed Executive"
                 
+                # Resolve Team Lead and Sales Manager accurately
+                tl_id_of_exec = str(exec_user.get("reporting_team_lead_id") or exec_user.get("team_lead_id") or "").strip()
+                tl_user = user_by_id.get(tl_id_of_exec) if tl_id_of_exec else None
+                tl_name = (tl_user.get("name") if tl_user else (exec_user.get("reporting_team_lead_name") or exec_user.get("team_lead_name") or exec_user.get("team_lead"))) or "Unassigned"
+
                 mgr_id_of_exec = str(exec_user.get("reporting_manager_id") or "").strip()
                 mgr_user = user_by_id.get(mgr_id_of_exec) if mgr_id_of_exec else None
-                customer_record["manager_name"] = (mgr_user.get("name") if mgr_user else exec_user.get("reporting_manager_name")) or "Unassigned"
+                mgr_name_str = str(exec_user.get("reporting_manager_name") or exec_user.get("reporting_manager") or "").strip()
+
+                if not mgr_user and mgr_name_str and mgr_name_str.lower() in user_by_name_lower:
+                    mgr_user = user_by_name_lower[mgr_name_str.lower()]
+
+                if mgr_user:
+                    m_role = str(mgr_user.get("role") or mgr_user.get("designation") or "").lower()
+                    if ("lead" in m_role or "tl" in m_role) and not ("sales manager" in m_role and not "lead" in m_role):
+                        # The user stored in reporting_manager field is actually a Team Lead!
+                        if tl_name == "Unassigned":
+                            tl_name = mgr_user.get("name") or mgr_name_str or "Unassigned"
+                        # Look up manager above this Team Lead
+                        parent_mgr_id = str(mgr_user.get("reporting_manager_id") or "").strip()
+                        parent_mgr_user = user_by_id.get(parent_mgr_id) if parent_mgr_id else None
+                        if not parent_mgr_user:
+                            parent_mgr_name = str(mgr_user.get("reporting_manager_name") or "").strip()
+                            if parent_mgr_name and parent_mgr_name.lower() in user_by_name_lower:
+                                parent_mgr_user = user_by_name_lower[parent_mgr_name.lower()]
+                        mgr_user = parent_mgr_user
+
+                if not mgr_user and tl_user:
+                    tl_mgr_id = str(tl_user.get("reporting_manager_id") or "").strip()
+                    mgr_user = user_by_id.get(tl_mgr_id) if tl_mgr_id else None
+
+                mgr_name = (mgr_user.get("name") if mgr_user else (exec_user.get("reporting_manager_name") if not ("lead" in str(exec_user.get("reporting_manager_name") or "").lower()) else "Unassigned")) or "Unassigned"
+                customer_record["team_lead_name"] = tl_name
+                customer_record["manager_name"] = mgr_name
                 
                 if eid not in exec_to_customers:
                     exec_to_customers[eid] = []
@@ -2305,6 +2348,7 @@ class ReportsRepository:
             else:
                 customer_record["executive_id"] = ""
                 customer_record["executive_name"] = "Unassigned"
+                customer_record["team_lead_name"] = "Unassigned"
                 customer_record["manager_name"] = "Unassigned"
                 customers_without_exec.append(customer_record)
 

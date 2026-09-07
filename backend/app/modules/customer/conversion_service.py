@@ -414,7 +414,7 @@ class CustomerConversionService:
             except Exception:
                 pass
         if not product_val:
-            product_val = "Software License"
+            product_val = "TwiteConnect CRM"
 
         notes_raw = contact.get("notes") or contact.get("reachOutReason") or f"Customer account for {company}"
         full_notes = f"{notes_raw} | Product: {product_val}"
