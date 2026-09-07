@@ -198,6 +198,8 @@ function App() {
                   <Route path="notifications" element={<CeoNotifications />} />
                   <Route path="settings" element={<CeoSettings />} />
                   <Route path="expenses" element={<CeoExpenses />} />
+                  <Route path="smart-map" element={<ManagerSmartMap />} />
+                  <Route path="radar" element={<ManagerSmartMap />} />
 
                   {/* Backward compatibility aliases */}
                   <Route path="sales-overview" element={<Navigate to="/ceo/sales-revenue" replace />} />

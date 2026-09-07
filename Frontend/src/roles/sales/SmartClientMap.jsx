@@ -210,9 +210,11 @@ function createMapMarker(latlng, map, html, onClick, anchor = 'center') {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function SmartClientMap() {
+export default function SmartClientMap({ isManagerView = false }) {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
+  const userRoleLower = String(currentUser?.role || currentUser?.designation || '').toLowerCase()
+  const isManager = isManagerView || userRoleLower.includes('manager') || userRoleLower.includes('ceo') || userRoleLower.includes('admin')
 
   // Refs
   const mapContainerRef  = useRef(null)
@@ -1259,20 +1261,20 @@ export default function SmartClientMap() {
   const visibleAlerts = onRouteClients.filter(c => !dismissedAlerts.current.has(c.id))
 
   return (
-    <div className="relative w-full h-[calc(100vh-120px)] md:h-[88vh] rounded-none md:rounded-3xl overflow-hidden border-0 md:border border-slate-200 shadow-xl bg-slate-50 font-sans">
+    <div className="relative w-full h-full min-h-[calc(100vh-4.5rem)] rounded-none md:rounded-3xl overflow-hidden border-0 md:border border-slate-200 shadow-xl bg-slate-50 font-sans">
 
       {/* ══ MAP CANVAS ══ */}
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-      {/* ══ GPS DENIED / UNAVAILABLE BANNER ══ */}
+      {/* ══ GPS DENIED / UNAVAILABLE FLOATING TOAST ══ */}
       {gpsStatus === 'denied' && (
-        <div className="absolute top-0 left-0 right-0 z-[1100] bg-rose-600 text-white text-xs font-extrabold px-4 py-2.5 flex items-center gap-2 shadow-lg">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1100] max-w-sm bg-rose-600/95 backdrop-blur-md text-white text-xs font-black px-3.5 py-1.5 rounded-full shadow-2xl flex items-center gap-2 border border-white/20">
           <AlertCircle size={14} className="flex-shrink-0" />
           Location permission required. Enable GPS in browser settings.
         </div>
       )}
       {gpsStatus === 'unavailable' && (
-        <div className="absolute top-0 left-0 right-0 z-[1100] bg-amber-500 text-white text-xs font-extrabold px-4 py-2.5 flex items-center gap-2 shadow-lg">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1100] max-w-sm bg-amber-500/95 backdrop-blur-md text-white text-xs font-black px-3.5 py-1.5 rounded-full shadow-2xl flex items-center gap-2 border border-white/20">
           <AlertCircle size={14} className="flex-shrink-0" />
           GPS unavailable on this device.
         </div>
@@ -1300,7 +1302,7 @@ export default function SmartClientMap() {
           </button>
 
           {/* Collapsed Round Manager Message Button */}
-          {activeInquiry && (
+          {!isManager && activeInquiry && (
             <button
               onClick={() => setActiveInquiry(activeInquiry)}
               className="relative w-9 h-9 bg-amber-500 hover:bg-amber-600 text-white shadow-xl rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer animate-bounce"
@@ -1312,9 +1314,7 @@ export default function SmartClientMap() {
           )}
         </div>
       ) : (
-        <div className={`absolute left-2 right-2 sm:left-4 sm:right-4 md:left-6 md:right-auto md:w-[400px] z-[1000] ${
-          gpsStatus !== 'active' && gpsStatus !== 'loading' ? 'top-11' : 'top-2 sm:top-3'
-        }`}>
+        <div className="absolute left-2 right-2 sm:left-4 sm:right-4 md:left-6 md:right-auto md:w-[380px] z-[1000] top-2 sm:top-3">
           {/* Low accuracy banner */}
           {gpsStatus === 'active' && gpsAccuracy && gpsAccuracyThreshold && gpsAccuracy > gpsAccuracyThreshold && (
             <div className="hidden md:flex bg-rose-600/95 text-white text-[10px] font-black px-3 py-1.5 rounded-xl shadow-lg mb-1.5 items-center gap-1.5 animate-pulse">
@@ -1456,24 +1456,26 @@ export default function SmartClientMap() {
             <span className="text-xs font-black">Navigation Active</span>
           </div>
         )}
-        <button
-          onClick={() => {
-            if (activeInquiry) setActiveInquiry(activeInquiry)
-            setShowInquiryDrawer(prev => !prev)
-          }}
-          className={`rounded-2xl shadow-2xl px-3.5 py-2 flex items-center gap-2 transition active:scale-95 cursor-pointer border-2 border-white ${
-            activeInquiry
-              ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white animate-bounce'
-              : 'bg-slate-900 hover:bg-slate-800 text-white'
-          }`}
-          title="Click to view & reply to Manager Inquiry"
-        >
-          <MessageSquare size={15} />
-          <span className="text-xs font-black">
-            {activeInquiry ? '⚡ Manager Inquiry (1)' : '💬 Message Manager'}
-          </span>
-          {activeInquiry && <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping" />}
-        </button>
+        {!isManager && (
+          <button
+            onClick={() => {
+              if (activeInquiry) setActiveInquiry(activeInquiry)
+              setShowInquiryDrawer(prev => !prev)
+            }}
+            className={`rounded-2xl shadow-2xl px-3.5 py-2 flex items-center gap-2 transition active:scale-95 cursor-pointer border-2 border-white ${
+              activeInquiry
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white animate-bounce'
+                : 'bg-slate-900 hover:bg-slate-800 text-white'
+            }`}
+            title="Click to view & reply to Manager Inquiry"
+          >
+            <MessageSquare size={15} />
+            <span className="text-xs font-black">
+              {activeInquiry ? '⚡ Manager Inquiry (1)' : '💬 Message Manager'}
+            </span>
+            {activeInquiry && <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping" />}
+          </button>
+        )}
 
         {!isMobile && offRoute && (
           <div className="bg-rose-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2 animate-pulse">

@@ -27,14 +27,16 @@ import {
   CheckCircle2,
   GripVertical,
   Receipt,
+  MapPin,
 } from 'lucide-react'
 
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { clearUserCache } from '../../utils/userScope.js'
 
-// Exactly the 9 requested CEO main navigation items
+// Exactly the requested CEO main navigation items with Live Radar Map
 const navItems = [
   { label: 'Dashboard', icon: LayoutDashboard, path: '/ceo' },
+  { label: 'Live Radar Map', icon: MapPin, path: '/ceo/smart-map' },
   { label: 'Clients', icon: Users, path: '/ceo/customers' },
   { label: 'Team Management', icon: Users2, path: '/ceo/team-management' },
   { label: 'HRMS', icon: Briefcase, path: '/ceo/hrms' },

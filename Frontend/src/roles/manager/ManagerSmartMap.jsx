@@ -14,6 +14,7 @@ import { formatDate } from '../../utils/dateUtils.js'
 import { filterUserItems } from '../../utils/userScope.js'
 import MAP_CONFIG from '../../config/mapConfig.js'
 import { detectRouteClients, shouldNotify } from '../../utils/routeProximityUtils.js'
+import SmartClientMap from '../sales/SmartClientMap.jsx'
 
 const DEFAULT_CENTER = MAP_CONFIG.DEFAULT_VIEWPORT_CENTER
 
@@ -198,6 +199,7 @@ export default function ManagerSmartMap() {
   const currentUser = useCurrentUser()
 
   // State
+  const [activeMapTab,     setActiveMapTab]      = useState('team') // 'team' | 'own'
   const [mapLoaded,        setMapLoaded]        = useState(false)
   const [loading,          setLoading]           = useState(true)
   const [panelOpen,        setPanelOpen]         = useState(window.innerWidth >= 1024)
@@ -2210,6 +2212,30 @@ export default function ManagerSmartMap() {
     })
   }, [executives, currentTeamGroup, activeTeamFilter, searchQuery])
 
+  if (activeMapTab === 'own') {
+    return (
+      <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-slate-900 font-sans">
+        {/* Floating Top Mode Switcher Bar */}
+        <div className="absolute top-3 right-3 sm:right-6 z-[1050] flex items-center gap-1 bg-white/95 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200/90 shadow-2xl">
+          <button
+            onClick={() => setActiveMapTab('team')}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-black text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Users className="w-3.5 h-3.5 text-indigo-600" /> Team Radar
+          </button>
+          <button
+            onClick={() => setActiveMapTab('own')}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-indigo-600 text-white shadow-md transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Compass className="w-3.5 h-3.5 text-amber-200" /> Personal Map
+          </button>
+        </div>
+
+        <SmartClientMap isManagerView={true} />
+      </div>
+    )
+  }
+
   return (
     <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-slate-900 font-sans">
 
@@ -2221,15 +2247,38 @@ export default function ManagerSmartMap() {
         <div className="absolute inset-0 z-30 bg-[#f1f5f9] overflow-y-auto">
           <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
-            {/* Header */}
-            <div className="flex items-center justify-between">
+            {/* Header with Mode Toggle */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
               <div>
-                <h1 className="text-xl font-black text-slate-900">Smart Radar Map</h1>
-                <p className="text-xs text-slate-500 font-semibold mt-0.5">Click a card to track live location</p>
+                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-indigo-600" /> Smart Radar Map & Live Tracking
+                </h1>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">Click an Executive card to track live location & route breadcrumbs</p>
               </div>
-              <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 border border-slate-200 bg-white rounded-lg px-3 py-2 hover:border-blue-300 transition">
-                <RefreshCw className="w-3.5 h-3.5" /> Refresh
-              </button>
+
+              <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 border border-slate-200">
+                  <button
+                    onClick={() => setActiveMapTab('team')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                      activeMapTab === 'team' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Users className="w-3.5 h-3.5 text-indigo-400" /> Team Radar
+                  </button>
+                  <button
+                    onClick={() => setActiveMapTab('own')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                      activeMapTab === 'own' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    <Compass className="w-3.5 h-3.5 text-amber-200" /> Personal Map
+                  </button>
+                </div>
+                <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 border border-slate-200 bg-white rounded-xl px-3 py-2 hover:border-blue-300 transition shadow-xs">
+                  <RefreshCw className="w-3.5 h-3.5" /> Refresh
+                </button>
+              </div>
             </div>
 
             {/* Stats Row */}
