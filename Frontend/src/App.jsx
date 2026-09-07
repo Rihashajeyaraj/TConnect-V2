@@ -8,6 +8,63 @@ import ProtectedRoute from './common/ProtectedRoute.jsx'
 import { ToastProvider } from './common/ToastContext.jsx'
 import PwaInstallPrompt from './common/PwaInstallPrompt.jsx'
 
+// ── Global Error Boundary Component (Prevents Blank White Loading Screens) ──
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error("Uncaught UI rendering error caught by ErrorBoundary:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="min-h-screen w-full flex items-center justify-center bg-slate-950 text-white font-sans p-6 text-center">
+          <div className="max-w-md w-full bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 space-y-4 shadow-2xl">
+            <div className="w-12 h-12 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mx-auto text-2xl">
+              ⚠️
+            </div>
+            <h2 className="text-lg font-black text-white">Something went wrong</h2>
+            <p className="text-xs text-slate-400 leading-relaxed font-medium">
+              An unexpected UI error occurred while rendering this page. Click below to refresh or return to Dashboard.
+            </p>
+            <div className="flex flex-col sm:flex-row gap-2.5 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                  window.location.reload();
+                }}
+                className="flex-1 py-2.5 px-4 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-black transition cursor-pointer shadow-md"
+              >
+                🔄 Reload Page
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  this.setState({ hasError: false, error: null });
+                  window.location.href = "/sales/dashboard";
+                }}
+                className="flex-1 py-2.5 px-4 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl text-xs font-black transition cursor-pointer"
+              >
+                🏠 Sales Dashboard
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ── Resilient Lazy Import Wrapper ──────────────────────────────────────
 const lazyWithRetry = (componentImport) =>
   lazy(async () => {
@@ -17,13 +74,19 @@ const lazyWithRetry = (componentImport) =>
       sessionStorage.removeItem('tc_chunk_reloaded')
       return component
     } catch (error) {
-      console.warn('Retrying dynamic module import after deployment update:', error)
+      console.warn('Retrying dynamic module import after update:', error)
       if (!pageHasAlreadyBeenReloaded) {
         sessionStorage.setItem('tc_chunk_reloaded', 'true')
         window.location.reload()
-        return new Promise(() => {})
       }
-      throw error
+      try {
+        const component = await componentImport()
+        sessionStorage.removeItem('tc_chunk_reloaded')
+        return component
+      } catch (retryErr) {
+        console.error('Dynamic module import failed after retry:', retryErr)
+        throw retryErr
+      }
     }
   })
 
@@ -110,145 +173,147 @@ const PageLoader = () => (
 
 function App() {
   return (
-    <ToastProvider>
-      <BrowserRouter>
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
+    <ErrorBoundary>
+      <ToastProvider>
+        <BrowserRouter>
+          <Suspense fallback={<PageLoader />}>
+            <Routes>
 
-            {/* ── Public Auth Routes ─────────────────────────── */}
-            <Route path="/" element={<Login />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/change-password" element={<ChangePassword />} />
-            <Route path="/signup" element={<Signup />} />
+              {/* ── Public Auth Routes ─────────────────────────── */}
+              <Route path="/" element={<Login />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/change-password" element={<ChangePassword />} />
+              <Route path="/signup" element={<Signup />} />
 
-            {/* ── CEO Portal ─────────────────────────────────── */}
-            <Route element={<ProtectedRoute allowedRoles={['ceo', 'admin', 'Admin']} />}>
-              <Route path="/ceo" element={<CeoLayout />}>
-                <Route index element={<CeoDashboard />} />
-                <Route path="dashboard" element={<CeoDashboard />} />
-                <Route path="customers" element={<CeoCustomers />} />
-                <Route path="team-management" element={<CeoTeamManagement />} />
-                <Route path="hrms" element={<CeoHrms />} />
-                <Route path="sales-revenue" element={<CeoSalesRevenue />} />
-                <Route path="reports" element={<CeoReports />} />
-                <Route path="notifications" element={<CeoNotifications />} />
-                <Route path="settings" element={<CeoSettings />} />
-                <Route path="expenses" element={<CeoExpenses />} />
+              {/* ── CEO Portal ─────────────────────────────────── */}
+              <Route element={<ProtectedRoute allowedRoles={['ceo', 'admin', 'Admin']} />}>
+                <Route path="/ceo" element={<CeoLayout />}>
+                  <Route index element={<CeoDashboard />} />
+                  <Route path="dashboard" element={<CeoDashboard />} />
+                  <Route path="customers" element={<CeoCustomers />} />
+                  <Route path="team-management" element={<CeoTeamManagement />} />
+                  <Route path="hrms" element={<CeoHrms />} />
+                  <Route path="sales-revenue" element={<CeoSalesRevenue />} />
+                  <Route path="reports" element={<CeoReports />} />
+                  <Route path="notifications" element={<CeoNotifications />} />
+                  <Route path="settings" element={<CeoSettings />} />
+                  <Route path="expenses" element={<CeoExpenses />} />
 
-                {/* Backward compatibility aliases */}
-                <Route path="sales-overview" element={<Navigate to="/ceo/sales-revenue" replace />} />
-                <Route path="revenue-finance" element={<Navigate to="/ceo/sales-revenue" replace />} />
-                <Route path="users" element={<CeoTeamManagement />} />
-                <Route path="client-log" element={<CeoSalesRevenue />} />
-                <Route path="leads" element={<CeoSalesRevenue initialSection="leads" />} />
-                <Route path="customer" element={<CeoCustomers />} />
-                <Route path="visits" element={<CeoSalesRevenue initialSection="visits" />} />
-                <Route path="followups" element={<CeoSalesRevenue initialSection="followups" />} />
-                <Route path="opportunities" element={<CeoSalesRevenue initialSection="opportunities" />} />
-                <Route path="employee" element={<CeoTeamManagement />} />
-                <Route path="attendance" element={<CeoHrms initialTab="attendance" />} />
-                <Route path="leaves" element={<CeoHrms initialTab="leaves" />} />
+                  {/* Backward compatibility aliases */}
+                  <Route path="sales-overview" element={<Navigate to="/ceo/sales-revenue" replace />} />
+                  <Route path="revenue-finance" element={<Navigate to="/ceo/sales-revenue" replace />} />
+                  <Route path="users" element={<CeoTeamManagement />} />
+                  <Route path="client-log" element={<CeoSalesRevenue />} />
+                  <Route path="leads" element={<CeoSalesRevenue initialSection="leads" />} />
+                  <Route path="customer" element={<CeoCustomers />} />
+                  <Route path="visits" element={<CeoSalesRevenue initialSection="visits" />} />
+                  <Route path="followups" element={<CeoSalesRevenue initialSection="followups" />} />
+                  <Route path="opportunities" element={<CeoSalesRevenue initialSection="opportunities" />} />
+                  <Route path="employee" element={<CeoTeamManagement />} />
+                  <Route path="attendance" element={<CeoHrms initialTab="attendance" />} />
+                  <Route path="leaves" element={<CeoHrms initialTab="leaves" />} />
+                </Route>
               </Route>
-            </Route>
 
-            {/* ── Admin Portal ────────────────────────────────── */}
-            <Route element={<ProtectedRoute allowedRoles={['admin', 'Admin']} />}>
-              <Route path="/admin" element={<AdminLayout />}>
-                <Route index element={<AdminDashboard />} />
-                <Route path="company" element={<CompanyOverview />} />
-                <Route path="users" element={<UserManagement />} />
-                <Route path="customers" element={<CeoCustomers />} />
-                <Route path="roles" element={<RoleManagement />} />
-                <Route path="hrms" element={<HRMS />} />
-                <Route path="attendance" element={<Navigate to="/admin/hrms?tab=attendance" replace />} />
-                <Route path="organization" element={<Navigate to="/admin/company" replace />} />
-                <Route path="reports" element={<AdminReports />} />
-                <Route path="audit" element={<Navigate to="/admin/reports?tab=security" replace />} />
-                <Route path="notifications" element={<Notifications />} />
-                <Route path="settings" element={<AdminSettings />} />
+              {/* ── Admin Portal ────────────────────────────────── */}
+              <Route element={<ProtectedRoute allowedRoles={['admin', 'Admin']} />}>
+                <Route path="/admin" element={<AdminLayout />}>
+                  <Route index element={<AdminDashboard />} />
+                  <Route path="company" element={<CompanyOverview />} />
+                  <Route path="users" element={<UserManagement />} />
+                  <Route path="customers" element={<CeoCustomers />} />
+                  <Route path="roles" element={<RoleManagement />} />
+                  <Route path="hrms" element={<HRMS />} />
+                  <Route path="attendance" element={<Navigate to="/admin/hrms?tab=attendance" replace />} />
+                  <Route path="organization" element={<Navigate to="/admin/company" replace />} />
+                  <Route path="reports" element={<AdminReports />} />
+                  <Route path="audit" element={<Navigate to="/admin/reports?tab=security" replace />} />
+                  <Route path="notifications" element={<Notifications />} />
+                  <Route path="settings" element={<AdminSettings />} />
+                </Route>
               </Route>
-            </Route>
 
-            {/* ── Manager Portal ──────────────────────────────── */}
-            <Route element={<ProtectedRoute allowedRoles={['manager', 'Sales Manager', 'team lead', 'Team Lead', 'lead', 'tl', 'admin', 'Admin']} />}>
-              <Route path="/manager" element={<ManagerLayout />}>
-                <Route index element={<ManagerDashboard />} />
-                <Route path="dashboard" element={<ManagerDashboard />} />
-                <Route path="map" element={<ManagerSmartMap />} />
-                <Route path="team" element={<ManagerTeam />} />
-                <Route path="leads" element={<ManagerLeads />} />
-                <Route path="customers" element={<ManagerCustomers />} />
-                <Route path="visits" element={<ManagerVisits />} />
-                <Route path="attendance" element={<Attendance />} />
-                <Route path="followups" element={<ManagerFollowups />} />
-                <Route path="opportunities" element={<ManagerOpportunities />} />
-                <Route path="expenses" element={<ManagerExpenses />} />
-                <Route path="reports" element={<ManagerReports />} />
-                <Route path="notifications" element={<ManagerNotifications />} />
-                <Route path="leaderboard" element={<ManagerLeaderboard />} />
-                <Route path="calendar" element={<ManagerCalendar />} />
-                <Route path="hrms" element={<ManagerHrms />} />
-                <Route path="settings" element={<ManagerSettings />} />
+              {/* ── Manager Portal ──────────────────────────────── */}
+              <Route element={<ProtectedRoute allowedRoles={['manager', 'Sales Manager', 'team lead', 'Team Lead', 'lead', 'tl', 'admin', 'Admin']} />}>
+                <Route path="/manager" element={<ManagerLayout />}>
+                  <Route index element={<ManagerDashboard />} />
+                  <Route path="dashboard" element={<ManagerDashboard />} />
+                  <Route path="map" element={<ManagerSmartMap />} />
+                  <Route path="team" element={<ManagerTeam />} />
+                  <Route path="leads" element={<ManagerLeads />} />
+                  <Route path="customers" element={<ManagerCustomers />} />
+                  <Route path="visits" element={<ManagerVisits />} />
+                  <Route path="attendance" element={<Attendance />} />
+                  <Route path="followups" element={<ManagerFollowups />} />
+                  <Route path="opportunities" element={<ManagerOpportunities />} />
+                  <Route path="expenses" element={<ManagerExpenses />} />
+                  <Route path="reports" element={<ManagerReports />} />
+                  <Route path="notifications" element={<ManagerNotifications />} />
+                  <Route path="leaderboard" element={<ManagerLeaderboard />} />
+                  <Route path="calendar" element={<ManagerCalendar />} />
+                  <Route path="hrms" element={<ManagerHrms />} />
+                  <Route path="settings" element={<ManagerSettings />} />
+                </Route>
               </Route>
-            </Route>
 
-            {/* ── Team Lead Portal (Clean Sales Manager UI Clone) ───────── */}
-            <Route element={<ProtectedRoute allowedRoles={['team_lead', 'team lead', 'Team Lead', 'lead', 'tl', 'manager', 'admin', 'ceo']} />}>
-              <Route path="/teamlead" element={<Navigate to="/team-lead/dashboard" replace />} />
-              <Route path="/teamlead/*" element={<Navigate to="/team-lead/dashboard" replace />} />
-              <Route path="/team-lead" element={<TeamLeadLayout />}>
-                <Route index element={<TeamLeadDashboard />} />
-                <Route path="dashboard" element={<TeamLeadDashboard />} />
-                <Route path="map" element={<TeamLeadSmartMap />} />
-                <Route path="attendance" element={<TeamLeadAttendance />} />
-                <Route path="visits" element={<TeamLeadVisits />} />
-                <Route path="leads" element={<TeamLeadLeads />} />
-                <Route path="customers" element={<ManagerCustomers />} />
-                <Route path="expenses" element={<TeamLeadExpenses />} />
-                <Route path="team" element={<ManagerTeam />} />
-                <Route path="reports" element={<ManagerReports />} />
-                <Route path="hrms" element={<TeamLeadHrms />} />
-                <Route path="notifications" element={<ManagerNotifications />} />
-                <Route path="settings" element={<ManagerSettings />} />
+              {/* ── Team Lead Portal (Clean Sales Manager UI Clone) ───────── */}
+              <Route element={<ProtectedRoute allowedRoles={['team_lead', 'team lead', 'Team Lead', 'lead', 'tl', 'manager', 'admin', 'ceo']} />}>
+                <Route path="/teamlead" element={<Navigate to="/team-lead/dashboard" replace />} />
+                <Route path="/teamlead/*" element={<Navigate to="/team-lead/dashboard" replace />} />
+                <Route path="/team-lead" element={<TeamLeadLayout />}>
+                  <Route index element={<TeamLeadDashboard />} />
+                  <Route path="dashboard" element={<TeamLeadDashboard />} />
+                  <Route path="map" element={<TeamLeadSmartMap />} />
+                  <Route path="attendance" element={<TeamLeadAttendance />} />
+                  <Route path="visits" element={<TeamLeadVisits />} />
+                  <Route path="leads" element={<TeamLeadLeads />} />
+                  <Route path="customers" element={<ManagerCustomers />} />
+                  <Route path="expenses" element={<TeamLeadExpenses />} />
+                  <Route path="team" element={<ManagerTeam />} />
+                  <Route path="reports" element={<ManagerReports />} />
+                  <Route path="hrms" element={<TeamLeadHrms />} />
+                  <Route path="notifications" element={<ManagerNotifications />} />
+                  <Route path="settings" element={<ManagerSettings />} />
+                </Route>
               </Route>
-            </Route>
 
-            {/* ── Unified Sales Portal ───────── */}
-            <Route element={<ProtectedRoute allowedRoles={SALES_ROLES} />}>
-              <Route path="/sales" element={<SalesLayout />}>
-                <Route index element={<Dashboard />} />
-                <Route path="dashboard" element={<Dashboard />} />
-                <Route path="map" element={<SmartClientMap />} />
-                <Route path="attendance" element={<Attendance />} />
-                <Route path="customers" element={<Customers />} />
-                <Route path="client-log" element={<ClientLog />} />
-                <Route path="visits" element={<ClientLog />} />
-                <Route path="leads" element={<Leads />} />
-                <Route path="followups" element={<ClientLog />} />
-                <Route path="opportunities" element={<ClientLog />} />
-                <Route path="expenses" element={<Expenses />} />
-                <Route path="notifications" element={<Notifications />} />
-                <Route path="hrms" element={<HRMS />} />
-                <Route path="todo" element={<Todo />} />
+              {/* ── Unified Sales Portal ───────── */}
+              <Route element={<ProtectedRoute allowedRoles={SALES_ROLES} />}>
+                <Route path="/sales" element={<SalesLayout />}>
+                  <Route index element={<Dashboard />} />
+                  <Route path="dashboard" element={<Dashboard />} />
+                  <Route path="map" element={<SmartClientMap />} />
+                  <Route path="attendance" element={<Attendance />} />
+                  <Route path="customers" element={<Customers />} />
+                  <Route path="client-log" element={<ClientLog />} />
+                  <Route path="visits" element={<ClientLog />} />
+                  <Route path="leads" element={<Leads />} />
+                  <Route path="followups" element={<ClientLog />} />
+                  <Route path="opportunities" element={<ClientLog />} />
+                  <Route path="expenses" element={<Expenses />} />
+                  <Route path="notifications" element={<Notifications />} />
+                  <Route path="hrms" element={<HRMS />} />
+                  <Route path="todo" element={<Todo />} />
 
-                {/* Team Management pages directly under /sales */}
-                <Route path="team" element={<ManagerTeam />} />
-                <Route path="team-map" element={<ManagerSmartMap />} />
-                <Route path="team-attendance" element={<ManagerAttendance />} />
-                <Route path="team-visits" element={<ManagerVisits />} />
-                <Route path="team-expenses" element={<ManagerExpenses />} />
-                <Route path="team-reports" element={<ManagerReports />} />
+                  {/* Team Management pages directly under /sales */}
+                  <Route path="team" element={<ManagerTeam />} />
+                  <Route path="team-map" element={<ManagerSmartMap />} />
+                  <Route path="team-attendance" element={<ManagerAttendance />} />
+                  <Route path="team-visits" element={<ManagerVisits />} />
+                  <Route path="team-expenses" element={<ManagerExpenses />} />
+                  <Route path="team-reports" element={<ManagerReports />} />
+                </Route>
               </Route>
-            </Route>
 
-            {/* ── Catch-All Fallback Route (Prevents Blank White Page on Unmatched URLs) ── */}
-            <Route path="*" element={<Navigate to="/" replace />} />
+              {/* ── Catch-All Fallback Route (Prevents Blank White Page on Unmatched URLs) ── */}
+              <Route path="*" element={<Navigate to="/" replace />} />
 
-          </Routes>
-        </Suspense>
-        <PwaInstallPrompt />
-      </BrowserRouter>
-    </ToastProvider>
+            </Routes>
+          </Suspense>
+          <PwaInstallPrompt />
+        </BrowserRouter>
+      </ToastProvider>
+    </ErrorBoundary>
   )
 }
 

@@ -19,6 +19,7 @@ import { useToast } from "../../common/ToastContext.jsx";
 import { attendanceAPI, spatialAPI, crmAPI, customerAPI, settingsAPI, notificationAPI } from "../../services/api.js";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { exportToExcel, exportToCSV } from "../../utils/exportUtils.js";
+import { parseDateInput, formatDate } from "../../utils/dateUtils.js";
 import { FaceLivenessEngine, LIVENESS_CHALLENGES } from "./FaceLivenessEngine.js";
 import { loadGoogleMaps } from "../../utils/loadGoogleMaps.js";
 import { filterUserItems } from "../../utils/userScope.js";
@@ -110,6 +111,7 @@ export default function Attendance(props) {
   const [gpsAccuracy, setGpsAccuracy] = useState(null);
   const [loadingLocation, setLoadingLocation] = useState(false);
   const [locationError, setLocationError] = useState(null);
+  const [showFullAddress, setShowFullAddress] = useState(false);
 
   // Attendance History Logs
   const [attendanceLogs, setAttendanceLogs] = useState([]);
@@ -252,9 +254,13 @@ export default function Attendance(props) {
       .then((res) => {
         const rawLogs = Array.isArray(res) ? res : (res?.data || []);
         const myLogs = rawLogs.filter(p => {
-          const pId = String(p.employee_id || p.user_id || '').toLowerCase();
-          const pEmail = String(p.email || p.user_email || '').toLowerCase();
-          return pId === String(userEmpCode).toLowerCase() || pId === String(currentUser.id).toLowerCase() || pEmail === userEmail;
+          const pId = String(p.employee_id || p.user_id || p.employee_code || '').toLowerCase().trim();
+          const pEmail = String(p.email || p.user_email || '').toLowerCase().trim();
+          const targetCode = String(userEmpCode || '').toLowerCase().trim();
+          const targetId = String(currentUser?.id || currentUser?.user_id || '').toLowerCase().trim();
+          const targetEmail = String(userEmail || '').toLowerCase().trim();
+          if (!targetCode && !targetId && !targetEmail) return true;
+          return (targetCode && pId.includes(targetCode)) || (targetId && pId.includes(targetId)) || (targetEmail && pEmail === targetEmail) || pId === targetCode || pId === targetId;
         }).map(p => {
           const pDate = p.date || p.attendance_date;
           let rawLoc = p.check_in_address || p.loginLocation || "Adyar IT Corridor, Chennai";
@@ -287,7 +293,7 @@ export default function Attendance(props) {
       });
   };
 
-  // Acquire fresh exact real-time GPS coordinates directly from device hardware
+  // Acquire fresh exact real-time GPS coordinates directly from device hardware (optimized for fast resolution)
   const getFreshExactPosition = () => {
     return new Promise((resolve) => {
       if (!("geolocation" in navigator)) {
@@ -301,6 +307,16 @@ export default function Attendance(props) {
           const accuracy = Math.round(pos.coords.accuracy || 0);
           console.log(`[Attendance] Fresh GPS Acquired: ${lat}, ${lng} (±${accuracy}m)`);
 
+          const cleanAddressText = (str) => {
+            if (!str) return '';
+            return str
+              .replace(/,\s*(CMWSSB|GCC|Ward|Division|Zone)\b[^,]*/gi, '')
+              .replace(/^(CMWSSB|GCC|Ward|Division|Zone)\b[^,]*,?\s*/gi, '')
+              .replace(/\s+,/g, ',')
+              .replace(/,+/g, ',')
+              .trim();
+          };
+
           let address = `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
 
           // 1. Try Google Maps Geocoder for exact building/street name
@@ -309,12 +325,10 @@ export default function Attendance(props) {
               const geocoder = new window.google.maps.Geocoder();
               const gRes = await geocoder.geocode({ location: { lat, lng } });
               if (gRes?.results?.length > 0) {
-                // Pick cleanest street/premise address over administrative ward names
                 const bestRes = gRes.results.find(r => r.types.includes('street_address') || r.types.includes('premise') || r.types.includes('subpremise'))
                   || gRes.results.find(r => r.types.includes('route') || r.types.includes('sublocality_level_1'))
                   || gRes.results[0];
-                let cleanAddr = (bestRes.formatted_address || gRes.results[0].formatted_address || '');
-                cleanAddr = cleanAddr.replace(/^(CMWSSB[^,]*|GCC[^,]*|Ward\s*\d+[^,]*|Division\s*\d+[^,]*|Zone\s*\d+[^,]*)[,\s]*/gi, '');
+                let cleanAddr = cleanAddressText(bestRes.formatted_address || gRes.results[0].formatted_address || '');
                 address = cleanAddr || gRes.results[0].formatted_address;
                 resolve({ lat, lng, address, accuracy });
                 return;
@@ -324,12 +338,12 @@ export default function Attendance(props) {
             }
           }
 
-          // 2. OpenStreetMap reverse lookup fallback
+          // 2. OpenStreetMap reverse lookup fallback (with fast 2-second timeout)
           try {
-            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, { signal: AbortSignal.timeout(4000) });
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}&zoom=18&addressdetails=1`, { signal: AbortSignal.timeout(2000) });
             const data = await res.json();
             if (data?.display_name) {
-              address = data.display_name;
+              address = cleanAddressText(data.display_name);
             }
           } catch {}
 
@@ -339,7 +353,7 @@ export default function Attendance(props) {
           console.warn("[Attendance] GPS error:", err);
           resolve({ lat: null, lng: null, address: "Location permission required. Please enable device GPS.", accuracy: null });
         },
-        { enableHighAccuracy: true, timeout: 12000, maximumAge: 0 }
+        { enableHighAccuracy: true, timeout: 5000, maximumAge: 10000 }
       );
     });
   };
@@ -404,11 +418,11 @@ export default function Attendance(props) {
     return () => stopCamera();
   }, [loading, isEnrolled]);
 
-  // Start Camera Web API
+  // Start Camera Web API with flexible ideal constraints
   useEffect(() => {
     if (isCameraActive) {
       navigator.mediaDevices
-        ?.getUserMedia({ video: { width: 1280, height: 720, facingMode: "user" } })
+        ?.getUserMedia({ video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: "user" } })
         .then((stream) => {
           streamRef.current = stream;
           if (videoRef.current) {
@@ -442,20 +456,40 @@ export default function Attendance(props) {
     setVerificationToken(null);
     setMatchedEmployeeName("");
     setMatchedEmployeeId("");
+    if (engineRef.current && engineRef.current.resetBlinkState) {
+      engineRef.current.resetBlinkState();
+    }
   };
 
-  // Real-Time Oval Face guide alignment loop (throttled to ~5 FPS to prevent unresponsiveness)
+  // Real-Time Oval Face guide alignment & Live Blink Detection loop (~10 FPS analysis)
   useEffect(() => {
     let animId;
     let lastAnalyzeTime = 0;
     const analyzeFrame = (time) => {
       if (isCameraActive && videoRef.current && canvasRef.current) {
-        if (time - lastAnalyzeTime > 200) {
+        if (time - lastAnalyzeTime > 100) {
           lastAnalyzeTime = time;
           const evalResult = engineRef.current.evaluateAlignment(videoRef.current, canvasRef.current);
           setIsFaceAligned(prev => prev !== evalResult.isAligned ? evalResult.isAligned : prev);
           if (evalResult.brightness) {
             setFaceBrightness(prev => Math.abs(prev - evalResult.brightness) > 5 ? evalResult.brightness : prev);
+          }
+
+          // Evaluate live eye blink detection when face is aligned inside oval guide
+          if (evalResult.isAligned && livenessStatus === "VERIFYING") {
+            const blinkRes = engineRef.current.detectLiveBlink(videoRef.current, canvasRef.current);
+            setBlinkCount(blinkRes.blinkCount);
+
+            if (blinkRes.blinkCount === 1) {
+              setLivenessProgress(50);
+              setFaceAlignmentFeedback(blinkRes.feedback);
+            } else if (blinkRes.blinkCount >= 2) {
+              setLivenessProgress(100);
+              setLivenessStatus("PASSED");
+              setFaceAlignmentFeedback("Face & Live Blinks Verified ✓");
+            } else {
+              setFaceAlignmentFeedback(blinkRes.feedback || "Position face inside oval & blink naturally 2 times");
+            }
           }
         }
       }
@@ -465,31 +499,7 @@ export default function Attendance(props) {
       animId = requestAnimationFrame(analyzeFrame);
     }
     return () => cancelAnimationFrame(animId);
-  }, [isCameraActive]);
-
-  // Sequenced Blink dot progress simulator
-  useEffect(() => {
-    let timer1, timer2;
-    if (isCameraActive && livenessStatus === "VERIFYING" && isFaceAligned) {
-      if (blinkCount === 0) {
-        timer1 = setTimeout(() => {
-          setBlinkCount(1);
-          setLivenessProgress(50);
-        }, 1500);
-      } else if (blinkCount === 1) {
-        timer2 = setTimeout(() => {
-          setBlinkCount(2);
-          setLivenessProgress(100);
-          setLivenessStatus("PASSED");
-          setFaceAlignmentFeedback("Face verified ✓");
-        }, 1500);
-      }
-    }
-    return () => {
-      clearTimeout(timer1);
-      clearTimeout(timer2);
-    };
-  }, [isCameraActive, livenessStatus, isFaceAligned, blinkCount]);
+  }, [isCameraActive, livenessStatus]);
 
   // Verify match once liveness succeeds
   useEffect(() => {
@@ -895,32 +905,32 @@ export default function Attendance(props) {
   }, [selectedLogForMap, googleMapsLoaded]);
 
   return (
-    <div className={isModalView ? "w-full text-slate-800 font-sans space-y-4" : "min-h-screen w-full bg-slate-50 text-slate-800 font-sans p-4 sm:p-6 lg:p-8 space-y-6"}>
+    <div className={isModalView ? "w-full text-slate-800 font-sans space-y-3 sm:space-y-4 min-w-0" : "min-h-screen w-full bg-slate-50 text-slate-800 font-sans p-2 sm:p-6 lg:p-8 space-y-4 sm:space-y-6 min-w-0 overflow-x-hidden"}>
       <canvas ref={canvasRef} className="hidden" />
 
       {/* Header Navigation */}
-      <div className="flex flex-wrap items-center justify-between bg-white px-6 py-4 rounded-2xl border border-slate-200/80 shadow-xs gap-3">
-        <div className="flex items-center gap-3">
+      <div className="flex flex-col xs:flex-row items-stretch xs:items-center justify-between bg-white p-3 sm:px-6 sm:py-4 rounded-xl sm:rounded-2xl border border-slate-200/80 shadow-xs gap-3 min-w-0">
+        <div className="flex items-center gap-2.5 min-w-0">
           {!isModalView && (
             <button
               onClick={() => navigate(-1)}
-              className="w-9 h-9 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-650 flex items-center justify-center transition cursor-pointer"
+              className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-slate-100 hover:bg-slate-200/80 text-slate-650 flex items-center justify-center transition cursor-pointer shrink-0"
             >
               <ChevronLeft size={18} />
             </button>
           )}
-          <div>
-            <h1 className="text-base font-black text-slate-900 flex items-center gap-2">
-              <ShieldCheck className="text-emerald-600 w-5 h-5" /> Attendance Portal
+          <div className="min-w-0">
+            <h1 className="text-sm sm:text-base font-black text-slate-900 flex items-center gap-2 truncate">
+              <ShieldCheck className="text-emerald-600 w-4 h-4 sm:w-5 sm:h-5 shrink-0" /> Attendance Portal
             </h1>
-            <p className="text-[11px] text-slate-500 font-bold">{userName} ({userEmpCode})</p>
+            <p className="text-[10px] sm:text-[11px] text-slate-500 font-bold truncate">{userName} ({userEmpCode})</p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 bg-slate-100 p-0.5 rounded-xl">
+        <div className="flex items-center gap-1 sm:gap-2 bg-slate-100 p-1 rounded-xl w-full xs:w-auto shrink-0">
           <button
             onClick={() => setActiveTab("punch")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+            className={`flex-1 xs:flex-none px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
               activeTab === "punch" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
             }`}
           >
@@ -928,7 +938,7 @@ export default function Attendance(props) {
           </button>
           <button
             onClick={() => setActiveTab("report")}
-            className={`px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer ${
+            className={`flex-1 xs:flex-none px-3 sm:px-4 py-1.5 rounded-lg text-xs font-bold transition cursor-pointer text-center ${
               activeTab === "report" ? "bg-white text-slate-900 shadow-xs" : "text-slate-500 hover:text-slate-900"
             }`}
           >
@@ -938,42 +948,69 @@ export default function Attendance(props) {
       </div>
 
       {activeTab === "punch" ? (
-        <div className="max-w-6xl w-full mx-auto bg-white rounded-3xl border border-slate-200/90 p-6 sm:p-10 shadow-lg space-y-8">
+        <div className="max-w-6xl w-full mx-auto bg-white rounded-2xl sm:rounded-3xl border border-slate-200/90 p-3.5 sm:p-8 lg:p-10 shadow-md sm:shadow-lg space-y-5 sm:space-y-8 min-w-0 overflow-hidden">
           {/* Header section (Title & Location) */}
-          <div className="text-center border-b border-slate-100 pb-5">
-            <h2 className="text-xl font-black text-slate-900">My Attendance</h2>
-            <div className="mt-3 flex items-center justify-center gap-2">
+          <div className="text-center border-b border-slate-100 pb-4 sm:pb-5 space-y-2 min-w-0">
+            <h2 className="text-lg sm:text-xl font-black text-slate-900">My Attendance</h2>
+            <div className="flex flex-col items-center justify-center gap-1.5 w-full min-w-0 px-1">
               {locationError ? (
-                <span className="text-xs text-rose-600 font-bold bg-rose-50 border border-rose-200 px-4 py-1.5 rounded-full">
+                <span className="text-xs text-rose-600 font-bold bg-rose-50 border border-rose-200 px-3 py-1.5 rounded-full truncate max-w-full">
                   ⚠️ {locationError}
                 </span>
               ) : (
-                <div className="inline-flex items-center gap-2 bg-slate-50 border border-slate-200/80 px-4 py-2 rounded-full text-xs sm:text-sm font-bold text-slate-700 max-w-3xl">
-                  <span className="text-emerald-600">📍</span>
-                  <span className="truncate">{currentLocation}</span>
-                  {gpsAccuracy && (
-                    <span className="text-[11px] font-black bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full">
-                      ±{gpsAccuracy}m
+                <div className="w-full max-w-full sm:max-w-3xl flex flex-col items-center gap-1 min-w-0">
+                  <div
+                    onClick={() => setShowFullAddress(!showFullAddress)}
+                    title={`Click to ${showFullAddress ? 'collapse' : 'view full address'}: ${currentLocation}`}
+                    className={`inline-flex items-center gap-1.5 bg-slate-50 hover:bg-emerald-50/50 border border-slate-200/80 px-3 py-1.5 sm:px-4 sm:py-2 rounded-2xl text-xs sm:text-sm font-bold text-slate-700 w-full min-w-0 shadow-2xs cursor-pointer transition ${
+                      showFullAddress ? "rounded-2xl" : "rounded-full"
+                    }`}
+                  >
+                    <span className="text-emerald-600 shrink-0">📍</span>
+                    <span className={`flex-1 min-w-0 text-left ${showFullAddress ? "break-words whitespace-normal leading-relaxed text-slate-900 font-extrabold" : "truncate"}`}>
+                      {currentLocation}
                     </span>
+                    {gpsAccuracy && (
+                      <span className="text-[10px] sm:text-[11px] font-black bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full shrink-0">
+                        ±{gpsAccuracy}m
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        captureLocation();
+                      }}
+                      disabled={loadingLocation}
+                      title="Refresh Live Location"
+                      className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-100/60 rounded-full transition cursor-pointer disabled:opacity-50 shrink-0"
+                    >
+                      <RefreshCw size={13} className={loadingLocation ? "animate-spin text-emerald-600" : ""} />
+                    </button>
+                  </div>
+
+                  {gpsCoords.lat != null && showFullAddress && (
+                    <div className="text-[11px] font-semibold text-slate-500 bg-slate-100/80 px-3 py-1 rounded-xl w-full text-center animate-in fade-in duration-200">
+                      GPS Coordinates: <span className="font-mono text-slate-800 font-bold">{gpsCoords.lat.toFixed(6)}, {gpsCoords.lng.toFixed(6)}</span> (±{gpsAccuracy || 10}m accuracy)
+                    </div>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowFullAddress(!showFullAddress)}
+                    className="text-[10px] font-black text-teal-650 hover:text-teal-800 flex items-center gap-1 cursor-pointer pt-0.5 tracking-wide uppercase"
+                  >
+                    {showFullAddress ? "▲ Collapse Location View" : "▼ Tap to view full address & GPS coordinates"}
+                  </button>
                 </div>
               )}
-              <button
-                type="button"
-                onClick={captureLocation}
-                disabled={loadingLocation}
-                title="Refresh Live Location"
-                className="p-2 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50 rounded-full transition cursor-pointer disabled:opacity-50"
-              >
-                <RefreshCw size={16} className={loadingLocation ? "animate-spin text-emerald-600" : ""} />
-              </button>
             </div>
           </div>
 
           {!isEnrolled && (
-            <div className="bg-amber-50 border border-amber-250 p-4 rounded-2xl text-xs font-bold text-amber-900 space-y-1.5 select-none text-left">
+            <div className="bg-amber-50 border border-amber-250 p-3.5 sm:p-4 rounded-2xl text-xs font-bold text-amber-900 space-y-1.5 select-none text-left min-w-0">
               <div className="flex items-center gap-2 text-amber-700">
-                <AlertCircle size={16} />
+                <AlertCircle size={16} className="shrink-0" />
                 <span>Biometric Face Profile Missing</span>
               </div>
               <p className="font-semibold text-amber-800 leading-relaxed">
@@ -983,26 +1020,26 @@ export default function Attendance(props) {
           )}
 
           {/* 2-Column Grid Layout: Camera (Left) and Controls (Right) */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-10 items-start">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 sm:gap-8 lg:gap-10 items-start min-w-0">
             
             {/* Left Column: Camera and Face Guide */}
-            <div className="space-y-4">
+            <div className="space-y-3.5 min-w-0">
               {/* Camera Section */}
-              <div className="relative w-full aspect-[4/3] min-h-[320px] sm:min-h-[380px] rounded-2xl bg-slate-950 overflow-hidden shadow-inner border border-slate-200 flex items-center justify-center">
+              <div className="relative w-full aspect-[4/3] max-h-[340px] sm:max-h-none sm:min-h-[380px] rounded-2xl bg-slate-950 overflow-hidden shadow-inner border border-slate-200 flex items-center justify-center">
                 {isCameraActive ? (
                   <>
                     <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
                     
                     {/* Face Guide oval frame */}
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                      <div className={`w-[210px] h-[280px] sm:w-[240px] sm:h-[320px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
+                      <div className={`w-[180px] h-[230px] sm:w-[240px] sm:h-[320px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
                         isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
                       }`} />
                     </div>
                   </>
                 ) : (
-                  <div className="flex flex-col items-center gap-3 text-slate-500 font-semibold text-sm py-16">
-                    <VideoOff size={40} />
+                  <div className="flex flex-col items-center gap-3 text-slate-500 font-semibold text-sm py-12 sm:py-16">
+                    <VideoOff size={36} />
                     <span>{isEnrolled ? "Camera is Off" : "🔒 Biometrics Required"}</span>
                   </div>
                 )}
@@ -1329,26 +1366,45 @@ export default function Attendance(props) {
             <div className="overflow-x-auto border border-slate-200 rounded-xl">
               {(() => {
                 const filtered = attendanceLogs.filter((log) => {
-                  const todayStr = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-                  const todayISO = new Date().toISOString().slice(0, 10);
-                  const yesterdayObj = new Date();
-                  yesterdayObj.setDate(yesterdayObj.getDate() - 1);
-                  const yesterdayStr = yesterdayObj.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-                  const yesterdayISO = yesterdayObj.toISOString().slice(0, 10);
-
                   const dStr = String(log.date || "");
+                  const logDateObj = parseDateInput(log.date);
+                  const now = new Date();
+
                   if (reportFilterMode === "TODAY") {
-                    return dStr.includes(todayStr) || dStr.includes(todayISO);
+                    if (logDateObj) {
+                      return logDateObj.getFullYear() === now.getFullYear() &&
+                             logDateObj.getMonth() === now.getMonth() &&
+                             logDateObj.getDate() === now.getDate();
+                    }
+                    const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    const todayStr = formatDate(now);
+                    return dStr.includes(todayISO) || dStr.includes(todayStr);
                   }
                   if (reportFilterMode === "YESTERDAY") {
-                    return dStr.includes(yesterdayStr) || dStr.includes(yesterdayISO);
+                    const yest = new Date(now);
+                    yest.setDate(yest.getDate() - 1);
+                    if (logDateObj) {
+                      return logDateObj.getFullYear() === yest.getFullYear() &&
+                             logDateObj.getMonth() === yest.getMonth() &&
+                             logDateObj.getDate() === yest.getDate();
+                    }
+                    const yestISO = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
+                    return dStr.includes(yestISO);
                   }
                   if (reportFilterMode === "WEEK") {
-                    const itemTime = new Date(log.date).getTime();
+                    const itemTime = logDateObj ? logDateObj.getTime() : new Date(log.date).getTime();
                     const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
                     return !isNaN(itemTime) && itemTime >= sevenDaysAgo;
                   }
                   if (reportFilterMode === "CUSTOM" && customDateFilter) {
+                    if (logDateObj) {
+                      const cDate = parseDateInput(customDateFilter);
+                      if (cDate) {
+                        return logDateObj.getFullYear() === cDate.getFullYear() &&
+                               logDateObj.getMonth() === cDate.getMonth() &&
+                               logDateObj.getDate() === cDate.getDate();
+                      }
+                    }
                     return dStr.includes(customDateFilter);
                   }
                   return true;

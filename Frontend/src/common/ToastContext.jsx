@@ -23,7 +23,7 @@ export function ToastProvider({ children }) {
     <ToastContext.Provider value={{ showToast: addToast }}>
       {children}
       {/* Toast Portal Container */}
-      <div className="fixed bottom-5 right-5 max-sm:bottom-auto max-sm:top-20 max-sm:right-4 max-sm:left-4 z-[9999] flex flex-col gap-2 w-auto max-w-sm pointer-events-none">
+      <div className="fixed bottom-5 right-5 max-sm:bottom-auto max-sm:top-3 max-sm:right-3 max-sm:left-3 z-[9999] flex flex-col gap-2 w-auto max-w-sm pointer-events-none">
         {toasts.map((t) => {
           let bg, border, icon, text
           switch (t.type) {

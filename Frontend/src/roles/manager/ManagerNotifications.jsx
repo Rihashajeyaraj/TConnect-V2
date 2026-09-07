@@ -15,7 +15,7 @@ import {
   MailOpen,
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
-import { formatDate } from '../../utils/dateUtils.js'
+import { formatDate, parseDateInput } from '../../utils/dateUtils.js'
 import { notificationAPI } from '../../services/api.js'
 
 export default function ManagerNotifications() {
@@ -41,7 +41,7 @@ export default function ManagerNotifications() {
           read: n.is_read || n.read || false,
           type: n.category || n.type || 'info',
           time: n.created_at ? new Date(n.created_at).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : 'Recently',
-          date: n.created_at ? n.created_at.slice(0, 10) : '2026-08-05',
+          date: n.created_at ? n.created_at.slice(0, 10) : formatDate(new Date()),
         }))
       )
 
@@ -93,14 +93,30 @@ export default function ManagerNotifications() {
     const matchesType = typeFilter === 'All' || (item.type || '').toLowerCase() === typeFilter.toLowerCase()
 
     let matchesDate = true
-    const itemDate = item.date || '2026-08-05'
+    const now = new Date()
+    const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`
+    const parsedItemDate = parseDateInput(item.created_at || item.date)
 
     if (dateFilter === 'Today') {
-      matchesDate = itemDate.includes('2026-08-05') || itemDate === todayStr
+      if (parsedItemDate) {
+        matchesDate = parsedItemDate.getFullYear() === now.getFullYear() &&
+                      parsedItemDate.getMonth() === now.getMonth() &&
+                      parsedItemDate.getDate() === now.getDate()
+      } else {
+        matchesDate = String(item.date || '').includes(todayISO) || item.date === todayStr
+      }
     } else if (dateFilter === 'Yesterday') {
-      matchesDate = itemDate.includes('2026-08-04') || itemDate === yesterdayStr
+      const yest = new Date(now)
+      yest.setDate(yest.getDate() - 1)
+      if (parsedItemDate) {
+        matchesDate = parsedItemDate.getFullYear() === yest.getFullYear() &&
+                      parsedItemDate.getMonth() === yest.getMonth() &&
+                      parsedItemDate.getDate() === yest.getDate()
+      } else {
+        matchesDate = String(item.date || '').includes(yesterdayStr)
+      }
     } else if (dateFilter === 'Custom Date' && customDate) {
-      matchesDate = itemDate.includes(customDate)
+      matchesDate = String(item.date || '').includes(customDate)
     }
 
     return matchesSearch && matchesType && matchesDate

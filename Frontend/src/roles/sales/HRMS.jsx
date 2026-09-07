@@ -725,20 +725,20 @@ export default function SalesHRMS(props) {
     : (dynamicPresentCount === 0 && (reportFilterMode === "TODAY" || reportFilterMode === "YESTERDAY") ? 1 : 0);
 
   return (
-    <div className="space-y-6 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-6">
+    <div className="space-y-4 sm:space-y-6 font-sans text-slate-900 min-w-0 w-full p-1 sm:p-6 overflow-x-hidden">
 
       {/* Top Header & Sub-Navigation Tabs */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+      <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200 shadow-xs space-y-3 sm:space-y-4 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 min-w-0">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2 truncate">
               {props?.portalTitle || (isUserAdmin ? "TwiteHRMS Admin Portal" : "TwiteHRMS Employee Portal")}
             </h1>
           </div>
         </div>
 
         {/* Horizontal Navigation Tabs Bar */}
-        <div className="flex items-center flex-nowrap whitespace-nowrap gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5 scrollbar-thin">
+        <div className="flex items-center flex-nowrap whitespace-nowrap gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5 scrollbar-thin min-w-0">
           {hrmsTabs.filter(tab => !(isCurrentUserAdmin && tab.key === "dashboard")).map(({ key, label, icon: Icon }) => (
             <div
               key={key}
@@ -772,11 +772,11 @@ export default function SalesHRMS(props) {
       </div>
 
       {/* ── MAIN SECTION CONTENT ────────────────────────────────── */}
-      <div className="w-full">
+      <div className="w-full min-w-0">
 
         {/* ── ATTENDANCE PORTAL ── */}
         {activeSection === "attendance" && (
-          <div className="max-w-5xl">
+          <div className="max-w-5xl min-w-0 w-full">
             <Attendance />
           </div>
         )}

@@ -92,7 +92,7 @@ class NotificationRepository:
                 r_role == user_role or
                 (r_role in user_role or user_role in r_role) or
                 ("executive" in r_role and "executive" in user_role) or
-                ("manager" in r_role and "manager" in user_role) or
+                (("manager" in r_role or "lead" in r_role) and ("manager" in user_role or "lead" in user_role or "tl" in user_role)) or
                 ("ceo" in r_role and "ceo" in user_role) or
                 ("admin" in r_role and "admin" in user_role)
             )
