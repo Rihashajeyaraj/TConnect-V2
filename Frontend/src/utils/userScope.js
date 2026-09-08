@@ -147,8 +147,96 @@ export function clearUserCache() {
   }
 }
 
+/**
+ * Filters notifications strictly according to privacy requirements:
+ * 1. Sales Executive: Receives ONLY notifications meant for them or their own assignments/claims.
+ * 2. Reporting Manager: Receives ONLY notifications for themselves or their direct team members.
+ * 3. CEO & Admin: Oversee all system notifications.
+ */
+export function filterUserNotifications(notifications, user, teamMembers = []) {
+  if (!Array.isArray(notifications)) return []
+  if (!user) return []
+
+  const role = String(user.role || user.designation || '').toLowerCase().trim()
+  const userEmail = String(user.email || '').toLowerCase().trim()
+  const userEmpCode = String(user.employee_code || user.employee_id || user.id || '').toLowerCase().trim()
+  const userName = String(user.name || user.full_name || '').toLowerCase().trim()
+
+  // Admin & CEO can view all system notifications
+  if (role.includes('admin') || role.includes('ceo')) {
+    return notifications
+  }
+
+  // MANAGER / TEAM LEAD PRIVACY SCOPING
+  if (role.includes('manager') || role.includes('lead') || role.includes('tl')) {
+    const teamEmails = new Set(teamMembers.map((m) => String(m.email || '').toLowerCase().trim()).filter(Boolean))
+    const teamEmpCodes = new Set(teamMembers.map((m) => String(m.employee_id || m.employee_code || m.id || '').toLowerCase().trim()).filter(Boolean))
+    const teamNames = new Set(teamMembers.map((m) => String(m.name || m.full_name || m.employee_name || '').toLowerCase().trim()).filter(Boolean))
+
+    return notifications.filter((n) => {
+      const recipEmail = String(n.recipient_email || n.assigned_to_email || n.email || '').toLowerCase().trim()
+      const recipId = String(n.recipient_id || n.recipient_user_id || n.employee_id || n.user_id || '').toLowerCase().trim()
+      const mgrEmail = String(n.manager_email || n.reporting_manager_email || '').toLowerCase().trim()
+      const mgrId = String(n.manager_id || n.reporting_manager_id || '').toLowerCase().trim()
+      const titleMsg = `${n.title || ''} ${n.message || ''}`.toLowerCase()
+
+      // Direct match for manager
+      if (userEmail && (recipEmail === userEmail || mgrEmail === userEmail)) return true
+      if (userEmpCode && (recipId === userEmpCode || mgrId === userEmpCode)) return true
+
+      // Belongs to team member reporting to this manager
+      if (recipEmail && teamEmails.has(recipEmail)) return true
+      if (recipId && teamEmpCodes.has(recipId)) return true
+      for (const tName of teamNames) {
+        if (tName && titleMsg.includes(tName)) return true
+      }
+
+      // Role broadcast for managers (if not targeted to another manager)
+      const isTargetedToOtherMgr = mgrEmail && mgrEmail !== userEmail
+      const recipRole = String(n.recipient_role || '').toLowerCase()
+      if ((recipRole.includes('manager') || recipRole === 'all') && !isTargetedToOtherMgr && !recipEmail) {
+        return true
+      }
+
+      return false
+    })
+  }
+
+  // EXECUTIVE / SALES PRIVACY SCOPING (EXCLUSIVELY FOR THIS LOGGED-IN EXECUTIVE)
+  return notifications.filter((n) => {
+    const recipEmail = String(n.recipient_email || n.assigned_to_email || n.email || '').toLowerCase().trim()
+    const recipId = String(n.recipient_id || n.recipient_user_id || n.employee_id || n.user_id || '').toLowerCase().trim()
+    const recipName = String(n.recipient_name || n.assigned_to || n.employee_name || '').toLowerCase().trim()
+    const titleMsg = `${n.title || ''} ${n.message || ''}`.toLowerCase()
+
+    // 1. Direct match on email, employee code, or full name
+    if (userEmail && recipEmail && recipEmail === userEmail) return true
+    if (userEmpCode && recipId && recipId === userEmpCode) return true
+    if (userName && recipName && recipName === userName) return true
+
+    // 2. Explicit message targeting for this user
+    if (titleMsg.includes('you have been') || titleMsg.includes('assigned to you')) return true
+    if (userEmail && titleMsg.includes(userEmail)) return true
+    if (userName && titleMsg.includes(userName)) return true
+
+    // 3. Privacy barrier: if notification specifies another user's recipient details, FILTER IT OUT!
+    if (recipEmail && recipEmail !== userEmail) return false
+    if (recipId && recipId !== userEmpCode) return false
+
+    // 4. Untargeted general system broadcasts
+    const recipRole = String(n.recipient_role || '').toLowerCase()
+    if (!recipEmail && !recipId && (recipRole === 'all' || recipRole === 'everyone' || recipRole === 'executive')) {
+      return true
+    }
+
+    return false
+  })
+}
+
 export default {
   isItemOwnedByUser,
   filterUserItems,
+  filterUserNotifications,
   clearUserCache,
 }
+

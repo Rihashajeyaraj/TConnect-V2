@@ -390,19 +390,30 @@ async def update_executive_location(
     except Exception as e:
         logger.warning(f"Error mapping authenticated user to employee record: {e}")
         
-    # 2. Update memory telemetry cache for backward compatibility
-    email = str(user_payload.get("email") or payload.get("email") or "abi@tconnect.com").lower()
+    # 2. Update memory telemetry cache - store under ALL keys for reliable lookup
+    email = str(user_payload.get("email") or payload.get("email") or "").lower().strip()
+    now_iso = datetime.datetime.utcnow().isoformat()
     entry = {
+        "employee_id": employee_id,
+        "employee_code": employee_code,
         "email": email,
         "name": employee_name,
-        "employee_code": employee_code,
         "latitude": lat,
         "longitude": lng,
         "accuracy": accuracy,
-        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "last_seen_at": now_iso,
+        "timestamp": now_iso,
         "is_online": True
     }
-    _live_executive_telemetry[email] = entry
+    # Store under every possible key so any lookup key hits
+    if employee_id:
+        _live_executive_telemetry[str(employee_id).strip()] = entry
+        _live_executive_telemetry[str(employee_id).strip().lower()] = entry
+    if employee_code and employee_code != employee_id:
+        _live_executive_telemetry[str(employee_code).strip()] = entry
+        _live_executive_telemetry[str(employee_code).strip().lower()] = entry
+    if email:
+        _live_executive_telemetry[email] = entry
     
     # 3. Persist latest location to Supabase hrms.employee_locations
     try:
@@ -522,12 +533,28 @@ async def get_manager_team_locations(
     today_str = datetime.now().strftime("%Y-%m-%d")
 
     def _fetch_locations():
+        loc_dict = {}
         try:
-            loc_res = sp_client.schema("hrms").table("employee_locations").select("*").in_("employee_id", exec_ids).execute()
-            return {loc["employee_id"]: loc for loc in loc_res.data} if loc_res.data else {}
+            # Query by employee_ids only (not emails, since employee_id column is UUID/code type)
+            db_exec_ids = [i for i in exec_ids if i]
+            if db_exec_ids:
+                loc_res = sp_client.schema("hrms").table("employee_locations").select("*").in_("employee_id", db_exec_ids).execute()
+                if loc_res.data:
+                    for loc in loc_res.data:
+                        k = str(loc.get("employee_id") or "").strip()
+                        if k:
+                            loc_dict[k] = loc
+                            loc_dict[k.lower()] = loc
         except Exception as e:
             logger.warning(f"Error fetching live locations: {e}")
-            return {}
+
+        # Merge live in-memory telemetry (stored under email/id/code) for instant real-time updates
+        # In-memory telemetry WINS over DB data for freshness
+        for telemetry_key, live_data in _live_executive_telemetry.items():
+            if telemetry_key:
+                loc_dict[str(telemetry_key).strip()] = live_data
+                loc_dict[str(telemetry_key).strip().lower()] = live_data
+        return loc_dict
 
     def _fetch_attendance():
         att_map = {}
@@ -560,12 +587,13 @@ async def get_manager_team_locations(
     def _fetch_sessions():
         sess_map = {}
         try:
-            sessions_res = sp_client.schema("hrms").table("tracking_sessions").select("*").in_("employee_id", exec_ids).order("start_time", desc=True).execute()
+            sessions_res = sp_client.schema("hrms").table("tracking_sessions").select("*").in_("employee_id", exec_identifiers).order("start_time", desc=True).execute()
             if sessions_res.data:
                 for sess in sessions_res.data:
-                    emp_id = sess.get("employee_id")
+                    emp_id = str(sess.get("employee_id") or "").strip()
                     if emp_id and emp_id not in sess_map:
                         sess_map[emp_id] = sess
+                        sess_map[emp_id.lower()] = sess
         except Exception as se:
             logger.warning(f"Error querying tracking sessions for team: {se}")
         return sess_map
@@ -585,12 +613,13 @@ async def get_manager_team_locations(
     offline_count = 0
 
     for idx, exec_user in enumerate(subordinates):
-        e_id = str(exec_user.get("employee_id") or "")
-        e_code = str(exec_user.get("employee_code") or "")
+        e_id = str(exec_user.get("employee_id") or exec_user.get("id") or "").strip()
+        e_code = str(exec_user.get("employee_code") or "").strip()
+        e_email = str(exec_user.get("email") or "").lower().strip()
 
-        loc = locations_map.get(e_id)
-        att = attendance_map.get(e_id) or attendance_map.get(e_code)
-        sess = sessions_map.get(e_id)
+        loc = locations_map.get(e_id) or locations_map.get(e_code) or locations_map.get(e_email) or locations_map.get(e_id.lower())
+        att = attendance_map.get(e_id) or attendance_map.get(e_code) or attendance_map.get(e_email)
+        sess = sessions_map.get(e_id) or sessions_map.get(e_code) or sessions_map.get(e_email)
 
         # GPS: prefer employee_locations, fall back to attendance_logs coordinates
         latitude = None
@@ -624,22 +653,22 @@ async def get_manager_team_locations(
         has_checkin = bool(att.get("check_in_time")) if att else False
         has_checkout = bool(att.get("check_out_time")) if att else False
         
-        # Strictly ONLINE ONLY IF checked in today, not checked out, and GPS seen within 5 minutes
+        # Strictly ONLINE if active tracking session OR recent GPS update (< 15 mins) OR checked in without checkout
         is_online = False
-        if has_checkin and not has_checkout:
+        if has_active_session or loc or e_id in _live_executive_telemetry:
             is_online = True
             if last_seen_at:
                 try:
                     clean_ts = str(last_seen_at).replace("Z", "+00:00")
                     seen_dt = datetime.fromisoformat(clean_ts)
                     now_dt = datetime.now(timezone.utc)
-                    diff = (now_dt - seen_dt).total_seconds()
-                    if diff > 300:  # 5 minutes without GPS update -> Stale (mark offline)
+                    diff = abs((now_dt - seen_dt).total_seconds())
+                    if diff > 900:  # 15 minutes without GPS update -> Stale
                         is_online = False
                 except Exception as ex_dt:
                     logger.debug(f"Error parsing last_seen_at for {e_id}: {ex_dt}")
-            else:
-                is_online = False
+        elif has_checkin and not has_checkout:
+            is_online = True
         else:
             is_online = False
                 
@@ -684,9 +713,14 @@ async def get_manager_team_locations(
         if resolved_emp_name.strip() in ("", "Sales Executive") and email_prefix:
             resolved_emp_name = email_prefix
 
+        # Include auth_user_id so the frontend can subscribe to correct broadcast channels
+        auth_uid_field = exec_user.get("user_id") or exec_user.get("auth_user_id") or ""
+
         normalized_list.append({
             "employee_id": e_id,
             "employee_code": e_code,
+            "auth_user_id": auth_uid_field,  # Auth UUID for broadcast channel matching
+            "user_id": auth_uid_field,
             "employee_name": resolved_emp_name,
             "email": exec_user.get("email") or "",
             "role": exec_user.get("designation") or exec_user.get("role") or "Sales Executive",
@@ -1468,6 +1502,18 @@ async def push_live_location(
                 return {"success": True, "skipped": True, "reason": "duplicate_location", "distance_m": round(dist, 1)}
     except Exception as e:
         logger.debug(f"dedup check: {e}")
+
+    # Store in memory telemetry cache for instant live team map updates
+    telemetry_data = {
+        "employee_id": emp_id, "latitude": lat, "longitude": lng,
+        "accuracy": accuracy, "is_online": True,
+        "last_seen_at": now_iso, "updated_at": now_iso,
+    }
+    _live_executive_telemetry[emp_id] = telemetry_data
+    if payload.get("email"):
+        _live_executive_telemetry[str(payload.get("email")).lower().strip()] = telemetry_data
+    if payload.get("employee_code"):
+        _live_executive_telemetry[str(payload.get("employee_code")).strip()] = telemetry_data
 
     # Upsert current position
     try:

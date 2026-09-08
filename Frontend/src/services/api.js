@@ -106,7 +106,11 @@ async function request(endpoint, options = {}) {
     ...options.headers,
   }
 
-  const config = { ...options, headers }
+  const controller = new AbortController()
+  const timeoutMs = options.timeout || 30000
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  const config = { ...options, headers, signal: controller.signal }
 
   if (endpoint === '/visits' && options.method === 'POST') {
     console.log("[VISIT API] POST /api/v1/visits");
@@ -116,6 +120,7 @@ async function request(endpoint, options = {}) {
   const executeRequest = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, config)
+      clearTimeout(timeoutId)
 
       let data
       try {
@@ -164,6 +169,13 @@ async function request(endpoint, options = {}) {
 
       return data
     } catch (error) {
+      clearTimeout(timeoutId)
+      if (error?.name === 'AbortError') {
+        if (!options.silentError) {
+          console.warn(`[API Timeout] Request to ${endpoint} timed out after ${timeoutMs}ms`)
+        }
+        return Promise.reject({ message: 'Request timed out. Please check connection and try again.', isTimeout: true })
+      }
       if (error?.status === 401) return Promise.reject(error)
       return Promise.reject(error || { message: 'Network or server error' })
     }
@@ -173,6 +185,7 @@ async function request(endpoint, options = {}) {
 
   if (method === 'GET' && !options._isRetry) {
     inFlightRequests.set(endpoint, requestPromise)
+    requestPromise.catch(() => {}) // Prevent unhandled promise rejections on shared in-flight GET requests
     requestPromise.finally(() => {
       inFlightRequests.delete(endpoint)
     })

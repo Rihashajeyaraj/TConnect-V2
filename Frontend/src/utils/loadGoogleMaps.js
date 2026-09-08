@@ -53,8 +53,16 @@ export function loadGoogleMaps(apiKey) {
     return Promise.reject(new Error('Window is not defined. Google Maps can only be loaded in the browser.'));
   }
   
-  if (window.google && window.google.maps) {
+  // Only skip loading if the Map constructor is truly available (not just a partial stub)
+  if (window.google && window.google.maps && typeof window.google.maps.Map === 'function') {
     return Promise.resolve(window.google.maps);
+  }
+
+  // If google.maps exists but Map is not a constructor, the previous load was incomplete — reset and reload
+  if (window.google && window.google.maps && typeof window.google.maps.Map !== 'function') {
+    console.warn('[loadGoogleMaps] Detected partial Maps stub (Map not a constructor). Resetting for clean load.')
+    window.__googleMapsPromise = null
+    googleMapsPromise = null
   }
 
   if (!apiKey) {
@@ -80,7 +88,7 @@ export function loadGoogleMaps(apiKey) {
 
       const script = document.createElement('script');
       // Request libraries parameter for geometry tools needed for distance calculations
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=geometry&loading=async&callback=${callbackName}`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=geometry&callback=${callbackName}`;
       script.async = true;
       script.defer = true;
       script.onerror = (err) => {

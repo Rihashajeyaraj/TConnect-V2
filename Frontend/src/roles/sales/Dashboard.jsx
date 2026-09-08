@@ -164,7 +164,8 @@ export default function Dashboard() {
   const [todoLoading, setTodoLoading] = useState(false);
   const [newTodo, setNewTodo] = useState("");
   const [selectedMonth, setSelectedMonth] = useState(() => localStorage.getItem("tc_dashboard_date_filter") || "Today");
-  const [customDateVal, setCustomDateVal] = useState(() => localStorage.getItem("tc_dashboard_custom_date") || new Date().toISOString().slice(0, 10));
+  const [customFromDate, setCustomFromDate] = useState(() => localStorage.getItem("tc_dashboard_custom_from_date") || localStorage.getItem("tc_dashboard_custom_date") || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const [customToDate, setCustomToDate] = useState(() => localStorage.getItem("tc_dashboard_custom_to_date") || localStorage.getItem("tc_dashboard_custom_date") || new Date().toISOString().slice(0, 10));
   const [managerTarget, setManagerTarget] = useState(() => getCachedValue("managerTarget", { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' }));
   const [refreshing, setRefreshing] = useState(false);
   const [todayAttRecord, setTodayAttRecord] = useState(null); // null = not yet fetched
@@ -174,9 +175,14 @@ export default function Dashboard() {
     localStorage.setItem("tc_dashboard_date_filter", val);
   };
 
-  const handleCustomDateChange = (val) => {
-    setCustomDateVal(val);
-    localStorage.setItem("tc_dashboard_custom_date", val);
+  const handleCustomFromDateChange = (val) => {
+    setCustomFromDate(val);
+    localStorage.setItem("tc_dashboard_custom_from_date", val);
+  };
+
+  const handleCustomToDateChange = (val) => {
+    setCustomToDate(val);
+    localStorage.setItem("tc_dashboard_custom_to_date", val);
   };
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showLeadsModal, setShowLeadsModal] = useState(false);
@@ -411,9 +417,20 @@ export default function Dashboard() {
           return str.includes(currentYearPrefix) || str.includes(currentYearSuffix);
         }
         if (selectedMonth === "Custom Date") {
-          if (!customDateVal) return true;
-          const customDateFormatted = formatDate(customDateVal);
-          return str.includes(customDateVal) || str.includes(customDateFormatted);
+          if (!customFromDate && !customToDate) return true;
+          try {
+            const itemTime = new Date(itemDate).getTime();
+            if (isNaN(itemTime)) {
+              if (customFromDate && str < customFromDate) return false;
+              if (customToDate && str > customToDate + "T23:59:59") return false;
+              return true;
+            }
+            const fromTime = customFromDate ? new Date(customFromDate + "T00:00:00").getTime() : 0;
+            const toTime = customToDate ? new Date(customToDate + "T23:59:59").getTime() : Infinity;
+            return itemTime >= fromTime && itemTime <= toTime;
+          } catch {
+            return true;
+          }
         }
         // Default: Today
         return str.includes(todayISO) || str.includes(todayFormattedStr);
@@ -582,7 +599,7 @@ export default function Dashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userEmail, userName, userEmpCode, userId, selectedMonth, customDateVal, todayAttRecord]);
+  }, [userEmail, userName, userEmpCode, userId, selectedMonth, customFromDate, customToDate, todayAttRecord]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -861,12 +878,27 @@ export default function Dashboard() {
               })}
             </div>
             {selectedMonth === "Custom Date" && (
-              <input
-                type="date"
-                value={customDateVal}
-                onChange={(e) => handleCustomDateChange(e.target.value)}
-                className="h-8 text-xs border border-teal-500/50 rounded-xl px-2 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs w-full sm:w-auto"
-              />
+              <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto mt-1 sm:mt-0">
+                <div className="flex items-center gap-1 bg-teal-50 border border-teal-300 rounded-xl px-2.5 py-1 shadow-2xs">
+                  <span className="text-[10px] font-black text-teal-900 shrink-0">From:</span>
+                  <input
+                    type="date"
+                    value={customFromDate}
+                    onChange={(e) => handleCustomFromDateChange(e.target.value)}
+                    className="h-6 text-xs bg-transparent font-extrabold text-teal-950 focus:outline-none cursor-pointer"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1 bg-teal-50 border border-teal-300 rounded-xl px-2.5 py-1 shadow-2xs">
+                  <span className="text-[10px] font-black text-teal-900 shrink-0">To:</span>
+                  <input
+                    type="date"
+                    value={customToDate}
+                    onChange={(e) => handleCustomToDateChange(e.target.value)}
+                    className="h-6 text-xs bg-transparent font-extrabold text-teal-950 focus:outline-none cursor-pointer"
+                  />
+                </div>
+              </div>
             )}
           </div>
 

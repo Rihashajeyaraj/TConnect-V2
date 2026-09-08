@@ -353,6 +353,10 @@ export default function SmartClientMap({ isManagerView = false }) {
           if (!dismissedInquiryIdsRef.current.has(nextKey)) {
             activeInquiryRef.current = nextInquiry
             setActiveInquiry(nextInquiry)
+            try {
+              const rName = nextInquiry.sender_name || 'Reporting Manager'
+              showToast(`💬 New Inquiry from ${rName}`, 'info')
+            } catch (_) {}
           }
         } else if (activeInquiryRef.current) {
           activeInquiryRef.current = null
@@ -362,9 +366,50 @@ export default function SmartClientMap({ isManagerView = false }) {
     }
 
     checkInquiries()
-    const interval = setInterval(checkInquiries, 15000)
-    return () => clearInterval(interval)
-  }, [currentUser?.email])
+    const interval = setInterval(checkInquiries, 2500)
+    const handleNotifEvent = () => checkInquiries()
+    window.addEventListener('tc_notifications_updated', handleNotifEvent)
+    window.addEventListener('tc_inquiry_received', handleNotifEvent)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('tc_notifications_updated', handleNotifEvent)
+      window.removeEventListener('tc_inquiry_received', handleNotifEvent)
+    }
+  }, [currentUser?.email, showToast])
+
+  const resolveSenderBadge = (inquiry) => {
+    if (!inquiry) return { role: 'Reporting Manager', icon: '👑', badgeText: 'text-amber-800 bg-amber-100 border-amber-300', title: 'Message from Reporting Manager', border: 'border-2 border-amber-400' }
+    const rawRole = String(inquiry.sender_role || inquiry.role || inquiry.category || '').toLowerCase()
+    const rawSender = String(inquiry.sender_name || inquiry.title || '').toLowerCase()
+    const senderName = inquiry.sender_name || 'Authority'
+
+    if (rawRole.includes('ceo') || rawSender.includes('ceo')) {
+      return {
+        role: 'CEO',
+        icon: '🏛️',
+        badgeText: 'text-purple-900 bg-purple-100 border-purple-300',
+        title: `🏛️ Direct Message from CEO (${senderName})`,
+        border: 'border-2 border-purple-500 shadow-purple-500/20'
+      }
+    }
+    if (rawRole.includes('lead') || rawRole.includes('tl') || rawSender.includes('team lead')) {
+      return {
+        role: 'Team Lead',
+        icon: '⭐',
+        badgeText: 'text-[#543D30] bg-[#F3ECE2] border-[#D4BCA8]',
+        title: `⭐ Message from Team Lead (${senderName})`,
+        border: 'border-2 border-[#8B5E3C] shadow-[#8B5E3C]/20'
+      }
+    }
+    return {
+      role: 'Reporting Manager',
+      icon: '👑',
+      badgeText: 'text-blue-900 bg-blue-100 border-blue-300',
+      title: `👑 Message from Reporting Manager (${senderName})`,
+      border: 'border-2 border-blue-500 shadow-blue-500/20'
+    }
+  }
 
   const handleDismissInquiry = (inquiry) => {
     const targetInquiry = inquiry || activeInquiry || activeInquiryRef.current
@@ -443,7 +488,7 @@ export default function SmartClientMap({ isManagerView = false }) {
   // ── Route ─────────────────────────────────────────────────────────────────
   // Load config dynamically on mount with instant localStorage cache
   useEffect(() => {
-    if (window.google?.maps) {
+    if (window.google?.maps?.Map && typeof window.google.maps.Map === 'function') {
       initializeHTMLMapMarker()
       setMapLoaded(true)
       return
@@ -983,6 +1028,9 @@ export default function SmartClientMap({ isManagerView = false }) {
   // ─── 12. Initialize Google Map ─────────────────────────────────────────
   useEffect(() => {
     if (!mapLoaded || !mapContainerRef.current || googleMapRef.current) return
+    if (mapContainerRef.current) {
+      mapContainerRef.current.innerHTML = ''
+    }
 
     const map = new window.google.maps.Map(mapContainerRef.current, {
       center: { lat: executivePos.lat, lng: executivePos.lng },
@@ -1016,6 +1064,9 @@ export default function SmartClientMap({ isManagerView = false }) {
       activePolylinesRef.current.forEach(p => p.setMap(null))
       activePolylinesRef.current = []
       googleMapRef.current = null
+      if (mapContainerRef.current) {
+        mapContainerRef.current.innerHTML = ''
+      }
     }
   }, [mapLoaded])
 
@@ -1229,14 +1280,16 @@ export default function SmartClientMap({ isManagerView = false }) {
         trailPolylineRef.current = new window.google.maps.Polyline({
           path: gPath,
           geodesic: true,
-          strokeOpacity: 0,
+          strokeColor: '#9333ea', // Primary bold solid purple line for traveled route
+          strokeOpacity: 0.85,
+          strokeWeight: 6,
           icons: [{
             icon: {
               path: 'M 0,-2 0,2',
               strokeOpacity: 1,
               scale: 2.5,
-              strokeColor: '#9333ea', // Purple dashed line for traveled trail
-              strokeWeight: 4,
+              strokeColor: '#c084fc', // Light purple accent dash on top
+              strokeWeight: 3,
             },
             offset: '0%',
             repeat: '14px',
@@ -1759,44 +1812,52 @@ export default function SmartClientMap({ isManagerView = false }) {
       )}
 
       {/* ══ DOCKED CORNER FLOATING MANAGER INQUIRY CARD ON EXECUTIVE MAP ══ */}
-      {(activeInquiry || showInquiryDrawer) && (
-        <div className="absolute top-14 right-3 left-3 md:left-auto md:w-[380px] z-[9999] animate-in slide-in-from-top-4 duration-300">
-          <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-4 shadow-2xl border-2 border-amber-400/80 space-y-3">
-            
-            {/* Header */}
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-sm shadow-md animate-pulse">
-                  ⚡
+      {(activeInquiry || showInquiryDrawer) && (() => {
+        const senderInfo = resolveSenderBadge(activeInquiry)
+        return (
+          <div className="absolute top-14 right-3 left-3 md:left-auto md:w-[380px] z-[9999] animate-in slide-in-from-top-4 duration-300">
+            <div className={`bg-white/98 backdrop-blur-xl rounded-2xl p-4 shadow-2xl space-y-3 ${senderInfo.border}`}>
+              
+              {/* Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center font-black text-sm shadow-md animate-bounce">
+                    {senderInfo.icon}
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black text-slate-900 leading-tight">
+                      {activeInquiry ? senderInfo.title : 'Status Reply to Management'}
+                    </h3>
+                    <div className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-slate-200 uppercase tracking-wider">
+                      <span className={`w-1.5 h-1.5 rounded-full ${senderInfo.badgeText}`} />
+                      {senderInfo.role} Message
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-xs font-black text-slate-900 leading-tight">
-                    {activeInquiry ? 'Manager Status Inquiry' : 'Status Reply to Manager'}
-                  </h3>
-                  <p className="text-[9px] font-bold text-amber-600">Tap quick reply below</p>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDismissInquiry(activeInquiry);
+                  }}
+                  className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center transition active:scale-90 cursor-pointer shadow-xs"
+                  title="Close"
+                >
+                  <X size={18} className="stroke-[2.5]" />
+                </button>
+              </div>
+
+              {/* Question Box */}
+              <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200">
+                <p className="text-xs font-black text-slate-900">
+                  "{activeInquiry?.message || 'Please send your current location status update.'}"
+                </p>
+                <div className="mt-1 flex items-center justify-between text-[9px] font-extrabold text-slate-500">
+                  <span>Sender: <strong className="text-slate-800">{activeInquiry?.sender_name || 'Reporting Manager'}</strong></span>
+                  <span className={`px-2 py-0.5 rounded-full border ${senderInfo.badgeText}`}>{senderInfo.role}</span>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDismissInquiry(activeInquiry);
-                }}
-                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center transition active:scale-90 cursor-pointer shadow-xs"
-                title="Close"
-              >
-                <X size={18} className="stroke-[2.5]" />
-              </button>
-            </div>
-
-            {/* Manager Question Box */}
-            <div className="bg-amber-50 rounded-xl p-2.5 border border-amber-200/80">
-              <p className="text-xs font-black text-amber-950">
-                "{activeInquiry?.message || 'Please send your current location status update.'}"
-              </p>
-              <span className="text-[9px] font-bold text-amber-700 mt-0.5 block">From: {activeInquiry?.sender_name || 'Sales Manager'}</span>
-            </div>
 
             {/* 1-Tap Quick Action Chips */}
             <div className="space-y-1.5">
@@ -1869,7 +1930,8 @@ export default function SmartClientMap({ isManagerView = false }) {
 
           </div>
         </div>
-      )}
+        )
+      })()}
 
 
     </div>

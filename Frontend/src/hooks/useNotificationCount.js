@@ -131,11 +131,14 @@ export default function useNotificationCount() {
             return;
           }
 
-          const isTargeted = Boolean(rEmail || rId);
+          const assocEmail = String(newNotif.assigned_to_email || newNotif.employee_email || '').toLowerCase().trim();
+          const assocId = String(newNotif.assigned_to_id || newNotif.user_id || '').toLowerCase().trim();
+
+          const isTargeted = Boolean(rEmail || rId || assocEmail || assocId);
           let isRecipient = false;
 
           if (isTargeted) {
-            isRecipient = (userEmail && rEmail === userEmail) || (rId && (rId === userId || rId === userEmpCode));
+            isRecipient = (userEmail && (rEmail === userEmail || assocEmail === userEmail)) || (rId && (rId === userId || rId === userEmpCode)) || (assocId && (assocId === userId || assocId === userEmpCode));
           } else {
             isRecipient = rRole === 'all' || rRole === userRole || userRole.includes(rRole) || rRole.includes(userRole);
           }

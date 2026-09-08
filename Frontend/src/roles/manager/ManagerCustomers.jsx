@@ -392,8 +392,14 @@ export default function ManagerCustomers() {
 
       {/* ── CUSTOMER POPUP LEDGER MODAL ─────────────────────────────────────── */}
       {popupOpen && (
-        <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh]">
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setPopupOpen(false) }}
+          className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh] cursor-default"
+          >
             
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
@@ -674,8 +680,14 @@ export default function ManagerCustomers() {
 
       {/* ── ONBOARD NEW CUSTOMER MODAL ───────────────────────────────────────── */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl my-auto">
+        <div
+          onClick={(e) => { if (e.target === e.currentTarget) setShowAddModal(false) }}
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto cursor-pointer"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white border border-slate-200 rounded-3xl max-w-lg w-full p-6 space-y-4 shadow-2xl my-auto cursor-default"
+          >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-lg font-black text-slate-900">Onboard New Client Account</h3>

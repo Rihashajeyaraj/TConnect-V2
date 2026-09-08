@@ -590,4 +590,15 @@ html, body, * {
 
 .dismissButton {
   display: none !important;
+}
+
+/* ── Suppress Google Maps Inset Controls & Floating Terms Card ─────────────── */
+.gm-style-cc,
+.gmnoprint a,
+.gmnoprint span,
+a[href*="maps.google.com/maps"],
+div[aria-label*="Map Data"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }

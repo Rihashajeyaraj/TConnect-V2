@@ -123,17 +123,16 @@ function Notifications() {
 
   const toggleFlag = (id, e) => {
     if (e) e.stopPropagation()
-    setFlaggedIds((prev) => {
-      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]
-      try {
-        localStorage.setItem('tc_ceo_flagged_notifications', JSON.stringify(next))
-      } catch (err) {}
-      showToast(
-        next.includes(id) ? 'Notification flagged 🚩 for follow-up' : 'Flag removed from notification',
-        next.includes(id) ? 'info' : 'default'
-      )
-      return next
-    })
+    const isCurrentlyFlagged = flaggedIds.includes(id)
+    const next = isCurrentlyFlagged ? flaggedIds.filter((x) => x !== id) : [...flaggedIds, id]
+    setFlaggedIds(next)
+    try {
+      localStorage.setItem('tc_ceo_flagged_notifications', JSON.stringify(next))
+    } catch (err) {}
+    showToast(
+      !isCurrentlyFlagged ? 'Notification flagged 🚩 for follow-up' : 'Flag removed from notification',
+      !isCurrentlyFlagged ? 'info' : 'default'
+    )
   }
 
   const markActionTaken = (id) => {
@@ -653,7 +652,7 @@ function Notifications() {
             return (
               <div
                 key={notif.id}
-                className={`rounded-2xl border p-4.5 transition flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+                className={`rounded-2xl border p-3 sm:p-4.5 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-4 ${
                   isFlagged
                     ? 'bg-amber-50/60 border-amber-300/80 shadow-xs'
                     : isActionTaken
@@ -663,35 +662,41 @@ function Notifications() {
                     : 'bg-slate-50/70 border-slate-200/70'
                 }`}
               >
-                <div className="flex items-start gap-3.5">
-                  <div className={`size-10 rounded-xl flex items-center justify-center shrink-0 ${
+                <div className="flex items-start gap-3 sm:gap-3.5 min-w-0 flex-1">
+                  <div className={`size-8 sm:size-10 rounded-xl flex items-center justify-center shrink-0 ${
                     isAdminAlert
                       ? 'bg-purple-100 text-purple-800'
                       : notif.category === 'LEAVE_APPROVAL'
                       ? 'bg-sky-100 text-sky-800'
                       : 'bg-blue-100 text-blue-800'
                   }`}>
-                    {isAdminAlert ? <ShieldAlert className="size-5" /> : <Bell className="size-5" />}
+                    {isAdminAlert ? <ShieldAlert className="size-4 sm:size-5" /> : <Bell className="size-4 sm:size-5" />}
                   </div>
-                  <div>
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <h3 className="text-xs font-black text-slate-900">{cleanText(notif.title)}</h3>
+
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <h3 className="text-xs font-black text-slate-900 leading-tight truncate sm:whitespace-normal">{cleanText(notif.title)}</h3>
                       {notif.unread && !isActionTaken && (
-                        <span className="size-2 rounded-full bg-[#832D51]" title="Unread alert" />
+                        <span className="size-2 rounded-full bg-[#832D51] shrink-0" title="Unread alert" />
                       )}
                       {isActionTaken && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 border border-emerald-300 px-1.5 py-0.2 text-[9px] font-black text-emerald-900">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-emerald-100 border border-emerald-300 px-1.5 py-0.2 text-[9px] font-black text-emerald-900 shrink-0">
                           <CheckCircle2 className="size-2.5 text-emerald-700" /> Action Taken
                         </span>
                       )}
                       {isFlagged && (
-                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 border border-amber-300 px-1.5 py-0.2 text-[9px] font-black text-amber-900">
+                        <span className="inline-flex items-center gap-1 rounded-md bg-amber-100 border border-amber-300 px-1.5 py-0.2 text-[9px] font-black text-amber-900 shrink-0">
                           <Flag className="size-2.5 fill-amber-500 text-amber-600" /> Flagged
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-slate-600 font-medium mt-1 max-w-2xl">{cleanText(notif.description)}</p>
-                    <div className="flex items-center gap-3 text-[10px] text-slate-400 font-bold mt-1.5">
+
+                    {/* Single important summary line on mobile, expanded on desktop */}
+                    <p className="text-[11px] sm:text-xs text-slate-600 font-medium mt-0.5 sm:mt-1 truncate sm:whitespace-normal max-w-2xl">
+                      {cleanText(notif.description)}
+                    </p>
+
+                    <div className="hidden sm:flex items-center gap-3 text-[10px] text-slate-400 font-bold mt-1.5">
                       <span>{notif.time}</span>
                       {auditData && (
                         <span className="text-[#832D51] font-extrabold flex items-center gap-0.5">
@@ -702,52 +707,64 @@ function Notifications() {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-2 shrink-0 self-end sm:self-center">
-                  {/* Mail Opened / Unopened Status Icon */}
-                  <div
-                    className={`p-2 rounded-xl border flex items-center justify-center ${
-                      isRead
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                        : 'bg-rose-50 border-rose-200 text-[#832D51]'
-                    }`}
-                    title={isRead ? 'Mail Opened & Read' : 'Unopened Mail'}
-                  >
-                    {isRead ? <MailOpen className="size-4 text-emerald-600" /> : <Mail className="size-4 text-[#832D51]" />}
+                {/* Mobile & Desktop Action Bar */}
+                <div className="flex items-center justify-between sm:justify-end gap-2 shrink-0 border-t border-slate-100/80 pt-2 sm:pt-0 sm:border-t-0 w-full sm:w-auto">
+                  <div className="flex sm:hidden items-center gap-2 text-[10px] text-slate-400 font-bold min-w-0 truncate">
+                    <span>{notif.time}</span>
+                    {auditData && (
+                      <span className="text-[#832D51] font-black flex items-center gap-0.5 shrink-0">
+                        <Eye className="size-3" /> Diff
+                      </span>
+                    )}
                   </div>
 
-                  {/* Flag Icon Only Button */}
-                  <button
-                    onClick={(e) => toggleFlag(notif.id, e)}
-                    className={`p-2 rounded-xl border transition cursor-pointer flex items-center justify-center ${
-                      isFlagged
-                        ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
-                        : 'bg-slate-100 hover:bg-amber-50 border-slate-200 text-slate-600 hover:text-amber-800'
-                    }`}
-                    title={isFlagged ? 'Flagged for follow-up (Click to unflag)' : 'Flag notification for follow-up'}
-                  >
-                    <Flag className={`size-4 ${isFlagged ? 'fill-white' : ''}`} />
-                  </button>
+                  <div className="flex items-center gap-1.5 ml-auto sm:ml-0 shrink-0">
+                    {/* Mail Opened / Unopened Status Icon */}
+                    <div
+                      className={`p-1.5 sm:p-2 rounded-xl border flex items-center justify-center ${
+                        isRead
+                          ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                          : 'bg-rose-50 border-rose-200 text-[#832D51]'
+                      }`}
+                      title={isRead ? 'Mail Opened & Read' : 'Unopened Mail'}
+                    >
+                      {isRead ? <MailOpen className="size-3.5 sm:size-4 text-emerald-600" /> : <Mail className="size-3.5 sm:size-4 text-[#832D51]" />}
+                    </div>
 
-                  {/* View Details Button (Opens Audit Diff Modal & marks Mail as Opened) */}
-                  <button
-                    onClick={() => {
-                      markSingleRead(notif.id)
-                      setSelectedNotifForDetails(notif)
-                    }}
-                    className="px-3.5 py-1.5 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white text-[11px] font-black transition flex items-center gap-1 cursor-pointer shadow-xs"
-                  >
-                    <Eye className="size-3.5" />
-                    View Details
-                  </button>
+                    {/* Flag Icon Only Button */}
+                    <button
+                      onClick={(e) => toggleFlag(notif.id, e)}
+                      className={`p-1.5 sm:p-2 rounded-xl border transition cursor-pointer flex items-center justify-center ${
+                        isFlagged
+                          ? 'bg-amber-500 text-white border-amber-600 shadow-xs'
+                          : 'bg-slate-100 hover:bg-amber-50 border-slate-200 text-slate-600 hover:text-amber-800'
+                      }`}
+                      title={isFlagged ? 'Flagged for follow-up (Click to unflag)' : 'Flag notification for follow-up'}
+                    >
+                      <Flag className={`size-3.5 sm:size-4 ${isFlagged ? 'fill-white' : ''}`} />
+                    </button>
 
-                  {/* Dismiss Button */}
-                  <button
-                    onClick={() => deleteNotification(notif.id)}
-                    className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
-                    title="Dismiss notification"
-                  >
-                    <Trash2 className="size-4" />
-                  </button>
+                    {/* View Details Button (Opens Audit Diff Modal & marks Mail as Opened) */}
+                    <button
+                      onClick={() => {
+                        markSingleRead(notif.id)
+                        setSelectedNotifForDetails(notif)
+                      }}
+                      className="px-2.5 sm:px-3.5 py-1.5 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white text-[10px] sm:text-[11px] font-black transition flex items-center gap-1 cursor-pointer shadow-xs whitespace-nowrap"
+                    >
+                      <Eye className="size-3 sm:size-3.5" />
+                      View Details
+                    </button>
+
+                    {/* Dismiss Button */}
+                    <button
+                      onClick={() => deleteNotification(notif.id)}
+                      className="p-1 sm:p-1.5 rounded-lg text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition cursor-pointer"
+                      title="Dismiss notification"
+                    >
+                      <Trash2 className="size-3.5 sm:size-4" />
+                    </button>
+                  </div>
                 </div>
               </div>
             )
@@ -814,50 +831,57 @@ function Notifications() {
         const audit = getAuditDiffForNotif(notif)
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-            <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-2xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 text-slate-800 text-xs">
+          <div
+            onClick={(e) => { if (e.target === e.currentTarget) setSelectedNotifForDetails(null) }}
+            className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/65 backdrop-blur-xs cursor-pointer overflow-y-auto"
+          >
+            <div
+              onClick={(e) => e.stopPropagation()}
+              className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 text-slate-800 text-xs my-auto cursor-default"
+            >
               
               {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-[#832D51] text-white">
-                <div className="flex items-center gap-2.5">
-                  <span className="grid size-9 place-items-center rounded-xl bg-white/20 text-white">
-                    <ShieldCheck className="size-5" />
+              <div className="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-slate-100 bg-[#832D51] text-white shrink-0">
+                <div className="flex items-center gap-3">
+                  <span className="grid size-11 place-items-center rounded-2xl bg-white/20 text-white shadow-xs">
+                    <ShieldCheck className="size-6" />
                   </span>
                   <div>
-                    <h3 className="text-base font-black tracking-tight">{cleanText(notif.title)}</h3>
-                    <p className="text-[10px] font-bold text-pink-100 uppercase tracking-widest mt-0.5">
+                    <h3 className="text-lg font-black tracking-tight">{cleanText(notif.title)}</h3>
+                    <p className="text-xs font-extrabold text-pink-100 uppercase tracking-widest mt-0.5">
                       Audit Inspection & Comparison Statement
                     </p>
                   </div>
                 </div>
                 <button
                   onClick={() => setSelectedNotifForDetails(null)}
-                  className="rounded-full p-1.5 text-white/80 hover:bg-white/10 hover:text-white transition cursor-pointer"
+                  className="rounded-full p-2 text-white/80 hover:bg-white/10 hover:text-white transition cursor-pointer"
+                  title="Close modal"
                 >
-                  <X className="size-5" />
+                  <X className="size-6" />
                 </button>
               </div>
 
               {/* Modal Content */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-5">
+              <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
                 
                 {/* Meta Overview Box */}
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3.5 bg-slate-50 border border-slate-150 rounded-2xl text-[11px]">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 sm:p-5 bg-slate-50 border border-slate-200 rounded-2xl text-xs">
                   <div>
-                    <span className="text-[9px] uppercase font-black text-slate-400 block">Target Staff Name</span>
-                    <p className="font-extrabold text-slate-900 mt-0.5">{resolveStaffName(audit.affectedStaff)}</p>
+                    <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Target Staff Name</span>
+                    <p className="font-black text-slate-900 text-sm mt-0.5">{resolveStaffName(audit.affectedStaff)}</p>
                   </div>
                   <div>
-                    <span className="text-[9px] uppercase font-black text-slate-400 block">Department</span>
-                    <p className="font-bold text-slate-800 mt-0.5">{audit.department || 'Sales & BD'}</p>
+                    <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Department</span>
+                    <p className="font-extrabold text-slate-800 mt-0.5">{audit.department || 'Sales & BD'}</p>
                   </div>
                   <div>
-                    <span className="text-[9px] uppercase font-black text-slate-400 block">Action Performed By</span>
-                    <p className="font-black text-[#832D51] mt-0.5">{resolveStaffName(audit.performedBy)}</p>
+                    <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Action Performed By</span>
+                    <p className="font-black text-[#832D51] text-sm mt-0.5">{resolveStaffName(audit.performedBy)}</p>
                   </div>
                   <div>
-                    <span className="text-[9px] uppercase font-black text-slate-400 block">Timestamp</span>
-                    <p className="font-bold text-slate-600 mt-0.5">{audit.timestamp || notif.time}</p>
+                    <span className="text-[10px] uppercase font-black text-slate-400 block tracking-wider">Timestamp</span>
+                    <p className="font-extrabold text-slate-600 mt-0.5">{audit.timestamp || notif.time}</p>
                   </div>
                 </div>
 

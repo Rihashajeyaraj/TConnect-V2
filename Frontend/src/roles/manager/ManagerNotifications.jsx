@@ -13,15 +13,20 @@ import {
   Search,
   X,
   MailOpen,
+  Trash2,
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
 import { formatDate, parseDateInput } from '../../utils/dateUtils.js'
 import { notificationAPI } from '../../services/api.js'
+import useCurrentUser from '../../hooks/useCurrentUser.js'
+import { filterUserNotifications } from '../../utils/userScope.js'
 
 export default function ManagerNotifications() {
   const { showToast } = useToast()
+  const currentUser = useCurrentUser()
   const [list, setList] = useState([])
   const [loading, setLoading] = useState(true)
+  const [selectedNotif, setSelectedNotif] = useState(null)
 
   // Date Wise Filter State
   const [dateFilter, setDateFilter] = useState('All') // 'All' | 'Today' | 'Yesterday' | 'This Week' | 'This Month' | 'Custom Date'
@@ -34,7 +39,11 @@ export default function ManagerNotifications() {
     try {
       const res = await notificationAPI.getNotifications()
       const raw = Array.isArray(res) ? res : res?.data || []
-      const sorted = [...raw].sort((a, b) => new Date(b.created_at || b.timestamp || 0) - new Date(a.created_at || a.timestamp || 0))
+      
+      // Strict Manager Scoping & Privacy Filter
+      const scopedNotifs = filterUserNotifications(raw, currentUser)
+
+      const sorted = [...scopedNotifs].sort((a, b) => new Date(b.created_at || b.timestamp || 0) - new Date(a.created_at || a.timestamp || 0))
       setList(
         sorted.map((n) => ({
           ...n,
@@ -44,7 +53,6 @@ export default function ManagerNotifications() {
           date: n.created_at ? n.created_at.slice(0, 10) : formatDate(new Date()),
         }))
       )
-
     } catch (e) {
       console.error("Failed to load notifications:", e)
     } finally {
@@ -54,7 +62,7 @@ export default function ManagerNotifications() {
 
   useEffect(() => {
     fetchNotifications()
-  }, [])
+  }, [currentUser?.email])
 
   const markAllRead = async () => {
     try {
@@ -67,7 +75,8 @@ export default function ManagerNotifications() {
     }
   }
 
-  const markSingleRead = async (id) => {
+  const markSingleRead = async (id, e) => {
+    if (e) e.stopPropagation()
     try {
       await notificationAPI.markRead(id)
       setList((prev) =>
@@ -76,6 +85,21 @@ export default function ManagerNotifications() {
       showToast('Notification marked as read', 'success')
     } catch (e) {
       showToast('Failed to update notification', 'error')
+    }
+  }
+
+  const handleOpenDetail = (item) => {
+    setSelectedNotif(item)
+    if (!item.read) {
+      markSingleRead(item.id)
+    }
+  }
+
+  const handleDelete = (id, e) => {
+    if (e) e.stopPropagation()
+    setList((prev) => prev.filter((n) => n.id !== id))
+    if (selectedNotif?.id === id) {
+      setSelectedNotif(null)
     }
   }
 
@@ -133,7 +157,7 @@ export default function ManagerNotifications() {
             <Bell className="w-7 h-7 text-mgr-primary-700" /> Manager System Notifications & Alerts
           </h1>
           <p className="text-xs text-slate-500 font-semibold mt-1">
-            Real-time notifications for lead conversions by Executives, visit check-ins, EOD reports, and expense claims.
+            Real-time notifications for team lead conversions, visit check-ins, EOD reports, and expense claims.
           </p>
         </div>
 
@@ -217,39 +241,105 @@ export default function ManagerNotifications() {
           filteredList.map((item) => (
             <div
               key={item.id}
-              className={`p-5 rounded-3xl border transition flex items-start justify-between gap-4 ${
+              onClick={() => handleOpenDetail(item)}
+              className={`p-5 rounded-3xl border transition flex items-start justify-between gap-4 cursor-pointer group hover:border-mgr-primary-400 ${
                 item.read
                   ? 'bg-white border-slate-200'
                   : 'bg-[#fffdf5] border-mgr-primary-300 shadow-2xs'
               }`}
             >
-              <div className="space-y-1">
+              <div className="space-y-1 min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <h3 className="text-base font-black text-slate-900">{item.title}</h3>
+                  <h3 className="text-base font-black text-slate-900 group-hover:text-mgr-primary-800 transition truncate">{item.title}</h3>
                   {item.date && (
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-mgr-primary-100 text-mgr-primary-900 border border-mgr-primary-300">
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-md bg-mgr-primary-100 text-mgr-primary-900 border border-mgr-primary-300 shrink-0">
                       📅 {item.date}
                     </span>
                   )}
                 </div>
-                <p className="text-xs text-slate-600 font-semibold leading-relaxed">{item.message}</p>
+                <p className="text-xs text-slate-600 font-semibold leading-relaxed truncate">{item.message}</p>
                 <span className="text-[10px] font-bold text-slate-400 block pt-1">{item.time || 'Just now'}</span>
               </div>
 
-              {!item.read && (
+              <div className="flex items-center gap-2 shrink-0">
+                {!item.read && (
+                  <button
+                    type="button"
+                    onClick={(e) => markSingleRead(item.id, e)}
+                    className="mgr-card p-1.5 rounded-xl bg-mgr-primary-50 hover:bg-mgr-primary-100 text-mgr-primary-800 border border-mgr-primary-200 transition active:scale-95 cursor-pointer mt-0.5 flex items-center justify-center"
+                    title="Mark as Read"
+                  >
+                    <MailOpen className="w-3.5 h-3.5" />
+                  </button>
+                )}
                 <button
                   type="button"
-                  onClick={() => markSingleRead(item.id)}
-                  className="mgr-card p-1.5 rounded-xl bg-mgr-primary-50 hover:bg-mgr-primary-100 text-mgr-primary-800 border border-mgr-primary-200 transition active:scale-95 cursor-pointer shrink-0 mt-0.5 flex items-center justify-center"
-                  title="Mark as Read"
+                  onClick={(e) => handleDelete(item.id, e)}
+                  className="p-1.5 rounded-xl text-slate-400 hover:text-red-500 hover:bg-red-50 transition cursor-pointer mt-0.5"
+                  title="Delete Notification"
                 >
-                  <MailOpen className="w-3.5 h-3.5" />
+                  <Trash2 className="w-4 h-4" />
                 </button>
-              )}
+              </div>
             </div>
           ))
         )}
       </div>
+
+      {/* ── ELEVATED NOTIFICATION DETAIL MODAL ──────────────────────────────── */}
+      {selectedNotif && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4 animate-in zoom-in-95 duration-200 relative">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-mgr-primary-100 text-mgr-primary-900 flex items-center justify-center font-bold">
+                  <Bell className="w-5 h-5" />
+                </div>
+                <div>
+                  <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-mgr-primary-50 text-mgr-primary-900 border border-mgr-primary-200">
+                    {selectedNotif.type || 'Notification'}
+                  </span>
+                  <h3 className="text-sm font-black text-slate-900 mt-1 leading-snug">
+                    {selectedNotif.title}
+                  </h3>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedNotif(null)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 text-xs font-semibold text-slate-800 leading-relaxed whitespace-pre-wrap">
+              {selectedNotif.message}
+            </div>
+
+            <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-3 text-[11px] text-amber-900 font-bold flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-amber-700 shrink-0" />
+              <span>Notification delivered to Manager ({currentUser.name || currentUser.email})</span>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <button
+                onClick={(e) => handleDelete(selectedNotif.id, e)}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-red-600 hover:bg-red-50 transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" /> Delete
+              </button>
+
+              <button
+                onClick={() => setSelectedNotif(null)}
+                className="px-5 py-2 rounded-xl text-xs font-extrabold bg-slate-900 text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
+

@@ -322,7 +322,7 @@ export default function SalesLayout() {
     try {
       spatialAPI.pushLocation(dbPoint).catch(() => null);
       lastPushedPosRef.current = { lat, lng };
-      spatialAPI.updateLocation({ latitude: lat, longitude: lng, accuracy, employee_code: empCode }).catch(() => null);
+      spatialAPI.updateLocation({ latitude: lat, longitude: lng, accuracy, employee_code: empCode, email: user.email || '' }).catch(() => null);
     } catch {
       // Queue for retry (cap at 20 points)
       if (gpsRetryQueue.current.length < 20) {
