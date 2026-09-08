@@ -136,6 +136,7 @@ const TeamLeadLayout = lazyWithRetry(() => import('./roles/teamlead/TeamLeadLayo
 const TeamLeadDashboard = lazyWithRetry(() => import('./roles/teamlead/TeamLeadDashboard.jsx'))
 const TeamLeadAttendance = lazyWithRetry(() => import('./roles/teamlead/TeamLeadAttendance.jsx'))
 const TeamLeadLeads = lazyWithRetry(() => import('./roles/teamlead/TeamLeadLeads.jsx'))
+const TeamLeadCustomers = lazyWithRetry(() => import('./roles/teamlead/TeamLeadCustomers.jsx'))
 const TeamLeadVisits = lazyWithRetry(() => import('./roles/teamlead/TeamLeadVisits.jsx'))
 const TeamLeadExpenses = lazyWithRetry(() => import('./roles/teamlead/TeamLeadExpenses.jsx'))
 const TeamLeadSmartMap = lazyWithRetry(() => import('./roles/teamlead/TeamLeadSmartMap.jsx'))
@@ -269,7 +270,7 @@ function App() {
                   <Route path="attendance" element={<TeamLeadAttendance />} />
                   <Route path="visits" element={<TeamLeadVisits />} />
                   <Route path="leads" element={<TeamLeadLeads />} />
-                  <Route path="customers" element={<ManagerCustomers />} />
+                  <Route path="customers" element={<TeamLeadCustomers />} />
                   <Route path="expenses" element={<TeamLeadExpenses />} />
                   <Route path="team" element={<ManagerTeam />} />
                   <Route path="reports" element={<ManagerReports />} />

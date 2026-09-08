@@ -343,240 +343,239 @@ export default function ManagerCustomers() {
   return (
     <div className="space-y-6 font-sans text-slate-900 bg-slate-50 min-h-screen px-4 md:px-6 pt-6 pb-12">
       {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      <div className="flex flex-wrap items-center justify-between gap-4 pb-2">
+      <div className="flex flex-wrap items-center justify-between gap-4 pb-2 border-b border-slate-200">
         <div>
           <h1 className="text-2xl font-black text-slate-900">
             Client Directory & Accounts
           </h1>
+          <p className="text-xs text-slate-500 font-semibold mt-1">
+            Oversee team client accounts, onboard new clients, and inspect conversion revenue.
+          </p>
         </div>
-      </div>
 
-
-      {/* ── SINGLE CUSTOMER CARD ────────────────────────────────────────────── */}
-      <div className="max-w-md">
-        <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xl text-slate-800 flex flex-col gap-4 hover:scale-[1.01] transition duration-200">
-          <div className="flex items-center gap-3.5">
-            <div className="p-3 bg-blue-50 text-blue-600 rounded-xl border border-blue-200">
-              <Building2 className="w-6 h-6" />
-            </div>
-            <div>
-              <h2 className="text-lg font-black tracking-wide text-slate-900">Client</h2>
-              <p className="text-xs text-slate-500 font-bold">Manage team client accounts</p>
-            </div>
-          </div>
-
-          {/* Quick Metrics grid */}
-          <div className="grid grid-cols-2 gap-3 border-t border-slate-100 pt-4 text-xs font-bold text-slate-600">
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Total Accounts</div>
-              <div className="text-base font-black text-blue-600">{totalCustomers} Clients</div>
-            </div>
-            <div>
-              <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Active Status</div>
-              <div className="text-base font-black text-emerald-600">{activeCount} Accounts</div>
-            </div>
-            <div className="col-span-2 border-t border-slate-100 pt-2 flex justify-between items-center text-[11px] font-black text-slate-600">
-              <span>Total Team Revenue</span>
-              <span className="text-teal-600 text-sm font-black">{formattedTotalRevenue}</span>
-            </div>
-          </div>
-
-          <button
-            onClick={() => setPopupOpen(true)}
-            className="mgr-card w-full mt-2 py-3 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-2 cursor-pointer"
-          >
-            <Eye size={14} /> Open Client Ledger
-          </button>
-        </div>
-      </div>
-
-      {/* ── CUSTOMER POPUP LEDGER MODAL ─────────────────────────────────────── */}
-      {popupOpen && (
-        <div
-          onClick={(e) => { if (e.target === e.currentTarget) setPopupOpen(false) }}
-          className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto cursor-pointer"
+        <button
+          onClick={() => setShowAddModal(true)}
+          className="mgr-card px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs rounded-xl shadow-md transition flex items-center gap-2 cursor-pointer"
         >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh] cursor-default"
-          >
-            
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
-              <div>
-                <h3 className="text-xl font-bold text-slate-900 flex items-center gap-2">
-                  <Building2 className="w-5 h-5 text-teal-600" /> Client Accounts Ledger
-                </h3>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  Filter by sales executive and date range to inspect team account conversions
-                </p>
-              </div>
-              <button
-                onClick={() => setPopupOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition"
-              >
-                <X size={18} />
-              </button>
-            </div>
+          <Plus size={16} /> Onboard New Client
+        </button>
+      </div>
 
-            {/* Filter Control Options — Mobile Responsive & Clean Layout */}
-            <div className="flex flex-col gap-2.5 pb-3 border-b border-slate-100 flex-shrink-0">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                {/* Executive & Date Filters */}
-                <div className="flex flex-wrap items-center gap-2.5">
-                  {/* Executive Filter */}
-                  <div className="flex items-center gap-1.5 text-xs">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Executive:</span>
-                    <select
-                      value={executiveFilter}
-                      onChange={(e) => setExecutiveFilter(e.target.value)}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition border border-slate-200 max-w-[160px] truncate"
-                    >
-                      <option value="All">All Executives</option>
-                      {executives.map((ex) => (
-                        <option key={ex.id} value={ex.name || ex.full_name}>
-                          {ex.name || ex.full_name}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Date Pills */}
-                  <div className="flex items-center gap-1 flex-wrap">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1 whitespace-nowrap">Date:</span>
-                    {['All Time', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
-                      <button
-                        key={tab}
-                        onClick={() => setDateFilterTab(tab)}
-                        className={`mgr-card px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition cursor-pointer shrink-0 ${
-                          dateFilterTab === tab
-                            ? 'bg-slate-900 text-white shadow-2xs'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
-                        }`}
-                      >
-                        {tab}
-                      </button>
-                    ))}
-                    {dateFilterTab === 'Custom' && (
-                      <div className="flex items-center gap-1.5 ml-1 flex-wrap sm:flex-nowrap pt-1 sm:pt-0">
-                        <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
-                          className="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none cursor-pointer" />
-                        <span className="text-slate-400 text-xs">→</span>
-                        <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
-                          className="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none cursor-pointer" />
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Search & Reset Controls */}
-                <div className="flex items-center gap-2 w-full lg:w-auto">
-                  <div className="relative flex-1 lg:w-56">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-                    <input
-                      type="text"
-                      value={search}
-                      onChange={(e) => setSearch(e.target.value)}
-                      placeholder="Search client, person..."
-                      className="w-full h-8 bg-slate-100 border border-slate-200 rounded-lg pl-8 pr-3 text-xs text-slate-900 focus:outline-none font-semibold placeholder-slate-400"
-                    />
-                  </div>
-
-                  {/* Reset */}
-                  {(executiveFilter !== 'All' || dateFilterTab !== 'All Time' || search || fromDate || toDate) && (
-                    <button
-                      onClick={() => { setExecutiveFilter('All'); setDateFilterTab('All Time'); setSearch(''); setFromDate(''); setToDate('') }}
-                      className="mgr-card px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg cursor-pointer transition shrink-0 whitespace-nowrap"
-                    >
-                      ✕ Reset
-                    </button>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Popup Table Container */}
-            <div className="overflow-y-auto overflow-x-auto flex-1 min-h-[150px] border border-slate-200 rounded-2xl shadow-2xs">
-              <table className="w-full text-left text-sm text-slate-800 min-w-[850px]">
-                <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-700 z-10">
-                  <tr>
-                    <th className="px-5 py-4">Sales Executive name</th>
-                    <th className="px-5 py-4">Client Details</th>
-                    <th className="px-5 py-4">Date</th>
-                    <th className="px-5 py-4">Revenue</th>
-                    <th className="px-5 py-4">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-semibold">
-                  {filteredCustomers.length === 0 ? (
-                    <tr>
-                      <td colSpan="5" className="text-center py-16 text-slate-400 font-bold text-xs">
-                        No client account records match your selected filters.
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredCustomers.map((cust) => (
-                      <tr key={cust.id} className="hover:bg-slate-50/70 transition">
-                        
-                        {/* 1. Sales Executive name */}
-                        <td className="px-5 py-4.5 font-black text-slate-900 text-sm">
-                          {cust.assignedExecutive || '—'}
-                        </td>
-
-                        {/* 2. Customer Details */}
-                        <td className="px-5 py-4.5 max-w-[320px]">
-                          <div className="font-black text-slate-900 text-sm">
-                            {cust.name || cust.company}
-                          </div>
-                          <div className="text-[10px] text-slate-400 font-bold font-mono">
-                            ID: {cust.id}
-                          </div>
-                          <div className="text-xs text-slate-600 font-semibold mt-1 space-y-0.5">
-                            <p className="flex items-center gap-1">
-                              <User size={12} className="text-mgr-primary-700 shrink-0" />
-                              <span>{cust.contactPerson || cust.person || '—'}</span>
-                            </p>
-                            <p className="flex items-center gap-1">
-                              <Mail size={12} className="text-mgr-primary-700 shrink-0" />
-                              <span className="truncate">{cust.email || '—'}</span>
-                            </p>
-                            <p className="flex items-center gap-1">
-                              <MapPin size={12} className="text-mgr-primary-700 shrink-0" />
-                              <span>{cust.city || '—'}</span>
-                            </p>
-                          </div>
-                        </td>
-
-                        {/* 3. Date Column in DD/MM/YYYY format with real DB date */}
-                        <td className="px-5 py-4.5 font-bold font-mono text-slate-800 text-xs whitespace-nowrap">
-                          🗓️ {formatDate(cust.date || cust.created_at || cust.conversion_date || cust.lastVisitDate)}
-                        </td>
-
-                        {/* 3. Revenue */}
-                        <td className="px-5 py-4.5 font-black text-emerald-700 text-base">
-                          {cust.revenue || '₹5,00,000'}
-                        </td>
-
-                        {/* 4. Action */}
-                        <td className="px-5 py-4.5">
-                          <button
-                            onClick={() => setSelectedCustomer(cust)}
-                            className="mgr-card px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-[11px] cursor-pointer transition flex items-center gap-1"
-                          >
-                            <Eye size={12} /> View Details
-                          </button>
-                        </td>
-
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-
+      {/* ── METRICS SUMMARY GRID ────────────────────────────────────────────── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Total Accounts</div>
+            <div className="text-2xl font-black text-blue-600 mt-1">{totalCustomers}</div>
+            <div className="text-[11px] text-slate-500 font-bold mt-0.5">Clients Onboarded</div>
+          </div>
+          <div className="p-3 bg-blue-50 text-blue-600 rounded-2xl border border-blue-100">
+            <Building2 className="w-6 h-6" />
           </div>
         </div>
-      )}
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Active Accounts</div>
+            <div className="text-2xl font-black text-emerald-600 mt-1">{activeCount}</div>
+            <div className="text-[11px] text-slate-500 font-bold mt-0.5">Active Status</div>
+          </div>
+          <div className="p-3 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100">
+            <UserCheck className="w-6 h-6" />
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Total Revenue</div>
+            <div className="text-2xl font-black text-teal-600 mt-1">{formattedTotalRevenue}</div>
+            <div className="text-[11px] text-slate-500 font-bold mt-0.5">Team Revenue</div>
+          </div>
+          <div className="p-3 bg-teal-50 text-teal-600 rounded-2xl border border-teal-100">
+            <DollarSign className="w-6 h-6" />
+          </div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-xs flex items-center justify-between">
+          <div>
+            <div className="text-[10px] uppercase tracking-wider text-slate-400 font-black">Enterprise Packs</div>
+            <div className="text-2xl font-black text-purple-600 mt-1">{enterpriseCount}</div>
+            <div className="text-[11px] text-slate-500 font-bold mt-0.5">Corporate Tier</div>
+          </div>
+          <div className="p-3 bg-purple-50 text-purple-600 rounded-2xl border border-purple-100">
+            <Briefcase className="w-6 h-6" />
+          </div>
+        </div>
+      </div>
+
+      {/* ── CLIENT ACCOUNTS LEDGER TABLE CONTAINER ─────────────────────────── */}
+      <div className="bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 space-y-4 shadow-sm">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+          <div>
+            <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+              <Building2 className="w-5 h-5 text-teal-600" /> Client Accounts Directory & Ledger
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Filter by sales executive and date range to inspect team account conversions
+            </p>
+          </div>
+        </div>
+
+        {/* Filter Control Options */}
+        <div className="flex flex-col gap-2.5 pb-3 border-b border-slate-100">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+            {/* Executive & Date Filters */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {/* Executive Filter */}
+              <div className="flex items-center gap-1.5 text-xs">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider whitespace-nowrap">Executive:</span>
+                <select
+                  value={executiveFilter}
+                  onChange={(e) => setExecutiveFilter(e.target.value)}
+                  className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition border border-slate-200 max-w-[160px] truncate"
+                >
+                  <option value="All">All Executives</option>
+                  {executives.map((ex) => (
+                    <option key={ex.id || ex.name} value={ex.name || ex.full_name}>
+                      {ex.name || ex.full_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date Pills */}
+              <div className="flex items-center gap-1 flex-wrap">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1 whitespace-nowrap">Date:</span>
+                {['All Time', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
+                  <button
+                    key={tab}
+                    onClick={() => setDateFilterTab(tab)}
+                    className={`mgr-card px-2.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition cursor-pointer shrink-0 ${
+                      dateFilterTab === tab
+                        ? 'bg-slate-900 text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
+                    }`}
+                  >
+                    {tab}
+                  </button>
+                ))}
+                {dateFilterTab === 'Custom' && (
+                  <div className="flex items-center gap-1.5 ml-1 flex-wrap sm:flex-nowrap pt-1 sm:pt-0">
+                    <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
+                      className="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none cursor-pointer" />
+                    <span className="text-slate-400 text-xs">→</span>
+                    <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
+                      className="bg-slate-100 border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold focus:outline-none cursor-pointer" />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Search & Reset Controls */}
+            <div className="flex items-center gap-2 w-full lg:w-auto">
+              <div className="relative flex-1 lg:w-56">
+                <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  placeholder="Search client, person..."
+                  className="w-full h-8 bg-slate-100 border border-slate-200 rounded-lg pl-8 pr-3 text-xs text-slate-900 focus:outline-none font-semibold placeholder-slate-400"
+                />
+              </div>
+
+              {/* Reset */}
+              {(executiveFilter !== 'All' || dateFilterTab !== 'All Time' || search || fromDate || toDate) && (
+                <button
+                  onClick={() => { setExecutiveFilter('All'); setDateFilterTab('All Time'); setSearch(''); setFromDate(''); setToDate('') }}
+                  className="mgr-card px-2.5 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg cursor-pointer transition shrink-0 whitespace-nowrap"
+                >
+                  ✕ Reset
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Table Container */}
+        <div className="overflow-y-auto overflow-x-auto min-h-[250px] border border-slate-200 rounded-2xl shadow-2xs">
+          <table className="w-full text-left text-sm text-slate-800 min-w-[850px]">
+            <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-[10px] font-black uppercase tracking-wider text-slate-700 z-10">
+              <tr>
+                <th className="px-5 py-4">Sales Executive name</th>
+                <th className="px-5 py-4">Client Details</th>
+                <th className="px-5 py-4">Date</th>
+                <th className="px-5 py-4">Revenue</th>
+                <th className="px-5 py-4">Action</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 font-semibold">
+              {filteredCustomers.length === 0 ? (
+                <tr>
+                  <td colSpan="5" className="text-center py-16 text-slate-400 font-bold text-xs">
+                    No client account records match your selected filters.
+                  </td>
+                </tr>
+              ) : (
+                filteredCustomers.map((cust) => (
+                  <tr key={cust.id} className="hover:bg-slate-50/70 transition">
+                    
+                    {/* 1. Sales Executive name */}
+                    <td className="px-5 py-4.5 font-black text-slate-900 text-sm">
+                      {cust.assignedExecutive || '—'}
+                    </td>
+
+                    {/* 2. Customer Details */}
+                    <td className="px-5 py-4.5 max-w-[320px]">
+                      <div className="font-black text-slate-900 text-sm">
+                        {cust.name || cust.company}
+                      </div>
+                      <div className="text-[10px] text-slate-400 font-bold font-mono">
+                        ID: {cust.id}
+                      </div>
+                      <div className="text-xs text-slate-600 font-semibold mt-1 space-y-0.5">
+                        <p className="flex items-center gap-1">
+                          <User size={12} className="text-mgr-primary-700 shrink-0" />
+                          <span>{cust.contactPerson || cust.person || '—'}</span>
+                        </p>
+                        <p className="flex items-center gap-1">
+                          <Mail size={12} className="text-mgr-primary-700 shrink-0" />
+                          <span className="truncate">{cust.email || '—'}</span>
+                        </p>
+                        <p className="flex items-center gap-1">
+                          <MapPin size={12} className="text-mgr-primary-700 shrink-0" />
+                          <span>{cust.city || '—'}</span>
+                        </p>
+                      </div>
+                    </td>
+
+                    {/* 3. Date Column */}
+                    <td className="px-5 py-4.5 font-bold font-mono text-slate-800 text-xs whitespace-nowrap">
+                      🗓️ {formatDate(cust.date || cust.created_at || cust.conversion_date || cust.lastVisitDate)}
+                    </td>
+
+                    {/* 4. Revenue */}
+                    <td className="px-5 py-4.5 font-black text-emerald-700 text-base">
+                      {cust.revenue || '₹5,00,000'}
+                    </td>
+
+                    {/* 5. Action */}
+                    <td className="px-5 py-4.5">
+                      <button
+                        onClick={() => setSelectedCustomer(cust)}
+                        className="mgr-card px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white font-bold text-[11px] cursor-pointer transition flex items-center gap-1"
+                      >
+                        <Eye size={12} /> View Details
+                      </button>
+                    </td>
+
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
 
       {/* ── CUSTOMER DOSSIER MODAL ───────────────────────────────────────────── */}
       {selectedCustomer && (
