@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react'
+import React, { useState, useEffect, useMemo, useRef } from 'react'
 
 /** Normalize legacy role names (e.g. Super Admin → Admin) */
 export function normalizeRole(role) {
@@ -37,12 +37,26 @@ export function useCurrentUser() {
   const [user, setUser] = useState(getStoredUser)
 
   useEffect(() => {
-    const sync = () => setUser(getStoredUser())
+    const sync = () => {
+      const fresh = getStoredUser()
+      setUser((prev) => {
+        if (
+          prev.id === fresh.id &&
+          prev.email === fresh.email &&
+          prev.role === fresh.role &&
+          prev.name === fresh.name &&
+          prev.employee_code === fresh.employee_code
+        ) {
+          return prev
+        }
+        return fresh
+      })
+    }
     window.addEventListener('storage', sync)
     return () => window.removeEventListener('storage', sync)
   }, [])
 
-  return useMemo(() => {
+  const memoizedUser = useMemo(() => {
     const initials = (user.name || user.email || 'U')
       .split(/[\s@]+/)
       .filter(Boolean)
@@ -51,7 +65,21 @@ export function useCurrentUser() {
       .join('')
 
     return { ...user, initials }
-  }, [user.id, user.email, user.role, user.name, user.employee_code, user.full_name])
+  }, [user.id, user.user_id, user.email, user.role, user.name, user.employee_code, user.employee_id, user.full_name])
+
+  // Stable reference caching to prevent unnecessary re-renders in useEffect dependencies
+  const userRef = useRef(memoizedUser)
+  if (
+    userRef.current.id !== memoizedUser.id ||
+    userRef.current.email !== memoizedUser.email ||
+    userRef.current.role !== memoizedUser.role ||
+    userRef.current.name !== memoizedUser.name ||
+    userRef.current.employee_code !== memoizedUser.employee_code
+  ) {
+    userRef.current = memoizedUser
+  }
+
+  return userRef.current
 }
 
 export default useCurrentUser

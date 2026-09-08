@@ -157,7 +157,6 @@ export default function ManagerCustomers() {
 
         setCustomerList(prev => {
           const merged = [...normalized]
-          // Sync any local records that don't exist in Supabase database
           prev.forEach(lc => {
             const exists = merged.some(
               sc =>
@@ -167,26 +166,6 @@ export default function ManagerCustomers() {
             )
             if (!exists && lc.name) {
               merged.push(lc)
-              customerAPI.createCustomer({
-                name: lc.name || lc.company,
-                company: lc.name || lc.company,
-                company_name: lc.name || lc.company,
-                person: lc.contactPerson,
-                contact_person: lc.contactPerson,
-                phone: lc.phone,
-                mobile: lc.phone,
-                email: lc.email,
-                city: lc.city,
-                status: lc.status,
-                sales_executive_name: lc.assignedExecutive,
-                executive_name: lc.assignedExecutive,
-                revenue: lc.revenue,
-                contractValue: lc.revenue,
-                packageTier: lc.tier,
-                notes: lc.reachOutReason,
-                specialRemarks: lc.specialRemarks,
-                remarksHistory: lc.remarksHistory,
-              }).catch(() => null)
             }
           })
           return merged
@@ -195,7 +174,7 @@ export default function ManagerCustomers() {
       .catch(err => {
         console.error("Failed to load customers from Supabase:", err)
       })
-  }, [currentUser])
+  }, [currentUser.id, currentUser.email])
 
   const filteredCustomers = customerList.filter((cust) => {
     const searchKw = search.toLowerCase()

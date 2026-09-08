@@ -82,7 +82,7 @@ export default function SalesHRMS(props) {
   const validTabKeys = NAV_ITEMS.map(n => n.key);
   const activeSection = validTabKeys.includes(rawTab)
     ? rawTab
-    : (isCurrentUserAdmin ? "attendance" : "dashboard");
+    : "dashboard";
   const setActiveSection = (val) => setSearchParams({ tab: val });
 
   const [hrmsTabs, setHrmsTabs] = useState(() => {
@@ -292,7 +292,7 @@ export default function SalesHRMS(props) {
       window.removeEventListener("tc:attendance-sync", reloadFromStorage);
       window.removeEventListener("tc:attendance-marked", reloadFromStorage);
     };
-  }, [currentUser]);
+  }, [currentUser.id, currentUser.email]);
 
   const [profile, setProfile] = useState(() => {
     try {

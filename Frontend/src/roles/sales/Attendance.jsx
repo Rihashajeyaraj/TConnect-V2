@@ -311,8 +311,6 @@ export default function Attendance(props) {
             if (!alreadyPresent) merged.push(ex);
           });
           localStorage.setItem("tc_attendance_logs", JSON.stringify(merged));
-          // Fire event so HRMS can react immediately
-          window.dispatchEvent(new CustomEvent("tc:attendance-sync"));
         } catch { /* non-critical */ }
         setLoading(false);
       })

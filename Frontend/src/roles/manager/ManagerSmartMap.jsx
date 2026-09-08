@@ -402,7 +402,7 @@ export default function ManagerSmartMap() {
       entity_type: 'NOTIFICATION',
       details: { title, message, recipient_role: 'manager' }
     }).catch(() => null)
-  }, [currentUser])
+  }, [currentUser.id, currentUser.email])
 
   // ─── 2. Fetch team locations ──────────────────────────────────────────────
   const fetchData = useCallback(async (isSilent = false) => {
@@ -2358,7 +2358,7 @@ export default function ManagerSmartMap() {
 
   const isCeo = useMemo(() => {
     return String(currentUser?.role || currentUser?.designation || '').toLowerCase().includes('ceo') || window.location.pathname.startsWith('/ceo')
-  }, [currentUser])
+  }, [currentUser?.role, currentUser?.designation])
 
   // ─── 8. Render ────────────────────────────────────────────────────────────
   // Group members (Team Leads for Manager view, Managers for CEO view)
