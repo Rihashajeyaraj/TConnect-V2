@@ -163,17 +163,10 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false); // Instant cached render without blocking UI
   const [todoLoading, setTodoLoading] = useState(false);
   const [newTodo, setNewTodo] = useState("");
-<<<<<<< HEAD
-  const [selectedMonth, setSelectedMonth] = useState(() => localStorage.getItem("tc_dashboard_date_filter") || "This Month");
-  const [customDateVal, setCustomDateVal] = useState(() => localStorage.getItem("tc_dashboard_custom_date") || new Date().toISOString().slice(0, 10));
-  const [customDateToVal, setCustomDateToVal] = useState(() => localStorage.getItem("tc_dashboard_custom_date_to") || new Date().toISOString().slice(0, 10));
-  const [todayAttRecord, setTodayAttRecord] = useState(null);
-=======
   const [selectedMonth, setSelectedMonth] = useState(() => localStorage.getItem("tc_dashboard_date_filter") || "Today");
   const [customFromDate, setCustomFromDate] = useState(() => localStorage.getItem("tc_dashboard_custom_from_date") || localStorage.getItem("tc_dashboard_custom_date") || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
   const [customToDate, setCustomToDate] = useState(() => localStorage.getItem("tc_dashboard_custom_to_date") || localStorage.getItem("tc_dashboard_custom_date") || new Date().toISOString().slice(0, 10));
-  const [managerTarget, setManagerTarget] = useState(() => getCachedValue("managerTarget", { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' }));
->>>>>>> Riha
+  const [todayAttRecord, setTodayAttRecord] = useState(null);
   const [refreshing, setRefreshing] = useState(false);
   const [managerTarget, setManagerTarget] = useState(() => getCachedValue("managerTarget", { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' }) || { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' });
 
@@ -429,20 +422,6 @@ export default function Dashboard() {
           return str.includes(currentYearPrefix) || str.includes(currentYearSuffix);
         }
         if (selectedMonth === "Custom Date") {
-<<<<<<< HEAD
-          if (!customDateVal && !customDateToVal) return true;
-          let itemISO = str.slice(0, 10);
-          if (itemISO.includes('/')) {
-            const parts = itemISO.split('/');
-            if (parts.length === 3) {
-              if (parts[2].length === 4) itemISO = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-              else if (parts[0].length === 4) itemISO = `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-            }
-          }
-          if (customDateVal && itemISO < customDateVal) return false;
-          if (customDateToVal && itemISO > customDateToVal) return false;
-          return true;
-=======
           if (!customFromDate && !customToDate) return true;
           try {
             const itemTime = new Date(itemDate).getTime();
@@ -457,7 +436,6 @@ export default function Dashboard() {
           } catch {
             return true;
           }
->>>>>>> Riha
         }
         // Default: Today
         return str.includes(todayISO) || str.includes(todayFormattedStr);
@@ -905,25 +883,6 @@ export default function Dashboard() {
               })}
             </div>
             {selectedMonth === "Custom Date" && (
-<<<<<<< HEAD
-              <div className="flex items-center gap-1.5 flex-wrap">
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] font-bold text-slate-500">From:</span>
-                  <input
-                    type="date"
-                    value={customDateVal}
-                    onChange={(e) => handleCustomDateChange(e.target.value)}
-                    className="h-8 text-xs border border-teal-500/50 rounded-xl px-2 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs w-auto"
-                  />
-                </div>
-                <div className="flex items-center gap-1">
-                  <span className="text-[10px] font-bold text-slate-500">To:</span>
-                  <input
-                    type="date"
-                    value={customDateToVal}
-                    onChange={(e) => handleCustomDateToChange(e.target.value)}
-                    className="h-8 text-xs border border-teal-500/50 rounded-xl px-2 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs w-auto"
-=======
               <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto mt-1 sm:mt-0">
                 <div className="flex items-center gap-1 bg-teal-50 border border-teal-300 rounded-xl px-2.5 py-1 shadow-2xs">
                   <span className="text-[10px] font-black text-teal-900 shrink-0">From:</span>
@@ -942,7 +901,6 @@ export default function Dashboard() {
                     value={customToDate}
                     onChange={(e) => handleCustomToDateChange(e.target.value)}
                     className="h-6 text-xs bg-transparent font-extrabold text-teal-950 focus:outline-none cursor-pointer"
->>>>>>> Riha
                   />
                 </div>
               </div>

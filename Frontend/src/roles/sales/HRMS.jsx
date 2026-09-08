@@ -435,22 +435,6 @@ export default function SalesHRMS(props) {
       return;
     }
 
-<<<<<<< HEAD
-    let calculatedDuration = "1 Day";
-    if (leaveType.includes("Half")) {
-      calculatedDuration = "0.5 Day";
-    } else if (leaveType.includes("Permission")) {
-      calculatedDuration = "2 Hours";
-    } else if (leaveFromDate && leaveToDate) {
-      const start = new Date(leaveFromDate);
-      const end = new Date(leaveToDate);
-      if (!isNaN(start.getTime()) && !isNaN(end.getTime())) {
-        const diffDays = Math.round(Math.abs(end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
-        calculatedDuration = `${diffDays} ${diffDays === 1 ? 'Day' : 'Days'}`;
-      }
-    }
-
-=======
     let reqDays = 1;
     if (leaveType.includes("Half")) {
       reqDays = 0.5;
@@ -517,7 +501,6 @@ export default function SalesHRMS(props) {
         ? "2 Hours" 
         : `${reqDays} ${reqDays === 1 ? 'Day' : 'Days'}`;
 
->>>>>>> Riha
     const payload = {
       id: `leave_${Date.now()}`,
       leave_type: leaveType,
@@ -530,12 +513,8 @@ export default function SalesHRMS(props) {
       employee_code: empCode,
       status: "Pending",
       role: currentUser.role || profile.role || "Sales Executive",
-<<<<<<< HEAD
-      duration: calculatedDuration,
-=======
       duration: formattedDuration,
       total_days: reqDays,
->>>>>>> Riha
       created_at: new Date().toISOString()
     };
 
@@ -1497,11 +1476,7 @@ export default function SalesHRMS(props) {
             {
               type: 'Casual Leave',
               allowed: Number(profile.annual_leaves ?? profile.annualLeaves ?? currentUser.annual_leaves ?? currentUser.annualLeaves ?? localAllocation?.annualLeaves ?? 12),
-<<<<<<< HEAD
-              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Casual Leave' || r.leave_type === 'Full Day Leave' || String(r.leave_type || '').includes('Casual') || String(r.leave_type || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => sum + getRequestDays(r), 0),
-=======
               consumed: myLeaveRequests.filter(r => (r.leave_type === 'Casual Leave' || r.leave_type === 'Full Day Leave' || String(r.leave_type || '').includes('Casual') || String(r.leave_type || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
->>>>>>> Riha
               unit: 'Days',
               color: 'bg-emerald-50 border-emerald-200 text-emerald-955',
               barColor: 'bg-emerald-600',
@@ -1510,11 +1485,7 @@ export default function SalesHRMS(props) {
             {
               type: 'Sick Leave',
               allowed: Number(profile.sick_leaves ?? profile.sickLeaves ?? currentUser.sick_leaves ?? currentUser.sickLeaves ?? localAllocation?.sickLeaves ?? 10),
-<<<<<<< HEAD
-              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Sick Leave' || String(r.leave_type || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => sum + getRequestDays(r), 0),
-=======
               consumed: myLeaveRequests.filter(r => (r.leave_type === 'Sick Leave' || String(r.leave_type || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
->>>>>>> Riha
               unit: 'Days',
               color: 'bg-rose-50 border-rose-200 text-rose-955',
               barColor: 'bg-rose-600',
@@ -1523,11 +1494,7 @@ export default function SalesHRMS(props) {
             {
               type: 'Other Leave',
               allowed: Number(profile.other_leaves ?? profile.otherLeaves ?? currentUser.other_leaves ?? currentUser.otherLeaves ?? localAllocation?.otherLeaves ?? 10),
-<<<<<<< HEAD
-              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Other Leave' || String(r.leave_type || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => sum + getRequestDays(r), 0),
-=======
               consumed: myLeaveRequests.filter(r => (r.leave_type === 'Other Leave' || String(r.leave_type || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
->>>>>>> Riha
               unit: 'Days',
               color: 'bg-violet-50 border-violet-200 text-violet-955',
               barColor: 'bg-violet-600',
@@ -1763,16 +1730,6 @@ export default function SalesHRMS(props) {
                             </span>
                           </td>
                           <td className="py-3.5 px-3 font-mono text-slate-900">
-<<<<<<< HEAD
-                            <div>{req.from_date} {req.to_date && req.to_date !== req.from_date ? `to ${req.to_date}` : ""}</div>
-                            <div className="text-[10px] text-teal-700 font-bold">
-                              {(() => {
-                                const days = getRequestDays(req);
-                                if (req.leave_type?.includes("Half")) return "Half Day (0.5 Day)";
-                                if (req.leave_type?.includes("Permission")) return req.time_slot || req.duration || "2 Hours";
-                                return `${days} ${days === 1 ? 'Day' : 'Days'}`;
-                              })()}
-=======
                             <div className="font-bold text-slate-900">
                               {formatDate(req.from_date || req.fromDate || req.start_date)}
                               {(req.to_date || req.toDate || req.end_date) && (req.to_date || req.toDate || req.end_date) !== (req.from_date || req.fromDate || req.start_date)
@@ -1785,7 +1742,6 @@ export default function SalesHRMS(props) {
                                 : req.leave_type?.includes("Permission")
                                   ? `Short Permission (${req.duration || "2 Hours"})`
                                   : `Full Day (${getLeaveRequestDays(req)} ${getLeaveRequestDays(req) === 1 ? "Day" : "Days"})`}
->>>>>>> Riha
                             </div>
                           </td>
                           <td className="py-3.5 px-3 max-w-[220px] text-slate-800 font-semibold truncate">
