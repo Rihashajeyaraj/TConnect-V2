@@ -210,9 +210,11 @@ function createMapMarker(latlng, map, html, onClick, anchor = 'center') {
 }
 
 // ─── Main Component ───────────────────────────────────────────────────────────
-export default function SmartClientMap() {
+export default function SmartClientMap({ isManagerView = false }) {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
+  const userRoleLower = String(currentUser?.role || currentUser?.designation || '').toLowerCase()
+  const isManager = isManagerView || userRoleLower.includes('manager') || userRoleLower.includes('ceo') || userRoleLower.includes('admin')
 
   // Refs
   const mapContainerRef  = useRef(null)
@@ -266,6 +268,7 @@ export default function SmartClientMap() {
 
   // ── Executive Mobile Inquiry Response State ────────────────────────────────
   const [activeInquiry, setActiveInquiry] = useState(null)
+  const activeInquiryRef = useRef(null)
   const [showInquiryDrawer, setShowInquiryDrawer] = useState(false)
   const [replyText, setReplyText] = useState('')
   const [isReplying, setIsReplying] = useState(false)
@@ -351,6 +354,10 @@ export default function SmartClientMap() {
           if (!dismissedInquiryIdsRef.current.has(nextKey)) {
             activeInquiryRef.current = nextInquiry
             setActiveInquiry(nextInquiry)
+            try {
+              const rName = nextInquiry.sender_name || 'Reporting Manager'
+              showToast(`💬 New Inquiry from ${rName}`, 'info')
+            } catch (_) {}
           }
         } else if (activeInquiryRef.current) {
           activeInquiryRef.current = null
@@ -360,9 +367,50 @@ export default function SmartClientMap() {
     }
 
     checkInquiries()
-    const interval = setInterval(checkInquiries, 3000)
-    return () => clearInterval(interval)
-  }, [currentUser?.email])
+    const interval = setInterval(checkInquiries, 2500)
+    const handleNotifEvent = () => checkInquiries()
+    window.addEventListener('tc_notifications_updated', handleNotifEvent)
+    window.addEventListener('tc_inquiry_received', handleNotifEvent)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('tc_notifications_updated', handleNotifEvent)
+      window.removeEventListener('tc_inquiry_received', handleNotifEvent)
+    }
+  }, [currentUser?.email, showToast])
+
+  const resolveSenderBadge = (inquiry) => {
+    if (!inquiry) return { role: 'Reporting Manager', icon: '👑', badgeText: 'text-amber-800 bg-amber-100 border-amber-300', title: 'Message from Reporting Manager', border: 'border-2 border-amber-400' }
+    const rawRole = String(inquiry.sender_role || inquiry.role || inquiry.category || '').toLowerCase()
+    const rawSender = String(inquiry.sender_name || inquiry.title || '').toLowerCase()
+    const senderName = inquiry.sender_name || 'Authority'
+
+    if (rawRole.includes('ceo') || rawSender.includes('ceo')) {
+      return {
+        role: 'CEO',
+        icon: '🏛️',
+        badgeText: 'text-purple-900 bg-purple-100 border-purple-300',
+        title: `🏛️ Direct Message from CEO (${senderName})`,
+        border: 'border-2 border-purple-500 shadow-purple-500/20'
+      }
+    }
+    if (rawRole.includes('lead') || rawRole.includes('tl') || rawSender.includes('team lead')) {
+      return {
+        role: 'Team Lead',
+        icon: '⭐',
+        badgeText: 'text-[#543D30] bg-[#F3ECE2] border-[#D4BCA8]',
+        title: `⭐ Message from Team Lead (${senderName})`,
+        border: 'border-2 border-[#8B5E3C] shadow-[#8B5E3C]/20'
+      }
+    }
+    return {
+      role: 'Reporting Manager',
+      icon: '👑',
+      badgeText: 'text-blue-900 bg-blue-100 border-blue-300',
+      title: `👑 Message from Reporting Manager (${senderName})`,
+      border: 'border-2 border-blue-500 shadow-blue-500/20'
+    }
+  }
 
   const handleDismissInquiry = (inquiry) => {
     const targetInquiry = inquiry || activeInquiry || activeInquiryRef.current
@@ -441,7 +489,7 @@ export default function SmartClientMap() {
   // ── Route ─────────────────────────────────────────────────────────────────
   // Load config dynamically on mount with instant localStorage cache
   useEffect(() => {
-    if (window.google?.maps) {
+    if (window.google?.maps?.Map && typeof window.google.maps.Map === 'function') {
       initializeHTMLMapMarker()
       setMapLoaded(true)
       return
@@ -748,13 +796,12 @@ export default function SmartClientMap() {
       const savedNavStr = localStorage.getItem('tc_active_nav_session')
       if (savedNavStr) {
         const savedNav = JSON.parse(savedNavStr)
-        if (savedNav && savedNav.selectedStop && savedNav.selectedStop.has_exact_coords) {
+        if (savedNav && savedNav.navMode === true && savedNav.selectedStop && savedNav.selectedStop.has_exact_coords) {
           console.log('[SmartClientMap] Restoring active navigation to:', savedNav.selectedStop.title)
           setSelectedStop(savedNav.selectedStop)
           fetchRoute(savedNav.selectedStop)
           setNavMode(true)
           setNavDestination(savedNav.navDestination || { lat: savedNav.selectedStop.latitude, lng: savedNav.selectedStop.longitude })
-
         }
       }
     } catch (e) {
@@ -783,48 +830,7 @@ export default function SmartClientMap() {
 
     setSelectedStop(entity)
     fetchRoute(entity)
-
-    // Persist active navigation session in localStorage until Executive clicks Stop Nav
-    try {
-      localStorage.setItem('tc_active_nav_session', JSON.stringify({
-        selectedStop: entity,
-        navMode: true,
-        navDestination: { lat: entity.latitude, lng: entity.longitude },
-        timestamp: Date.now()
-      }))
-    } catch (e) { console.warn('Save active nav err:', e) }
-
-    // Push new client destination & notify Manager instantly
-    const clientData = {
-      client_id: entity.id,
-      client_name: entity.title,
-      company_name: entity.title,
-      client_address: entity.address,
-      client_phone: entity.phone,
-      client_latitude: entity.latitude,
-      client_longitude: entity.longitude,
-    };
-
-    spatialAPI.startSession(executivePos.lat, executivePos.lng, clientData)
-      .then(res => {
-        const data = res?.data || res;
-        const sessId = data?.session?.id || data?.id || data?.session_id;
-        if (sessId) localStorage.setItem('tc_tracking_session', sessId);
-        window.dispatchEvent(new CustomEvent('tc:start-tracking', {
-          detail: { lat: executivePos.lat, lng: executivePos.lng, clientData, sessionId: sessId }
-        }));
-      })
-      .catch(() => null);
-
-    notificationAPI.sendNotification({
-      title: "📍 Destination Changed",
-      message: `${currentUser?.name || 'Sales Executive'} set destination to ${entity.category || 'Client'} "${entity.title}".`,
-      category: "VISIT",
-      type: "VISIT",
-      recipient_role: "manager"
-    }).catch(() => null);
-
-  }, [fetchRoute, showToast, executivePos, currentUser])
+  }, [fetchRoute, showToast])
 
   // ─── 8. Start Navigation Mode ───────────────────────────────────────────
   const startNavigation = useCallback(async () => {
@@ -1033,6 +1039,9 @@ export default function SmartClientMap() {
   // ─── 12. Initialize Google Map ─────────────────────────────────────────
   useEffect(() => {
     if (!mapLoaded || !mapContainerRef.current || googleMapRef.current) return
+    if (mapContainerRef.current) {
+      mapContainerRef.current.innerHTML = ''
+    }
 
     const map = new window.google.maps.Map(mapContainerRef.current, {
       center: { lat: executivePos.lat, lng: executivePos.lng },
@@ -1066,6 +1075,9 @@ export default function SmartClientMap() {
       activePolylinesRef.current.forEach(p => p.setMap(null))
       activePolylinesRef.current = []
       googleMapRef.current = null
+      if (mapContainerRef.current) {
+        mapContainerRef.current.innerHTML = ''
+      }
     }
   }, [mapLoaded])
 
@@ -1230,39 +1242,72 @@ export default function SmartClientMap() {
     }
   }, [executivePos, gpsAccuracy, gpsStatus, mapLoaded])
 
-  // ─── 16. Traveled Trail Polyline (Purple dashed line) ───────────────────
+  // ─── 16. Traveled Trail Polyline (Purple dashed line - Track real executive travel only) ───
   useEffect(() => {
     if (!googleMapRef.current || !window.google || !mapLoaded) return
     if (!executivePos?.lat || !executivePos?.lng) return
 
+    // 1. Do NOT track or render polyline unless GPS fix is active
+    if (gpsStatus !== 'active') {
+      if (trailPolylineRef.current) {
+        trailPolylineRef.current.setMap(null)
+        trailPolylineRef.current = null
+      }
+      return
+    }
+
+    // 2. Ignore default fallback center (DEFAULT_CENTER) completely
+    const isDefaultCenter =
+      Math.abs(executivePos.lat - DEFAULT_CENTER.lat) < 0.0001 &&
+      Math.abs(executivePos.lng - DEFAULT_CENTER.lng) < 0.0001
+
+    if (isDefaultCenter) {
+      return
+    }
+
+    // 3. Purge any accidental DEFAULT_CENTER points from trail history
     const pts = trailPointsRef.current
-    const lastPt = pts.length > 0 ? pts[pts.length - 1] : null
+    if (pts.length > 0) {
+      const filtered = pts.filter(p => !(
+        Math.abs(p.lat - DEFAULT_CENTER.lat) < 0.0001 &&
+        Math.abs(p.lng - DEFAULT_CENTER.lng) < 0.0001
+      ))
+      if (filtered.length !== pts.length) {
+        trailPointsRef.current = filtered
+      }
+    }
+
+    const validPts = trailPointsRef.current
+    const lastPt = validPts.length > 0 ? validPts[validPts.length - 1] : null
 
     let distFromLastM = 0
     if (lastPt) {
       distFromLastM = haversineDistance(lastPt.lat, lastPt.lng, executivePos.lat, executivePos.lng) * 1000
     }
 
-    // Append point if first point or executive moved >= 3 meters
-    if (pts.length === 0 || distFromLastM >= 3) {
-      pts.push({ lat: executivePos.lat, lng: executivePos.lng })
+    // Append point ONLY if first real acquired point or executive moved >= 5 meters
+    if (validPts.length === 0 || distFromLastM >= 5) {
+      validPts.push({ lat: executivePos.lat, lng: executivePos.lng })
     }
 
-    if (pts.length > 1) {
-      const gPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
+    // 4. ONLY draw traveled polyline if executive has AT LEAST 2 REAL traveled points
+    if (validPts.length > 1) {
+      const gPath = validPts.map(p => ({ lat: p.lat, lng: p.lng }))
       
       if (!trailPolylineRef.current) {
         trailPolylineRef.current = new window.google.maps.Polyline({
           path: gPath,
           geodesic: true,
-          strokeOpacity: 0,
+          strokeColor: '#9333ea', // Primary bold solid purple line for traveled route
+          strokeOpacity: 0.85,
+          strokeWeight: 6,
           icons: [{
             icon: {
               path: 'M 0,-2 0,2',
               strokeOpacity: 1,
               scale: 2.5,
-              strokeColor: '#9333ea', // Purple dashed line for traveled trail
-              strokeWeight: 4,
+              strokeColor: '#c084fc', // Light purple accent dash on top
+              strokeWeight: 3,
             },
             offset: '0%',
             repeat: '14px',
@@ -1276,27 +1321,31 @@ export default function SmartClientMap() {
           trailPolylineRef.current.setMap(googleMapRef.current)
         }
       }
+    } else {
+      if (trailPolylineRef.current) {
+        trailPolylineRef.current.setMap(null)
+      }
     }
-  }, [executivePos, mapLoaded])
+  }, [executivePos, gpsStatus, mapLoaded])
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   const visibleAlerts = onRouteClients.filter(c => !dismissedAlerts.current.has(c.id))
 
   return (
-    <div className="relative w-full h-[calc(100vh-120px)] md:h-[88vh] rounded-none md:rounded-3xl overflow-hidden border-0 md:border border-slate-200 shadow-xl bg-slate-50 font-sans">
+    <div className="relative w-full h-full min-h-[calc(100vh-4.5rem)] rounded-none md:rounded-3xl overflow-hidden border-0 md:border border-slate-200 shadow-xl bg-slate-50 font-sans">
 
       {/* ══ MAP CANVAS ══ */}
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
-      {/* ══ GPS DENIED / UNAVAILABLE BANNER ══ */}
+      {/* ══ GPS DENIED / UNAVAILABLE FLOATING TOAST ══ */}
       {gpsStatus === 'denied' && (
-        <div className="absolute top-0 left-0 right-0 z-[1100] bg-rose-600 text-white text-xs font-extrabold px-4 py-2.5 flex items-center gap-2 shadow-lg">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1100] max-w-sm bg-rose-600/95 backdrop-blur-md text-white text-xs font-black px-3.5 py-1.5 rounded-full shadow-2xl flex items-center gap-2 border border-white/20">
           <AlertCircle size={14} className="flex-shrink-0" />
           Location permission required. Enable GPS in browser settings.
         </div>
       )}
       {gpsStatus === 'unavailable' && (
-        <div className="absolute top-0 left-0 right-0 z-[1100] bg-amber-500 text-white text-xs font-extrabold px-4 py-2.5 flex items-center gap-2 shadow-lg">
+        <div className="absolute top-3 left-1/2 -translate-x-1/2 z-[1100] max-w-sm bg-amber-500/95 backdrop-blur-md text-white text-xs font-black px-3.5 py-1.5 rounded-full shadow-2xl flex items-center gap-2 border border-white/20">
           <AlertCircle size={14} className="flex-shrink-0" />
           GPS unavailable on this device.
         </div>
@@ -1324,7 +1373,7 @@ export default function SmartClientMap() {
           </button>
 
           {/* Collapsed Round Manager Message Button */}
-          {activeInquiry && (
+          {!isManager && activeInquiry && (
             <button
               onClick={() => setActiveInquiry(activeInquiry)}
               className="relative w-9 h-9 bg-amber-500 hover:bg-amber-600 text-white shadow-xl rounded-full flex items-center justify-center active:scale-95 transition cursor-pointer animate-bounce"
@@ -1336,9 +1385,7 @@ export default function SmartClientMap() {
           )}
         </div>
       ) : (
-        <div className={`absolute left-2 right-2 sm:left-4 sm:right-4 md:left-6 md:right-auto md:w-[400px] z-[1000] ${
-          gpsStatus !== 'active' && gpsStatus !== 'loading' ? 'top-11' : 'top-2 sm:top-3'
-        }`}>
+        <div className="absolute left-2 right-2 sm:left-4 sm:right-4 md:left-6 md:right-auto md:w-[380px] z-[1000] top-2 sm:top-3">
           {/* Low accuracy banner */}
           {gpsStatus === 'active' && gpsAccuracy && gpsAccuracyThreshold && gpsAccuracy > gpsAccuracyThreshold && (
             <div className="hidden md:flex bg-rose-600/95 text-white text-[10px] font-black px-3 py-1.5 rounded-xl shadow-lg mb-1.5 items-center gap-1.5 animate-pulse">
@@ -1480,24 +1527,26 @@ export default function SmartClientMap() {
             <span className="text-xs font-black">Navigation Active</span>
           </div>
         )}
-        <button
-          onClick={() => {
-            if (activeInquiry) setActiveInquiry(activeInquiry)
-            setShowInquiryDrawer(prev => !prev)
-          }}
-          className={`rounded-2xl shadow-2xl px-3.5 py-2 flex items-center gap-2 transition active:scale-95 cursor-pointer border-2 border-white ${
-            activeInquiry
-              ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white animate-bounce'
-              : 'bg-slate-900 hover:bg-slate-800 text-white'
-          }`}
-          title="Click to view & reply to Manager Inquiry"
-        >
-          <MessageSquare size={15} />
-          <span className="text-xs font-black">
-            {activeInquiry ? '⚡ Manager Inquiry (1)' : '💬 Message Manager'}
-          </span>
-          {activeInquiry && <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping" />}
-        </button>
+        {!isManager && (
+          <button
+            onClick={() => {
+              if (activeInquiry) setActiveInquiry(activeInquiry)
+              setShowInquiryDrawer(prev => !prev)
+            }}
+            className={`rounded-2xl shadow-2xl px-3.5 py-2 flex items-center gap-2 transition active:scale-95 cursor-pointer border-2 border-white ${
+              activeInquiry
+                ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white animate-bounce'
+                : 'bg-slate-900 hover:bg-slate-800 text-white'
+            }`}
+            title="Click to view & reply to Manager Inquiry"
+          >
+            <MessageSquare size={15} />
+            <span className="text-xs font-black">
+              {activeInquiry ? '⚡ Manager Inquiry (1)' : '💬 Message Manager'}
+            </span>
+            {activeInquiry && <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping" />}
+          </button>
+        )}
 
         {!isMobile && offRoute && (
           <div className="bg-rose-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2 animate-pulse">
@@ -1781,44 +1830,52 @@ export default function SmartClientMap() {
       )}
 
       {/* ══ DOCKED CORNER FLOATING MANAGER INQUIRY CARD ON EXECUTIVE MAP ══ */}
-      {(activeInquiry || showInquiryDrawer) && (
-        <div className="absolute top-14 right-3 left-3 md:left-auto md:w-[380px] z-[9999] animate-in slide-in-from-top-4 duration-300">
-          <div className="bg-white/98 backdrop-blur-xl rounded-2xl p-4 shadow-2xl border-2 border-amber-400/80 space-y-3">
-            
-            {/* Header */}
-            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-              <div className="flex items-center gap-2">
-                <div className="w-8 h-8 rounded-xl bg-amber-500 text-white flex items-center justify-center font-black text-sm shadow-md animate-pulse">
-                  ⚡
+      {(activeInquiry || showInquiryDrawer) && (() => {
+        const senderInfo = resolveSenderBadge(activeInquiry)
+        return (
+          <div className="absolute top-14 right-3 left-3 md:left-auto md:w-[380px] z-[9999] animate-in slide-in-from-top-4 duration-300">
+            <div className={`bg-white/98 backdrop-blur-xl rounded-2xl p-4 shadow-2xl space-y-3 ${senderInfo.border}`}>
+              
+              {/* Header */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-amber-600 text-white flex items-center justify-center font-black text-sm shadow-md animate-bounce">
+                    {senderInfo.icon}
+                  </div>
+                  <div>
+                    <h3 className="text-xs font-black text-slate-900 leading-tight">
+                      {activeInquiry ? senderInfo.title : 'Status Reply to Management'}
+                    </h3>
+                    <div className="mt-0.5 inline-flex items-center gap-1 text-[9px] font-extrabold px-2 py-0.5 rounded-full border border-slate-200 uppercase tracking-wider">
+                      <span className={`w-1.5 h-1.5 rounded-full ${senderInfo.badgeText}`} />
+                      {senderInfo.role} Message
+                    </div>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-xs font-black text-slate-900 leading-tight">
-                    {activeInquiry ? 'Manager Status Inquiry' : 'Status Reply to Manager'}
-                  </h3>
-                  <p className="text-[9px] font-bold text-amber-600">Tap quick reply below</p>
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    handleDismissInquiry(activeInquiry);
+                  }}
+                  className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center transition active:scale-90 cursor-pointer shadow-xs"
+                  title="Close"
+                >
+                  <X size={18} className="stroke-[2.5]" />
+                </button>
+              </div>
+
+              {/* Question Box */}
+              <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200">
+                <p className="text-xs font-black text-slate-900">
+                  "{activeInquiry?.message || 'Please send your current location status update.'}"
+                </p>
+                <div className="mt-1 flex items-center justify-between text-[9px] font-extrabold text-slate-500">
+                  <span>Sender: <strong className="text-slate-800">{activeInquiry?.sender_name || 'Reporting Manager'}</strong></span>
+                  <span className={`px-2 py-0.5 rounded-full border ${senderInfo.badgeText}`}>{senderInfo.role}</span>
                 </div>
               </div>
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  handleDismissInquiry(activeInquiry);
-                }}
-                className="w-8 h-8 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 flex items-center justify-center transition active:scale-90 cursor-pointer shadow-xs"
-                title="Close"
-              >
-                <X size={18} className="stroke-[2.5]" />
-              </button>
-            </div>
-
-            {/* Manager Question Box */}
-            <div className="bg-amber-50 rounded-xl p-2.5 border border-amber-200/80">
-              <p className="text-xs font-black text-amber-950">
-                "{activeInquiry?.message || 'Please send your current location status update.'}"
-              </p>
-              <span className="text-[9px] font-bold text-amber-700 mt-0.5 block">From: {activeInquiry?.sender_name || 'Sales Manager'}</span>
-            </div>
 
             {/* 1-Tap Quick Action Chips */}
             <div className="space-y-1.5">
@@ -1891,7 +1948,8 @@ export default function SmartClientMap() {
 
           </div>
         </div>
-      )}
+        )
+      })()}
 
 
     </div>

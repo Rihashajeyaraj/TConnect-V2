@@ -1,19 +1,20 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react'
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
   MapPin, Radio, Users, Activity, Clock, RefreshCw,
   Search, Shield, Map as MapIcon, Eye, Compass, Navigation,
-  AlertCircle, ChevronRight, Phone, Mail, Award, CheckCircle2, X,
+  AlertCircle, ChevronRight, ChevronLeft, Phone, Mail, Award, CheckCircle2, X,
   Route, Milestone, Minimize2, Maximize2, ArrowLeft, MessageSquare, Send, MessageCircle
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
-import { spatialAPI, authAPI, settingsAPI, crmAPI, customerAPI, visitAPI, auditAPI, notificationAPI } from '../../services/api.js'
-import { loadGoogleMaps } from '../../utils/loadGoogleMaps.js'
+import { spatialAPI, authAPI, settingsAPI, crmAPI, customerAPI, visitAPI, auditAPI, notificationAPI, hrmsAPI, userAPI } from '../../services/api.js'
+import { loadGoogleMaps, purgeGoogleMapsBillingModal } from '../../utils/loadGoogleMaps.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser, { getStoredUser } from '../../hooks/useCurrentUser.js'
 import { formatDate } from '../../utils/dateUtils.js'
 import { filterUserItems } from '../../utils/userScope.js'
 import MAP_CONFIG from '../../config/mapConfig.js'
 import { detectRouteClients, shouldNotify } from '../../utils/routeProximityUtils.js'
+import SmartClientMap from '../sales/SmartClientMap.jsx'
 
 const DEFAULT_CENTER = MAP_CONFIG.DEFAULT_VIEWPORT_CENTER
 
@@ -198,6 +199,7 @@ export default function ManagerSmartMap() {
   const currentUser = useCurrentUser()
 
   // State
+  const [activeMapTab,     setActiveMapTab]      = useState('team') // 'team' | 'own'
   const [mapLoaded,        setMapLoaded]        = useState(false)
   const [loading,          setLoading]           = useState(true)
   const [panelOpen,        setPanelOpen]         = useState(window.innerWidth >= 1024)
@@ -210,6 +212,8 @@ export default function ManagerSmartMap() {
   const [stats,            setStats]             = useState({ total: 0, online: 0, offline: 0 })
   const [initialFitDone,   setInitialFitDone]    = useState(false)
   const [isTrackingMinimized, setIsTrackingMinimized] = useState(false)
+  const [selectedTeamLeadIndex, setSelectedTeamLeadIndex] = useState(0)
+  const [activeTeamFilter,      setActiveTeamFilter]      = useState('all') // 'all' (paginated team lead) | 'all_combined' | specific key
 
   // Live-tracking panel state
   const [trackSession,     setTrackSession]      = useState(null)
@@ -303,7 +307,7 @@ export default function ManagerSmartMap() {
     }
 
     fetchReplies()
-    const interval = setInterval(fetchReplies, 3000)
+    const interval = setInterval(fetchReplies, 15000)
     return () => clearInterval(interval)
   }, [showToast])
 
@@ -370,11 +374,13 @@ export default function ManagerSmartMap() {
         recipient_role: 'executive',
         recipient_email: targetEmail,
         employee_id: empCode,
-        sender_name: currentUser?.name || 'Sales Manager'
+        sender_name: currentUser?.name || currentUser?.full_name || 'Reporting Manager',
+        sender_role: currentUser?.role || currentUser?.designation || 'Sales Manager',
       })
       showToast(`Inquiry sent to ${resolveRealName(ex)}`, 'success')
       setCustomInquiryText('')
       window.dispatchEvent(new Event('tc_notifications_updated'))
+      window.dispatchEvent(new CustomEvent('tc_inquiry_received', { detail: { targetEmail, empCode, senderRole: currentUser?.role || 'Sales Manager' } }))
     } catch (err) {
       showToast('Failed to send inquiry', 'error')
     }
@@ -402,12 +408,87 @@ export default function ManagerSmartMap() {
   const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true)
     try {
-      const res = await spatialAPI.getTeamLocations()
-      const payload = res?.data || res
-      if (payload?.executives) {
-        setExecutives(payload.executives)
-        setStats({ total: payload.team_count || 0, online: payload.online_count || 0, offline: payload.offline_count || 0 })
+      const res = await spatialAPI.getTeamLocations().catch(() => null)
+      const payload = res?.data || res || {}
+      let list = Array.isArray(payload?.executives) ? [...payload.executives] : []
+
+      const isCeo = String(currentUser?.role || currentUser?.designation || '').toLowerCase().includes('ceo') || window.location.pathname.startsWith('/ceo')
+
+      if (isCeo) {
+        // CEO Portal: Track ONLY Managers (Sales Managers, Regional Managers, etc. — Exclude Team Leads & Executives)
+        const [empRes, userRes] = await Promise.all([
+          hrmsAPI.getEmployees().catch(() => null),
+          userAPI.getUsers().catch(() => null)
+        ])
+        const allEmps = Array.isArray(empRes?.data) ? empRes.data : (Array.isArray(empRes) ? empRes : [])
+        const allUsers = Array.isArray(userRes?.data) ? userRes.data : (Array.isArray(userRes) ? userRes : [])
+        const combined = [...allEmps, ...allUsers]
+
+        let managerCandidates = combined.filter(e => {
+          const r = String(e.role || e.designation || e.employee_role || '').toLowerCase()
+          return (r.includes('manager') || r.includes('mgr')) &&
+                 !r.includes('team lead') && !r.includes('lead') && !r.includes('tl') && !r.includes('executive')
+        })
+
+        if (managerCandidates.length === 0) {
+          managerCandidates = list.filter(e => {
+            const r = String(e.role || e.designation || '').toLowerCase()
+            return r.includes('manager') || r.includes('mgr')
+          })
+        }
+        if (managerCandidates.length === 0 && combined.length > 0) {
+          managerCandidates = combined.filter(e => {
+            const r = String(e.role || e.designation || '').toLowerCase()
+            return !r.includes('executive')
+          })
+        }
+
+        const managerList = (managerCandidates.length > 0 ? managerCandidates : list).map(m => {
+          const mName = m.name || m.full_name || m.employee_name || 'Sales Manager'
+          const mEmail = String(m.email || '').toLowerCase()
+          const liveData = list.find(r => 
+            (r.employee_id && String(r.employee_id) === String(m.employee_id || m.id)) ||
+            (r.email && String(r.email).toLowerCase() === mEmail) ||
+            (r.employee_name && String(r.employee_name).toLowerCase().includes(mName.toLowerCase()))
+          ) || {}
+          return {
+            ...m,
+            ...liveData,
+            id: m.employee_id || m.id || liveData.id || `MGR_${Math.random().toString(36).substr(2, 4)}`,
+            employee_id: m.employee_id || m.id || liveData.employee_id || `MGR_${Math.random().toString(36).substr(2, 4)}`,
+            name: mName,
+            employee_name: mName,
+            designation: m.designation || m.role || 'Sales Manager',
+            role: m.role || m.designation || 'Sales Manager',
+            latitude: liveData.latitude || m.latitude || null,
+            longitude: liveData.longitude || m.longitude || null,
+            is_online: liveData.is_online !== undefined ? liveData.is_online : true,
+            last_seen_at: liveData.last_seen_at || m.last_seen_at || ''
+          }
+        })
+
+        const seenM = new Set()
+        const uniqueManagers = managerList.filter(m => {
+          const key = String(m.employee_id || m.id || m.name).toLowerCase()
+          if (seenM.has(key)) return false
+          seenM.add(key)
+          return true
+        })
+
+        if (uniqueManagers.length > 0) {
+          list = uniqueManagers
+        } else if (list.length > 0) {
+          list = list.map(e => ({
+            ...e,
+            designation: e.designation || 'Sales Manager',
+            role: e.role || 'Sales Manager'
+          }))
+        }
       }
+
+      setExecutives(list)
+      const onlineCount = list.filter(e => e.is_online).length
+      setStats({ total: list.length, online: onlineCount, offline: list.length - onlineCount })
       setLastUpdated(new Date().toLocaleTimeString())
     } catch (err) {
       console.error('Smart Map fetch error:', err)
@@ -633,8 +714,8 @@ export default function ManagerSmartMap() {
 
   // ─── 1. Load Google Maps CDN with Instant Cache ────────────────────────────
   useEffect(() => {
-    // If already loaded (e.g. hot reload), skip network round-trip entirely
-    if (window.google?.maps) {
+    // If already fully loaded (google.maps.Map constructor must exist), skip network round-trip
+    if (window.google?.maps?.Map && typeof window.google.maps.Map === 'function') {
       initializeHTMLMapMarker()
       setMapLoaded(true)
       return
@@ -668,6 +749,15 @@ export default function ManagerSmartMap() {
       .catch(err => console.error('Failed to load Google Maps:', err))
   }, [])
 
+  // Auto-purge Google Maps billing error modal overlay popups
+  useEffect(() => {
+    purgeGoogleMapsBillingModal()
+    const timer = setInterval(() => {
+      purgeGoogleMapsBillingModal()
+    }, 3000)
+    return () => clearInterval(timer)
+  }, [])
+
 
   useEffect(() => { fetchData() }, [fetchData])
 
@@ -677,7 +767,7 @@ export default function ManagerSmartMap() {
       if (!document.hidden) {
         fetchData(true)
       }
-    }, 3000) // Fast 3-second auto-refresh polling for instant manager map updates
+    }, 2000) // Fast 2-second real-time live map polling
     return () => clearInterval(t)
   }, [autoRefresh, fetchData])
 
@@ -735,7 +825,92 @@ export default function ManagerSmartMap() {
     loadCandidates()
   }, [])
 
-  // ─── Supabase Realtime for entire team locations ───
+  // ─── Supabase Realtime: broadcast channels + postgres_changes fallback ───
+  const broadcastChannelsRef = useRef([])
+
+  // Subscribe to each executive's broadcast channel when executives list updates
+  useEffect(() => {
+    if (!supabase || executives.length === 0) return
+
+    // Clean up previous broadcast subscriptions
+    broadcastChannelsRef.current.forEach(ch => {
+      try { supabase.removeChannel(ch) } catch {}
+    })
+    broadcastChannelsRef.current = []
+
+    // Subscribe to each executive's tracking broadcast channels
+    executives.forEach(ex => {
+      const empId = ex.employee_id || ex.id || ''
+      const empCode = ex.employee_code || ''
+      const empEmail = (ex.email || '').toLowerCase()
+
+      const channelKeys = new Set()
+      if (empId) {
+        channelKeys.add(`tracking_${empId}`)
+        channelKeys.add(`tracking_${empId}_live`)
+      }
+      if (empCode && empCode !== empId) {
+        channelKeys.add(`tracking_${empCode}`)
+        channelKeys.add(`tracking_${empCode}_live`)
+      }
+      // Also subscribe via auth UUID (used by SalesLayout.jsx as fallback channel name)
+      const authUid = ex.auth_user_id || ex.user_id || ''
+      if (authUid && authUid !== empId && authUid !== empCode) {
+        channelKeys.add(`tracking_${authUid}`)
+        channelKeys.add(`tracking_${authUid}_live`)
+      }
+
+      channelKeys.forEach(chName => {
+        try {
+          const ch = supabase
+            .channel(chName)
+            .on('broadcast', { event: 'location' }, (msg) => {
+              const loc = msg.payload
+              if (!loc) return
+              const receivedLat = loc.latitude || loc.lat
+              const receivedLng = loc.longitude || loc.lng
+              if (!receivedLat || !receivedLng) return
+
+              console.log(`[ManagerMap] Broadcast update from ${chName}:`, receivedLat, receivedLng)
+
+              setExecutives(prev => prev.map(e => {
+                const matchId = empId && (String(e.employee_id) === String(empId) || String(e.id) === String(empId))
+                const matchCode = empCode && String(e.employee_code) === String(empCode)
+                const matchEmail = empEmail && String(e.email || '').toLowerCase() === empEmail
+                if (matchId || matchCode || matchEmail) {
+                  return {
+                    ...e,
+                    latitude: receivedLat,
+                    longitude: receivedLng,
+                    accuracy: loc.accuracy || e.accuracy,
+                    is_online: true,
+                    last_seen_at: loc.recorded_at || new Date().toISOString()
+                  }
+                }
+                return e
+              }))
+            })
+            .subscribe((status) => {
+              if (status === 'SUBSCRIBED') {
+                console.log(`[ManagerMap] Subscribed to exec broadcast: ${chName}`)
+              }
+            })
+          broadcastChannelsRef.current.push(ch)
+        } catch (err) {
+          console.warn(`[ManagerMap] Failed to subscribe to ${chName}:`, err)
+        }
+      })
+    })
+
+    return () => {
+      broadcastChannelsRef.current.forEach(ch => {
+        try { supabase.removeChannel(ch) } catch {}
+      })
+      broadcastChannelsRef.current = []
+    }
+  }, [executives.map(e => e.employee_id).join(',')]) // re-subscribe when team changes
+
+  // Also subscribe to postgres_changes on employee_locations as fallback
   useEffect(() => {
     if (!supabase) return
     
@@ -749,9 +924,14 @@ export default function ManagerSmartMap() {
         const updatedLoc = payload.new
         if (!updatedLoc) return
         
+        const updatedEmpId = String(updatedLoc.employee_id || '').trim()
+        if (!updatedEmpId) return
+
         setExecutives(prev => {
           return prev.map(ex => {
-            if (ex.employee_id === updatedLoc.employee_id) {
+            const exId = String(ex.employee_id || '').trim()
+            const exCode = String(ex.employee_code || '').trim()
+            if (exId === updatedEmpId || exCode === updatedEmpId) {
               return {
                 ...ex,
                 latitude: updatedLoc.latitude,
@@ -778,9 +958,44 @@ export default function ManagerSmartMap() {
     }
   }, [supabase])
 
-  // ─── 3. Google Maps init ──────────────────────────────────────────────────
+  // ─── 3. Google Maps init ────────────────────────────────────────────────
   useEffect(() => {
     if (!mapLoaded || !mapContainerRef.current || googleMapRef.current) return
+
+    // Safety guard: ensure Map constructor is truly available (loading=async can expose
+    // a partial window.google.maps stub before Map class is ready)
+    if (!window.google?.maps?.Map || typeof window.google.maps.Map !== 'function') {
+      const retryTimer = setTimeout(() => {
+        if (!mapContainerRef.current || googleMapRef.current) return
+        if (!window.google?.maps?.Map || typeof window.google.maps.Map !== 'function') {
+          console.warn('[SmartMap] Map constructor still not ready, re-triggering load.')
+          setMapLoaded(false)
+          setTimeout(() => setMapLoaded(true), 500)
+          return
+        }
+        try {
+          initializeHTMLMapMarker()
+          if (mapContainerRef.current) mapContainerRef.current.innerHTML = ''
+          const m = new window.google.maps.Map(mapContainerRef.current, {
+            center: { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng },
+            zoom: 13,
+            zoomControl: true,
+            zoomControlOptions: { position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9 },
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: false
+          })
+          googleMapRef.current = m
+        } catch (e) {
+          console.error('[SmartMap] Retry map init failed:', e)
+        }
+      }, 600)
+      return () => clearTimeout(retryTimer)
+    }
+
+    if (mapContainerRef.current) {
+      mapContainerRef.current.innerHTML = ''
+    }
     const map = new window.google.maps.Map(mapContainerRef.current, {
       center: { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng },
       zoom: 13,
@@ -800,6 +1015,9 @@ export default function ManagerSmartMap() {
       teamMarkersMapRef.current.forEach(m => m.setMap(null))
       teamMarkersMapRef.current.clear()
       googleMapRef.current = null
+      if (mapContainerRef.current) {
+        mapContainerRef.current.innerHTML = ''
+      }
     }
   }, [mapLoaded])
 
@@ -1401,8 +1619,13 @@ export default function ManagerSmartMap() {
       const newPt = { lat, lng }
       const pts = trailPointsRef.current
       const lastPt = pts.length > 0 ? pts[pts.length - 1] : null
-      if (!lastPt || haversineDistance(lastPt.lat, lastPt.lng, lat, lng) > 0.001) {
+      if (!lastPt) {
         pts.push(newPt)
+      } else {
+        const dist = haversineDistance(lastPt.lat, lastPt.lng, lat, lng)
+        if (dist > 0.001 && dist <= 5.0) {
+          pts.push(newPt)
+        }
       }
 
       if (pts.length >= 1 && googleMapRef.current && window.google) {
@@ -1419,23 +1642,23 @@ export default function ManagerSmartMap() {
         } else if (gPath.length >= 2) {
           trackRouteRef.current = new window.google.maps.Polyline({
             path: gPath,
-            strokeColor: '#2563eb',
+            strokeColor: '#9333ea', // Primary solid purple line for traveled route
             strokeOpacity: 0.85,
-            strokeWeight: 5,
+            strokeWeight: 6,
             geodesic: true,
             map: googleMapRef.current,
             zIndex: 15
           })
         }
 
-        // Always render purple dashed line for executive traveled trail
+        // Render purple dashed accent line on top of traveled trail
         if (gPath.length >= 2) {
           const purpleSymbol = {
             path: 'M 0,-2 0,2',
             strokeOpacity: 1,
             scale: 2.5,
-            strokeColor: '#9333ea', // Purple dashed line for traveled trail
-            strokeWeight: 4
+            strokeColor: '#c084fc', // Light purple accent dash on top of primary purple line
+            strokeWeight: 3
           }
           if (offRoutePolylineRef.current) {
             offRoutePolylineRef.current.setPath(gPath)
@@ -1706,21 +1929,36 @@ export default function ManagerSmartMap() {
         console.error("[SmartMap] Error rendering live/end markers:", gErr)
       }
 
-      // If executive is offline and has no active tracking session, do not render tracking layers
-      if (!executive.is_online && status !== 'active') {
-        return
-      }
-
-      // ─── Draw traveled trail as dotted polyline + start/end markers ───
+      // ─── Draw traveled trail as bold purple polyline + start/end markers ───
       try {
-        const pathCoords = crumbs.map(c => ({ lat: Number(c.latitude), lng: Number(c.longitude) })).filter(pt => !isNaN(pt.lat) && !isNaN(pt.lng) && pt.lat !== 0 && pt.lng !== 0)
+        const rawPathCoords = crumbs.map(c => ({ lat: Number(c.latitude), lng: Number(c.longitude) })).filter(pt => !isNaN(pt.lat) && !isNaN(pt.lng) && pt.lat !== 0 && pt.lng !== 0)
         
+        // Filter out outlier GPS jumps (> 5 km between consecutive breadcrumbs)
+        const pathCoords = []
+        if (rawPathCoords.length > 0) {
+          pathCoords.push(rawPathCoords[0])
+          for (let i = 1; i < rawPathCoords.length; i++) {
+            const prev = pathCoords[pathCoords.length - 1]
+            const curr = rawPathCoords[i]
+            const dist = haversineDistance(prev.lat, prev.lng, curr.lat, curr.lng)
+            if (dist <= 5.0) {
+              pathCoords.push(curr)
+            }
+          }
+        }
+
         let startLat = session?.start_latitude != null ? Number(session.start_latitude) : (crumbs.length > 0 ? Number(crumbs[0].latitude) : null)
         let startLng = session?.start_longitude != null ? Number(session.start_longitude) : (crumbs.length > 0 ? Number(crumbs[0].longitude) : null)
 
-        if (startLat != null && startLng != null && !isNaN(startLat) && !isNaN(startLng)) {
-          if (pathCoords.length === 0 || haversineDistance(startLat, startLng, pathCoords[0].lat, pathCoords[0].lng) > 0.005) {
+        if (startLat != null && startLng != null && !isNaN(startLat) && !isNaN(startLng) && startLat !== 0 && startLng !== 0) {
+          // ONLY unshift start location if pathCoords is empty OR start position is within 1 km of first breadcrumb
+          if (pathCoords.length === 0) {
             pathCoords.unshift({ lat: startLat, lng: startLng })
+          } else {
+            const distToFirst = haversineDistance(startLat, startLng, pathCoords[0].lat, pathCoords[0].lng)
+            if (distToFirst > 0.005 && distToFirst <= 1.0) {
+              pathCoords.unshift({ lat: startLat, lng: startLng })
+            }
           }
           const startLatLng = new window.google.maps.LatLng(startLat, startLng)
           startMarkerRef.current = new HTMLMapMarker(
@@ -1754,9 +1992,9 @@ export default function ManagerSmartMap() {
         if (pathCoords.length > 1) {
           trackRouteRef.current = new window.google.maps.Polyline({
             path: pathCoords,
-            strokeColor: '#2563eb',
+            strokeColor: '#9333ea', // Primary solid purple line for traveled route
             strokeOpacity: 0.85,
-            strokeWeight: 5,
+            strokeWeight: 6,
             geodesic: true,
             map: map,
             zIndex: 15
@@ -1766,8 +2004,8 @@ export default function ManagerSmartMap() {
             path: 'M 0,-2 0,2',
             strokeOpacity: 1,
             scale: 2.5,
-            strokeColor: '#9333ea', // Purple dashed line for traveled trail
-            strokeWeight: 4
+            strokeColor: '#c084fc', // Light purple accent dash on top
+            strokeWeight: 3
           }
           offRoutePolylineRef.current = new window.google.maps.Polyline({
             path: pathCoords,
@@ -2045,7 +2283,7 @@ export default function ManagerSmartMap() {
       } catch (err) {
         console.warn("Polling error:", err)
       }
-    }, 1000) // Ultra-fast 1-second fallback polling for live tracking
+    }, 5000) // Optimized 5-second fallback polling for live tracking
   }, [_applyNewCrumb, _handleSessionEnded, fetchData])
 
   // Stale detection timer: re-evaluate badge every 30s
@@ -2118,31 +2356,214 @@ export default function ManagerSmartMap() {
   const proxStatus = getProximityStatus()
   const hb = getHeartbeatStatus()
 
+  const isCeo = useMemo(() => {
+    return String(currentUser?.role || currentUser?.designation || '').toLowerCase().includes('ceo') || window.location.pathname.startsWith('/ceo')
+  }, [currentUser])
+
   // ─── 8. Render ────────────────────────────────────────────────────────────
-  const filteredExecutives = executives.filter(ex =>
-    resolveRealName(ex).toLowerCase().includes(searchQuery.toLowerCase())
-  )
+  // Group members (Team Leads for Manager view, Managers for CEO view)
+  const teamGroups = useMemo(() => {
+    if (!executives || executives.length === 0) return []
+
+    if (isCeo) {
+      const mgrMap = new Map()
+      executives.forEach(m => {
+        const title = m.designation || m.role || 'Sales Manager'
+        const key = title.toLowerCase().trim()
+        if (!mgrMap.has(key)) {
+          mgrMap.set(key, {
+            key,
+            title: title.endsWith('s') ? title : `${title}s`,
+            leadName: title,
+            leadEmail: '',
+            leadRole: 'Manager',
+            executives: []
+          })
+        }
+        mgrMap.get(key).executives.push(m)
+      })
+      return Array.from(mgrMap.values()).filter(g => g.executives.length > 0)
+    }
+
+    const groupsMap = new Map()
+
+    // 1. Identify all Team Leads in the payload
+    executives.forEach(ex => {
+      const roleLower = (ex.role || ex.designation || '').toLowerCase()
+      const isTL = roleLower.includes('team lead') || roleLower.includes('tl') || roleLower.includes('lead')
+      if (isTL) {
+        const name = resolveRealName(ex)
+        const key = (ex.email || ex.employee_id || name).toLowerCase().trim()
+        if (!groupsMap.has(key)) {
+          groupsMap.set(key, {
+            key,
+            title: `${name}'s Team`,
+            leadName: name,
+            leadEmail: ex.email || '',
+            leadRole: ex.role || 'Team Lead',
+            executives: []
+          })
+        }
+      }
+    })
+
+    // 2. Classify members under their Team Leads
+    executives.forEach(ex => {
+      const roleLower = (ex.role || ex.designation || '').toLowerCase()
+      const isTL = roleLower.includes('team lead') || roleLower.includes('tl') || roleLower.includes('lead')
+
+      if (isTL) {
+        const name = resolveRealName(ex)
+        const key = (ex.email || ex.employee_id || name).toLowerCase().trim()
+        if (groupsMap.has(key)) {
+          const group = groupsMap.get(key)
+          if (!group.executives.some(e => (e.employee_id || e.id) === (ex.employee_id || ex.id))) {
+            group.executives.push(ex)
+          }
+        }
+        return
+      }
+
+      const repName = (ex.reporting_manager_name || ex.reporting_manager || '').trim()
+      const repEmail = (ex.reporting_manager_email || '').toLowerCase().trim()
+
+      let matchedKey = null
+      for (const [key, group] of groupsMap.entries()) {
+        if ((repEmail && group.leadEmail && repEmail === group.leadEmail.toLowerCase()) ||
+            (repName && group.leadName && repName.toLowerCase().includes(group.leadName.toLowerCase())) ||
+            (repName && group.leadName && group.leadName.toLowerCase().includes(repName.toLowerCase()))) {
+          matchedKey = key
+          break
+        }
+      }
+
+      if (matchedKey && groupsMap.has(matchedKey)) {
+        groupsMap.get(matchedKey).executives.push(ex)
+      } else if (repName && !['not assigned', 'none', 'n/a', ''].includes(repName.toLowerCase())) {
+        const cleanKey = repName.toLowerCase().trim()
+        if (!['jeeva', 'manager', 'admin', 'ceo', 'super admin'].some(ignored => cleanKey.includes(ignored))) {
+          if (!groupsMap.has(cleanKey)) {
+            groupsMap.set(cleanKey, {
+              key: cleanKey,
+              title: repName.endsWith("'s Team") ? repName : `${repName}'s Team`,
+              leadName: repName,
+              leadEmail: repEmail,
+              leadRole: 'Team Lead',
+              executives: []
+            })
+          }
+          groupsMap.get(cleanKey).executives.push(ex)
+        }
+      }
+    })
+
+    return Array.from(groupsMap.values()).filter(g => g.executives.length > 0)
+  }, [executives])
+
+  // Current active team group when paginated or tabbed
+  const currentTeamGroup = useMemo(() => {
+    if (teamGroups.length === 0) return null
+    if (activeTeamFilter === 'all_combined') return null
+    const validIdx = Math.min(Math.max(0, selectedTeamLeadIndex), teamGroups.length - 1)
+    if (activeTeamFilter === 'all' || !activeTeamFilter) {
+      return teamGroups[validIdx] || teamGroups[0]
+    }
+    return teamGroups.find(g => g.key === activeTeamFilter) || teamGroups[validIdx] || teamGroups[0]
+  }, [teamGroups, selectedTeamLeadIndex, activeTeamFilter])
+
+  // Filter executives based on searchQuery AND active Team Lead filter
+  const filteredExecutives = useMemo(() => {
+    let list = executives
+    if (activeTeamFilter !== 'all_combined' && currentTeamGroup) {
+      list = currentTeamGroup.executives || []
+    }
+    if (!searchQuery.trim()) return list
+    const q = searchQuery.toLowerCase()
+    return list.filter(e => {
+      const name = resolveRealName(e).toLowerCase()
+      const email = (e.email || '').toLowerCase()
+      const role = (e.role || e.designation || '').toLowerCase()
+      const code = (e.employee_code || e.employee_id || '').toLowerCase()
+      return name.includes(q) || email.includes(q) || role.includes(q) || code.includes(q)
+    })
+  }, [executives, currentTeamGroup, activeTeamFilter, searchQuery])
+
+  if (activeMapTab === 'own' && !isCeo) {
+    return (
+      <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-slate-900 font-sans">
+        {/* Floating Top Mode Switcher Bar */}
+        <div className="absolute top-3 right-3 sm:right-6 z-[1050] flex items-center gap-1 bg-white/95 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200/90 shadow-2xl">
+          <button
+            onClick={() => setActiveMapTab('team')}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-black text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Users className="w-3.5 h-3.5 text-indigo-600" /> Team Radar
+          </button>
+          <button
+            onClick={() => setActiveMapTab('own')}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-indigo-600 text-white shadow-md transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Compass className="w-3.5 h-3.5 text-amber-200" /> Personal Map
+          </button>
+        </div>
+
+        <SmartClientMap isManagerView={true} />
+      </div>
+    )
+  }
 
   return (
     <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-slate-900 font-sans">
 
       {/* Map container — always in DOM, pre-initialized */}
-      <div ref={mapContainerRef} className="w-full h-full absolute inset-0 z-0" />
+      <div
+        ref={mapContainerRef}
+        className={`w-full h-full absolute inset-0 z-0 ${!selectedExecutive ? 'invisible pointer-events-none' : 'visible'}`}
+      />
 
       {/* ── Card Grid Dashboard (covers map when no executive selected) ── */}
       {!selectedExecutive && (
         <div className="absolute inset-0 z-30 bg-[#f1f5f9] overflow-y-auto">
           <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
-            {/* Header */}
-            <div className="flex items-center justify-between">
+            {/* Header with Mode Toggle */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
               <div>
-                <h1 className="text-xl font-black text-slate-900">Smart Radar Map</h1>
-                <p className="text-xs text-slate-500 font-semibold mt-0.5">Click a card to track live location</p>
+                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <MapPin className="w-5 h-5 text-indigo-600" /> {isCeo ? 'CEO Operations Radar & Manager Live Tracking' : 'Smart Radar Map & Live Tracking'}
+                </h1>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  {isCeo
+                    ? 'Click a Sales Manager card to track live location, territory status & route breadcrumbs'
+                    : 'Click an Executive card to track live location & route breadcrumbs'}
+                </p>
               </div>
-              <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-500 hover:text-blue-600 border border-slate-200 bg-white rounded-lg px-3 py-2 hover:border-blue-300 transition">
-                <RefreshCw className="w-3.5 h-3.5" /> Refresh
-              </button>
+
+              <div className="flex items-center gap-2">
+                {!isCeo && (
+                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 border border-slate-200">
+                    <button
+                      onClick={() => setActiveMapTab('team')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                        activeMapTab === 'team' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Users className="w-3.5 h-3.5 text-indigo-400" /> Team Radar
+                    </button>
+                    <button
+                      onClick={() => setActiveMapTab('own')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                        activeMapTab === 'own' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Compass className="w-3.5 h-3.5 text-amber-200" /> Personal Map
+                    </button>
+                  </div>
+                )}
+                <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 border border-slate-200 bg-white rounded-xl px-3 py-2 hover:border-blue-300 transition shadow-xs">
+                  <RefreshCw className="w-3.5 h-3.5" /> Refresh
+                </button>
+              </div>
             </div>
 
             {/* Stats Row */}
@@ -2192,6 +2613,109 @@ export default function ManagerSmartMap() {
                 </div>
               ))}
             </div>
+
+            {/* Team Lead / Manager Selector & Pagination Control */}
+            {teamGroups.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-3">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pb-2">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-600 to-indigo-700 text-white flex items-center justify-center font-black text-lg shadow-sm">
+                      {isCeo ? '🏛️' : '👑'}
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-base font-black text-slate-900">
+                          {activeTeamFilter === 'all_combined'
+                            ? (isCeo ? 'All Sales Managers' : 'All Assigned Teams')
+                            : (currentTeamGroup?.title || (isCeo ? 'Sales Managers View' : 'Team Lead View'))}
+                        </h3>
+                        <span className="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-black px-2.5 py-0.5 rounded-full">
+                          {filteredExecutives.length} {isCeo ? 'Managers' : 'Executives'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 font-semibold mt-0.5">
+                        {activeTeamFilter === 'all_combined'
+                          ? (isCeo ? 'Displaying live locations across all Sales Managers' : 'Displaying combined list across all team leads')
+                          : (isCeo ? `Category: ${currentTeamGroup?.title || 'Sales Managers'}` : `Reporting to Team Lead: ${currentTeamGroup?.leadName || 'Team Lead'}`)}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Pagination Controls (shown when there are multiple Team Leads) */}
+                  {teamGroups.length > 1 && (
+                    <div className="flex items-center gap-2 bg-slate-100/80 border border-slate-200 rounded-xl p-1">
+                      <button
+                        onClick={() => {
+                          const nextIdx = (selectedTeamLeadIndex - 1 + teamGroups.length) % teamGroups.length
+                          setSelectedTeamLeadIndex(nextIdx)
+                          setActiveTeamFilter(teamGroups[nextIdx].key)
+                        }}
+                        className="p-2 rounded-lg text-slate-700 hover:text-blue-600 hover:bg-white hover:shadow-xs transition flex items-center gap-1 text-xs font-black"
+                        title="Previous Team Lead"
+                      >
+                        <ChevronLeft className="w-4 h-4" /> Prev Team
+                      </button>
+
+                      <div className="text-xs font-black text-slate-800 px-3 py-1 bg-white border border-slate-200 rounded-lg shadow-2xs min-w-[110px] text-center select-none">
+                        {activeTeamFilter === 'all_combined' ? 'All Teams' : `Team ${selectedTeamLeadIndex + 1} of ${teamGroups.length}`}
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          const nextIdx = (selectedTeamLeadIndex + 1) % teamGroups.length
+                          setSelectedTeamLeadIndex(nextIdx)
+                          setActiveTeamFilter(teamGroups[nextIdx].key)
+                        }}
+                        className="p-2 rounded-lg text-slate-700 hover:text-blue-600 hover:bg-white hover:shadow-xs transition flex items-center gap-1 text-xs font-black"
+                        title="Next Team Lead"
+                      >
+                        Next Team <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Quick Team Lead Tabs (shown when there are multiple Team Leads) */}
+                {teamGroups.length > 1 && (
+                  <div className="flex items-center gap-2 overflow-x-auto pt-2 border-t border-slate-100 scrollbar-none">
+                    <button
+                      onClick={() => setActiveTeamFilter('all_combined')}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap border ${
+                        activeTeamFilter === 'all_combined'
+                          ? 'bg-[#0b3c5d] text-white border-[#0b3c5d] shadow-sm scale-102'
+                          : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span>🌐 All Teams Combined</span>
+                      <span className="opacity-80 text-[10px] font-bold">({executives.length})</span>
+                    </button>
+
+                    {teamGroups.map((group, idx) => {
+                      const isActive = activeTeamFilter !== 'all_combined' && (activeTeamFilter === group.key || selectedTeamLeadIndex === idx)
+                      return (
+                        <button
+                          key={group.key}
+                          onClick={() => {
+                            setSelectedTeamLeadIndex(idx)
+                            setActiveTeamFilter(group.key)
+                          }}
+                          className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 whitespace-nowrap border ${
+                            isActive
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-md scale-102'
+                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>👑 {group.title}</span>
+                          <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-full ${isActive ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'}`}>
+                            {group.executives.length}
+                          </span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* Search */}
             <div className="relative">

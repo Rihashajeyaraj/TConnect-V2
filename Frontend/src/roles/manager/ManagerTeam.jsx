@@ -1,5 +1,6 @@
 // Sales Manager Team & Reports Module
 import React, { useState, useEffect } from 'react'
+import { useLocation } from 'react-router-dom'
 import {
   Users,
   Search,
@@ -34,7 +35,8 @@ import {
 } from 'lucide-react'
 import { hrmsAPI, reportAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
-import { formatDate } from '../../utils/dateUtils.js'
+import { formatDate, getLeaveRequestDays } from '../../utils/dateUtils.js'
+import { collectManagerSubordinates } from '../../utils/managerScoping.js'
 
 const DEFAULT_EOD_REPORTS = []
 
@@ -49,6 +51,7 @@ const getStoredUser = () => {
 
 export default function ManagerTeam() {
   const { showToast } = useToast()
+  const location = useLocation()
 
   // View Mode State: 'table' (default) or 'cards'
   const [viewMode, setViewMode] = useState('table')
@@ -56,8 +59,10 @@ export default function ManagerTeam() {
   // Employee Profile Card Modal State
   const [viewingEmpProfile, setViewingEmpProfile] = useState(null)
 
-  // Search & Filter State
+  // Search & Filter State (EOD Reports)
+  const [isTLOnlyMode, setIsTLOnlyMode] = useState(false)
   const [search, setSearch] = useState('')
+  const [selectedTL, setSelectedTL] = useState('All')
   const [selectedSE, setSelectedSE] = useState('All')
   const [selectedStatus, setSelectedStatus] = useState('All')
   const [selectedDateFilter, setSelectedDateFilter] = useState('All') // 'All' | 'Today' | 'Yesterday' | 'This Week' | 'This Month' | 'Custom Date'
@@ -70,6 +75,7 @@ export default function ManagerTeam() {
 
   const mgrUser = getStoredUser()
   const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
+  const isTeamLeadPortal = location.pathname.startsWith('/team-lead') || String(mgrUser.role || '').toLowerCase().includes('lead')
 
   // EOD Reports List & Executives with Local Caching
   const [reports, setReports] = useState(() => {
@@ -99,27 +105,78 @@ export default function ManagerTeam() {
     } catch { return [] }
   })
   const [activeTab, setActiveTab] = useState(null) // 'attendance' | 'permissions' | null
+  const [teamLeads, setTeamLeads] = useState([])
+  const [allSubordinates, setAllSubordinates] = useState([])
   const [attendanceLogs, setAttendanceLogs] = useState(() => {
     try {
       const cached = localStorage.getItem(`tc_cached_team_attendance_logs_${mgrEmail}`)
       return cached ? JSON.parse(cached) : []
     } catch { return [] }
   })
+
+
+  const isManagerUser = React.useCallback((emp) => {
+    if (!emp) return false
+
+    let name = ''
+    let email = ''
+    let role = ''
+    let code = ''
+
+    if (typeof emp === 'string') {
+      name = emp.toLowerCase().trim()
+      email = emp.toLowerCase().trim()
+    } else {
+      name = String(emp.name || emp.full_name || emp.employeeName || emp.executive || emp.executive_name || emp.employee_name || '').toLowerCase().trim()
+      email = String(emp.email || emp.user_email || emp.executiveEmail || emp.executive_email || '').toLowerCase().trim()
+      role = String(emp.role || emp.designation || '').toLowerCase().trim()
+      code = String(emp.employee_code || emp.employee_id || emp.emp_code || emp.user_id || '').toLowerCase().trim()
+    }
+
+    const myEmail = (mgrUser.email || '').toLowerCase().trim()
+    const myName = (mgrUser.name || mgrUser.full_name || '').toLowerCase().trim()
+    const myId = String(mgrUser.id || mgrUser.employee_id || mgrUser.user_id || '').toLowerCase().trim()
+
+    if (myEmail && email && (email === myEmail || email.includes(myEmail))) return true
+    if (myId && code && code === myId) return true
+    if (myName && name && (name === myName || name.includes(myName) || myName.includes(name))) return true
+
+    if (role && (role.includes('manager') || role.includes('admin') || role.includes('ceo') || role.includes('founder') || role.includes('director'))) {
+      return true
+    }
+
+    if (name.includes('manager') || name.includes('admin') || name.includes('ceo') || name.includes('jeeva')) {
+      return true
+    }
+
+    return false
+  }, [mgrUser])
+
+  // Attendance Modal Filters
+  const [attendanceTLFilter, setAttendanceTLFilter] = useState('All')
   const [attendanceExecutiveFilter, setAttendanceExecutiveFilter] = useState('All')
   const [attendanceTypeFilter, setAttendanceTypeFilter] = useState('All')
 
   const teamLogs = React.useMemo(() => {
     const logs = []
+    const pool = allSubordinates.length > 0 ? allSubordinates : executives
     attendanceLogs.forEach(log => {
-      // Find if this log belongs to any assigned executive
-      const exec = executives.find(ex => {
+      const logEmpCode = String(log.employee_id || log.employee_code || log.emp_code || log.user_id || '').toLowerCase().trim();
+      const logEmail = String(log.email || log.user_email || '').toLowerCase().trim();
+      const logName = String(log.name || log.employee_name || '').toLowerCase().trim();
+      const logRole = String(log.role || log.designation || '').toLowerCase().trim();
+
+      // Exclude Managers & Self from team attendance logs
+      if (isManagerUser({ name: logName, email: logEmail, employee_code: logEmpCode, role: logRole })) {
+        return;
+      }
+
+      // Find if this log belongs to any assigned Team Lead or Executive
+      const exec = pool.find(ex => {
+        if (isManagerUser(ex)) return false;
         const targetEmpCode = String(ex.employee_code || ex.employee_id || '').toLowerCase().trim();
         const targetEmail = String(ex.email || '').toLowerCase().trim();
         const targetName = String(ex.name || '').toLowerCase().trim();
-
-        const logEmpCode = String(log.employee_id || log.employee_code || log.emp_code || log.user_id || '').toLowerCase().trim();
-        const logEmail = String(log.email || log.user_email || '').toLowerCase().trim();
-        const logName = String(log.name || log.employee_name || '').toLowerCase().trim();
 
         if (targetEmpCode && logEmpCode && targetEmpCode === logEmpCode) return true;
         if (targetEmail && logEmail && targetEmail === logEmail) return true;
@@ -132,7 +189,7 @@ export default function ManagerTeam() {
         return false;
       });
 
-      if (exec) {
+      if (exec && !isManagerUser(exec)) {
         const checkInAddr = log.check_in_address || log.loginLocation || log.location || '';
         const isClientVisit = checkInAddr.startsWith("CLIENT_VISIT_DESTINATION:::");
         
@@ -140,29 +197,59 @@ export default function ManagerTeam() {
           ...log,
           employeeName: exec.name,
           employeeCode: exec.employee_code,
+          employeeRole: exec.role || 'Executive',
+          reportingManagerName: exec.reporting_manager_name || '',
           attendanceType: isClientVisit ? "Client Visit" : "Office",
           isClientVisit,
         });
       }
     });
     return logs;
-  }, [attendanceLogs, executives]);
+  }, [attendanceLogs, allSubordinates, executives, isManagerUser]);
 
   const filteredTeamLogs = React.useMemo(() => {
     return teamLogs.filter(log => {
       const matchesType = attendanceTypeFilter === 'All' || log.attendanceType === attendanceTypeFilter;
-      let matchesExec = true;
-      if (attendanceExecutiveFilter !== 'All') {
+
+      if (isTLOnlyMode) {
+        const tlNames = teamLeads.map(t => (t.name || '').toLowerCase().trim())
+        const tlEmails = teamLeads.map(t => (t.email || '').toLowerCase().trim())
+        const empName = String(log.employeeName || '').toLowerCase().trim()
+        const empEmail = String(log.email || '').toLowerCase().trim()
+
+        const isBelongingToTL = tlNames.some(tn => tn && (empName.includes(tn) || tn.includes(empName))) || (empEmail && tlEmails.includes(empEmail))
+        if (teamLeads.length > 0 && !isBelongingToTL) return false
+
+        if (attendanceTLFilter !== 'All') {
+          const targetTL = attendanceTLFilter.toLowerCase().trim()
+          const matchesTL = empName.includes(targetTL) || empEmail.includes(targetTL)
+          if (!matchesTL) return false
+        }
+        return matchesType
+      }
+
+      let matchesTL = attendanceTLFilter === 'All'
+      if (!matchesTL) {
+        const targetTL = attendanceTLFilter.toLowerCase().trim()
+        const empName = String(log.employeeName || '').toLowerCase()
+        const empCode = String(log.employeeCode || '').toLowerCase()
+        const repTL = String(log.reportingManagerName || '').toLowerCase()
+        matchesTL = empName.includes(targetTL) || empCode === targetTL || repTL.includes(targetTL)
+      }
+
+      let matchesExec = attendanceExecutiveFilter === 'All'
+      if (!matchesExec) {
         const target = attendanceExecutiveFilter.toLowerCase().trim();
         const empName = String(log.employeeName || '').toLowerCase();
         const empCode = String(log.employeeCode || '').toLowerCase();
         matchesExec = empName.includes(target) || target.includes(empName) || empCode === target;
       }
-      return matchesType && matchesExec;
+      return matchesType && matchesTL && matchesExec;
     });
-  }, [teamLogs, attendanceTypeFilter, attendanceExecutiveFilter]);
+  }, [teamLogs, attendanceTypeFilter, attendanceTLFilter, attendanceExecutiveFilter, isTLOnlyMode, teamLeads]);
 
   // Leave modal filter state
+  const [leaveTLFilter, setLeaveTLFilter] = useState('All')
   const [leaveExecutiveFilter, setLeaveExecutiveFilter] = useState('All')
   const [leaveDateTab, setLeaveDateTab] = useState('All Time')
   const [leaveFromDate, setLeaveFromDate] = useState('')
@@ -192,42 +279,68 @@ export default function ManagerTeam() {
     }
   }
 
-  // Filter leave requests to only include assigned executives and apply Executive & Date filters
+  // Filter leave requests to include assigned Team Leads & Executives
   const filteredLeaveRequests = React.useMemo(() => {
+    const pool = allSubordinates.length > 0 ? allSubordinates : executives
     return teamLeaveRequests.filter((req) => {
       if (!req) return false
       const reqRole = String(req.role || "").toLowerCase();
-      // Exclude manager, admin, ceo requests
-      if (reqRole.includes("manager") || reqRole.includes("admin") || reqRole.includes("ceo")) {
-        return false;
-      }
-
       const reqEmail = String(req.executive_email || req.email || "").toLowerCase().trim();
       const reqCode = String(req.employee_code || req.employee_id || req.emp_code || "").toLowerCase().trim();
       const reqName = String(req.executive_name || req.executive || req.employee_name || "").toLowerCase().trim();
 
-      // Check if matches assigned team
-      const matchesTeam = executives.some((ex) => {
-        const exEmail = String(ex.email || "").toLowerCase().trim();
-        const exCode = String(ex.employee_code || ex.employee_id || ex.emp_code || "").toLowerCase().trim();
-        const exName = String(ex.name || "").toLowerCase().trim();
-        return (
-          (exEmail && reqEmail === exEmail) ||
-          (exCode && reqCode === exCode) ||
-          (exName && (reqName.includes(exName) || exName.includes(reqName)))
-        );
-      });
-      if (!matchesTeam) return false;
+      // Exclude Managers & Self
+      if (isManagerUser({ name: reqName, email: reqEmail, employee_code: reqCode, role: reqRole })) {
+        return false;
+      }
 
-      // Executive Filter check
-      if (leaveExecutiveFilter !== 'All') {
-        const targetVal = leaveExecutiveFilter.toLowerCase().trim();
-        const matchesExec =
-          reqName.includes(targetVal) ||
-          targetVal.includes(reqName) ||
-          reqCode === targetVal ||
-          reqEmail === targetVal;
-        if (!matchesExec) return false;
+      if (isTLOnlyMode) {
+        const tlNames = teamLeads.map(t => (t.name || '').toLowerCase().trim())
+        const tlEmails = teamLeads.map(t => (t.email || '').toLowerCase().trim())
+        const isBelongingToTL = tlNames.some(tn => tn && (reqName.includes(tn) || tn.includes(reqName))) || (reqEmail && tlEmails.includes(reqEmail))
+        if (teamLeads.length > 0 && !isBelongingToTL) return false
+
+        if (leaveTLFilter !== 'All') {
+          const targetTL = leaveTLFilter.toLowerCase().trim()
+          const matchesTL = reqName.includes(targetTL) || reqEmail.includes(targetTL)
+          if (!matchesTL) return false
+        }
+      } else {
+        const matchedSub = pool.find((ex) => {
+          const exEmail = String(ex.email || "").toLowerCase().trim();
+          const exCode = String(ex.employee_code || ex.employee_id || ex.emp_code || "").toLowerCase().trim();
+          const exName = String(ex.name || "").toLowerCase().trim();
+          return (
+            (exEmail && reqEmail === exEmail) ||
+            (exCode && reqCode === exCode) ||
+            (exName && (reqName.includes(exName) || exName.includes(reqName)))
+          );
+        });
+        if (!matchedSub && pool.length > 0) return false;
+
+        // Team Lead Filter check
+        if (leaveTLFilter !== 'All') {
+          const targetTL = leaveTLFilter.toLowerCase().trim();
+          const reqRepTL = String(matchedSub?.reporting_manager_name || req.team_lead_name || "").toLowerCase();
+          const matchesTL =
+            reqName.includes(targetTL) ||
+            targetTL.includes(reqName) ||
+            reqCode === targetTL ||
+            reqEmail === targetTL ||
+            reqRepTL.includes(targetTL);
+          if (!matchesTL) return false;
+        }
+
+        // Executive Filter check
+        if (leaveExecutiveFilter !== 'All') {
+          const targetVal = leaveExecutiveFilter.toLowerCase().trim();
+          const matchesExec =
+            reqName.includes(targetVal) ||
+            targetVal.includes(reqName) ||
+            reqCode === targetVal ||
+            reqEmail === targetVal;
+          if (!matchesExec) return false;
+        }
       }
 
       // Date Filter check
@@ -247,7 +360,7 @@ export default function ManagerTeam() {
 
       return true;
     });
-  }, [teamLeaveRequests, executives, leaveExecutiveFilter, leaveFromDate, leaveToDate])
+  }, [teamLeaveRequests, allSubordinates, executives, leaveTLFilter, leaveExecutiveFilter, leaveFromDate, leaveToDate, isTLOnlyMode, teamLeads, isManagerUser])
 
   useEffect(() => {
     attendanceAPI.getLeaveRequests()
@@ -277,64 +390,96 @@ export default function ManagerTeam() {
 
 
 
-  // Helper to filter ONLY assigned executives under current manager
-  const getAssignedExecutivesList = (rawEmployees) => {
+  // Process employees to extract Team Leads & Sales Executives
+  const processSubordinates = (rawEmployees) => {
     const mgrUser = getStoredUser()
-    const mgrEmail = (mgrUser.email || '').toLowerCase().trim()
-    const mgrId = (mgrUser.id || mgrUser.employee_id || mgrUser.user_id || '').toLowerCase().trim()
-    const mgrName = (mgrUser.name || mgrUser.full_name || '').toLowerCase().trim()
+    const subordinates = collectManagerSubordinates(rawEmployees, mgrUser)
+    const listToProcess = subordinates.length > 0 ? subordinates : rawEmployees
 
-    let assignedSet = new Set()
-    try {
-      const assignMap = JSON.parse(localStorage.getItem('tc_manager_assignments') || '{}')
-      Object.keys(assignMap).forEach((key) => {
-        const kLower = key.toLowerCase().trim()
-        if (kLower === mgrEmail || kLower === mgrId || (mgrName && kLower.includes(mgrName.split(' ')[0]))) {
-          const list = assignMap[key] || []
-          list.forEach((item) => assignedSet.add(String(item).toLowerCase().trim()))
-        }
-      })
-    } catch (e) {}
+    const tlsMap = new Map()
+    const execsMap = new Map()
+    const allSubMap = new Map()
 
-    const assignedOnly = rawEmployees.filter((e) => {
-      const rId = String(e.reporting_manager_id || e.manager_id || '').toLowerCase().trim()
-      const rEmail = String(e.reporting_manager_email || e.manager_email || '').toLowerCase().trim()
-      const rName = String(e.reporting_manager_name || e.manager_name || '').toLowerCase().trim()
-      const eId = String(e.id || e.employee_id || '').toLowerCase().trim()
-      const eEmail = String(e.email || '').toLowerCase().trim()
-      const eCode = String(e.employee_code || e.emp_code || '').toLowerCase().trim()
+    listToProcess.forEach((e, idx) => {
+      if (isManagerUser(e)) return // Skip all managers, admins, CEOs, and Jeeva kumar!
 
-      const isReportingManagerMatch =
-        (rEmail && mgrEmail && (rEmail === mgrEmail || rEmail.includes(mgrEmail))) ||
-        (rId && mgrId && (rId === mgrId || rId.includes(mgrId))) ||
-        (rName && mgrName && (rName.includes(mgrName.split(' ')[0]) || mgrName.includes(rName.split(' ')[0])))
+      const roleLower = String(e.role || e.designation || '').toLowerCase()
+      const nameLower = String(e.name || e.full_name || e.executive || e.employee_name || '').toLowerCase()
+      const isDrTwite = nameLower.includes('twite') || nameLower.includes('dr.') || nameLower.includes('executive')
+      const isTL = (roleLower.includes('team lead') || roleLower.includes('tl') || roleLower.includes('lead')) && !isDrTwite
 
-      const isAssignmentMapMatch = assignedSet.has(eId) || assignedSet.has(eEmail) || assignedSet.has(eCode)
+      const empObj = {
+        id: e.id || e.employee_id || `emp_${idx}`,
+        name: e.name || e.full_name || (isTL ? 'Team Lead' : 'Sales Executive'),
+        email: e.email || '',
+        employee_code: e.employee_code || e.employee_id || e.emp_code || `EMP${String(idx + 101).padStart(3, '0')}`,
+        role: e.role || (isTL ? 'Team Lead' : 'Sales Executive'),
+        reporting_manager_name: e.reporting_manager_name || e.reporting_manager || e.manager_name || '',
+        reporting_manager_email: e.reporting_manager_email || e.manager_email || '',
+      }
 
-      return isReportingManagerMatch || isAssignmentMapMatch
+      allSubMap.set(empObj.email || empObj.name, empObj)
+
+      if (isTL) {
+        tlsMap.set(empObj.email || empObj.name, empObj)
+      } else {
+        execsMap.set(empObj.email || empObj.name, empObj)
+      }
     })
 
-    return assignedOnly
+    // Extract any Team Lead names from raw employees reporting_manager_name
+    rawEmployees.forEach((e) => {
+      const rName = String(e.reporting_manager_name || e.reporting_manager || '').trim()
+      const rEmail = String(e.reporting_manager_email || '').trim()
+      if (rName && !isManagerUser({ name: rName, email: rEmail, role: '' })) {
+        const rLower = rName.toLowerCase()
+        if (
+          rLower !== 'not assigned' &&
+          rLower !== 'none' &&
+          rLower !== 'n/a' &&
+          rLower !== 'null' &&
+          !rLower.includes('twite') &&
+          !rLower.includes('dr.') &&
+          !rLower.includes('executive')
+        ) {
+          if (!tlsMap.has(rEmail || rName)) {
+            const tlObj = {
+              id: `tl_${tlsMap.size}`,
+              name: rName,
+              email: rEmail,
+              employee_code: 'TL',
+              role: 'Team Lead',
+            }
+            tlsMap.set(rEmail || rName, tlObj)
+            allSubMap.set(rEmail || rName, tlObj)
+          }
+        }
+      }
+    })
+
+    const finalTLs = Array.from(tlsMap.values()).filter(t => {
+      if (isManagerUser(t)) return false
+      const tName = (t.name || t.full_name || '').toLowerCase()
+      if (tName.includes('twite') || tName.includes('dr.') || tName.includes('executive')) return false
+      return true
+    })
+    const finalExecs = Array.from(execsMap.values()).filter(e => !isManagerUser(e))
+    const finalAll = Array.from(allSubMap.values()).filter(a => !isManagerUser(a))
+
+    setTeamLeads(finalTLs)
+    setExecutives(finalExecs.length > 0 ? finalExecs : finalAll)
+    setAllSubordinates(finalAll)
+    try {
+      localStorage.setItem(`tc_cached_team_executives_${mgrEmail}`, JSON.stringify(finalAll))
+    } catch (e) {}
   }
 
   useEffect(() => {
     hrmsAPI.getEmployees().then((res) => {
       const raw = Array.isArray(res) ? res : res?.data || []
       if (raw && raw.length > 0) {
-        const execsOnly = getAssignedExecutivesList(raw)
-        if (execsOnly.length > 0) {
-          const mapped = execsOnly.map((e, idx) => ({
-            id: e.id || e.employee_id || `se_${idx}`,
-            name: e.name || e.full_name || 'Sales Executive',
-            email: e.email || '',
-            employee_code: e.employee_code || e.employee_id || e.emp_code || 'EMP000012',
-          }))
-          setExecutives(mapped)
-          try {
-            localStorage.setItem(`tc_cached_team_executives_${mgrEmail}`, JSON.stringify(mapped))
-          } catch (e) {}
-          return
-        }
+        processSubordinates(raw)
+        return
       }
       fallbackLoadExecs()
     }).catch(() => fallbackLoadExecs())
@@ -345,24 +490,51 @@ export default function ManagerTeam() {
       const savedUsersStr = localStorage.getItem('tc_app_users')
       if (savedUsersStr) {
         const parsed = JSON.parse(savedUsersStr)
-        const execsOnly = getAssignedExecutivesList(parsed)
-        if (execsOnly.length > 0) {
-          const mapped = execsOnly.map((u, idx) => ({
-            id: u.id || `se_${idx}`,
-            name: u.name || u.full_name || 'Sales Executive',
-            email: u.email || '',
-            employee_code: u.employee_code || u.employee_id || u.emp_code || 'EMP000012',
-          }))
-          setExecutives(mapped)
-          try {
-            localStorage.setItem(`tc_cached_team_executives_${mgrEmail}`, JSON.stringify(mapped))
-          } catch (e) {}
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          processSubordinates(parsed)
           return
         }
       }
     } catch (e) {}
+
+    setTeamLeads([])
     setExecutives([])
+    setAllSubordinates([])
   }
+
+  // Executives list dynamically filtered by selected Team Lead
+  const availableExecutivesForEod = React.useMemo(() => {
+    if (selectedTL === 'All') return executives
+    const targetTL = selectedTL.toLowerCase().trim()
+    const matched = executives.filter((ex) => {
+      const rName = (ex.reporting_manager_name || '').toLowerCase()
+      const rEmail = (ex.reporting_manager_email || '').toLowerCase()
+      return rName.includes(targetTL) || rEmail.includes(targetTL)
+    })
+    return matched.length > 0 ? matched : executives
+  }, [executives, selectedTL])
+
+  const availableExecutivesForLeave = React.useMemo(() => {
+    if (leaveTLFilter === 'All') return executives
+    const targetTL = leaveTLFilter.toLowerCase().trim()
+    const matched = executives.filter((ex) => {
+      const rName = (ex.reporting_manager_name || '').toLowerCase()
+      const rEmail = (ex.reporting_manager_email || '').toLowerCase()
+      return rName.includes(targetTL) || rEmail.includes(targetTL)
+    })
+    return matched.length > 0 ? matched : executives
+  }, [executives, leaveTLFilter])
+
+  const availableExecutivesForAttendance = React.useMemo(() => {
+    if (attendanceTLFilter === 'All') return executives
+    const targetTL = attendanceTLFilter.toLowerCase().trim()
+    const matched = executives.filter((ex) => {
+      const rName = (ex.reporting_manager_name || '').toLowerCase()
+      const rEmail = (ex.reporting_manager_email || '').toLowerCase()
+      return rName.includes(targetTL) || rEmail.includes(targetTL)
+    })
+    return matched.length > 0 ? matched : executives
+  }, [executives, attendanceTLFilter])
 
   const resolveEmployeeCode = (seName, seEmail, rawCode) => {
     if (rawCode && String(rawCode).trim() !== '' && String(rawCode).trim() !== 'EMP000012') {
@@ -655,29 +827,71 @@ export default function ManagerTeam() {
     }
   }
 
-  // Filtering Calculation
+  // Filtering Calculation for EOD Reports
   const filteredReports = reports.filter((r) => {
     if (!r) return false
 
-    // Check if the report belongs to one of the manager's assigned executives
-    const matchesExecutiveScope = executives.some((exec) => {
-      const execEmail = (exec.email || '').toLowerCase().trim()
-      const execCode = (exec.employee_code || '').toLowerCase().trim()
-      const execName = (exec.name || '').toLowerCase().trim()
+    const repName = (r.executive || r.executive_name || '').toLowerCase().trim()
+    const repEmail = (r.executiveEmail || r.executive_email || '').toLowerCase().trim()
+    const repCode = (r.employee_code || r.employee_id || '').toLowerCase().trim()
+    const repRole = (r.designation || r.role || '').toLowerCase().trim()
 
-      const repEmail = (r.executiveEmail || r.executive_email || '').toLowerCase().trim()
-      const repCode = (r.employee_code || r.employee_id || '').toLowerCase().trim()
-      const repName = (r.executive || r.executive_name || '').toLowerCase().trim()
-
-      return (
-        (execEmail && repEmail === execEmail) ||
-        (execCode && repCode === execCode) ||
-        (execName && repName.includes(execName))
-      )
-    })
-
-    if (executives.length > 0 && !matchesExecutiveScope) {
+    // Exclude Managers & Self
+    if (isManagerUser({ name: repName, email: repEmail, employee_code: repCode, role: repRole })) {
       return false
+    }
+
+    if (isTLOnlyMode) {
+      const tlNames = teamLeads.map(t => (t.name || '').toLowerCase().trim())
+      const tlEmails = teamLeads.map(t => (t.email || '').toLowerCase().trim())
+      const isBelongingToTL = tlNames.some(tn => tn && (repName.includes(tn) || tn.includes(repName))) || (repEmail && tlEmails.includes(repEmail))
+      if (teamLeads.length > 0 && !isBelongingToTL) return false
+
+      if (selectedTL !== 'All') {
+        const targetTL = selectedTL.toLowerCase().trim()
+        const matchesTL = repName.includes(targetTL) || repEmail.includes(targetTL)
+        if (!matchesTL) return false
+      }
+    } else {
+      const pool = allSubordinates.length > 0 ? allSubordinates : executives
+      const matchesExecutiveScope = pool.some((exec) => {
+        const execEmail = (exec.email || '').toLowerCase().trim()
+        const execCode = (exec.employee_code || '').toLowerCase().trim()
+        const execName = (exec.name || '').toLowerCase().trim()
+
+        const repEmail = (r.executiveEmail || r.executive_email || '').toLowerCase().trim()
+        const repCode = (r.employee_code || r.employee_id || '').toLowerCase().trim()
+        const repName = (r.executive || r.executive_name || '').toLowerCase().trim()
+
+        return (
+          (execEmail && repEmail === execEmail) ||
+          (execCode && repCode === execCode) ||
+          (execName && (repName.includes(execName) || execName.includes(repName)))
+        )
+      })
+
+      if (pool.length > 0 && !matchesExecutiveScope) {
+        return false
+      }
+
+      // Team Lead filter
+      if (selectedTL !== 'All') {
+        const targetTL = selectedTL.toLowerCase().trim()
+        const repName = (r.executive || r.executive_name || '').toLowerCase().trim()
+        const repEmail = (r.executiveEmail || r.executive_email || '').toLowerCase().trim()
+        const repCode = (r.employee_code || r.employee_id || '').toLowerCase().trim()
+
+        const matchedSub = pool.find(
+          (ex) =>
+            (ex.email && ex.email.toLowerCase() === repEmail) ||
+            (ex.name && ex.name.toLowerCase() === repName) ||
+            (ex.employee_code && ex.employee_code.toLowerCase() === repCode)
+        )
+
+        const subTLName = (matchedSub?.reporting_manager_name || '').toLowerCase()
+        const matchesTL = repName.includes(targetTL) || repEmail.includes(targetTL) || subTLName.includes(targetTL)
+        if (!matchesTL) return false
+      }
     }
 
     const q = search.toLowerCase().trim()
@@ -726,71 +940,205 @@ export default function ManagerTeam() {
     return matchesSearch && matchesStatus && matchesSE && matchesDate
   })
 
+  // Team Leader specific counts for Row 2 stat cards
+  const tlReportsCount = React.useMemo(() => {
+    if (teamLeads.length === 0) return 0
+    const tlNames = new Set(teamLeads.map(t => (t.name || '').toLowerCase().trim()))
+    const tlEmails = new Set(teamLeads.map(t => (t.email || '').toLowerCase().trim()))
+    return reports.filter(r => {
+      const repName = (r.executive || r.executive_name || '').toLowerCase().trim()
+      const repEmail = (r.executiveEmail || r.executive_email || '').toLowerCase().trim()
+      return tlNames.has(repName) || (repEmail && tlEmails.has(repEmail))
+    }).length
+  }, [reports, teamLeads])
+
+  const tlPendingLeavesCount = React.useMemo(() => {
+    if (teamLeads.length === 0) return 0
+    const tlNames = new Set(teamLeads.map(t => (t.name || '').toLowerCase().trim()))
+    const tlEmails = new Set(teamLeads.map(t => (t.email || '').toLowerCase().trim()))
+    return teamLeaveRequests.filter(req => {
+      if (!req || req.status !== 'Pending') return false
+      const reqName = (req.executive_name || req.executive || req.employee_name || '').toLowerCase().trim()
+      const reqEmail = (req.executive_email || req.email || '').toLowerCase().trim()
+      return tlNames.has(reqName) || (reqEmail && tlEmails.has(reqEmail))
+    }).length
+  }, [teamLeaveRequests, teamLeads])
+
   return (
     <div className="space-y-6 text-slate-900 font-sans pb-12">
-      {/* ── THREE COMPACT KPI CARDS: EOD, LEAVE, ATTENDANCE ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl">
-        {/* CARD 1: Attendance - YELLOW */}
-        <div
-          onClick={() => setActiveTab('attendance')}
-          className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-amber-50 to-orange-50/50 text-amber-950 border-amber-200 hover:border-amber-400 hover:bg-amber-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
-        >
-          <div className="space-y-0.5">
-            <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800/80">
-              EOD Attendance Reports
-            </p>
-            <h3 className="text-xl font-bold text-amber-950">{filteredReports.length} Reports</h3>
-            <p className="text-[10px] font-normal text-amber-600/90">
-              Click to view EOD attendance logs
-            </p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-amber-100 text-amber-700 border border-amber-300/60">
-            <FileText className="w-5 h-5" />
-          </div>
+      {/* ── ROW 1: SALES EXECUTIVES OVERVIEW CARDS ── */}
+      <div className="space-y-2">
+        <div className="flex items-center gap-2 text-slate-500 font-extrabold text-[11px] uppercase tracking-wider pl-1">
+          <Users className="w-3.5 h-3.5 text-slate-400" /> Sales Executives Overview
         </div>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl">
+          {/* CARD 1: Attendance - YELLOW */}
+          <div
+            onClick={() => {
+              setIsTLOnlyMode(false)
+              setSelectedTL('All')
+              setSelectedSE('All')
+              setActiveTab('attendance')
+            }}
+            className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-amber-50 to-orange-50/50 text-amber-950 border-amber-200 hover:border-amber-400 hover:bg-amber-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+          >
+            <div className="space-y-0.5">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-amber-800/80">
+                EOD Attendance Reports
+              </p>
+              <h3 className="text-xl font-bold text-amber-950">{filteredReports.length} Reports</h3>
+              <p className="text-[10px] font-normal text-amber-600/90">
+                Click to view EOD attendance logs
+              </p>
+            </div>
+            <div className="p-2.5 rounded-xl bg-amber-100 text-amber-700 border border-amber-300/60">
+              <FileText className="w-5 h-5" />
+            </div>
+          </div>
 
-        {/* CARD 2: Permissions - BLUE */}
-        <div
-          onClick={() => setActiveTab('permissions')}
-          className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-blue-50 to-indigo-50/50 text-blue-950 border-blue-200 hover:border-blue-400 hover:bg-blue-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
-        >
-          <div className="space-y-0.5">
-            <p className="text-[10px] font-black uppercase tracking-wider text-blue-800/85">
-              Leave & Permissions
-            </p>
-            <h3 className="text-xl font-black text-blue-950">
-              {filteredLeaveRequests.filter(r => r.status === 'Pending').length} Pending
-            </h3>
-            <p className="text-[10px] font-semibold text-blue-600/90">
-              Click to view team leave requests
-            </p>
+          {/* CARD 2: Permissions - BLUE */}
+          <div
+            onClick={() => {
+              setIsTLOnlyMode(false)
+              setLeaveTLFilter('All')
+              setLeaveExecutiveFilter('All')
+              setActiveTab('permissions')
+            }}
+            className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-blue-50 to-indigo-50/50 text-blue-950 border-blue-200 hover:border-blue-400 hover:bg-blue-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+          >
+            <div className="space-y-0.5">
+              <p className="text-[10px] font-black uppercase tracking-wider text-blue-800/85">
+                Leave & Permissions
+              </p>
+              <h3 className="text-xl font-black text-blue-950">
+                {filteredLeaveRequests.filter(r => r.status === 'Pending').length} Pending
+              </h3>
+              <p className="text-[10px] font-semibold text-blue-600/90">
+                Click to view team leave requests
+              </p>
+            </div>
+            <div className="p-2.5 rounded-xl bg-blue-100 text-blue-700 border border-blue-300/60">
+              <Calendar className="w-5 h-5" />
+            </div>
           </div>
-          <div className="p-2.5 rounded-xl bg-blue-100 text-blue-700 border border-blue-300/60">
-            <Calendar className="w-5 h-5" />
-          </div>
-        </div>
 
-        {/* CARD 3: Team Attendance - PURPLE */}
-        <div
-          onClick={() => setActiveTab('team_attendance')}
-          className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-purple-50 to-fuchsia-50/50 text-purple-950 border-purple-200 hover:border-purple-400 hover:bg-purple-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
-        >
-          <div className="space-y-0.5">
-            <p className="text-[10px] font-black uppercase tracking-wider text-purple-800/85">
-              Team Attendance
-            </p>
-            <h3 className="text-xl font-black text-purple-950">
-              {executives.length} Executives
-            </h3>
-            <p className="text-[10px] font-semibold text-purple-600/90">
-              Click to view login/logout history
-            </p>
-          </div>
-          <div className="p-2.5 rounded-xl bg-purple-100 text-purple-700 border border-purple-300/60">
-            <Users className="w-5 h-5" />
+          {/* CARD 3: Team Attendance - PURPLE */}
+          <div
+            onClick={() => {
+              setIsTLOnlyMode(false)
+              setAttendanceTLFilter('All')
+              setAttendanceExecutiveFilter('All')
+              setActiveTab('team_attendance')
+            }}
+            className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-purple-50 to-fuchsia-50/50 text-purple-950 border-purple-200 hover:border-purple-400 hover:bg-purple-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+          >
+            <div className="space-y-0.5">
+              <p className="text-[10px] font-black uppercase tracking-wider text-purple-800/85">
+                Team Attendance
+              </p>
+              <h3 className="text-xl font-black text-purple-950">
+                {executives.length} Executives
+              </h3>
+              <p className="text-[10px] font-semibold text-purple-600/90">
+                Click to view login/logout history
+              </p>
+            </div>
+            <div className="p-2.5 rounded-xl bg-purple-100 text-purple-700 border border-purple-300/60">
+              <Users className="w-5 h-5" />
+            </div>
           </div>
         </div>
       </div>
+
+      {/* ── ROW 2: TEAM LEADERS CARDS WITH HEADING (Sales Manager Portal Only) ── */}
+      {!isTeamLeadPortal && (
+        <div className="space-y-2 pt-2">
+          <div className="flex items-center gap-2 text-slate-900 font-extrabold text-sm tracking-tight pl-1">
+            <Award className="w-4 h-4 text-amber-600" /> Team Leaders
+            <span className="text-[10px] font-extrabold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full border border-amber-200 shadow-2xs">
+              {teamLeads.length} Assigned Leads
+            </span>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 max-w-4xl">
+            {/* CARD 1: TEAM LEAD EOD REPORTS - EMERALD */}
+            <div
+              onClick={() => {
+                setIsTLOnlyMode(true)
+                setSelectedTL('All')
+                setSelectedSE('All')
+                setActiveTab('attendance')
+              }}
+              className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-emerald-50 to-teal-50/50 text-emerald-950 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+            >
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-bold uppercase tracking-wider text-emerald-800/80">
+                  Team Lead EOD Reports
+                </p>
+                <h3 className="text-xl font-bold text-emerald-950">{tlReportsCount} Reports</h3>
+                <p className="text-[10px] font-normal text-emerald-600/90">
+                  Click to view Team Lead EOD logs
+                </p>
+              </div>
+              <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-700 border border-emerald-300/60">
+                <FileText className="w-5 h-5" />
+              </div>
+            </div>
+
+            {/* CARD 2: TEAM LEAD LEAVE & PERMISSIONS - ROSE */}
+            <div
+              onClick={() => {
+                setIsTLOnlyMode(true)
+                setLeaveTLFilter('All')
+                setLeaveExecutiveFilter('All')
+                setActiveTab('permissions')
+              }}
+              className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-rose-50 to-pink-50/50 text-rose-950 border-rose-200 hover:border-rose-400 hover:bg-rose-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+            >
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-black uppercase tracking-wider text-rose-800/85">
+                  Team Lead Leaves
+                </p>
+                <h3 className="text-xl font-black text-rose-950">
+                  {tlPendingLeavesCount} Pending
+                </h3>
+                <p className="text-[10px] font-semibold text-rose-600/90">
+                  Click to view Team Lead leave requests
+                </p>
+              </div>
+              <div className="p-2.5 rounded-xl bg-rose-100 text-rose-700 border border-rose-300/60">
+                <Calendar className="w-5 h-5" />
+              </div>
+            </div>
+
+            {/* CARD 3: TEAM LEAD ATTENDANCE - SKY */}
+            <div
+              onClick={() => {
+                setIsTLOnlyMode(true)
+                setAttendanceTLFilter('All')
+                setAttendanceExecutiveFilter('All')
+                setActiveTab('team_attendance')
+              }}
+              className="mgr-card p-4 rounded-2xl border bg-gradient-to-br from-sky-50 to-cyan-50/50 text-sky-950 border-sky-200 hover:border-sky-400 hover:bg-sky-100/30 transition cursor-pointer flex items-center justify-between shadow-xs active:scale-[0.98]"
+            >
+              <div className="space-y-0.5">
+                <p className="text-[10px] font-black uppercase tracking-wider text-sky-800/85">
+                  Team Lead Attendance
+                </p>
+                <h3 className="text-xl font-black text-sky-950">
+                  {teamLeads.length} Team Leads
+                </h3>
+                <p className="text-[10px] font-semibold text-sky-600/90">
+                  Click to view Team Lead login/logout history
+                </p>
+              </div>
+              <div className="p-2.5 rounded-xl bg-sky-100 text-sky-700 border border-sky-300/60">
+                <UserCheck className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── ATTENDANCE DETAILS MODAL POPUP ───────────────────────────────────── */}
       {activeTab === 'attendance' && (
@@ -800,10 +1148,10 @@ export default function ManagerTeam() {
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div>
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <Users className="w-5 h-5 text-mgr-primary-600" /> Team EOD Attendance Reports
+                  <Users className="w-5 h-5 text-mgr-primary-600" /> {isTLOnlyMode ? "Team Lead EOD Attendance Reports" : "Team EOD Attendance Reports"}
                 </h2>
                 <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                  View check-in/out times, EOD summaries, and submission history.
+                  {isTLOnlyMode ? "View check-in/out times, EOD summaries, and submission history for Team Leaders." : "View check-in/out times, EOD summaries, and submission history."}
                 </p>
               </div>
               <button
@@ -814,25 +1162,50 @@ export default function ManagerTeam() {
               </button>
             </div>
 
-
-
             {/* Filter Panel */}
             <div className="bg-white border border-slate-200 rounded-3xl p-4 space-y-4 shadow-xs">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex flex-wrap items-center gap-2 bg-slate-50 border-slate-200 rounded-2xl px-3.5 py-1.5 text-xs font-bold text-slate-700">
-                  <span className="text-slate-500">Sales Executive:</span>
-                  <select
-                    value={selectedSE}
-                    onChange={(e) => setSelectedSE(e.target.value)}
-                    className="mgr-card bg-transparent text-slate-900 focus:outline-none cursor-pointer font-black text-xs"
-                  >
-                    <option value="All">All Executives (Combined Sum)</option>
-                    {executives.map((ex) => (
-                      <option key={ex.id || ex.email} value={ex.name}>
-                        {ex.name} ({ex.employee_code || 'EMP'})
-                      </option>
-                    ))}
-                  </select>
+                <div className="flex flex-wrap items-center gap-3">
+                {/* Team Lead Filter (Manager Portal Only) */}
+                {!isTeamLeadPortal && (
+                  <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3.5 py-1.5 text-xs font-bold text-slate-700">
+                    <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider">Team Lead:</span>
+                    <select
+                      value={selectedTL}
+                      onChange={(e) => {
+                        setSelectedTL(e.target.value)
+                        setSelectedSE('All')
+                      }}
+                      className="mgr-card bg-transparent text-slate-900 focus:outline-none cursor-pointer font-black text-xs"
+                    >
+                      <option value="All">All Team Leads</option>
+                      {teamLeads.map((tl) => (
+                        <option key={tl.id || tl.email} value={tl.name}>
+                          👤 {tl.name} ({tl.employee_code || 'TL'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                  {/* Sales Executive Filter - ONLY IF NOT TL mode */}
+                  {!isTLOnlyMode && (
+                    <div className="flex flex-wrap items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl px-3.5 py-1.5 text-xs font-bold text-slate-700">
+                      <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider">Executive:</span>
+                      <select
+                        value={selectedSE}
+                        onChange={(e) => setSelectedSE(e.target.value)}
+                        className="mgr-card bg-transparent text-slate-900 focus:outline-none cursor-pointer font-black text-xs"
+                      >
+                        <option value="All">All Executives (Combined Sum)</option>
+                        {availableExecutivesForEod.map((ex) => (
+                          <option key={ex.id || ex.email} value={ex.name}>
+                            {ex.name} ({ex.employee_code || 'EMP'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2">
@@ -987,10 +1360,10 @@ export default function ManagerTeam() {
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div>
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-mgr-primary-700" /> Team Leave & Permission Requests
+                  <Calendar className="w-5 h-5 text-mgr-primary-700" /> {isTLOnlyMode ? "Team Lead Leave & Permission Requests" : "Team Leave & Permission Requests"}
                 </h2>
                 <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                  Approve or Reject Leave & Permission requests submitted by assigned Sales Executives.
+                  {isTLOnlyMode ? "Approve or Reject Leave & Permission requests submitted by Team Leaders." : "Approve or Reject Leave & Permission requests submitted by assigned Sales Executives."}
                 </p>
               </div>
               <button
@@ -1005,22 +1378,46 @@ export default function ManagerTeam() {
               {/* Filter Strip */}
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
                 <div className="flex flex-wrap items-center gap-3">
-                  {/* Executive Filter Dropdown */}
-                  <div className="flex items-center gap-2 text-xs">
-                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Executive:</span>
-                    <select
-                      value={leaveExecutiveFilter}
-                      onChange={(e) => setLeaveExecutiveFilter(e.target.value)}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-xl px-3 py-1.5 text-xs border border-slate-200 transition"
-                    >
-                      <option value="All">All Executives</option>
-                      {executives.map((ex) => (
-                        <option key={ex.id || ex.employee_code} value={ex.name || ex.full_name}>
-                          {ex.name || ex.full_name} ({ex.employee_code || ex.employee_id})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
+                  {/* Team Lead Filter (Manager Portal Only) */}
+                  {!isTeamLeadPortal && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Team Lead:</span>
+                      <select
+                        value={leaveTLFilter}
+                        onChange={(e) => {
+                          setLeaveTLFilter(e.target.value)
+                          setLeaveExecutiveFilter('All')
+                        }}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-xl px-3 py-1.5 text-xs border border-slate-200 transition"
+                      >
+                        <option value="All">All Team Leads</option>
+                        {teamLeads.map((tl) => (
+                          <option key={tl.id || tl.employee_code} value={tl.name || tl.full_name}>
+                            👤 {tl.name || tl.full_name} ({tl.employee_code || 'TL'})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+
+                  {/* Executive Filter Dropdown - ONLY IF NOT TL mode */}
+                  {!isTLOnlyMode && (
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Executive:</span>
+                      <select
+                        value={leaveExecutiveFilter}
+                        onChange={(e) => setLeaveExecutiveFilter(e.target.value)}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-xl px-3 py-1.5 text-xs border border-slate-200 transition"
+                      >
+                        <option value="All">All Executives</option>
+                        {availableExecutivesForLeave.map((ex) => (
+                          <option key={ex.id || ex.employee_code} value={ex.name || ex.full_name}>
+                            {ex.name || ex.full_name} ({ex.employee_code || ex.employee_id})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
 
                   {/* Date Filter Pills */}
                   <div className="flex items-center gap-1.5 flex-wrap">
@@ -1111,9 +1508,17 @@ export default function ManagerTeam() {
                       </tr>
                     ) : (
                       filteredLeaveRequests.map((req, idx) => {
-                        const rawDate = req.start_date || req.leave_date || req.date || req.from_date || (req.created_at ? String(req.created_at).split('T')[0] : '2026-09-02');
-                        const reqDate = formatDate(rawDate);
-                        const endDateStr = req.end_date && req.end_date !== req.start_date ? ` to ${req.end_date}` : "";
+                        const fromDateStr = req.from_date || req.start_date || req.leave_date || req.date;
+                        const toDateStr = req.to_date || req.end_date || fromDateStr;
+                        const formattedFrom = formatDate(fromDateStr);
+                        const formattedTo = formatDate(toDateStr);
+                        const dateDisplay = (formattedFrom && formattedTo && formattedFrom !== formattedTo) ? `${formattedFrom} to ${formattedTo}` : formattedFrom;
+                        const daysCount = getLeaveRequestDays(req);
+                        const durationLabel = req.leave_type?.includes("Half")
+                          ? "Half Day (0.5 Day)"
+                          : req.leave_type?.includes("Permission")
+                            ? `Short Permission (${req.duration || "2 Hours"})`
+                            : `Full Day (${daysCount} ${daysCount === 1 ? 'Day' : 'Days'})`;
                         return (
                           <tr key={req.id || idx} className="hover:bg-mgr-primary-50/40 transition-colors">
                             <td 
@@ -1137,12 +1542,12 @@ export default function ManagerTeam() {
                             </td>
                             {/* Separate Date Column */}
                             <td className="px-4 py-3.5 text-slate-900 font-mono font-bold">
-                              🗓️ {reqDate}{endDateStr}
+                              🗓️ {dateDisplay}
                             </td>
                             {/* Separate Duration / Slot Column */}
                             <td className="px-4 py-3.5 text-slate-700">
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 font-extrabold border border-slate-200">
-                                ⏱ {req.duration || req.slot || "1 Day"}
+                                ⏱ {durationLabel}
                               </span>
                             </td>
                             <td className="px-4 py-3.5 max-w-[220px]">
@@ -1366,10 +1771,10 @@ export default function ManagerTeam() {
             <div className="flex items-center justify-between pb-3 border-b border-slate-200">
               <div>
                 <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <Users className="w-5 h-5 text-mgr-secondary-600" /> Team Attendance Overview
+                  <Users className="w-5 h-5 text-mgr-secondary-600" /> {isTLOnlyMode ? "Team Lead Attendance Overview" : "Team Attendance Overview"}
                 </h2>
                 <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                  View comprehensive login and logout history for all your assigned executives.
+                  {isTLOnlyMode ? "View comprehensive login and logout history for all your Team Leaders." : "View comprehensive login and logout history for all your assigned executives."}
                 </p>
               </div>
               <button
@@ -1396,21 +1801,47 @@ export default function ManagerTeam() {
                 ))}
               </div>
 
-              {/* Executive Dropdown Filter */}
-              <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs font-bold text-slate-700 min-w-[250px]">
-                <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider whitespace-nowrap">Executive:</span>
-                <select
-                  value={attendanceExecutiveFilter}
-                  onChange={(e) => setAttendanceExecutiveFilter(e.target.value)}
-                  className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-black text-xs w-full"
-                >
-                  <option value="All">All Executives</option>
-                  {executives.map((ex) => (
-                    <option key={ex.id || ex.employee_code || ex.email} value={ex.name || ex.full_name}>
-                      {ex.name || ex.full_name} ({ex.employee_code || ex.employee_id || 'EMP'})
-                    </option>
-                  ))}
-                </select>
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Team Lead Dropdown Filter (Manager Portal Only) */}
+                {!isTeamLeadPortal && (
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs font-bold text-slate-700 min-w-[200px]">
+                    <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider whitespace-nowrap">Team Lead:</span>
+                    <select
+                      value={attendanceTLFilter}
+                      onChange={(e) => {
+                        setAttendanceTLFilter(e.target.value)
+                        setAttendanceExecutiveFilter('All')
+                      }}
+                      className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-black text-xs w-full"
+                    >
+                      <option value="All">All Team Leads</option>
+                      {teamLeads.map((tl) => (
+                        <option key={tl.id || tl.employee_code || tl.email} value={tl.name || tl.full_name}>
+                          👤 {tl.name || tl.full_name} ({tl.employee_code || 'TL'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Executive Dropdown Filter - ONLY IF NOT TL mode */}
+                {!isTLOnlyMode && (
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs font-bold text-slate-700 min-w-[200px]">
+                    <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider whitespace-nowrap">Executive:</span>
+                    <select
+                      value={attendanceExecutiveFilter}
+                      onChange={(e) => setAttendanceExecutiveFilter(e.target.value)}
+                      className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-black text-xs w-full"
+                    >
+                      <option value="All">All Executives</option>
+                      {availableExecutivesForAttendance.map((ex) => (
+                        <option key={ex.id || ex.employee_code || ex.email} value={ex.name || ex.full_name}>
+                          {ex.name || ex.full_name} ({ex.employee_code || ex.employee_id || 'EMP'})
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 

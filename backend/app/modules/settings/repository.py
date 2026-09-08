@@ -396,7 +396,7 @@ class SettingsRepository:
             try:
                 res = self.client.schema("organization").table(schema_tbl).select("*").limit(1).execute()
                 if res.data and len(res.data) > 0:
-                    profile_data = res.data[0].copy()
+                    profile_data = {k: v for k, v in res.data[0].items() if v is not None}
                     # Remove JSONB branches/products to avoid stale mappings
                     profile_data.pop("branches", None)
                     profile_data.pop("products", None)

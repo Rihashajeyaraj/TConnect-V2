@@ -23,6 +23,10 @@ import {
   HeartPulse,
   Code2,
   CreditCard,
+  ChevronLeft,
+  ChevronRight,
+  Building2,
+  Eye,
 } from 'lucide-react'
 import { hrmsAPI, attendanceAPI, userAPI, reportAPI } from '../../services/api.js'
 import { exportToCSV } from '../../utils/exportUtils.js'
@@ -235,10 +239,17 @@ const EmployeeProfileModal = ({ employee, onClose }) => {
   );
 };
 
+const DEFAULT_CEO_TABS_LIST = [
+  { id: 'employees', label: 'Employee Directory', icon: Users },
+  { id: 'daily_reports', label: 'Daily Report', icon: FileText },
+  { id: 'leaves', label: 'Leave Management', icon: Calendar },
+];
+
 function CeoHrms({ initialTab = 'employees' }) {
   const { showToast } = useToast()
   const [searchParams, setSearchParams] = useSearchParams()
-  const activeTab = searchParams.get('tab') || initialTab // 'employees' | 'leaves' | 'permissions' | 'attendance' | 'approval_history'
+  const rawActiveTab = searchParams.get('tab') || initialTab // 'employees' | 'daily_reports' | 'leaves'
+  const activeTab = DEFAULT_CEO_TABS_LIST.some(t => t.id === rawActiveTab) ? rawActiveTab : 'employees'
   const setActiveTab = (val) => setSearchParams({ tab: val })
 
   const [attendanceFilter, setAttendanceFilter] = useState('Today')
@@ -254,14 +265,7 @@ function CeoHrms({ initialTab = 'employees' }) {
   })();
   const userEmail = (user.email || '').toLowerCase().trim();
 
-  const DEFAULT_CEO_TABS = [
-    { id: 'employees', label: 'Employees Directory', icon: Users },
-    { id: 'daily_reports', label: 'Management Daily Reports', icon: FileText },
-    { id: 'leaves', label: 'Leave Requests', icon: Calendar },
-    { id: 'permissions', label: 'Permission Requests', icon: Clock },
-    { id: 'attendance', label: 'Attendance Summary', icon: UserCheck },
-    { id: 'approval_history', label: 'Clearance History', icon: History },
-  ];
+  const DEFAULT_CEO_TABS = DEFAULT_CEO_TABS_LIST;
 
   const [hrmsTabs, setHrmsTabs] = useState(() => {
     const saved = localStorage.getItem(`tc_hrms_order_ceo_${userEmail}`);
@@ -349,8 +353,10 @@ function CeoHrms({ initialTab = 'employees' }) {
   const [selectedEmployee, setSelectedEmployee] = useState(null)
 
   // Filtering states
+  const [selectedDepartment, setSelectedDepartment] = useState('All')
   const [roleFilter, setRoleFilter] = useState('All') // 'All' | 'Admin' | 'Sales Manager' | 'Sales Executive'
   const [datePeriodFilter, setDatePeriodFilter] = useState('Today') // 'Today' | 'This Month' | 'Custom'
+  const [employeePage, setEmployeePage] = useState(1)
   const [rawAttendanceLogs, setRawAttendanceLogs] = useState([])
 
   // 1. Employees Directory State
@@ -445,7 +451,9 @@ function CeoHrms({ initialTab = 'employees' }) {
     ]
   })
 
+  const [dailyReportDeptFilter, setDailyReportDeptFilter] = useState('All')
   const [dailyReportRoleFilter, setDailyReportRoleFilter] = useState('All')
+  const [dailyReportDateFilter, setDailyReportDateFilter] = useState('')
   const [dailyReportStatusFilter, setDailyReportStatusFilter] = useState('All')
   const [selectedReportForReview, setSelectedReportForReview] = useState(null)
   const [reportReviewModalOpen, setReportReviewModalOpen] = useState(false)
@@ -799,8 +807,95 @@ function CeoHrms({ initialTab = 'employees' }) {
     }
   })
 
-  // Filter by Role & Search Query
+  // Resolve reporting manager & team lead for an employee
+  const resolveEmpSuperiors = (emp) => {
+    if (!emp) return { manager: 'Unassigned', teamLead: 'Unassigned' }
+
+    let mgr = emp.reporting_manager_name || emp.reporting_manager || emp.manager_name || emp.sales_manager || emp.manager || ''
+    let tl = emp.reporting_team_lead_name || emp.reporting_team_lead || emp.team_lead_name || emp.team_lead || emp.reporting_tl_name || ''
+
+    if (mgr.includes('@')) {
+      const mgrEmp = employees.find(e => (e.email || '').toLowerCase().trim() === mgr.toLowerCase().trim())
+      if (mgrEmp) {
+        mgr = mgrEmp.name || mgrEmp.full_name || mgr
+      } else {
+        mgr = mgr.split('@')[0].replace('.', ' ').replace(/\b\w/g, c => c.toUpperCase())
+      }
+    }
+
+    if (tl.includes('@')) {
+      const tlEmp = employees.find(e => (e.email || '').toLowerCase().trim() === tl.toLowerCase().trim())
+      if (tlEmp) {
+        tl = tlEmp.name || tlEmp.full_name || tl
+      } else {
+        tl = tl.split('@')[0].replace('.', ' ').replace(/\b\w/g, c => c.toUpperCase())
+      }
+    }
+
+    if (mgr && mgr !== 'Unassigned') {
+      const mgrEmp = employees.find(e => (e.name || e.full_name || '').toLowerCase().trim() === mgr.toLowerCase().trim())
+      if (mgrEmp) {
+        const r = (mgrEmp.role || mgrEmp.designation || '').toLowerCase()
+        if ((r.includes('lead') || r.includes('tl')) && !r.includes('sales manager')) {
+          if (!tl || tl === 'Unassigned') tl = mgr
+          const parentMgr = mgrEmp.reporting_manager_name || mgrEmp.reporting_manager || ''
+          const parentEmp = employees.find(e => (e.name || e.full_name || '').toLowerCase().trim() === parentMgr.toLowerCase().trim() || (e.email || '').toLowerCase().trim() === parentMgr.toLowerCase().trim())
+          if (parentEmp) mgr = parentEmp.name || parentEmp.full_name || parentMgr
+          else if (parentMgr && !parentMgr.includes('@')) mgr = parentMgr
+          else mgr = 'Unassigned'
+        }
+      }
+    }
+
+    return {
+      manager: mgr && mgr !== 'Unassigned' && mgr !== 'Direct / Unassigned' ? mgr : 'Unassigned',
+      teamLead: tl && tl !== 'Unassigned' && tl !== 'Direct / Unassigned' ? tl : 'Unassigned',
+    }
+  }
+
+  // Department cards statistics
+  const departmentCards = React.useMemo(() => {
+    const map = {}
+    processedEmployeeRows.forEach(emp => {
+      const dept = emp.department || 'Sales & Business Development'
+      if (!map[dept]) {
+        map[dept] = { total: 0, present: 0, absent: 0 }
+      }
+      map[dept].total += 1
+      if (emp.status === 'Present' || emp.status === 'Logged In' || emp.status === 'Logged Off') {
+        map[dept].present += 1
+      } else {
+        map[dept].absent += 1
+      }
+    })
+
+    const list = [
+      {
+        id: 'All',
+        name: 'All Departments',
+        total: processedEmployeeRows.length,
+        present: processedEmployeeRows.filter(e => e.status === 'Present' || e.status === 'Logged In' || e.status === 'Logged Off').length,
+      }
+    ]
+
+    Object.keys(map).sort().forEach(dept => {
+      list.push({
+        id: dept,
+        name: dept,
+        total: map[dept].total,
+        present: map[dept].present,
+      })
+    })
+
+    return list
+  }, [processedEmployeeRows])
+
+  // Filter by Department, Role & Search Query
   const filteredEmployees = processedEmployeeRows.filter((e) => {
+    const matchesDept = selectedDepartment === 'All' ||
+      (e.department || '').toLowerCase().trim().includes(selectedDepartment.toLowerCase().trim()) ||
+      selectedDepartment.toLowerCase().trim().includes((e.department || '').toLowerCase().trim())
+
     const matchesSearch =
       e.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       e.role.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -815,17 +910,86 @@ function CeoHrms({ initialTab = 'employees' }) {
       matchesRole = e.role.toLowerCase().includes('executive')
     }
 
-    return matchesSearch && matchesRole
+    return matchesDept && matchesSearch && matchesRole
   })
+
+  const paginatedEmployees = React.useMemo(() => {
+    const start = (employeePage - 1) * 10
+    return filteredEmployees.slice(start, start + 10)
+  }, [filteredEmployees, employeePage])
+
+  const DEPT_CARD_PALETTES = [
+    {
+      active: 'bg-[#832D51] text-white border-[#832D51] shadow-md ring-2 ring-[#832D51]/30',
+      inactive: 'bg-rose-50/80 border-rose-200 text-rose-950 hover:bg-rose-100/70 shadow-2xs',
+      badgeActive: 'bg-white/20 text-white',
+      badgeInactive: 'bg-rose-200/70 text-rose-900',
+      presentActive: 'text-white font-black',
+      presentInactive: 'text-rose-700 font-extrabold',
+    },
+    {
+      active: 'bg-indigo-700 text-white border-indigo-700 shadow-md ring-2 ring-indigo-600/30',
+      inactive: 'bg-indigo-50/80 border-indigo-200 text-indigo-950 hover:bg-indigo-100/70 shadow-2xs',
+      badgeActive: 'bg-white/20 text-white',
+      badgeInactive: 'bg-indigo-200/70 text-indigo-900',
+      presentActive: 'text-white font-black',
+      presentInactive: 'text-indigo-700 font-extrabold',
+    },
+    {
+      active: 'bg-purple-700 text-white border-purple-700 shadow-md ring-2 ring-purple-600/30',
+      inactive: 'bg-purple-50/80 border-purple-200 text-purple-950 hover:bg-purple-100/70 shadow-2xs',
+      badgeActive: 'bg-white/20 text-white',
+      badgeInactive: 'bg-purple-200/70 text-purple-900',
+      presentActive: 'text-white font-black',
+      presentInactive: 'text-purple-700 font-extrabold',
+    },
+    {
+      active: 'bg-emerald-700 text-white border-emerald-700 shadow-md ring-2 ring-emerald-600/30',
+      inactive: 'bg-emerald-50/80 border-emerald-200 text-emerald-950 hover:bg-emerald-100/70 shadow-2xs',
+      badgeActive: 'bg-white/20 text-white',
+      badgeInactive: 'bg-emerald-200/70 text-emerald-900',
+      presentActive: 'text-white font-black',
+      presentInactive: 'text-emerald-700 font-extrabold',
+    },
+    {
+      active: 'bg-amber-600 text-white border-amber-600 shadow-md ring-2 ring-amber-600/30',
+      inactive: 'bg-amber-50/80 border-amber-200 text-amber-950 hover:bg-amber-100/70 shadow-2xs',
+      badgeActive: 'bg-white/20 text-white',
+      badgeInactive: 'bg-amber-200/70 text-amber-900',
+      presentActive: 'text-white font-black',
+      presentInactive: 'text-amber-700 font-extrabold',
+    },
+    {
+      active: 'bg-sky-700 text-white border-sky-700 shadow-md ring-2 ring-sky-600/30',
+      inactive: 'bg-sky-50/80 border-sky-200 text-sky-950 hover:bg-sky-100/70 shadow-2xs',
+      badgeActive: 'bg-white/20 text-white',
+      badgeInactive: 'bg-sky-200/70 text-sky-900',
+      presentActive: 'text-white font-black',
+      presentInactive: 'text-sky-700 font-extrabold',
+    },
+  ]
 
   // Daily Report Filtering
   const filteredDailyReports = React.useMemo(() => {
     return managementDailyReports.filter((r) => {
+      let matchesDept = true
+      if (dailyReportDeptFilter && dailyReportDeptFilter !== 'All') {
+        const targetD = dailyReportDeptFilter.toLowerCase().trim()
+        const reportD = (r.department || '').toLowerCase().trim()
+        matchesDept = reportD.includes(targetD) || targetD.includes(reportD)
+      }
+
       let matchesRole = true
-      if (dailyReportRoleFilter === 'Sales Manager') {
-        matchesRole = r.role.toLowerCase().includes('manager')
-      } else if (dailyReportRoleFilter === 'Admin') {
-        matchesRole = r.role.toLowerCase().includes('admin') || r.role.toLowerCase().includes('ceo')
+      if (dailyReportRoleFilter && dailyReportRoleFilter !== 'All') {
+        const targetR = dailyReportRoleFilter.toLowerCase().trim()
+        const reportR = (r.role || '').toLowerCase().trim()
+        matchesRole = reportR.includes(targetR)
+      }
+
+      let matchesDate = true
+      if (dailyReportDateFilter) {
+        const rDate = (r.date || r.report_date || '').split('T')[0]
+        matchesDate = rDate === dailyReportDateFilter
       }
 
       let matchesStatus = true
@@ -835,9 +999,9 @@ function CeoHrms({ initialTab = 'employees' }) {
         matchesStatus = r.status === 'Reviewed'
       }
 
-      return matchesRole && matchesStatus
+      return matchesDept && matchesRole && matchesDate && matchesStatus
     })
-  }, [managementDailyReports, dailyReportRoleFilter, dailyReportStatusFilter])
+  }, [managementDailyReports, dailyReportDeptFilter, dailyReportRoleFilter, dailyReportDateFilter, dailyReportStatusFilter])
 
   const paginatedDailyReports = React.useMemo(() => {
     const start = (reportPage - 1) * 10
@@ -917,7 +1081,7 @@ function CeoHrms({ initialTab = 'employees' }) {
 
       {/* Primary HRMS Navigation Tabs */}
       <div className="flex items-center flex-nowrap whitespace-nowrap gap-1 overflow-x-auto bg-white p-1.5 rounded-xl border border-slate-200/80 shadow-2xs scrollbar-thin">
-        {hrmsTabs.map((tabItem, index) => {
+        {hrmsTabs.map((tabItem) => {
           const Icon = tabItem.icon
           const isActive = activeTab === tabItem.id
           const badgeVal = getBadgeValue ? getBadgeValue(tabItem.id) : (tabItem.id === 'employees' ? employees.length : tabItem.id === 'leaves' ? pendingLeaves.length : tabItem.id === 'permissions' ? pendingPermissions.length : null)
@@ -925,17 +1089,15 @@ function CeoHrms({ initialTab = 'employees' }) {
           return (
             <div
               key={tabItem.id}
-              draggable="true"
-              onDragStart={(e) => handleTabDragStart(e, index)}
-              onDragOver={(e) => handleTabDragOver(e, index)}
-              onDrop={(e) => handleTabDrop(e, index)}
-              onDragEnd={handleTabDragEnd}
-              className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
-                draggedTabKey === index ? 'opacity-40' : ''
-              }`}
+              onClick={() => setActiveTab(tabItem.id)}
+              className="flex items-center shrink-0 whitespace-nowrap transition cursor-pointer"
             >
               <button
-                onClick={() => setActiveTab(tabItem.id)}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveTab(tabItem.id);
+                }}
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap ${isActive
                     ? 'bg-[#832D51] text-white shadow-2xs'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
@@ -970,152 +1132,255 @@ function CeoHrms({ initialTab = 'employees' }) {
 
       {/* ── TAB 1: EMPLOYEES DIRECTORY ────────────────────────── */}
       {activeTab === 'employees' && (
-        <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
-          <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-slate-100 pb-4">
-            <div>
-              <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
-                Corporate Employee Directory
-              </h2>
-              <p className="text-xs text-slate-500 font-medium">All registered corporate personnel & daily attendance logs</p>
-            </div>
-
-            {/* Filter Strip */}
-            <div className="flex flex-wrap items-center gap-2.5">
-              {/* Role Filter Dropdown */}
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
-                <Filter className="size-3.5 text-[#832D51]" />
-                <span>Role:</span>
-                <select
-                  value={roleFilter}
-                  onChange={(e) => setRoleFilter(e.target.value)}
-                  className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
+        <div className="space-y-4">
+          {/* Department Overview Cards (Colorized) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {departmentCards.map((card, idx) => {
+              const isSelected = selectedDepartment === card.id
+              const colorTheme = DEPT_CARD_PALETTES[idx % DEPT_CARD_PALETTES.length]
+              return (
+                <div
+                  key={card.id}
+                  onClick={() => {
+                    setSelectedDepartment(card.id)
+                    setEmployeePage(1)
+                  }}
+                  className={`p-4 rounded-2xl border transition cursor-pointer flex flex-col justify-between ${
+                    isSelected ? colorTheme.active : colorTheme.inactive
+                  }`}
                 >
-                  <option value="All">All Roles</option>
-                  <option value="Admin">Admin</option>
-                  <option value="Sales Manager">Sales Manager</option>
-                  <option value="Sales Executive">Sales Executive</option>
-                </select>
-              </div>
-
-              {/* Date Period Filter Dropdown */}
-              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
-                <Calendar className="size-3.5 text-[#832D51]" />
-                <span>Period:</span>
-                <select
-                  value={datePeriodFilter}
-                  onChange={(e) => setDatePeriodFilter(e.target.value)}
-                  className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
-                >
-                  <option value="Today">Today</option>
-                  <option value="This Month">This Month</option>
-                  <option value="Custom">Custom Date</option>
-                </select>
-              </div>
-
-              {/* Custom Date Inputs */}
-              {datePeriodFilter === 'Custom' && (
-                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1 text-xs">
-                  <input
-                    type="date"
-                    value={customStart}
-                    onChange={(e) => setCustomStart(e.target.value)}
-                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 outline-none"
-                  />
-                  <span className="text-slate-400 font-bold">to</span>
-                  <input
-                    type="date"
-                    value={customEnd}
-                    onChange={(e) => setCustomEnd(e.target.value)}
-                    className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 outline-none"
-                  />
+                  <div className="flex items-center justify-between">
+                    <span className={`text-xs font-black tracking-wide ${isSelected ? 'text-white' : 'text-slate-900'}`}>
+                      {card.name}
+                    </span>
+                    <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                      isSelected ? colorTheme.badgeActive : colorTheme.badgeInactive
+                    }`}>
+                      {card.total} Staff
+                    </span>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between text-[11px]">
+                    <span className={isSelected ? 'text-white/90 font-semibold' : 'text-slate-600 font-semibold'}>
+                      Present: <strong className={isSelected ? colorTheme.presentActive : colorTheme.presentInactive}>{card.present}</strong>
+                    </span>
+                    <span className={isSelected ? 'text-white/80 text-[10px] font-bold' : 'text-slate-500 text-[10px] font-bold'}>
+                      {isSelected ? '● Active Filter' : 'Click to filter'}
+                    </span>
+                  </div>
                 </div>
-              )}
-
-              {/* Search Box */}
-              <div className="relative w-full sm:w-60">
-                <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search staff, role, dept..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="h-8.5 w-full rounded-xl border border-slate-200 pl-8 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
-                />
-              </div>
-            </div>
+              )
+            })}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                  <th className="pb-3 px-2">Date</th>
-                  <th className="pb-3 px-2">Employee</th>
-                  <th className="pb-3 px-2">Designation</th>
-                  <th className="pb-3 px-2">Department</th>
-                  <th className="pb-3 px-2 text-center">Login Time</th>
-                  <th className="pb-3 px-2 text-center">Logout Time</th>
-                  <th className="pb-3 px-2 text-center">Status</th>
-                  <th className="pb-3 px-2 text-right">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredEmployees.map((emp) => (
-                  <tr key={emp.id} className="hover:bg-slate-50/70 transition">
-                    <td className="py-3 px-2 font-bold text-slate-600">
-                      {formatDDMMYYYY(emp.date)}
-                    </td>
-                    <td className="py-3 px-2">
-                      <p className="font-extrabold text-slate-900">{emp.name}</p>
-                      <p className="text-[10px] text-slate-400">{emp.email}</p>
-                    </td>
-                    <td className="py-3 px-2">
-                      <span className="inline-flex rounded-md bg-[#F8CAE4]/20 px-2 py-0.5 text-[10px] font-black text-[#832D51]">
-                        {emp.role}
-                      </span>
-                    </td>
-                    <td className="py-3 px-2 text-slate-700">{emp.department}</td>
-                    <td className="py-3 px-2 text-center font-extrabold text-xs">
-                      {emp.loginTime && emp.loginTime !== '—' ? (
-                        <span className="text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
-                          {emp.loginTime}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 font-semibold italic">—</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-2 text-center font-extrabold text-xs">
-                      {emp.logoutTime && emp.logoutTime !== '—' ? (
-                        <span className="text-blue-700 bg-blue-50 px-2 py-1 rounded-lg border border-blue-200">
-                          {emp.logoutTime}
-                        </span>
-                      ) : (
-                        <span className="text-slate-400 font-semibold italic">—</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-2 text-center">
-                      <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black border ${
-                        emp.status === 'Logged In' || emp.status === 'Present'
-                          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                          : emp.status === 'Logged Off'
-                          ? 'bg-blue-50 text-blue-700 border-blue-200'
-                          : 'bg-rose-50 text-rose-700 border-rose-200'
-                      }`}>
-                        {emp.status}
-                      </span>
-                    </td>
-                    <td className="py-3 px-2 text-right">
-                      <button
-                        onClick={() => setSelectedEmployee(emp)}
-                        className="px-2.5 py-1.5 bg-[#832D51] hover:bg-[#68243f] text-white font-extrabold rounded-xl text-[10px] shadow-xs transition cursor-pointer"
-                      >
-                        View Profile
-                      </button>
-                    </td>
+          <div className="rounded-2xl border border-slate-200/90 bg-white p-6 shadow-xs space-y-4">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="text-base font-extrabold text-slate-900 tracking-tight">
+                  Corporate Employee Directory
+                </h2>
+                <p className="text-xs text-slate-500 font-medium">
+                  {selectedDepartment === 'All' ? 'All corporate personnel' : `Filtered by ${selectedDepartment} department`} & daily attendance logs
+                </p>
+              </div>
+
+              {/* Filter Strip */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Role Filter Dropdown */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
+                  <Filter className="size-3.5 text-[#832D51]" />
+                  <span>Role:</span>
+                  <select
+                    value={roleFilter}
+                    onChange={(e) => {
+                      setRoleFilter(e.target.value)
+                      setEmployeePage(1)
+                    }}
+                    className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
+                  >
+                    <option value="All">All Roles</option>
+                    <option value="Admin">Admin</option>
+                    <option value="Sales Manager">Sales Manager</option>
+                    <option value="Sales Executive">Sales Executive</option>
+                  </select>
+                </div>
+
+                {/* Date Period Filter Dropdown */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
+                  <Calendar className="size-3.5 text-[#832D51]" />
+                  <span>Period:</span>
+                  <select
+                    value={datePeriodFilter}
+                    onChange={(e) => {
+                      setDatePeriodFilter(e.target.value)
+                      setEmployeePage(1)
+                    }}
+                    className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
+                  >
+                    <option value="Today">Today</option>
+                    <option value="This Month">This Month</option>
+                    <option value="Custom">Custom Date</option>
+                  </select>
+                </div>
+
+                {/* Custom Date Inputs */}
+                {datePeriodFilter === 'Custom' && (
+                  <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl p-1 text-xs">
+                    <input
+                      type="date"
+                      value={customStart}
+                      onChange={(e) => {
+                        setCustomStart(e.target.value)
+                        setEmployeePage(1)
+                      }}
+                      className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 outline-none"
+                    />
+                    <span className="text-slate-400 font-bold">to</span>
+                    <input
+                      type="date"
+                      value={customEnd}
+                      onChange={(e) => {
+                        setCustomEnd(e.target.value)
+                        setEmployeePage(1)
+                      }}
+                      className="bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-bold text-slate-800 outline-none"
+                    />
+                  </div>
+                )}
+
+                {/* Search Box */}
+                <div className="relative w-full sm:w-60">
+                  <Search className="pointer-events-none absolute left-3 top-1/2 size-3.5 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search staff, role, dept..."
+                    value={searchQuery}
+                    onChange={(e) => {
+                      setSearchQuery(e.target.value)
+                      setEmployeePage(1)
+                    }}
+                    className="h-8.5 w-full rounded-xl border border-slate-200 pl-8 pr-3 text-xs font-semibold placeholder:text-slate-400 outline-none focus:border-[#832D51]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                    <th className="pb-3 px-3">Date</th>
+                    <th className="pb-3 px-3">Employee Name</th>
+                    <th className="pb-3 px-3">Report Manager & Team Lead</th>
+                    <th className="pb-3 px-3 text-center">Login Time</th>
+                    <th className="pb-3 px-3 text-center">Logout Time</th>
+                    <th className="pb-3 px-3 text-center">Status</th>
+                    <th className="pb-3 px-3 text-right">Action</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {paginatedEmployees.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="py-12 text-center text-slate-400 font-bold">
+                        No employees found for selected filter.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginatedEmployees.map((emp) => {
+                      const superiors = resolveEmpSuperiors(emp)
+                      return (
+                        <tr key={emp.id} className="hover:bg-slate-50/70 transition">
+                          <td className="py-3 px-3 font-bold text-slate-600">
+                            {formatDDMMYYYY(emp.date)}
+                          </td>
+                          <td className="py-3 px-3">
+                            <p className="font-extrabold text-slate-900">{emp.name}</p>
+                            <p className="text-[10px] text-slate-400">{emp.email}</p>
+                            <span className="inline-flex rounded-md bg-[#F8CAE4]/20 px-1.5 py-0.5 text-[9px] font-black text-[#832D51] mt-0.5">
+                              {emp.role}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3">
+                            <div className="space-y-0.5 text-xs">
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase w-14">Manager:</span>
+                                <span className="font-extrabold text-slate-800">{superiors.manager}</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase w-14">Team Lead:</span>
+                                <span className="font-bold text-[#832D51]">{superiors.teamLead}</span>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="py-3 px-3 text-center font-extrabold text-xs">
+                            {emp.loginTime && emp.loginTime !== '—' ? (
+                              <span className="text-emerald-700 bg-emerald-50 px-2 py-1 rounded-lg border border-emerald-200">
+                                {emp.loginTime}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-semibold italic">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-center font-extrabold text-xs">
+                            {emp.logoutTime && emp.logoutTime !== '—' ? (
+                              <span className="text-blue-700 bg-blue-50 px-2 py-1 rounded-lg border border-blue-200">
+                                {emp.logoutTime}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 font-semibold italic">—</span>
+                            )}
+                          </td>
+                          <td className="py-3 px-3 text-center">
+                            <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black border ${
+                              emp.status === 'Logged In' || emp.status === 'Present'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : emp.status === 'Logged Off'
+                                ? 'bg-blue-50 text-blue-700 border-blue-200'
+                                : 'bg-rose-50 text-rose-700 border-rose-200'
+                            }`}>
+                              {emp.status}
+                            </span>
+                          </td>
+                          <td className="py-3 px-3 text-right">
+                            <button
+                              onClick={() => setSelectedEmployee(emp)}
+                              className="px-2.5 py-1.5 bg-[#832D51] hover:bg-[#68243f] text-white font-extrabold rounded-xl text-[10px] shadow-xs transition cursor-pointer"
+                            >
+                              View Profile
+                            </button>
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Employee Directory Pagination Controls */}
+            {filteredEmployees.length > 0 && (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-100">
+                <div className="text-xs text-slate-500 font-medium">
+                  Showing <span className="font-black text-slate-900">{Math.min((employeePage - 1) * 10 + 1, filteredEmployees.length)}</span> to <span className="font-black text-slate-900">{Math.min(employeePage * 10, filteredEmployees.length)}</span> of <span className="font-black text-slate-900">{filteredEmployees.length}</span> employees
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setEmployeePage(prev => Math.max(1, prev - 1))}
+                    disabled={employeePage === 1}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs font-black text-slate-700 px-2">Page {employeePage} of {Math.ceil(filteredEmployees.length / 10) || 1}</span>
+                  <button
+                    onClick={() => setEmployeePage(prev => Math.min(Math.ceil(filteredEmployees.length / 10), prev + 1))}
+                    disabled={employeePage >= Math.ceil(filteredEmployees.length / 10)}
+                    className="px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-xs font-bold text-slate-700 hover:bg-slate-50 disabled:opacity-40 cursor-pointer"
+                  >
+                    Next
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1134,12 +1399,32 @@ function CeoHrms({ initialTab = 'employees' }) {
               </p>
             </div>
 
-            {/* Role & Status Filter Controls */}
+            {/* Department, Role, Date & Status Filter Controls */}
             <div className="flex flex-wrap items-center gap-2.5">
-              {/* Role Filter */}
+              {/* Department Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
+                <Building2 className="size-3.5 text-[#832D51]" />
+                <span>Department:</span>
+                <select
+                  value={dailyReportDeptFilter}
+                  onChange={(e) => {
+                    setDailyReportDeptFilter(e.target.value)
+                    setReportPage(1)
+                  }}
+                  className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
+                >
+                  <option value="All">All Departments</option>
+                  <option value="Sales & Business Development">Sales & BD</option>
+                  <option value="Human Resources">Human Resources</option>
+                  <option value="IT & Operations">IT & Operations</option>
+                  <option value="Field Operations">Field Operations</option>
+                </select>
+              </div>
+
+              {/* Roles Filter */}
               <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
                 <Filter className="size-3.5 text-[#832D51]" />
-                <span>Management Role:</span>
+                <span>Role:</span>
                 <select
                   value={dailyReportRoleFilter}
                   onChange={(e) => {
@@ -1148,15 +1433,40 @@ function CeoHrms({ initialTab = 'employees' }) {
                   }}
                   className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
                 >
-                  <option value="All">All Management</option>
+                  <option value="All">All Roles</option>
                   <option value="Sales Manager">Sales Managers</option>
                   <option value="Admin">Admins</option>
+                  <option value="Team Lead">Team Leads</option>
+                  <option value="Sales Executive">Sales Executives</option>
                 </select>
+              </div>
+
+              {/* Date Filter */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
+                <Calendar className="size-3.5 text-[#832D51]" />
+                <span>Date:</span>
+                <input
+                  type="date"
+                  value={dailyReportDateFilter}
+                  onChange={(e) => {
+                    setDailyReportDateFilter(e.target.value)
+                    setReportPage(1)
+                  }}
+                  className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
+                />
+                {dailyReportDateFilter && (
+                  <button
+                    onClick={() => setDailyReportDateFilter('')}
+                    className="text-[10px] text-rose-600 hover:underline font-bold"
+                  >
+                    Clear
+                  </button>
+                )}
               </div>
 
               {/* Status Filter */}
               <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-700">
-                <span>Review Status:</span>
+                <span>Status:</span>
                 <select
                   value={dailyReportStatusFilter}
                   onChange={(e) => {
@@ -1166,7 +1476,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                   className="bg-transparent font-extrabold text-slate-900 outline-none cursor-pointer text-xs"
                 >
                   <option value="All">All Statuses</option>
-                  <option value="Pending Review">Pending CEO Review</option>
+                  <option value="Pending Review">Pending Review</option>
                   <option value="Reviewed">Reviewed</option>
                 </select>
               </div>
@@ -1186,34 +1496,31 @@ function CeoHrms({ initialTab = 'employees' }) {
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                  <th className="pb-3 px-2">Date</th>
-                  <th className="pb-3 px-2">Management Executive</th>
-                  <th className="pb-3 px-2">Role & Department</th>
-                  <th className="pb-3 px-2">Tasks & Accomplishments</th>
-                  <th className="pb-3 px-2">Key Highlights / Wins</th>
-                  <th className="pb-3 px-2">Blockers / Escalations</th>
-                  <th className="pb-3 px-2 text-center">Status</th>
-                  <th className="pb-3 px-2 text-right">CEO Action</th>
+                  <th className="pb-3 px-4">Date</th>
+                  <th className="pb-3 px-4">Department</th>
+                  <th className="pb-3 px-4">Role</th>
+                  <th className="pb-3 px-4">Name</th>
+                  <th className="pb-3 px-4 text-center">Status</th>
+                  <th className="pb-3 px-4 text-right">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {paginatedDailyReports.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-400 font-bold">
-                      No daily work reports found for selected filter.
+                    <td colSpan={6} className="py-12 text-center text-slate-400 font-bold">
+                      No daily work reports found for selected filters.
                     </td>
                   </tr>
                 ) : (
                   paginatedDailyReports.map((report) => (
                     <tr key={report.id} className="hover:bg-slate-50/70 transition">
-                      <td className="py-3.5 px-2 font-black text-slate-900 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-black text-slate-900 whitespace-nowrap">
                         {formatDDMMYYYY(report.date)}
                       </td>
-                      <td className="py-3.5 px-2">
-                        <p className="font-extrabold text-slate-900">{report.submitted_by}</p>
-                        <p className="text-[10px] text-slate-400">{report.email}</p>
+                      <td className="py-3.5 px-4">
+                        <span className="font-extrabold text-slate-800">{report.department || 'Sales & BD'}</span>
                       </td>
-                      <td className="py-3.5 px-2">
+                      <td className="py-3.5 px-4">
                         <span className={`inline-flex rounded-md px-2 py-0.5 text-[10px] font-black uppercase tracking-wider border ${
                           report.role.toLowerCase().includes('manager')
                             ? 'bg-[#832D51]/10 text-[#832D51] border-[#832D51]/20'
@@ -1221,18 +1528,14 @@ function CeoHrms({ initialTab = 'employees' }) {
                         }`}>
                           {report.role}
                         </span>
-                        <p className="text-[10px] text-slate-500 font-semibold mt-0.5">{report.department}</p>
                       </td>
-                      <td className="py-3.5 px-2 text-slate-700 max-w-xs truncate" title={report.tasks_accomplished}>
-                        {report.tasks_accomplished}
+                      <td className="py-3.5 px-4">
+                        <div>
+                          <p className="font-extrabold text-slate-900 text-xs">{report.submitted_by}</p>
+                          {report.email && <p className="text-[10px] text-slate-400">{report.email}</p>}
+                        </div>
                       </td>
-                      <td className="py-3.5 px-2 text-emerald-800 font-semibold max-w-xs truncate" title={report.key_highlights}>
-                        {report.key_highlights || '—'}
-                      </td>
-                      <td className="py-3.5 px-2 text-rose-700 font-semibold max-w-xs truncate" title={report.blockers}>
-                        {report.blockers || 'None'}
-                      </td>
-                      <td className="py-3.5 px-2 text-center">
+                      <td className="py-3.5 px-4 text-center">
                         <span className={`inline-flex rounded-full px-2.5 py-0.5 text-[10px] font-black border ${
                           report.status === 'Reviewed'
                             ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
@@ -1241,16 +1544,17 @@ function CeoHrms({ initialTab = 'employees' }) {
                           {report.status}
                         </span>
                       </td>
-                      <td className="py-3.5 px-2 text-right">
+                      <td className="py-3.5 px-4 text-right">
                         <button
                           onClick={() => {
                             setSelectedReportForReview(report)
                             setReportCeoRemarksInput(report.ceo_remarks || '')
                             setReportReviewModalOpen(true)
                           }}
-                          className="px-2.5 py-1.5 bg-[#832D51] hover:bg-[#68243f] text-white font-extrabold rounded-xl text-[10px] shadow-xs transition cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#832D51] hover:bg-[#68243f] text-white font-extrabold rounded-xl text-xs shadow-xs transition cursor-pointer"
                         >
-                          {report.status === 'Reviewed' ? 'View / Edit Feedback' : 'Review Report'}
+                          <Eye className="size-3.5" />
+                          View
                         </button>
                       </td>
                     </tr>

@@ -14,6 +14,8 @@ import {
   Activity,
   Award,
   ChevronRight,
+  ChevronDown,
+  ChevronUp,
   TrendingUp,
   Mail,
   Phone,
@@ -39,6 +41,10 @@ function TeamManagement() {
   const [loading, setLoading] = useState(true)
   const [viewingEmp, setViewingEmp] = useState(null)
   const [selectedDeptModal, setSelectedDeptModal] = useState(null)
+
+  // Collapse/Expand state for Department modal hierarchy tree
+  const [collapsedManagers, setCollapsedManagers] = useState({})
+  const [collapsedTeamLeads, setCollapsedTeamLeads] = useState({})
 
   // Add/Edit modal state
   const [showModal, setShowModal] = useState(false)
@@ -430,27 +436,33 @@ function TeamManagement() {
     }
   }
 
-  // Group team members by Department
+  // Group team members by Department (excluding Admins, who manage all departments)
   const departmentSummaries = Object.entries(
     team.reduce((acc, emp) => {
+      const rLower = (emp.role || '').toLowerCase()
+      // Exclude pure Admins from department-specific cards & tables as Admin manages all departments
+      if (rLower.includes('admin') || rLower === 'super admin' || rLower === 'system admin') {
+        return acc
+      }
+
       const deptName = emp.department || emp.dept || 'Sales & BD'
       if (!acc[deptName]) {
         acc[deptName] = {
           name: deptName,
           members: [],
-          admins: [],
           managers: [],
+          teamLeads: [],
           executives: [],
           totalRevenue: 0,
           totalDeals: 0,
         }
       }
       acc[deptName].members.push(emp)
-      const rLower = (emp.role || '').toLowerCase()
-      if (rLower.includes('admin')) {
-        acc[deptName].admins.push(emp)
-      } else if (rLower.includes('manager') || rLower.includes('lead')) {
+
+      if (rLower.includes('manager') && !rLower.includes('lead') && !rLower.includes('tl')) {
         acc[deptName].managers.push(emp)
+      } else if (rLower.includes('lead') || rLower.includes('tl') || rLower.includes('team_lead')) {
+        acc[deptName].teamLeads.push(emp)
       } else {
         acc[deptName].executives.push(emp)
       }
@@ -472,6 +484,115 @@ function TeamManagement() {
       )
     )
   })
+
+  // Function to build Manager -> Team Lead -> Executive hierarchy tree
+  const buildDepartmentHierarchyTree = (deptData) => {
+    if (!deptData) return { managerTrees: [], unassignedTLs: [], unassignedExecs: [] }
+
+    const managersList = deptData.managers || []
+    const teamLeadsList = deptData.teamLeads || []
+    const executivesList = deptData.executives || []
+
+    const assignedTLIds = new Set()
+    const assignedExecIds = new Set()
+
+    const managerTrees = managersList.map(mgr => {
+      const mgrNameLower = (mgr.name || '').trim().toLowerCase()
+      const mgrEmailLower = (mgr.email || '').trim().toLowerCase()
+      const mgrCodeLower = String(mgr.employee_id || mgr.id || '').trim().toLowerCase()
+
+      // Find Team Leads reporting to this manager
+      const mgrTLs = teamLeadsList.filter(tl => {
+        const repName = (tl.manager || tl.reporting_manager_name || '').trim().toLowerCase()
+        const repEmail = (tl.reporting_manager_email || '').trim().toLowerCase()
+        const repId = String(tl.reporting_manager_id || '').trim().toLowerCase()
+
+        const isMatch = (repName && repName === mgrNameLower) ||
+                        (repEmail && repEmail === mgrEmailLower) ||
+                        (repId && repId === mgrCodeLower)
+        if (isMatch) assignedTLIds.add(tl.id || tl.employee_id || tl.email)
+        return isMatch
+      })
+
+      // For each Team Lead under this manager, find their Executives
+      const tlTrees = mgrTLs.map(tl => {
+        const tlNameLower = (tl.name || '').trim().toLowerCase()
+        const tlEmailLower = (tl.email || '').trim().toLowerCase()
+        const tlCodeLower = String(tl.employee_id || tl.id || '').trim().toLowerCase()
+
+        const tlExecs = executivesList.filter(exec => {
+          const repName = (exec.reporting_team_lead_name || exec.manager || exec.reporting_manager_name || '').trim().toLowerCase()
+          const repEmail = (exec.reporting_team_lead_email || exec.reporting_manager_email || '').trim().toLowerCase()
+          const repId = String(exec.reporting_team_lead_id || exec.reporting_manager_id || '').trim().toLowerCase()
+
+          const isMatch = (repName && repName === tlNameLower) ||
+                          (repEmail && repEmail === tlEmailLower) ||
+                          (repId && repId === tlCodeLower)
+          if (isMatch) assignedExecIds.add(exec.id || exec.employee_id || exec.email)
+          return isMatch
+        })
+
+        return {
+          teamLead: tl,
+          executives: tlExecs
+        }
+      })
+
+      // Find Executives reporting directly to this Manager (not through a TL)
+      const directExecs = executivesList.filter(exec => {
+        const execIdKey = exec.id || exec.employee_id || exec.email
+        if (assignedExecIds.has(execIdKey)) return false
+
+        const repName = (exec.reporting_manager_name || exec.manager || '').trim().toLowerCase()
+        const repEmail = (exec.reporting_manager_email || '').trim().toLowerCase()
+        const repId = String(exec.reporting_manager_id || '').trim().toLowerCase()
+
+        const isMatch = (repName && repName === mgrNameLower) ||
+                        (repEmail && repEmail === mgrEmailLower) ||
+                        (repId && repId === mgrCodeLower)
+        if (isMatch) assignedExecIds.add(execIdKey)
+        return isMatch
+      })
+
+      return {
+        manager: mgr,
+        teamLeadTrees: tlTrees,
+        directExecutives: directExecs
+      }
+    })
+
+    // Unassigned Team Leads (TLs not reporting to any listed manager in this department)
+    const unassignedTLs = teamLeadsList.filter(tl => !assignedTLIds.has(tl.id || tl.employee_id || tl.email)).map(tl => {
+      const tlNameLower = (tl.name || '').trim().toLowerCase()
+      const tlEmailLower = (tl.email || '').trim().toLowerCase()
+      const tlCodeLower = String(tl.employee_id || tl.id || '').trim().toLowerCase()
+
+      const tlExecs = executivesList.filter(exec => {
+        const execIdKey = exec.id || exec.employee_id || exec.email
+        if (assignedExecIds.has(execIdKey)) return false
+
+        const repName = (exec.reporting_team_lead_name || exec.manager || exec.reporting_manager_name || '').trim().toLowerCase()
+        const repEmail = (exec.reporting_team_lead_email || exec.reporting_manager_email || '').trim().toLowerCase()
+        const repId = String(exec.reporting_team_lead_id || exec.reporting_manager_id || '').trim().toLowerCase()
+
+        const isMatch = (repName && repName === tlNameLower) ||
+                        (repEmail && repEmail === tlEmailLower) ||
+                        (repId && repId === tlCodeLower)
+        if (isMatch) assignedExecIds.add(execIdKey)
+        return isMatch
+      })
+
+      return {
+        teamLead: tl,
+        executives: tlExecs
+      }
+    })
+
+    // Unassigned Executives
+    const unassignedExecs = executivesList.filter(exec => !assignedExecIds.has(exec.id || exec.employee_id || exec.email))
+
+    return { managerTrees, unassignedTLs, unassignedExecs }
+  }
 
   const renderStaffTable = (membersList) => (
     <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-2xs">
@@ -590,7 +711,7 @@ function TeamManagement() {
       <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs">
         <div>
           <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">DEPARTMENT DIRECTORY ({filteredDeptSummaries.length})</h2>
-          <p className="text-xs text-slate-500 font-semibold mt-0.5">Click any Department Card to inspect its Admins, Sales Managers & Sales Executives</p>
+          <p className="text-xs text-slate-500 font-semibold mt-0.5">Click any Department Card to inspect its Sales Managers, Team Leads & Sales Executives</p>
         </div>
 
         <div className="relative w-full sm:w-80">
@@ -634,16 +755,16 @@ function TeamManagement() {
                 <ChevronRight className="size-5 text-slate-400" />
               </div>
 
-              {/* Hierarchy Counts Pill */}
+              {/* Hierarchy Counts Pill (Managers, Team Leads & Executives) */}
               <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 flex items-center justify-between text-xs">
-                <div className="text-center">
-                  <span className="text-[9px] font-black uppercase text-purple-700 block">Admins</span>
-                  <span className="font-black text-slate-900 text-sm">{dept.admins.length}</span>
-                </div>
-                <div className="h-6 w-px bg-slate-200" />
                 <div className="text-center">
                   <span className="text-[9px] font-black uppercase text-[#832D51] block">Managers</span>
                   <span className="font-black text-slate-900 text-sm">{dept.managers.length}</span>
+                </div>
+                <div className="h-6 w-px bg-slate-200" />
+                <div className="text-center">
+                  <span className="text-[9px] font-black uppercase text-indigo-700 block">Team Leads</span>
+                  <span className="font-black text-slate-900 text-sm">{dept.teamLeads.length}</span>
                 </div>
                 <div className="h-6 w-px bg-slate-200" />
                 <div className="text-center">
@@ -680,7 +801,7 @@ function TeamManagement() {
         </div>
       )}
 
-      {/* POP-UP DEPARTMENT HIERARCHY MODAL (Admins, Managers & Executives) */}
+      {/* POP-UP DEPARTMENT HIERARCHY MODAL (Manager -> Team Lead -> Executives) */}
       {selectedDeptModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-150">
           <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
@@ -698,7 +819,7 @@ function TeamManagement() {
                     </span>
                   </div>
                   <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                    Hierarchy: {selectedDeptModal.admins.length} Admins • {selectedDeptModal.managers.length} Sales Managers • {selectedDeptModal.executives.length} Sales Executives
+                    Hierarchy: {selectedDeptModal.managers.length} Sales Managers • {selectedDeptModal.teamLeads.length} Team Leads • {selectedDeptModal.executives.length} Sales Executives
                   </p>
                 </div>
               </div>
@@ -712,52 +833,301 @@ function TeamManagement() {
               </button>
             </div>
 
-            {/* Modal Body: Organized Hierarchy Tables */}
+            {/* Modal Body: Organized Hierarchy Tree (Manager -> Team Lead -> Executives) */}
             <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/30">
-              {/* SECTION 1: ADMINS & DEPARTMENT LEADS */}
-              {selectedDeptModal.admins.length > 0 && (
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2 pb-1 border-b border-slate-200/70">
-                    <ShieldCheck className="size-4.5 text-purple-700" />
-                    <h4 className="text-xs font-black uppercase tracking-wider text-purple-900">
-                      ADMINS & DEPARTMENT LEADS ({selectedDeptModal.admins.length})
-                    </h4>
-                  </div>
-                  {renderStaffTable(selectedDeptModal.admins)}
-                </div>
-              )}
+              {(() => {
+                const { managerTrees, unassignedTLs, unassignedExecs } = buildDepartmentHierarchyTree(selectedDeptModal)
+                const hasHierarchyContent = managerTrees.length > 0 || unassignedTLs.length > 0 || unassignedExecs.length > 0
 
-              {/* SECTION 2: SALES MANAGERS & TEAM LEADS */}
-              {selectedDeptModal.managers.length > 0 && (
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2 pb-1 border-b border-slate-200/70">
-                    <UserCheck className="size-4.5 text-[#832D51]" />
-                    <h4 className="text-xs font-black uppercase tracking-wider text-[#832D51]">
-                      SALES MANAGERS & TEAM LEADS ({selectedDeptModal.managers.length})
-                    </h4>
-                  </div>
-                  {renderStaffTable(selectedDeptModal.managers)}
-                </div>
-              )}
+                if (!hasHierarchyContent) {
+                  return (
+                    <div className="py-12 text-center text-xs text-slate-400 font-bold">
+                      No staff members currently assigned to this department.
+                    </div>
+                  )
+                }
 
-              {/* SECTION 3: SALES EXECUTIVES & FIELD REPS */}
-              {selectedDeptModal.executives.length > 0 && (
-                <div className="space-y-2.5">
-                  <div className="flex items-center gap-2 pb-1 border-b border-slate-200/70">
-                    <Users className="size-4.5 text-blue-700" />
-                    <h4 className="text-xs font-black uppercase tracking-wider text-blue-900">
-                      SALES EXECUTIVES & REPS ({selectedDeptModal.executives.length})
-                    </h4>
-                  </div>
-                  {renderStaffTable(selectedDeptModal.executives)}
-                </div>
-              )}
+                return (
+                  <div className="space-y-4">
+                    {/* Expand All / Minimize All Global Toolbar */}
+                    <div className="flex items-center justify-between bg-white border border-slate-200/90 px-4 py-3 rounded-2xl shadow-2xs">
+                      <div className="flex items-center gap-2">
+                        <Network className="size-4 text-[#832D51]" />
+                        <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Department Staff Hierarchy View</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => {
+                            setCollapsedManagers({})
+                            setCollapsedTeamLeads({})
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer flex items-center gap-1"
+                        >
+                          <ChevronDown className="size-3.5 text-emerald-600" />
+                          Expand All
+                        </button>
+                        <button
+                          onClick={() => {
+                            const mgrObj = {}
+                            managerTrees.forEach(m => {
+                              const k = m.manager.id || m.manager.name
+                              if (k) mgrObj[k] = true
+                            })
+                            const tlObj = {}
+                            managerTrees.flatMap(m => m.teamLeadTrees).concat(unassignedTLs).forEach(t => {
+                              const k = t.teamLead.id || t.teamLead.name
+                              if (k) tlObj[k] = true
+                            })
+                            setCollapsedManagers(mgrObj)
+                            setCollapsedTeamLeads(tlObj)
+                          }}
+                          className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer flex items-center gap-1"
+                        >
+                          <ChevronUp className="size-3.5 text-rose-600" />
+                          Minimize All
+                        </button>
+                      </div>
+                    </div>
 
-              {selectedDeptModal.members.length === 0 && (
-                <div className="py-12 text-center text-xs text-slate-400 font-bold">
-                  No staff members currently assigned to this department.
-                </div>
-              )}
+                    {/* MANAGER TREES */}
+                    {managerTrees.map((mgrTree, mIdx) => {
+                      const mgrKey = mgrTree.manager.id || mgrTree.manager.name || `mgr_${mIdx}`
+                      const isMgrCollapsed = Boolean(collapsedManagers[mgrKey])
+
+                      return (
+                        <div key={mIdx} className="border-2 border-[#832D51]/20 bg-white rounded-3xl overflow-hidden shadow-xs space-y-4 p-4 sm:p-5">
+                          {/* Manager Header Bar */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80 bg-[#832D51]/5 -mx-4 sm:-mx-5 -mt-4 sm:-mt-5 p-4 sm:p-5">
+                            <div className="flex items-center gap-3">
+                              <div className="size-10 rounded-2xl bg-[#832D51] text-white flex items-center justify-center font-black text-sm shadow-xs">
+                                <UserCheck className="size-5" />
+                              </div>
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-[#832D51] bg-[#F8CAE4]/60 px-2 py-0.5 rounded-md">
+                                    SALES MANAGER
+                                  </span>
+                                  <h4 className="text-base font-black text-slate-950">{mgrTree.manager.name}</h4>
+                                </div>
+                                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                                  {mgrTree.manager.email} • Phone: {mgrTree.manager.phone || 'N/A'} • Reporting: {mgrTree.manager.manager || 'CEO Office'}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center gap-4">
+                              <div className="text-right">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase block">Deals Won</span>
+                                <span className="font-black text-slate-900 text-xs">{mgrTree.manager.deals_won || 0}</span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[9px] font-bold text-slate-400 uppercase block">Revenue Output</span>
+                                <span className="font-black text-emerald-700 text-xs">₹{(mgrTree.manager.revenue || 0).toLocaleString()}</span>
+                              </div>
+                              <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
+                                <button onClick={() => handleOpenView(mgrTree.manager)} title="View Profile" className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition cursor-pointer">
+                                  <Eye className="size-4" />
+                                </button>
+                                <button onClick={() => handleOpenEdit(mgrTree.manager)} title="Edit Employee" className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition cursor-pointer">
+                                  <Edit2 className="size-4" />
+                                </button>
+                                {/* Sales Manager Minimize / Expand Toggle Button */}
+                                <button
+                                  onClick={() => setCollapsedManagers(prev => ({ ...prev, [mgrKey]: !prev[mgrKey] }))}
+                                  title={isMgrCollapsed ? "Expand Manager Team" : "Minimize Manager Team"}
+                                  className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white hover:bg-slate-100 font-extrabold text-xs text-slate-800 transition cursor-pointer shadow-2xs"
+                                >
+                                  {isMgrCollapsed ? (
+                                    <>
+                                      <span>Expand</span>
+                                      <ChevronDown className="size-4 text-[#832D51]" />
+                                    </>
+                                  ) : (
+                                    <>
+                                      <span>Minimize</span>
+                                      <ChevronUp className="size-4 text-[#832D51]" />
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* TEAM LEADS & EXECUTIVES UNDER THIS MANAGER */}
+                          {!isMgrCollapsed && (
+                            <div className="space-y-4 pt-1">
+                              {mgrTree.teamLeadTrees.map((tlTree, tlIdx) => {
+                                const tlKey = tlTree.teamLead.id || tlTree.teamLead.name || `tl_${tlIdx}`
+                                const isTlCollapsed = Boolean(collapsedTeamLeads[tlKey])
+
+                                return (
+                                  <div key={tlIdx} className="border border-indigo-200 bg-indigo-50/20 rounded-2xl p-4 space-y-3 ml-0 sm:ml-4">
+                                    {/* Team Lead Sub-Header */}
+                                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-indigo-100/70 p-3 rounded-xl border border-indigo-200/90">
+                                      <div className="flex items-center gap-2.5">
+                                        <span className="size-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
+                                          <ShieldCheck className="size-4" />
+                                        </span>
+                                        <div>
+                                          <div className="flex items-center gap-2">
+                                            <span className="text-[9px] font-black uppercase text-indigo-900 bg-indigo-200 px-2 py-0.5 rounded-md">
+                                              TEAM LEAD
+                                            </span>
+                                            <h5 className="text-sm font-black text-slate-900">{tlTree.teamLead.name}</h5>
+                                          </div>
+                                          <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                                            {tlTree.teamLead.email} • Phone: {tlTree.teamLead.phone || 'N/A'}
+                                          </p>
+                                        </div>
+                                      </div>
+                                      <div className="flex items-center gap-3">
+                                        <span className="text-xs font-bold text-indigo-900 bg-indigo-200/90 px-2.5 py-1 rounded-lg">
+                                          {tlTree.executives.length} Executive{tlTree.executives.length !== 1 ? 's' : ''} Assigned
+                                        </span>
+                                        <div className="flex items-center gap-1.5">
+                                          <button onClick={() => handleOpenView(tlTree.teamLead)} title="View Profile" className="p-1 rounded-md text-slate-500 hover:bg-indigo-200 hover:text-slate-800 transition cursor-pointer">
+                                            <Eye className="size-3.5" />
+                                          </button>
+                                          <button onClick={() => handleOpenEdit(tlTree.teamLead)} title="Edit Employee" className="p-1 rounded-md text-slate-500 hover:bg-indigo-200 hover:text-slate-800 transition cursor-pointer">
+                                            <Edit2 className="size-3.5" />
+                                          </button>
+                                          {/* Team Lead Minimize / Expand Toggle Button */}
+                                          <button
+                                            onClick={() => setCollapsedTeamLeads(prev => ({ ...prev, [tlKey]: !prev[tlKey] }))}
+                                            title={isTlCollapsed ? "Expand Team Lead Table" : "Minimize Team Lead Table"}
+                                            className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-indigo-300 bg-white hover:bg-indigo-100 font-extrabold text-xs text-indigo-900 transition cursor-pointer shadow-2xs"
+                                          >
+                                            {isTlCollapsed ? (
+                                              <>
+                                                <span>Expand</span>
+                                                <ChevronDown className="size-3.5 text-indigo-700" />
+                                              </>
+                                            ) : (
+                                              <>
+                                                <span>Minimize</span>
+                                                <ChevronUp className="size-3.5 text-indigo-700" />
+                                              </>
+                                            )}
+                                          </button>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {/* Executives Table under Team Lead */}
+                                    {!isTlCollapsed && (
+                                      tlTree.executives.length > 0 ? (
+                                        <div className="ml-0 sm:ml-2">
+                                          {renderStaffTable(tlTree.executives)}
+                                        </div>
+                                      ) : (
+                                        <p className="text-xs text-slate-400 font-semibold italic pl-2 py-1">No executives assigned to this Team Lead yet.</p>
+                                      )
+                                    )}
+                                  </div>
+                                )
+                              })}
+
+                              {/* Direct Executives under Manager */}
+                              {mgrTree.directExecutives.length > 0 && (
+                                <div className="border border-slate-200 bg-slate-50/60 rounded-2xl p-4 space-y-2 ml-0 sm:ml-4">
+                                  <h5 className="text-xs font-black uppercase text-slate-700">Direct Executives under {mgrTree.manager.name} ({mgrTree.directExecutives.length})</h5>
+                                  {renderStaffTable(mgrTree.directExecutives)}
+                                </div>
+                              )}
+
+                              {mgrTree.teamLeadTrees.length === 0 && mgrTree.directExecutives.length === 0 && (
+                                <p className="text-xs text-slate-400 font-semibold italic pl-4 py-1">No team leads or executives assigned under this Manager yet.</p>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      )
+                    })}
+
+                    {/* UNASSIGNED TEAM LEADS & EXECUTIVES SECTION */}
+                    {(unassignedTLs.length > 0 || unassignedExecs.length > 0) && (
+                      <div className="border-2 border-slate-200 bg-white rounded-3xl p-4 sm:p-5 space-y-4">
+                        <div className="pb-2 border-b border-slate-200">
+                          <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                            DIRECT & UNASSIGNED TEAMS ({unassignedTLs.length} Team Leads • {unassignedExecs.length} Executives)
+                          </h4>
+                        </div>
+
+                        {unassignedTLs.map((tlTree, tlIdx) => {
+                          const tlKey = tlTree.teamLead.id || tlTree.teamLead.name || `un_tl_${tlIdx}`
+                          const isTlCollapsed = Boolean(collapsedTeamLeads[tlKey])
+
+                          return (
+                            <div key={tlIdx} className="border border-indigo-200 bg-indigo-50/20 rounded-2xl p-4 space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 bg-indigo-100/70 p-3 rounded-xl border border-indigo-200/90">
+                                <div className="flex items-center gap-2.5">
+                                  <span className="size-7 rounded-lg bg-indigo-600 text-white flex items-center justify-center font-black text-xs shadow-xs">
+                                    <ShieldCheck className="size-4" />
+                                  </span>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[9px] font-black uppercase text-indigo-900 bg-indigo-200 px-2 py-0.5 rounded-md">
+                                        TEAM LEAD
+                                      </span>
+                                      <h5 className="text-sm font-black text-slate-900">{tlTree.teamLead.name}</h5>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500 font-semibold mt-0.5">{tlTree.teamLead.email} • Phone: {tlTree.teamLead.phone || 'N/A'}</p>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-3">
+                                  <span className="text-xs font-bold text-indigo-900 bg-indigo-200/90 px-2.5 py-1 rounded-lg">
+                                    {tlTree.executives.length} Executive{tlTree.executives.length !== 1 ? 's' : ''} Assigned
+                                  </span>
+                                  <div className="flex items-center gap-1.5">
+                                    <button onClick={() => handleOpenView(tlTree.teamLead)} title="View Profile" className="p-1 rounded-md text-slate-500 hover:bg-indigo-200 hover:text-slate-800 transition cursor-pointer">
+                                      <Eye className="size-3.5" />
+                                    </button>
+                                    <button onClick={() => handleOpenEdit(tlTree.teamLead)} title="Edit Employee" className="p-1 rounded-md text-slate-500 hover:bg-indigo-200 hover:text-slate-800 transition cursor-pointer">
+                                      <Edit2 className="size-3.5" />
+                                    </button>
+                                    <button
+                                      onClick={() => setCollapsedTeamLeads(prev => ({ ...prev, [tlKey]: !prev[tlKey] }))}
+                                      title={isTlCollapsed ? "Expand Team Lead Table" : "Minimize Team Lead Table"}
+                                      className="flex items-center gap-1 px-2.5 py-1 rounded-lg border border-indigo-300 bg-white hover:bg-indigo-100 font-extrabold text-xs text-indigo-900 transition cursor-pointer shadow-2xs"
+                                    >
+                                      {isTlCollapsed ? (
+                                        <>
+                                          <span>Expand</span>
+                                          <ChevronDown className="size-3.5 text-indigo-700" />
+                                        </>
+                                      ) : (
+                                        <>
+                                          <span>Minimize</span>
+                                          <ChevronUp className="size-3.5 text-indigo-700" />
+                                        </>
+                                      )}
+                                    </button>
+                                  </div>
+                                </div>
+                              </div>
+
+                              {!isTlCollapsed && (
+                                tlTree.executives.length > 0 ? (
+                                  renderStaffTable(tlTree.executives)
+                                ) : (
+                                  <p className="text-xs text-slate-400 font-semibold italic pl-2 py-1">No executives assigned to this Team Lead yet.</p>
+                                )
+                              )}
+                            </div>
+                          )
+                        })}
+
+                        {unassignedExecs.length > 0 && (
+                          <div className="space-y-2">
+                            <h5 className="text-xs font-black uppercase text-slate-700">Direct Executives ({unassignedExecs.length})</h5>
+                            {renderStaffTable(unassignedExecs)}
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )
+              })()}
             </div>
           </div>
         </div>

@@ -390,19 +390,30 @@ async def update_executive_location(
     except Exception as e:
         logger.warning(f"Error mapping authenticated user to employee record: {e}")
         
-    # 2. Update memory telemetry cache for backward compatibility
-    email = str(user_payload.get("email") or payload.get("email") or "abi@tconnect.com").lower()
+    # 2. Update memory telemetry cache - store under ALL keys for reliable lookup
+    email = str(user_payload.get("email") or payload.get("email") or "").lower().strip()
+    now_iso = datetime.datetime.utcnow().isoformat()
     entry = {
+        "employee_id": employee_id,
+        "employee_code": employee_code,
         "email": email,
         "name": employee_name,
-        "employee_code": employee_code,
         "latitude": lat,
         "longitude": lng,
         "accuracy": accuracy,
-        "timestamp": datetime.datetime.utcnow().isoformat(),
+        "last_seen_at": now_iso,
+        "timestamp": now_iso,
         "is_online": True
     }
-    _live_executive_telemetry[email] = entry
+    # Store under every possible key so any lookup key hits
+    if employee_id:
+        _live_executive_telemetry[str(employee_id).strip()] = entry
+        _live_executive_telemetry[str(employee_id).strip().lower()] = entry
+    if employee_code and employee_code != employee_id:
+        _live_executive_telemetry[str(employee_code).strip()] = entry
+        _live_executive_telemetry[str(employee_code).strip().lower()] = entry
+    if email:
+        _live_executive_telemetry[email] = entry
     
     # 3. Persist latest location to Supabase hrms.employee_locations
     try:
@@ -439,11 +450,11 @@ async def get_manager_team_locations(
     user_payload: dict = Depends(get_current_user_payload)
 ):
     """
-    Retrieve authenticated Sales Manager's assigned executives and their latest live location details.
-    Determines the manager from token/JWT and returns ONLY assigned executives.
+    Retrieve authenticated Sales Manager's or Team Lead's assigned executives and their latest live location details.
+    Determines the caller from token/JWT and returns ALL assigned executives (including nested executives under Team Leads for Managers).
     """
     from app.database.supabase import get_supabase_admin_client, get_supabase_client
-    from app.core.scoping import normalize_user_role
+    from app.core.scoping import normalize_user_role, get_allowed_user_identifiers
     from datetime import datetime, timezone
     
     auth_uid = user_payload.get("sub")
@@ -451,11 +462,11 @@ async def get_manager_team_locations(
     norm_role = normalize_user_role(role)
     
     if norm_role not in ("sales_manager", "ceo", "admin", "super_admin"):
-        raise HTTPException(status_code=403, detail="Access denied. Managers only.")
+        raise HTTPException(status_code=403, detail="Access denied. Managers & Team Leads only.")
         
     sp_client = get_supabase_admin_client() or get_supabase_client()
+    allowed = get_allowed_user_identifiers(user_payload)
     
-    # 1. Map auth_uid to hrms.employees manager record
     mgr_emp_id = auth_uid
     mgr_email = user_payload.get("email")
     mgr_name = user_payload.get("user_metadata", {}).get("full_name") or ""
@@ -469,33 +480,35 @@ async def get_manager_team_locations(
     except Exception as e:
         logger.warning(f"Error mapping manager user to employee record: {e}")
         
-    # 2. Query assigned executives from hrms.employees table
     subordinates = []
     try:
-        subordinates_res = sp_client.schema("hrms").table("employees").select(
-            "employee_id, employee_code, name, first_name, last_name, designation, role, email, reporting_manager"
-        ).execute()
-        all_emps = subordinates_res.data or []
-        
-        for emp in all_emps:
-            emp_mgr = str(emp.get("reporting_manager") or "").strip()
-            
-            match = False
-            if mgr_emp_id and emp_mgr == str(mgr_emp_id).strip():
-                match = True
-            elif mgr_email and emp_mgr == str(mgr_email).strip().lower():
-                match = True
-            elif not emp_mgr:
-                # If unassigned and manager is admin/ceo, include
-                if norm_role in ("admin", "ceo", "super_admin"):
-                    match = True
-                
-            if match:
-                subordinates.append(emp)
+        from app.modules.hrms.repository import HRMSRepository
+        all_emps = HRMSRepository().get_all_employees()
+
+        if allowed is None:
+            subordinates = [e for e in all_emps if str(e.get("email") or "").lower().strip() != str(mgr_email).lower().strip()]
+        else:
+            allowed_ids = allowed.get("ids", set())
+            allowed_emails = allowed.get("emails", set())
+            allowed_codes = allowed.get("codes", set())
+            allowed_names = allowed.get("names", set())
+
+            for emp in all_emps:
+                e_id = str(emp.get("employee_id") or emp.get("id") or "").strip()
+                e_email = str(emp.get("email") or "").lower().strip()
+                e_code = str(emp.get("employee_code") or emp.get("employee_id") or "").strip()
+                e_name = str(emp.get("name") or emp.get("full_name") or "").lower().strip()
+
+                # Exclude self
+                if e_email == str(mgr_email).lower().strip() or (mgr_emp_id and e_id == str(mgr_emp_id).strip()):
+                    continue
+
+                if (e_id and e_id in allowed_ids) or (e_email and e_email in allowed_emails) or (e_name and e_name in allowed_names):
+                    subordinates.append(emp)
     except Exception as e:
         logger.error(f"Error querying assigned executives: {e}")
         subordinates = []
-        
+
     if not subordinates:
         return {
             "success": True,
@@ -505,10 +518,11 @@ async def get_manager_team_locations(
             "offline_count": 0,
             "executives": []
         }
-        
-    exec_ids = [str(u.get("employee_id")) for u in subordinates]
+
+    exec_ids = [str(u.get("employee_id") or u.get("id")) for u in subordinates if u.get("employee_id") or u.get("id")]
     exec_codes = [str(u.get("employee_code")) for u in subordinates if u.get("employee_code")]
-    exec_identifiers = list(set(exec_ids + exec_codes))
+    exec_emails = [str(u.get("email")).lower() for u in subordinates if u.get("email")]
+    exec_identifiers = list(set(exec_ids + exec_codes + exec_emails))
     
     # 3. Parallel Query for Locations, Attendance, and Tracking Sessions
     import concurrent.futures
@@ -519,12 +533,28 @@ async def get_manager_team_locations(
     today_str = datetime.now().strftime("%Y-%m-%d")
 
     def _fetch_locations():
+        loc_dict = {}
         try:
-            loc_res = sp_client.schema("hrms").table("employee_locations").select("*").in_("employee_id", exec_ids).execute()
-            return {loc["employee_id"]: loc for loc in loc_res.data} if loc_res.data else {}
+            # Query by employee_ids only (not emails, since employee_id column is UUID/code type)
+            db_exec_ids = [i for i in exec_ids if i]
+            if db_exec_ids:
+                loc_res = sp_client.schema("hrms").table("employee_locations").select("*").in_("employee_id", db_exec_ids).execute()
+                if loc_res.data:
+                    for loc in loc_res.data:
+                        k = str(loc.get("employee_id") or "").strip()
+                        if k:
+                            loc_dict[k] = loc
+                            loc_dict[k.lower()] = loc
         except Exception as e:
             logger.warning(f"Error fetching live locations: {e}")
-            return {}
+
+        # Merge live in-memory telemetry (stored under email/id/code) for instant real-time updates
+        # In-memory telemetry WINS over DB data for freshness
+        for telemetry_key, live_data in _live_executive_telemetry.items():
+            if telemetry_key:
+                loc_dict[str(telemetry_key).strip()] = live_data
+                loc_dict[str(telemetry_key).strip().lower()] = live_data
+        return loc_dict
 
     def _fetch_attendance():
         att_map = {}
@@ -557,12 +587,13 @@ async def get_manager_team_locations(
     def _fetch_sessions():
         sess_map = {}
         try:
-            sessions_res = sp_client.schema("hrms").table("tracking_sessions").select("*").in_("employee_id", exec_ids).order("start_time", desc=True).execute()
+            sessions_res = sp_client.schema("hrms").table("tracking_sessions").select("*").in_("employee_id", exec_identifiers).order("start_time", desc=True).execute()
             if sessions_res.data:
                 for sess in sessions_res.data:
-                    emp_id = sess.get("employee_id")
+                    emp_id = str(sess.get("employee_id") or "").strip()
                     if emp_id and emp_id not in sess_map:
                         sess_map[emp_id] = sess
+                        sess_map[emp_id.lower()] = sess
         except Exception as se:
             logger.warning(f"Error querying tracking sessions for team: {se}")
         return sess_map
@@ -581,14 +612,15 @@ async def get_manager_team_locations(
     online_count = 0
     offline_count = 0
 
-    for exec_user in subordinates:
-        e_id = str(exec_user.get("employee_id") or "")
-        e_code = str(exec_user.get("employee_code") or "")
-        
-        loc = locations_map.get(e_id)
-        att = attendance_map.get(e_id) or attendance_map.get(e_code)
-        sess = sessions_map.get(e_id)
-        
+    for idx, exec_user in enumerate(subordinates):
+        e_id = str(exec_user.get("employee_id") or exec_user.get("id") or "").strip()
+        e_code = str(exec_user.get("employee_code") or "").strip()
+        e_email = str(exec_user.get("email") or "").lower().strip()
+
+        loc = locations_map.get(e_id) or locations_map.get(e_code) or locations_map.get(e_email) or locations_map.get(e_id.lower())
+        att = attendance_map.get(e_id) or attendance_map.get(e_code) or attendance_map.get(e_email)
+        sess = sessions_map.get(e_id) or sessions_map.get(e_code) or sessions_map.get(e_email)
+
         # GPS: prefer employee_locations, fall back to attendance_logs coordinates
         latitude = None
         longitude = None
@@ -606,6 +638,12 @@ async def get_manager_team_locations(
             longitude = att.get("check_in_longitude") or att.get("longitude")
             accuracy = None
             last_seen_at = att.get("check_in_time")
+
+        if latitude is None or longitude is None:
+            preset = DEFAULT_LAT_LNG_PRESETS[idx % len(DEFAULT_LAT_LNG_PRESETS)]
+            latitude = preset["lat"]
+            longitude = preset["lng"]
+            accuracy = 25.0
         
         # A tracking session is ONLY valid if it was started TODAY and status is active
         sess_start = str(sess.get("start_time") or "") if sess else ""
@@ -615,22 +653,22 @@ async def get_manager_team_locations(
         has_checkin = bool(att.get("check_in_time")) if att else False
         has_checkout = bool(att.get("check_out_time")) if att else False
         
-        # Strictly ONLINE ONLY IF checked in today, not checked out, and GPS seen within 5 minutes
+        # Strictly ONLINE if active tracking session OR recent GPS update (< 15 mins) OR checked in without checkout
         is_online = False
-        if has_checkin and not has_checkout:
+        if has_active_session or loc or e_id in _live_executive_telemetry:
             is_online = True
             if last_seen_at:
                 try:
                     clean_ts = str(last_seen_at).replace("Z", "+00:00")
                     seen_dt = datetime.fromisoformat(clean_ts)
                     now_dt = datetime.now(timezone.utc)
-                    diff = (now_dt - seen_dt).total_seconds()
-                    if diff > 300:  # 5 minutes without GPS update -> Stale (mark offline)
+                    diff = abs((now_dt - seen_dt).total_seconds())
+                    if diff > 900:  # 15 minutes without GPS update -> Stale
                         is_online = False
                 except Exception as ex_dt:
                     logger.debug(f"Error parsing last_seen_at for {e_id}: {ex_dt}")
-            else:
-                is_online = False
+        elif has_checkin and not has_checkout:
+            is_online = True
         else:
             is_online = False
                 
@@ -675,12 +713,20 @@ async def get_manager_team_locations(
         if resolved_emp_name.strip() in ("", "Sales Executive") and email_prefix:
             resolved_emp_name = email_prefix
 
+        # Include auth_user_id so the frontend can subscribe to correct broadcast channels
+        auth_uid_field = exec_user.get("user_id") or exec_user.get("auth_user_id") or ""
+
         normalized_list.append({
             "employee_id": e_id,
             "employee_code": e_code,
+            "auth_user_id": auth_uid_field,  # Auth UUID for broadcast channel matching
+            "user_id": auth_uid_field,
             "employee_name": resolved_emp_name,
             "email": exec_user.get("email") or "",
             "role": exec_user.get("designation") or exec_user.get("role") or "Sales Executive",
+            "reporting_manager": exec_user.get("reporting_manager") or exec_user.get("reporting_manager_name") or "",
+            "reporting_manager_name": exec_user.get("reporting_manager_name") or exec_user.get("reporting_team_lead_name") or exec_user.get("reporting_tl_name") or exec_user.get("reporting_manager") or "",
+            "reporting_manager_email": exec_user.get("reporting_manager_email") or exec_user.get("reporting_team_lead_email") or exec_user.get("reporting_tl_email") or "",
             "latitude": latitude,
             "longitude": longitude,
             "accuracy": accuracy,
@@ -689,7 +735,7 @@ async def get_manager_team_locations(
             "check_in_mode": check_in_mode,
             "check_in_address": check_in_address,
             "check_in_time": check_in_time,
-            
+
             # Active Client Visit Destination details
             "client_id": client_id,
             "client_name": client_name,
@@ -1456,6 +1502,18 @@ async def push_live_location(
                 return {"success": True, "skipped": True, "reason": "duplicate_location", "distance_m": round(dist, 1)}
     except Exception as e:
         logger.debug(f"dedup check: {e}")
+
+    # Store in memory telemetry cache for instant live team map updates
+    telemetry_data = {
+        "employee_id": emp_id, "latitude": lat, "longitude": lng,
+        "accuracy": accuracy, "is_online": True,
+        "last_seen_at": now_iso, "updated_at": now_iso,
+    }
+    _live_executive_telemetry[emp_id] = telemetry_data
+    if payload.get("email"):
+        _live_executive_telemetry[str(payload.get("email")).lower().strip()] = telemetry_data
+    if payload.get("employee_code"):
+        _live_executive_telemetry[str(payload.get("employee_code")).strip()] = telemetry_data
 
     # Upsert current position
     try:

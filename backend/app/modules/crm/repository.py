@@ -6,7 +6,20 @@ from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
 from app.core.logger import logger
 
+import time
+import threading
+
 _in_memory_leads: List[Dict[str, Any]] = []
+
+_leads_cache_lock = threading.Lock()
+_LEADS_CACHE: Optional[List[Dict[str, Any]]] = None
+_LEADS_CACHE_TIMESTAMP: float = 0.0
+_LEADS_CACHE_TTL: float = 30.0
+
+def clear_leads_cache():
+    global _LEADS_CACHE, _LEADS_CACHE_TIMESTAMP
+    _LEADS_CACHE = None
+    _LEADS_CACHE_TIMESTAMP = 0.0
 
 _UUID_PATTERN = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
 
@@ -21,6 +34,30 @@ class CRMRepository:
         self.helper = get_schema_helper()
 
     def get_all_leads(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        global _LEADS_CACHE, _LEADS_CACHE_TIMESTAMP
+        now = time.time()
+        
+        all_enriched = None
+        if _LEADS_CACHE is not None and (now - _LEADS_CACHE_TIMESTAMP) < _LEADS_CACHE_TTL:
+            all_enriched = _LEADS_CACHE
+
+        if all_enriched is None:
+            with _leads_cache_lock:
+                now = time.time()
+                if _LEADS_CACHE is not None and (now - _LEADS_CACHE_TIMESTAMP) < _LEADS_CACHE_TTL:
+                    all_enriched = _LEADS_CACHE
+                else:
+                    all_enriched = self._fetch_and_enrich_leads()
+                    _LEADS_CACHE = all_enriched
+                    _LEADS_CACHE_TIMESTAMP = now
+
+        from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
+        allowed = get_allowed_user_identifiers(user_payload)
+        if allowed is not None:
+            return [l for l in all_enriched if is_record_accessible(l, allowed)]
+        return list(all_enriched)
+
+    def _fetch_and_enrich_leads(self) -> List[Dict[str, Any]]:
         leads = []
         try:
             res = self.supabase.schema("crm").table("leads").select("*").execute()
@@ -150,14 +187,10 @@ class CRMRepository:
 
             enriched_leads.append(row)
 
-        from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
-        allowed = get_allowed_user_identifiers(user_payload)
-        if allowed is not None:
-            enriched_leads = [l for l in enriched_leads if is_record_accessible(l, allowed)]
-
         return enriched_leads
 
     def create_lead(self, data: Dict[str, Any], user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        clear_leads_cache()
         lead_id = data.get("id") or data.get("lead_id") or str(uuid.uuid4())
         lead_num = data.get("lead_number") or data.get("lead_code") or f"LD-{str(uuid.uuid4())[:6].upper()}"
 
@@ -486,48 +519,10 @@ class CRMRepository:
         params = params or {}
         try:
             # 1. Fetch all leads from Supabase / Memory
+            # Note: get_all_leads already applies get_allowed_user_identifiers scoping
+            # which handles Manager -> Team Lead -> Executive hierarchy recursively.
+            # No additional filtering needed here.
             all_leads = self.get_all_leads(user_payload=user_payload)
-
-            # Restrict results to manager's assigned team if the user has a manager role
-            user_payload = user_payload or {}
-            user_role = str(user_payload.get("role") or "").lower().strip()
-            if "manager" in user_role:
-                from app.modules.users.repository import UserRepository
-                user_repo = UserRepository()
-                mgr_email = str(user_payload.get("email") or "").lower().strip()
-                mgr_id = str(user_payload.get("id") or user_payload.get("user_id") or "").strip()
-                mgr_code = str(user_payload.get("employee_code") or "").strip()
-                effective_mgr_identifier = mgr_email or mgr_id or mgr_code
-
-                assigned_execs = user_repo.get_assigned_executives_for_manager(effective_mgr_identifier) or []
-
-                assigned_emails = {str(u.get("email") or "").lower().strip() for u in assigned_execs if u.get("email")}
-                assigned_ids = {str(u.get("id") or u.get("user_id") or u.get("employee_id") or "").strip() for u in assigned_execs}
-                assigned_codes = {str(u.get("employee_code") or u.get("employee_id") or "").strip() for u in assigned_execs}
-                assigned_names = {str(u.get("name") or u.get("full_name") or "").lower().strip() for u in assigned_execs}
-                assigned_names = {n for n in assigned_names if len(n) > 3}
-
-                team_leads = []
-                for l in (all_leads or []):
-                    if not isinstance(l, dict):
-                        continue
-                    l_se_email = str(l.get("assigned_to_email") or l.get("assignedToEmail") or l.get("created_by_email") or l.get("email") or "").lower().strip()
-                    l_se_id = str(l.get("user_id") or l.get("userId") or l.get("executive_id") or l.get("employee_id") or "").strip()
-                    l_se_name = str(l.get("assigned_to") or l.get("assignedTo") or l.get("created_by_name") or l.get("executive") or "").lower().strip()
-
-                    is_match = False
-                    if l_se_email and l_se_email in assigned_emails:
-                        is_match = True
-                    elif l_se_id and (l_se_id in assigned_ids or l_se_id in assigned_codes):
-                        is_match = True
-                    else:
-                        for name in assigned_names:
-                            if name in l_se_name:
-                                is_match = True
-                                break
-                    if is_match:
-                        team_leads.append(l)
-                all_leads = team_leads
 
             # 2. Filter parameters
             se_filter = str(params.get("sales_executive_id") or params.get("executive") or params.get("se_id") or "").lower().strip()

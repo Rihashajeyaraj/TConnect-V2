@@ -38,8 +38,8 @@ class ExpenseService:
     def update_expense_status(self, exp_id: str, approval: ExpenseApproval, manager_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         if manager_payload:
             role = normalize_user_role(manager_payload.get("role"))
-            if role == "sales_executive":
-                raise ForbiddenException("Sales Executives are not authorized to approve or reject expense claims.")
+            if role in ("sales_executive", "team_lead"):
+                raise ForbiddenException("Only Sales Managers and Executives Leaders are authorized to approve or reject expense claims.")
 
         exp = self.repo.get_expense_by_id(exp_id)
         if not exp:
@@ -58,8 +58,8 @@ class ExpenseService:
     def change_status(self, exp_id: str, status: str, remarks: str, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         if user_payload:
             role = normalize_user_role(user_payload.get("role"))
-            if role == "sales_executive":
-                raise ForbiddenException("Sales Executives are not authorized to approve or reject expense claims.")
+            if role in ("sales_executive", "team_lead"):
+                raise ForbiddenException("Only Sales Managers and Executives Leaders are authorized to approve or reject expense claims.")
 
         exp = self.repo.get_expense_by_id(exp_id)
         if not exp:

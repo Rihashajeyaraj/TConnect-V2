@@ -19,6 +19,7 @@ import { useToast } from '../../common/ToastContext.jsx'
 import useCurrentUser from '../../hooks/useCurrentUser.js'
 import { formatDate, getDateFilterRange, isDateWithinFilterRange } from '../../utils/dateUtils.js'
 import DateRangeFilter from '../../common/DateRangeFilter.jsx'
+import { collectManagerSubordinates } from '../../utils/managerScoping.js'
 
 const STATUS_COLORS = {
   Present: 'bg-emerald-50 text-emerald-700 border-emerald-200',
@@ -66,31 +67,7 @@ export default function ManagerAttendance() {
       const atts = attRes.status === 'fulfilled' ? (Array.isArray(attRes.value) ? attRes.value : attRes.value?.data || []) : []
 
       // 1. Dynamic HRMS Assignment Scoping
-      const myExecs = emps.filter((emp) => {
-        if (!emp) return false
-
-        const empManagerId = String(emp.reporting_manager_id || emp.reporting_manager || '').trim()
-        const empManagerEmail = String(emp.reporting_manager_email || '').toLowerCase().trim()
-        const empManagerName = String(emp.reporting_manager_name || '').toLowerCase().trim()
-
-        const myId = String(currentUser.id || '').trim()
-        const myUserId = String(currentUser.user_id || '').trim()
-        const myCode = String(currentUser.employee_code || '').trim()
-        const myEmail = String(currentUser.email || '').toLowerCase().trim()
-        const myName = String(currentUser.name || currentUser.full_name || '').toLowerCase().trim()
-
-        const idMatch = !!(empManagerId && (
-          (myId && empManagerId === myId) ||
-          (myUserId && empManagerId === myUserId) ||
-          (myCode && empManagerId === myCode)
-        ))
-
-        const emailMatch = !!(empManagerEmail && myEmail && empManagerEmail === myEmail)
-
-        const nameMatch = !!(empManagerName && myName && empManagerName === myName)
-
-        return idMatch || emailMatch || nameMatch
-      })
+      const myExecs = collectManagerSubordinates(emps, currentUser)
 
       setAssignedExecutives(myExecs)
 

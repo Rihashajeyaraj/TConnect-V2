@@ -25,6 +25,8 @@ class UserCreate(BaseModel):
     half_day_permissions: Optional[int] = 6
     short_permissions: Optional[int] = 2
     incentive_percentage: Optional[float] = 5.0
+    custom_permissions: Optional[Dict[str, Any]] = None
+    permissions: Optional[Dict[str, Any]] = None
 
     @validator("phone", "emergency_contact", pre=True, allow_reuse=True)
     def validate_phone_number(cls, v):
@@ -57,6 +59,8 @@ class UserUpdate(BaseModel):
     half_day_permissions: Optional[int] = None
     short_permissions: Optional[int] = None
     incentive_percentage: Optional[float] = None
+    custom_permissions: Optional[Dict[str, Any]] = None
+    permissions: Optional[Dict[str, Any]] = None
 
     @validator("phone", pre=True, allow_reuse=True)
     def validate_phone_number(cls, v):
@@ -89,6 +93,8 @@ class UserResponse(BaseModel):
     half_day_permissions: Optional[int] = 6
     short_permissions: Optional[int] = 2
     incentive_percentage: Optional[float] = 5.0
+    custom_permissions: Optional[Dict[str, Any]] = None
+    permissions: Optional[Dict[str, Any]] = None
 
 
 class AssignManagerRequest(BaseModel):

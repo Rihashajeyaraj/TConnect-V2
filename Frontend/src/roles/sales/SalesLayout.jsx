@@ -215,6 +215,7 @@ export default function SalesLayout() {
   const seRole = user.role || "Sales Executive";
   const seInitials = (seName.split(" ").map((w) => w[0]).join("").slice(0, 2) || "SE").toUpperCase();
 
+
   // ── Supabase & Background Tracking Pipeline ──────────────────────────────
   const SUPA_URL = import.meta.env.VITE_SUPABASE_URL;
   const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -321,7 +322,7 @@ export default function SalesLayout() {
     try {
       spatialAPI.pushLocation(dbPoint).catch(() => null);
       lastPushedPosRef.current = { lat, lng };
-      spatialAPI.updateLocation({ latitude: lat, longitude: lng, accuracy, employee_code: empCode }).catch(() => null);
+      spatialAPI.updateLocation({ latitude: lat, longitude: lng, accuracy, employee_code: empCode, email: user.email || '' }).catch(() => null);
     } catch {
       // Queue for retry (cap at 20 points)
       if (gpsRetryQueue.current.length < 20) {
@@ -822,7 +823,7 @@ export default function SalesLayout() {
     window.location.href = "/";
   };
 
-  const menus = [
+  const baseMenus = [
     { title: "Dashboard", icon: LayoutDashboard, path: "/sales/dashboard" },
     { title: "Smart Map", icon: MapPin, path: "/sales/map" },
     { title: "Leads", icon: Users, path: "/sales/leads" },
@@ -833,6 +834,8 @@ export default function SalesLayout() {
     { title: "HRMS", icon: ShieldCheck, path: "/sales/hrms" },
     { title: "Tasks", icon: CheckSquare, path: "/sales/todo" },
   ];
+
+  const menus = baseMenus;
 
   const userEmail = (user?.email || "").toLowerCase().trim();
   const [sidebarItems, setSidebarItems] = useState(() => {

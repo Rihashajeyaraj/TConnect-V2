@@ -29,8 +29,8 @@ import {
 } from "lucide-react";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
-import { formatDate } from "../../utils/dateUtils.js";
-import { reportAPI, attendanceAPI, hrmsAPI, adminAPI, holidaysAPI, handbookAPI } from "../../services/api.js";
+import { formatDate, getLeaveRequestDays, parseDateInput } from "../../utils/dateUtils.js";
+import { reportAPI, attendanceAPI, hrmsAPI, adminAPI, holidaysAPI, handbookAPI, settingsAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import Attendance, { calculateWorkHours } from "./Attendance.jsx";
 
@@ -64,7 +64,7 @@ const HANDBOOK = [
   { title: "Daily Reporting", icon: "📊", content: "Submit Daily Work Report before 6:30 PM every working day. Include calls, visits, pipeline updates." },
 ];
 
-export default function SalesHRMS() {
+export default function SalesHRMS(props) {
   const toastCtx = useToast();
   const showToast = (msg, type) => {
     if (toastCtx && toastCtx.showToast) toastCtx.showToast(msg, type);
@@ -109,8 +109,69 @@ export default function SalesHRMS() {
   const [loadingHolidays, setLoadingHolidays] = useState(false);
   const [loadingHandbook, setLoadingHandbook] = useState(false);
 
+  const [holidayPdfData, setHolidayPdfData] = useState(() => {
+    try {
+      const pdf = localStorage.getItem('tc_holiday_calendar_pdf');
+      const meta = JSON.parse(localStorage.getItem('tc_holiday_calendar_meta') || '{}');
+      return pdf ? { url: pdf, name: meta.name || 'Holiday_Calendar_2026.pdf', date: meta.date } : null;
+    } catch { return null; }
+  });
+
+  const [handbookPdfData, setHandbookPdfData] = useState(() => {
+    try {
+      const pdf = localStorage.getItem('tc_twite_handbook_pdf');
+      const meta = JSON.parse(localStorage.getItem('tc_twite_handbook_meta') || '{}');
+      return pdf ? { url: pdf, name: meta.name || 'Twite_Employee_Handbook.pdf', date: meta.date } : null;
+    } catch { return null; }
+  });
+
   useEffect(() => {
+    function syncLocalPdfs() {
+      try {
+        const hPdf = localStorage.getItem('tc_holiday_calendar_pdf');
+        const hMeta = JSON.parse(localStorage.getItem('tc_holiday_calendar_meta') || '{}');
+        if (hPdf) {
+          setHolidayPdfData({ url: hPdf, name: hMeta.name || 'Holiday_Calendar_2026.pdf', date: hMeta.date });
+        }
+        const hbPdf = localStorage.getItem('tc_twite_handbook_pdf');
+        const hbMeta = JSON.parse(localStorage.getItem('tc_twite_handbook_meta') || '{}');
+        if (hbPdf) {
+          setHandbookPdfData({ url: hbPdf, name: hbMeta.name || 'Twite_Employee_Handbook.pdf', date: hbMeta.date });
+        }
+      } catch (_) {}
+    }
+
+    syncLocalPdfs();
+    window.addEventListener('storage', syncLocalPdfs);
+
     async function loadMasterData() {
+      try {
+        const sRes = await settingsAPI.getSettings().catch(() => null);
+        const d = sRes?.data || sRes || {};
+        if (d.holiday_calendar_pdf) {
+          setHolidayPdfData({
+            url: d.holiday_calendar_pdf,
+            name: d.holiday_calendar_filename || 'Holiday_Calendar_2026.pdf',
+            date: d.holiday_calendar_uploaded_at
+          });
+          try {
+            localStorage.setItem('tc_holiday_calendar_pdf', d.holiday_calendar_pdf);
+            localStorage.setItem('tc_holiday_calendar_meta', JSON.stringify({ name: d.holiday_calendar_filename, date: d.holiday_calendar_uploaded_at }));
+          } catch (_) {}
+        }
+        if (d.twite_handbook_pdf) {
+          setHandbookPdfData({
+            url: d.twite_handbook_pdf,
+            name: d.twite_handbook_filename || 'Twite_Employee_Handbook.pdf',
+            date: d.twite_handbook_uploaded_at
+          });
+          try {
+            localStorage.setItem('tc_twite_handbook_pdf', d.twite_handbook_pdf);
+            localStorage.setItem('tc_twite_handbook_meta', JSON.stringify({ name: d.twite_handbook_filename, date: d.twite_handbook_uploaded_at }));
+          } catch (_) {}
+        }
+      } catch (_) {}
+
       try {
         setLoadingHolidays(true);
         const hRes = await holidaysAPI.getHolidays();
@@ -132,6 +193,7 @@ export default function SalesHRMS() {
       }
     }
     loadMasterData();
+    return () => window.removeEventListener('storage', syncLocalPdfs);
   }, []);
 
   useEffect(() => {
@@ -265,9 +327,13 @@ export default function SalesHRMS() {
             reportingManager: emp.reporting_manager_name || "Not Assigned",
             reportingManagerEmail: emp.reporting_manager_email || "",
             annualLeaves: emp.annual_leaves ?? emp.annualLeaves,
+            sickLeaves: emp.sick_leaves ?? emp.sickLeaves,
+            otherLeaves: emp.other_leaves ?? emp.otherLeaves,
             halfDayPermissions: emp.half_day_permissions ?? emp.halfDayPermissions,
             shortPermissions: emp.short_permissions ?? emp.shortPermissions,
             annual_leaves: emp.annual_leaves ?? emp.annualLeaves,
+            sick_leaves: emp.sick_leaves ?? emp.sickLeaves,
+            other_leaves: emp.other_leaves ?? emp.otherLeaves,
             half_day_permissions: emp.half_day_permissions ?? emp.halfDayPermissions,
             short_permissions: emp.short_permissions ?? emp.shortPermissions,
           };
@@ -369,6 +435,7 @@ export default function SalesHRMS() {
       return;
     }
 
+<<<<<<< HEAD
     let calculatedDuration = "1 Day";
     if (leaveType.includes("Half")) {
       calculatedDuration = "0.5 Day";
@@ -383,6 +450,74 @@ export default function SalesHRMS() {
       }
     }
 
+=======
+    let reqDays = 1;
+    if (leaveType.includes("Half")) {
+      reqDays = 0.5;
+    } else if (leaveType.includes("Permission")) {
+      reqDays = 2.0;
+    } else if (leaveFromDate && leaveToDate) {
+      const d1 = parseDateInput(leaveFromDate);
+      const d2 = parseDateInput(leaveToDate);
+      if (d1 && d2) {
+        const diffMs = Math.abs(d2.getTime() - d1.getTime());
+        reqDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
+      }
+    }
+
+    // Quota Validation Check
+    const userEmailClean = String(userEmail || currentUser.email || profile.officialEmail || '').toLowerCase().trim();
+    const savedLeaves = userEmailClean ? localStorage.getItem(`tc_leaves_${userEmailClean}`) : null;
+    const localAlloc = savedLeaves ? JSON.parse(savedLeaves) : null;
+
+    let targetCardAllowed = 10;
+    let categoryKey = 'Sick Leave';
+
+    if (leaveType.includes("Casual")) {
+      categoryKey = "Casual Leave";
+      targetCardAllowed = Number(profile.annual_leaves ?? profile.annualLeaves ?? currentUser.annual_leaves ?? currentUser.annualLeaves ?? localAlloc?.annualLeaves ?? 12);
+    } else if (leaveType.includes("Sick")) {
+      categoryKey = "Sick Leave";
+      targetCardAllowed = Number(profile.sick_leaves ?? profile.sickLeaves ?? currentUser.sick_leaves ?? currentUser.sickLeaves ?? localAlloc?.sickLeaves ?? 10);
+    } else if (leaveType.includes("Other")) {
+      categoryKey = "Other Leave";
+      targetCardAllowed = Number(profile.other_leaves ?? profile.otherLeaves ?? currentUser.other_leaves ?? currentUser.otherLeaves ?? localAlloc?.otherLeaves ?? 10);
+    } else if (leaveType.includes("Half")) {
+      categoryKey = "Half-Day Permission";
+      targetCardAllowed = Number(profile.half_day_permissions ?? profile.halfDayPermissions ?? currentUser.half_day_permissions ?? currentUser.halfDayPermissions ?? localAlloc?.halfDayPermissions ?? 6);
+    } else if (leaveType.includes("Permission")) {
+      categoryKey = "Short Permission";
+      targetCardAllowed = Number(profile.short_permissions ?? profile.shortPermissions ?? currentUser.short_permissions ?? currentUser.shortPermissions ?? localAlloc?.shortPermissions ?? 2);
+    }
+
+    const currentConsumed = myLeaveRequests
+      .filter(r => {
+        if (r.status === 'Rejected') return false;
+        const rType = String(r.leave_type || r.leaveType || '');
+        if (categoryKey.includes('Casual')) return rType.includes('Casual') || rType.includes('Full');
+        if (categoryKey.includes('Sick')) return rType.includes('Sick');
+        if (categoryKey.includes('Other')) return rType.includes('Other');
+        if (categoryKey.includes('Half')) return rType.includes('Half');
+        if (categoryKey.includes('Short')) return rType.includes('Short') || rType.includes('Permission');
+        return false;
+      })
+      .reduce((sum, r) => sum + getLeaveRequestDays(r), 0);
+
+    const remainingQuota = Math.max(0, targetCardAllowed - currentConsumed);
+    const unitLabel = leaveType.includes("Permission") ? "Hours" : "Days";
+
+    if (reqDays > remainingQuota) {
+      showToast(`⚠️ Quota Exceeded! You have only ${remainingQuota} ${unitLabel} remaining for ${leaveType}, but you requested ${reqDays} ${unitLabel} (${formatDate(leaveFromDate)} to ${formatDate(leaveToDate)}). Please adjust your request!`, "error");
+      return;
+    }
+
+    const formattedDuration = leaveType.includes("Half") 
+      ? "0.5 Day" 
+      : leaveType.includes("Permission") 
+        ? "2 Hours" 
+        : `${reqDays} ${reqDays === 1 ? 'Day' : 'Days'}`;
+
+>>>>>>> Riha
     const payload = {
       id: `leave_${Date.now()}`,
       leave_type: leaveType,
@@ -395,7 +530,12 @@ export default function SalesHRMS() {
       employee_code: empCode,
       status: "Pending",
       role: currentUser.role || profile.role || "Sales Executive",
+<<<<<<< HEAD
       duration: calculatedDuration,
+=======
+      duration: formattedDuration,
+      total_days: reqDays,
+>>>>>>> Riha
       created_at: new Date().toISOString()
     };
 
@@ -405,7 +545,7 @@ export default function SalesHRMS() {
 
     try {
       await attendanceAPI.submitLeaveRequest(payload);
-      showToast(`🏖️ ${leaveType} Request submitted successfully!`, "success");
+      showToast(`🏖️ ${leaveType} Request (${formattedDuration}) submitted successfully!`, "success");
     } catch (err) {
       showToast(`Notice: Request submitted.`, "info");
     }
@@ -624,34 +764,32 @@ export default function SalesHRMS() {
     : (dynamicPresentCount === 0 && (reportFilterMode === "TODAY" || reportFilterMode === "YESTERDAY") ? 1 : 0);
 
   return (
-    <div className="space-y-6 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-6">
+    <div className="space-y-4 sm:space-y-6 font-sans text-slate-900 min-w-0 w-full p-1 sm:p-6 overflow-x-hidden">
 
       {/* Top Header & Sub-Navigation Tabs */}
-      <div className="bg-white rounded-3xl p-4 sm:p-5 border border-slate-200 shadow-xs space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-              {isUserAdmin ? "TwiteHRMS Admin Portal" : "TwiteHRMS Employee Portal"}
+      <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200 shadow-xs space-y-3 sm:space-y-4 min-w-0">
+        <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 min-w-0">
+          <div className="min-w-0 flex-1">
+            <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2 truncate">
+              {props?.portalTitle || (isUserAdmin ? "TwiteHRMS Admin Portal" : "TwiteHRMS Employee Portal")}
             </h1>
           </div>
         </div>
 
         {/* Horizontal Navigation Tabs Bar */}
-        <div className="flex items-center flex-nowrap whitespace-nowrap gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5 scrollbar-thin">
-          {hrmsTabs.filter(tab => !(isCurrentUserAdmin && tab.key === "dashboard")).map(({ key, label, icon: Icon }, index) => (
+        <div className="flex items-center flex-nowrap whitespace-nowrap gap-1.5 overflow-x-auto pb-1 border-t border-slate-100 pt-2.5 scrollbar-thin min-w-0">
+          {hrmsTabs.filter(tab => !(isCurrentUserAdmin && tab.key === "dashboard")).map(({ key, label, icon: Icon }) => (
             <div
               key={key}
-              draggable="true"
-              onDragStart={(e) => handleTabDragStart(e, index)}
-              onDragOver={(e) => handleTabDragOver(e, index)}
-              onDrop={(e) => handleTabDrop(e, index)}
-              onDragEnd={handleTabDragEnd}
-              className={`flex items-center shrink-0 whitespace-nowrap transition cursor-pointer ${
-                draggedTabKey === index ? "opacity-40" : ""
-              }`}
+              onClick={() => setActiveSection(key)}
+              className="flex items-center shrink-0 whitespace-nowrap transition cursor-pointer"
             >
               <button
-                onClick={() => setActiveSection(key)}
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveSection(key);
+                }}
                 className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer whitespace-nowrap ${activeSection === key
                     ? "bg-[#1a1f36] text-white shadow-2xs"
                     : "text-slate-600 hover:bg-slate-100"
@@ -673,11 +811,11 @@ export default function SalesHRMS() {
       </div>
 
       {/* ── MAIN SECTION CONTENT ────────────────────────────────── */}
-      <div className="w-full">
+      <div className="w-full min-w-0">
 
         {/* ── ATTENDANCE PORTAL ── */}
         {activeSection === "attendance" && (
-          <div className="max-w-5xl">
+          <div className="max-w-5xl min-w-0 w-full">
             <Attendance />
           </div>
         )}
@@ -1359,27 +1497,39 @@ export default function SalesHRMS() {
             {
               type: 'Casual Leave',
               allowed: Number(profile.annual_leaves ?? profile.annualLeaves ?? currentUser.annual_leaves ?? currentUser.annualLeaves ?? localAllocation?.annualLeaves ?? 12),
+<<<<<<< HEAD
               consumed: myLeaveRequests.filter(r => (r.leave_type === 'Casual Leave' || r.leave_type === 'Full Day Leave' || String(r.leave_type || '').includes('Casual') || String(r.leave_type || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => sum + getRequestDays(r), 0),
+=======
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Casual Leave' || r.leave_type === 'Full Day Leave' || String(r.leave_type || '').includes('Casual') || String(r.leave_type || '').includes('Full')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
+>>>>>>> Riha
               unit: 'Days',
-              color: 'bg-emerald-50 border-emerald-200 text-emerald-950',
+              color: 'bg-emerald-50 border-emerald-200 text-emerald-955',
               barColor: 'bg-emerald-600',
               description: 'General full-day casual leaves'
             },
             {
               type: 'Sick Leave',
               allowed: Number(profile.sick_leaves ?? profile.sickLeaves ?? currentUser.sick_leaves ?? currentUser.sickLeaves ?? localAllocation?.sickLeaves ?? 10),
+<<<<<<< HEAD
               consumed: myLeaveRequests.filter(r => (r.leave_type === 'Sick Leave' || String(r.leave_type || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => sum + getRequestDays(r), 0),
+=======
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Sick Leave' || String(r.leave_type || '').includes('Sick')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
+>>>>>>> Riha
               unit: 'Days',
-              color: 'bg-rose-50 border-rose-200 text-rose-950',
+              color: 'bg-rose-50 border-rose-200 text-rose-955',
               barColor: 'bg-rose-600',
               description: 'Medical rest / Sick leave balance'
             },
             {
               type: 'Other Leave',
               allowed: Number(profile.other_leaves ?? profile.otherLeaves ?? currentUser.other_leaves ?? currentUser.otherLeaves ?? localAllocation?.otherLeaves ?? 10),
+<<<<<<< HEAD
               consumed: myLeaveRequests.filter(r => (r.leave_type === 'Other Leave' || String(r.leave_type || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => sum + getRequestDays(r), 0),
+=======
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Other Leave' || String(r.leave_type || '').includes('Other')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
+>>>>>>> Riha
               unit: 'Days',
-              color: 'bg-violet-50 border-violet-200 text-violet-950',
+              color: 'bg-violet-50 border-violet-200 text-violet-955',
               barColor: 'bg-violet-600',
               description: 'Special leaves / WFH / Others'
             },
@@ -1388,18 +1538,14 @@ export default function SalesHRMS() {
               allowed: Number(profile.half_day_permissions ?? profile.halfDayPermissions ?? currentUser.half_day_permissions ?? currentUser.halfDayPermissions ?? localAllocation?.halfDayPermissions ?? 6),
               consumed: myLeaveRequests.filter(r => (r.leave_type === 'Half-Day Permission' || String(r.leave_type || '').includes('Half')) && r.status !== 'Rejected').reduce((sum, r) => sum + 0.5, 0),
               unit: 'Days',
-              color: 'bg-amber-50 border-amber-200 text-amber-950',
+              color: 'bg-amber-50 border-amber-200 text-amber-955',
               barColor: 'bg-amber-600',
               description: 'Half-day permissions quota'
             },
             {
               type: 'Short Permission',
               allowed: Number(profile.short_permissions ?? profile.shortPermissions ?? currentUser.short_permissions ?? currentUser.shortPermissions ?? localAllocation?.shortPermissions ?? 2),
-              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Short Permission' || String(r.leave_type || '').includes('Short')) && r.status !== 'Rejected').reduce((sum, r) => {
-                const durationStr = String(r.duration || '2');
-                const match = durationStr.match(/(\d+)/);
-                return sum + (match ? parseFloat(match[1]) : 2.0);
-              }, 0),
+              consumed: myLeaveRequests.filter(r => (r.leave_type === 'Short Permission' || String(r.leave_type || '').includes('Short')) && r.status !== 'Rejected').reduce((sum, r) => sum + getLeaveRequestDays(r), 0),
               unit: 'Hours',
               color: 'bg-sky-50 border-sky-200 text-sky-950',
               barColor: 'bg-sky-600',
@@ -1617,6 +1763,7 @@ export default function SalesHRMS() {
                             </span>
                           </td>
                           <td className="py-3.5 px-3 font-mono text-slate-900">
+<<<<<<< HEAD
                             <div>{req.from_date} {req.to_date && req.to_date !== req.from_date ? `to ${req.to_date}` : ""}</div>
                             <div className="text-[10px] text-teal-700 font-bold">
                               {(() => {
@@ -1625,6 +1772,20 @@ export default function SalesHRMS() {
                                 if (req.leave_type?.includes("Permission")) return req.time_slot || req.duration || "2 Hours";
                                 return `${days} ${days === 1 ? 'Day' : 'Days'}`;
                               })()}
+=======
+                            <div className="font-bold text-slate-900">
+                              {formatDate(req.from_date || req.fromDate || req.start_date)}
+                              {(req.to_date || req.toDate || req.end_date) && (req.to_date || req.toDate || req.end_date) !== (req.from_date || req.fromDate || req.start_date)
+                                ? ` to ${formatDate(req.to_date || req.toDate || req.end_date)}`
+                                : ""}
+                            </div>
+                            <div className="text-[10px] text-teal-700 font-extrabold mt-0.5">
+                              {req.leave_type?.includes("Half")
+                                ? "Half Day (0.5 Day)"
+                                : req.leave_type?.includes("Permission")
+                                  ? `Short Permission (${req.duration || "2 Hours"})`
+                                  : `Full Day (${getLeaveRequestDays(req)} ${getLeaveRequestDays(req) === 1 ? "Day" : "Days"})`}
+>>>>>>> Riha
                             </div>
                           </td>
                           <td className="py-3.5 px-3 max-w-[220px] text-slate-800 font-semibold truncate">
@@ -1851,6 +2012,73 @@ export default function SalesHRMS() {
                       </div>
                     )}
 
+                    {/* Dynamic Quota Warning / Summary Banner */}
+                    {(() => {
+                      let reqDays = 1;
+                      if (leaveType.includes("Half")) reqDays = 0.5;
+                      else if (leaveType.includes("Permission")) reqDays = 2.0;
+                      else if (leaveFromDate && leaveToDate) {
+                        const d1 = parseDateInput(leaveFromDate);
+                        const d2 = parseDateInput(leaveToDate);
+                        if (d1 && d2) {
+                          const diffMs = Math.abs(d2.getTime() - d1.getTime());
+                          reqDays = Math.max(1, Math.round(diffMs / (1000 * 60 * 60 * 24)) + 1);
+                        }
+                      }
+
+                      const userEmailClean = String(userEmail || currentUser.email || profile.officialEmail || '').toLowerCase().trim();
+                      const savedLeaves = userEmailClean ? localStorage.getItem(`tc_leaves_${userEmailClean}`) : null;
+                      const localAlloc = savedLeaves ? JSON.parse(savedLeaves) : null;
+
+                      let targetCardAllowed = 10;
+                      if (leaveType.includes("Casual")) {
+                        targetCardAllowed = Number(profile.annual_leaves ?? profile.annualLeaves ?? currentUser.annual_leaves ?? currentUser.annualLeaves ?? localAlloc?.annualLeaves ?? 12);
+                      } else if (leaveType.includes("Sick")) {
+                        targetCardAllowed = Number(profile.sick_leaves ?? profile.sickLeaves ?? currentUser.sick_leaves ?? currentUser.sickLeaves ?? localAlloc?.sickLeaves ?? 10);
+                      } else if (leaveType.includes("Other")) {
+                        targetCardAllowed = Number(profile.other_leaves ?? profile.otherLeaves ?? currentUser.other_leaves ?? currentUser.otherLeaves ?? localAlloc?.otherLeaves ?? 10);
+                      } else if (leaveType.includes("Half")) {
+                        targetCardAllowed = Number(profile.half_day_permissions ?? profile.halfDayPermissions ?? currentUser.half_day_permissions ?? currentUser.halfDayPermissions ?? localAlloc?.halfDayPermissions ?? 6);
+                      } else if (leaveType.includes("Permission")) {
+                        targetCardAllowed = Number(profile.short_permissions ?? profile.shortPermissions ?? currentUser.short_permissions ?? currentUser.shortPermissions ?? localAlloc?.shortPermissions ?? 2);
+                      }
+
+                      const currentConsumed = myLeaveRequests
+                        .filter(r => {
+                          if (r.status === 'Rejected') return false;
+                          const rType = String(r.leave_type || r.leaveType || '');
+                          if (leaveType.includes('Casual')) return rType.includes('Casual') || rType.includes('Full');
+                          if (leaveType.includes('Sick')) return rType.includes('Sick');
+                          if (leaveType.includes('Other')) return rType.includes('Other');
+                          if (leaveType.includes('Half')) return rType.includes('Half');
+                          if (leaveType.includes('Permission')) return rType.includes('Short') || rType.includes('Permission');
+                          return false;
+                        })
+                        .reduce((sum, r) => sum + getLeaveRequestDays(r), 0);
+
+                      const rem = Math.max(0, targetCardAllowed - currentConsumed);
+                      const isOver = reqDays > rem;
+                      const unitLabel = leaveType.includes("Permission") ? "Hours" : "Days";
+
+                      return (
+                        <div className={`rounded-2xl p-3.5 border text-xs font-bold transition-all ${
+                          isOver 
+                            ? "bg-rose-50 border-rose-300 text-rose-900" 
+                            : "bg-teal-50/80 border-teal-200 text-teal-900"
+                        }`}>
+                          <div className="flex flex-wrap items-center justify-between gap-1">
+                            <span>Duration: <u className="font-extrabold">{reqDays} {unitLabel}</u> ({formatDate(leaveFromDate)} {leaveToDate && leaveToDate !== leaveFromDate ? `to ${formatDate(leaveToDate)}` : ''})</span>
+                            <span>Remaining: <u className="font-extrabold">{rem} {unitLabel}</u></span>
+                          </div>
+                          {isOver && (
+                            <p className="text-[11px] font-black text-rose-600 mt-1 flex items-center gap-1">
+                              ⚠️ Selected duration exceeds your available quota! Please adjust your dates.
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     {/* Reason */}
                     <div>
                       <label className="text-xs font-black text-slate-800 uppercase tracking-wider block mb-1.5">Reason for Request</label>
@@ -1891,8 +2119,57 @@ export default function SalesHRMS() {
 
         {/* ── HOLIDAY CALENDAR ── */}
         {activeSection === "calendar" && (
-          <div className="max-w-2xl space-y-5">
-            <h1 className="text-2xl font-black text-slate-900">Holiday Calendar</h1>
+          <div className="max-w-4xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <div>
+                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <CalendarDays className="w-5 h-5 text-teal-600" /> Holiday Calendar
+                </h1>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  Official company holiday list and admin-uploaded holiday schedule document.
+                </p>
+              </div>
+
+              {holidayPdfData && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={holidayPdfData.url}
+                    download={holidayPdfData.name || "Holiday_Calendar.pdf"}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    📥 Download PDF
+                  </a>
+                  <button
+                    onClick={() => {
+                      const win = window.open();
+                      if (win) win.document.write(`<iframe src="${holidayPdfData.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                    }}
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    🔍 Fullscreen
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {holidayPdfData ? (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-500 font-bold px-1">
+                  <span>📄 Official Document: <strong>{holidayPdfData.name}</strong></span>
+                  {holidayPdfData.date && <span>Uploaded by Admin on: {new Date(holidayPdfData.date).toLocaleDateString()}</span>}
+                </div>
+                <iframe
+                  src={holidayPdfData.url}
+                  className="w-full h-[650px] rounded-xl border border-slate-200 bg-slate-50"
+                  title="Holiday Calendar PDF"
+                />
+              </div>
+            ) : (
+              <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 text-xs font-bold text-amber-900 flex items-center gap-2">
+                <span>📄 Official Holiday Calendar PDF has not been uploaded by Admin yet. Below is the active holiday list:</span>
+              </div>
+            )}
+
             {loadingHolidays ? (
               <p className="text-slate-400 text-sm font-semibold p-4">Loading holiday calendar...</p>
             ) : dbHolidays.length === 0 ? (
@@ -1903,6 +2180,9 @@ export default function SalesHRMS() {
               </div>
             ) : (
               <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100">
+                <div className="p-4 bg-slate-50 border-b border-slate-100 font-black text-xs text-slate-700 uppercase tracking-wider">
+                  Annual Company Holidays
+                </div>
                 {dbHolidays.map(h => (
                   <div key={h.id || h.date} className="px-5 py-3.5 flex items-center justify-between gap-3">
                     <div className="flex items-center gap-3">
@@ -1977,9 +2257,57 @@ export default function SalesHRMS() {
 
         {/* ── HANDBOOK ── */}
         {activeSection === "handbook" && (
-          <div className="max-w-3xl space-y-5">
-            <h1 className="text-2xl font-black text-slate-900">Twite Sales Handbook</h1>
-            <p className="text-slate-500 text-sm font-semibold">Guidelines, processes, and policies for TwiteConnect Sales Executives.</p>
+          <div className="max-w-4xl space-y-6">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <div>
+                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-teal-600" /> Twite Employee Handbook
+                </h1>
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  Official company policy, rules, and guidelines handbook document.
+                </p>
+              </div>
+
+              {handbookPdfData && (
+                <div className="flex items-center gap-2 shrink-0">
+                  <a
+                    href={handbookPdfData.url}
+                    download={handbookPdfData.name || "Twite_Handbook.pdf"}
+                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    📥 Download Handbook PDF
+                  </a>
+                  <button
+                    onClick={() => {
+                      const win = window.open();
+                      if (win) win.document.write(`<iframe src="${handbookPdfData.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
+                    }}
+                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                  >
+                    🔍 Fullscreen
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {handbookPdfData ? (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
+                <div className="flex items-center justify-between text-xs text-slate-500 font-bold px-1">
+                  <span>📄 Official Document: <strong>{handbookPdfData.name}</strong></span>
+                  {handbookPdfData.date && <span>Uploaded by Admin on: {new Date(handbookPdfData.date).toLocaleDateString()}</span>}
+                </div>
+                <iframe
+                  src={handbookPdfData.url}
+                  className="w-full h-[700px] rounded-xl border border-slate-200 bg-slate-50"
+                  title="Twite Employee Handbook PDF"
+                />
+              </div>
+            ) : (
+              <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 text-xs font-bold text-amber-900 flex items-center gap-2">
+                <span>📄 Twite Employee Handbook PDF has not been uploaded by Admin yet. Below is the general policies summary:</span>
+              </div>
+            )}
+
             {loadingHandbook ? (
               <p className="text-slate-400 text-sm font-semibold p-4">Loading handbook policies...</p>
             ) : dbHandbook.length === 0 ? (

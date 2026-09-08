@@ -163,10 +163,17 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(false); // Instant cached render without blocking UI
   const [todoLoading, setTodoLoading] = useState(false);
   const [newTodo, setNewTodo] = useState("");
+<<<<<<< HEAD
   const [selectedMonth, setSelectedMonth] = useState(() => localStorage.getItem("tc_dashboard_date_filter") || "This Month");
   const [customDateVal, setCustomDateVal] = useState(() => localStorage.getItem("tc_dashboard_custom_date") || new Date().toISOString().slice(0, 10));
   const [customDateToVal, setCustomDateToVal] = useState(() => localStorage.getItem("tc_dashboard_custom_date_to") || new Date().toISOString().slice(0, 10));
   const [todayAttRecord, setTodayAttRecord] = useState(null);
+=======
+  const [selectedMonth, setSelectedMonth] = useState(() => localStorage.getItem("tc_dashboard_date_filter") || "Today");
+  const [customFromDate, setCustomFromDate] = useState(() => localStorage.getItem("tc_dashboard_custom_from_date") || localStorage.getItem("tc_dashboard_custom_date") || new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10));
+  const [customToDate, setCustomToDate] = useState(() => localStorage.getItem("tc_dashboard_custom_to_date") || localStorage.getItem("tc_dashboard_custom_date") || new Date().toISOString().slice(0, 10));
+  const [managerTarget, setManagerTarget] = useState(() => getCachedValue("managerTarget", { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' }));
+>>>>>>> Riha
   const [refreshing, setRefreshing] = useState(false);
   const [managerTarget, setManagerTarget] = useState(() => getCachedValue("managerTarget", { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' }) || { revenueTarget: 500000, dealsTarget: 10, setBy: 'Sales Manager' });
 
@@ -175,9 +182,14 @@ export default function Dashboard() {
     localStorage.setItem("tc_dashboard_date_filter", val);
   };
 
-  const handleCustomDateChange = (val) => {
-    setCustomDateVal(val);
-    localStorage.setItem("tc_dashboard_custom_date", val);
+  const handleCustomFromDateChange = (val) => {
+    setCustomFromDate(val);
+    localStorage.setItem("tc_dashboard_custom_from_date", val);
+  };
+
+  const handleCustomToDateChange = (val) => {
+    setCustomToDate(val);
+    localStorage.setItem("tc_dashboard_custom_to_date", val);
   };
 
   const handleCustomDateToChange = (val) => {
@@ -417,6 +429,7 @@ export default function Dashboard() {
           return str.includes(currentYearPrefix) || str.includes(currentYearSuffix);
         }
         if (selectedMonth === "Custom Date") {
+<<<<<<< HEAD
           if (!customDateVal && !customDateToVal) return true;
           let itemISO = str.slice(0, 10);
           if (itemISO.includes('/')) {
@@ -429,6 +442,22 @@ export default function Dashboard() {
           if (customDateVal && itemISO < customDateVal) return false;
           if (customDateToVal && itemISO > customDateToVal) return false;
           return true;
+=======
+          if (!customFromDate && !customToDate) return true;
+          try {
+            const itemTime = new Date(itemDate).getTime();
+            if (isNaN(itemTime)) {
+              if (customFromDate && str < customFromDate) return false;
+              if (customToDate && str > customToDate + "T23:59:59") return false;
+              return true;
+            }
+            const fromTime = customFromDate ? new Date(customFromDate + "T00:00:00").getTime() : 0;
+            const toTime = customToDate ? new Date(customToDate + "T23:59:59").getTime() : Infinity;
+            return itemTime >= fromTime && itemTime <= toTime;
+          } catch {
+            return true;
+          }
+>>>>>>> Riha
         }
         // Default: Today
         return str.includes(todayISO) || str.includes(todayFormattedStr);
@@ -597,7 +626,7 @@ export default function Dashboard() {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [userEmail, userName, userEmpCode, userId, selectedMonth, customDateVal, todayAttRecord]);
+  }, [userEmail, userName, userEmpCode, userId, selectedMonth, customFromDate, customToDate, todayAttRecord]);
 
   useEffect(() => { fetchAll(); }, [fetchAll]);
 
@@ -876,6 +905,7 @@ export default function Dashboard() {
               })}
             </div>
             {selectedMonth === "Custom Date" && (
+<<<<<<< HEAD
               <div className="flex items-center gap-1.5 flex-wrap">
                 <div className="flex items-center gap-1">
                   <span className="text-[10px] font-bold text-slate-500">From:</span>
@@ -893,6 +923,26 @@ export default function Dashboard() {
                     value={customDateToVal}
                     onChange={(e) => handleCustomDateToChange(e.target.value)}
                     className="h-8 text-xs border border-teal-500/50 rounded-xl px-2 bg-teal-50/50 font-black text-teal-800 focus:outline-none focus:ring-2 focus:ring-teal-400 cursor-pointer shadow-2xs w-auto"
+=======
+              <div className="flex items-center gap-1.5 flex-wrap w-full sm:w-auto mt-1 sm:mt-0">
+                <div className="flex items-center gap-1 bg-teal-50 border border-teal-300 rounded-xl px-2.5 py-1 shadow-2xs">
+                  <span className="text-[10px] font-black text-teal-900 shrink-0">From:</span>
+                  <input
+                    type="date"
+                    value={customFromDate}
+                    onChange={(e) => handleCustomFromDateChange(e.target.value)}
+                    className="h-6 text-xs bg-transparent font-extrabold text-teal-950 focus:outline-none cursor-pointer"
+                  />
+                </div>
+
+                <div className="flex items-center gap-1 bg-teal-50 border border-teal-300 rounded-xl px-2.5 py-1 shadow-2xs">
+                  <span className="text-[10px] font-black text-teal-900 shrink-0">To:</span>
+                  <input
+                    type="date"
+                    value={customToDate}
+                    onChange={(e) => handleCustomToDateChange(e.target.value)}
+                    className="h-6 text-xs bg-transparent font-extrabold text-teal-950 focus:outline-none cursor-pointer"
+>>>>>>> Riha
                   />
                 </div>
               </div>

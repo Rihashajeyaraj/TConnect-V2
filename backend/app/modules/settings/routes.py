@@ -52,7 +52,6 @@ async def get_products(
 @router.get("/business", response_model=StandardResponse)
 async def get_settings(
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageSettings),
     service: SettingsService = Depends(get_service)
 ):
     """Get system settings configuration."""

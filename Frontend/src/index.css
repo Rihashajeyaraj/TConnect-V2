@@ -130,6 +130,31 @@ body {
 .border-ceo-maroon { border-color: #540000; }
 .border-ceo-darkgray { border-color: #cccccc; }
 
+/* ── TEAM LEAD PORTAL LIGHT COFFEE BROWN THEME ───────────────────────────── */
+:root {
+  --tl-espresso: #543D30;
+  --tl-mocha-dark: #422E22;
+  --tl-cinnamon: #966038;
+  --tl-caramel: #D49A6A;
+  --tl-caramel-light: #F3ECE2;
+  --tl-cream-bg: #FAF6F0;
+  --tl-border-cream: #E8D8C8;
+  --tl-latte-text: #6B4E3D;
+}
+
+.bg-tl-espresso { background-color: #543D30; }
+.bg-tl-mocha-dark { background-color: #422E22; }
+.bg-tl-cinnamon { background-color: #966038; }
+.hover\:bg-tl-cinnamon-dark:hover { background-color: #804F2B; }
+.bg-tl-caramel { background-color: #D49A6A; }
+.bg-tl-caramel-light { background-color: #F3ECE2; }
+.bg-tl-cream-bg { background-color: #FAF6F0; }
+.text-tl-cinnamon { color: #966038; }
+.text-tl-caramel { color: #D49A6A; }
+.text-tl-latte { color: #6B4E3D; }
+.border-tl-cream { border-color: #E8D8C8; }
+.border-tl-caramel { border-color: #D49A6A; }
+
 button,
 input {
   font: inherit;
@@ -545,4 +570,35 @@ html, body, * {
 
 .mgr-card-blue::after {
   background: radial-gradient(circle at center, rgba(159, 194, 248, 0.6) 0%, transparent 70%);
+}
+
+/* ── Suppress Google Maps Billing / Error Overlay Popups ───────────────────── */
+.gm-style-moc,
+.gm-err-container,
+.gm-err-content,
+.gm-err-icon,
+.gm-err-title,
+.gm-err-message,
+[aria-labelledby*="gm-err"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+  height: 0 !important;
+  width: 0 !important;
+}
+
+.dismissButton {
+  display: none !important;
+}
+
+/* ── Suppress Google Maps Inset Controls & Floating Terms Card ─────────────── */
+.gm-style-cc,
+.gmnoprint a,
+.gmnoprint span,
+a[href*="maps.google.com/maps"],
+div[aria-label*="Map Data"] {
+  display: none !important;
+  visibility: hidden !important;
+  pointer-events: none !important;
 }

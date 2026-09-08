@@ -27,9 +27,24 @@ function redirectToLogin() {
 
 // ─────────────────────────────────────────────────────────────
 // Core request function — uses only real Supabase session token
-// Deduplicates in-flight GET requests to eliminate duplicate network calls
+// In-Memory SWR Cache & Deduplication for zero-latency page transitions
 // ─────────────────────────────────────────────────────────────
 const inFlightRequests = new Map()
+const apiCache = new Map()
+const CACHE_TTL_MS = 60000 // 60 seconds memory cache
+
+export function invalidateApiCache(prefix = '') {
+  if (!prefix) {
+    apiCache.clear()
+    return
+  }
+  for (const key of apiCache.keys()) {
+    if (key.includes(prefix)) {
+      apiCache.delete(key)
+    }
+  }
+}
+
 let activeRefreshPromise = null
 
 async function handleSilentRefresh() {
@@ -62,8 +77,24 @@ async function handleSilentRefresh() {
 async function request(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase()
 
+  // Invalidate cache on mutations (POST, PUT, PATCH, DELETE)
+  if (method !== 'GET') {
+    invalidateApiCache()
+  } else if (!options.bypassCache && !options._isRetry && apiCache.has(endpoint)) {
+    const cached = apiCache.get(endpoint)
+    if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
+      // Background revalidate if cache is >5s old for zero-latency page transitions
+      if (Date.now() - cached.timestamp > 5000) {
+        setTimeout(() => {
+          request(endpoint, { ...options, bypassCache: true }).catch(() => {})
+        }, 10)
+      }
+      return Promise.resolve(cached.data)
+    }
+  }
+
   // For GET requests, reuse identical in-flight promises to deduplicate parallel calls
-  if (method === 'GET' && inFlightRequests.has(endpoint) && !options._isRetry) {
+  if (method === 'GET' && !options.bypassCache && inFlightRequests.has(endpoint) && !options._isRetry) {
     return inFlightRequests.get(endpoint)
   }
 
@@ -75,7 +106,11 @@ async function request(endpoint, options = {}) {
     ...options.headers,
   }
 
-  const config = { ...options, headers }
+  const controller = new AbortController()
+  const timeoutMs = options.timeout || 30000
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
+
+  const config = { ...options, headers, signal: controller.signal }
 
   if (endpoint === '/visits' && options.method === 'POST') {
     console.log("[VISIT API] POST /api/v1/visits");
@@ -85,6 +120,7 @@ async function request(endpoint, options = {}) {
   const executeRequest = async () => {
     try {
       const response = await fetch(`${API_BASE_URL}${endpoint}`, config)
+      clearTimeout(timeoutId)
 
       let data
       try {
@@ -127,8 +163,19 @@ async function request(endpoint, options = {}) {
         return Promise.reject(data || { message: `HTTP Error ${response.status}` })
       }
 
+      if (method === 'GET') {
+        apiCache.set(endpoint, { data, timestamp: Date.now() })
+      }
+
       return data
     } catch (error) {
+      clearTimeout(timeoutId)
+      if (error?.name === 'AbortError') {
+        if (!options.silentError) {
+          console.warn(`[API Timeout] Request to ${endpoint} timed out after ${timeoutMs}ms`)
+        }
+        return Promise.reject({ message: 'Request timed out. Please check connection and try again.', isTimeout: true })
+      }
       if (error?.status === 401) return Promise.reject(error)
       return Promise.reject(error || { message: 'Network or server error' })
     }
@@ -138,6 +185,7 @@ async function request(endpoint, options = {}) {
 
   if (method === 'GET' && !options._isRetry) {
     inFlightRequests.set(endpoint, requestPromise)
+    requestPromise.catch(() => {}) // Prevent unhandled promise rejections on shared in-flight GET requests
     requestPromise.finally(() => {
       inFlightRequests.delete(endpoint)
     })
@@ -378,8 +426,8 @@ export const todoAPI = {
 
 
 export const userAPI = {
-  getUsers: () => request('/users'),
-  getHierarchy: () => request('/users/hierarchy'),
+  getUsers: (options = {}) => request('/users', options),
+  getHierarchy: (options = {}) => request('/users/hierarchy', options),
   createUser: (data) => request('/users', { method: 'POST', body: JSON.stringify(data) }),
   updateUser: (id, data) => request(`/users/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteUser: (id) => request(`/users/${id}`, { method: 'DELETE' }),
@@ -398,7 +446,7 @@ export const userAPI = {
 
 
 export const settingsAPI = {
-  getSettings: () => request('/settings/business'),
+  getSettings: (options = {}) => request('/settings/business', options),
   updateSettings: (data) => request('/settings/business', { method: 'PUT', body: JSON.stringify(data) }),
   getConfig: () => request('/settings/config'),
   getProducts: () => request('/settings/products'),

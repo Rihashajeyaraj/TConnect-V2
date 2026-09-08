@@ -10,9 +10,14 @@ import {
   Clock3,
   AlertCircle,
   Check,
+  X,
+  Eye,
+  ExternalLink,
+  ShieldAlert,
 } from "lucide-react";
 import useCurrentUser from "../../hooks/useCurrentUser.js";
 import { notificationAPI } from "../../services/api.js";
+import { filterUserNotifications } from "../../utils/userScope.js";
 
 export default function Notifications() {
   const currentUser = useCurrentUser();
@@ -23,13 +28,32 @@ export default function Notifications() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState("All");
+  const [selectedNotif, setSelectedNotif] = useState(null);
 
   const loadNotifications = async () => {
     setLoading(true);
     try {
       const res = await notificationAPI.getNotifications();
       const raw = Array.isArray(res) ? res : res?.data || [];
-      const sorted = [...raw].sort((a, b) => new Date(b.created_at || b.timestamp || 0) - new Date(a.created_at || a.timestamp || 0));
+      const localNotifs = JSON.parse(localStorage.getItem("tc_app_notifications") || "[]");
+      const combined = [...raw, ...localNotifs];
+
+      // Deduplicate by ID or unique title/timestamp
+      const seen = new Set();
+      const unique = combined.filter((n) => {
+        const key = n.id || `${n.title}_${n.created_at || n.timestamp}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+
+      // Strict Executive Privacy Filter
+      const scopedNotifs = filterUserNotifications(unique, currentUser);
+
+      const sorted = [...scopedNotifs].sort(
+        (a, b) => new Date(b.created_at || b.timestamp || 0) - new Date(a.created_at || a.timestamp || 0)
+      );
+
       setItems(
         sorted.map((n) => ({
           ...n,
@@ -37,9 +61,9 @@ export default function Notifications() {
           read: n.is_read || n.read || false,
           type: n.category || n.type || "General",
           time: n.created_at ? new Date(n.created_at).toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit" }) : "Recently",
+          dateStr: n.created_at ? new Date(n.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "",
         }))
       );
-
     } catch (e) {
       console.error("Failed to load notifications", e);
     } finally {
@@ -49,7 +73,7 @@ export default function Notifications() {
 
   useEffect(() => {
     loadNotifications();
-  }, []);
+  }, [currentUser?.email]);
 
   const handleMarkAllRead = async () => {
     try {
@@ -61,7 +85,8 @@ export default function Notifications() {
     }
   };
 
-  const handleMarkRead = async (id) => {
+  const handleMarkRead = async (id, e) => {
+    if (e) e.stopPropagation();
     try {
       await notificationAPI.markRead(id);
       setItems((prev) =>
@@ -72,16 +97,26 @@ export default function Notifications() {
     }
   };
 
-  const handleDelete = (id) => {
-    // Dismiss/hide locally since backend has no delete endpoint
+  const handleDelete = (id, e) => {
+    if (e) e.stopPropagation();
     setItems((prev) => prev.filter((n) => n.id !== id));
+    if (selectedNotif?.id === id) {
+      setSelectedNotif(null);
+    }
+  };
+
+  const handleOpenDetail = (n) => {
+    setSelectedNotif(n);
+    if (!n.read) {
+      handleMarkRead(n.id);
+    }
   };
 
   const filtered = items.filter((n) => {
     const matchesSearch =
       (n.title || "").toLowerCase().includes(search.toLowerCase()) ||
       (n.message || "").toLowerCase().includes(search.toLowerCase());
-    const matchesType = typeFilter === "All" || n.type === typeFilter;
+    const matchesType = typeFilter === "All" || n.type.toLowerCase() === typeFilter.toLowerCase();
     return matchesSearch && matchesType;
   });
 
@@ -104,7 +139,7 @@ export default function Notifications() {
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-slate-500 font-medium">Real-time alerts for leads assigned by Sales Manager</p>
+            <p className="text-[11px] text-slate-500 font-medium">Personalized real-time alerts & assignment updates</p>
           </div>
         </div>
 
@@ -155,32 +190,35 @@ export default function Notifications() {
             {filtered.map((n) => (
               <div
                 key={n.id}
-                className={`p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50 transition ${
+                onClick={() => handleOpenDetail(n)}
+                className={`p-3.5 flex items-center justify-between gap-3 hover:bg-slate-50 transition cursor-pointer group ${
                   n.status === "Unread" || !n.read ? "bg-teal-50/40" : ""
                 }`}
               >
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   <span
                     className={`w-2.5 h-2.5 rounded-full shrink-0 ${
                       n.status === "Unread" || !n.read ? "bg-red-500 animate-pulse" : "bg-slate-300"
                     }`}
                   />
-                  <div className="min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <p className="text-xs font-extrabold text-slate-900 truncate">{n.title}</p>
-                      <span className="bg-slate-100 text-slate-600 text-[9px] font-bold px-2 py-0.5 rounded-md border border-slate-200">
-                        {n.type || "Lead"}
+                      <p className="text-xs font-extrabold text-slate-900 group-hover:text-teal-700 transition truncate">
+                        {n.title}
+                      </p>
+                      <span className="bg-slate-100 text-slate-600 text-[9px] font-bold px-2 py-0.5 rounded-md border border-slate-200 shrink-0">
+                        {n.type || "General"}
                       </span>
                     </div>
                     <p className="text-xs text-slate-600 mt-0.5 truncate">{n.message}</p>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex items-center gap-2.5 shrink-0">
                   <span className="text-[10px] text-slate-400 font-semibold">{n.time || "Just now"}</span>
                   {(n.status === "Unread" || !n.read) && (
                     <button
-                      onClick={() => handleMarkRead(n.id)}
+                      onClick={(e) => handleMarkRead(n.id, e)}
                       className="p-1 rounded-lg text-teal-600 hover:bg-teal-50"
                       title="Mark as Read"
                     >
@@ -188,7 +226,7 @@ export default function Notifications() {
                     </button>
                   )}
                   <button
-                    onClick={() => handleDelete(n.id)}
+                    onClick={(e) => handleDelete(n.id, e)}
                     className="p-1 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50"
                     title="Delete Notification"
                   >
@@ -200,6 +238,76 @@ export default function Notifications() {
           </div>
         )}
       </div>
+
+      {/* ── ELEVATED NOTIFICATION DETAIL MODAL (MOBILE & DESKTOP) ───────────────── */}
+      {selectedNotif && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-200">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-100 space-y-4 animate-in zoom-in-95 duration-200 relative">
+            {/* Header */}
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-2xl bg-teal-100 text-teal-700 flex items-center justify-center font-bold">
+                  <Bell className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-extrabold uppercase tracking-wider px-2 py-0.5 rounded-md bg-teal-50 text-teal-700 border border-teal-200">
+                      {selectedNotif.type || "Notification"}
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-400">
+                      {selectedNotif.dateStr ? `${selectedNotif.dateStr} • ` : ""}{selectedNotif.time || "Just now"}
+                    </span>
+                  </div>
+                  <h3 className="text-sm font-extrabold text-slate-900 mt-1 leading-snug">
+                    {selectedNotif.title}
+                  </h3>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedNotif(null)}
+                className="p-1.5 rounded-full hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Elevated Message Body */}
+            <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 text-xs font-medium text-slate-800 leading-relaxed whitespace-pre-wrap">
+              {selectedNotif.message}
+            </div>
+
+            {/* Notification Metadata Info */}
+            <div className="bg-teal-50/50 border border-teal-100 rounded-xl p-3 text-[11px] text-teal-900 space-y-1">
+              {selectedNotif.assigned_by && (
+                <p><span className="font-bold">Assigned By:</span> {selectedNotif.assigned_by}</p>
+              )}
+              {selectedNotif.lead_name && (
+                <p><span className="font-bold">Related Lead:</span> {selectedNotif.lead_name}</p>
+              )}
+              <p className="text-[10px] text-teal-700 font-semibold flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-teal-600" /> Private & Securly Delivered to {currentUser.name || currentUser.email}
+              </p>
+            </div>
+
+            {/* Modal Actions */}
+            <div className="flex items-center justify-between pt-1">
+              <button
+                onClick={(e) => handleDelete(selectedNotif.id, e)}
+                className="px-3 py-2 rounded-xl text-xs font-bold text-red-600 hover:bg-red-50 transition flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" /> Delete
+              </button>
+
+              <button
+                onClick={() => setSelectedNotif(null)}
+                className="px-5 py-2 rounded-xl text-xs font-extrabold bg-slate-900 text-white hover:bg-slate-800 transition cursor-pointer"
+              >
+                Close View
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
-}
+}

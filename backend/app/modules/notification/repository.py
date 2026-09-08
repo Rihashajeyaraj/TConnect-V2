@@ -74,34 +74,40 @@ class NotificationRepository:
             if not any(str(n.get("id")) == str(std.get("id")) for n in notifs):
                 notifs.append(std)
 
-        # Filter by targeted recipient or broadcast role
+        # Strict privacy filtering by targeted recipient, assigned employee, reporting manager, or broadcast role
         filtered = []
         for n in notifs:
             r_id = str(n.get("recipient_id") or n.get("recipient_user_id") or n.get("employee_id") or "").strip().lower()
             r_email = str(n.get("recipient_email") or "").lower().strip()
             r_role = str(n.get("recipient_role") or "all").strip().lower()
 
-            email_match = bool(r_email and user_email and r_email == user_email)
-            id_match = bool(r_id and (
-                (user_id_str and r_id == user_id_str) or
-                (user_emp_code and r_id == user_emp_code)
-            ))
+            assoc_email = str(n.get("assigned_to_email") or n.get("employee_email") or n.get("user_email") or "").lower().strip()
+            assoc_id = str(n.get("assigned_to_id") or n.get("user_id") or "").lower().strip()
+            mgr_email = str(n.get("manager_email") or n.get("reporting_manager_email") or "").lower().strip()
+            mgr_id = str(n.get("manager_id") or n.get("reporting_manager_id") or "").lower().strip()
 
-            role_match = (
-                r_role in ["all", "", "everyone"] or
-                r_role == user_role or
-                (r_role in user_role or user_role in r_role) or
-                ("executive" in r_role and "executive" in user_role) or
-                ("manager" in r_role and "manager" in user_role) or
-                ("ceo" in r_role and "ceo" in user_role) or
-                ("admin" in r_role and "admin" in user_role)
-            )
+            if any(role_kw in user_role for role_kw in ["admin", "ceo"]):
+                filtered.append(n)
+                continue
 
-            is_targeted = bool(r_email or r_id)
-            if is_targeted:
-                if email_match or id_match:
-                    filtered.append(n)
-            else:
+            email_match = bool((r_email and user_email and r_email == user_email) or (assoc_email and user_email and assoc_email == user_email))
+            id_match = bool((r_id and (r_id == user_id_str or r_id == user_emp_code)) or (assoc_id and (assoc_id == user_id_str or assoc_id == user_emp_code)))
+            mgr_match = bool(("manager" in user_role or "lead" in user_role or "tl" in user_role) and ((mgr_email and user_email and mgr_email == user_email) or (mgr_id and (mgr_id == user_id_str or mgr_id == user_emp_code))))
+
+            if email_match or id_match or mgr_match:
+                filtered.append(n)
+                continue
+
+            # Untargeted role broadcast check
+            has_any_target = bool(r_email or r_id or assoc_email or assoc_id or mgr_email or mgr_id)
+            if not has_any_target:
+                role_match = (
+                    r_role in ["all", "", "everyone"] or
+                    r_role == user_role or
+                    (r_role in user_role or user_role in r_role) or
+                    ("executive" in r_role and "executive" in user_role) or
+                    (("manager" in r_role or "lead" in r_role) and ("manager" in user_role or "lead" in user_role or "tl" in user_role))
+                )
                 if role_match:
                     filtered.append(n)
 

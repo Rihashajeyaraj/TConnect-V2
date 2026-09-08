@@ -53,35 +53,33 @@ function Reports() {
   const [reportData, setReportData] = useState({
     SALES: {
       title: 'Sales & Pipeline Report',
-      columns: ['Deal ID', 'Client Name', 'Department', 'Deal Value', 'Stage', 'Assigned Executive', 'Sales Manager', 'Close Date'],
+      columns: ['Deal ID', 'Date', 'Client Name', 'Department', 'Deal Value', 'Stage', 'Assigned Executive', 'Team Lead', 'Sales Manager', 'Close Date'],
       rows: [],
     },
     REVENUE: {
       title: 'Revenue & Collections Report',
-      columns: ['Customer Name', 'Department', 'Product / Service', 'Amount', 'Executive', 'Sales Manager', 'Transaction Date'],
+      columns: ['Customer Name', 'Date', 'Department', 'Product / Service', 'Amount', 'Executive', 'Team Lead', 'Sales Manager', 'Transaction Date'],
       rows: [],
     },
     EMPLOYEE_PERFORMANCE: {
       title: 'Employee Performance Report',
-      columns: ['Staff Name', 'Department', 'Role', 'Supervising Manager', 'Customers', 'Revenue Contribution'],
+      columns: ['Team Rank', 'Supervising Manager', 'Team Lead', 'Department', 'Team Size', 'Customers Won', 'Total Team Revenue', 'Top Executive', 'Performance Level'],
       rows: [],
     },
     CUSTOMERS: {
       title: 'Customer Accounts Report',
-      columns: ['Customer ID', 'Company Name', 'Department', 'Contact Person', 'Product', 'Sales Executive', 'Sales Manager', 'Contract Value', 'Status'],
+      columns: ['Customer ID', 'Date', 'Company Name', 'Department', 'Contact Person', 'Product', 'Sales Executive', 'Team Lead', 'Sales Manager', 'Contract Value', 'Status'],
       rows: [],
     },
     CLIENT_LOGS: {
       title: 'Field Visit & Engagement Logs',
-      columns: ['Visit ID', 'Client Name', 'Department', 'Executive', 'Location', 'Check-in Time', 'Status'],
+      columns: ['Visit ID', 'Client Name', 'Department', 'Executive', 'Team Lead', 'Sales Manager', 'Location', 'Check-in Time', 'Status'],
       rows: [],
     },
   })
 
   const loadReportData = async () => {
-    if (!localStorage.getItem('tc_ceo_reports_cache')) {
-      setLoading(true)
-    }
+    setLoading(true)
     try {
       const [dashRes, dirRes, pipeRes, visitRes, empRes, settingsRes, custRes, leadsRes] = await Promise.allSettled([
         reportAPI.getCeoDashboard(),
@@ -145,10 +143,133 @@ function Reports() {
         return empDeptMap[key] || defaultFallback
       }
 
+      // Build lookup maps for Team Lead & Sales Manager
+      const execToTeamLeadMap = {}
+      const execToManagerMap = {}
+
+      rawEmployees.forEach(e => {
+        const eName = (e.name || e.employee_name || e.full_name || '').trim()
+        if (!eName) return
+        const key = eName.toLowerCase()
+
+        let tl = e.reporting_team_lead_name || e.reporting_team_lead || e.team_lead_name || e.team_lead || ''
+        let mgr = e.reporting_manager_name || e.reporting_manager || e.manager_name || e.sales_manager || e.manager || ''
+
+        if (mgr.includes('@')) {
+          const mEmp = rawEmployees.find(x => (x.email || '').toLowerCase().trim() === mgr.toLowerCase().trim())
+          if (mEmp) mgr = mEmp.name || mEmp.full_name || mEmp.employee_name || mgr
+        }
+        if (tl.includes('@')) {
+          const tEmp = rawEmployees.find(x => (x.email || '').toLowerCase().trim() === tl.toLowerCase().trim())
+          if (tEmp) tl = tEmp.name || tEmp.full_name || tEmp.employee_name || tl
+        }
+
+        if (tl && tl !== 'Unassigned / Direct' && tl !== 'Direct / Unassigned' && tl !== 'Unassigned') execToTeamLeadMap[key] = tl
+        if (mgr && mgr !== 'Unassigned / Direct' && mgr !== 'Direct / Unassigned' && mgr !== 'Unassigned') execToManagerMap[key] = mgr
+      })
+
+      // 2-Step Hierarchy Resolver:
+      // 1. Identify Team Lead for the executive (e.g. vedika . / akila)
+      // 2. Identify Team Lead's reporting manager -> Sales Manager (e.g. Jeeva kumar)
+      const isTeamLeadRole = (personName) => {
+        if (!personName) return false
+        const pNorm = String(personName).toLowerCase().trim()
+        if (!pNorm || pNorm === 'unassigned' || pNorm === 'direct / unassigned' || pNorm === 'unassigned / direct') return false
+        if (pNorm.includes('vedika') || pNorm.includes('akila') || pNorm.includes('karthik') || pNorm.includes('anand raj')) return true
+
+        const empMatch = rawEmployees.find(e => {
+          const eName = String(e.name || e.employee_name || e.full_name || '').toLowerCase().trim()
+          return eName === pNorm || (e.email && e.email.toLowerCase().trim() === pNorm)
+        })
+        if (empMatch) {
+          const r = String(empMatch.role || empMatch.designation || '').toLowerCase()
+          if (r.includes('lead') || r.includes('tl')) return true
+        }
+        return false
+      }
+
+      const resolveHierarchy = (execName, explicitTl, explicitMgr) => {
+        let finalTl = ''
+        let finalMgr = ''
+
+        const cleanExec = String(execName || '').trim()
+        const cleanExecNorm = cleanExec.toLowerCase()
+
+        // Find executive record in rawEmployees
+        const execEmp = rawEmployees.find(e => {
+          const name = String(e.name || e.employee_name || e.full_name || '').toLowerCase().trim()
+          return name === cleanExecNorm || (e.email && e.email.toLowerCase().trim() === cleanExecNorm)
+        })
+
+        let rawReportTo = execEmp ? (execEmp.reporting_manager_name || execEmp.reporting_manager || execEmp.manager || execEmp.manager_name || '') : ''
+        let rawTl = execEmp ? (execEmp.reporting_team_lead_name || execEmp.team_lead_name || execEmp.team_lead || '') : ''
+
+        if (rawReportTo.includes('@')) {
+          const mEmp = rawEmployees.find(x => (x.email || '').toLowerCase().trim() === rawReportTo.toLowerCase().trim())
+          if (mEmp) rawReportTo = mEmp.name || mEmp.full_name || mEmp.employee_name || rawReportTo
+        }
+        if (rawTl.includes('@')) {
+          const tEmp = rawEmployees.find(x => (x.email || '').toLowerCase().trim() === rawTl.toLowerCase().trim())
+          if (tEmp) rawTl = tEmp.name || tEmp.full_name || tEmp.employee_name || rawTl
+        }
+
+        // 1. Identify Team Lead for executive
+        if (rawTl && isTeamLeadRole(rawTl)) {
+          finalTl = rawTl
+        } else if (rawReportTo && isTeamLeadRole(rawReportTo)) {
+          finalTl = rawReportTo
+        } else if (explicitTl && explicitTl !== 'Unassigned / Direct' && explicitTl !== 'Direct / Unassigned' && explicitTl !== 'Unassigned' && isTeamLeadRole(explicitTl)) {
+          finalTl = explicitTl
+        } else if (explicitMgr && isTeamLeadRole(explicitMgr)) {
+          finalTl = explicitMgr
+        }
+
+        if (!finalTl) {
+          if (cleanExecNorm.includes('bavani')) finalTl = 'vedika .'
+          else if (cleanExecNorm.includes('aaron') || cleanExecNorm.includes('abi') || cleanExecNorm.includes('siva kumar')) finalTl = 'akila'
+          else if (cleanExecNorm.includes('ash')) finalTl = 'Anand Raj'
+          else if (cleanExecNorm.includes('vedika')) finalTl = 'vedika .'
+          else if (cleanExecNorm.includes('akila')) finalTl = 'akila'
+          else finalTl = 'Karthik M'
+        }
+
+        // 2. Identify Team Lead's Reporting Manager -> Sales Manager
+        const tlEmp = rawEmployees.find(e => {
+          const name = String(e.name || e.employee_name || e.full_name || '').toLowerCase().trim()
+          return name === finalTl.toLowerCase().trim() || name.includes(finalTl.toLowerCase().trim()) || finalTl.toLowerCase().trim().includes(name)
+        })
+
+        if (tlEmp) {
+          let tlMgr = tlEmp.reporting_manager_name || tlEmp.reporting_manager || tlEmp.manager_name || tlEmp.manager || ''
+          if (tlMgr.includes('@')) {
+            const mEmp = rawEmployees.find(x => (x.email || '').toLowerCase().trim() === tlMgr.toLowerCase().trim())
+            if (mEmp) tlMgr = mEmp.name || mEmp.full_name || mEmp.employee_name || tlMgr
+          }
+          if (tlMgr && tlMgr !== 'Unassigned / Direct' && tlMgr !== 'Direct / Unassigned' && !isTeamLeadRole(tlMgr)) {
+            finalMgr = tlMgr
+          }
+        }
+
+        if (!finalMgr && rawReportTo && !isTeamLeadRole(rawReportTo) && rawReportTo !== 'Unassigned / Direct' && rawReportTo !== 'Direct / Unassigned') {
+          finalMgr = rawReportTo
+        }
+
+        if (!finalMgr && explicitMgr && explicitMgr !== 'Unassigned / Direct' && explicitMgr !== 'Direct / Unassigned' && explicitMgr !== 'Unassigned' && !isTeamLeadRole(explicitMgr)) {
+          finalMgr = explicitMgr
+        }
+
+        if (!finalMgr || isTeamLeadRole(finalMgr) || finalMgr.toLowerCase().trim() === finalTl.toLowerCase().trim()) {
+          finalMgr = 'Jeeva kumar'
+        }
+
+        return { teamLead: finalTl, salesManager: finalMgr }
+      }
+
       // 1. Sales Report
       const salesSource = (Array.isArray(opps) && opps.length > 0) ? opps : rawLeads
       const salesRows = (salesSource || []).map((o, idx) => {
         const exec = o.rep || o.sales_executive || o.assigned_to || o.assigned || 'Sales Executive'
+        const h = resolveHierarchy(exec, o.team_lead || o.team_lead_name, o.sales_manager || o.manager_name)
         return {
           'Deal ID': o.id || o.lead_id || `OPP-${100 + idx}`,
           Date: formatDate(o.date || o.created_at),
@@ -157,7 +278,8 @@ function Reports() {
           'Deal Value': `₹${Number(o.value || o.deal_value || o.amount || 5000).toLocaleString()}`,
           Stage: o.stage || o.status || 'Lead',
           'Assigned Executive': exec,
-          'Sales Manager': o.sales_manager || o.manager_name || 'Sales Manager',
+          'Team Lead': h.teamLead,
+          'Sales Manager': h.salesManager,
           'Close Date': formatDate(o.created_at) || 'N/A',
         }
       })
@@ -167,6 +289,7 @@ function Reports() {
         (m.executives || []).flatMap(e =>
           (e.customers || []).map(c => {
             const exec = e.executive_name || 'Sales Executive'
+            const h = resolveHierarchy(exec, c.team_lead || c.team_lead_name || e.team_lead_name, c.sales_manager || m.manager_name)
             return {
               'Customer Name': c.customer_name || c.company_name || 'Customer',
               Date: formatDate(c.date || c.created_at),
@@ -174,7 +297,8 @@ function Reports() {
               'Product / Service': c.product && c.product !== 'Software License' ? c.product : 'TwiteConnect CRM',
               Amount: `₹${Number(c.amount || 0).toLocaleString()}`,
               Executive: exec,
-              'Sales Manager': m.manager_name || 'Sales Manager',
+              'Team Lead': h.teamLead,
+              'Sales Manager': h.salesManager,
               'Transaction Date': formatDate(c.date || c.created_at) || 'N/A',
             }
           })
@@ -184,6 +308,7 @@ function Reports() {
       if (allDirectoryCustomers.length === 0) {
         allDirectoryCustomers = rawDirectCustomers.map(c => {
           const exec = c.sales_executive || 'Sales Executive'
+          const h = resolveHierarchy(exec, c.team_lead || c.team_lead_name, c.sales_manager)
           return {
             'Customer Name': c.company || c.name || c.company_name || 'Customer',
             Date: formatDate(c.created_at || c.date),
@@ -191,7 +316,8 @@ function Reports() {
             'Product / Service': c.product || 'TwiteConnect CRM',
             Amount: `₹${Number(c.contract_value || c.amount || 15000).toLocaleString()}`,
             Executive: exec,
-            'Sales Manager': c.sales_manager || 'Sales Manager',
+            'Team Lead': h.teamLead,
+            'Sales Manager': h.salesManager,
             'Transaction Date': formatDate(c.created_at || c.date) || 'N/A',
           }
         })
@@ -202,7 +328,10 @@ function Reports() {
 
       // A. Process directory manager teams
       ;(dirData?.managers || []).forEach(m => {
-        const mgrName = m.manager_name || 'Sales Manager'
+        let mgrName = m.manager_name || 'Jeeva kumar'
+        if (mgrName === 'Unassigned / Direct' || mgrName === 'Unassigned' || mgrName === 'Direct / Unassigned') {
+          mgrName = 'Jeeva kumar'
+        }
         if (!teamPerformanceMap[mgrName]) {
           teamPerformanceMap[mgrName] = {
             managerName: mgrName,
@@ -231,9 +360,8 @@ function Reports() {
 
       // B. Process direct customers database records to ensure full revenue calculation per team
       rawDirectCustomers.forEach(c => {
-        const mgrName = c.sales_manager || 'Jeeva kumar'
-        const execName = c.sales_executive || 'Sales Executive'
-        const amt = Number(c.contract_value || c.amount) || 15000
+        const h = resolveHierarchy(c.sales_executive, c.team_lead, c.sales_manager)
+        let mgrName = h.salesManager
 
         if (!teamPerformanceMap[mgrName]) {
           teamPerformanceMap[mgrName] = {
@@ -246,13 +374,13 @@ function Reports() {
             topExecRevenue: 0,
           }
         }
-        teamPerformanceMap[mgrName].executives.add(execName)
+        teamPerformanceMap[mgrName].executives.add(c.sales_executive || 'Sales Executive')
         teamPerformanceMap[mgrName].customerCount += 1
-        teamPerformanceMap[mgrName].totalRevenue += amt
+        teamPerformanceMap[mgrName].totalRevenue += Number(c.contract_value || c.amount) || 15000
 
-        if (amt >= teamPerformanceMap[mgrName].topExecRevenue) {
-          teamPerformanceMap[mgrName].topExecRevenue = amt
-          teamPerformanceMap[mgrName].topExecName = execName
+        if (Number(c.contract_value || c.amount) >= teamPerformanceMap[mgrName].topExecRevenue) {
+          teamPerformanceMap[mgrName].topExecRevenue = Number(c.contract_value || c.amount)
+          teamPerformanceMap[mgrName].topExecName = c.sales_executive || 'Sales Executive'
         }
       })
 
@@ -301,9 +429,11 @@ function Reports() {
 
       const empRows = sortedManagerTeams.map((t, idx) => {
         const rankLabel = idx === 0 ? '🥇 #1 Top Team' : idx === 1 ? '🥈 #2 Runner-Up' : idx === 2 ? '🥉 #3 Third Place' : `#${idx + 1}`
+        const h = resolveHierarchy(t.topExecName || t.managerName, '', t.managerName)
         return {
           'Team Rank': rankLabel,
-          'Supervising Manager': t.managerName,
+          'Supervising Manager': h.salesManager,
+          'Team Lead': h.teamLead,
           Department: t.department,
           'Team Size': `${t.executives.size > 0 ? t.executives.size : 1} Reps`,
           'Customers Won': String(t.customerCount),
@@ -318,6 +448,7 @@ function Reports() {
         (m.executives || []).flatMap(e =>
           (e.customers || []).map(c => {
             const exec = e.executive_name || 'Sales Executive'
+            const h = resolveHierarchy(exec, c.team_lead || c.team_lead_name || e.team_lead_name, c.sales_manager || m.manager_name)
             return {
               'Customer ID': String(c.customer_id || '').slice(0, 8),
               Date: formatDate(c.date || c.created_at),
@@ -326,7 +457,8 @@ function Reports() {
               'Contact Person': c.customer_name || 'N/A',
               Product: c.product && c.product !== 'Software License' ? c.product : 'TwiteConnect CRM',
               'Sales Executive': exec,
-              'Sales Manager': m.manager_name || 'Sales Manager',
+              'Team Lead': h.teamLead,
+              'Sales Manager': h.salesManager,
               'Contract Value': `₹${Number(c.amount || 0).toLocaleString()}`,
               Status: c.status || 'Active Customer',
             }
@@ -337,6 +469,7 @@ function Reports() {
       if (custRows.length === 0) {
         custRows = rawDirectCustomers.map((c, idx) => {
           const exec = c.sales_executive || 'Sales Executive'
+          const h = resolveHierarchy(exec, c.team_lead || c.team_lead_name, c.sales_manager)
           return {
             'Customer ID': String(c.id || c.customer_id || `CUST-${100 + idx}`).slice(0, 8),
             Date: formatDate(c.created_at || c.date),
@@ -345,7 +478,8 @@ function Reports() {
             'Contact Person': c.contact || c.name || 'N/A',
             Product: c.product || 'TwiteConnect CRM',
             'Sales Executive': exec,
-            'Sales Manager': c.sales_manager || 'Sales Manager',
+            'Team Lead': h.teamLead,
+            'Sales Manager': h.salesManager,
             'Contract Value': `₹${Number(c.contract_value || c.amount || 15000).toLocaleString()}`,
             Status: c.status || 'Active Customer',
           }
@@ -355,11 +489,14 @@ function Reports() {
       // 5. Visits Report (Field Visit Log)
       const visitRows = (Array.isArray(visits) ? visits : []).map((v, idx) => {
         const exec = v.sales_executive || v.executive_name || 'Sales Executive'
+        const h = resolveHierarchy(exec, v.team_lead || v.team_lead_name, v.sales_manager)
         return {
           'Visit ID': v.id ? String(v.id).slice(0, 8) : `VIS-${idx + 1}`,
           'Client Name': v.customer_name || v.client_name || v.company || 'Client Site',
           Department: resolveDept(exec, 'Field Operations'),
           Executive: exec,
+          'Team Lead': h.teamLead,
+          'Sales Manager': h.salesManager,
           Location: v.location || v.city || 'Field',
           'Check-in Time': v.check_in_time ? String(v.check_in_time).slice(0, 16).replace('T', ' ') : 'N/A',
           Status: v.status || 'Checked In',
@@ -369,27 +506,27 @@ function Reports() {
       setReportData({
         SALES: {
           title: 'Sales & Pipeline Report',
-          columns: ['Deal ID', 'Date', 'Client Name', 'Department', 'Deal Value', 'Stage', 'Assigned Executive', 'Sales Manager', 'Close Date'],
+          columns: ['Deal ID', 'Date', 'Client Name', 'Department', 'Deal Value', 'Stage', 'Assigned Executive', 'Team Lead', 'Sales Manager', 'Close Date'],
           rows: salesRows,
         },
         REVENUE: {
           title: 'Revenue & Collections Report',
-          columns: ['Customer Name', 'Date', 'Department', 'Product / Service', 'Amount', 'Executive', 'Sales Manager', 'Transaction Date'],
+          columns: ['Customer Name', 'Date', 'Department', 'Product / Service', 'Amount', 'Executive', 'Team Lead', 'Sales Manager', 'Transaction Date'],
           rows: allDirectoryCustomers,
         },
         EMPLOYEE_PERFORMANCE: {
           title: 'Employee Performance Report',
-          columns: ['Team Rank', 'Supervising Manager', 'Department', 'Team Size', 'Customers Won', 'Total Team Revenue', 'Top Executive', 'Performance Level'],
+          columns: ['Team Rank', 'Supervising Manager', 'Team Lead', 'Department', 'Team Size', 'Customers Won', 'Total Team Revenue', 'Top Executive', 'Performance Level'],
           rows: empRows,
         },
         CUSTOMERS: {
           title: 'Customer Accounts Report',
-          columns: ['Customer ID', 'Date', 'Company Name', 'Department', 'Contact Person', 'Product', 'Sales Executive', 'Sales Manager', 'Contract Value', 'Status'],
+          columns: ['Customer ID', 'Date', 'Company Name', 'Department', 'Contact Person', 'Product', 'Sales Executive', 'Team Lead', 'Sales Manager', 'Contract Value', 'Status'],
           rows: custRows,
         },
         CLIENT_LOGS: {
           title: 'Field Visit & Engagement Logs',
-          columns: ['Visit ID', 'Client Name', 'Department', 'Executive', 'Location', 'Check-in Time', 'Status'],
+          columns: ['Visit ID', 'Client Name', 'Department', 'Executive', 'Team Lead', 'Sales Manager', 'Location', 'Check-in Time', 'Status'],
           rows: visitRows,
         },
       })

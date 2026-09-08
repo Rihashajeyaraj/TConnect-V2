@@ -82,6 +82,9 @@ function CeoDashboard() {
   // Employee Directory Modal Filter States
   const [employeeRoleFilter, setEmployeeRoleFilter] = useState('ALL')
   const [employeeCustomSearch, setEmployeeCustomSearch] = useState('')
+  const [employeeDeptFilter, setEmployeeDeptFilter] = useState('ALL')
+  const [absentRoleFilter, setAbsentRoleFilter] = useState('ALL')
+  const [absentSearch, setAbsentSearch] = useState('')
 
   // Attendance & Field Visit State for Present, Absent, Field Visit cards
   const [attendanceMetrics, setAttendanceMetrics] = useState({
@@ -157,18 +160,46 @@ function CeoDashboard() {
       const salaryRecords = Array.isArray(salRes?.data) ? salRes.data : (Array.isArray(salRes) ? salRes : [])
       setSalariesList([...salaryRecords, ...backendEmployees, ...backendUsers])
 
+      const isUserInactive = (u) => {
+        if (!u) return true
+        if (u.is_active === false || u.is_active === 0 || String(u.is_active).toLowerCase() === 'false') return true
+        const status = String(u.status || u.employment_status || u.account_status || '').toLowerCase().trim()
+        const inactiveStatuses = ['inactive', 'deactivated', 'deactive', 'disabled', 'terminated', 'resigned', 'left', 'suspended']
+        if (inactiveStatuses.includes(status)) return true
+        return false
+      }
+
+      const rawUserPool = [...backendUsers, ...backendEmployees, ...localUsersRaw]
+
+      // Identify all keys for users marked as inactive in ANY record source
+      const inactiveUserKeys = new Set()
+      rawUserPool.forEach((u) => {
+        if (!u) return
+        if (isUserInactive(u)) {
+          const email = (u.email || '').toLowerCase().trim()
+          const code = String(u.employee_code || u.employee_id || u.id || '').toLowerCase().trim()
+          const name = String(u.name || u.full_name || `${u.first_name || ''} ${u.last_name || ''}`).toLowerCase().trim()
+          if (email) inactiveUserKeys.add(email)
+          if (code) inactiveUserKeys.add(code)
+          if (name) inactiveUserKeys.add(name)
+        }
+      })
+
       const uniqueUserMap = new Map()
-      ;[...backendUsers, ...backendEmployees, ...localUsersRaw].forEach((u) => {
+      rawUserPool.forEach((u) => {
         if (!u) return
         const email = (u.email || '').toLowerCase().trim()
         const code = String(u.employee_code || u.employee_id || u.id || '').toLowerCase().trim()
         const name = String(u.name || u.full_name || `${u.first_name || ''} ${u.last_name || ''}`).toLowerCase().trim()
         const key = email || code || name
-        if (key && !uniqueUserMap.has(key)) {
-          const status = String(u.status || u.employment_status || 'active').toLowerCase()
-          if (status !== 'inactive' && status !== 'terminated') {
-            uniqueUserMap.set(key, u)
-          }
+        if (!key) return
+
+        // Skip deactivated / inactive users
+        if (inactiveUserKeys.has(email) || inactiveUserKeys.has(code) || inactiveUserKeys.has(name)) return
+        if (isUserInactive(u)) return
+
+        if (!uniqueUserMap.has(key)) {
+          uniqueUserMap.set(key, u)
         }
       })
       const activeUserPool = Array.from(uniqueUserMap.values())
@@ -384,12 +415,52 @@ function CeoDashboard() {
 
         const finalExecName = seUser ? (seUser.name || seUser.full_name || rawExec) : (rawExec || 'Direct / Sales Executive')
 
-        // Resolve Sales Manager from Executive's reporting hierarchy
+        // ── 2-STEP HIERARCHY: Executive → Team Lead → Team Lead's Manager (Sales Manager) ──
+        const isTeamLeadUser = (u) => {
+          if (!u) return false
+          const r = String(u.role || u.designation || '').toLowerCase()
+          return r.includes('lead') || r.includes('tl')
+        }
+
+        let finalTeamLeadName = ''
         let finalManagerName = ''
+
+        // Step 1: Identify the Team Lead for this executive
         if (seUser) {
-          finalManagerName = seUser.reporting_manager_name || (seUser.reporting_manager_email && managerNamesMap[seUser.reporting_manager_email.toLowerCase()]) || ''
-          if (!finalManagerName && (seUser.role || '').toLowerCase().includes('manager')) {
-            finalManagerName = seUser.name || seUser.full_name
+          let rawTl = seUser.reporting_team_lead_name || seUser.team_lead_name || seUser.team_lead || ''
+          let rawMgrOfExec = seUser.reporting_manager_name || (seUser.reporting_manager_email && managerNamesMap[seUser.reporting_manager_email.toLowerCase()]) || ''
+
+          if (rawTl && rawTl !== 'Unassigned' && rawTl !== 'Unassigned / Direct') {
+            finalTeamLeadName = rawTl
+          } else if (rawMgrOfExec) {
+            // Check if exec's reporting manager is actually a Team Lead
+            const possibleTlUser = userMapByName[rawMgrOfExec.toLowerCase().trim()]
+            if (possibleTlUser && isTeamLeadUser(possibleTlUser)) {
+              finalTeamLeadName = rawMgrOfExec
+            }
+          }
+        }
+        if (!finalTeamLeadName) {
+          const rawTlFallback = c.team_lead_name || c.team_lead || ''
+          if (rawTlFallback && rawTlFallback !== 'Unassigned') finalTeamLeadName = rawTlFallback
+        }
+
+        // Step 2: Find Team Lead's reporting manager → that is the Sales Manager
+        if (finalTeamLeadName) {
+          const tlUser = userMapByName[finalTeamLeadName.toLowerCase().trim()]
+          if (tlUser) {
+            const tlMgr = tlUser.reporting_manager_name || (tlUser.reporting_manager_email && managerNamesMap[tlUser.reporting_manager_email.toLowerCase()]) || ''
+            if (tlMgr && !isTeamLeadUser(userMapByName[tlMgr.toLowerCase().trim()])) {
+              finalManagerName = tlMgr
+            }
+          }
+        }
+
+        // Fallback: direct reporting manager of exec if TL lookup failed
+        if (!finalManagerName && seUser) {
+          const rawMgr = seUser.reporting_manager_name || (seUser.reporting_manager_email && managerNamesMap[seUser.reporting_manager_email.toLowerCase()]) || ''
+          if (rawMgr && !isTeamLeadUser(userMapByName[rawMgr.toLowerCase().trim()])) {
+            finalManagerName = rawMgr
           }
         }
         if (!finalManagerName) {
@@ -397,7 +468,11 @@ function CeoDashboard() {
           const rawMgrEmail = (c.reporting_manager_email || '').toLowerCase().trim()
           if (rawMgrEmail && managerNamesMap[rawMgrEmail]) finalManagerName = managerNamesMap[rawMgrEmail]
           else if (rawMgr && managerNamesMap[rawMgr.toLowerCase().trim()]) finalManagerName = managerNamesMap[rawMgr.toLowerCase().trim()]
-          else finalManagerName = rawMgr || 'Direct / Sales Manager'
+          else finalManagerName = rawMgr || 'Sales Manager'
+        }
+        // Hard guarantee: Sales Manager != Team Lead
+        if (finalManagerName && finalTeamLeadName && finalManagerName.toLowerCase().trim() === finalTeamLeadName.toLowerCase().trim()) {
+          finalManagerName = 'Jeeva kumar'
         }
 
         // Parse amount
@@ -416,6 +491,7 @@ function CeoDashboard() {
           name: custName,
           company: c.company || custName,
           sales_executive: finalExecName,
+          team_lead: finalTeamLeadName || '',
           sales_manager: finalManagerName,
           details: detailsStr,
           product: prod,
@@ -476,8 +552,10 @@ function CeoDashboard() {
             rawRevenueTransactions.push({
               id: transId,
               date: c.date,
+              team_lead: c.team_lead || '',
               sales_manager: c.sales_manager,
               sales_executive: c.sales_executive,
+              product: c.product || '',
               amount: c.amount,
             })
           }
@@ -488,18 +566,54 @@ function CeoDashboard() {
       const unifiedRevenueRecords = []
       const coveredExecNames = new Set()
 
+      // Helper: check if a user record is a Team Lead
+      const isTeamLeadUser = (u) => {
+        if (!u) return false
+        const r = String(u.role || u.designation || '').toLowerCase()
+        return r.includes('lead') || r.includes('tl')
+      }
+
+      // Helper: 2-step hierarchy resolution for any executive name
+      const resolveTeamLeadAndManager = (execName, existingTl, existingMgr) => {
+        const execUser = userMapByName[String(execName).toLowerCase().trim()]
+        let finalTl = existingTl || ''
+        let finalMgr = existingMgr || ''
+
+        if (execUser) {
+          // Step 1: Get Team Lead
+          let rawTl = execUser.reporting_team_lead_name || execUser.team_lead_name || execUser.team_lead || ''
+          let rawMgr = execUser.reporting_manager_name || (execUser.reporting_manager_email && managerNamesMap[execUser.reporting_manager_email.toLowerCase()]) || ''
+
+          if (rawTl && rawTl !== 'Unassigned' && rawTl !== 'Unassigned / Direct') {
+            finalTl = rawTl
+          } else if (rawMgr) {
+            const possibleTl = userMapByName[rawMgr.toLowerCase().trim()]
+            if (possibleTl && isTeamLeadUser(possibleTl)) finalTl = rawMgr
+          }
+
+          // Step 2: Get Team Lead's Reporting Manager → Sales Manager
+          if (finalTl) {
+            const tlUser = userMapByName[finalTl.toLowerCase().trim()]
+            if (tlUser) {
+              const tlMgr = tlUser.reporting_manager_name || (tlUser.reporting_manager_email && managerNamesMap[tlUser.reporting_manager_email.toLowerCase()]) || ''
+              if (tlMgr && !isTeamLeadUser(userMapByName[tlMgr.toLowerCase().trim()])) finalMgr = tlMgr
+            }
+          }
+
+          // Fallback: exec's own reporting manager if it's not a TL
+          if (!finalMgr && rawMgr && !isTeamLeadUser(userMapByName[rawMgr.toLowerCase().trim()])) finalMgr = rawMgr
+        }
+
+        // Ensure TL != Mgr
+        if (finalTl && finalMgr && finalTl.toLowerCase().trim() === finalMgr.toLowerCase().trim()) finalMgr = ''
+        return { teamLead: finalTl || '', salesManager: finalMgr || (existingMgr && !isTeamLeadUser(userMapByName[(existingMgr || '').toLowerCase().trim()]) ? existingMgr : 'Jeeva kumar') }
+      }
+
       // Include all actual revenue transactions
       rawRevenueTransactions.forEach((rec) => {
         if (!rec) return
         const execName = rec.sales_executive || 'Sales Executive'
-        let mgrName = rec.sales_manager
-
-        if (!mgrName || mgrName.includes('Direct') || mgrName.includes('Unassigned')) {
-          const matchedUser = userMapByName[execName.toLowerCase().trim()] || userMapByEmail[(rec.sales_executive_email || '').toLowerCase().trim()]
-          if (matchedUser) {
-            mgrName = matchedUser.reporting_manager_name || (matchedUser.reporting_manager_email && managerNamesMap[matchedUser.reporting_manager_email.toLowerCase()]) || mgrName
-          }
-        }
+        const { teamLead, salesManager } = resolveTeamLeadAndManager(execName, rec.team_lead || '', rec.sales_manager || '')
 
         if (rec.amount > 0) {
           coveredExecNames.add(execName.toLowerCase().trim())
@@ -508,8 +622,10 @@ function CeoDashboard() {
         unifiedRevenueRecords.push({
           id: rec.id || `${String(execName).toLowerCase()}|${rec.amount}|${rec.date}`,
           date: rec.date || todayDateStr,
-          sales_manager: mgrName || 'Sales Manager',
+          team_lead: teamLead,
+          sales_manager: salesManager,
           sales_executive: execName,
+          product: rec.product || '',
           amount: typeof rec.amount === 'number' ? rec.amount : (parseFloat(String(rec.amount).replace(/[^0-9.]/g, '')) || 0),
         })
       })
@@ -522,19 +638,15 @@ function CeoDashboard() {
 
         if (!coveredExecNames.has(execKey)) {
           coveredExecNames.add(execKey)
-          let mgrName = exec.reporting_manager_name || (exec.reporting_manager_email && managerNamesMap[exec.reporting_manager_email.toLowerCase()])
-          if (!mgrName && (exec.role || '').toLowerCase().includes('manager')) {
-            mgrName = execName
-          }
-          if (!mgrName) {
-            mgrName = 'Sales Manager'
-          }
+          const { teamLead, salesManager } = resolveTeamLeadAndManager(execName, '', '')
 
           unifiedRevenueRecords.push({
             id: `mock-empty-${execKey.replace(/\s+/g, '')}`,
             date: todayDateStr,
-            sales_manager: mgrName,
+            team_lead: teamLead,
+            sales_manager: salesManager,
             sales_executive: execName,
+            product: '',
             amount: 0,
           })
         }
@@ -696,7 +808,7 @@ function CeoDashboard() {
     {
       id: 'employees',
       title: 'Active Employees',
-      value: `${metrics.activeEmployees || metrics.totalEmployees || 14}`,
+      value: `${(metrics.activeEmployees !== undefined && metrics.activeEmployees !== null && metrics.activeEmployees > 0) ? metrics.activeEmployees : (metrics.totalEmployees || 0)}`,
       subtitle: 'Active Staff Workforce',
       icon: Users,
       color: 'indigo',
@@ -804,7 +916,7 @@ function CeoDashboard() {
           date: c.date || (c.created_at ? c.created_at.split('T')[0] : new Date().toISOString().split('T')[0]),
           sales_manager: c.sales_manager || c.manager_name || 'Jeeva kumar',
           sales_executive: c.sales_executive || c.executive_name || 'Sales Executive',
-          product: c.product || c.product_name || 'Software License',
+          product: c.product || c.product_name || 'TwiteConnect CRM',
           amount: c.amount || 0,
         })
       }
@@ -1064,7 +1176,7 @@ function CeoDashboard() {
           />
 
           {/* Modal Card wrapper */}
-          <div className="relative w-full max-w-4xl max-h-[85vh] overflow-hidden rounded-3xl bg-white border border-slate-200 shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative w-full max-w-7xl max-h-[93vh] overflow-hidden rounded-3xl bg-white border border-slate-200 shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className={`flex items-center justify-between border-b px-6 py-4.5 transition-colors ${
               activeModal === 'revenue'
@@ -1148,9 +1260,10 @@ function CeoDashboard() {
                 // Combine Revenue deals + Reimbursement claims into one comprehensive date ledger
                 const revenueItems = filteredRevenue.map(r => ({
                   date: r.date || '2026-08-20',
+                  team_lead: r.team_lead || '',
                   sales_manager: r.sales_manager || r.manager_name || 'Jeeva kumar',
                   sales_executive: r.sales_executive || r.executive_name || 'Aaron Fdo',
-                  product: r.product || r.product_name || (r.customer_name ? `Deal - ${r.customer_name}` : 'Software License'),
+                  product: r.product || r.product_name || (r.customer_name ? `Deal - ${r.customer_name}` : 'TwiteConnect CRM'),
                   revenue: Number(r.amount || 0),
                   reimbursement: 0,
                   salary: 0,
@@ -1159,6 +1272,7 @@ function CeoDashboard() {
 
                 const expenseItems = (approvedExpenses.length > 0 ? approvedExpenses : (dashboardData?.pendingExpenseClaims || [])).map(e => ({
                   date: e.date || e.created_at?.split('T')[0] || '2026-08-14',
+                  team_lead: e.team_lead || '',
                   sales_manager: e.manager_name || e.approved_by || 'Jeeva kumar',
                   sales_executive: e.employee_name || e.submitted_by || e.sales_executive || 'Bavani sree',
                   product: e.title || e.purpose || e.category || 'Field Reimbursement',
@@ -1330,20 +1444,21 @@ function CeoDashboard() {
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
                             <tr className="bg-slate-50/80 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                              <th className="px-3 py-2.5">DATE</th>
-                              <th className="px-3 py-2.5">SALES MANAGER</th>
-                              <th className="px-3 py-2.5">SALES EXECUTIVE</th>
-                              <th className="px-3 py-2.5">PRODUCT</th>
-                              <th className="px-3 py-2.5 text-right">REVENUE</th>
-                              <th className="px-3 py-2.5 text-right">REIMBURSEMENT</th>
-                              <th className="px-3 py-2.5 text-right">SALARY</th>
-                              <th className="px-3 py-2.5 text-right">INCENTIVES</th>
+                              <th className="px-3 py-2.5 whitespace-nowrap">DATE</th>
+                              <th className="px-3 py-2.5 whitespace-nowrap">SALES MANAGER</th>
+                              <th className="px-3 py-2.5 whitespace-nowrap">TEAM LEAD</th>
+                              <th className="px-3 py-2.5 whitespace-nowrap">SALES EXECUTIVE</th>
+                              <th className="px-3 py-2.5 whitespace-nowrap">PRODUCT</th>
+                              <th className="px-3 py-2.5 text-right whitespace-nowrap">REVENUE</th>
+                              <th className="px-3 py-2.5 text-right whitespace-nowrap">REIMBURSEMENT</th>
+                              <th className="px-3 py-2.5 text-right whitespace-nowrap">SALARY</th>
+                              <th className="px-3 py-2.5 text-right whitespace-nowrap">INCENTIVES</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 font-medium">
                             {filteredLedgerItems.length === 0 ? (
                               <tr>
-                                <td colSpan={8} className="py-10 text-center text-slate-400 font-bold">
+                                <td colSpan={9} className="py-10 text-center text-slate-400 font-bold">
                                   No transaction records found for selected date range.
                                 </td>
                               </tr>
@@ -1351,9 +1466,14 @@ function CeoDashboard() {
                               filteredLedgerItems.map((rec, i) => (
                                 <tr key={i} className="hover:bg-slate-50/50">
                                   <td className="px-3 py-2.5 text-slate-900 font-black text-[11px] whitespace-nowrap">{formatDDMMYYYY(rec.date)}</td>
-                                  <td className="px-3 py-2.5 text-slate-800 font-bold text-[11px]">{rec.sales_manager}</td>
-                                  <td className="px-3 py-2.5 text-slate-700 font-semibold text-[11px]">{rec.sales_executive}</td>
-                                  <td className="px-3 py-2.5 text-slate-600 font-medium text-[11px]">{rec.product}</td>
+                                  <td className="px-3 py-2.5 text-slate-800 font-bold text-[11px] whitespace-nowrap">{rec.sales_manager || '—'}</td>
+                                  <td className="px-3 py-2.5 text-[11px] whitespace-nowrap">
+                                    <span className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-200 rounded-md px-2 py-0.5 font-bold">
+                                      {rec.team_lead || '—'}
+                                    </span>
+                                  </td>
+                                  <td className="px-3 py-2.5 text-slate-700 font-semibold text-[11px] whitespace-nowrap">{rec.sales_executive}</td>
+                                  <td className="px-3 py-2.5 text-slate-600 font-medium text-[11px]">{rec.product || '—'}</td>
                                   <td className="px-3 py-2.5 text-right font-black text-slate-950 text-[11px]">
                                     {rec.revenue > 0 ? `₹${rec.revenue.toLocaleString()}` : '—'}
                                   </td>
@@ -1389,24 +1509,42 @@ function CeoDashboard() {
               
               {/* 2. CUSTOMERS MODAL VIEW (Manager Cards First -> Click -> Team Deals Table) */}
               {activeModal === 'customers' && (() => {
-                const customersList = !customerWinToggle 
-                  ? (dashboardData?.customerSummary?.customersList || []) 
-                  : (dashboardData?.customerSummary?.wonOpportunitiesList || [])
+                const customersList = dashboardData?.customerSummary?.customersList || []
 
-                // Group accounts by Sales Manager
+                // Helper: check if a name belongs to a Team Lead role
+                const isTlName = (name) => {
+                  if (!name) return false
+                  const n = name.toLowerCase().trim()
+                  // Known TL names
+                  if (n.includes('vedika') || n.includes('akila') || n.includes('anand raj')) return true
+                  // Check HRMS data via dashboardData if available
+                  const empList = dashboardData?.employeeSummary?.employeesList || []
+                  const match = empList.find(e => String(e.name || '').toLowerCase().trim() === n)
+                  if (match) {
+                    const r = String(match.role || match.designation || '').toLowerCase()
+                    return r.includes('lead') || r.includes('tl')
+                  }
+                  return false
+                }
+
+                // Group accounts by Sales Manager (real manager, not Team Lead)
                 const managerMap = {}
                 customersList.forEach(cust => {
-                  const mgr = (cust.sales_manager || 'Jeeva kumar').trim()
+                  // Use sales_manager, but if it's a TL, fall back to a sensible default
+                  let mgr = (cust.sales_manager || '').trim()
+                  if (!mgr || isTlName(mgr)) mgr = 'Jeeva kumar'
                   if (!managerMap[mgr]) {
                     managerMap[mgr] = {
                       name: mgr,
                       customers: [],
                       executives: new Set(),
+                      teamLeads: new Set(),
                       totalAmount: 0,
                     }
                   }
                   managerMap[mgr].customers.push(cust)
                   if (cust.sales_executive) managerMap[mgr].executives.add(cust.sales_executive)
+                  if (cust.team_lead) managerMap[mgr].teamLeads.add(cust.team_lead)
                   managerMap[mgr].totalAmount += (cust.amount || 0)
                 })
 
@@ -1414,7 +1552,11 @@ function CeoDashboard() {
 
                 // If a manager card is clicked, filter list for that manager
                 const filteredDeals = selectedManagerCard
-                  ? customersList.filter(c => (c.sales_manager || 'Jeeva kumar').trim().toLowerCase() === selectedManagerCard.toLowerCase())
+                  ? customersList.filter(c => {
+                      let mgr = (c.sales_manager || '').trim()
+                      if (!mgr || isTlName(mgr)) mgr = 'Jeeva kumar'
+                      return mgr.toLowerCase() === selectedManagerCard.toLowerCase()
+                    })
                   : customersList
 
                 return (
@@ -1430,25 +1572,6 @@ function CeoDashboard() {
                           </div>
 
                           <div className="flex items-center gap-3">
-                            {/* Win Switcher Toggle */}
-                            <div className="flex bg-slate-200/70 p-1 rounded-xl">
-                              <button
-                                onClick={() => setCustomerWinToggle(false)}
-                                className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
-                                  !customerWinToggle ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-800'
-                                }`}
-                              >
-                                All Customers
-                              </button>
-                              <button
-                                onClick={() => setCustomerWinToggle(true)}
-                                className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
-                                  customerWinToggle ? 'bg-[#832D51] text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
-                                }`}
-                              >
-                                Win
-                              </button>
-                            </div>
                             <span className="text-[10px] font-black text-[#832D51] bg-[#832D51]/10 px-2.5 py-1.5 rounded-xl border border-[#832D51]/20">
                               {managerCards.length} Manager{managerCards.length !== 1 ? 's' : ''}
                             </span>
@@ -1499,6 +1622,19 @@ function CeoDashboard() {
                                         <span className="text-[11px] font-bold text-slate-700">Total Portfolio Value:</span>
                                         <span className="font-black text-slate-950">₹{m.totalAmount.toLocaleString()}</span>
                                       </div>
+                                      <div className="flex items-start justify-between text-xs gap-2">
+                                        <span className="text-[11px] font-bold text-slate-700 shrink-0">Team Leads:</span>
+                                        <div className="flex flex-wrap gap-1 justify-end">
+                                          {Array.from(m.teamLeads).length > 0
+                                            ? Array.from(m.teamLeads).map(tl => (
+                                                <span key={tl} className="inline-flex items-center bg-violet-50 text-violet-700 border border-violet-200 rounded-md px-1.5 py-0.5 text-[10px] font-bold">
+                                                  {tl}
+                                                </span>
+                                              ))
+                                            : <span className="text-slate-400 font-semibold text-[11px]">—</span>
+                                          }
+                                        </div>
+                                      </div>
                                       <div className="flex items-center justify-between text-xs">
                                         <span className="text-[11px] font-bold text-slate-700">Executives:</span>
                                         <span className="font-bold text-slate-800 text-[11px] max-w-[130px] truncate" title={execsArray.join(', ')}>
@@ -1538,24 +1674,6 @@ function CeoDashboard() {
                             </div>
                           </div>
 
-                          <div className="flex bg-slate-200/70 p-1 rounded-xl">
-                            <button
-                              onClick={() => setCustomerWinToggle(false)}
-                              className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
-                                !customerWinToggle ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-600 hover:text-slate-800'
-                              }`}
-                            >
-                              All Customers
-                            </button>
-                            <button
-                              onClick={() => setCustomerWinToggle(true)}
-                              className={`px-3 py-1 rounded-lg text-xs font-black transition cursor-pointer ${
-                                customerWinToggle ? 'bg-[#832D51] text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
-                              }`}
-                            >
-                              Win
-                            </button>
-                          </div>
                         </div>
 
                         {/* Customer Deals Table with requested columns */}
@@ -1564,33 +1682,39 @@ function CeoDashboard() {
                             <table className="w-full text-left border-collapse text-xs">
                               <thead>
                                 <tr className="bg-slate-50/80 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                                  <th className="px-4 py-3">DATE</th>
-                                  <th className="px-4 py-3">SALES EXECUTIVE NAME</th>
-                                  <th className="px-4 py-3">CLIENT DETAILS</th>
-                                  <th className="px-4 py-3">PRODUCT</th>
-                                  <th className="px-4 py-3 text-right">AMOUNT</th>
-                                  <th className="px-4 py-3 text-center">ACTION</th>
+                                  <th className="px-4 py-3 whitespace-nowrap">DATE</th>
+                                  <th className="px-4 py-3 whitespace-nowrap">TEAM LEAD</th>
+                                  <th className="px-4 py-3 whitespace-nowrap">SALES EXECUTIVE</th>
+                                  <th className="px-4 py-3 whitespace-nowrap">CLIENT DETAILS</th>
+                                  <th className="px-4 py-3 whitespace-nowrap">PRODUCT</th>
+                                  <th className="px-4 py-3 text-right whitespace-nowrap">AMOUNT</th>
+                                  <th className="px-4 py-3 text-center whitespace-nowrap">ACTION</th>
                                 </tr>
                               </thead>
                               <tbody className="divide-y divide-slate-100 font-medium">
                                 {filteredDeals.length === 0 ? (
                                   <tr>
-                                    <td colSpan={6} className="py-12 text-center text-slate-400 font-bold">
+                                    <td colSpan={7} className="py-12 text-center text-slate-400 font-bold">
                                       No deal records found for {selectedManagerCard}.
                                     </td>
                                   </tr>
                                 ) : (
                                   filteredDeals.map((cust, i) => (
                                     <tr key={cust.id || i} className="hover:bg-slate-50/50">
-                                      <td className="px-4 py-3.5 text-slate-500 font-semibold">{formatDDMMYYYY(cust.date)}</td>
-                                      <td className="px-4 py-3.5 text-slate-900 font-bold">{cust.sales_executive || 'Sales Rep'}</td>
+                                      <td className="px-4 py-3.5 text-slate-500 font-semibold whitespace-nowrap">{formatDDMMYYYY(cust.date)}</td>
+                                      <td className="px-4 py-3.5 whitespace-nowrap">
+                                        <span className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-200 rounded-md px-2 py-0.5 font-bold text-[11px]">
+                                          {cust.team_lead || '—'}
+                                        </span>
+                                      </td>
+                                      <td className="px-4 py-3.5 text-slate-900 font-bold whitespace-nowrap">{cust.sales_executive || 'Sales Rep'}</td>
                                       <td className="px-4 py-3.5">
                                         <div className="font-bold text-slate-900">{cust.name || cust.client_name_details}</div>
                                         <div className="text-[10px] text-slate-400 truncate max-w-[200px]" title={cust.details}>
                                           {cust.details || cust.email || ''}
                                         </div>
                                       </td>
-                                      <td className="px-4 py-3.5 text-slate-700 font-medium">{cust.product || 'Software License'}</td>
+                                      <td className="px-4 py-3.5 text-slate-700 font-medium">{cust.product || 'TwiteConnect CRM'}</td>
                                       <td className="px-4 py-3.5 text-right font-black text-slate-950">₹{(cust.amount || 0).toLocaleString()}</td>
                                       <td className="px-4 py-3.5 text-center">
                                         <Link
@@ -1622,10 +1746,18 @@ function CeoDashboard() {
                   const roleLower = String(emp.role || '').toLowerCase()
                   const nameLower = String(emp.name || '').toLowerCase()
                   const idLower = String(emp.employee_id || '').toLowerCase()
+                  const deptStr = (emp.department || emp.dept || '').trim()
+
+                  // Department filter
+                  if (employeeDeptFilter !== 'ALL') {
+                    if (deptStr.toLowerCase() !== employeeDeptFilter.toLowerCase()) return false
+                  }
 
                   // Tab Role Filter
                   if (employeeRoleFilter === 'MANAGER') {
-                    if (!roleLower.includes('manager') && !roleLower.includes('lead')) return false
+                    if (!roleLower.includes('manager')) return false
+                  } else if (employeeRoleFilter === 'TEAM LEAD') {
+                    if (!roleLower.includes('lead') && !roleLower.includes('tl')) return false
                   } else if (employeeRoleFilter === 'EXECUTIVE') {
                     if (!roleLower.includes('executive') && !roleLower.includes('rep') && !roleLower.includes('staff')) return false
                   } else if (employeeRoleFilter === 'ADMIN') {
@@ -1646,9 +1778,17 @@ function CeoDashboard() {
                   return true
                 })
 
-                const managerCount = allEmployeesList.filter(e => (e.role || '').toLowerCase().includes('manager') || (e.role || '').toLowerCase().includes('lead')).length
+                const managerCount = allEmployeesList.filter(e => (e.role || '').toLowerCase().includes('manager')).length
+                const teamLeadCount = allEmployeesList.filter(e => (e.role || '').toLowerCase().includes('lead') || (e.role || '').toLowerCase().includes('tl')).length
                 const execCount = allEmployeesList.filter(e => (e.role || '').toLowerCase().includes('executive') || (e.role || '').toLowerCase().includes('rep')).length
                 const adminCount = allEmployeesList.filter(e => (e.role || '').toLowerCase().includes('admin') || (e.role || '').toLowerCase().includes('ceo') || (e.role || '').toLowerCase().includes('founder')).length
+
+                // Compute unique departments dynamically
+                const uniqueDepts = ['ALL', ...Array.from(new Set(
+                  allEmployeesList
+                    .map(e => (e.department || e.dept || '').trim())
+                    .filter(d => d && d !== 'N/A')
+                )).sort()]
 
                 return (
                   <div className="space-y-3.5">
@@ -1675,6 +1815,17 @@ function CeoDashboard() {
                           }`}
                         >
                           MANAGER <span className={`ml-1 px-1.5 py-0.2 text-[10px] rounded-full ${employeeRoleFilter === 'MANAGER' ? 'bg-[#6a2240] text-pink-100' : 'bg-slate-100 text-slate-700'}`}>{managerCount}</span>
+                        </button>
+
+                        <button
+                          onClick={() => setEmployeeRoleFilter('TEAM LEAD')}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer ${
+                            employeeRoleFilter === 'TEAM LEAD'
+                              ? 'bg-violet-600 text-white shadow-xs scale-[1.02]'
+                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
+                          }`}
+                        >
+                          TEAM LEAD <span className={`ml-1 px-1.5 py-0.2 text-[10px] rounded-full ${employeeRoleFilter === 'TEAM LEAD' ? 'bg-violet-700 text-violet-100' : 'bg-slate-100 text-slate-700'}`}>{teamLeadCount}</span>
                         </button>
 
                         <button
@@ -1723,32 +1874,63 @@ function CeoDashboard() {
                       </div>
                     </div>
 
+                    {/* Department Filter Chips */}
+                    {uniqueDepts.length > 1 && (
+                      <div className="flex flex-wrap items-center gap-1.5 px-1">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">Dept:</span>
+                        {uniqueDepts.map(dept => (
+                          <button
+                            key={dept}
+                            onClick={() => setEmployeeDeptFilter(dept)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer border ${
+                              employeeDeptFilter === dept
+                                ? 'bg-[#832D51] text-white border-[#832D51] shadow-xs scale-[1.02]'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {dept === 'ALL' ? `All Departments (${allEmployeesList.length})` : `${dept} (${allEmployeesList.filter(e => (e.department || e.dept || '').trim() === dept).length})`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
                     {/* Employee Directory Table */}
                     <div className="border border-slate-200/80 rounded-2xl overflow-hidden shadow-2xs bg-white">
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
                             <tr className="bg-slate-50 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                              <th className="px-5 py-3">Employee ID</th>
-                              <th className="px-5 py-3">Name</th>
-                              <th className="px-5 py-3">Role</th>
+                              <th className="px-5 py-3 whitespace-nowrap">Employee ID</th>
+                              <th className="px-5 py-3 whitespace-nowrap">Name</th>
+                              <th className="px-5 py-3 whitespace-nowrap">Department</th>
+                              <th className="px-5 py-3 whitespace-nowrap">Role</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 font-medium">
                             {filteredEmployeesList.length === 0 ? (
                               <tr>
-                                <td colSpan={3} className="py-12 text-center text-slate-400 font-bold">
-                                  No employee records found matching filter ({employeeRoleFilter}).
+                                <td colSpan={4} className="py-12 text-center text-slate-400 font-bold">
+                                  No employee records found matching filter ({employeeRoleFilter}{employeeDeptFilter !== 'ALL' ? ` · ${employeeDeptFilter}` : ''}).
                                 </td>
                               </tr>
                             ) : (
                               filteredEmployeesList.map((emp, i) => (
                                 <tr key={i} className="hover:bg-slate-50/50">
-                                  <td className="px-5 py-3.5 font-bold text-[#832D51]">{emp.employee_id}</td>
-                                  <td className="px-5 py-3.5 text-slate-900 font-black">{emp.name}</td>
+                                  <td className="px-5 py-3.5 font-bold text-[#832D51] whitespace-nowrap">{emp.employee_id}</td>
+                                  <td className="px-5 py-3.5 text-slate-900 font-black whitespace-nowrap">{emp.name}</td>
+                                  <td className="px-5 py-3.5">
+                                    {(emp.department || emp.dept) ? (
+                                      <span className="inline-flex items-center rounded-md px-2.5 py-0.5 font-bold text-[10px] tracking-wide bg-sky-50 text-sky-700 border border-sky-200">
+                                        {emp.department || emp.dept}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 font-semibold text-[11px]">—</span>
+                                    )}
+                                  </td>
                                   <td className="px-5 py-3.5 text-slate-600">
                                     <span className={`inline-flex items-center rounded-md px-2.5 py-0.5 font-black uppercase text-[10px] tracking-wider border ${
                                       (emp.role || '').toLowerCase().includes('manager') ? 'bg-[#832D51]/10 text-[#832D51] border-[#832D51]/30' :
+                                      (emp.role || '').toLowerCase().includes('lead') || (emp.role || '').toLowerCase().includes('tl') ? 'bg-violet-50 text-violet-700 border-violet-200' :
                                       (emp.role || '').toLowerCase().includes('admin') || (emp.role || '').toLowerCase().includes('ceo') ? 'bg-purple-50 text-purple-800 border-purple-200' :
                                       'bg-indigo-50 text-indigo-800 border-indigo-200'
                                     }`}>
@@ -1884,56 +2066,132 @@ function CeoDashboard() {
               )}
 
               {/* 6. ABSENT STAFF ROSTER MODAL */}
-              {activeModal === 'absent' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between bg-rose-50 border border-rose-200/90 rounded-xl p-3.5">
-                    <div className="flex items-center gap-2">
-                      <XCircle className="size-4 text-rose-600" />
-                      <span className="text-xs font-black text-rose-950 uppercase tracking-wider">
-                        ABSENT STAFF TODAY ({attendanceMetrics.absentToday} EMPLOYEES)
+              {activeModal === 'absent' && (() => {
+                const absentFiltered = attendanceMetrics.absentList.filter(emp => {
+                  const roleLower = String(emp.role || emp.designation || '').toLowerCase()
+                  const nameLower = String(emp.name || emp.full_name || '').toLowerCase()
+
+                  if (absentRoleFilter === 'MANAGER' && !roleLower.includes('manager')) return false
+                  if (absentRoleFilter === 'TEAM LEAD' && !roleLower.includes('lead') && !roleLower.includes('tl')) return false
+                  if (absentRoleFilter === 'EXECUTIVE' && !roleLower.includes('executive') && !roleLower.includes('rep')) return false
+                  if (absentRoleFilter === 'ADMIN' && !roleLower.includes('admin') && !roleLower.includes('ceo') && !roleLower.includes('founder')) return false
+
+                  if (absentSearch.trim()) {
+                    const q = absentSearch.toLowerCase().trim()
+                    if (!nameLower.includes(q) && !roleLower.includes(q)) return false
+                  }
+
+                  return true
+                })
+
+                const roleGroups = [
+                  { key: 'ALL', label: 'All', count: attendanceMetrics.absentList.length },
+                  { key: 'MANAGER', label: 'Manager', count: attendanceMetrics.absentList.filter(e => String(e.role || '').toLowerCase().includes('manager')).length },
+                  { key: 'TEAM LEAD', label: 'Team Lead', count: attendanceMetrics.absentList.filter(e => { const r = String(e.role || '').toLowerCase(); return r.includes('lead') || r.includes('tl') }).length },
+                  { key: 'EXECUTIVE', label: 'Executive', count: attendanceMetrics.absentList.filter(e => { const r = String(e.role || '').toLowerCase(); return r.includes('executive') || r.includes('rep') }).length },
+                  { key: 'ADMIN', label: 'Admin', count: attendanceMetrics.absentList.filter(e => { const r = String(e.role || '').toLowerCase(); return r.includes('admin') || r.includes('ceo') || r.includes('founder') }).length },
+                ].filter(g => g.key === 'ALL' || g.count > 0)
+
+                return (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between bg-rose-50 border border-rose-200/90 rounded-xl p-3.5">
+                      <div className="flex items-center gap-2">
+                        <XCircle className="size-4 text-rose-600" />
+                        <span className="text-xs font-black text-rose-950 uppercase tracking-wider">
+                          ABSENT STAFF TODAY ({attendanceMetrics.absentToday} EMPLOYEES)
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-extrabold text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full uppercase">
+                        UNMARKED / ON LEAVE
                       </span>
                     </div>
-                    <span className="text-[10px] font-extrabold text-rose-700 bg-rose-100 px-2.5 py-0.5 rounded-full uppercase">
-                      UNMARKED / ON LEAVE
-                    </span>
-                  </div>
 
-                  <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                          <th className="px-4 py-3">STAFF NAME</th>
-                          <th className="px-4 py-3">ROLE / DESIGNATION</th>
-                          <th className="px-4 py-3">ATTENDANCE STATUS</th>
-                          <th className="px-4 py-3 text-right">ACTION</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
-                        {attendanceMetrics.absentList.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="py-8 text-center text-slate-400 font-bold">
-                              All staff members are present today. No absent records found.
-                            </td>
+                    {/* Filters Row */}
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        {roleGroups.map(g => (
+                          <button
+                            key={g.key}
+                            onClick={() => setAbsentRoleFilter(g.key)}
+                            className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer border ${
+                              absentRoleFilter === g.key
+                                ? 'bg-rose-600 text-white border-rose-600 shadow-xs scale-[1.02]'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {g.label}
+                            <span className={`ml-1.5 px-1.5 py-0.5 text-[10px] rounded-full ${
+                              absentRoleFilter === g.key ? 'bg-rose-700 text-rose-100' : 'bg-slate-100 text-slate-600'
+                            }`}>{g.count}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <div className="relative flex-1 max-w-xs">
+                        <Search className="absolute left-3 top-2.5 size-3.5 text-slate-400" />
+                        <input
+                          type="text"
+                          placeholder="Search by name or role..."
+                          value={absentSearch}
+                          onChange={e => setAbsentSearch(e.target.value)}
+                          className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-rose-400"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                            <th className="px-4 py-3 whitespace-nowrap">STAFF NAME</th>
+                            <th className="px-4 py-3 whitespace-nowrap">ROLE / DESIGNATION</th>
+                            <th className="px-4 py-3 whitespace-nowrap">ATTENDANCE STATUS</th>
+                            <th className="px-4 py-3 text-right whitespace-nowrap">ACTION</th>
                           </tr>
-                        ) : (
-                          attendanceMetrics.absentList.map((emp, i) => (
-                            <tr key={i} className="hover:bg-slate-50/50">
-                              <td className="px-4 py-3 text-slate-900 font-black">{emp.name || emp.full_name || 'Staff Member'}</td>
-                              <td className="px-4 py-3 text-slate-600 font-semibold">{emp.role || emp.designation || 'Staff Member'}</td>
-                              <td className="px-4 py-3 text-rose-600 font-bold">Not Clocked In</td>
-                              <td className="px-4 py-3 text-right font-black">
-                                <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-md text-[10px]">
-                                  Absent
-                                </span>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium">
+                          {absentFiltered.length === 0 ? (
+                            <tr>
+                              <td colSpan={4} className="py-8 text-center text-slate-400 font-bold">
+                                {attendanceMetrics.absentList.length === 0
+                                  ? 'All staff members are present today.'
+                                  : `No absent staff matching filter “${absentRoleFilter}${absentSearch ? ' · ' + absentSearch : ''}”`}
                               </td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                          ) : (
+                            absentFiltered.map((emp, i) => (
+                              <tr key={i} className="hover:bg-rose-50/30">
+                                <td className="px-4 py-3 text-slate-900 font-black">{emp.name || emp.full_name || 'Staff Member'}</td>
+                                <td className="px-4 py-3">
+                                  <span className={`inline-flex items-center rounded-md px-2 py-0.5 font-black uppercase text-[10px] tracking-wider border ${
+                                    String(emp.role || '').toLowerCase().includes('manager') ? 'bg-[#832D51]/10 text-[#832D51] border-[#832D51]/30' :
+                                    String(emp.role || '').toLowerCase().includes('lead') ? 'bg-violet-50 text-violet-700 border-violet-200' :
+                                    String(emp.role || '').toLowerCase().includes('admin') || String(emp.role || '').toLowerCase().includes('ceo') ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                    'bg-indigo-50 text-indigo-700 border-indigo-200'
+                                  }`}>
+                                    {emp.role || emp.designation || 'Staff Member'}
+                                  </span>
+                                </td>
+                                <td className="px-4 py-3 text-rose-600 font-bold">Not Clocked In</td>
+                                <td className="px-4 py-3 text-right font-black">
+                                  <span className="bg-rose-50 text-rose-700 border border-rose-200 px-2 py-0.5 rounded-md text-[10px]">
+                                    Absent
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {absentFiltered.length > 0 && (
+                      <p className="text-[11px] text-slate-400 font-bold text-right">
+                        Showing {absentFiltered.length} of {attendanceMetrics.absentList.length} absent staff
+                      </p>
+                    )}
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* 7. TODAY ON FIELD VISIT MODAL */}
               {activeModal === 'field_visit' && (
