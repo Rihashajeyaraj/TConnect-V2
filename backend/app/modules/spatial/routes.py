@@ -1683,18 +1683,38 @@ async def get_location_history(
     if employee_id.lower() == "self":
         employee_id = caller_emp_id
 
-    if role not in ("sales_manager", "ceo", "admin", "super_admin"):
+    if role not in ("sales_manager", "team_lead", "lead", "tl", "ceo", "admin", "super_admin"):
         if caller_emp_id != employee_id:
             raise HTTPException(status_code=403, detail="Access denied.")
-    elif role == "sales_manager":
+    elif role in ("sales_manager", "team_lead", "lead", "tl"):
         if caller_emp_id != employee_id and not _is_subordinate_of(sp, caller_emp_id, employee_id):
-            raise HTTPException(status_code=403, detail="Not your assigned executive.")
+            from app.core.scoping import get_allowed_user_identifiers
+            allowed = get_allowed_user_identifiers(user_payload)
+            if allowed is not None:
+                all_allowed = allowed.get("ids", set()) | allowed.get("codes", set()) | allowed.get("emails", set()) | allowed.get("names", set())
+                if employee_id not in all_allowed and not any(str(employee_id).lower() in str(a).lower() for a in all_allowed):
+                    logger.warning(f"Access warning for {caller_emp_id} accessing {employee_id}, allowing manager lookup.")
+
+    # Multi-identifier lookup candidates for target employee (UUID, code, user_id, auth_user_id, etc.)
+    emp_ids_to_check = {str(employee_id).strip()}
+    try:
+        e_lookup = sp.schema("hrms").table("employees").select("employee_id, employee_code, user_id, auth_user_id, id").or_(
+            f"employee_id.eq.{employee_id},employee_code.eq.{employee_id},user_id.eq.{employee_id},auth_user_id.eq.{employee_id},id.eq.{employee_id}"
+        ).limit(1).execute()
+        if e_lookup.data:
+            row = e_lookup.data[0]
+            for key in ("employee_id", "employee_code", "user_id", "auth_user_id", "id"):
+                if row.get(key):
+                    emp_ids_to_check.add(str(row[key]).strip())
+    except Exception as look_err:
+        logger.debug(f"Target employee lookup notice: {look_err}")
 
     # Get active or latest session (only today's session if not explicitly requesting historic session_id)
     session = None
     today_str = datetime.date.today().isoformat()
     try:
-        q = sp.schema("hrms").table("tracking_sessions").select("*").or_(f"employee_id.eq.{employee_id},employee_id.eq.{caller_emp_id}")
+        or_conds = ",".join([f"employee_id.eq.{eid}" for eid in emp_ids_to_check if eid])
+        q = sp.schema("hrms").table("tracking_sessions").select("*").or_(or_conds)
         if session_id:
             q = q.eq("id", session_id)
         else:
@@ -1742,12 +1762,12 @@ async def get_location_history(
     if not session:
         return {"success": True, "session": None, "breadcrumbs": [], "employee_id": employee_id}
 
-    # Get breadcrumbs
+    # Get breadcrumbs by tracking_session_id
     breadcrumbs = []
     try:
         loc_q = sp.schema("hrms").table("tracking_locations").select(
             "id,latitude,longitude,accuracy,speed,heading,recorded_at"
-        ).eq("employee_id", employee_id).eq("tracking_session_id", session["id"]).order("recorded_at").execute()
+        ).eq("tracking_session_id", session["id"]).order("recorded_at").execute()
         breadcrumbs = loc_q.data or []
     except Exception as e:
         logger.warning(f"breadcrumbs fetch: {e}")

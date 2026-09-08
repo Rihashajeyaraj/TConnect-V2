@@ -194,12 +194,12 @@ function createMapMarker(latlng, map, html, onClick, anchor = 'center') {
   return new HTMLMapMarker(latlng, map, html, onClick, anchor)
 }
 
-export default function ManagerSmartMap() {
+export default function ManagerSmartMap({ hideHeader = false }) {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
 
   // State
-  const [activeMapTab,     setActiveMapTab]      = useState('team') // 'team' | 'own'
+  const [activeTab,        setActiveTab]        = useState('team') // 'team' | 'own'
   const [mapLoaded,        setMapLoaded]        = useState(false)
   const [loading,          setLoading]           = useState(true)
   const [panelOpen,        setPanelOpen]         = useState(window.innerWidth >= 1024)
@@ -2488,32 +2488,62 @@ export default function ManagerSmartMap() {
     })
   }, [executives, currentTeamGroup, activeTeamFilter, searchQuery])
 
-  if (activeMapTab === 'own' && !isCeo) {
-    return (
-      <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-slate-900 font-sans">
-        {/* Floating Top Mode Switcher Bar */}
-        <div className="absolute top-3 right-3 sm:right-6 z-[1050] flex items-center gap-1 bg-white/95 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200/90 shadow-2xl">
-          <button
-            onClick={() => setActiveMapTab('team')}
-            className="px-3.5 py-1.5 rounded-xl text-xs font-black text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition flex items-center gap-1.5 cursor-pointer"
-          >
-            <Users className="w-3.5 h-3.5 text-indigo-600" /> Team Radar
-          </button>
-          <button
-            onClick={() => setActiveMapTab('own')}
-            className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-indigo-600 text-white shadow-md transition flex items-center gap-1.5 cursor-pointer"
-          >
-            <Compass className="w-3.5 h-3.5 text-amber-200" /> Personal Map
-          </button>
-        </div>
 
+
+  const roleTitle = isCeo ? 'CEO Operations' : 'Sales Manager'
+
+  const renderHeaderBar = () => (
+    <div className="bg-white border border-[#E8D8C8] p-2 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs mb-4">
+      <div className="flex items-center gap-2 px-2">
+        <MapPin className="w-5 h-5 text-[#966038]" />
+        <div>
+          <h2 className="text-xs font-black text-[#543D30] uppercase tracking-wider">
+            Smart Client & Live Tracking Radar ({roleTitle})
+          </h2>
+          <p className="text-[10px] text-slate-500 font-semibold">
+            Toggle between live team location tracking and personal client radar navigation map.
+          </p>
+        </div>
+      </div>
+
+      <div className="flex items-center gap-1 bg-[#FAF6F0] p-1 rounded-xl shrink-0 border border-[#E8D8C8]">
+        <button
+          onClick={() => setActiveTab('team')}
+          className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'team'
+              ? 'bg-[#543D30] text-white shadow-xs'
+              : 'text-[#6B4E3D] hover:text-[#543D30]'
+          }`}
+        >
+          <Users className="w-3.5 h-3.5 text-[#D49A6A]" /> Team Live Radar Map
+        </button>
+        <button
+          onClick={() => setActiveTab('own')}
+          className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+            activeTab === 'own'
+              ? 'bg-[#966038] text-white shadow-xs'
+              : 'text-[#6B4E3D] hover:text-[#543D30]'
+          }`}
+        >
+          <Compass className="w-3.5 h-3.5 text-amber-200" /> Personal Smart Map
+        </button>
+      </div>
+    </div>
+  )
+
+  if (activeTab === 'own') {
+    return (
+      <div className="space-y-4 font-sans">
+        {!hideHeader && renderHeaderBar()}
         <SmartClientMap isManagerView={true} />
       </div>
     )
   }
 
   return (
-    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-slate-900 font-sans">
+    <div className="space-y-4 font-sans">
+      {!hideHeader && renderHeaderBar()}
+      <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-slate-900 font-sans rounded-2xl border border-slate-200">
 
       {/* Map container — always in DOM, pre-initialized */}
       <div
@@ -2540,26 +2570,6 @@ export default function ManagerSmartMap() {
               </div>
 
               <div className="flex items-center gap-2">
-                {!isCeo && (
-                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 border border-slate-200">
-                    <button
-                      onClick={() => setActiveMapTab('team')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-                        activeMapTab === 'team' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      <Users className="w-3.5 h-3.5 text-indigo-400" /> Team Radar
-                    </button>
-                    <button
-                      onClick={() => setActiveMapTab('own')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-                        activeMapTab === 'own' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      <Compass className="w-3.5 h-3.5 text-amber-200" /> Personal Map
-                    </button>
-                  </div>
-                )}
                 <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 border border-slate-200 bg-white rounded-xl px-3 py-2 hover:border-blue-300 transition shadow-xs">
                   <RefreshCw className="w-3.5 h-3.5" /> Refresh
                 </button>
@@ -3053,6 +3063,7 @@ export default function ManagerSmartMap() {
           </div>
         </div>
       )}
+      </div>
     </div>
   )
 }
