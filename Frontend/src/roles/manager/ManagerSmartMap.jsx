@@ -1848,12 +1848,13 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   }, [])
 
   const _loadTrackingHistory = useCallback(async (executive) => {
-    if (!googleMapRef.current || !window.google) return
+    if (!googleMapRef.current || !window.google || !executive) return
     selectedExecutiveRef.current = executive
     setTrackStatus('loading')
-    console.log("[SmartMap] Loading tracking history for executive:", executive?.employee_name, executive?.employee_id)
+    const targetId = executive.employee_id || executive.id || executive.employee_code || ''
+    console.log("[SmartMap] Loading tracking history for executive:", executive?.employee_name || executive?.name, targetId)
     try {
-      const res = await spatialAPI.getLocationHistory(executive.employee_id)
+      const res = await spatialAPI.getLocationHistory(targetId)
       console.log("[SmartMap] History response:", res)
       const data = res?.data || res
       const session = data?.session
