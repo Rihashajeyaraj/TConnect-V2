@@ -353,6 +353,9 @@ export default function SalesHRMS(props) {
 
 
   const isUserAdmin = currentUser.role?.includes('Admin') || profile.role?.includes('Admin') || String(currentUser.role).toLowerCase().includes('admin');
+  const userRoleStr = String(currentUser.role || profile.role || currentUser.designation || profile.designation || '').toLowerCase();
+  const isTeamLeadRole = userRoleStr.includes('lead') || userRoleStr.includes('tl');
+  const isManagerRole = userRoleStr.includes('manager') && !isTeamLeadRole;
   const managerName = isUserAdmin ? 'Dr. Twite Executive' : (profile.reportingManager && profile.reportingManager !== "Not Assigned" ? profile.reportingManager : (currentUser.reporting_manager_name || "Not Assigned"));
 
   const [employeesCount, setEmployeesCount] = useState(0);
@@ -2169,6 +2172,10 @@ export default function SalesHRMS(props) {
             <p className="text-slate-500 text-sm font-semibold">
               {isUserAdmin 
                 ? "Your growth path at TwiteConnect based on employee accounts managed." 
+                : isTeamLeadRole
+                ? "Your leadership growth path at TwiteConnect based on team conversions."
+                : isManagerRole
+                ? "Your management growth path at TwiteConnect based on overall territory performance."
                 : "Your growth path at TwiteConnect based on deals closed."}
             </p>
             <div className="space-y-3">
@@ -2178,6 +2185,18 @@ export default function SalesHRMS(props) {
                 { level: "3", title: "Senior HR & Admin Lead", target: "16–30 profiles", done: employeesCount > 30, current: employeesCount > 15 && employeesCount <= 30 },
                 { level: "4", title: "HR & Operations Manager", target: "31–50 profiles", done: employeesCount > 50, current: employeesCount > 30 && employeesCount <= 50 },
                 { level: "5", title: "VP of Operations & People", target: "51+ profiles", done: false, current: employeesCount > 50 },
+              ] : isTeamLeadRole ? [
+                { level: "1", title: "Sales Executive", target: "0–15 deals", done: true, current: false },
+                { level: "2", title: "Senior Sales Executive", target: "16–30 deals", done: true, current: false },
+                { level: "3", title: "Sales Team Lead", target: "31–60 team deals", done: convertedClients > 60, current: convertedClients <= 60 },
+                { level: "4", title: "Senior Team Lead / Asst. Manager", target: "61–100 team deals", done: convertedClients > 100, current: convertedClients > 60 && convertedClients <= 100 },
+                { level: "5", title: "Sales Manager", target: "100+ team deals", done: false, current: convertedClients > 100 },
+              ] : isManagerRole ? [
+                { level: "1", title: "Sales Executive", target: "0–15 deals", done: true, current: false },
+                { level: "2", title: "Senior Sales Executive", target: "16–30 deals", done: true, current: false },
+                { level: "3", title: "Sales Team Lead", target: "31–60 deals", done: true, current: false },
+                { level: "4", title: "Sales Manager", target: "Direct Team Operations", done: false, current: true },
+                { level: "5", title: "Regional Sales Director", target: "Executive Leadership Promotion", done: false, current: false },
               ] : [
                 { level: "1", title: "Sales Executive Trainee", target: "0–5 deals", done: convertedClients > 5, current: convertedClients <= 5 },
                 { level: "2", title: "Sales Executive", target: "6–15 deals", done: convertedClients > 15, current: convertedClients > 5 && convertedClients <= 15 },
@@ -2202,14 +2221,14 @@ export default function SalesHRMS(props) {
               <div className="flex items-center gap-3 mb-3">
                 <Medal size={20} className="text-amber-500" />
                 <h3 className="font-black text-slate-900 text-sm">
-                  {isUserAdmin ? "Your Total Employees Managed" : "Your Total Conversions"}
+                  {isUserAdmin ? "Your Total Employees Managed" : isTeamLeadRole ? "Your Total Team Conversions" : "Your Total Conversions"}
                 </h3>
               </div>
               <p className="text-4xl font-black text-amber-600">
                 {isUserAdmin ? employeesCount : convertedClients}
               </p>
               <p className="text-xs text-slate-450 font-semibold mt-1">
-                {isUserAdmin ? "active staff accounts in the portal" : "deals closed across all time"}
+                {isUserAdmin ? "active staff accounts in the portal" : isTeamLeadRole ? "team deals closed across all time" : "deals closed across all time"}
               </p>
             </div>
           </div>
