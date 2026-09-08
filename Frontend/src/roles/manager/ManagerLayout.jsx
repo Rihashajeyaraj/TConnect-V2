@@ -288,6 +288,7 @@ export default function ManagerLayout() {
   }
   const location = useLocation()
   const navigate = useNavigate()
+  const isMapPage = location.pathname.includes('/map')
 
   const userEmail = (currentUser?.email || "").toLowerCase().trim();
   const [sidebarItems, setSidebarItems] = useState(() => {
@@ -874,7 +875,11 @@ export default function ManagerLayout() {
           </div>
         </aside>
 
-        <main className="flex-1 p-4 lg:p-6 min-w-0 overflow-y-auto w-full pb-20 lg:pb-6 bg-[#F0F4F8]">
+        <main className={`flex-1 min-w-0 ${
+          isMapPage 
+            ? "p-0 overflow-hidden h-[calc(100vh-64px)] lg:h-[calc(100vh-80px)] lg:p-6 lg:pb-6" 
+            : "p-4 lg:p-6 overflow-y-auto w-full pb-20 lg:pb-6 bg-[#F0F4F8]"
+        }`}>
           <Outlet />
         </main>
 

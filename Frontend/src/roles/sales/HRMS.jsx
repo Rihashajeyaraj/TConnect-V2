@@ -78,7 +78,11 @@ export default function SalesHRMS(props) {
 
   const [searchParams, setSearchParams] = useSearchParams();
   const isCurrentUserAdmin = currentUser.role?.includes('Admin') || String(currentUser.role).toLowerCase().includes('admin');
-  const activeSection = searchParams.get("tab") || (isCurrentUserAdmin ? "attendance" : "dashboard");
+  const rawTab = (searchParams.get("tab") || "").toLowerCase().trim();
+  const validTabKeys = NAV_ITEMS.map(n => n.key);
+  const activeSection = validTabKeys.includes(rawTab)
+    ? rawTab
+    : (isCurrentUserAdmin ? "attendance" : "dashboard");
   const setActiveSection = (val) => setSearchParams({ tab: val });
 
   const [hrmsTabs, setHrmsTabs] = useState(() => {
@@ -327,7 +331,7 @@ export default function SalesHRMS(props) {
       }
     }
     loadUserProfile();
-  }, [empCode, currentUser]);
+  }, [empCode, userEmail]);
 
 
   const isUserAdmin = currentUser.role?.includes('Admin') || profile.role?.includes('Admin') || String(currentUser.role).toLowerCase().includes('admin');

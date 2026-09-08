@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import React, { useState, useEffect, useMemo } from 'react'
 
 /** Normalize legacy role names (e.g. Super Admin → Admin) */
 export function normalizeRole(role) {
@@ -42,14 +42,16 @@ export function useCurrentUser() {
     return () => window.removeEventListener('storage', sync)
   }, [])
 
-  const initials = (user.name || user.email || 'U')
-    .split(/[\s@]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((s) => s[0]?.toUpperCase())
-    .join('')
+  return useMemo(() => {
+    const initials = (user.name || user.email || 'U')
+      .split(/[\s@]+/)
+      .filter(Boolean)
+      .slice(0, 2)
+      .map((s) => s[0]?.toUpperCase())
+      .join('')
 
-  return { ...user, initials }
+    return { ...user, initials }
+  }, [user.id, user.email, user.role, user.name, user.employee_code, user.full_name])
 }
 
 export default useCurrentUser
