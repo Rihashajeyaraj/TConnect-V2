@@ -257,6 +257,7 @@ export default function TeamLeadLayout() {
     return navItems;
   });
 
+  const isMapPage = location.pathname.includes('/map')
   const [isCustomizing, setIsCustomizing] = useState(false);
   const [draggedIndex, setDraggedIndex] = useState(null);
 
@@ -746,7 +747,11 @@ export default function TeamLeadLayout() {
         </aside>
 
         {/* Workspace Content */}
-        <main className="flex-1 min-w-0 p-4 lg:p-6 overflow-y-auto">
+        <main className={`flex-1 min-w-0 ${
+          isMapPage 
+            ? "p-0 overflow-hidden h-[calc(100vh-64px)] lg:h-[calc(100vh-80px)] lg:p-6 lg:pb-6" 
+            : "p-4 lg:p-6 overflow-y-auto"
+        }`}>
           <Outlet />
         </main>
       </div>

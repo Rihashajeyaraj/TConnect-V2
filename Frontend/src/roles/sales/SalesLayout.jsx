@@ -1175,7 +1175,7 @@ export default function SalesLayout() {
         {/* Page Content Container */}
         <main className={`flex-1 min-w-0 ${
           isMapPage 
-            ? "p-0 pb-14 overflow-hidden h-[calc(100vh-64px)] lg:h-auto lg:p-6 lg:overflow-y-auto lg:pb-6" 
+            ? "p-0 pb-14 overflow-hidden h-[calc(100vh-64px)] lg:h-[calc(100vh-80px)] lg:p-6 lg:pb-6" 
             : "p-3 sm:p-5 lg:p-6 overflow-y-auto pb-20 lg:pb-6"
         }`}>
           <Outlet />

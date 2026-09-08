@@ -549,6 +549,24 @@ export default function SmartClientMap({ isManagerView = false }) {
       return
     }
     setGpsStatus('loading')
+
+    // Fast initial position fix (low accuracy, instant return ~50ms)
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const { latitude, longitude, accuracy } = pos.coords
+        setExecutivePos({ lat: latitude, lng: longitude })
+        setGpsAccuracy(accuracy || null)
+        setGpsStatus('active')
+      },
+      () => {},
+      { enableHighAccuracy: false, timeout: 3000, maximumAge: 60000 }
+    )
+
+    // Safety fallback: if GPS takes more than 1.5s, set active with DEFAULT_CENTER so map renders immediately
+    const safetyTimer = setTimeout(() => {
+      setGpsStatus(prev => (prev === 'loading' ? 'active' : prev))
+    }, 1500)
+
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
         const { latitude, longitude, accuracy } = pos.coords
@@ -557,19 +575,34 @@ export default function SmartClientMap({ isManagerView = false }) {
         setGpsAccuracy(accuracy || null)
         setGpsStatus('active')
 
-        // Rapid backend telemetry - max once per 2 seconds for instant tracking updates
+        // Rapid backend telemetry & local cross-tab broadcast for sub-second Manager map updates
         const now = Date.now()
-        if (now - lastTelemetryUpdate.current > 2000) {
-
+        if (now - lastTelemetryUpdate.current > 1000) {
           lastTelemetryUpdate.current = now
-          spatialAPI.updateLocation({
+          const payload = {
+            employee_id:   currentUser?.employee_id || currentUser?.id,
+            employee_code: currentUser?.employee_code || 'EMP000012',
             email:         currentUser?.email || 'executive@tconnect.com',
             name:          currentUser?.name  || 'Sales Executive',
-            employee_code: currentUser?.employee_code || 'EMP000012',
+            latitude, longitude,
+            accuracy: accuracy || 0.0,
+            recorded_at: new Date().toISOString()
+          }
+
+          spatialAPI.updateLocation({
+            email:         payload.email,
+            name:          payload.name,
+            employee_code: payload.employee_code,
             latitude, longitude,
             accuracy_meters: accuracy || 0.0,
-            timestamp: new Date().toISOString()
+            timestamp: payload.recorded_at
           }).catch(() => null)
+
+          try {
+            const bc = new BroadcastChannel('tc_live_gps_stream')
+            bc.postMessage(payload)
+            localStorage.setItem('tc_executive_live_location', JSON.stringify(payload))
+          } catch (e) {}
         }
       },
       (err) => {
@@ -578,7 +611,10 @@ export default function SmartClientMap({ isManagerView = false }) {
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     )
-    return () => navigator.geolocation.clearWatch(watchId)
+    return () => {
+      clearTimeout(safetyTimer)
+      navigator.geolocation.clearWatch(watchId)
+    }
   }, [currentUser?.email])
 
   // ─── 3. Fetch scoped DB records ─────────────────────────────────────────
@@ -1038,46 +1074,68 @@ export default function SmartClientMap({ isManagerView = false }) {
 
   // ─── 12. Initialize Google Map ─────────────────────────────────────────
   useEffect(() => {
-    if (!mapLoaded || !mapContainerRef.current || googleMapRef.current) return
-    if (mapContainerRef.current) {
-      mapContainerRef.current.innerHTML = ''
+    if (!mapLoaded) return
+
+    const initMap = () => {
+      if (!mapContainerRef.current || googleMapRef.current) return
+      if (!window.google?.maps?.Map || typeof window.google.maps.Map !== 'function') {
+        setTimeout(initMap, 200)
+        return
+      }
+
+      try {
+        if (mapContainerRef.current) {
+          mapContainerRef.current.innerHTML = ''
+        }
+        const centerLat = executivePos?.lat || 13.0827
+        const centerLng = executivePos?.lng || 80.2707
+
+        const map = new window.google.maps.Map(mapContainerRef.current, {
+          center: { lat: centerLat, lng: centerLng },
+          zoom: 14,
+          zoomControl: true,
+          zoomControlOptions: {
+            position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9
+          },
+          mapTypeControl: false,
+          streetViewControl: false,
+          fullscreenControl: false,
+        })
+
+        googleMapRef.current = map
+
+        setTimeout(() => {
+          if (googleMapRef.current && window.google?.maps?.event) {
+            window.google.maps.event.trigger(googleMapRef.current, 'resize')
+          }
+        }, 200)
+      } catch (err) {
+        console.error('[SmartClientMap] Error initializing Google Map:', err)
+      }
     }
 
-    const map = new window.google.maps.Map(mapContainerRef.current, {
-      center: { lat: executivePos.lat, lng: executivePos.lng },
-      zoom: 14,
-      zoomControl: true,
-      zoomControlOptions: {
-        position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9
-      },
-      mapTypeControl: false,
-      streetViewControl: false,
-      fullscreenControl: false,
-    })
-
-    googleMapRef.current = map
+    initMap()
+    const timer = setTimeout(initMap, 300)
 
     return () => {
+      clearTimeout(timer)
       if (execMarkerRef.current) {
-        execMarkerRef.current.setMap(null)
+        try { execMarkerRef.current.setMap(null) } catch {}
         execMarkerRef.current = null
       }
       if (accuracyCircleRef.current) {
-        accuracyCircleRef.current.setMap(null)
+        try { accuracyCircleRef.current.setMap(null) } catch {}
         accuracyCircleRef.current = null
       }
       if (trailPolylineRef.current) {
-        trailPolylineRef.current.setMap(null)
+        try { trailPolylineRef.current.setMap(null) } catch {}
         trailPolylineRef.current = null
       }
-      activeMarkersRef.current.forEach(m => m.setMap(null))
+      activeMarkersRef.current.forEach(m => { try { m.setMap(null) } catch {} })
       activeMarkersRef.current = []
-      activePolylinesRef.current.forEach(p => p.setMap(null))
+      activePolylinesRef.current.forEach(p => { try { p.setMap(null) } catch {} })
       activePolylinesRef.current = []
       googleMapRef.current = null
-      if (mapContainerRef.current) {
-        mapContainerRef.current.innerHTML = ''
-      }
     }
   }, [mapLoaded])
 
@@ -1096,12 +1154,21 @@ export default function SmartClientMap({ isManagerView = false }) {
     initializeHTMLMapMarker()
     if (!HTMLMapMarker) return
     const latlng = new window.google.maps.LatLng(executivePos.lat, executivePos.lng)
-    
     if (!execMarkerRef.current) {
-      const html = `<div class="relative flex items-center justify-center">
-        <span class="animate-ping absolute inline-flex h-8 w-8 rounded-full bg-cyan-400 opacity-75"></span>
-        <div class="relative w-8 h-8 rounded-full bg-cyan-600 border-2 border-white text-white flex items-center justify-center font-black shadow-lg text-xs">👤</div>
-      </div>`
+      const userName = currentUser?.name ? currentUser.name.split(' ')[0] : 'You'
+      const html = `
+        <div class="live-scooty-container" style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; user-select: none;">
+          <div style="background: rgba(15, 23, 42, 0.95); border: 1.5px solid #10b981; border-radius: 20px; padding: 2px 10px; color: #ffffff; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 800; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: flex; align-items: center; gap: 5px; z-index: 10;">
+            <span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
+            <span>${userName}</span>
+          </div>
+          <div style="width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #10b981; margin-top: -1px; z-index: 9;"></div>
+          <div style="width: 58px; height: 46px; display: flex; align-items: center; justify-content: center; position: relative; margin-top: 2px;">
+            <div style="position: absolute; width: 48px; height: 48px; border-radius: 50%; background: rgba(16, 185, 129, 0.18); border: 1.5px solid rgba(16, 185, 129, 0.5); z-index: -1;"></div>
+            <img src="/motorcycle_rider.png" alt="Motorcycle Rider" style="width: 52px; height: 40px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));" />
+          </div>
+        </div>
+      `
       
       execMarkerRef.current = createMapMarker(
         latlng,
@@ -1335,7 +1402,7 @@ export default function SmartClientMap({ isManagerView = false }) {
     <div className="relative w-full h-full min-h-[calc(100vh-4.5rem)] rounded-none md:rounded-3xl overflow-hidden border-0 md:border border-slate-200 shadow-xl bg-slate-50 font-sans">
 
       {/* ══ MAP CANVAS ══ */}
-      <div ref={mapContainerRef} className="w-full h-full z-10" />
+      <div ref={mapContainerRef} className="absolute inset-0 w-full h-full z-10" />
 
       {/* ══ GPS DENIED / UNAVAILABLE FLOATING TOAST ══ */}
       {gpsStatus === 'denied' && (
@@ -1431,14 +1498,17 @@ export default function SmartClientMap({ isManagerView = false }) {
                 )}
               </div>
               
-              {/* Only show list button here if not on mobile (on mobile it's in the collapsed buttons) */}
+              {/* List button */}
               {!isMobile && (
-                <button
-                  onClick={() => setShowAddModal(true)}
-                  className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 transition flex-shrink-0 cursor-pointer"
-                >
-                  <List size={14} />
-                </button>
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    onClick={() => setShowAddModal(true)}
+                    className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 transition flex-shrink-0 cursor-pointer"
+                    title="Select Destination"
+                  >
+                    <List size={14} />
+                  </button>
+                </div>
               )}
             </div>
 
@@ -1527,26 +1597,7 @@ export default function SmartClientMap({ isManagerView = false }) {
             <span className="text-xs font-black">Navigation Active</span>
           </div>
         )}
-        {!isManager && (
-          <button
-            onClick={() => {
-              if (activeInquiry) setActiveInquiry(activeInquiry)
-              setShowInquiryDrawer(prev => !prev)
-            }}
-            className={`rounded-2xl shadow-2xl px-3.5 py-2 flex items-center gap-2 transition active:scale-95 cursor-pointer border-2 border-white ${
-              activeInquiry
-                ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-white animate-bounce'
-                : 'bg-slate-900 hover:bg-slate-800 text-white'
-            }`}
-            title="Click to view & reply to Manager Inquiry"
-          >
-            <MessageSquare size={15} />
-            <span className="text-xs font-black">
-              {activeInquiry ? '⚡ Manager Inquiry (1)' : '💬 Message Manager'}
-            </span>
-            {activeInquiry && <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping" />}
-          </button>
-        )}
+
 
         {!isMobile && offRoute && (
           <div className="bg-rose-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2 animate-pulse">
@@ -1827,6 +1878,26 @@ export default function SmartClientMap({ isManagerView = false }) {
             <p className="text-xs text-slate-400">Acquiring GPS position</p>
           </div>
         </div>
+      )}
+
+      {/* ══ SINGLE PERSISTENT FLOATING MESSAGE MANAGER BUTTON (TOP RIGHT) ══ */}
+      {!isManager && !showInquiryDrawer && (
+        <button
+          type="button"
+          onClick={() => setShowInquiryDrawer(true)}
+          className={`absolute top-3.5 right-3.5 z-[1000] text-white backdrop-blur-md border shadow-2xl px-3.5 py-2 rounded-2xl text-xs font-black flex items-center gap-2 active:scale-95 transition cursor-pointer group ${
+            activeInquiry
+              ? 'bg-gradient-to-r from-amber-500 to-orange-600 border-amber-300 animate-bounce ring-2 ring-amber-400'
+              : 'bg-slate-900/95 hover:bg-slate-900 border-slate-700'
+          }`}
+          title="Open Manager Inquiry & Status Update Window"
+        >
+          <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center font-bold text-xs shadow-xs group-hover:rotate-12 transition">
+            💬
+          </div>
+          <span>{activeInquiry ? '⚡ Manager Inquiry (1)' : 'Message Manager'}</span>
+          {activeInquiry && <span className="w-2.5 h-2.5 bg-red-600 rounded-full animate-ping" />}
+        </button>
       )}
 
       {/* ══ DOCKED CORNER FLOATING MANAGER INQUIRY CARD ON EXECUTIVE MAP ══ */}
