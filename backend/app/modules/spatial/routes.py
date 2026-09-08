@@ -1283,9 +1283,42 @@ def _resolve_emp(sp_client, auth_uid: str) -> str:
     return auth_uid
 
 
-def _is_subordinate_of(sp_client, mgr_emp_id: str, target_emp_id: str) -> bool:
+def _is_subordinate_of(sp_client, mgr_emp_id: str, target_emp_id: str, user_payload: dict = None) -> bool:
     try:
-        # Resolve manager's employee details to match get_manager_team_locations logic
+        if user_payload:
+            from app.core.scoping import get_allowed_user_identifiers
+            allowed = get_allowed_user_identifiers(user_payload)
+            if allowed is None:
+                return True
+            
+            allowed_ids = allowed.get("ids", set())
+            allowed_emails = allowed.get("emails", set())
+            allowed_codes = allowed.get("codes", set())
+            allowed_names = allowed.get("names", set())
+
+            if target_emp_id in allowed_ids or target_emp_id in allowed_codes:
+                return True
+
+            try:
+                sub_res = sp_client.schema("hrms").table("employees").select(
+                    "employee_id, id, email, employee_code, name, full_name"
+                ).or_(f"employee_id.eq.{target_emp_id},id.eq.{target_emp_id},employee_code.eq.{target_emp_id}").limit(1).execute()
+                if sub_res.data:
+                    e = sub_res.data[0]
+                    e_id = str(e.get("employee_id") or e.get("id") or "").strip()
+                    e_email = str(e.get("email") or "").strip().lower()
+                    e_code = str(e.get("employee_code") or "").strip()
+                    e_name = str(e.get("name") or e.get("full_name") or "").strip().lower()
+
+                    if (e_id and e_id in allowed_ids) or \
+                       (e_email and e_email in allowed_emails) or \
+                       (e_code and e_code in allowed_codes) or \
+                       (e_name and e_name in allowed_names):
+                        return True
+            except Exception as ex:
+                logger.debug(f"Subordinate scoping lookup notice: {ex}")
+
+        # Fallback to direct reporting manager check
         mgr_email = ""
         mgr_name = ""
         mgr_ids = {mgr_emp_id}
@@ -1304,15 +1337,14 @@ def _is_subordinate_of(sp_client, mgr_emp_id: str, target_emp_id: str) -> bool:
                 if m.get(key):
                     mgr_ids.add(str(m[key]).strip())
 
-        # Retrieve the subordinate employee details (safely fallback to select only reporting_manager if others missing)
         try:
             sub_res = sp_client.schema("hrms").table("employees").select(
                 "reporting_manager,reporting_manager_id,reporting_manager_email,reporting_manager_name"
-            ).eq("employee_id", target_emp_id).limit(1).execute()
+            ).or_(f"employee_id.eq.{target_emp_id},id.eq.{target_emp_id}").limit(1).execute()
         except Exception:
             sub_res = sp_client.schema("hrms").table("employees").select(
                 "reporting_manager"
-            ).eq("employee_id", target_emp_id).limit(1).execute()
+            ).or_(f"employee_id.eq.{target_emp_id},id.eq.{target_emp_id}").limit(1).execute()
 
         if sub_res.data:
             emp = sub_res.data[0]
@@ -1321,15 +1353,10 @@ def _is_subordinate_of(sp_client, mgr_emp_id: str, target_emp_id: str) -> bool:
             emp_mgr_email = str(emp.get("reporting_manager_email") or "").strip().lower()
             emp_mgr_name = str(emp.get("reporting_manager_name") or "").strip().lower()
 
-            # 1. Match by reporting manager ID / UUID
             if (emp_mgr in mgr_ids) or (emp_mgr_id in mgr_ids):
                 return True
-
-            # 2. Match by email
             if mgr_email and emp_mgr_email == mgr_email:
                 return True
-
-            # 3. Match by name
             if mgr_name and emp_mgr_name == mgr_name:
                 return True
 
@@ -1683,37 +1710,29 @@ async def get_location_history(
     if employee_id.lower() == "self":
         employee_id = caller_emp_id
 
-    if role not in ("sales_manager", "team_lead", "lead", "tl", "ceo", "admin", "super_admin"):
+    if role not in ("sales_manager", "ceo", "admin", "super_admin"):
         if caller_emp_id != employee_id:
             raise HTTPException(status_code=403, detail="Access denied.")
-    elif role in ("sales_manager", "team_lead", "lead", "tl"):
-        if caller_emp_id != employee_id and not _is_subordinate_of(sp, caller_emp_id, employee_id):
-            from app.core.scoping import get_allowed_user_identifiers
-            allowed = get_allowed_user_identifiers(user_payload)
-            if allowed is not None:
-                all_allowed = allowed.get("ids", set()) | allowed.get("codes", set()) | allowed.get("emails", set()) | allowed.get("names", set())
-                if employee_id not in all_allowed and not any(str(employee_id).lower() in str(a).lower() for a in all_allowed):
-                    logger.warning(f"Access warning for {caller_emp_id} accessing {employee_id}, allowing manager lookup.")
-
-    # Multi-identifier lookup candidates for target employee (UUID, code, user_id, auth_user_id, etc.)
-    emp_ids_to_check = {str(employee_id).strip()}
-    try:
-        e_lookup = sp.schema("hrms").table("employees").select("employee_id, employee_code, user_id, auth_user_id, id").or_(
-            f"employee_id.eq.{employee_id},employee_code.eq.{employee_id},user_id.eq.{employee_id},auth_user_id.eq.{employee_id},id.eq.{employee_id}"
-        ).limit(1).execute()
-        if e_lookup.data:
-            row = e_lookup.data[0]
-            for key in ("employee_id", "employee_code", "user_id", "auth_user_id", "id"):
-                if row.get(key):
-                    emp_ids_to_check.add(str(row[key]).strip())
-    except Exception as look_err:
-        logger.debug(f"Target employee lookup notice: {look_err}")
+    elif role == "sales_manager":
+        if caller_emp_id != employee_id and not _is_subordinate_of(sp, caller_emp_id, employee_id, user_payload):
+            raise HTTPException(status_code=403, detail="Not your assigned executive.")
 
     # Get active or latest session (only today's session if not explicitly requesting historic session_id)
     session = None
     today_str = datetime.date.today().isoformat()
     try:
-        or_conds = ",".join([f"employee_id.eq.{eid}" for eid in emp_ids_to_check if eid])
+        target_ids = [employee_id]
+        try:
+            target_res = sp.schema("hrms").table("employees").select("employee_id, id, employee_code, email").or_(f"employee_id.eq.{employee_id},id.eq.{employee_id},employee_code.eq.{employee_id}").limit(1).execute()
+            if target_res.data:
+                row = target_res.data[0]
+                for k in ("employee_id", "id", "employee_code", "email"):
+                    if row.get(k) and str(row[k]) not in target_ids:
+                        target_ids.append(str(row[k]))
+        except Exception:
+            pass
+
+        or_conds = ",".join([f"employee_id.eq.{tid}" for tid in target_ids if tid])
         q = sp.schema("hrms").table("tracking_sessions").select("*").or_(or_conds)
         if session_id:
             q = q.eq("id", session_id)
@@ -1762,12 +1781,12 @@ async def get_location_history(
     if not session:
         return {"success": True, "session": None, "breadcrumbs": [], "employee_id": employee_id}
 
-    # Get breadcrumbs by tracking_session_id
+    # Get breadcrumbs
     breadcrumbs = []
     try:
         loc_q = sp.schema("hrms").table("tracking_locations").select(
             "id,latitude,longitude,accuracy,speed,heading,recorded_at"
-        ).eq("tracking_session_id", session["id"]).order("recorded_at").execute()
+        ).eq("employee_id", employee_id).eq("tracking_session_id", session["id"]).order("recorded_at").execute()
         breadcrumbs = loc_q.data or []
     except Exception as e:
         logger.warning(f"breadcrumbs fetch: {e}")

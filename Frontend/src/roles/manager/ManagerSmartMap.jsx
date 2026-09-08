@@ -93,7 +93,7 @@ const GONE_MS    = 10 * 60 * 1000  // > 10 mins → Gone / No Signal
 function getTrackingBadge(status, lastUpdatedMs, isOnline = true) {
   if (status === 'ended' || status === 'stopped') return { label: 'Session Ended', color: '#64748b', dot: '⬛' }
   if (!isOnline) return { label: 'Offline', color: '#dc2626', dot: '🔴' }
-  if (!lastUpdatedMs) return { label: 'Live Active', color: '#10b981', dot: '🟢' }
+  if (!lastUpdatedMs) return { label: 'No Signal', color: '#64748b', dot: '⬛' }
 
   const age = Date.now() - lastUpdatedMs
   if (age > OFFLINE_MS) return { label: 'Offline (>5m)', color: '#dc2626', dot: '🔴' }
@@ -194,12 +194,12 @@ function createMapMarker(latlng, map, html, onClick, anchor = 'center') {
   return new HTMLMapMarker(latlng, map, html, onClick, anchor)
 }
 
-export default function ManagerSmartMap({ hideHeader = false }) {
+export default function ManagerSmartMap() {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
 
   // State
-  const [activeTab,        setActiveTab]        = useState('team') // 'team' | 'own'
+  const [activeMapTab,     setActiveMapTab]      = useState('team') // 'team' | 'own'
   const [mapLoaded,        setMapLoaded]        = useState(false)
   const [loading,          setLoading]           = useState(true)
   const [panelOpen,        setPanelOpen]         = useState(window.innerWidth >= 1024)
@@ -487,30 +487,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       }
 
       setExecutives(list)
-      if (selectedExecutiveRef.current) {
-        const curId = String(selectedExecutiveRef.current.employee_id || selectedExecutiveRef.current.id || '').trim()
-        const curEmail = String(selectedExecutiveRef.current.email || '').toLowerCase().trim()
-        const updatedEx = list.find(e => {
-          const eId = String(e.employee_id || e.id || '').trim()
-          const eEmail = String(e.email || '').toLowerCase().trim()
-          return (curId && eId === curId) || (curEmail && eEmail === curEmail)
-        })
-        if (updatedEx) {
-          selectedExecutiveRef.current = updatedEx
-          setSelectedExecutive(updatedEx)
-          if (updatedEx.latitude && updatedEx.longitude) {
-            _applyNewCrumb({
-              employee_id: updatedEx.employee_id,
-              employee_code: updatedEx.employee_code,
-              email: updatedEx.email,
-              name: updatedEx.employee_name,
-              latitude: updatedEx.latitude,
-              longitude: updatedEx.longitude,
-              recorded_at: updatedEx.last_seen_at || new Date().toISOString()
-            })
-          }
-        }
-      }
       const onlineCount = list.filter(e => e.is_online).length
       setStats({ total: list.length, online: onlineCount, offline: list.length - onlineCount })
       setLastUpdated(new Date().toLocaleTimeString())
@@ -551,7 +527,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const lastRouteRecalcTimeRef = useRef(0)
   const nearbyClientMarkersRef = useRef([])
   const destRoutePathRef        = useRef([])    // [[lat,lng],...] raw planned route
-  const allVisitsRef = useRef([])  // All raw visits for per-executive scoping
   const nearbyNotifiedMap       = useRef(new globalThis.Map()) // Map<id,{lat,lng}> hysteresis dedup
   const candidatesRef           = useRef([])    // latest normalised leads+customers list
 
@@ -822,11 +797,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
             has_exact_coords: ok,
             address:          item.address || item.location || item.city || '—',
             phone:            item.phone || item.mobile || '',
-            // ── Executive assignment fields (used to scope per-executive nearby detection) ──
-            assigned_to:       String(item.assigned_to || item.assignedTo || item.executive || item.accountManager || item.employee_name || '').toLowerCase().trim(),
-            assigned_to_email: String(item.assigned_to_email || item.assignedToEmail || item.executiveEmail || item.owner_email || '').toLowerCase().trim(),
-            employee_id:       String(item.employee_id || item.emp_id || '').toLowerCase().trim(),
-            employee_code:     String(item.employee_code || item.emp_code || '').toLowerCase().trim(),
             originalItem:     item,
           }
         }
@@ -834,7 +804,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         const custs = safeArray(custsRes).map((i, idx) => toNorm(i, 'Customer', idx))
         const visits = safeArray(visitsRes)
 
-        // Store all visits with executive scoping info for per-executive completed/scheduled detection
         const completedIds = new Set(
           visits.filter(v => ['COMPLETED', 'CHECKED_OUT', 'visited', 'completed'].includes(v.status || v.visit_status))
                 .map(v => v.lead_id || v.customer_id || v.client_id || v.id)
@@ -847,9 +816,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         )
         completedVisitIdsRef.current = completedIds
         scheduledVisitIdsRef.current = scheduledIds
-
-        // Store all raw visits too so we can re-scope by executive later
-        allVisitsRef.current = visits
 
         candidatesRef.current = [...leads, ...custs].filter(c => c.has_exact_coords)
       } catch (e) {
@@ -1163,39 +1129,32 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   useEffect(() => {
     if (!googleMapRef.current || !window.google) return
     
-    // When tracking an individual executive, hide all other team pins to prevent map clutter & confusion
-    if (selectedExecutive) {
-      teamMarkersMapRef.current.forEach(m => m.setMap(null))
-      teamMarkersMapRef.current.clear()
-      return
-    }
-
     const bounds = []
     const currentOnlineIds = new Set()
 
     if (viewMode === 'team' || viewMode === 'both') {
       executives.forEach(ex => {
         if (!ex.latitude || !ex.longitude) return
+        
+        // ONLY render markers on map if the executive is currently Logged In / ONLINE!
         if (!ex.is_online) return
+        
+        // Hide selected executive's static team marker to prevent duplication with tracking layer
+        if (selectedExecutive && selectedExecutive.employee_id === ex.employee_id) return
 
         const empId = ex.employee_id
         currentOnlineIds.add(empId)
 
         const isCV = ex.check_in_mode === 'Client Visit'
         const displayName = resolveRealName(ex)
-        const html = `
-          <div class="live-scooty-container" style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; user-select: none;">
-            <div style="background: rgba(15, 23, 42, 0.95); border: 1.5px solid #10b981; border-radius: 20px; padding: 2px 10px; color: #ffffff; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 800; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: flex; align-items: center; gap: 5px; z-index: 10;">
-              <span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; box-shadow: 0 0 8px #10b981;"></span>
-              <span>${displayName.split(' ')[0]}</span>
-            </div>
-            <div style="width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #10b981; margin-top: -1px; z-index: 9;"></div>
-            <div style="width: 58px; height: 46px; display: flex; align-items: center; justify-content: center; position: relative; margin-top: 2px;">
-              <div style="position: absolute; width: 48px; height: 48px; border-radius: 50%; background: rgba(16, 185, 129, 0.18); border: 1.5px solid rgba(16, 185, 129, 0.5); z-index: -1;"></div>
-              <img src="/motorcycle_rider.png" alt="Motorcycle Rider" style="width: 52px; height: 40px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));" />
-            </div>
-          </div>
-        `
+        const initials = displayName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+        const sc = isCV ? '#8b5cf6' : (ex.is_online ? '#10b981' : '#64748b')
+        const glow = isCV ? 'rgba(139,92,246,0.5)' : (ex.is_online ? 'rgba(16,185,129,0.4)' : 'rgba(100,116,139,0.2)')
+
+        const html = `<div style="display:flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;background:#0f172a;border:3px solid ${sc};box-shadow:0 0 12px ${glow};color:#f8fafc;font-family:ui-sans-serif,system-ui;font-weight:800;font-size:13px;position:relative;">
+          ${initials}
+          <span style="position:absolute;bottom:-2px;right:-2px;width:12px;height:12px;background:${sc};border:2px solid #0f172a;border-radius:50%;"></span>
+        </div>`
 
         const latlng = new window.google.maps.LatLng(ex.latitude, ex.longitude)
         bounds.push([ex.latitude, ex.longitude])
@@ -1287,9 +1246,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
   // ─── 6. Live tracking: load history + subscribe Realtime ─────────────────
   const _clearTrackingLayer = useCallback(() => {
-    if (infoWindowRef.current) {
-      try { infoWindowRef.current.close() } catch (e) {}
-    }
     if (trackRouteRef.current)  { trackRouteRef.current.setMap(null);  trackRouteRef.current  = null }
     trailPointsRef.current = []
     if (startMarkerRef.current) { startMarkerRef.current.setMap(null); startMarkerRef.current = null }
@@ -1301,10 +1257,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     if (nearbyClientMarkersRef.current) {
       nearbyClientMarkersRef.current.forEach(m => m.setMap(null))
       nearbyClientMarkersRef.current = []
-    }
-    if (teamMarkersMapRef.current) {
-      teamMarkersMapRef.current.forEach(m => m.setMap(null))
-      teamMarkersMapRef.current.clear()
     }
     if (animFrameRef.current)   { cancelAnimationFrame(animFrameRef.current); animFrameRef.current = null }
     if (pollTimerRef.current)   { clearInterval(pollTimerRef.current); pollTimerRef.current = null }
@@ -1389,11 +1341,17 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
     const routePath = destRoutePathRef.current;
     const destId    = destClientRef.current?.id;
-    const exec      = selectedExecutiveRef.current;
+
+    // If no planned route exists yet, fall back to clearing markers silently
+    if (!routePath || routePath.length < 2) {
+      nearbyClientMarkersRef.current.forEach(m => m.setMap(null));
+      nearbyClientMarkersRef.current = [];
+      return;
+    }
 
     // Build normalised candidates from cached data or auto-fetch if empty
-    let allCandidates = candidatesRef.current;
-    if (!allCandidates || allCandidates.length === 0) {
+    let candidates = candidatesRef.current;
+    if (!candidates || candidates.length === 0) {
       try {
         const [lRes, cRes] = await Promise.allSettled([crmAPI.getLeads(), customerAPI.getCustomers()]);
         const safeArray = (r) => (r.status === 'fulfilled' ? (Array.isArray(r.value) ? r.value : (r.value?.data || [])) : []);
@@ -1410,100 +1368,40 @@ export default function ManagerSmartMap({ hideHeader = false }) {
             has_exact_coords: ok,
             address: item.address || item.location || item.city || '—',
             phone: item.phone || item.mobile || '',
-            assigned_to:       String(item.assigned_to || item.assignedTo || item.executive || item.accountManager || item.employee_name || '').toLowerCase().trim(),
-            assigned_to_email: String(item.assigned_to_email || item.assignedToEmail || item.executiveEmail || item.owner_email || '').toLowerCase().trim(),
-            employee_id:       String(item.employee_id || item.emp_id || '').toLowerCase().trim(),
-            employee_code:     String(item.employee_code || item.emp_code || '').toLowerCase().trim(),
             originalItem: item,
           };
         };
         const leads = safeArray(lRes).map((i, idx) => toNorm(i, 'Lead', idx));
         const custs = safeArray(cRes).map((i, idx) => toNorm(i, 'Customer', idx));
-        allCandidates = [...leads, ...custs].filter(c => c.has_exact_coords);
-        candidatesRef.current = allCandidates;
+        candidates = [...leads, ...custs].filter(c => c.has_exact_coords);
+        candidatesRef.current = candidates;
       } catch (e) {
         console.warn("Failed to load candidates on the fly:", e);
       }
     }
-    if (!allCandidates || allCandidates.length === 0) return;
-
-    // ── Scope candidates to only THIS executive's leads/clients ──────────────
-    // Match by email, name, employee_id, or employee_code of the selected executive
-    const execEmail    = String(exec?.email || exec?.employee_email || '').toLowerCase().trim()
-    const execName     = String(exec?.employee_name || exec?.name || '').toLowerCase().trim()
-    const execEmpId    = String(exec?.employee_id || exec?.id || '').toLowerCase().trim()
-    const execEmpCode  = String(exec?.employee_code || '').toLowerCase().trim()
-
-    const isExecItem = (c) => {
-      if (!exec) return true // Fallback: show all if no executive context
-      const cEmail   = c.assigned_to_email
-      const cName    = c.assigned_to
-      const cEmpId   = c.employee_id
-      const cEmpCode = c.employee_code
-      if (execEmail   && cEmail   && cEmail === execEmail)     return true
-      if (execEmpId   && cEmpId   && cEmpId === execEmpId)     return true
-      if (execEmpCode && cEmpCode && cEmpCode === execEmpCode) return true
-      if (execName    && cName    && (cName.includes(execName) || execName.includes(cName))) return true
-      // Also accept items with no assignment (legacy data) only if we have no other data
-      return false
-    }
-
-    // Filter to only this executive's assigned leads/clients
-    let candidates = allCandidates.filter(isExecItem)
-
-    // If no items found with strict matching, fall back to all (legacy/unassigned data)
-    if (candidates.length === 0) {
-      console.log('[ManagerMap] No executive-scoped candidates found, falling back to all candidates')
-      candidates = allCandidates
-    }
-
-    // ── Scope completed/scheduled visit IDs to this executive ─────────────────
-    const execVisits = allVisitsRef.current.filter(v => {
-      const vEmail   = String(v.assigned_to_email || v.assignedToEmail || v.executiveEmail || v.email || '').toLowerCase().trim()
-      const vName    = String(v.assigned_to || v.assignedTo || v.executive || v.employee_name || '').toLowerCase().trim()
-      const vEmpId   = String(v.employee_id || v.emp_id || '').toLowerCase().trim()
-      const vEmpCode = String(v.employee_code || '').toLowerCase().trim()
-      if (execEmail   && vEmail   && vEmail === execEmail)     return true
-      if (execEmpId   && vEmpId   && vEmpId === execEmpId)     return true
-      if (execEmpCode && vEmpCode && vEmpCode === execEmpCode) return true
-      if (execName    && vName    && (vName.includes(execName) || execName.includes(vName))) return true
-      return false
-    })
-
-    let execCompletedIds = completedVisitIdsRef.current
-    let execScheduledIds = scheduledVisitIdsRef.current
-    if (execVisits.length > 0) {
-      execCompletedIds = new Set(
-        execVisits.filter(v => ['COMPLETED', 'CHECKED_OUT', 'visited', 'completed'].includes(v.status || v.visit_status))
-                  .map(v => v.lead_id || v.customer_id || v.client_id || v.id).filter(Boolean)
-      )
-      execScheduledIds = new Set(
-        execVisits.filter(v => !execCompletedIds.has(v.lead_id || v.customer_id || v.client_id || v.id))
-                  .map(v => v.lead_id || v.customer_id || v.client_id || v.id).filter(Boolean)
-      )
-    }
+    if (!candidates || candidates.length === 0) return;
 
     let matched = [];
     if (routePath && routePath.length >= 2) {
-      // 1. Route-corridor detection (ahead-only corridor) — scoped to exec's own leads/clients
+      // 1. Run shared detection (500m hard corridor, segment-based, ahead-only)
       matched = detectRouteClients({
         candidates,
         routePath,
         execPos:  { lat: execLat, lng: execLng },
         destId,
-        completedVisitIds: execCompletedIds,
-        scheduledVisitIds: execScheduledIds,
+        completedVisitIds: completedVisitIdsRef.current,
+        scheduledVisitIds: scheduledVisitIdsRef.current,
       });
     } else {
-      // 2. Radius-based detection within 3.5 km when no planned route line exists
+      // 2. Fallback: Radius-based detection within 2.5 km of executive
       matched = candidates.filter(c => {
         if (destId && String(c.id) === String(destId)) return false;
         const d = haversineDistance(execLat, execLng, c.latitude, c.longitude);
-        return d <= 3.5;
+        return d <= 2.5;
       }).map(c => {
         const d = haversineDistance(execLat, execLng, c.latitude, c.longitude);
-        const isPrev = execCompletedIds?.has(c.id);
-        const isSched = execScheduledIds?.has(c.id);
+        const isPrev = completedVisitIdsRef.current?.has(c.id);
+        const isSched = scheduledVisitIdsRef.current?.has(c.id);
         return {
           ...c,
           distToRouteM: Math.round(d * 1000),
@@ -1520,21 +1418,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
     matched.forEach(item => {
       const itemLatLng = new window.google.maps.LatLng(item.latitude, item.longitude);
-      const isPrev  = item.alertType === 'previous';
-      const isSched = item.alertType === 'scheduled';
-      const isLead  = item.category === 'Lead';
-
-      const pinColor = isPrev 
-        ? (isLead ? '#a855f7' : '#7c3aed') 
-        : (isSched ? '#2563eb' : (isLead ? '#f59e0b' : '#10b981'));
-        
-      const label = isPrev 
-        ? (isLead ? 'PL' : 'P') 
-        : (isSched ? 'S' : (isLead ? 'L' : 'C'));
-
-      const alertHeader = isPrev
-        ? (isLead ? '🔄 Previous Visited Lead' : '🔄 Previous Visited Client')
-        : (isSched ? '📅 Scheduled Client Visit' : (isLead ? '🎯 Nearby Lead' : '📍 Nearby Client'));
+      const isPrev   = item.alertType === 'previous';
+      const isSched  = item.alertType === 'scheduled';
+      const pinColor = isPrev ? '#7c3aed' : (isSched ? '#2563eb' : (item.category === 'Customer' ? '#10b981' : '#f59e0b'));
+      const label    = isPrev ? 'P' : (isSched ? 'S' : (item.category === 'Customer' ? 'C' : 'L'));
 
       const pinHtml = `
         <div style="display:flex;align-items:center;justify-content:center;width:30px;height:30px;border-radius:50%;background:#0f172a;border:2.5px solid ${pinColor};box-shadow:0 3px 10px rgba(0,0,0,0.5);color:#fff;">
@@ -1551,7 +1438,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           showInfoWindow(itemLatLng, `
             <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:240px;">
               <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:${pinColor};text-transform:uppercase;font-size:10px;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1.5px solid #f1f5f9;padding-bottom:4px;">
-                <span>${alertHeader}</span>
+                <span>${isPrev ? '🔄 Previous Visited Client' : (isSched ? '📅 Scheduled Client Visit' : '📍 Nearby ' + item.category)}</span>
               </div>
               <div style="font-weight:800;font-size:13px;color:#0f172a;">${item.title}</div>
               <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;margin-top:6px;">
@@ -1562,7 +1449,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                 <span style="font-weight:700;color:#64748b;">Address:</span>
                 <span style="font-weight:600;color:#475569;line-height:1.3;">${item.address || '—'}</span>
                 <span style="font-weight:700;color:#64748b;">Distance:</span>
-                <span style="font-weight:800;color:${pinColor};">${item.distToRouteM}m</span>
+                <span style="font-weight:800;color:#7c3aed;">${item.distToRouteM}m</span>
               </div>
             </div>
           `);
@@ -1640,28 +1527,28 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     `
   }
 
-  const _buildLiveIcon = (color = '#10b981', heading = 0, name = '') => {
+  const _buildLiveIcon = (color = '#8b5cf6', heading = 0, name = '') => {
     const displayName = name ? name.split(' ')[0] : 'Executive'
     return `
       <div class="live-scooty-container" style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; user-select: none;">
         
         <!-- Top Floating Executive Name Pill -->
-        <div style="background: rgba(15, 23, 42, 0.95); border: 1.5px solid ${color}; border-radius: 20px; padding: 2px 10px; color: #ffffff; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 11px; font-weight: 800; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: flex; align-items: center; gap: 5px; z-index: 10;">
-          <span style="width: 7px; height: 7px; border-radius: 50%; background: #10b981; animation: liveBlink 1.2s infinite ease-in-out; box-shadow: 0 0 8px #10b981;"></span>
-          <span style="letter-spacing: -0.2px;">${displayName}</span>
+        <div style="background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(6px); border: 1.5px solid ${color}; border-radius: 20px; padding: 2px 8px; color: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 800; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); margin-bottom: 2px; display: flex; align-items: center; gap: 4px; z-index: 10;">
+          <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; animation: liveBlink 1.2s infinite ease-in-out;"></span>
+          <span>${displayName}</span>
         </div>
-        
-        <!-- Downward Pointer Triangle Arrow -->
-        <div style="width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid ${color}; margin-top: -1px; z-index: 9;"></div>
 
         <!-- Animated Motorcycle & Radar Ring Wrapper -->
-        <div class="live-vehicle-wrapper" style="transform: rotate(${heading}deg); transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); width: 64px; height: 50px; display: flex; align-items: center; justify-content: center; position: relative; margin-top: 2px;">
+        <div class="live-vehicle-wrapper" style="transform: rotate(${heading}deg); transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1); width: 64px; height: 50px; display: flex; align-items: center; justify-content: center; position: relative;">
           
           <!-- Outer Radar Pulse Halo -->
-          <div style="position: absolute; width: 52px; height: 52px; border-radius: 50%; background: rgba(16, 185, 129, 0.18); border: 1.5px solid rgba(16, 185, 129, 0.5); animation: scootyRadarPulse 2s infinite cubic-bezier(0.2, 0.8, 0.2, 1); z-index: -1;"></div>
+          <div style="position: absolute; width: 48px; height: 48px; border-radius: 50%; background: ${color}28; border: 1.5px solid ${color}66; animation: scootyRadarPulse 2s infinite cubic-bezier(0.2, 0.8, 0.2, 1); z-index: -1;"></div>
           
-          <!-- 3D Motorcycle Rider PNG Asset -->
-          <img src="/motorcycle_rider.png" alt="Motorcycle Rider" style="width: 56px; height: 42px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));" />
+          <!-- Forward Direction Arrow Pointer -->
+          <div style="position: absolute; top: -6px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 8px solid ${color}; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); z-index: 5;"></div>
+
+          <!-- Direct 3D Motorcycle Rider PNG Asset from Login Form -->
+          <img src="/motorcycle_rider.png" alt="Motorcycle Rider" style="width: 58px; height: 44px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6));" />
         </div>
       </div>
       <style>
@@ -1679,20 +1566,20 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   }
 
   const _buildStartIcon = () => `
-      <div style="display: flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; background: #10b981; border: 2.5px solid #ffffff; box-shadow: 0 4px 14px rgba(16,185,129,0.5); color: #ffffff; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 900; white-space: nowrap; letter-spacing: 0.4px;">
-        <span style="font-size: 11px;">🟢</span> STARTING POINT
+      <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #10b981; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(16,185,129,0.4); color: #fff; font-family: sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">
+        START
       </div>
   `
 
   const _buildEndIcon = () => `
-      <div style="display: flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; background: #475569; border: 2.5px solid #ffffff; box-shadow: 0 4px 14px rgba(71,85,105,0.4); color: #ffffff; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 900; white-space: nowrap; letter-spacing: 0.4px;">
-        <span style="font-size: 11px;">⬛</span> TRIP ENDED
+      <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #475569; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(71,85,105,0.4); color: #fff; font-family: sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">
+        END
       </div>
   `
 
   const _buildDestIcon = () => `
-      <div style="display: flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 20px; background: #ef4444; border: 2.5px solid #ffffff; box-shadow: 0 4px 14px rgba(239,68,68,0.55); color: #ffffff; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 900; white-space: nowrap; letter-spacing: 0.4px;">
-        <span style="font-size: 11px;">🎯</span> DESTINATION
+      <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #ef4444; border: 2.5px solid #fff; box-shadow: 0 4px 12px rgba(239,68,68,0.5); color: #fff;">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
       </div>
   `
 
@@ -1703,7 +1590,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return
 
     const crumbTime = new Date(crumb.recorded_at || crumb.timestamp || Date.now()).getTime()
-    if (liveMarkerRef.current && crumbTime && crumbTime <= latestTimestampRef.current) {
+    if (crumbTime && crumbTime <= latestTimestampRef.current) {
       console.log("[SmartMap] Ignored older/stale coordinate update:", crumb.recorded_at || crumb.timestamp)
       return
     }
@@ -1848,13 +1735,12 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   }, [])
 
   const _loadTrackingHistory = useCallback(async (executive) => {
-    if (!googleMapRef.current || !window.google || !executive) return
+    if (!googleMapRef.current || !window.google) return
     selectedExecutiveRef.current = executive
     setTrackStatus('loading')
-    const targetId = executive.employee_id || executive.id || executive.employee_code || ''
-    console.log("[SmartMap] Loading tracking history for executive:", executive?.employee_name || executive?.name, targetId)
+    console.log("[SmartMap] Loading tracking history for executive:", executive?.employee_name, executive?.employee_id)
     try {
-      const res = await spatialAPI.getLocationHistory(targetId)
+      const res = await spatialAPI.getLocationHistory(executive.employee_id)
       console.log("[SmartMap] History response:", res)
       const data = res?.data || res
       const session = data?.session
@@ -1874,21 +1760,31 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       }
       const map = googleMapRef.current
 
-      // Parse Client Destination (prefer DB columns, fallback to executive coordinates, fallback to encoded check_in_address, fallback to candidate lookup)
+      // Parse Client Destination (prefer DB columns, fallback to executive coordinates, fallback to encoded check_in_address)
       let clientDest = null
-      
-      const rawEncString = [
-        executive?.check_in_address,
-        executive?.loginLocation,
-        session?.client_address,
-        session?.remarks,
-        executive?.remarks
-      ].find(str => str && typeof str === 'string' && str.includes("CLIENT_VISIT_DESTINATION:::"))
-
-      if (rawEncString) {
+      if (session && session.client_latitude != null && session.client_longitude != null) {
+        clientDest = {
+          id: session.client_id || 'db_dest',
+          title: session.client_name || 'Active Client Visit',
+          company_name: session.company_name || session.client_name || 'Active Client Visit',
+          address: session.client_address || '—',
+          latitude: Number(session.client_latitude),
+          longitude: Number(session.client_longitude),
+          category: 'Client'
+        }
+      } else if (executive.client_latitude != null && executive.client_longitude != null) {
+        clientDest = {
+          id: executive.client_id || 'ex_dest',
+          title: executive.client_name || 'Active Client Visit',
+          company_name: executive.company_name || executive.client_name || 'Active Client Visit',
+          address: executive.client_address || '—',
+          latitude: Number(executive.client_latitude),
+          longitude: Number(executive.client_longitude),
+          category: 'Client'
+        }
+      } else if (executive.check_in_address && executive.check_in_address.startsWith("CLIENT_VISIT_DESTINATION:::")) {
         try {
-          const jsonPart = rawEncString.substring(rawEncString.indexOf("CLIENT_VISIT_DESTINATION:::") + "CLIENT_VISIT_DESTINATION:::".length)
-          const parsed = JSON.parse(jsonPart)
+          const parsed = JSON.parse(executive.check_in_address.replace("CLIENT_VISIT_DESTINATION:::", ""))
           if (parsed && parsed.latitude != null && parsed.longitude != null) {
             clientDest = {
               id: parsed.id || 'parsed_dest',
@@ -1897,58 +1793,11 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               address: parsed.address || '—',
               latitude: Number(parsed.latitude),
               longitude: Number(parsed.longitude),
-              category: parsed.category || 'Client'
+              category: 'Client'
             }
           }
         } catch (e) {
-          console.warn("Failed to parse CLIENT_VISIT_DESTINATION from string:", e)
-        }
-      }
-
-      if (!clientDest) {
-        if (session && session.client_latitude != null && session.client_longitude != null) {
-          clientDest = {
-            id: session.client_id || 'db_dest',
-            title: session.client_name || 'Active Client Visit',
-            company_name: session.company_name || session.client_name || 'Active Client Visit',
-            address: session.client_address || '—',
-            latitude: Number(session.client_latitude),
-            longitude: Number(session.client_longitude),
-            category: 'Client'
-          }
-        } else if (executive.client_latitude != null && executive.client_longitude != null) {
-          clientDest = {
-            id: executive.client_id || 'ex_dest',
-            title: executive.client_name || 'Active Client Visit',
-            company_name: executive.company_name || executive.client_name || 'Active Client Visit',
-            address: executive.client_address || '—',
-            latitude: Number(executive.client_latitude),
-            longitude: Number(executive.client_longitude),
-            category: 'Client'
-          }
-        }
-      }
-
-      // Candidate matching fallback by name if coordinates missing
-      if (!clientDest || clientDest.latitude == null || clientDest.longitude == null) {
-        const targetName = (session?.client_name || session?.company_name || executive?.client_name || executive?.company_name || '').toLowerCase().trim()
-        if (targetName && targetName !== 'client visit' && targetName !== 'active client visit') {
-          const match = (allCandidatesRef.current || []).find(c => {
-            const cTitle = (c.title || '').toLowerCase()
-            const cComp = (c.company_name || c.company || '').toLowerCase()
-            return (cTitle && cTitle.includes(targetName)) || (cComp && cComp.includes(targetName))
-          })
-          if (match && match.latitude != null && match.longitude != null) {
-            clientDest = {
-              id: match.id || 'candidate_dest',
-              title: match.title || match.company_name || targetName,
-              company_name: match.company_name || match.title || targetName,
-              address: match.address || '—',
-              latitude: Number(match.latitude),
-              longitude: Number(match.longitude),
-              category: match.category || 'Client'
-            }
-          }
+          console.warn("Failed to parse check_in_address for destination:", e)
         }
       }
 
@@ -2098,8 +1947,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           }
         }
 
-        let startLat = session?.start_latitude != null ? Number(session.start_latitude) : (executive?.check_in_latitude != null ? Number(executive.check_in_latitude) : (crumbs.length > 0 ? Number(crumbs[0].latitude) : null))
-        let startLng = session?.start_longitude != null ? Number(session.start_longitude) : (executive?.check_in_longitude != null ? Number(executive.check_in_longitude) : (crumbs.length > 0 ? Number(crumbs[0].longitude) : null))
+        let startLat = session?.start_latitude != null ? Number(session.start_latitude) : (crumbs.length > 0 ? Number(crumbs[0].latitude) : null)
+        let startLng = session?.start_longitude != null ? Number(session.start_longitude) : (crumbs.length > 0 ? Number(crumbs[0].longitude) : null)
 
         if (startLat != null && startLng != null && !isNaN(startLat) && !isNaN(startLng) && startLat !== 0 && startLng !== 0) {
           // ONLY unshift start location if pathCoords is empty OR start position is within 1 km of first breadcrumb
@@ -2112,12 +1961,12 @@ export default function ManagerSmartMap({ hideHeader = false }) {
             }
           }
           const startLatLng = new window.google.maps.LatLng(startLat, startLng)
-          startMarkerRef.current = createMapMarker(
+          startMarkerRef.current = new HTMLMapMarker(
             startLatLng,
             map,
             _buildStartIcon(),
             () => {
-              showInfoWindow(startLatLng, `<div style="font-family:sans-serif;font-size:12px;padding:8px;color:#1e293b;min-width:180px;"><strong style="color:#10b981">🟢 Trip Start</strong><br/><span style="font-size:11px;color:#475569;">Time: ${session?.start_time ? new Date(session.start_time).toLocaleTimeString() : '—'}</span></div>`)
+              showInfoWindow(startLatLng, `<div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;"><strong>🟢 Start Point</strong><br/>Time: ${session?.start_time ? new Date(session.start_time).toLocaleTimeString() : '—'}</div>`)
             },
             'center'
           )
@@ -2127,12 +1976,12 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           const endLat = Number(session.end_latitude)
           const endLng = Number(session.end_longitude)
           const endLatLng = new window.google.maps.LatLng(endLat, endLng)
-          endMarkerRef.current = createMapMarker(
+          endMarkerRef.current = new HTMLMapMarker(
             endLatLng,
             map,
             _buildEndIcon(),
             () => {
-              showInfoWindow(endLatLng, `<div style="font-family:sans-serif;font-size:12px;padding:8px;color:#1e293b;min-width:180px;"><strong style="color:#475569">⬛ Trip End</strong><br/><span style="font-size:11px;color:#475569;">Time: ${session?.end_time ? new Date(session.end_time).toLocaleTimeString() : '—'}</span></div>`)
+              showInfoWindow(endLatLng, `<div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;"><strong>⬛ End Point</strong><br/>Time: ${session?.end_time ? new Date(session.end_time).toLocaleTimeString() : '—'}</div>`)
             },
             'center'
           )
@@ -2204,11 +2053,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       }
 
       // Draw route to destination (if client visit active, draw regardless of ended/active status)
-      const navOriginLat = startLat != null ? startLat : latestLat
-      const navOriginLng = startLng != null ? startLng : latestLng
-      if (clientDest && navOriginLat != null && navOriginLng != null && !isNaN(navOriginLat) && !isNaN(navOriginLng)) {
+      if (clientDest && latestLat != null && latestLng != null && !isNaN(latestLat) && !isNaN(latestLng)) {
         try {
-          _drawRouteToDestination(navOriginLat, navOriginLng, clientDest)
+          _drawRouteToDestination(latestLat, latestLng, clientDest)
         } catch (routeErr) {
           console.error("[SmartMap] Error drawing route to destination:", routeErr)
         }
@@ -2278,19 +2125,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     }
     if (pollTimerRef.current) { clearInterval(pollTimerRef.current); pollTimerRef.current = null }
 
-    // Helper to check if incoming broadcast/event belongs to currently selected executive
-    const isMatchingExecutive = (loc) => {
-      const currentEx = selectedExecutiveRef.current
-      if (!currentEx || !loc) return false
-      const locId = String(loc.employee_id || loc.id || loc.user_id || '').trim()
-      const locCode = String(loc.employee_code || '').trim()
-      const exId = String(currentEx.employee_id || currentEx.id || '').trim()
-      const exCode = String(currentEx.employee_code || '').trim()
-      if (locId && (locId === exId || locId === exCode)) return true
-      if (locCode && (locCode === exId || locCode === exCode)) return true
-      return false
-    }
-
     if (supabase) {
       const chNames = new Set()
       if (employeeId) {
@@ -2310,7 +2144,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           .channel(name)
           .on('broadcast', { event: 'location' }, (payload) => {
             const crumb = payload?.payload
-            if (!crumb || !isMatchingExecutive(crumb)) return
+            if (!crumb) return
             
             if (crumb.broadcast_sent_at) {
               const latVal = Date.now() - crumb.broadcast_sent_at
@@ -2332,7 +2166,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
             filter: sessionId ? `tracking_session_id=eq.${sessionId}` : `employee_id=eq.${employeeId}`
           }, (payload) => {
             const crumb = payload.new
-            if (!crumb || !isMatchingExecutive(crumb)) return
+            if (!crumb) return
             const exists = crumbsRef.current.some(c => c.id === crumb.id)
             if (!exists) {
               crumbsRef.current = [...crumbsRef.current, crumb]
@@ -2385,7 +2219,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       bc = new BroadcastChannel('tc_live_gps_stream')
       bc.onmessage = (event) => {
         const loc = event.data
-        if (loc && loc.latitude && loc.longitude && isMatchingExecutive(loc)) {
+        if (loc && loc.latitude && loc.longitude) {
           _applyNewCrumb(loc)
           fetchData(true)
         }
@@ -2397,7 +2231,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       try {
         const raw = e.type === 'storage' ? e.newValue : e.detail
         const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-        if (parsed && parsed.latitude && parsed.longitude && isMatchingExecutive(parsed)) {
+        if (parsed && parsed.latitude && parsed.longitude) {
           _applyNewCrumb(parsed)
           fetchData(true)
         }
@@ -2654,62 +2488,32 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     })
   }, [executives, currentTeamGroup, activeTeamFilter, searchQuery])
 
-
-
-  const roleTitle = isCeo ? 'CEO Operations' : 'Sales Manager'
-
-  const renderHeaderBar = () => (
-    <div className="bg-white border border-[#E8D8C8] p-2 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs mb-4">
-      <div className="flex items-center gap-2 px-2">
-        <MapPin className="w-5 h-5 text-[#966038]" />
-        <div>
-          <h2 className="text-xs font-black text-[#543D30] uppercase tracking-wider">
-            Smart Client & Live Tracking Radar ({roleTitle})
-          </h2>
-          <p className="text-[10px] text-slate-500 font-semibold">
-            Toggle between live team location tracking and personal client radar navigation map.
-          </p>
-        </div>
-      </div>
-
-      <div className="flex items-center gap-1 bg-[#FAF6F0] p-1 rounded-xl shrink-0 border border-[#E8D8C8]">
-        <button
-          onClick={() => setActiveTab('team')}
-          className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-            activeTab === 'team'
-              ? 'bg-[#543D30] text-white shadow-xs'
-              : 'text-[#6B4E3D] hover:text-[#543D30]'
-          }`}
-        >
-          <Users className="w-3.5 h-3.5 text-[#D49A6A]" /> Team Live Radar Map
-        </button>
-        <button
-          onClick={() => setActiveTab('own')}
-          className={`px-3.5 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-            activeTab === 'own'
-              ? 'bg-[#966038] text-white shadow-xs'
-              : 'text-[#6B4E3D] hover:text-[#543D30]'
-          }`}
-        >
-          <Compass className="w-3.5 h-3.5 text-amber-200" /> Personal Smart Map
-        </button>
-      </div>
-    </div>
-  )
-
-  if (activeTab === 'own') {
+  if (activeMapTab === 'own' && !isCeo) {
     return (
-      <div className="space-y-4 font-sans">
-        {!hideHeader && renderHeaderBar()}
+      <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-slate-900 font-sans">
+        {/* Floating Top Mode Switcher Bar */}
+        <div className="absolute top-3 right-3 sm:right-6 z-[1050] flex items-center gap-1 bg-white/95 backdrop-blur-md p-1.5 rounded-2xl border border-slate-200/90 shadow-2xl">
+          <button
+            onClick={() => setActiveMapTab('team')}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-black text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Users className="w-3.5 h-3.5 text-indigo-600" /> Team Radar
+          </button>
+          <button
+            onClick={() => setActiveMapTab('own')}
+            className="px-3.5 py-1.5 rounded-xl text-xs font-black bg-indigo-600 text-white shadow-md transition flex items-center gap-1.5 cursor-pointer"
+          >
+            <Compass className="w-3.5 h-3.5 text-amber-200" /> Personal Map
+          </button>
+        </div>
+
         <SmartClientMap isManagerView={true} />
       </div>
     )
   }
 
   return (
-    <div className="space-y-4 font-sans">
-      {!hideHeader && renderHeaderBar()}
-      <div className="relative w-full h-full min-h-[calc(100vh-5rem)] rounded-none md:rounded-3xl overflow-hidden border-0 md:border border-slate-700 shadow-xl bg-slate-900 font-sans">
+    <div className="relative w-full h-[calc(100vh-4rem)] overflow-hidden bg-slate-900 font-sans">
 
       {/* Map container — always in DOM, pre-initialized */}
       <div
@@ -2736,6 +2540,26 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               </div>
 
               <div className="flex items-center gap-2">
+                {!isCeo && (
+                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 border border-slate-200">
+                    <button
+                      onClick={() => setActiveMapTab('team')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                        activeMapTab === 'team' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Users className="w-3.5 h-3.5 text-indigo-400" /> Team Radar
+                    </button>
+                    <button
+                      onClick={() => setActiveMapTab('own')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                        activeMapTab === 'own' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Compass className="w-3.5 h-3.5 text-amber-200" /> Personal Map
+                    </button>
+                  </div>
+                )}
                 <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 border border-slate-200 bg-white rounded-xl px-3 py-2 hover:border-blue-300 transition shadow-xs">
                   <RefreshCw className="w-3.5 h-3.5" /> Refresh
                 </button>
@@ -3011,60 +2835,24 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       {/* ── Map Tracking Overlay (when executive is selected) ── */}
       {selectedExecutive && (
         <>
-          {/* Top-Right Floating Inquiry Tag / Message Tag Button for Manager */}
-          <button
-            type="button"
-            onClick={() => setInquiryModalEx(selectedExecutive)}
-            className="absolute top-3.5 right-3.5 z-[1010] bg-slate-900/95 hover:bg-slate-900 text-white backdrop-blur-md border border-slate-700 shadow-2xl px-3.5 py-2 rounded-2xl text-xs font-black flex items-center gap-2 active:scale-95 transition cursor-pointer group"
-            title="Ask Inquiry / Send Message to Executive"
-          >
-            <div className="w-6 h-6 rounded-lg bg-amber-500 text-white flex items-center justify-center font-bold text-xs shadow-xs group-hover:rotate-12 transition">
-              💬
-            </div>
-            <span>Inquiry Tag</span>
-          </button>
-
           {isTrackingMinimized ? (
-            <div className="absolute top-3.5 left-3.5 z-[1010] flex items-center gap-2 flex-wrap">
-              {/* Back to Team Radar button */}
-              <button
-                type="button"
-                onClick={() => { _clearTrackingLayer(); setSelectedExecutive(null); setIsTrackingMinimized(false) }}
-                className="bg-slate-900/95 hover:bg-slate-900 text-white backdrop-blur-md border border-slate-700 shadow-2xl px-3.5 py-2 rounded-2xl text-xs font-black flex items-center gap-2 active:scale-95 transition cursor-pointer group"
-                title="Back to Team Radar Map & Executive Cards"
-              >
-                <ArrowLeft className="w-4 h-4 text-amber-400 group-hover:-translate-x-0.5 transition" />
-                <span>Back to Team Radar</span>
-              </button>
-
-              {/* Inquiry Tag button */}
-              <button
-                type="button"
-                onClick={() => setInquiryModalEx(selectedExecutive)}
-                className="bg-amber-500 hover:bg-amber-600 text-white shadow-xl px-3 py-2 rounded-2xl text-xs font-black flex items-center gap-1.5 active:scale-95 transition cursor-pointer"
-                title="Ask Inquiry / View Executive Replies"
-              >
-                <MessageSquare className="w-3.5 h-3.5 text-white" />
-                <span>Inquiry Tag</span>
-              </button>
-
-              {/* Minimized Executive Live Status Badge */}
-              <div className="bg-white/98 border border-slate-200 rounded-2xl px-3.5 py-2 shadow-xl backdrop-blur-md text-slate-800 flex items-center gap-2.5">
+            <div className="absolute top-5 left-5 z-20 w-80 bg-white/95 border border-slate-200 rounded-xl p-3 shadow-xl backdrop-blur-md text-slate-800 pointer-events-auto flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2.5 min-w-0">
                 <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse flex-shrink-0" />
                 <div className="min-w-0">
-                  <div className="text-xs font-black truncate text-slate-900 max-w-[140px]">{resolveRealName(selectedExecutive)}</div>
+                  <div className="text-xs font-black truncate text-slate-900">{resolveRealName(selectedExecutive)}</div>
                   <div className="text-[9px] text-slate-500 font-extrabold uppercase tracking-wider">
-                    {destClient && destRouteMeta ? `${destRouteMeta.etaMins}m (${destRouteMeta.distanceKm.toFixed(1)}km)` : 'Live GPS Active'}
+                    {destClient && destRouteMeta ? `${destRouteMeta.etaMins} mins remaining (${destRouteMeta.distanceKm.toFixed(1)} km)` : 'Live GPS Active'}
                   </div>
                 </div>
-                <div className="flex items-center gap-1 flex-shrink-0 ml-1">
-                  <button onClick={() => setIsTrackingMinimized(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" title="Expand details">
-                    <Maximize2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button onClick={() => { _clearTrackingLayer(); setSelectedExecutive(null); setIsTrackingMinimized(false) }} className="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" title="Close tracking">
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+              </div>
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <button onClick={() => setIsTrackingMinimized(false)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-50 transition">
+                  <Maximize2 className="w-4 h-4" />
+                </button>
+                <button onClick={() => { _clearTrackingLayer(); setSelectedExecutive(null); setIsTrackingMinimized(false) }} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
             </div>
           ) : (
@@ -3091,7 +2879,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               </div>
 
               {/* Heartbeat & Signal */}
-              <div className="flex items-center gap-2 flex-wrap">
+              <div className="flex items-center gap-2">
                 {(() => {
                   const hb = getHeartbeatStatus()
                   return (
@@ -3108,74 +2896,26 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                 )}
               </div>
 
-              {/* Trip Status Section */}
+              {/* Proximity Status */}
               {(() => {
                 const badge = getTrackingBadge(trackStatus === 'ended' ? 'ended' : trackStatus, lastPingMs, selectedExecutive?.is_online)
                 const prox = getProximityStatus()
-                const tripStatusLabel =
-                  trackStatus === 'ended' ? 'Reached / Session Ended' :
-                  prox === 'Arrived' ? 'Reached' :
-                  prox === 'At Start Location' ? 'Trip Started' :
-                  prox === 'Idle' ? 'Idle' :
-                  prox === 'Travelling' ? 'Travelling' :
-                  prox === 'Near Location' ? 'Near Destination' :
-                  selectedExecutive?.is_online ? 'Active' : 'Offline'
-                const tripStatusColor =
-                  trackStatus === 'ended' ? '#64748b' :
-                  prox === 'Arrived' ? '#10b981' :
-                  prox === 'At Start Location' ? '#f59e0b' :
-                  prox === 'Idle' ? '#f97316' :
-                  prox === 'Travelling' ? '#8b5cf6' :
-                  '#6366f1'
                 return (
                   <div className="space-y-2">
-                    {/* Trip Status Badge */}
-                    <div className="rounded-xl p-3 border" style={{ background: tripStatusColor + '14', borderColor: tripStatusColor + '40' }}>
-                      <div className="text-[10px] font-black uppercase tracking-wider mb-1.5" style={{ color: tripStatusColor }}>📍 Trip Status</div>
-                      <div className="flex items-center gap-2">
-                        <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: tripStatusColor, boxShadow: `0 0 6px ${tripStatusColor}` }} />
-                        <span className="text-sm font-black" style={{ color: tripStatusColor }}>{tripStatusLabel}</span>
-                      </div>
-                      <div className="mt-1.5 text-[10px] font-bold flex items-center gap-1" style={{ color: badge.color }}>
-                        {badge.dot} {badge.label}
-                      </div>
+                    <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      <span>Track Status</span>
+                      <span className={`px-2 py-0.5 rounded-full ${
+                        prox === 'Arrived' ? 'bg-emerald-100 text-emerald-700' :
+                        prox === 'Near Location' ? 'bg-blue-100 text-blue-700' :
+                        prox === 'At Start Location' ? 'bg-amber-100 text-amber-800' :
+                        prox === 'Idle' ? 'bg-orange-100 text-orange-700 animate-pulse' :
+                        prox === 'Travelling' ? 'bg-violet-100 text-violet-700' :
+                        'bg-slate-100 text-slate-400'
+                      }`}>{prox}</span>
                     </div>
-
-                    {/* Session Times Row */}
-                    {trackSession && (
-                      <div className="grid grid-cols-2 gap-2">
-                        <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 space-y-0.5">
-                          <div className="text-[9px] font-black uppercase tracking-wider text-emerald-500">🟢 Start</div>
-                          <div className="text-[11px] font-black text-slate-800">
-                            {trackSession.start_time ? new Date(trackSession.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : '—'}
-                          </div>
-                          {trackSession.start_time && (
-                            <div className="text-[9px] text-slate-400 font-semibold">{new Date(trackSession.start_time).toLocaleDateString()}</div>
-                          )}
-                        </div>
-                        <div className={`border rounded-xl p-2.5 space-y-0.5 ${trackStatus === 'ended' ? 'bg-slate-50 border-slate-200' : 'bg-violet-50 border-violet-100'}`}>
-                          <div className={`text-[9px] font-black uppercase tracking-wider ${trackStatus === 'ended' ? 'text-slate-400' : 'text-violet-400'}`}>
-                            {trackStatus === 'ended' ? '⬛ End' : '⏱ Duration'}
-                          </div>
-                          <div className="text-[11px] font-black text-slate-800">
-                            {trackStatus === 'ended' && trackSession.end_time
-                              ? new Date(trackSession.end_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-                              : trackSession.start_time ? formatDuration(trackSession.start_time) : '—'}
-                          </div>
-                          {trackStatus === 'ended' && trackSession.end_time && (
-                            <div className="text-[9px] text-slate-400 font-semibold">{new Date(trackSession.end_time).toLocaleDateString()}</div>
-                          )}
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Route breadcrumb count */}
-                    {trackBreadcrumbs.length > 0 && (
-                      <div className="flex items-center gap-1.5 text-[10px] text-slate-400 font-semibold">
-                        <Route className="w-3 h-3 text-purple-400" />
-                        {trackBreadcrumbs.length} GPS points recorded
-                      </div>
-                    )}
+                    <div className="flex items-center gap-2 text-xs font-bold" style={{ color: badge.color }}>
+                      <span>{badge.dot}</span> {badge.label}
+                    </div>
                   </div>
                 )
               })()}
@@ -3184,53 +2924,30 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               {destClient && (() => {
                 const clientContactInfo = candidatesRef.current?.find(c => String(c.id) === String(destClient.id)) || destClient;
                 return (
-                  <div className="bg-violet-50 border border-violet-200 rounded-xl p-3 space-y-1.5">
-                    <div className="text-[10px] font-bold text-violet-500 uppercase tracking-wider flex items-center gap-1">🎯 Destination Client</div>
+                  <div className="bg-violet-50 border border-violet-100 rounded-xl p-3 space-y-1.5">
+                    <div className="text-[10px] font-bold text-violet-400 uppercase tracking-wider">Client Visit</div>
                     <div className="font-black text-slate-900 text-sm">{destClient.company_name || destClient.title}</div>
                     {destClient.address && <div className="text-[11px] text-slate-500 font-semibold">{destClient.address}</div>}
                     {destRouteMeta && (
                       <div className="flex gap-3 mt-1.5 text-[11px] font-bold">
-                        <span className="text-violet-700">🕒 ETA: {destRouteMeta.etaMins} min</span>
-                        <span className="text-slate-500">📏 {destRouteMeta.distanceKm.toFixed(1)} km</span>
+                        <span className="text-violet-700">🕒 {destRouteMeta.etaMins} min</span>
+                        <span className="text-slate-500">📍 {destRouteMeta.distanceKm.toFixed(1)} km</span>
                       </div>
                     )}
                     {clientContactInfo?.contact_person && (
                       <div className="text-[11px] text-slate-600 font-semibold">👤 {clientContactInfo.contact_person}</div>
                     )}
-                    {(clientContactInfo?.phone || destClient?.phone) && (
-                      <a href={`tel:${clientContactInfo?.phone || destClient?.phone}`} className="text-[11px] text-blue-600 font-bold">📞 {clientContactInfo?.phone || destClient?.phone}</a>
+                    {clientContactInfo?.phone && (
+                      <a href={`tel:${clientContactInfo.phone}`} className="text-[11px] text-blue-600 font-bold">📞 {clientContactInfo.phone}</a>
                     )}
                   </div>
                 )
               })()}
 
-              {/* Nearby Clients/Leads on Route */}
-              {onRouteClients.length > 0 && (
-                <div className="space-y-1.5">
-                  <div className="text-[10px] font-black uppercase tracking-wider text-slate-500 flex items-center gap-1">
-                    <MapPin className="w-3 h-3 text-amber-500" />
-                    Nearby on Route ({onRouteClients.length})
-                  </div>
-                  <div className="space-y-1 max-h-32 overflow-y-auto pr-1">
-                    {onRouteClients.slice(0, 5).map((item, i) => {
-                      const isPrev = item.alertType === 'previous'
-                      const isSched = item.alertType === 'scheduled'
-                      const isLead = item.category === 'Lead'
-                      const dotColor = isPrev ? '#a855f7' : isSched ? '#2563eb' : isLead ? '#f59e0b' : '#10b981'
-                      const typeLabel = isPrev ? (isLead ? 'Prev Lead' : 'Prev Client') : isSched ? 'Scheduled' : isLead ? 'Lead' : 'Client'
-                      return (
-                        <div key={item.id || i} className="flex items-center gap-2 bg-slate-50 rounded-xl px-2.5 py-1.5 border border-slate-100">
-                          <div className="w-5 h-5 rounded-full flex items-center justify-center text-white text-[8px] font-black flex-shrink-0" style={{ background: dotColor }}>
-                            {isLead ? 'L' : 'C'}
-                          </div>
-                          <div className="min-w-0 flex-1">
-                            <div className="text-[10px] font-black text-slate-800 truncate">{item.title}</div>
-                            <div className="text-[9px] font-bold" style={{ color: dotColor }}>{typeLabel} · {item.distToRouteM}m</div>
-                          </div>
-                        </div>
-                      )
-                    })}
-                  </div>
+              {/* Breadcrumb count */}
+              {trackBreadcrumbs.length > 0 && (
+                <div className="text-[10px] text-slate-400 font-semibold">
+                  {trackBreadcrumbs.length} location points recorded today
                 </div>
               )}
             </div>
@@ -3336,7 +3053,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           </div>
         </div>
       )}
-      </div>
     </div>
   )
 }

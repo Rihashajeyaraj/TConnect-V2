@@ -968,7 +968,7 @@ export default function SmartClientMap({ isManagerView = false }) {
       setOffRoute(distToRoute > OFF_ROUTE_THRESHOLD_KM)
     }
 
-    // Dynamic traveled trail polyline (breadcrumb trail)
+    // Dynamic traveled trail polyline (purple dotted line)
     try {
       const lat = executivePos.lat
       const lng = executivePos.lng
@@ -977,7 +977,9 @@ export default function SmartClientMap({ isManagerView = false }) {
       if (!last || haversineDistance(last.lat, last.lng, lat, lng) > 0.015) {
         pts.push({ lat, lng })
       }
-    } catch {}
+    } catch (e) {
+      console.warn("Trail update error:", e)
+    }
 
 
     // Debounced OSRM re-fetch
@@ -1151,8 +1153,6 @@ export default function SmartClientMap({ isManagerView = false }) {
   // ─── 13. Update exec marker smoothly ────────────────────────────────────
   useEffect(() => {
     if (!googleMapRef.current || !window.google) return
-    initializeHTMLMapMarker()
-    if (!HTMLMapMarker) return
     const latlng = new window.google.maps.LatLng(executivePos.lat, executivePos.lng)
     if (!execMarkerRef.current) {
       const userName = currentUser?.name ? currentUser.name.split(' ')[0] : 'You'
@@ -1194,8 +1194,6 @@ export default function SmartClientMap({ isManagerView = false }) {
   // ─── 14. Redraw destination + on-route markers + polyline ───────────────
   useEffect(() => {
     if (!googleMapRef.current || !window.google) return
-    initializeHTMLMapMarker()
-    if (!HTMLMapMarker) return
 
     activeMarkersRef.current.forEach(m => m.setMap(null))
     activeMarkersRef.current = []
