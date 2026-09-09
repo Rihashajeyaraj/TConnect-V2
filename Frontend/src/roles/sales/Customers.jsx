@@ -49,15 +49,37 @@ export default function Customers() {
 
   const matchesUser = (item) => {
     if (!item) return false;
-    const mgr = (item.accountManager || item.assignedTo || item.assigned_to || item.executive || "").toLowerCase().trim();
-    const email = (item.assignedToEmail || item.assigned_to_email || item.email || "").toLowerCase().trim();
-    const empCode = (item.employee_id || item.employee_code || "").toLowerCase().trim();
+    const mgr = (
+      item.account_manager ||
+      item.accountManager ||
+      item.sales_executive_name ||
+      item.executive_name ||
+      item.assigned_to_name ||
+      item.assigned_to ||
+      item.assignedTo ||
+      item.executive ||
+      ""
+    ).toLowerCase().trim();
+
+    const email = (item.assignedToEmail || item.assigned_to_email || item.email || item.executiveEmail || "").toLowerCase().trim();
+    const empCode = (item.employee_id || item.employee_code || item.emp_code || "").toLowerCase().trim();
     const uid = (item.user_id || item.userId || "").toLowerCase().trim();
 
+    // 1. Direct match on email
     if (userEmail && (email === userEmail || mgr === userEmail)) return true;
+
+    // 2. Direct match on employee code / ID
     if (userEmpCode && empCode === userEmpCode.toLowerCase()) return true;
     if (userId && uid === userId.toLowerCase()) return true;
-    if (userName && (mgr.includes(userName.toLowerCase()) || userName.toLowerCase().includes(mgr))) return true;
+
+    // 3. Match on user name ONLY if manager / assigned name explicitly equals or includes user's name AND does NOT refer to a generic role or another executive
+    if (userName && mgr) {
+      const cleanUserName = userName.toLowerCase().trim();
+      if (mgr === cleanUserName) return true;
+      if (cleanUserName && mgr.includes(cleanUserName) && !mgr.includes("executive") && !mgr.includes("sales")) {
+        return true;
+      }
+    }
 
     return false;
   };
@@ -73,7 +95,22 @@ export default function Customers() {
         const key = c.id || c.customer_id || (c.name || c.company || "").toLowerCase().trim();
         if (!seen.has(key)) {
           seen.add(key);
-          clean.push(c);
+          const realMgr =
+            (c.accountManager && c.accountManager !== userName ? c.accountManager : null) ||
+            c.sales_executive_name ||
+            c.executive_name ||
+            c.assigned_to_name ||
+            c.assigned_to ||
+            c.assignedTo ||
+            c.executive ||
+            c.person ||
+            c.contactPerson ||
+            c.accountManager ||
+            "Executive Account";
+          clean.push({
+            ...c,
+            accountManager: realMgr
+          });
         }
       });
       return filterUserItems(clean, currentUser);
@@ -115,26 +152,41 @@ export default function Customers() {
       .getCustomers()
       .then((res) => {
         const raw = Array.isArray(res) ? res : (res?.data || []);
-        const normalized = raw.map((c) => ({
-          id: c.customer_id || c.id,
-          customer_id: c.customer_id || c.id,
-          leadId: c.lead_id,
-          leadNumber: c.leadNumber || (c.lead_id ? String(c.lead_id).slice(0, 12).toUpperCase() : null),
-          name: c.name || c.company || c.company_name || "Client Account",
-          company: c.company || c.name || c.company_name || "Client Account",
-          person: c.person || c.contactPerson || c.contact_person || "—",
-          phone: c.phone || c.mobile || "—",
-          email: c.email || "—",
-          city: c.city || (c.billing_address || "").split(",")[0] || "Chennai",
-          status: c.status || "Active Customer",
-          packageTier: c.packageTier || "Enterprise Plan",
-          reachOutReason: c.notes || c.reachOutReason || "Converted customer account.",
-          accountManager: c.accountManager || c.account_manager || userName,
-          contractValue: c.contractValue || c.revenue || "₹0",
-          remarksHistory: c.remarksHistory || [],
-          latitude: c.latitude ?? null,
-          longitude: c.longitude ?? null,
-        }));
+        const normalized = raw.map((c) => {
+          const realMgr =
+            (c.accountManager && c.accountManager !== userName ? c.accountManager : null) ||
+            c.account_manager ||
+            c.sales_executive_name ||
+            c.executive_name ||
+            c.assigned_to_name ||
+            c.assigned_to ||
+            c.assignedTo ||
+            c.executive ||
+            c.person ||
+            c.contactPerson ||
+            "Executive Account";
+
+          return {
+            id: c.customer_id || c.id,
+            customer_id: c.customer_id || c.id,
+            leadId: c.lead_id,
+            leadNumber: c.leadNumber || (c.lead_id ? String(c.lead_id).slice(0, 12).toUpperCase() : null),
+            name: c.name || c.company || c.company_name || "Client Account",
+            company: c.company || c.name || c.company_name || "Client Account",
+            person: c.person || c.contactPerson || c.contact_person || "—",
+            phone: c.phone || c.mobile || "—",
+            email: c.email || "—",
+            city: c.city || (c.billing_address || "").split(",")[0] || "Chennai",
+            status: c.status || "Active Customer",
+            packageTier: c.packageTier || "Enterprise Plan",
+            reachOutReason: c.notes || c.reachOutReason || "Converted customer account.",
+            accountManager: realMgr,
+            contractValue: c.contractValue || c.revenue || "₹0",
+            remarksHistory: c.remarksHistory || [],
+            latitude: c.latitude ?? null,
+            longitude: c.longitude ?? null,
+          };
+        });
 
         setCustomerList((prev) => {
           const merged = [...normalized];

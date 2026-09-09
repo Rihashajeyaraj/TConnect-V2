@@ -2540,26 +2540,6 @@ export default function ManagerSmartMap() {
               </div>
 
               <div className="flex items-center gap-2">
-                {!isCeo && (
-                  <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl shrink-0 border border-slate-200">
-                    <button
-                      onClick={() => setActiveMapTab('team')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-                        activeMapTab === 'team' ? 'bg-slate-900 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      <Users className="w-3.5 h-3.5 text-indigo-400" /> Team Radar
-                    </button>
-                    <button
-                      onClick={() => setActiveMapTab('own')}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
-                        activeMapTab === 'own' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                      }`}
-                    >
-                      <Compass className="w-3.5 h-3.5 text-amber-200" /> Personal Map
-                    </button>
-                  </div>
-                )}
                 <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 border border-slate-200 bg-white rounded-xl px-3 py-2 hover:border-blue-300 transition shadow-xs">
                   <RefreshCw className="w-3.5 h-3.5" /> Refresh
                 </button>

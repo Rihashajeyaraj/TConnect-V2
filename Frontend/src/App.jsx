@@ -129,7 +129,7 @@ const ManagerLeaderboard = lazyWithRetry(() => import('./roles/manager/ManagerLe
 const ManagerCalendar = lazyWithRetry(() => import('./roles/manager/ManagerCalendar.jsx'))
 const ManagerHrms = lazyWithRetry(() => import('./roles/manager/ManagerHrms.jsx'))
 const ManagerSettings = lazyWithRetry(() => import('./roles/manager/ManagerSettings.jsx'))
-const ManagerSmartMap = lazyWithRetry(() => import('./roles/manager/ManagerSmartMap.jsx'))
+const ManagerSmartMap = lazyWithRetry(() => import('./roles/manager/ManagerSmartMapWrapper.jsx'))
 
 // Team Lead Portal
 const TeamLeadLayout = lazyWithRetry(() => import('./roles/teamlead/TeamLeadLayout.jsx'))
