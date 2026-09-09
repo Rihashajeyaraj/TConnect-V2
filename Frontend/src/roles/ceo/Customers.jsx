@@ -150,7 +150,7 @@ function CeoCustomers() {
 
   const loadCustomerDirectory = async () => {
     try {
-      if (!localStorage.getItem('tc_ceo_customers_cache')) {
+      if (!data || !localStorage.getItem('tc_ceo_customers_cache')) {
         setLoading(true)
       }
       setError(null)
@@ -529,6 +529,10 @@ function CeoCustomers() {
   const ITEMS_PER_PAGE = 10
   const [customerPage, setCustomerPage] = useState(1)
   const [leadPage, setLeadPage] = useState(1)
+
+  useEffect(() => {
+    loadCustomerDirectory()
+  }, [])
 
   useEffect(() => {
     setCustomerPage(1)
