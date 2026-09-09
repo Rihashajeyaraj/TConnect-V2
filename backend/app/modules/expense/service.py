@@ -55,10 +55,10 @@ class ExpenseService:
     def get_manager_pending_expenses(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
         return self.repo.get_manager_pending_expenses(user_payload)
 
-    def change_status(self, exp_id: str, status: str, remarks: str, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+    def change_status(self, exp_id: str, status: str, remarks: str, user_payload: Dict[str, Any] = None, allow_team_lead: bool = False) -> Dict[str, Any]:
         if user_payload:
             role = normalize_user_role(user_payload.get("role"))
-            if role in ("sales_executive", "team_lead"):
+            if not allow_team_lead and role in ("sales_executive", "team_lead"):
                 raise ForbiddenException("Only Sales Managers and Executives Leaders are authorized to approve or reject expense claims.")
 
         exp = self.repo.get_expense_by_id(exp_id)

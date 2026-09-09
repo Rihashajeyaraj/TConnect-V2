@@ -19,9 +19,54 @@ import {
   ExternalLink,
   DollarSign,
   AlertCircle,
+  Send,
 } from 'lucide-react'
-import { expenseAPI } from '../../services/api.js'
+import { expenseAPI, notificationAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
+
+const formatDateDDMMYYYY = (val) => {
+  if (!val || val === '—' || val === 'N/A') return '—'
+  try {
+    const s = String(val).trim()
+    if (s.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) return s
+    const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+    if (match) {
+      return `${match[3]}/${match[2]}/${match[1]}`
+    }
+    const d = new Date(s)
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0')
+      const month = String(d.getMonth() + 1).padStart(2, '0')
+      const year = d.getFullYear()
+      return `${day}/${month}/${year}`
+    }
+    return s
+  } catch {
+    return val
+  }
+}
+
+const resolveEmployeeCode = (seName, seEmail, rawCode) => {
+  if (rawCode && !rawCode.startsWith('EMP-10') && rawCode !== 'EMP-101' && rawCode !== 'EMP-102' && rawCode !== 'EMP-103') {
+    return rawCode
+  }
+  const n = (seName || '').toLowerCase().trim()
+  const e = (seEmail || '').toLowerCase().trim()
+
+  try {
+    const appUsers = JSON.parse(localStorage.getItem('tc_app_users') || '[]')
+    const matchedUser = appUsers.find((u) => {
+      const uMail = (u.email || '').toLowerCase()
+      const uName = (u.name || u.full_name || '').toLowerCase()
+      return (uMail && e && e === uMail) || (uName && n && n.includes(uName))
+    })
+    if (matchedUser && (matchedUser.employee_code || matchedUser.employee_id || matchedUser.emp_code)) {
+      return matchedUser.employee_code || matchedUser.employee_id || matchedUser.emp_code
+    }
+  } catch (err) {}
+
+  return 'EMP000014'
+}
 
 export default function TeamLeadExpenses() {
   const { showToast } = useToast()
@@ -43,28 +88,53 @@ export default function TeamLeadExpenses() {
       const data = res?.data?.expenses || res?.expenses || res?.data || (Array.isArray(res) ? res : [])
 
       if (Array.isArray(data) && data.length > 0) {
-        const mapped = data.map((item, idx) => ({
-          id: item.id || item.expense_id || `EXP-${1001 + idx}`,
-          employeeName: item.employee_name || item.assigned_to || item.user_name || item.name || 'Sales Executive',
-          employeeCode: item.employee_code || item.emp_code || item.user_code || `EMP-${100 + idx}`,
-          avatar: item.photo || item.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${item.employee_name || idx}`,
-          customerName: item.customer_name || item.client || item.company || 'Direct Field Client',
-          visitLocation: item.visit_location || item.location || item.city || 'Field Location',
-          category: item.category || item.expense_category || item.type || 'Travel / Fuel',
-          amount: item.amount ? (String(item.amount).startsWith('₹') ? item.amount : `₹${Number(item.amount).toLocaleString('en-IN')}`) : '₹0',
-          numericAmount: parseFloat(String(item.amount || '0').replace(/[^0-9.]/g, '')) || 0,
-          date: item.visit_date || item.expense_date || item.date || item.created_at || 'Recently',
-          submittedDate: item.submitted_date || item.created_at || item.date || 'Today',
-          status: (item.status || item.current_status || 'Pending').toLowerCase().includes('approv')
-            ? 'Approved'
-            : (item.status || '').toLowerCase().includes('reject')
-            ? 'Rejected'
-            : 'Pending',
-          description: item.description || item.notes || item.purpose || 'Field travel & conveyance reimbursement request',
-          receiptUrl: item.receipt_url || item.receiptUrl || item.voucher_url || item.file_url || null,
-          receiptName: item.receipt_name || item.file_name || 'receipt_voucher.pdf',
-          managerRemarks: item.manager_remarks || item.remarks || '',
-        }))
+        const mapped = data.map((item, idx) => {
+          let rawDesc = item.description || item.title || item.notes || item.purpose || 'Field travel & conveyance reimbursement request'
+          let customerName = item.customer_name || item.client || item.company || 'Direct Field Client'
+          let visitLocation = item.visit_location || item.location || item.city || 'Field Location'
+          let visitDate = item.visit_date || item.expense_date || item.date || item.created_at || ''
+
+          if (rawDesc && String(rawDesc).startsWith("EXPENSE_VISIT_DETAILS:::")) {
+            try {
+              const parsed = JSON.parse(String(rawDesc).replace("EXPENSE_VISIT_DETAILS:::", ""))
+              customerName = parsed.customer_name || customerName
+              visitLocation = parsed.visit_location || visitLocation
+              visitDate = parsed.visit_date || visitDate
+              rawDesc = parsed.description || ""
+            } catch (err) {
+              console.warn("Failed to parse expense visit details JSON:", err)
+            }
+          }
+
+          const seName = item.employee_name || item.assigned_to || item.user_name || item.name || 'Sales Executive'
+          const seEmail = item.assigned_to_email || item.email || ''
+          const seCode = resolveEmployeeCode(seName, seEmail, item.employee_code || item.emp_code || item.user_code || item.employee_id)
+
+          return {
+            id: item.id || item.expense_id || `EXP-${1001 + idx}`,
+            employeeName: seName,
+            employeeCode: seCode,
+            avatar: item.photo || item.avatar || `https://api.dicebear.com/7.x/avataaars/svg?seed=${seName}`,
+            customerName: customerName,
+            visitLocation: visitLocation,
+            category: item.category || item.expense_category || item.type || 'Travel / Fuel',
+            amount: item.amount ? (String(item.amount).startsWith('₹') ? item.amount : `₹${Number(item.amount).toLocaleString('en-IN')}`) : '₹0',
+            numericAmount: parseFloat(String(item.amount || '0').replace(/[^0-9.]/g, '')) || 0,
+            date: formatDateDDMMYYYY(visitDate || 'Recently'),
+            submittedDate: formatDateDDMMYYYY(item.submitted_date || item.created_at || item.date || 'Today'),
+            status: (item.status || item.current_status || 'Pending').toLowerCase().includes('approv')
+              ? 'Approved'
+              : (item.status || '').toLowerCase().includes('reject')
+              ? 'Rejected'
+              : (item.status || '').toLowerCase().includes('manager')
+              ? 'Pending Manager Approval'
+              : 'Pending Team Lead Review',
+            description: rawDesc,
+            receiptUrl: item.receipt_url || item.receiptUrl || item.voucher_url || item.file_url || null,
+            receiptName: item.receipt_name || item.file_name || 'receipt_voucher.pdf',
+            managerRemarks: item.manager_remarks || item.remarks || '',
+          }
+        })
         setTeamExpenses(mapped)
       } else {
         // Mock fallback if API returns empty array for demo
@@ -83,6 +153,29 @@ export default function TeamLeadExpenses() {
       fetchTeamExpenses()
     }
   }, [activeTab])
+
+  const handleMoveToManager = async (item) => {
+    try {
+      await expenseAPI.forwardToManager(item.id, { remarks: "Forwarded to Manager by Team Lead" })
+      
+      // Dispatch notification to Manager
+      notificationAPI.sendNotification({
+        recipientRole: 'Sales Manager',
+        title: `Expense Claim Forwarded by Team Lead`,
+        message: `Team Lead forwarded ${item.employeeName}'s reimbursement request of ${item.amount} for manager approval.`,
+        type: 'Expense',
+      }).catch(() => null)
+
+      showToast(`Expense claim (${item.amount}) moved to Manager for approval!`, 'success')
+      fetchTeamExpenses()
+      if (selectedClaim && selectedClaim.id === item.id) {
+        setSelectedClaim((prev) => prev ? { ...prev, status: 'Pending Manager Approval' } : null)
+      }
+    } catch (err) {
+      const msg = err.response?.data?.detail || err.message || 'Failed to move claim to Manager.'
+      showToast(msg, 'error')
+    }
+  }
 
   // Filtered Team Expenses
   const filteredTeamExpenses = teamExpenses.filter((item) => {
@@ -355,22 +448,37 @@ export default function TeamLeadExpenses() {
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black">
                               <XCircle className="w-3 h-3" /> REJECTED
                             </span>
+                          ) : item.status === 'Pending Manager Approval' ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-[10px] font-black">
+                              <Clock className="w-3 h-3 animate-pulse" /> PENDING MGR APPROVAL
+                            </span>
                           ) : (
                             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 text-[10px] font-black">
-                              <Clock className="w-3 h-3 animate-pulse" /> PENDING
+                              <Clock className="w-3 h-3 animate-pulse" /> PENDING TL REVIEW
                             </span>
                           )}
                         </td>
 
-                        {/* View Audit Action */}
+                        {/* View Audit & Forward Action */}
                         <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={() => setSelectedClaim(item)}
-                            className="p-1.5 rounded-lg bg-[#FAF6F0] hover:bg-[#F3ECE2] text-[#6B4E3D] border border-[#E8D8C8] transition cursor-pointer inline-flex items-center gap-1 font-extrabold text-[11px]"
-                            title="View Full Claim Audit"
-                          >
-                            <Eye className="w-3.5 h-3.5 text-[#966038]" /> Inspect
-                          </button>
+                          <div className="flex items-center justify-end gap-1.5">
+                            {(item.status === 'Pending Team Lead Review' || item.status === 'Pending') && (
+                              <button
+                                onClick={() => handleMoveToManager(item)}
+                                className="px-2.5 py-1 rounded-lg bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-[10px] transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                                title="Move to Manager for Approval"
+                              >
+                                <Send className="w-3 h-3" /> Move to Manager
+                              </button>
+                            )}
+                            <button
+                              onClick={() => setSelectedClaim(item)}
+                              className="p-1.5 rounded-lg bg-[#FAF6F0] hover:bg-[#F3ECE2] text-[#6B4E3D] border border-[#E8D8C8] transition cursor-pointer inline-flex items-center gap-1 font-extrabold text-[11px]"
+                              title="View Full Claim Audit"
+                            >
+                              <Eye className="w-3.5 h-3.5 text-[#966038]" /> Inspect
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -488,7 +596,15 @@ export default function TeamLeadExpenses() {
               )}
             </div>
 
-            <div className="pt-2 border-t border-slate-100 flex justify-end">
+            <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
+              {(selectedClaim.status === 'Pending Team Lead Review' || selectedClaim.status === 'Pending') ? (
+                <button
+                  onClick={() => handleMoveToManager(selectedClaim)}
+                  className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-xs rounded-xl transition cursor-pointer flex items-center gap-1.5 shadow-md"
+                >
+                  <Send className="w-3.5 h-3.5" /> Move to Manager
+                </button>
+              ) : <div />}
               <button
                 onClick={() => setSelectedClaim(null)}
                 className="px-4 py-2 bg-[#543D30] hover:bg-[#422E22] text-white font-bold text-xs rounded-xl transition cursor-pointer"
@@ -539,16 +655,16 @@ export default function TeamLeadExpenses() {
 const MOCK_TEAM_EXPENSES = [
   {
     id: 'EXP-1092',
-    employeeName: 'Ramesh Kumar',
-    employeeCode: 'EMP-014',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Ramesh',
+    employeeName: 'Bavani sree',
+    employeeCode: 'EMP000014',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Bavani',
     customerName: 'Bavani Sree Enterprises',
     visitLocation: 'T. Nagar, Chennai',
     category: 'Travel / Fuel',
     amount: '₹834',
     numericAmount: 834,
-    date: '2026-08-14',
-    submittedDate: '2026-08-14',
+    date: '14/08/2026',
+    submittedDate: '14/08/2026',
     status: 'Approved',
     description: 'Field visit conveyance for ongoing software demo meeting',
     receiptUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600&auto=format&fit=crop&q=60',
@@ -557,17 +673,17 @@ const MOCK_TEAM_EXPENSES = [
   },
   {
     id: 'EXP-1095',
-    employeeName: 'Sanjay Dutt',
-    employeeCode: 'EMP-018',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sanjay',
+    employeeName: 'Abi hastro',
+    employeeCode: 'EMP000017',
+    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Abi',
     customerName: 'Hjewr Tech Solutions',
     visitLocation: 'Guindy Industrial Estate',
     category: 'Miscellaneous Field Cost',
     amount: '₹183',
     numericAmount: 183,
-    date: '2026-08-25',
-    submittedDate: '2026-08-25',
-    status: 'Pending',
+    date: '25/08/2026',
+    submittedDate: '25/08/2026',
+    status: 'Pending Team Lead Review',
     description: 'Parking charges & refreshments during client onboarding session',
     receiptUrl: 'https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=600&auto=format&fit=crop&q=60',
     receiptName: 'parking_bill.pdf',
@@ -576,15 +692,15 @@ const MOCK_TEAM_EXPENSES = [
   {
     id: 'EXP-1088',
     employeeName: 'Vikas Sharma',
-    employeeCode: 'EMP-021',
+    employeeCode: 'EMP000021',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Vikas',
     customerName: 'Apex Logistics Ltd',
     visitLocation: 'Velachery, Chennai',
     category: 'Client Refreshment',
     amount: '₹450',
     numericAmount: 450,
-    date: '2026-08-20',
-    submittedDate: '2026-08-20',
+    date: '20/08/2026',
+    submittedDate: '20/08/2026',
     status: 'Approved',
     description: 'Tea & snacks for client procurement head meeting',
     receiptUrl: null,
@@ -594,15 +710,15 @@ const MOCK_TEAM_EXPENSES = [
   {
     id: 'EXP-1077',
     employeeName: 'Anitha Roy',
-    employeeCode: 'EMP-025',
+    employeeCode: 'EMP000025',
     avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Anitha',
     customerName: 'Omni Health Corp',
     visitLocation: 'Nungambakkam',
     category: 'Travel / Conveyance',
     amount: '₹1,200',
     numericAmount: 1200,
-    date: '2026-08-11',
-    submittedDate: '2026-08-11',
+    date: '11/08/2026',
+    submittedDate: '11/08/2026',
     status: 'Rejected',
     description: 'Cab fare for duplicate visit attempt',
     receiptUrl: null,

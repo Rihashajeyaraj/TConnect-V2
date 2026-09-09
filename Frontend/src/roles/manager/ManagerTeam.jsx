@@ -49,6 +49,26 @@ const getStoredUser = () => {
   } catch (e) { return {} }
 }
 
+const formatDateToYYYYMMDD = (dateStr) => {
+  if (!dateStr) return '';
+  const trimmed = String(dateStr).trim();
+  if (trimmed.includes('T')) {
+    return trimmed.split('T')[0];
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return trimmed.substring(0, 10);
+  }
+  const parts = trimmed.split(/[\/\-]/);
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    } else {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+  }
+  return trimmed;
+}
+
 export default function ManagerTeam() {
   const { showToast } = useToast()
   const location = useLocation()
@@ -156,6 +176,9 @@ export default function ManagerTeam() {
   const [attendanceTLFilter, setAttendanceTLFilter] = useState('All')
   const [attendanceExecutiveFilter, setAttendanceExecutiveFilter] = useState('All')
   const [attendanceTypeFilter, setAttendanceTypeFilter] = useState('All')
+  const [attendanceDateTab, setAttendanceDateTab] = useState('All Time') // 'All Time' | 'Today' | 'Yesterday' | 'This Month' | 'Custom'
+  const [attendanceFromDate, setAttendanceFromDate] = useState('')
+  const [attendanceToDate, setAttendanceToDate] = useState('')
 
   const teamLogs = React.useMemo(() => {
     const logs = []
@@ -235,6 +258,28 @@ export default function ManagerTeam() {
     return teamLogs.filter(log => {
       const matchesType = attendanceTypeFilter === 'All' || log.attendanceType === attendanceTypeFilter;
 
+      // Date filter check
+      const rawLogDate = log.attendance_date || log.date || (log.created_at ? String(log.created_at).substring(0, 10) : '') || (log.check_in_time ? String(log.check_in_time).substring(0, 10) : '');
+      const logDateISO = formatDateToYYYYMMDD(rawLogDate);
+
+      const todayISO = new Date().toISOString().slice(0, 10);
+      const yesterdayISO = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+      const thisMonthISO = new Date().toISOString().slice(0, 7);
+
+      let matchesDate = true;
+      if (attendanceDateTab === 'Today') {
+        matchesDate = logDateISO === todayISO;
+      } else if (attendanceDateTab === 'Yesterday') {
+        matchesDate = logDateISO === yesterdayISO;
+      } else if (attendanceDateTab === 'This Month') {
+        matchesDate = logDateISO.startsWith(thisMonthISO);
+      } else if (attendanceDateTab === 'Custom') {
+        if (attendanceFromDate) matchesDate = matchesDate && logDateISO >= attendanceFromDate;
+        if (attendanceToDate) matchesDate = matchesDate && logDateISO <= attendanceToDate;
+      }
+
+      if (!matchesDate) return false;
+
       if (isTLOnlyMode) {
         const tlNames = teamLeads.map(t => (t.name || '').toLowerCase().trim())
         const tlEmails = teamLeads.map(t => (t.email || '').toLowerCase().trim())
@@ -270,7 +315,7 @@ export default function ManagerTeam() {
       }
       return matchesType && matchesTL && matchesExec;
     });
-  }, [teamLogs, attendanceTypeFilter, attendanceTLFilter, attendanceExecutiveFilter, isTLOnlyMode, teamLeads]);
+  }, [teamLogs, attendanceTypeFilter, attendanceTLFilter, attendanceExecutiveFilter, attendanceDateTab, attendanceFromDate, attendanceToDate, isTLOnlyMode, teamLeads]);
 
   // Leave modal filter state
   const [leaveTLFilter, setLeaveTLFilter] = useState('All')
@@ -581,26 +626,6 @@ export default function ManagerTeam() {
     } catch (err) { }
 
     return 'EMP000012'
-  }
-
-  const formatDateToYYYYMMDD = (dateStr) => {
-    if (!dateStr) return '';
-    const trimmed = String(dateStr).trim();
-    if (trimmed.includes('T')) {
-      return trimmed.split('T')[0];
-    }
-    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
-      return trimmed.substring(0, 10);
-    }
-    const parts = trimmed.split(/[\/\-]/);
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-      } else {
-        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-      }
-    }
-    return trimmed;
   }
 
   const formatTelemetryTime = (raw) => {
@@ -1809,14 +1834,14 @@ export default function ManagerTeam() {
               </button>
             </div>
 
-            {/* Toggle Filter and Executive Dropdown */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs text-xs">
-              <div className="flex bg-slate-200/60 p-1 rounded-xl">
+            {/* Toggle Filter, Executive Dropdown, and Date Filters */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white border border-slate-200 rounded-2xl p-4 shadow-xs text-xs">
+              <div className="flex bg-slate-200/60 p-1 rounded-xl shrink-0">
                 {['All', 'Office', 'Client Visit'].map((tab) => (
                   <button
                     key={tab}
                     onClick={() => setAttendanceTypeFilter(tab)}
-                    className={`px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
+                    className={`px-3 sm:px-4 py-1.5 rounded-lg text-xs font-black transition cursor-pointer ${
                       attendanceTypeFilter === tab ? 'bg-[#0b3c5d] text-white shadow-sm' : 'text-slate-600 hover:text-slate-800'
                     }`}
                   >
@@ -1825,11 +1850,51 @@ export default function ManagerTeam() {
                 ))}
               </div>
 
+              {/* Date Filter Pills */}
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-xs font-black text-slate-500 flex items-center gap-1 shrink-0">
+                  <Calendar size={13} className="text-[#0b3c5d]" /> Date:
+                </span>
+                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  {['All Time', 'Today', 'Yesterday', 'This Month', 'Custom'].map((tab) => (
+                    <button
+                      key={tab}
+                      onClick={() => setAttendanceDateTab(tab)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] sm:text-xs font-bold transition cursor-pointer ${
+                        attendanceDateTab === tab
+                          ? 'bg-[#0b3c5d] text-white shadow-xs font-black'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+
+                {attendanceDateTab === 'Custom' && (
+                  <div className="flex items-center gap-1.5 animate-in fade-in duration-150">
+                    <input
+                      type="date"
+                      value={attendanceFromDate}
+                      onChange={(e) => setAttendanceFromDate(e.target.value)}
+                      className="bg-white border border-slate-200 text-xs font-bold px-2 py-1 rounded-xl text-slate-800 focus:outline-none focus:border-[#0b3c5d]"
+                    />
+                    <span className="text-xs font-bold text-slate-400">to</span>
+                    <input
+                      type="date"
+                      value={attendanceToDate}
+                      onChange={(e) => setAttendanceToDate(e.target.value)}
+                      className="bg-white border border-slate-200 text-xs font-bold px-2 py-1 rounded-xl text-slate-800 focus:outline-none focus:border-[#0b3c5d]"
+                    />
+                  </div>
+                )}
+              </div>
+
               <div className="flex flex-wrap items-center gap-3">
                 {/* Team Lead Dropdown Filter (Manager Portal Only) */}
                 {!isTeamLeadPortal && (
-                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs font-bold text-slate-700 min-w-[200px]">
-                    <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider whitespace-nowrap">Team Lead:</span>
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs font-bold text-slate-700 min-w-[170px]">
+                    <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider whitespace-nowrap">TL:</span>
                     <select
                       value={attendanceTLFilter}
                       onChange={(e) => {
@@ -1850,7 +1915,7 @@ export default function ManagerTeam() {
 
                 {/* Executive Dropdown Filter - ONLY IF NOT TL mode */}
                 {!isTLOnlyMode && (
-                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs font-bold text-slate-700 min-w-[200px]">
+                  <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-1.5 text-xs font-bold text-slate-700 min-w-[170px]">
                     <span className="text-slate-500 font-black uppercase text-[10px] tracking-wider whitespace-nowrap">Executive:</span>
                     <select
                       value={attendanceExecutiveFilter}

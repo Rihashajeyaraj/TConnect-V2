@@ -23,6 +23,28 @@ import { filterUserItems, isItemOwnedByUser } from "../../utils/userScope.js";
 import { expenseAPI, notificationAPI } from "../../services/api.js";
 import { useAutoSave } from "../../services/useAutoSave.js";
 
+const formatDateDDMMYYYY = (val) => {
+  if (!val || val === '—' || val === 'N/A') return '—';
+  try {
+    const s = String(val).trim();
+    if (s.match(/^\d{1,2}\/\d{1,2}\/\d{4}$/)) return s;
+    const match = s.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (match) {
+      return `${match[3]}/${match[2]}/${match[1]}`;
+    }
+    const d = new Date(s);
+    if (!isNaN(d.getTime())) {
+      const day = String(d.getDate()).padStart(2, '0');
+      const month = String(d.getMonth() + 1).padStart(2, '0');
+      const year = d.getFullYear();
+      return `${day}/${month}/${year}`;
+    }
+    return s;
+  } catch {
+    return val;
+  }
+};
+
 export default function Expenses(props) {
   const { showToast } = useToast();
   const isModalView = props?.isModalView || false;
@@ -86,8 +108,8 @@ export default function Expenses(props) {
             clientName: clientName,
             location: location,
             remarks: remarks,
-            status: e.status || "PENDING",
-            date: visitDate,
+            status: e.status || "Pending Team Lead Review",
+            date: formatDateDDMMYYYY(visitDate),
             submittedAt: e.created_at ? new Date(e.created_at).toLocaleString([], { dateStyle: "short", timeStyle: "short" }) : "",
             billFileName: e.bill_file_name || "",
             reporting_manager: e.reporting_manager || "Not Assigned",
@@ -225,7 +247,7 @@ export default function Expenses(props) {
         date: form.date,
       });
 
-      showToast(`📨 Expense Request (${formattedAmountStr}) sent to Sales Manager for approval!`, "success");
+      showToast(`📨 Expense Request (${formattedAmountStr}) submitted for Team Lead review!`, "success");
 
       // 2. Reset Form
       clearFormDraft();
@@ -421,7 +443,7 @@ export default function Expenses(props) {
                       </span>
                     </td>
 
-                    <td className="py-3.5 px-4 font-bold text-slate-700">{exp.date}</td>
+                    <td className="py-3.5 px-4 font-bold text-slate-700">{formatDateDDMMYYYY(exp.date)}</td>
 
                     <td className="py-3.5 px-4 font-black text-teal-700 text-sm">{exp.amount}</td>
 
@@ -433,19 +455,34 @@ export default function Expenses(props) {
                     </td>
 
                     <td className="py-3.5 px-4 text-right">
-                      <span
-                        className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-extrabold border ${
-                          (exp.status || "").toLowerCase().includes("approved")
-                            ? "bg-emerald-50 text-emerald-800 border-emerald-300"
-                            : (exp.status || "").toLowerCase().includes("reject")
-                            ? "bg-rose-50 text-rose-800 border-rose-300"
-                            : "bg-amber-50 text-amber-900 border-amber-300"
-                        }`}
-                      >
-                        {(exp.status || "").toLowerCase().includes("approved") && <CheckCircle size={13} />}
-                        {(exp.status || "").toLowerCase().includes("pending") && <Clock3 size={13} />}
-                        {exp.status || "Pending"}
-                      </span>
+                      {(() => {
+                        const st = (exp.status || "").toLowerCase();
+                        if (st.includes("approved")) {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-extrabold border bg-emerald-50 text-emerald-800 border-emerald-300">
+                              <CheckCircle size={13} /> Approved
+                            </span>
+                          );
+                        } else if (st.includes("manager")) {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-extrabold border bg-indigo-50 text-indigo-800 border-indigo-300">
+                              <Clock3 size={13} /> Pending Manager Approval
+                            </span>
+                          );
+                        } else if (st.includes("reject")) {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-extrabold border bg-rose-50 text-rose-800 border-rose-300">
+                              <XCircle size={13} /> Rejected
+                            </span>
+                          );
+                        } else {
+                          return (
+                            <span className="inline-flex items-center gap-1 px-3 py-1 rounded-full text-xs font-extrabold border bg-amber-50 text-amber-900 border-amber-300">
+                              <Clock3 size={13} /> Pending Team Lead Review
+                            </span>
+                          );
+                        }
+                      })()}
                     </td>
                   </tr>
                 ))

@@ -154,3 +154,21 @@ async def return_expense_patch(
         data=exp,
         message="Expense claim returned for correction successfully"
     )
+
+
+@router.patch("/{exp_id}/forward", response_model=StandardResponse)
+async def forward_expense_patch(
+    exp_id: str,
+    data: dict = None,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewExpenses),
+    service: ExpenseService = Depends(get_service)
+):
+    """Forward an expense claim to Manager (used by Team Lead)."""
+    remarks = (data or {}).get("remarks") or "Forwarded to Manager for approval."
+    exp = service.change_status(exp_id, "Pending Manager Approval", remarks, user_payload, allow_team_lead=True)
+    return StandardResponse.success_response(
+        data=exp,
+        message="Expense claim forwarded to Manager successfully"
+    )
+

@@ -381,6 +381,7 @@ export const expenseAPI = {
   },
   getExpenseById: (id) => request(`/expenses/${id}`),
   createExpense: (data) => request('/expenses', { method: 'POST', body: JSON.stringify(data) }),
+  forwardToManager: (id, data) => request(`/expenses/${id}/forward`, { method: 'PATCH', body: JSON.stringify(data || {}) }),
   approveExpense: (id, data) => request(`/expenses/${id}/approve`, { method: 'PATCH', body: JSON.stringify(data || {}) }),
   rejectExpense: (id, data) => request(`/expenses/${id}/reject`, { method: 'PATCH', body: JSON.stringify(data || {}) }),
   returnExpense: (id, data) => request(`/expenses/${id}/return`, { method: 'PATCH', body: JSON.stringify(data || {}) }),

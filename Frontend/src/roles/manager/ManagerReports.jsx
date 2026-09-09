@@ -35,6 +35,26 @@ import { useToast } from '../../common/ToastContext.jsx'
 
 const DEFAULT_EOD_REPORTS = []
 
+const formatDateToYYYYMMDD = (dateStr) => {
+  if (!dateStr) return '';
+  const trimmed = String(dateStr).trim();
+  if (trimmed.includes('T')) {
+    return trimmed.split('T')[0];
+  }
+  if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
+    return trimmed.substring(0, 10);
+  }
+  const parts = trimmed.split(/[\/\-]/);
+  if (parts.length === 3) {
+    if (parts[0].length === 4) {
+      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    } else {
+      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+    }
+  }
+  return trimmed;
+}
+
 export default function ManagerReports() {
   const { showToast } = useToast()
 
@@ -109,26 +129,6 @@ export default function ManagerReports() {
     } catch (err) {}
 
     return 'EMP000012'
-  }
-
-  const formatDateToYYYYMMDD = (dateStr) => {
-    if (!dateStr) return '';
-    const trimmed = String(dateStr).trim();
-    if (trimmed.includes('T')) {
-      return trimmed.split('T')[0];
-    }
-    if (/^\d{4}-\d{2}-\d{2}/.test(trimmed)) {
-      return trimmed.substring(0, 10);
-    }
-    const parts = trimmed.split(/[\/\-]/);
-    if (parts.length === 3) {
-      if (parts[0].length === 4) {
-        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-      } else {
-        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-      }
-    }
-    return trimmed;
   }
 
   const findMatchingLog = (empCode, seEmail, seName, reportDate, logList) => {

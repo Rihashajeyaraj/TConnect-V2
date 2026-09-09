@@ -133,7 +133,7 @@ class ExpenseRepository:
             "category": str(data.get("category") or data.get("type") or "General"),
             "amount": float(data.get("amount") or data.get("rawAmount") or 0),
             "receipt_url": data.get("receipt_url") or data.get("receiptUrl") or None,
-            "status": "PENDING",
+            "status": "Pending Team Lead Review",
             "expense_date": str(data.get("date") or datetime.utcnow().date().isoformat()),
             "created_at": now_iso,
         }
@@ -196,7 +196,7 @@ class ExpenseRepository:
         manager_name = str((manager_payload or {}).get("name") or (manager_payload or {}).get("full_name") or "Sales Manager")
 
         payload = {
-            "status": status.upper(),
+            "status": status,
             "remarks": manager_remarks,
             "reviewed_by": manager_name,
         }

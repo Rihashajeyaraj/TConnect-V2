@@ -1779,58 +1779,6 @@ export default function SalesHRMS(props) {
               </div>
             </div>
 
-            {/* 4. Attendance Summary & Reports */}
-            {!isUserAdmin && (
-              <div className="bg-white rounded-3xl border border-slate-200 shadow-xs p-6 space-y-4">
-                <h2 className="text-lg font-black text-slate-900">Attendance Report</h2>
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left border-collapse min-w-[760px]">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-[11px] font-black text-slate-400 uppercase tracking-wider">
-                        <th className="py-3 px-3">DATE</th>
-                        <th className="py-3 px-3">LOGIN TIME</th>
-                        <th className="py-3 px-3">LOGOUT TIME</th>
-                        <th className="py-3 px-3">LOGIN LOCATION</th>
-                        <th className="py-3 px-3">LOGOUT LOCATION</th>
-                        <th className="py-3 px-3">WORK HOURS</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 text-xs font-bold text-slate-700">
-                      {(() => {
-                        const logs = getArr("tc_attendance_logs");
-                        const userLogs = filterUserItems(logs, currentUser);
-
-                        if (userLogs.length === 0) {
-                          return (
-                            <tr>
-                              <td colSpan="6" className="py-8 text-center text-slate-400 font-bold">
-                                No attendance logs recorded for your account yet.
-                              </td>
-                            </tr>
-                          );
-                        }
-
-                        return userLogs.map((row, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/80 transition">
-                            <td className="py-4 px-3 text-slate-900">{formatDate(row.date)}</td>
-                            <td className="py-4 px-3">{row.loginTime}</td>
-                            <td className="py-4 px-3">{row.logoutTime}</td>
-                            <td className="py-4 px-3 max-w-[220px] text-slate-600 font-medium text-[11px] leading-relaxed">
-                              {row.loginLocation}
-                            </td>
-                            <td className="py-4 px-3 max-w-[220px] text-slate-600 font-medium text-[11px] leading-relaxed">
-                              {row.logoutLocation}
-                            </td>
-                            <td className="py-4 px-3 font-extrabold text-slate-900">{row.workHours}</td>
-                          </tr>
-                        ));
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
             {/* 5. APPLY LEAVE / PERMISSION MODAL */}
             {showLeaveModal && (
               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">

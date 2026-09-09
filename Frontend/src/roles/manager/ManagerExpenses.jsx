@@ -456,7 +456,8 @@ export default function ManagerExpenses() {
 
       showToast(`Expense claim has been successfully ${newStatus.toLowerCase()}!`, 'success')
 
-      // Trigger SE Notification
+      // Trigger Notifications to Executive & Team Lead
+      const execName = selectedExpenseModal.assigned_to || selectedExpenseModal.executive || 'Sales Executive'
       const seNotif = {
         recipientEmail: selectedExpenseModal.assigned_to_email,
         title: `Expense Claim ${newStatus}: #${selectedExpenseModal.id}`,
@@ -464,6 +465,16 @@ export default function ManagerExpenses() {
         type: 'Expense',
       }
       notificationAPI.sendNotification(seNotif).catch(() => null)
+
+      if (actionType === 'APPROVE') {
+        const tlNotif = {
+          recipientRole: 'Team Lead',
+          title: `Reimbursement Approved`,
+          message: `Sales Manager approved ${execName}'s reimbursement of ${selectedExpenseModal.amount}`,
+          type: 'Expense',
+        }
+        notificationAPI.sendNotification(tlNotif).catch(() => null)
+      }
 
       // Reload latest data from API
       await fetchExpensesData()
@@ -502,7 +513,8 @@ export default function ManagerExpenses() {
 
       showToast(`Expense claim has been successfully ${newStatus.toLowerCase()}!`, 'success')
 
-      // Trigger SE Notification
+      // Trigger Notifications to Executive & Team Lead
+      const execName = expense.assigned_to || expense.executive || 'Sales Executive'
       const seNotif = {
         recipientEmail: expense.assigned_to_email || expense.email,
         title: `Expense Claim ${newStatus}: #${expense.id}`,
@@ -510,6 +522,16 @@ export default function ManagerExpenses() {
         type: 'Expense',
       }
       notificationAPI.sendNotification(seNotif).catch(() => null)
+
+      if (actionType === 'APPROVE') {
+        const tlNotif = {
+          recipientRole: 'Team Lead',
+          title: `Reimbursement Approved`,
+          message: `Sales Manager approved ${execName}'s reimbursement of ${expense.amount}`,
+          type: 'Expense',
+        }
+        notificationAPI.sendNotification(tlNotif).catch(() => null)
+      }
 
       // Reload latest data
       await fetchExpensesData()
