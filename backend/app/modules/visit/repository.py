@@ -19,59 +19,77 @@ class VisitRepository:
             return {}
         row = dict(v)
         # Expose standard field names for frontend compatibility
-        row["customer_name"] = row.get("client_name") or row.get("company_name") or "Prospect Client"
+        row["customer_name"] = row.get("client_name") or row.get("company_name") or row.get("customer_name") or "Prospect Client"
         row["customer"] = row["customer_name"]
         row["client"] = row["customer_name"]
         row["company"] = row.get("company_name") or row["customer_name"]
         row["assigned_to_email"] = row.get("assigned_to_email")
         row["assignedToEmail"] = row.get("assigned_to_email")
-        row["assigned_to"] = row.get("employee_name")
-        row["executive"] = row.get("employee_name")
+        row["assigned_to"] = row.get("employee_name") or row.get("assigned_to") or row.get("executive") or "Sales Executive"
+        row["executive"] = row["assigned_to"]
         row["lead_number"] = row.get("lead_number") or row.get("lead_id") or ""
         row["leadNumber"] = row.get("lead_number") or row.get("lead_id") or ""
         row["lead_id"] = row.get("lead_id") or row.get("lead_number") or ""
-        row["product"] = row.get("product") or row.get("product_name") or row.get("purpose") or "TwiteConnect CRM"
-        row["purpose"] = row.get("purpose") or row.get("product") or "Site Visit & Demo"
-        row["location"] = row.get("location") or row.get("address") or "Chennai"
-        row["address"] = row.get("location") or row.get("address") or "Chennai"
+
+        # ── Purpose & Products Discussed ──────────────────────────────────────
+        purpose_val = row.get("purpose") or row.get("product") or row.get("products_discussed") or "Site Visit & Demo"
+        row["product"] = purpose_val
+        row["purpose"] = purpose_val
+        row["products_discussed"] = purpose_val
+        row["visit_purpose"] = purpose_val
+
+        # ── Location & Address ────────────────────────────────────────────────
+        loc_val = row.get("location") or row.get("address") or row.get("check_in_address") or "Chennai"
+        row["location"] = loc_val
+        row["address"] = loc_val
+        row["gps_location"] = loc_val
+
         row["remarks"] = row.get("remarks") or row.get("notes") or ""
         row["notes"] = row.get("notes") or row.get("remarks") or ""
+        row["discussion_summary"] = row["remarks"] or purpose_val
 
         # ── Scheduled Visit Date (preferred/scheduled date, NOT created_at) ────
-        # Priority: visit_date > date field > parsed from notes. created_at is NEVER used for display.
         notes_str = str(row.get("notes") or "")
-        raw_sched_date = row.get("visit_date") or row.get("date")
+        raw_sched_date = row.get("visit_date") or row.get("date") or row.get("scheduled_date") or row.get("scheduledDate")
         if not raw_sched_date and "Visit Date:" in notes_str:
             try:
                 raw_sched_date = notes_str.split("Visit Date:")[1].split("|")[0].strip()
             except Exception:
                 pass
 
+        # Fallback to created_at or today if raw_sched_date is missing
+        if not raw_sched_date:
+            raw_sched_date = row.get("created_at") or datetime.utcnow().strftime("%Y-%m-%d")
+
         if raw_sched_date:
             raw_str = str(raw_sched_date).strip().split("T")[0].split(" ")[0]
             if "-" in raw_str and len(raw_str) == 10:
                 parts = raw_str.split("-")
                 if len(parts) == 3 and len(parts[0]) == 4:
-                    # ISO -> DD/MM/YYYY
-                    formatted_date = f"{parts[2]}/{parts[1]}/{parts[0]}"
+                    formatted_date = f"{parts[0]}-{parts[1]}-{parts[2]}"
                 else:
                     formatted_date = raw_str
             elif "/" in raw_str:
-                formatted_date = raw_str
+                parts = raw_str.split("/")
+                if len(parts) == 3:
+                    if len(parts[2]) == 4:
+                        formatted_date = f"{parts[2]}-{parts[1]}-{parts[0]}"
+                    else:
+                        formatted_date = f"{parts[0]}-{parts[1]}-{parts[2]}"
+                else:
+                    formatted_date = raw_str
             else:
                 formatted_date = raw_str
         else:
-            formatted_date = ""
+            formatted_date = datetime.utcnow().strftime("%Y-%m-%d")
 
-        # Keep created_at intact and separate — for audit/internal use ONLY
         row["created_at"] = row.get("created_at")
-
         row["visit_date"] = formatted_date
         row["date"] = formatted_date
         row["scheduledDate"] = formatted_date
 
         # ── Scheduled Visit Time ──────────────────────────────────────────────
-        stored_time = row.get("visit_time") or row.get("time")
+        stored_time = row.get("visit_time") or row.get("time") or row.get("scheduled_time") or row.get("scheduledTime")
         if not stored_time and "Visit Time:" in notes_str:
             try:
                 stored_time = notes_str.split("Visit Time:")[1].split("|")[0].strip()
@@ -81,7 +99,6 @@ class VisitRepository:
         row["time"] = row["visit_time"]
         row["scheduledTime"] = row["visit_time"]
 
-        # Preserve check_in_time and check_out_time as separate audit fields
         row["check_in_time"] = row.get("check_in_time")
         row["check_out_time"] = row.get("check_out_time")
 
@@ -187,6 +204,8 @@ class VisitRepository:
             "company_name": data.get("company_name") or data.get("company") or customer_name,
             "assigned_to_email": se_email if se_email else None,
             "purpose": product_str,
+            "visit_date": v_date_clean,
+            "visit_time": v_time,
             "status": data.get("status") or data.get("visit_status") or "SCHEDULED",
             "location": loc_str,
             "notes": full_notes,
@@ -255,6 +274,8 @@ class VisitRepository:
                     "employee_name": se_name,
                     "client_name": customer_name,
                     "purpose": product_str,
+                    "visit_date": v_date_clean,
+                    "visit_time": v_time,
                     "status": data.get("status") or "SCHEDULED",
                     "location": loc_str,
                     "notes": full_notes,

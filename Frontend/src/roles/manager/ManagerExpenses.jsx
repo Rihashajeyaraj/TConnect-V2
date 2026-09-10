@@ -680,24 +680,24 @@ export default function ManagerExpenses() {
 
       {/* ── EXPENSE CLAIMS POPUP LEDGER MODAL ───────────────────────────────── */}
       {popupOpen && (
-        <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-6xl w-full p-4 sm:p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+        <div className="fixed inset-0 bg-slate-950/65 backdrop-blur-sm flex items-center justify-center p-2 sm:p-5 z-40 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-[96vw] lg:max-w-7xl w-full p-6 lg:p-8 space-y-5 shadow-2xl my-auto animate-in fade-in zoom-in duration-200 flex flex-col max-h-[93vh]">
             
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 flex-shrink-0">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4 flex-shrink-0">
               <div>
-                <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <Receipt className="w-6 h-6 text-teal-600" /> Expense Claims Ledger
+                <h3 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                  <Receipt className="w-7 h-7 text-teal-600" /> Expense Claims Ledger
                 </h3>
-                <p className="text-xs text-slate-500 font-bold mt-0.5">
+                <p className="text-xs text-slate-500 font-semibold mt-1">
                   Filter by status toggles and process executive expense requests
                 </p>
               </div>
               <button
                 onClick={() => setPopupOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition active:scale-95"
+                className="p-2 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 transition active:scale-95 cursor-pointer"
               >
-                <X size={20} />
+                <X size={22} />
               </button>
             </div>
 
@@ -990,8 +990,8 @@ export default function ManagerExpenses() {
 
       {/* ── EXPENSE DETAILS DRAWER & APPROVAL MODAL ────────────────────────── */}
       {selectedExpenseModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 space-y-4 shadow-2xl my-auto animate-in fade-in zoom-in duration-150">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-5 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-4xl lg:max-w-5xl w-full p-7 lg:p-8 space-y-5 shadow-2xl my-auto animate-in fade-in zoom-in duration-150">
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>

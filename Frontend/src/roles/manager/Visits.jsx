@@ -262,9 +262,21 @@ export default function ManagerVisits() {
   const normalizeVisit = (v, idx = 0) => {
     if (!v) return null
     const id = v.id || v.visit_id || `VST-${1001 + idx}`
-    const seName = v.assigned_to || v.assignedTo || v.executive || v.executiveName || v.sales_executive_name || 'Abi hastro'
-    const seEmail = v.assigned_to_email || v.assignedToEmail || v.executiveEmail || v.email || 'abi@gmail.com'
+    const seName = v.assigned_to || v.assignedTo || v.executive || v.executiveName || v.sales_executive_name || v.employee_name || 'Sales Executive'
+    const seEmail = v.assigned_to_email || v.assignedToEmail || v.executiveEmail || v.email || ''
     const empCode = resolveEmployeeCode(seName, seEmail, v.employee_code || v.employee_id || v.emp_code)
+
+    let rawSchedDate = v.visit_date || v.visitDate || v.scheduledDate || v.date || ''
+    if (!rawSchedDate && v.created_at) {
+      rawSchedDate = String(v.created_at).split('T')[0]
+    }
+    if (!rawSchedDate) {
+      rawSchedDate = new Date().toISOString().split('T')[0]
+    }
+
+    const rawSchedTime = v.visit_time || v.visitTime || v.scheduledTime || v.time || '10:00 AM'
+    const purposeStr = v.purpose || v.products_discussed || v.product || v.visit_purpose || 'Site Visit / Product Demo'
+    const locationStr = v.gps_location || v.location || v.address || v.city || 'Chennai'
 
     return {
       id: id,
@@ -278,16 +290,21 @@ export default function ManagerVisits() {
       employee_code: empCode,
       assigned_to: seName,
       assigned_to_email: seEmail,
-      visit_date: v.visit_date || v.visitDate || v.date || v.scheduledDate || 'Today',
-      visit_time: v.visit_time || v.visitTime || v.time || v.scheduledTime || '10:00 AM',
-      check_in_time: v.check_in_time || v.checkInTime || '10:30 AM',
-      check_out_time: v.check_out_time || v.checkOutTime || '11:15 AM',
-      duration: v.duration || v.meetingDuration || '45 Mins',
-      gps_location: v.gps_location || v.location || v.address || v.city || 'Chennai',
+      visit_date: rawSchedDate,
+      visit_time: rawSchedTime,
+      scheduledDate: rawSchedDate,
+      scheduledTime: rawSchedTime,
+      purpose: purposeStr,
+      visit_purpose: purposeStr,
+      products_discussed: purposeStr,
+      discussion_summary: v.discussion_summary || v.notes || v.remarks || purposeStr,
+      gps_location: locationStr,
+      location: locationStr,
+      check_in_time: v.check_in_time || v.checkInTime || null,
+      check_out_time: v.check_out_time || v.checkOutTime || null,
+      duration: v.duration || v.meetingDuration || '',
       visit_status: v.visit_status || v.status || 'Scheduled',
-      discussion_summary: v.discussion_summary || v.purpose || v.notes || v.remark || 'Site Visit / Product Demo',
       customer_requirements: v.customer_requirements || 'Requires enterprise solution.',
-      products_discussed: v.products_discussed || v.purpose || 'TwiteConnect Field CRM Suite',
       competitor_info: v.competitor_info || '',
       estimated_order_value: v.estimated_order_value || v.value || '₹4,50,000',
       customer_feedback: v.customer_feedback || '',
@@ -295,6 +312,7 @@ export default function ManagerVisits() {
       lead_status: v.lead_status || 'Follow Up Required',
       lead_priority: v.lead_priority || v.priority || 'Hot',
       remarks: v.remarks || v.notes || v.remark || 'Site visit logged by sales executive.',
+      created_at: v.created_at || null,
     }
   }
 
@@ -365,22 +383,67 @@ export default function ManagerVisits() {
     }
   }
 
+  const getYYYYMMDD = (dStr) => {
+    if (!dStr) return ''
+    let str = String(dStr).trim().split('T')[0].split(' ')[0]
+    if (str.includes('/')) {
+      const parts = str.split('/')
+      if (parts.length === 3) {
+        if (parts[2].length === 4) {
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+        } else if (parts[0].length === 4) {
+          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+        }
+      }
+    }
+    return str
+  }
+
   const calculateLocalSummary = (visitArr) => {
-    const scheduled = visitArr.filter((x) => String(x.visit_status || x.status || '').toLowerCase().includes('schedule')).length
-    const completed = visitArr.filter((x) => String(x.visit_status || x.status || '').toLowerCase().includes('complete')).length
-    const pending = visitArr.filter((x) => String(x.visit_status || x.status || '').toLowerCase().includes('pending') || String(x.status || '').toLowerCase().includes('check')).length
-    const missed = visitArr.filter((x) => String(x.visit_status || x.status || '').toLowerCase().includes('miss') || String(x.status || '').toLowerCase().includes('cancel')).length
-    const converted = visitArr.filter((x) => String(x.lead_status || '').toLowerCase().includes('convert')).length
-    const followups = visitArr.filter((x) => String(x.lead_status || '').toLowerCase().includes('follow')).length
-    const hot = visitArr.filter((x) => String(x.lead_priority || x.priority || '').toLowerCase().includes('hot')).length
-    const warm = visitArr.filter((x) => String(x.lead_priority || x.priority || '').toLowerCase().includes('warm')).length
-    const cold = visitArr.filter((x) => String(x.lead_priority || x.priority || '').toLowerCase().includes('cold')).length
+    const todayStr = new Date().toISOString().split('T')[0]
+
+    let scheduledToday = 0
+    let completedToday = 0
+    let pendingVisits = 0
+    let missedVisits = 0
+    let converted = 0
+    let followups = 0
+    let hot = 0
+    let warm = 0
+    let cold = 0
+
+    visitArr.forEach((x) => {
+      const vDate = getYYYYMMDD(x.visit_date || x.scheduledDate || x.date)
+      const statusStr = String(x.visit_status || x.status || '').toLowerCase()
+      const isCompleted = statusStr.includes('complete')
+      const isMissedStatus = statusStr.includes('miss') || statusStr.includes('cancel')
+
+      if (isCompleted) {
+        completedToday++
+      } else if ((vDate && vDate < todayStr) || isMissedStatus) {
+        missedVisits++
+      } else {
+        // Scheduled today or future date, not completed -> Pending
+        pendingVisits++
+      }
+
+      // Today's Scheduled Visits count ONLY visits whose date is TODAY
+      if (vDate === todayStr || (!vDate && statusStr.includes('schedule'))) {
+        scheduledToday++
+      }
+
+      if (String(x.lead_status || '').toLowerCase().includes('convert')) converted++
+      if (String(x.lead_status || '').toLowerCase().includes('follow')) followups++
+      if (String(x.lead_priority || x.priority || '').toLowerCase().includes('hot')) hot++
+      if (String(x.lead_priority || x.priority || '').toLowerCase().includes('warm')) warm++
+      if (String(x.lead_priority || x.priority || '').toLowerCase().includes('cold')) cold++
+    })
 
     setSummary({
-      scheduled_today: scheduled,
-      completed_today: completed,
-      pending_visits: pending,
-      missed_visits: missed,
+      scheduled_today: scheduledToday,
+      completed_today: completedToday,
+      pending_visits: pendingVisits,
+      missed_visits: missedVisits,
       converted_customers: converted,
       followups: followups,
       hot_leads: hot,

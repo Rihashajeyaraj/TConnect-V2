@@ -286,6 +286,8 @@ CREATE TABLE IF NOT EXISTS field_management.visits (
     employee_name TEXT,
     assigned_to_email TEXT,
     purpose TEXT DEFAULT 'Product Demo & Requirement Analysis',
+    visit_date TEXT,
+    visit_time TEXT,
     status TEXT DEFAULT 'SCHEDULED',
     location TEXT,
     latitude NUMERIC,

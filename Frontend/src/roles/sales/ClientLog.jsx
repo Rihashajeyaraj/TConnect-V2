@@ -20,6 +20,8 @@ import {
   ExternalLink,
   Filter,
   X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { visitAPI, crmAPI, pipelineAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
@@ -66,6 +68,17 @@ export default function ClientLog(props) {
   const [filterDateMode, setFilterDateMode] = useState("All"); // "All" | "Today" | "This Month" | "Custom"
   const [customFilterDate, setCustomFilterDate] = useState("");
   const [customFilterDateTo, setCustomFilterDateTo] = useState("");
+  const [visitStatusFilter, setVisitStatusFilter] = useState("All");
+
+  // ── Pagination State (10 items per page) ───────────────────────────
+  const ITEMS_PER_PAGE = 10;
+  const [visitPage, setVisitPage] = useState(1);
+  const [followupPage, setFollowupPage] = useState(1);
+
+  useEffect(() => {
+    setVisitPage(1);
+    setFollowupPage(1);
+  }, [search, visitStatusFilter, filterDateMode, customFilterDate, customFilterDateTo, activeTab]);
 
   // Helper for date matching
   const matchesDateFilter = (dateStr) => {
@@ -105,8 +118,6 @@ export default function ClientLog(props) {
   // 1. VISITS STATE & HANDLERS (Permanent Monthly Work Report Audit - Never Deleted)
   // ───────────────────────────────────────────────────────────────────────────
   const [visitList, setVisitList] = useState([]);
-
-  const [visitStatusFilter, setVisitStatusFilter] = useState("All");
   const [isVisitModalOpen, setIsVisitModalOpen] = useState(props?.defaultOpenAddVisit || false);
 
   useEffect(() => {
@@ -483,6 +494,13 @@ export default function ClientLog(props) {
     return matchesSearch && matchesDate;
   });
 
+  // ── Sliced Paginated Lists (10 rows max per page) ─────────────────
+  const totalVisitPages = Math.ceil(filteredVisits.length / ITEMS_PER_PAGE) || 1;
+  const paginatedVisits = filteredVisits.slice((visitPage - 1) * ITEMS_PER_PAGE, visitPage * ITEMS_PER_PAGE);
+
+  const totalFollowupPages = Math.ceil(filteredFollowups.length / ITEMS_PER_PAGE) || 1;
+  const paginatedFollowups = filteredFollowups.slice((followupPage - 1) * ITEMS_PER_PAGE, followupPage * ITEMS_PER_PAGE);
+
   return (
     <div className={isModalView ? "space-y-4 font-sans text-slate-900 min-w-0 w-full" : "space-y-5 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-6"}>
       {/* ── Top Banner & Toggle Buttons Bar ───────────────────────────────── */}
@@ -629,7 +647,7 @@ export default function ClientLog(props) {
                       </td>
                     </tr>
                   ) : (
-                    filteredVisits.map((item) => (
+                    paginatedVisits.map((item) => (
                       <tr key={item.id || item.visit_id} className="hover:bg-slate-50/80 transition">
                         {/* 1. Lead Number Column */}
                         <td className="py-3.5 px-4 align-top">
@@ -701,24 +719,30 @@ export default function ClientLog(props) {
                           </div>
                         </td>
 
-                        {/* 7. Status & Check-In Action */}
+                        {/* 7. Status & Complete Visit Actions */}
                         <td className="py-3.5 px-4 align-top text-right">
-                          <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-black border ${item.status === "Completed" || item.visit_status === "Completed" || item.status === "COMPLETED"
-                            ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                            : item.status === "Checked-In"
-                              ? "bg-blue-50 text-blue-800 border-blue-200"
-                              : "bg-amber-50 text-amber-800 border-amber-200"
-                            }`}>
-                            {item.status === "Completed" || item.status === "COMPLETED" ? "✅ Completed" : item.status === "Checked-In" ? "📍 Checked-In" : "📅 Scheduled"}
-                          </span>
-                          {item.status === "Scheduled" && (
-                            <div className="mt-2">
+                          {item.status === "Completed" || item.visit_status === "Completed" || item.status === "COMPLETED" ? (
+                            <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black bg-emerald-100 text-emerald-900 border border-emerald-300 shadow-2xs">
+                              <CheckCircle2 size={14} className="text-emerald-700" /> Visit Completed
+                            </span>
+                          ) : (
+                            <div className="flex flex-col items-end gap-2">
                               <button
-                                onClick={() => handleCheckIn(item.id || item.visit_id)}
-                                className="px-2.5 py-1 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10px] transition cursor-pointer shadow-xs"
+                                onClick={() => handleCompleteVisit(item.id || item.visit_id)}
+                                className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs inline-flex items-center gap-1.5 shadow-sm transition cursor-pointer active:scale-95"
+                                title="Click to complete visit and update Field Visit Audit"
                               >
-                                Check-In (GPS)
+                                <CheckCircle2 size={13} /> Complete Visit
                               </button>
+
+                              {item.status === "Scheduled" && (
+                                <button
+                                  onClick={() => handleCheckIn(item.id || item.visit_id)}
+                                  className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 font-bold text-[10px] transition cursor-pointer"
+                                >
+                                  Check-In (GPS)
+                                </button>
+                              )}
                             </div>
                           )}
                         </td>
@@ -729,6 +753,51 @@ export default function ClientLog(props) {
               </table>
             </div>
           </div>
+
+          {/* ── Client Visits Pagination Bar (10 Rows / Page) ── */}
+          {filteredVisits.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+              <div className="text-xs text-slate-500 font-bold">
+                Showing <span className="font-black text-slate-900">{Math.min((visitPage - 1) * ITEMS_PER_PAGE + 1, filteredVisits.length)}</span> to{" "}
+                <span className="font-black text-slate-900">{Math.min(visitPage * ITEMS_PER_PAGE, filteredVisits.length)}</span> of{" "}
+                <span className="font-black text-slate-900">{filteredVisits.length.toLocaleString()}</span> visit records
+              </div>
+
+              {totalVisitPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setVisitPage((p) => Math.max(1, p - 1))}
+                    disabled={visitPage === 1}
+                    className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  {Array.from({ length: totalVisitPages }, (_, i) => i + 1).map((pageNum) => (
+                    <button
+                      key={pageNum}
+                      onClick={() => setVisitPage(pageNum)}
+                      className={`w-8 h-8 rounded-xl text-xs font-black transition cursor-pointer ${
+                        visitPage === pageNum
+                          ? "bg-teal-600 text-white shadow-xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  ))}
+
+                  <button
+                    onClick={() => setVisitPage((p) => Math.min(totalVisitPages, p + 1))}
+                    disabled={visitPage === totalVisitPages}
+                    className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
@@ -771,7 +840,7 @@ export default function ClientLog(props) {
                       </td>
                     </tr>
                   ) : (
-                    filteredFollowups.map((item) => (
+                    paginatedFollowups.map((item) => (
                       <tr key={item.id} className="hover:bg-slate-50/80 transition">
                         {/* ID Badge Column */}
                         <td className="py-3.5 px-4">
@@ -852,6 +921,51 @@ export default function ClientLog(props) {
               </table>
             </div>
           </div>
+
+          {/* ── Follow-Up Calls Pagination Bar (10 Rows / Page) ── */}
+          {filteredFollowups.length > 0 && (
+            <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-2xs">
+              <div className="text-xs text-slate-500 font-bold">
+                Showing <span className="font-black text-slate-900">{Math.min((followupPage - 1) * ITEMS_PER_PAGE + 1, filteredFollowups.length)}</span> to{" "}
+                <span className="font-black text-slate-900">{Math.min(followupPage * ITEMS_PER_PAGE, filteredFollowups.length)}</span> of{" "}
+                <span className="font-black text-slate-900">{filteredFollowups.length.toLocaleString()}</span> follow-up records
+              </div>
+
+              {totalFollowupPages > 1 && (
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={() => setFollowupPage((p) => Math.max(1, p - 1))}
+                    disabled={followupPage === 1}
+                    className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    <ChevronLeft size={16} />
+                  </button>
+
+                  {Array.from({ length: totalFollowupPages }, (_, i) => i + 1).map((pageNum) => (
+                    <button
+                      key={pageNum}
+                      onClick={() => setFollowupPage(pageNum)}
+                      className={`w-8 h-8 rounded-xl text-xs font-black transition cursor-pointer ${
+                        followupPage === pageNum
+                          ? "bg-teal-600 text-white shadow-xs"
+                          : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                      }`}
+                    >
+                      {pageNum}
+                    </button>
+                  ))}
+
+                  <button
+                    onClick={() => setFollowupPage((p) => Math.min(totalFollowupPages, p + 1))}
+                    disabled={followupPage === totalFollowupPages}
+                    className="p-2 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed transition cursor-pointer"
+                  >
+                    <ChevronRight size={16} />
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

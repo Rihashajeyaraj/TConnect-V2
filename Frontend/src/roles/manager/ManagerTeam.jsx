@@ -27,6 +27,8 @@ import {
   Target,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   LayoutGrid,
   Table,
   Eye,
@@ -317,15 +319,17 @@ export default function ManagerTeam() {
     });
   }, [teamLogs, attendanceTypeFilter, attendanceTLFilter, attendanceExecutiveFilter, attendanceDateTab, attendanceFromDate, attendanceToDate, isTLOnlyMode, teamLeads]);
 
-  // Leave modal filter state
+  // Leave modal filter state & pagination
   const [leaveTLFilter, setLeaveTLFilter] = useState('All')
   const [leaveExecutiveFilter, setLeaveExecutiveFilter] = useState('All')
   const [leaveDateTab, setLeaveDateTab] = useState('All Time')
   const [leaveFromDate, setLeaveFromDate] = useState('')
   const [leaveToDate, setLeaveToDate] = useState('')
+  const [leavePage, setLeavePage] = useState(1)
 
   const handleLeaveDateTab = (tab) => {
     setLeaveDateTab(tab)
+    setLeavePage(1)
     const now = new Date()
     const todayStr = now.toISOString().split('T')[0]
 
@@ -430,6 +434,31 @@ export default function ManagerTeam() {
       return true;
     });
   }, [teamLeaveRequests, allSubordinates, executives, leaveTLFilter, leaveExecutiveFilter, leaveFromDate, leaveToDate, isTLOnlyMode, teamLeads, isManagerUser])
+
+  // Sort leave requests: Pending on top, Approved/Rejected below, secondary by date sent descending
+  const sortedLeaveRequests = React.useMemo(() => {
+    return [...filteredLeaveRequests].sort((a, b) => {
+      const aStatus = String(a.status || 'Pending').toLowerCase().trim();
+      const bStatus = String(b.status || 'Pending').toLowerCase().trim();
+      const aIsPending = aStatus === 'pending';
+      const bIsPending = bStatus === 'pending';
+
+      // 1. Pending requests display on top
+      if (aIsPending && !bIsPending) return -1;
+      if (!aIsPending && bIsPending) return 1;
+
+      // 2. Secondary sort: Newest creation / sent date first
+      const dateA = new Date(a.created_at || a.submitted_at || a.applied_on || a.start_date || a.leave_date || a.from_date || 0).getTime();
+      const dateB = new Date(b.created_at || b.submitted_at || b.applied_on || b.start_date || b.leave_date || b.from_date || 0).getTime();
+      return dateB - dateA;
+    });
+  }, [filteredLeaveRequests]);
+
+  const leaveLimit = 10;
+  const totalLeavePages = Math.ceil(sortedLeaveRequests.length / leaveLimit) || 1;
+  const paginatedLeaveRequests = React.useMemo(() => {
+    return sortedLeaveRequests.slice((leavePage - 1) * leaveLimit, leavePage * leaveLimit);
+  }, [sortedLeaveRequests, leavePage, leaveLimit]);
 
   useEffect(() => {
     attendanceAPI.getLeaveRequests()
@@ -1403,29 +1432,29 @@ export default function ManagerTeam() {
 
       {/* ── PERMISSIONS DETAILS MODAL POPUP ──────────────────────────────────── */}
       {activeTab === 'permissions' && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-40 overflow-y-auto">
-          <div className="bg-slate-50 border-slate-200 rounded-3xl max-w-6xl w-full p-6 space-y-4 shadow-2xl my-auto flex flex-col max-h-[90vh] overflow-y-auto relative animate-in fade-in zoom-in duration-150">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-2 sm:p-5 z-40 overflow-y-auto">
+          <div className="bg-slate-50 border-slate-200 rounded-3xl max-w-[96vw] lg:max-w-7xl w-full p-6 lg:p-8 space-y-5 shadow-2xl my-auto flex flex-col max-h-[93vh] overflow-y-auto relative animate-in fade-in zoom-in duration-150">
             {/* Modal Header */}
-            <div className="flex items-center justify-between pb-3 border-b border-slate-200">
+            <div className="flex items-center justify-between pb-3.5 border-b border-slate-200">
               <div>
-                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-mgr-primary-700" /> {isTLOnlyMode ? "Team Lead Leave & Permission Requests" : "Team Leave & Permission Requests"}
+                <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
+                  <Calendar className="w-6 h-6 text-mgr-primary-700" /> {isTLOnlyMode ? "Team Lead Leave & Permission Requests" : "Team Leave & Permission Requests"}
                 </h2>
-                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                <p className="text-xs text-slate-500 font-semibold mt-1">
                   {isTLOnlyMode ? "Approve or Reject Leave & Permission requests submitted by Team Leaders." : "Approve or Reject Leave & Permission requests submitted by assigned Sales Executives."}
                 </p>
               </div>
               <button
                 onClick={() => setActiveTab(null)}
-                className="mgr-card p-1.5 rounded-xl hover:bg-slate-200 text-slate-500 transition cursor-pointer"
+                className="mgr-card p-2 rounded-xl hover:bg-slate-200 text-slate-500 transition cursor-pointer"
               >
-                <X size={20} />
+                <X size={22} />
               </button>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-xs">
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-5 shadow-xs">
               {/* Filter Strip */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 pb-4 border-b border-slate-100">
                 <div className="flex flex-wrap items-center gap-3">
                   {/* Team Lead Filter (Manager Portal Only) */}
                   {!isTeamLeadPortal && (
@@ -1436,8 +1465,9 @@ export default function ManagerTeam() {
                         onChange={(e) => {
                           setLeaveTLFilter(e.target.value)
                           setLeaveExecutiveFilter('All')
+                          setLeavePage(1)
                         }}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-xl px-3 py-1.5 text-xs border border-slate-200 transition"
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-xl px-3 py-2 text-xs border border-slate-200 transition"
                       >
                         <option value="All">All Team Leads</option>
                         {teamLeads.map((tl) => (
@@ -1455,8 +1485,11 @@ export default function ManagerTeam() {
                       <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Executive:</span>
                       <select
                         value={leaveExecutiveFilter}
-                        onChange={(e) => setLeaveExecutiveFilter(e.target.value)}
-                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-xl px-3 py-1.5 text-xs border border-slate-200 transition"
+                        onChange={(e) => {
+                          setLeaveExecutiveFilter(e.target.value)
+                          setLeavePage(1)
+                        }}
+                        className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-xl px-3 py-2 text-xs border border-slate-200 transition"
                       >
                         <option value="All">All Executives</option>
                         {availableExecutivesForLeave.map((ex) => (
@@ -1489,14 +1522,20 @@ export default function ManagerTeam() {
                         <input
                           type="date"
                           value={leaveFromDate}
-                          onChange={(e) => setLeaveFromDate(e.target.value)}
+                          onChange={(e) => {
+                            setLeaveFromDate(e.target.value)
+                            setLeavePage(1)
+                          }}
                           className="bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-bold focus:outline-none cursor-pointer"
                         />
                         <span className="text-slate-400 text-xs font-bold">→</span>
                         <input
                           type="date"
                           value={leaveToDate}
-                          onChange={(e) => setLeaveToDate(e.target.value)}
+                          onChange={(e) => {
+                            setLeaveToDate(e.target.value)
+                            setLeavePage(1)
+                          }}
                           className="bg-slate-100 border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-bold focus:outline-none cursor-pointer"
                         />
                       </div>
@@ -1513,8 +1552,9 @@ export default function ManagerTeam() {
                         setLeaveDateTab('All Time')
                         setLeaveFromDate('')
                         setLeaveToDate('')
+                        setLeavePage(1)
                       }}
-                      className="px-3 py-1.5 text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl cursor-pointer transition"
+                      className="px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-xl cursor-pointer transition"
                     >
                       ✕ Reset Filters
                     </button>
@@ -1528,7 +1568,7 @@ export default function ManagerTeam() {
                         if (Array.isArray(raw)) setTeamLeaveRequests(raw)
                       })
                     }}
-                    className="mgr-card px-3.5 py-2 rounded-xl bg-mgr-primary-50 hover:bg-mgr-primary-100 text-mgr-primary-955 border border-mgr-primary-300 font-extrabold text-xs transition cursor-pointer flex items-center gap-1.5 shrink-0"
+                    className="mgr-card px-4 py-2.5 rounded-xl bg-mgr-primary-50 hover:bg-mgr-primary-100 text-mgr-primary-955 border border-mgr-primary-300 font-extrabold text-xs transition cursor-pointer flex items-center gap-1.5 shrink-0"
                   >
                     <RefreshCw size={14} /> Refresh Requests
                   </button>
@@ -1536,32 +1576,37 @@ export default function ManagerTeam() {
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs font-bold text-slate-800 min-w-[900px]">
+                <table className="w-full text-left text-xs font-bold text-slate-800 min-w-[1000px]">
                   <thead>
                     <tr className="bg-slate-100/80 border-b border-slate-200 text-[11px] font-black uppercase tracking-wider text-slate-700">
-                      <th className="px-4 py-3.5">Executive Name</th>
-                      <th className="px-4 py-3.5">Request Type</th>
-                      <th className="px-4 py-3.5">Date</th>
-                      <th className="px-4 py-3.5">Duration / Slot</th>
-                      <th className="px-4 py-3.5">Reason</th>
-                      <th className="px-4 py-3.5">Current Status</th>
-                      <th className="px-4 py-3.5 text-right">Approve / Reject Action</th>
+                      <th className="px-4 py-4">Executive Name</th>
+                      <th className="px-4 py-4">Request Type</th>
+                      <th className="px-4 py-4">Date Sent</th>
+                      <th className="px-4 py-4">Leave / Permission Date</th>
+                      <th className="px-4 py-4">Duration / Slot</th>
+                      <th className="px-4 py-4">Reason</th>
+                      <th className="px-4 py-4">Current Status</th>
+                      <th className="px-4 py-4 text-right">Approve / Reject Action</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200">
-                    {filteredLeaveRequests.length === 0 ? (
+                    {paginatedLeaveRequests.length === 0 ? (
                       <tr>
-                        <td colSpan="7" className="text-center py-10 text-slate-500 font-bold text-sm bg-slate-50/50">
+                        <td colSpan="8" className="text-center py-12 text-slate-500 font-bold text-sm bg-slate-50/50">
                           No leave or permission requests found matching your selected filters.
                         </td>
                       </tr>
                     ) : (
-                      filteredLeaveRequests.map((req, idx) => {
+                      paginatedLeaveRequests.map((req, idx) => {
                         const fromDateStr = req.from_date || req.start_date || req.leave_date || req.date;
                         const toDateStr = req.to_date || req.end_date || fromDateStr;
                         const formattedFrom = formatDate(fromDateStr);
                         const formattedTo = formatDate(toDateStr);
                         const dateDisplay = (formattedFrom && formattedTo && formattedFrom !== formattedTo) ? `${formattedFrom} to ${formattedTo}` : formattedFrom;
+                        
+                        const dateSentRaw = req.created_at || req.submitted_at || req.applied_on || req.created_date || req.request_date;
+                        const dateSentDisplay = dateSentRaw ? formatDate(dateSentRaw) : formattedFrom;
+
                         const daysCount = getLeaveRequestDays(req);
                         const durationLabel = req.leave_type?.includes("Half")
                           ? "Half Day (0.5 Day)"
@@ -1569,17 +1614,17 @@ export default function ManagerTeam() {
                             ? `Short Permission (${req.duration || "2 Hours"})`
                             : `Full Day (${daysCount} ${daysCount === 1 ? 'Day' : 'Days'})`;
                         return (
-                          <tr key={req.id || idx} className="hover:bg-mgr-primary-50/40 transition-colors">
+                          <tr key={req.id || idx} className={`hover:bg-mgr-primary-50/40 transition-colors ${req.status === "Pending" || !req.status ? "bg-amber-50/30" : ""}`}>
                             <td 
                               onClick={() => setViewingEmpProfile({ name: req.executive_name || req.executive, employee_code: req.employee_code, email: req.executive_email, role: 'Sales Executive', status: 'Active' })}
-                              className="px-4 py-3.5 font-bold text-slate-900 hover:text-blue-600 cursor-pointer transition"
+                              className="px-4 py-4 font-black text-slate-900 hover:text-blue-600 cursor-pointer transition text-sm"
                               title="Click to view full employee profile"
                             >
                               {req.executive_name || req.executive || "Sales Executive"}
-                              <div className="text-[10px] text-slate-400 font-extrabold font-mono">[{req.employee_code || "EMP000012"}]</div>
+                              <div className="text-[10px] text-slate-400 font-extrabold font-mono mt-0.5">[{req.employee_code || "EMP000012"}]</div>
                             </td>
-                            <td className="px-4 py-3.5">
-                              <span className={`inline-block px-2.5 py-1 rounded-xl text-xs font-black border ${
+                            <td className="px-4 py-4">
+                              <span className={`inline-block px-3 py-1 rounded-xl text-xs font-black border ${
                                 req.leave_type?.includes("Half")
                                   ? "bg-mgr-primary-100 text-mgr-primary-955 border-mgr-primary-300"
                                   : req.leave_type?.includes("Permission")
@@ -1589,26 +1634,30 @@ export default function ManagerTeam() {
                                 {req.leave_type || "Leave Request"}
                               </span>
                             </td>
-                            {/* Separate Date Column */}
-                            <td className="px-4 py-3.5 text-slate-900 font-mono font-bold">
+                            {/* NEW: Date Request Sent Column */}
+                            <td className="px-4 py-4 text-slate-700 font-mono font-bold text-xs">
+                              📥 {dateSentDisplay}
+                            </td>
+                            {/* Leave / Permission Date Column */}
+                            <td className="px-4 py-4 text-slate-900 font-mono font-bold text-xs">
                               🗓️ {dateDisplay}
                             </td>
-                            {/* Separate Duration / Slot Column */}
-                            <td className="px-4 py-3.5 text-slate-700">
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 text-slate-800 font-extrabold border border-slate-200">
+                            {/* Duration / Slot Column */}
+                            <td className="px-4 py-4 text-slate-700">
+                              <span className="inline-flex items-center gap-1 px-3 py-1 rounded-xl bg-slate-100 text-slate-800 font-extrabold border border-slate-200 text-xs">
                                 ⏱ {durationLabel}
                               </span>
                             </td>
-                            <td className="px-4 py-3.5 max-w-[220px]">
-                              <p className="text-slate-600 font-medium leading-relaxed italic">"{req.reason || "No reason specified."}"</p>
+                            <td className="px-4 py-4 max-w-[220px]">
+                              <p className="text-slate-600 font-medium leading-relaxed italic text-xs">"{req.reason || "No reason specified."}"</p>
                             </td>
-                            <td className="px-4 py-3.5">
-                              <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black border ${
+                            <td className="px-4 py-4">
+                              <span className={`px-3 py-1 rounded-full text-xs font-black border ${
                                 req.status === "Approved"
                                   ? "bg-emerald-100 text-emerald-955 border-emerald-300"
                                   : req.status === "Rejected"
                                     ? "bg-rose-100 text-rose-955 border-rose-300"
-                                    : "bg-mgr-primary-100 text-mgr-primary-900 border-mgr-primary-300"
+                                    : "bg-amber-100 text-amber-950 border-amber-300 animate-pulse"
                               }`}>
                                 {req.status === "Approved"
                                   ? "✓ Approved"
@@ -1617,19 +1666,19 @@ export default function ManagerTeam() {
                                     : "⏳ Pending"}
                               </span>
                             </td>
-                            <td className="px-4 py-3.5 text-right space-y-1">
+                            <td className="px-4 py-4 text-right space-y-1">
                               <div className="flex items-center justify-end gap-2">
                                 <button
                                   onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Approved")}
                                   disabled={req.status === "Approved"}
-                                  className="mgr-card px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
+                                  className="mgr-card px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
                                 >
                                   <CheckCircle2 size={14} /> Approve
                                 </button>
                                 <button
                                   onClick={() => handleUpdateLeaveStatus(req.id || req.leave_id, "Rejected")}
                                   disabled={req.status === "Rejected"}
-                                  className="mgr-card px-3 py-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
+                                  className="mgr-card px-3.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white font-black text-xs shadow-2xs transition cursor-pointer flex items-center gap-1"
                                 >
                                   <XCircle size={14} /> Reject
                                 </button>
@@ -1642,6 +1691,34 @@ export default function ManagerTeam() {
                   </tbody>
                 </table>
               </div>
+
+              {/* ── PAGINATION BAR (10 ROWS PER PAGE) ─────────────────────── */}
+              {sortedLeaveRequests.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-3 pt-4 border-t border-slate-200 text-xs font-bold text-slate-600">
+                  <div>
+                    Showing <span className="font-black text-slate-900">{(leavePage - 1) * leaveLimit + 1}</span> to <span className="font-black text-slate-900">{Math.min(leavePage * leaveLimit, sortedLeaveRequests.length)}</span> of <span className="font-black text-slate-900">{sortedLeaveRequests.length}</span> requests
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={() => setLeavePage((p) => Math.max(1, p - 1))}
+                      disabled={leavePage === 1}
+                      className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 font-black text-slate-800 transition border border-slate-300 cursor-pointer disabled:cursor-not-allowed flex items-center gap-1"
+                    >
+                      <ChevronLeft size={14} /> Previous
+                    </button>
+                    <span className="px-3.5 py-2 bg-slate-900 text-white rounded-xl font-black">
+                      Page {leavePage} of {totalLeavePages}
+                    </span>
+                    <button
+                      onClick={() => setLeavePage((p) => Math.min(totalLeavePages, p + 1))}
+                      disabled={leavePage >= totalLeavePages}
+                      className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 disabled:opacity-40 font-black text-slate-800 transition border border-slate-300 cursor-pointer disabled:cursor-not-allowed flex items-center gap-1"
+                    >
+                      Next <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>

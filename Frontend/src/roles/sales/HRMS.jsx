@@ -1782,16 +1782,16 @@ export default function SalesHRMS(props) {
             {/* 5. APPLY LEAVE / PERMISSION MODAL */}
             {showLeaveModal && (
               <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-                <div className="bg-white rounded-3xl max-w-lg w-full p-6 space-y-5 shadow-2xl border border-slate-200">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
+                <div className="bg-white rounded-3xl max-w-2xl w-full p-7 lg:p-8 space-y-6 shadow-2xl border border-slate-200 animate-in zoom-in-95 duration-150">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+                    <h3 className="text-xl font-black text-slate-900 flex items-center gap-2">
                       🏖️ Apply for Leave / Permission
                     </h3>
                     <button
                       onClick={() => setShowLeaveModal(false)}
-                      className="p-1.5 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+                      className="p-2 rounded-xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
                     >
-                      <X size={18} />
+                      <X size={20} />
                     </button>
                   </div>
 
