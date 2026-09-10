@@ -307,8 +307,16 @@ export default function ManagerSmartMap() {
     }
 
     fetchReplies()
-    const interval = setInterval(fetchReplies, 15000)
-    return () => clearInterval(interval)
+    const interval = setInterval(fetchReplies, 3000)
+    const handleEvent = () => fetchReplies()
+    window.addEventListener('tc_notifications_updated', handleEvent)
+    window.addEventListener('tc_inquiry_received', handleEvent)
+
+    return () => {
+      clearInterval(interval)
+      window.removeEventListener('tc_notifications_updated', handleEvent)
+      window.removeEventListener('tc_inquiry_received', handleEvent)
+    }
   }, [showToast])
 
   const getUserReplies = (ex) => {

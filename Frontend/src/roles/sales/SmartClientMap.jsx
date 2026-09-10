@@ -326,9 +326,21 @@ export default function SmartClientMap({ isManagerView = false }) {
 
         const inquiries = notifs.filter(n => {
           const cat = String(n.category || n.type || '').toUpperCase()
-          if (!cat.includes('INQUIRY') && !String(n.title || '').includes('Inquiry')) return false
+          const title = String(n.title || '')
+          // Exclude replies! A reply sent by executive or received from another party is NOT an inquiry prompt.
+          if (cat.includes('REPLY') || title.includes('Reply')) return false
+          if (!cat.includes('INQUIRY') && !title.includes('Inquiry')) return false
           if (n.read || n.is_read) return false
           
+          // Exclude notifications sent by the executive themselves or meant for manager
+          const senderEmail = String(n.sender_email || n.email || '').toLowerCase().trim()
+          const myEmail = String(currentUser?.email || getStoredUser()?.email || '').toLowerCase().trim()
+          if (myEmail && senderEmail === myEmail) return false
+
+          const senderRole = String(n.sender_role || '').toLowerCase()
+          if (senderRole.includes('executive')) return false
+          if (n.recipient_role && String(n.recipient_role).toLowerCase() === 'manager') return false
+
           const key = getInquiryKey(n)
           const rawId = String(n.id || n.notification_id || '').toLowerCase().trim()
           const rawMsg = String(n.message || n.description || '').toLowerCase().trim()
@@ -1730,9 +1742,9 @@ export default function SmartClientMap({ isManagerView = false }) {
         </div>
       )}
 
-      {/* ══ MOBILE: DESTINATION SLIM BAR (bottom) ══ */}
+      {/* ══ MOBILE: DESTINATION SLIM BAR (positioned above bottom nav bar) ══ */}
       {isMobile && selectedStop && (
-        <div className="md:hidden absolute bottom-0 left-0 right-0 z-[1010] bg-slate-900/97 backdrop-blur-xl border-t border-slate-700/60">
+        <div className="md:hidden absolute bottom-16 left-0 right-0 z-[1025] bg-slate-900/97 backdrop-blur-xl border-t border-slate-700/60 shadow-2xl">
           <div className="flex items-center gap-3 px-4 py-3">
             <div className="min-w-0 flex-1">
               <p className="text-[8px] font-black text-slate-400 uppercase tracking-wider">Destination</p>
@@ -1758,10 +1770,10 @@ export default function SmartClientMap({ isManagerView = false }) {
       )}
 
       {/* ══ ENTITY DETAIL CARD ══ */}
-      {/* Desktop: bottom-left floating card; Mobile: bottom sheet above destination bar */}
+      {/* Desktop: bottom-left floating card; Mobile: bottom sheet above destination bar / bottom nav bar */}
       {selectedEntity && !showAddModal && (
-        <div className={`absolute z-[1015] left-0 right-0 md:left-6 md:right-auto md:w-[400px] md:bottom-4 ${
-          selectedStop ? 'bottom-[70px]' : 'bottom-0'
+        <div className={`absolute z-[1025] left-0 right-0 md:left-6 md:right-auto md:w-[400px] ${
+          selectedStop ? 'bottom-[130px] md:bottom-[70px]' : 'bottom-16 md:bottom-4'
         }`}>
           {/* Mobile drag handle */}
           <div className="md:hidden flex justify-center pt-2 bg-white rounded-t-3xl border-t border-slate-100">

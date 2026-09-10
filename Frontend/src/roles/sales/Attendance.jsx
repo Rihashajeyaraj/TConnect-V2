@@ -1149,9 +1149,9 @@ export default function Attendance(props) {
                   <>
                     <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover transform -scale-x-100" />
                     
-                    {/* Face Guide oval frame */}
+                    {/* Face Guide round circle frame */}
                     <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                      <div className={`w-[180px] h-[230px] sm:w-[240px] sm:h-[320px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
+                      <div className={`w-[240px] h-[240px] sm:w-[280px] sm:h-[280px] rounded-full border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${
                         isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
                       }`} />
                     </div>
@@ -1195,7 +1195,7 @@ export default function Attendance(props) {
                   </div>
                 ) : (
                   <div className="text-xs sm:text-sm text-slate-500 font-bold">
-                    Position your face inside the oval guide
+                    Position your face inside the circle guide
                   </div>
                 )}
               </div>

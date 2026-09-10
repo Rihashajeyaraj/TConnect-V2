@@ -4127,9 +4127,9 @@ function UserManagement() {
                     </span>
                   </div>
 
-                  {/* Face Guide oval frame */}
+                  {/* Face Guide round circle frame */}
                   <div className="absolute inset-0 pointer-events-none flex items-center justify-center">
-                    <div className={`w-[180px] h-[240px] rounded-[50%] border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
+                    <div className={`w-[240px] h-[240px] sm:w-[280px] sm:h-[280px] rounded-full border-4 transition-all duration-300 shadow-[0_0_0_9999px_rgba(15,23,42,0.45)] ${isFaceAligned ? "border-emerald-500" : "border-amber-500 animate-pulse"
                       }`} />
                   </div>
 
