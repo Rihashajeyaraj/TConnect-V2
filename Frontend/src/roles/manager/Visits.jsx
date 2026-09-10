@@ -215,48 +215,53 @@ export default function ManagerVisits() {
     return 'EMP000012'
   }
 
-  const isSEAbsentOnDate = (seEmailOrName, visitDate) => {
-    if (!attendanceLoaded || !visitDate) return false
+  const getSEAttendanceStatusOnDate = (seEmailOrName, seEmpCode, visitDate, visitStatus) => {
+    if (!visitDate) return null
     
     const targetDateStr = formatDate(visitDate)
     const identifier = String(seEmailOrName || '').toLowerCase().trim()
-    if (!identifier) return false
+    const codeIdentifier = String(seEmpCode || '').toLowerCase().trim()
 
-    // Filter logs for this executive on this particular day
     const execLogs = attendanceLogs.filter((log) => {
       const logEmpCode = String(log.employee_id || log.employee_code || log.emp_code || log.user_id || '').toLowerCase().trim()
       const logEmail = String(log.email || log.user_email || '').toLowerCase().trim()
-      const logName = String(log.name || log.employee_name || '').toLowerCase().trim()
+      const logName = String(log.name || log.employee_name || log.full_name || '').toLowerCase().trim()
       
-      const emailMatch = logEmail && (identifier === logEmail || logEmail.includes(identifier) || identifier.includes(logEmail))
-      const nameMatch = logName && (identifier === logName || logName.includes(identifier) || identifier.includes(logName))
+      const codeMatch = codeIdentifier && logEmpCode && (codeIdentifier === logEmpCode || logEmpCode.includes(codeIdentifier) || codeIdentifier.includes(logEmpCode))
+      const emailMatch = logEmail && identifier && (identifier === logEmail || logEmail.includes(identifier) || identifier.includes(logEmail))
+      const nameMatch = logName && identifier && (identifier === logName || logName.includes(identifier) || identifier.includes(logName))
 
-      if (!(emailMatch || nameMatch)) return false
+      if (!(codeMatch || emailMatch || nameMatch)) return false
 
-      // Match the date
-      const logDateStr = formatDate(log.attendance_date || log.date || log.created_at || log.check_in_time)
+      const logDateStr = formatDate(log.attendance_date || log.date || log.created_at || log.check_in_time || log.punch_in)
       return logDateStr === targetDateStr
     })
 
-    if (execLogs.length === 0) {
-      // Past or today date with no logs means absent
-      const visitD = parseDateInput(visitDate)
-      if (visitD) {
-        const today = new Date()
-        today.setHours(23, 59, 59, 999)
-        if (visitD.getTime() > today.getTime()) {
-          return false
-        }
+    const isCompletedVisit = String(visitStatus || '').toLowerCase().includes('complete')
+
+    if (execLogs.length > 0) {
+      const hasPresent = execLogs.some((l) => {
+        const st = String(l.status || l.attendance_status || '').toLowerCase().trim()
+        return st === 'present' || st === 'late' || st.includes('half') || st.includes('wfh') || st.includes('office') || st.includes('check') || l.check_in_time || l.punch_in
+      })
+      const hasAbsent = execLogs.some((l) => {
+        const st = String(l.status || l.attendance_status || '').toLowerCase().trim()
+        return st === 'absent' || st.includes('leave')
+      })
+
+      if (hasPresent || isCompletedVisit) {
+        return { status: 'PRESENT', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300' }
       }
-      return true
+      if (hasAbsent) {
+        return { status: 'ABSENT', badgeClass: 'bg-rose-100 text-rose-800 border-rose-300' }
+      }
     }
 
-    const hasPresent = execLogs.some((l) => {
-      const status = String(l.status || '').toLowerCase().trim()
-      return status === 'present' || status === 'late' || status === 'half day' || status === 'half-day'
-    })
+    if (isCompletedVisit) {
+      return { status: 'PRESENT', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300' }
+    }
 
-    return !hasPresent
+    return null
   }
 
   const normalizeVisit = (v, idx = 0) => {
@@ -762,18 +767,26 @@ export default function ManagerVisits() {
                     <td className="px-5 py-4.5 font-black text-slate-900 text-sm sm:text-base">
                       <div className="flex items-center gap-2">
                         <span>{visit.assigned_to || visit.assignedTo || visit.executive || 'Sales Executive'}</span>
-                        {(String(visit.visit_status || visit.status || '').toLowerCase().includes('miss') || String(visit.visit_status || visit.status || '').toLowerCase().includes('cancel')) &&
-                         isSEAbsentOnDate(visit.assigned_to_email || visit.assigned_to, visit.visit_date) && (
-                          <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-200 shrink-0">
-                            Absent
-                          </span>
-                        )}
+                        {(() => {
+                          const attInfo = getSEAttendanceStatusOnDate(
+                            visit.assigned_to_email || visit.assigned_to,
+                            visit.employee_code || visit.employee_id,
+                            visit.visit_date || visit.date,
+                            visit.visit_status || visit.status
+                          )
+                          if (!attInfo) return null
+                          return (
+                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-md border shrink-0 ${attInfo.badgeClass}`}>
+                              {attInfo.status}
+                            </span>
+                          )
+                        })()}
                       </div>
                     </td>
 
                     {/* 3. Combined Visit Date & Time */}
                     <td className="px-5 py-4.5 font-mono text-xs sm:text-sm font-bold text-slate-800">
-                      <span className="text-slate-900">{visit.visit_date || visit.date || '2026-08-05'}</span>
+                      <span className="text-slate-900">{formatDate(visit.visit_date || visit.date)}</span>
                       <span className="text-mgr-primary-800 font-black ml-1.5">• {visit.visit_time || visit.time || '10:30 AM'}</span>
                     </td>
 
@@ -892,12 +905,20 @@ export default function ManagerVisits() {
                   <p className="font-black text-mgr-primary-900 text-sm">{selectedAuditModal.assigned_to || selectedAuditModal.executive || 'Sales Executive'}</p>
                 </div>
                 <p className="text-slate-500 font-mono text-[11px]">{selectedAuditModal.assigned_to_email || 'executive@tconnect.com'}</p>
-                {(String(selectedAuditModal.visit_status || '').toLowerCase().includes('miss') || String(selectedAuditModal.visit_status || '').toLowerCase().includes('cancel')) &&
-                 isSEAbsentOnDate(selectedAuditModal.assigned_to_email || selectedAuditModal.assigned_to, selectedAuditModal.visit_date) && (
-                  <span className="absolute top-2 right-2 text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-200 shadow-2xs">
-                    Absent on Visit Date
-                  </span>
-                )}
+                {(() => {
+                  const attInfo = getSEAttendanceStatusOnDate(
+                    selectedAuditModal.assigned_to_email || selectedAuditModal.assigned_to,
+                    selectedAuditModal.employee_code || selectedAuditModal.employee_id,
+                    selectedAuditModal.visit_date,
+                    selectedAuditModal.visit_status
+                  )
+                  if (!attInfo) return null
+                  return (
+                    <span className={`absolute top-2 right-2 text-[9px] font-black uppercase px-2 py-0.5 rounded-md border shadow-2xs ${attInfo.badgeClass}`}>
+                      {attInfo.status} on Visit Date
+                    </span>
+                  )
+                })()}
               </div>
 
               <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1">

@@ -136,8 +136,15 @@ class NotificationRepository:
         type_str = str(data.get("type") or data.get("notification_type") or data.get("category") or "INFO")
         is_read_val = bool(data.get("is_read") or data.get("read") or False)
 
-        recip_email = data.get("recipient_email") or data.get("employee_email")
-        recip_id = data.get("recipient_id") or data.get("employee_id") or data.get("user_id") or data.get("recipient_user_id")
+        recip_role_clean = recip_role.lower().strip()
+
+        # When sending a reply or message targeting manager/team_lead, employee_id is the sender's code, not recipient_id
+        if recip_role_clean in ["manager", "team_lead", "lead", "tl", "admin", "ceo"] or "REPLY" in type_str.upper():
+            recip_email = data.get("recipient_email")
+            recip_id = data.get("recipient_id") or data.get("recipient_user_id")
+        else:
+            recip_email = data.get("recipient_email") or data.get("employee_email")
+            recip_id = data.get("recipient_id") or data.get("employee_id") or data.get("user_id") or data.get("recipient_user_id")
 
         recip_user_id = None
         if recip_id and len(str(recip_id)) == 36 and "-" in str(recip_id):
@@ -189,9 +196,14 @@ class NotificationRepository:
         }
         if recip_id:
             req_obj["recipient_id"] = str(recip_id)
-            req_obj["employee_id"] = str(recip_id)
         if recip_email:
             req_obj["recipient_email"] = str(recip_email).lower().strip()
+        if data.get("employee_id"):
+            req_obj["employee_id"] = str(data.get("employee_id")).strip()
+        if data.get("sender_name"):
+            req_obj["sender_name"] = str(data.get("sender_name")).strip()
+        if data.get("sender_email"):
+            req_obj["sender_email"] = str(data.get("sender_email")).strip()
 
         _in_memory_notifications.append(req_obj)
 

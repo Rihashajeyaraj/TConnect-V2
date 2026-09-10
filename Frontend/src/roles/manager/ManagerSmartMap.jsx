@@ -194,7 +194,7 @@ function createMapMarker(latlng, map, html, onClick, anchor = 'center') {
   return new HTMLMapMarker(latlng, map, html, onClick, anchor)
 }
 
-export default function ManagerSmartMap() {
+export default function ManagerSmartMap({ hideHeader = false }) {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
 
@@ -249,9 +249,10 @@ export default function ManagerSmartMap() {
       try {
         const res = await notificationAPI.getNotifications()
         const notifs = Array.isArray(res) ? res : (res?.data || [])
-        const replies = notifs.filter(n => {
+        const chatNotifs = notifs.filter(n => {
           const cat = String(n.category || n.type || '').toUpperCase()
-          return cat.includes('REPLY') || String(n.title || '').includes('Reply')
+          const title = String(n.title || '')
+          return cat.includes('REPLY') || cat.includes('INQUIRY') || title.includes('Reply') || title.includes('Inquiry')
         })
         
         let newlyAddedToToast = []
@@ -259,9 +260,10 @@ export default function ManagerSmartMap() {
           const next = { ...prev }
           let updated = false
 
-          replies.forEach(r => {
-            const senderName = r.sender_name || r.title?.replace('💬 Reply from ', '') || 'Executive'
-            const empId = String(r.employee_id || r.sender_id || r.user_id || senderName || 'unknown').toLowerCase().trim()
+          chatNotifs.forEach(r => {
+            const isReply = String(r.category || r.type || '').toUpperCase().includes('REPLY') || String(r.title || '').includes('Reply')
+            const senderName = r.sender_name || (isReply ? r.title?.replace('💬 Reply from ', '') : 'Reporting Manager') || 'Executive'
+            const empId = String(r.employee_id || r.recipient_id || r.sender_id || r.user_id || senderName || 'unknown').toLowerCase().trim()
             const existing = next[empId] || []
             if (!existing.some(e => e.id === r.id || (e.timestamp === r.created_at && e.message === (r.message || r.title)))) {
               updated = true
@@ -271,10 +273,12 @@ export default function ManagerSmartMap() {
                 sender_name: senderName,
                 sender_email: r.sender_email || r.recipient_email || '',
                 timestamp: r.created_at || new Date().toISOString(),
-                read: false
+                read: isReply ? false : true,
+                is_inquiry: !isReply,
+                category: r.category || r.type || (isReply ? 'LOCATION_INQUIRY_REPLY' : 'LOCATION_INQUIRY')
               }
               next[empId] = [entry, ...existing]
-              if (!isFirstFetchRepliesRef.current) {
+              if (isReply && !isFirstFetchRepliesRef.current) {
                 newlyAddedToToast.push(entry)
               }
             }
@@ -373,6 +377,28 @@ export default function ManagerSmartMap() {
     const q = questionText || customInquiryText || 'Why are you stopped at this location?'
     const targetEmail = (ex.email || ex.employee_email || ex.user_email || '').toLowerCase().trim()
     const empCode = (ex.employee_id || ex.employee_code || ex.id || '').trim()
+    const key = empCode.toLowerCase().trim() || resolveRealName(ex).toLowerCase().trim() || 'unknown'
+    const mgrName = currentUser?.name || currentUser?.full_name || 'Reporting Manager'
+
+    const localInq = {
+      id: 'inq_' + Date.now(),
+      message: q,
+      sender_name: mgrName,
+      sender_role: currentUser?.role || 'Sales Manager',
+      timestamp: new Date().toISOString(),
+      read: true,
+      is_inquiry: true,
+      category: 'LOCATION_INQUIRY'
+    }
+
+    setExecutiveReplies(prev => {
+      const next = { ...prev }
+      const existing = next[key] || []
+      next[key] = [localInq, ...existing]
+      localStorage.setItem('tc_executive_replies', JSON.stringify(next))
+      return next
+    })
+
     try {
       await notificationAPI.sendNotification({
         title: '⚡ Quick Status Inquiry',
@@ -382,7 +408,7 @@ export default function ManagerSmartMap() {
         recipient_role: 'executive',
         recipient_email: targetEmail,
         employee_id: empCode,
-        sender_name: currentUser?.name || currentUser?.full_name || 'Reporting Manager',
+        sender_name: mgrName,
         sender_role: currentUser?.role || currentUser?.designation || 'Sales Manager',
       })
       showToast(`Inquiry sent to ${resolveRealName(ex)}`, 'success')
@@ -2535,24 +2561,26 @@ export default function ManagerSmartMap() {
           <div className="max-w-5xl mx-auto px-4 py-6 space-y-6">
 
             {/* Header with Mode Toggle */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-              <div>
-                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <MapPin className="w-5 h-5 text-indigo-600" /> {isCeo ? 'CEO Operations Radar & Manager Live Tracking' : 'Smart Radar Map & Live Tracking'}
-                </h1>
-                <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                  {isCeo
-                    ? 'Click a Sales Manager card to track live location, territory status & route breadcrumbs'
-                    : 'Click an Executive card to track live location & route breadcrumbs'}
-                </p>
-              </div>
+            {!hideHeader && (
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <div>
+                  <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-indigo-600" /> {isCeo ? 'CEO Operations Radar & Manager Live Tracking' : 'Smart Radar Map & Live Tracking'}
+                  </h1>
+                  <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                    {isCeo
+                      ? 'Click a Sales Manager card to track live location, territory status & route breadcrumbs'
+                      : 'Click an Executive card to track live location & route breadcrumbs'}
+                  </p>
+                </div>
 
-              <div className="flex items-center gap-2">
-                <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 border border-slate-200 bg-white rounded-xl px-3 py-2 hover:border-blue-300 transition shadow-xs">
-                  <RefreshCw className="w-3.5 h-3.5" /> Refresh
-                </button>
+                <div className="flex items-center gap-2">
+                  <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 border border-slate-200 bg-white rounded-xl px-3 py-2 hover:border-blue-300 transition shadow-xs">
+                    <RefreshCw className="w-3.5 h-3.5" /> Refresh
+                  </button>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* Stats Row */}
             <div className="grid grid-cols-3 gap-3">
@@ -2971,8 +2999,8 @@ export default function ManagerSmartMap() {
               </button>
             </div>
 
-            {/* Executive replies chat history */}
-            <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
+            {/* Executive responses & inquiry chat history */}
+            <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Executive Responses Chat History</span>
                 <span className="text-[10px] font-black text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
@@ -2982,21 +3010,33 @@ export default function ManagerSmartMap() {
               {(() => {
                 const replies = getUserReplies(inquiryModalEx)
                 if (replies.length === 0) {
-                  return <p className="text-xs text-slate-400 italic py-2">No response messages received yet.</p>
+                  return <p className="text-xs text-slate-400 italic py-2">No inquiry or response messages received yet.</p>
                 }
-                return replies.map((r, i) => (
-                  <div key={r.id || i} className="bg-slate-50 rounded-2xl p-3 border border-slate-200/90 space-y-1">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black text-blue-600 uppercase tracking-wider">
-                        💬 {r.sender_name || resolveRealName(inquiryModalEx)}
-                      </span>
-                      <span className="text-[9px] font-semibold text-slate-400">
-                        {r.timestamp ? new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
-                      </span>
+                return replies.map((r, i) => {
+                  const isInquiry = r.is_inquiry || (String(r.category || r.type || '').toUpperCase().includes('INQUIRY') && !String(r.category || r.type || '').toUpperCase().includes('REPLY'))
+                  return (
+                    <div
+                      key={r.id || i}
+                      className={`rounded-2xl p-3 border space-y-1 transition-all ${
+                        isInquiry
+                          ? 'bg-amber-50/80 border-amber-200/90 ml-3'
+                          : 'bg-blue-50/60 border-blue-200/80 mr-3'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className={`text-[10px] font-black uppercase tracking-wider ${
+                          isInquiry ? 'text-amber-800' : 'text-blue-600'
+                        }`}>
+                          {isInquiry ? `⚡ Outgoing Inquiry (${r.sender_name || 'Manager'})` : `💬 Reply from ${r.sender_name || resolveRealName(inquiryModalEx)}`}
+                        </span>
+                        <span className="text-[9px] font-semibold text-slate-400">
+                          {r.timestamp ? new Date(r.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'Just now'}
+                        </span>
+                      </div>
+                      <p className="text-xs font-bold text-slate-800">"{r.message}"</p>
                     </div>
-                    <p className="text-xs font-bold text-slate-800">"{r.message}"</p>
-                  </div>
-                ))
+                  )
+                })
               })()}
             </div>
 

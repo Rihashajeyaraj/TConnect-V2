@@ -100,6 +100,7 @@ export default function ManagerLeads() {
   const [search, setSearch] = useState('')
   const [selectedTL, setSelectedTL] = useState('All')
   const [selectedSE, setSelectedSE] = useState('All')
+  const [selectedRoleFilter, setSelectedRoleFilter] = useState('All') // 'All' | 'TeamLead' | 'Executive'
   const [customSEInput, setCustomSEInput] = useState('')
   const [selectedStatus, setSelectedStatus] = useState('All')
   const [selectedPriority, setSelectedPriority] = useState('All')
@@ -209,6 +210,22 @@ export default function ManagerLeads() {
       }
     })
 
+    // Also ensure current user is added if they are a Team Lead
+    const curRoleStr = String(currentUser.role || mgrUser.role || '').toLowerCase()
+    if (curRoleStr.includes('lead') || curRoleStr.includes('tl') || isTeamLead) {
+      const curName = currentUser.name || mgrUser.name || 'Team Lead'
+      const curEmail = currentUser.email || mgrUser.email || ''
+      if (curName && !tlsMap.has(curEmail || curName)) {
+        tlsMap.set(curEmail || curName, {
+          id: `tl_cur`,
+          name: curName,
+          email: curEmail,
+          employee_code: currentUser.employee_code || mgrUser.employee_code || 'TL',
+          role: 'Team Lead',
+        })
+      }
+    }
+
     const finalTLs = Array.from(tlsMap.values()).filter(t => {
       const tName = (t.name || '').toLowerCase()
       return !tName.includes('twite') && !tName.includes('dr.') && !tName.includes('executive')
@@ -218,6 +235,58 @@ export default function ManagerLeads() {
     setTeamLeads(finalTLs)
     setExecutives(finalExecs.length > 0 ? finalExecs : (finalTLs.length > 0 ? finalTLs : []))
   }
+
+  // Helper to determine if assigned user on lead is a Team Lead or Executive
+  const getAssignedRole = React.useCallback(
+    (lead) => {
+      if (!lead) return 'Executive'
+
+      // Check explicit role attribute if provided
+      const explicitRole = String(
+        lead.assigned_to_role || lead.assigned_role || lead.created_by_role || lead.role || lead.designation || ''
+      ).toLowerCase()
+      if (explicitRole.includes('lead') || explicitRole.includes('tl')) {
+        return 'TeamLead'
+      }
+
+      const assignedName = String(lead.assigned_to || lead.assignedTo || lead.created_by_name || '').toLowerCase().trim()
+      const assignedEmail = String(lead.assigned_to_email || lead.assignedToEmail || lead.created_by_email || '').toLowerCase().trim()
+
+      // Match logged-in user if current user is a Team Lead
+      const curName = String(currentUser.name || mgrUser.name || '').toLowerCase().trim()
+      const curEmail = String(currentUser.email || mgrUser.email || '').toLowerCase().trim()
+      const curRole = String(currentUser.role || mgrUser.role || '').toLowerCase().trim()
+
+      if (
+        (curRole.includes('lead') || curRole.includes('tl') || isTeamLead) &&
+        ((assignedEmail && curEmail && assignedEmail === curEmail) ||
+          (assignedName && curName && (assignedName === curName || assignedName.includes(curName) || curName.includes(assignedName))))
+      ) {
+        return 'TeamLead'
+      }
+
+      // Match against loaded teamLeads list
+      if (teamLeads && teamLeads.length > 0) {
+        const matchedInTLs = teamLeads.some((tl) => {
+          const tlName = String(tl.name || '').toLowerCase().trim()
+          const tlEmail = String(tl.email || '').toLowerCase().trim()
+          return (
+            (assignedEmail && tlEmail && assignedEmail === tlEmail) ||
+            (assignedName && tlName && (assignedName === tlName || assignedName.includes(tlName) || tlName.includes(assignedName)))
+          )
+        })
+        if (matchedInTLs) return 'TeamLead'
+      }
+
+      // Specific known TL check or fallback heuristic
+      if (assignedName.includes('vedika')) {
+        return 'TeamLead'
+      }
+
+      return 'Executive'
+    },
+    [currentUser, mgrUser, isTeamLead, teamLeads]
+  )
 
   // Load Sales Executives & Team Leads from backend HRMS API or localStorage
   useEffect(() => {
@@ -243,7 +312,7 @@ export default function ManagerLeads() {
           processSubordinates(parsed)
           return
         }
-      }
+        }
     } catch (e) { }
 
     setTeamLeads([])
@@ -502,7 +571,7 @@ export default function ManagerLeads() {
           (targetClean.length >= 2 && (seEmail.includes(targetClean) || seName.includes(targetClean) || seCode.includes(targetClean)))
 
         if (!matchesSE) {
-          const foundExec = executives.find(
+          const foundExec = [...executives, ...teamLeads].find(
             (ex) =>
               (ex.email && ex.email.toLowerCase() === targetVal) ||
               (ex.name && ex.name.toLowerCase() === targetVal) ||
@@ -535,7 +604,7 @@ export default function ManagerLeads() {
         const tlName = (l.team_lead_name || l.reporting_manager_name || '').toLowerCase()
         const tlEmail = (l.team_lead_email || l.reporting_manager_email || '').toLowerCase()
 
-        const matchedExec = executives.find(
+        const matchedExec = [...executives, ...teamLeads].find(
           (ex) =>
             (ex.email && ex.email.toLowerCase() === seEmail) ||
             (ex.name && ex.name.toLowerCase() === seName) ||
@@ -555,7 +624,15 @@ export default function ManagerLeads() {
           execTLEmail.includes(targetClean)
       }
 
-      return matchesSearch && matchesPriority && matchesStatus && matchesTL && matchesSE && matchesDate
+      // Role filter check (All | TeamLead | Executive)
+      let matchesRole = true
+      if (selectedRoleFilter === 'TeamLead') {
+        matchesRole = getAssignedRole(l) === 'TeamLead'
+      } else if (selectedRoleFilter === 'Executive') {
+        matchesRole = getAssignedRole(l) === 'Executive'
+      }
+
+      return matchesSearch && matchesPriority && matchesStatus && matchesTL && matchesSE && matchesDate && matchesRole
     })
 
     // Deduplicate leads to avoid duplicate double-clicks
@@ -571,7 +648,7 @@ export default function ManagerLeads() {
       seen.add(key)
       return true
     })
-  }, [leads, search, selectedPriority, selectedStatus, fromDate, toDate, selectedTL, selectedSE, customSEInput, executives])
+  }, [leads, search, selectedPriority, selectedStatus, fromDate, toDate, selectedTL, selectedSE, selectedRoleFilter, customSEInput, executives, teamLeads, getAssignedRole])
 
   const getLeadCategory = React.useCallback((lead) => {
     if (!lead) return 'cold'
@@ -623,25 +700,6 @@ export default function ManagerLeads() {
 
   return (
     <div className="space-y-6 text-slate-900 font-sans pb-12">
-      {/* ── HEADER ───────────────────────────────────────────────────────────── */}
-      <div className="bg-white border border-slate-200 p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 shadow-xs">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-            <Target className="w-7 h-7 text-[#0c4160]" /> Total Leads
-          </h1>
-          <p className="text-xs text-slate-500 font-semibold mt-1">
-            Real-time pipeline and status report of all sales leads under your management.
-          </p>
-        </div>
-
-        <button
-          onClick={fetchTeamLeadReports}
-          className="mgr-card flex items-center gap-2 px-3.5 py-2 rounded-xl bg-[#0c4160] hover:bg-[#082d43] text-white font-extrabold text-xs shadow-2xs transition cursor-pointer"
-        >
-          <RefreshCw size={14} className={loading ? 'animate-spin' : ''} /> Refresh DB Data
-        </button>
-      </div>
-
       {/* ── TWO COMPACT KPI CARDS: LEADS & CUSTOMERS ────────────────────────────── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
         {/* Card 1: Leads */}
@@ -716,21 +774,38 @@ export default function ManagerLeads() {
                         setSelectedSE('All')
                         setPage(1)
                       }}
-                      className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition"
+                      className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition border border-slate-200"
                     >
                       <option value="All">All Team Leads</option>
                       {teamLeads.map((tl) => (
                         <option key={tl.email || tl.id} value={tl.name || tl.email}>
-                          👤 {tl.name} ({tl.employee_code || 'TL'})
+                          👑 {tl.name} ({tl.employee_code || 'TL'})
                         </option>
                       ))}
                     </select>
                   </div>
                 )}
 
-                {/* Sales Executive Filter */}
+                {/* Role Filter (All | TeamLead's Leads | Executive Leads) */}
                 <div className="flex items-center gap-2 text-sm shrink-0">
-                  <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Executive:</span>
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Role Filter:</span>
+                  <select
+                    value={selectedRoleFilter}
+                    onChange={(e) => {
+                      setSelectedRoleFilter(e.target.value)
+                      setPage(1)
+                    }}
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition border border-slate-200"
+                  >
+                    <option value="All">All Roles</option>
+                    <option value="TeamLead">👑 TeamLead's Leads</option>
+                    <option value="Executive">👤 Executive Leads</option>
+                  </select>
+                </div>
+
+                {/* Sales Executive & Team Lead Filter */}
+                <div className="flex items-center gap-2 text-sm shrink-0">
+                  <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Executive / Team Lead:</span>
                   <select
                     value={selectedSE}
                     onChange={(e) => {
@@ -738,14 +813,25 @@ export default function ManagerLeads() {
                       if (e.target.value !== 'Other') setCustomSEInput('')
                       setPage(1)
                     }}
-                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition"
+                    className="bg-slate-100 hover:bg-slate-200 text-slate-800 focus:outline-none cursor-pointer font-bold rounded-lg px-2.5 py-1.5 text-xs transition border border-slate-200"
                   >
-                    <option value="All">All Executives</option>
-                    {availableExecutives.map((ex) => (
-                      <option key={ex.email || ex.id} value={ex.email || ex.name}>
-                        {ex.name} ({ex.employee_code || 'EMP'})
-                      </option>
-                    ))}
+                    <option value="All">All Executives & Team Leads</option>
+                    {teamLeads.length > 0 && (
+                      <optgroup label="Team Leads">
+                        {teamLeads.map((tl) => (
+                          <option key={`tl_${tl.email || tl.id}`} value={tl.email || tl.name}>
+                            👑 {tl.name} ({tl.employee_code || 'TL'})
+                          </option>
+                        ))}
+                      </optgroup>
+                    )}
+                    <optgroup label="Sales Executives">
+                      {availableExecutives.map((ex) => (
+                        <option key={ex.email || ex.id} value={ex.email || ex.name}>
+                          👤 {ex.name} ({ex.employee_code || 'EMP'})
+                        </option>
+                      ))}
+                    </optgroup>
                     <option value="Other">Custom Search...</option>
                   </select>
                   {selectedSE === 'Other' && (
@@ -753,7 +839,7 @@ export default function ManagerLeads() {
                       type="text"
                       value={customSEInput}
                       onChange={(e) => { setCustomSEInput(e.target.value); setPage(1) }}
-                      placeholder="SE Name / Code..."
+                      placeholder="Name / Code..."
                       className="w-32 h-7 px-2 bg-slate-100 rounded-lg focus:outline-none font-bold text-xs"
                     />
                   )}
@@ -801,10 +887,10 @@ export default function ManagerLeads() {
               </div>
 
               {/* Reset — only when filters active */}
-              {(selectedTL !== 'All' || selectedSE !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || search || fromDate || toDate || selectedLeadTab !== 'Leads') && (
+              {(selectedTL !== 'All' || selectedSE !== 'All' || selectedRoleFilter !== 'All' || selectedStatus !== 'All' || selectedPriority !== 'All' || search || fromDate || toDate || selectedLeadTab !== 'Leads') && (
                 <button
                   onClick={() => {
-                    setSelectedTL('All'); setSelectedSE('All'); setSelectedStatus('All'); setSelectedPriority('All')
+                    setSelectedTL('All'); setSelectedSE('All'); setSelectedRoleFilter('All'); setSelectedStatus('All'); setSelectedPriority('All')
                     setSearch(''); setFromDate(''); setToDate(''); setSelectedLeadTab('Leads'); setPage(1)
                   }}
                   className="mgr-card text-xs font-black text-rose-600 hover:text-rose-800 cursor-pointer transition shrink-0"
@@ -823,7 +909,7 @@ export default function ManagerLeads() {
                     <thead>
                       <tr className="bg-slate-100/80 border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-700">
                         <th className="px-5 py-4">Date</th>
-                        <th className="px-5 py-4">Sales Executive</th>
+                        <th className="px-5 py-4">Executive/TeamLead Name</th>
                         <th className="px-5 py-4">Customer Details</th>
                         <th className="px-5 py-4">Product</th>
                         <th className="px-5 py-4">Amount</th>
@@ -851,7 +937,18 @@ export default function ManagerLeads() {
                               {formatDate(lead.created_at || lead.date) || '—'}
                             </td>
                             <td className="px-5 py-4.5 font-black text-slate-900 text-sm">
-                              {lead.assigned_to || lead.assignedTo || lead.created_by_name || '—'}
+                              <div>{lead.assigned_to || lead.assignedTo || lead.created_by_name || '—'}</div>
+                              <div className="mt-1">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider shadow-2xs ${
+                                    getAssignedRole(lead) === 'TeamLead'
+                                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                      : 'bg-slate-100 text-slate-700 border border-slate-300'
+                                  }`}
+                                >
+                                  {getAssignedRole(lead) === 'TeamLead' ? '👑 TeamLead' : '👤 Executive'}
+                                </span>
+                              </div>
                             </td>
                             <td className="px-5 py-4">
                               <div className="font-black text-slate-900">{lead.company_name || lead.company || 'Client Account'}</div>
@@ -892,7 +989,7 @@ export default function ManagerLeads() {
                     <thead>
                       <tr className="bg-slate-100/80 border-b border-slate-200 text-xs font-black uppercase tracking-wider text-slate-700">
                         <th className="px-5 py-4">Date</th>
-                        <th className="px-5 py-4">Executive Name</th>
+                        <th className="px-5 py-4">Executive/TeamLead Name</th>
                         <th className="px-5 py-4">Client Details</th>
                         <th className="px-5 py-4">Product</th>
                         <th className="px-5 py-4">Category</th>
@@ -920,7 +1017,18 @@ export default function ManagerLeads() {
                               {formatDate(lead.created_at || lead.date) || '—'}
                             </td>
                             <td className="px-5 py-4.5 font-black text-slate-900 text-sm">
-                              {lead.assigned_to || lead.assignedTo || lead.created_by_name || '—'}
+                              <div>{lead.assigned_to || lead.assignedTo || lead.created_by_name || '—'}</div>
+                              <div className="mt-1">
+                                <span
+                                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider shadow-2xs ${
+                                    getAssignedRole(lead) === 'TeamLead'
+                                      ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                      : 'bg-slate-100 text-slate-700 border border-slate-300'
+                                  }`}
+                                >
+                                  {getAssignedRole(lead) === 'TeamLead' ? '👑 TeamLead' : '👤 Executive'}
+                                </span>
+                              </div>
                             </td>
                             <td className="px-5 py-4">
                               <div className="font-black text-slate-900">{lead.company_name || lead.company || 'Client Account'}</div>
@@ -1033,7 +1141,18 @@ export default function ManagerLeads() {
               </div>
 
               <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1">
-                <span className="text-[10px] font-extrabold uppercase text-slate-400">Assigned Sales Executive</span>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-extrabold uppercase text-slate-400">Assigned Person</span>
+                  <span
+                    className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider ${
+                      getAssignedRole(selectedLeadModal) === 'TeamLead'
+                        ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                        : 'bg-slate-100 text-slate-700 border border-slate-300'
+                    }`}
+                  >
+                    {getAssignedRole(selectedLeadModal) === 'TeamLead' ? '👑 TeamLead' : '👤 Executive'}
+                  </span>
+                </div>
                 <div className="flex items-center gap-1.5 mt-0.5">
                   <span className="text-[10px] bg-mgr-primary-100 text-mgr-primary-950 border border-mgr-primary-300 px-1 py-0.2 rounded font-mono font-black">
                     [{selectedLeadModal.employee_code || 'EMP-101'}]

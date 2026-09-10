@@ -56,11 +56,11 @@ export default function useNotificationCount() {
 
   const fetchUnreadCount = useCallback(async () => {
     try {
-      const res = await notificationAPI.getUnreadCount();
+      const res = await notificationAPI.getUnreadCount({ silentError: true, timeout: 8000 });
       const count = res?.data?.unread_count ?? res?.unread_count ?? (typeof res?.data === 'number' ? res.data : 0);
       updateCountState(count);
-    } catch (err) {
-      console.warn('[NotificationCount] Failed to fetch unread count:', err);
+    } catch (_) {
+      // Silent catch for background notification count polling
     }
   }, [updateCountState]);
 

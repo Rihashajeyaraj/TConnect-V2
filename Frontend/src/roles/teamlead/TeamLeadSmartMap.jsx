@@ -51,7 +51,7 @@ export default function TeamLeadSmartMap() {
       </div>
 
       {/* Render selected view */}
-      {activeTab === 'team' && canViewTeamMap ? <ManagerSmartMap /> : <SmartClientMap />}
+      {activeTab === 'team' && canViewTeamMap ? <ManagerSmartMap hideHeader={true} /> : <SmartClientMap />}
     </div>
   )
 }
