@@ -388,11 +388,11 @@ export const expenseAPI = {
 }
 
 export const notificationAPI = {
-  getNotifications: () => request('/notifications'),
-  getUnreadCount: () => request('/notifications/unread-count'),
-  sendNotification: (data) => request('/notifications', { method: 'POST', body: JSON.stringify(data) }),
-  markRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
-  markAsRead: (id) => request(`/notifications/${id}/read`, { method: 'PATCH' }),
+  getNotifications: (options = {}) => request('/notifications', options),
+  getUnreadCount: (options = {}) => request('/notifications/unread-count', options),
+  sendNotification: (data, options = {}) => request('/notifications', { method: 'POST', body: JSON.stringify(data), ...options }),
+  markRead: (id, options = {}) => request(`/notifications/${id}/${typeof id === 'string' && id.includes('/') ? '' : 'read'}`, { method: 'PATCH', ...options }),
+  markAsRead: (id, options = {}) => request(`/notifications/${id}/read`, { method: 'PATCH', ...options }),
 }
 
 export const reportAPI = {
@@ -501,8 +501,8 @@ export const spatialAPI = {
     request('/spatial/route-optimize', { method: 'POST', body: JSON.stringify({ lat, lng, waypoints }) }),
   checkGeofence: (lat, lng, thresholdMeters = 450) =>
     request('/spatial/geofence-check', { method: 'POST', body: JSON.stringify({ lat, lng, geofence_threshold_meters: thresholdMeters }) }),
-  updateLocation: (data) =>
-    request('/spatial/update-location', { method: 'POST', body: JSON.stringify(data) }),
+  updateLocation: (data, options = {}) =>
+    request('/spatial/update-location', { method: 'POST', body: JSON.stringify(data), silentError: true, timeout: 8000, ...options }),
   getRoute: (origin, destination) =>
     request('/spatial/route', { method: 'POST', body: JSON.stringify({ origin, destination }) }),
   getTeamLocations: () =>
@@ -512,8 +512,8 @@ export const spatialAPI = {
   startSession: (lat, lng, clientData = {}) =>
     request('/spatial/location/session/start', { method: 'POST', body: JSON.stringify({ latitude: lat, longitude: lng, ...clientData }) }),
   /** Push a GPS breadcrumb. Rejects poor accuracy & duplicates server-side. */
-  pushLocation: (data) =>
-    request('/spatial/location/push', { method: 'POST', body: JSON.stringify(data) }),
+  pushLocation: (data, options = {}) =>
+    request('/spatial/location/push', { method: 'POST', body: JSON.stringify(data), silentError: true, timeout: 8000, ...options }),
   /** End the tracking session when executive clocks out. */
   endSession: (data) =>
     request('/spatial/location/session/end', { method: 'POST', body: JSON.stringify(data) }),

@@ -50,7 +50,13 @@ self.addEventListener('fetch', (event) => {
           })
         }
         return response
-      }).catch(() => caches.match(event.request))
+      }).catch(async () => {
+        const cached = await caches.match(event.request)
+        return cached || new Response('console.warn("Module fetch failed offline");', {
+          status: 404,
+          headers: { 'Content-Type': 'application/javascript' }
+        })
+      })
     )
     return
   }
@@ -66,7 +72,16 @@ self.addEventListener('fetch', (event) => {
         }
         return response
       })
-      .catch(() => caches.match(event.request))
+      .catch(async () => {
+        const cached = await caches.match(event.request)
+        if (cached) return cached
+        // For HTML navigation requests, return index.html fallback
+        if (event.request.mode === 'navigate' || (event.request.headers.get('accept') || '').includes('text/html')) {
+          const indexFallback = (await caches.match('/index.html')) || (await caches.match('/'))
+          if (indexFallback) return indexFallback
+        }
+        return new Response('Offline', { status: 503, statusText: 'Service Unavailable' })
+      })
   )
 })
 

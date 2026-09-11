@@ -316,11 +316,15 @@ export default function SmartClientMap({ isManagerView = false }) {
     } catch (e) { console.warn('Save handled inquiry key err:', e) }
   }
 
+  const isCheckingInquiriesRef = useRef(false)
+
   // Poll for Manager Location Inquiries
   useEffect(() => {
     const checkInquiries = async () => {
+      if (isCheckingInquiriesRef.current) return
+      isCheckingInquiriesRef.current = true
       try {
-        const res = await notificationAPI.getNotifications()
+        const res = await notificationAPI.getNotifications({ silentError: true, timeout: 8000 })
         const notifs = Array.isArray(res) ? res : (res?.data || [])
         const handledKeys = getHandledInquiryKeys()
 
@@ -375,11 +379,15 @@ export default function SmartClientMap({ isManagerView = false }) {
           activeInquiryRef.current = null
           setActiveInquiry(null)
         }
-      } catch (e) { console.warn('Inquiry check err:', e) }
+      } catch (e) {
+        // Silent catch for background inquiry polling
+      } finally {
+        isCheckingInquiriesRef.current = false
+      }
     }
 
     checkInquiries()
-    const interval = setInterval(checkInquiries, 2500)
+    const interval = setInterval(checkInquiries, 15000)
     const handleNotifEvent = () => checkInquiries()
     window.addEventListener('tc_notifications_updated', handleNotifEvent)
     window.addEventListener('tc_inquiry_received', handleNotifEvent)
