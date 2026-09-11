@@ -249,6 +249,7 @@ export default function SmartClientMap({ isManagerView = false }) {
   const routeFetchTimer  = useRef(null)         // debounce timer id
   const trailPolylineRef = useRef(null)         // Traveled breadcrumb polyline
   const trailOuterPolylineRef = useRef(null)    // Dark casing road polyline for high contrast
+  const startMarkerRef   = useRef(null)         // Green START point marker
   const trailPointsRef   = useRef([])           // Breadcrumb points array
   const lastTelemetryUpdate = useRef(0)         // throttled updates tracking
   const lastUiRenderTime = useRef(0)            // P2 throttled React UI renders tracking
@@ -1245,6 +1246,14 @@ export default function SmartClientMap({ isManagerView = false }) {
         try { accuracyCircleRef.current.setMap(null) } catch {}
         accuracyCircleRef.current = null
       }
+      if (startMarkerRef.current) {
+        try { startMarkerRef.current.setMap(null) } catch {}
+        startMarkerRef.current = null
+      }
+      if (trailOuterPolylineRef.current) {
+        try { trailOuterPolylineRef.current.setMap(null) } catch {}
+        trailOuterPolylineRef.current = null
+      }
       if (trailPolylineRef.current) {
         try { trailPolylineRef.current.setMap(null) } catch {}
         trailPolylineRef.current = null
@@ -1477,7 +1486,26 @@ export default function SmartClientMap({ isManagerView = false }) {
       validPts.push({ lat: executivePos.lat, lng: executivePos.lng })
     }
 
-    // 4. ONLY draw traveled polyline if executive has AT LEAST 2 REAL traveled points
+    // 4. Render green START marker pin at initial starting location
+    if (validPts.length > 0 && !startMarkerRef.current && googleMapRef.current && window.google) {
+      const startLatLng = new window.google.maps.LatLng(validPts[0].lat, validPts[0].lng)
+      const buildStartHtml = () => `
+        <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #10b981; border: 2.5px solid #ffffff; box-shadow: 0 4px 10px rgba(16,185,129,0.45); color: #ffffff; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">
+          START
+        </div>
+      `
+      startMarkerRef.current = createMapMarker(
+        startLatLng,
+        googleMapRef.current,
+        buildStartHtml(),
+        () => {
+          showInfoWindow(startLatLng, '<div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:4px;color:#1e293b;"><strong>🟢 Start Point</strong><br/>Your trip starting location</div>')
+        },
+        'center'
+      )
+    }
+
+    // 5. ONLY draw traveled polyline if executive has AT LEAST 2 REAL traveled points
     if (validPts.length > 1) {
       const gPath = validPts.map(p => ({ lat: p.lat, lng: p.lng }))
       
@@ -1536,6 +1564,36 @@ export default function SmartClientMap({ isManagerView = false }) {
       }
     }
   }, [executivePos, gpsStatus, mapLoaded])
+
+  // Pre-load executive's today's saved tracking breadcrumbs history on mount
+  useEffect(() => {
+    if (!mapLoaded) return
+    const empId = currentUser?.employee_id || currentUser?.employee_code || currentUser?.id
+    if (!empId) return
+
+    spatialAPI.getLocationHistory(empId).then(res => {
+      const data = res?.data || res
+      const crumbs = data?.breadcrumbs || []
+      if (crumbs.length > 0) {
+        const historyPts = crumbs
+          .map(c => ({ lat: Number(c.latitude), lng: Number(c.longitude) }))
+          .filter(p => !isNaN(p.lat) && !isNaN(p.lng) && p.lat !== 0 && p.lng !== 0)
+        
+        if (historyPts.length > 0) {
+          const currentPts = trailPointsRef.current
+          const combined = [...historyPts]
+          currentPts.forEach(p => {
+            if (!combined.some(c => Math.abs(c.lat - p.lat) < 0.00001 && Math.abs(c.lng - p.lng) < 0.00001)) {
+              combined.push(p)
+            }
+          })
+          trailPointsRef.current = combined
+        }
+      }
+    }).catch(err => {
+      console.warn('[SmartClientMap] Failed to pre-load tracking history:', err)
+    })
+  }, [mapLoaded, currentUser?.employee_id, currentUser?.employee_code, currentUser?.id])
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   const visibleAlerts = onRouteClients.filter(c => !dismissedAlerts.current.has(c.id))
