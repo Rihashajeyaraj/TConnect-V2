@@ -66,13 +66,7 @@ export default function useNotificationCount() {
       const res = await notificationAPI.getUnreadCount({ silentError: true, timeout: 8000 });
       const count = res?.data?.unread_count ?? res?.unread_count ?? (typeof res?.data === 'number' ? res.data : 0);
       updateCountState(count);
-<<<<<<< HEAD
-    } catch (_) {
-      // Silent catch for background notification count polling
-    }
-=======
     } catch (_) {}
->>>>>>> Riha
   }, [updateCountState]);
 
   // ── Push subscription registration ─────────────────────────────────────────
