@@ -1480,8 +1480,8 @@ export default function SmartClientMap({ isManagerView = false }) {
       distFromLastM = haversineDistance(lastPt.lat, lastPt.lng, executivePos.lat, executivePos.lng) * 1000
     }
 
-    // Filter out stationary jitter (must move >= 2m) and filter out absurd GPS teleport jumps (> 500m in single tick)
-    const isReasonableMove = validPts.length === 0 || (distFromLastM >= 2 && distFromLastM < 500)
+    // Filter out stationary jitter (must move >= 15m) and filter out absurd GPS teleport jumps (> 500m in single tick)
+    const isReasonableMove = validPts.length === 0 || (distFromLastM >= 15 && distFromLastM < 500)
     if (isReasonableMove) {
       validPts.push({ lat: executivePos.lat, lng: executivePos.lng })
     }

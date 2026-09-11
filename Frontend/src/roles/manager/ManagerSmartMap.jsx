@@ -1132,7 +1132,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     if (trackStatus === 'stopped') return 'Stopped';
     if (trackStatus === 'loading') return 'Loading...';
     if (selectedExecutive && !selectedExecutive.is_online) return 'Offline';
-    if (lastPingMs && Date.now() - lastPingMs > 5 * 60 * 1000) return 'Offline';
     if (!latestExecPos) return 'No GPS Data';
     if (!destClient) return 'No Destination';
 
@@ -1190,21 +1189,19 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     if (age <= 60000) {
       return { label: 'Live Connection', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', dot: 'bg-emerald-500 animate-pulse' };
     }
-    if (age > 5 * 60 * 1000) {
-      return { label: 'Offline (>5m)', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20', dot: 'bg-rose-500' };
-    }
+    const minsAgo = Math.floor(age / 60000);
     if (selectedExecutive) {
       const staleKey = `stale_${selectedExecutive.employee_id}_${Math.floor(lastPingMs / 60000)}`
       if (!notifiedEventsRef.current.has(staleKey)) {
         notifiedEventsRef.current.set(staleKey, true)
         sendManagerNotification(
           '🟠 Executive GPS Stale',
-          `${resolveRealName(selectedExecutive)}'s GPS signal has not updated for over 1 minute.`,
+          `${resolveRealName(selectedExecutive)}'s GPS signal has not updated for over ${minsAgo} minute(s).`,
           'TRACKING'
         )
       }
     }
-    return { label: 'GPS Stale (>1 min)', color: 'text-orange-400 bg-orange-500/10 border-orange-500/20', dot: 'bg-orange-500' };
+    return { label: `GPS Stale (${minsAgo > 0 ? `${minsAgo}m ago` : '>1 min'})`, color: 'text-orange-400 bg-orange-500/10 border-orange-500/20', dot: 'bg-orange-500' };
   };
 
   // ─── 5. Team / Client markers ─────────────────────────────────────────────
@@ -2018,15 +2015,17 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       try {
         const rawPathCoords = crumbs.map(c => ({ lat: Number(c.latitude), lng: Number(c.longitude) })).filter(pt => !isNaN(pt.lat) && !isNaN(pt.lng) && pt.lat !== 0 && pt.lng !== 0)
         
-        // Filter out outlier GPS jumps (> 5 km between consecutive breadcrumbs)
+        // Filter out stationary GPS noise/jitter (< 15 meters) & outlier GPS jumps (> 5 km)
         const pathCoords = []
         if (rawPathCoords.length > 0) {
           pathCoords.push(rawPathCoords[0])
           for (let i = 1; i < rawPathCoords.length; i++) {
             const prev = pathCoords[pathCoords.length - 1]
             const curr = rawPathCoords[i]
-            const dist = haversineDistance(prev.lat, prev.lng, curr.lat, curr.lng)
-            if (dist <= 5.0) {
+            const distKm = haversineDistance(prev.lat, prev.lng, curr.lat, curr.lng)
+            const distM = distKm * 1000
+            const isLastPt = (i === rawPathCoords.length - 1)
+            if ((distM >= 15 && distKm <= 5.0) || (isLastPt && distM >= 3 && distKm <= 5.0)) {
               pathCoords.push(curr)
             }
           }
