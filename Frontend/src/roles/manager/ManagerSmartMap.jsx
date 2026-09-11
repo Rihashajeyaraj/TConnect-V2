@@ -178,6 +178,11 @@ function initializeHTMLMapMarker() {
       this.draw()
     }
 
+    setPosition(latlng) {
+      this.latlng = latlng
+      this.draw()
+    }
+
     getPosition() {
       return this.latlng
     }
@@ -1713,23 +1718,23 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         } else if (gPath.length >= 2) {
           trackRouteRef.current = new window.google.maps.Polyline({
             path: gPath,
-            strokeColor: '#9333ea', // Primary solid purple line for traveled route
-            strokeOpacity: 0.85,
-            strokeWeight: 6,
+            strokeColor: '#3b0764', // Dark royal purple road casing
+            strokeOpacity: 0.65,
+            strokeWeight: 9,
             geodesic: true,
             map: googleMapRef.current,
             zIndex: 15
           })
         }
 
-        // Render purple dashed accent line on top of traveled trail
+        // Render electric purple core line with violet dashed accent on top of traveled trail
         if (gPath.length >= 2) {
           const purpleSymbol = {
             path: 'M 0,-2 0,2',
             strokeOpacity: 1,
-            scale: 2.5,
-            strokeColor: '#c084fc', // Light purple accent dash on top of primary purple line
-            strokeWeight: 3
+            scale: 2.2,
+            strokeColor: '#f3e8ff', // Light violet accent dash
+            strokeWeight: 2
           }
           if (offRoutePolylineRef.current) {
             offRoutePolylineRef.current.setPath(gPath)
@@ -1740,7 +1745,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
             offRoutePolylineRef.current = new window.google.maps.Polyline({
               path: gPath,
               geodesic: true,
-              strokeOpacity: 0,
+              strokeColor: '#a855f7', // Electric purple main road line
+              strokeOpacity: 0.95,
+              strokeWeight: 5,
               icons: [{
                 icon: purpleSymbol,
                 offset: '0%',
@@ -2112,7 +2119,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         try {
           const { data: evs, error: evsErr } = await supabase
             .schema('hrms')
-            .table('tracking_events')
+            .from('tracking_events')
             .select('*')
             .eq('session_id', session.id)
             .order('created_at', { ascending: false })
@@ -2212,6 +2219,13 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
       const channels = []
       chNames.forEach(name => {
+        try {
+          const existing = supabase.getChannels().find(c => c.name === name || c.topic === `realtime:${name}`)
+          if (existing) {
+            supabase.removeChannel(existing)
+          }
+        } catch (_) {}
+
         const channel = supabase
           .channel(name)
           .on('broadcast', { event: 'location' }, (payload) => {

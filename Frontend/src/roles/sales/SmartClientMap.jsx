@@ -205,6 +205,11 @@ function initializeHTMLMapMarker() {
       this.draw()
     }
 
+    setPosition(latlng) {
+      this.latlng = latlng
+      this.draw()
+    }
+
     getPosition() {
       return this.latlng
     }
@@ -243,6 +248,7 @@ export default function SmartClientMap({ isManagerView = false }) {
   const lastRoutePos     = useRef(null)         // last OSRM fetch position
   const routeFetchTimer  = useRef(null)         // debounce timer id
   const trailPolylineRef = useRef(null)         // Traveled breadcrumb polyline
+  const trailOuterPolylineRef = useRef(null)    // Dark casing road polyline for high contrast
   const trailPointsRef   = useRef([])           // Breadcrumb points array
   const lastTelemetryUpdate = useRef(0)         // throttled updates tracking
   const lastUiRenderTime = useRef(0)            // P2 throttled React UI renders tracking
@@ -631,7 +637,11 @@ export default function SmartClientMap({ isManagerView = false }) {
         const newPos = { lat: latitude, lng: longitude }
         execPosRef.current = newPos
         if (execMarkerRef.current) {
-          execMarkerRef.current.setPosition(newPos)
+          if (typeof execMarkerRef.current.setPosition === 'function') {
+            execMarkerRef.current.setPosition(newPos)
+          } else if (typeof execMarkerRef.current.setLatLng === 'function') {
+            execMarkerRef.current.setLatLng(newPos)
+          }
         }
 
         // P2 Optimization: Throttle React UI state updates to ~1.5s to prevent render cascades
@@ -1421,6 +1431,10 @@ export default function SmartClientMap({ isManagerView = false }) {
 
     // 1. Do NOT track or render polyline if permission is explicitly denied
     if (gpsStatus === 'denied') {
+      if (trailOuterPolylineRef.current) {
+        trailOuterPolylineRef.current.setMap(null)
+        trailOuterPolylineRef.current = null
+      }
       if (trailPolylineRef.current) {
         trailPolylineRef.current.setMap(null)
         trailPolylineRef.current = null
@@ -1457,8 +1471,9 @@ export default function SmartClientMap({ isManagerView = false }) {
       distFromLastM = haversineDistance(lastPt.lat, lastPt.lng, executivePos.lat, executivePos.lng) * 1000
     }
 
-    // Append point if first acquired point or executive moved >= 1 meter
-    if (validPts.length === 0 || distFromLastM >= 1) {
+    // Filter out stationary jitter (must move >= 2m) and filter out absurd GPS teleport jumps (> 500m in single tick)
+    const isReasonableMove = validPts.length === 0 || (distFromLastM >= 2 && distFromLastM < 500)
+    if (isReasonableMove) {
       validPts.push({ lat: executivePos.lat, lng: executivePos.lng })
     }
 
@@ -1466,20 +1481,39 @@ export default function SmartClientMap({ isManagerView = false }) {
     if (validPts.length > 1) {
       const gPath = validPts.map(p => ({ lat: p.lat, lng: p.lng }))
       
+      // Outer dark purple casing line for clean road contrast
+      if (!trailOuterPolylineRef.current) {
+        trailOuterPolylineRef.current = new window.google.maps.Polyline({
+          path: gPath,
+          geodesic: true,
+          strokeColor: '#3b0764', // Deep dark royal purple casing line
+          strokeOpacity: 0.65,
+          strokeWeight: 9,
+          map: googleMapRef.current,
+          zIndex: 34
+        })
+      } else {
+        trailOuterPolylineRef.current.setPath(gPath)
+        if (!trailOuterPolylineRef.current.getMap()) {
+          trailOuterPolylineRef.current.setMap(googleMapRef.current)
+        }
+      }
+
+      // Inner electric purple main road line
       if (!trailPolylineRef.current) {
         trailPolylineRef.current = new window.google.maps.Polyline({
           path: gPath,
           geodesic: true,
-          strokeColor: '#9333ea', // Primary bold solid purple line for traveled route
-          strokeOpacity: 0.85,
-          strokeWeight: 6,
+          strokeColor: '#a855f7', // Vibrant electric purple road path
+          strokeOpacity: 0.95,
+          strokeWeight: 5,
           icons: [{
             icon: {
               path: 'M 0,-2 0,2',
               strokeOpacity: 1,
-              scale: 2.5,
-              strokeColor: '#c084fc', // Light purple accent dash on top
-              strokeWeight: 3,
+              scale: 2.2,
+              strokeColor: '#f3e8ff', // Soft light violet accent dash on top
+              strokeWeight: 2,
             },
             offset: '0%',
             repeat: '14px',
@@ -1494,6 +1528,9 @@ export default function SmartClientMap({ isManagerView = false }) {
         }
       }
     } else {
+      if (trailOuterPolylineRef.current) {
+        trailOuterPolylineRef.current.setMap(null)
+      }
       if (trailPolylineRef.current) {
         trailPolylineRef.current.setMap(null)
       }

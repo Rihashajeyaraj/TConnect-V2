@@ -69,7 +69,7 @@ async def log_frontend_event(
         "MANAGER_NEARBY_CLIENT",
     }
     
-    if action not in ALLOWED_FRONTEND_ACTIONS:
+    if action not in ALLOWED_FRONTEND_ACTIONS and not action.startswith("MANAGER_NOTIF_"):
         raise HTTPException(
             status_code=400,
             detail=f"Action '{action}' is not permitted to be submitted directly from the frontend client."
