@@ -209,27 +209,7 @@ export default function ManagerVisits() {
     setExecutives([])
   }
 
-<<<<<<< HEAD
-  const isSEAbsentOnDate = (seIdentifier, visitDate) => {
-    if (!attendanceLogs || attendanceLogs.length === 0 || !visitDate) return false
-    const targetDate = String(visitDate).split('T')[0].split(' ')[0].trim()
-    const targetSE = String(seIdentifier || '').toLowerCase().trim()
-    if (!targetSE) return false
 
-    const record = attendanceLogs.find((log) => {
-      const logDate = String(log.date || log.created_at || '').split('T')[0].split(' ')[0].trim()
-      const logSE = String(log.email || log.employee_email || log.user_name || log.name || log.employee_id || '').toLowerCase().trim()
-      return logDate === targetDate && (logSE.includes(targetSE) || targetSE.includes(logSE))
-    })
-
-    if (record) {
-      const st = String(record.status || record.attendance_status || '').toLowerCase()
-      return st.includes('absent') || st.includes('leave') || st.includes('off')
-    }
-    return false
-  }
-=======
->>>>>>> Riha
 
   const resolveEmployeeCode = (seName, seEmail, rawCode) => {
     const n = (seName || '').toLowerCase().trim()
