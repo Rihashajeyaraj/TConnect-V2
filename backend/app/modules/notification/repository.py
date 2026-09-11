@@ -5,6 +5,7 @@ from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
 from app.core.logger import logger
+from app.modules.notification import push_service
 
 _in_memory_notifications: List[Dict[str, Any]] = []
 
@@ -207,9 +208,148 @@ class NotificationRepository:
             logger.warning(f"system.notifications insert notice: {e}")
 
 
+        # ── Web Push dispatch (fire-and-forget, never blocks notification creation) ──
+        # Determine recipient identity for subscription lookup
+        push_user_id   = str(recip_user_id or recip_id or "").strip()
+        push_user_email = str(recip_email or "").strip().lower()
+
+        if push_user_id or push_user_email:
+            try:
+                # Re-compute unread count AFTER the insert so the count is accurate
+                fresh_unread = self.get_unread_count(push_user_id or "", {
+                    "email": push_user_email,
+                    "sub": push_user_id,
+                })
+
+                push_payload = {
+                    "type":         "new_notification",
+                    "title":        title_str,
+                    "body":         msg_str,
+                    "unread_count": fresh_unread,
+                    "url":          "/notifications",
+                }
+
+                subs = self.get_push_subscriptions_for_user(
+                    user_id=push_user_id, user_email=push_user_email
+                )
+
+                if subs:
+                    def _remove_stale(endpoints: List[str]) -> None:
+                        for ep in endpoints:
+                            self.delete_push_subscription_by_endpoint(ep)
+
+                    push_service.send_push_to_subscriptions_async(
+                        subs, push_payload, on_remove=_remove_stale
+                    )
+                    logger.info(
+                        "[WebPush] Dispatching push to %d subscription(s) for user %s (unread=%d)",
+                        len(subs), push_user_id or push_user_email, fresh_unread
+                    )
+            except Exception as push_err:  # noqa: BLE001
+                # Push failure must NEVER cause notification creation to fail
+                logger.warning("[WebPush] Push dispatch error (non-fatal): %s", push_err)
+
         return req_obj
 
+    # ──────────────────────────────────────────────────────────────────────────
+    # Push Subscription CRUD
+    # ──────────────────────────────────────────────────────────────────────────
 
+    def save_push_subscription(
+        self,
+        user_id: str,
+        user_email: str,
+        endpoint: str,
+        p256dh: str,
+        auth: str,
+    ) -> Dict[str, Any]:
+        """Upsert a push subscription for the authenticated user.
+        Uses endpoint as the unique key — multiple devices are supported.
+        """
+        now_iso = datetime.utcnow().isoformat() + "Z"
+        payload = {
+            "user_id":    str(user_id).strip(),
+            "user_email": str(user_email).strip().lower() if user_email else None,
+            "endpoint":   endpoint,
+            "p256dh":     p256dh,
+            "auth":       auth,
+            "updated_at": now_iso,
+        }
+        try:
+            res = (
+                self.supabase
+                .schema("system")
+                .table("push_subscriptions")
+                .upsert(payload, on_conflict="endpoint")
+                .execute()
+            )
+            if res.data:
+                logger.info("[WebPush] Subscription saved for user %s", user_id[:8])
+                return res.data[0]
+        except Exception as e:
+            logger.warning("[WebPush] save_push_subscription error: %s", e)
+        return payload
+
+    def delete_push_subscription(
+        self,
+        user_id: str,
+        endpoint: str,
+    ) -> bool:
+        """Remove a subscription by endpoint for the authenticated user."""
+        try:
+            (
+                self.supabase
+                .schema("system")
+                .table("push_subscriptions")
+                .delete()
+                .eq("endpoint", endpoint)
+                .eq("user_id", str(user_id).strip())
+                .execute()
+            )
+            logger.info("[WebPush] Subscription deleted for user %s", user_id[:8])
+            return True
+        except Exception as e:
+            logger.warning("[WebPush] delete_push_subscription error: %s", e)
+            return False
+
+    def delete_push_subscription_by_endpoint(self, endpoint: str) -> bool:
+        """Remove stale/expired subscription by endpoint only (called from push dispatch)."""
+        try:
+            (
+                self.supabase
+                .schema("system")
+                .table("push_subscriptions")
+                .delete()
+                .eq("endpoint", endpoint)
+                .execute()
+            )
+            logger.info("[WebPush] Stale subscription removed: %s…", endpoint[:40])
+            return True
+        except Exception as e:
+            logger.warning("[WebPush] delete_by_endpoint error: %s", e)
+            return False
+
+    def get_push_subscriptions_for_user(
+        self,
+        user_id: str = "",
+        user_email: str = "",
+    ) -> List[Dict[str, Any]]:
+        """Return all push subscriptions for a user (matched by id OR email)."""
+        results: List[Dict[str, Any]] = []
+        try:
+            q = self.supabase.schema("system").table("push_subscriptions").select("*")
+            if user_id:
+                q = q.eq("user_id", str(user_id).strip())
+            elif user_email:
+                q = q.eq("user_email", str(user_email).strip().lower())
+            else:
+                return []
+            res = q.execute()
+            if res.data:
+                results = res.data
+        except Exception as e:
+            logger.warning("[WebPush] get_push_subscriptions error: %s", e)
+        return results
 
     def mark_as_read(self, notification_id: str) -> Dict[str, Any]:
         updates = {"is_read": True, "read": True, "unread": False}
