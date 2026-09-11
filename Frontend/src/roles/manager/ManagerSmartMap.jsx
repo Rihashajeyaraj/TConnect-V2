@@ -795,15 +795,40 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  useEffect(() => {
-    if (!autoRefresh) return
-    const t = setInterval(() => {
-      if (!document.hidden) {
+  // ─── P2 Optimization: Realtime Primary with 45s Disconnected Fallback & Visibility Control ───
+  const fallbackTimerRef = useRef(null)
+  const isRealtimeActiveRef = useRef(false)
+
+  // Start 45s fallback polling ONLY when Realtime is disconnected
+  const startFallbackPolling = useCallback(() => {
+    if (fallbackTimerRef.current) return
+    console.log('[ManagerSmartMap] Realtime disconnected: Starting 45s fallback polling')
+    fallbackTimerRef.current = setInterval(() => {
+      if (!document.hidden && !isRealtimeActiveRef.current) {
         fetchData(true)
       }
-    }, 2000) // Fast 2-second real-time live map polling
-    return () => clearInterval(t)
-  }, [autoRefresh, fetchData])
+    }, 45000) // Safe 45-second fallback polling interval
+  }, [fetchData])
+
+  const stopFallbackPolling = useCallback(() => {
+    if (fallbackTimerRef.current) {
+      console.log('[ManagerSmartMap] Realtime connected: Stopping fallback polling')
+      clearInterval(fallbackTimerRef.current)
+      fallbackTimerRef.current = null
+    }
+  }, [])
+
+  // Page Visibility API handler: avoid updates when tab is hidden, resync on tab focus
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Resync team locations once when returning to visible tab
+        fetchData(true)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [fetchData])
 
   // ─── Load all leads + customers + visits for route-corridor nearby detection ───
   useEffect(() => {
@@ -979,7 +1004,17 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           })
         })
       })
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[ManagerSmartMap] Realtime channel connected: team_locations_realtime')
+          isRealtimeActiveRef.current = true
+          stopFallbackPolling()
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          console.warn('[ManagerSmartMap] Realtime channel disconnected/error:', status)
+          isRealtimeActiveRef.current = false
+          startFallbackPolling()
+        }
+      })
       
     return () => {
       if (supabase && channel) {
@@ -990,7 +1025,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         }
       }
     }
-  }, [supabase])
+  }, [supabase, startFallbackPolling, stopFallbackPolling])
 
   // ─── 3. Google Maps init ────────────────────────────────────────────────
   useEffect(() => {
@@ -1013,6 +1048,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           const m = new window.google.maps.Map(mapContainerRef.current, {
             center: { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng },
             zoom: 13,
+            mapId: 'DEMO_MAP_ID', // Enables Google Vector Maps WebGL 60fps rendering & 3D buildings
             zoomControl: true,
             zoomControlOptions: { position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9 },
             mapTypeControl: false,
@@ -1033,6 +1069,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     const map = new window.google.maps.Map(mapContainerRef.current, {
       center: { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng },
       zoom: 13,
+      mapId: 'DEMO_MAP_ID', // Enables Google Vector Maps WebGL 60fps rendering & 3D buildings
       zoomControl: true,
       zoomControlOptions: {
         position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9
@@ -1624,12 +1661,12 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return
 
     const crumbTime = new Date(crumb.recorded_at || crumb.timestamp || Date.now()).getTime()
-    if (crumbTime && crumbTime <= latestTimestampRef.current) {
+    if (crumbTime && crumbTime < latestTimestampRef.current) {
       console.log("[SmartMap] Ignored older/stale coordinate update:", crumb.recorded_at || crumb.timestamp)
       return
     }
     if (crumbTime) {
-      latestTimestampRef.current = crumbTime
+      latestTimestampRef.current = Math.max(latestTimestampRef.current, crumbTime)
     }
 
     const now = Date.now()
@@ -1774,7 +1811,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     setTrackStatus('loading')
     console.log("[SmartMap] Loading tracking history for executive:", executive?.employee_name, executive?.employee_id)
     try {
-      const res = await spatialAPI.getLocationHistory(executive.employee_id)
+      const targetEmpId = executive.employee_id || executive.employee_code || executive.id
+      const res = await spatialAPI.getLocationHistory(targetEmpId)
       console.log("[SmartMap] History response:", res)
       const data = res?.data || res
       const session = data?.session

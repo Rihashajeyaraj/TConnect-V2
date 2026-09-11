@@ -1,8 +1,22 @@
-import React, { useState } from 'react'
-import SmartClientMap from '../sales/SmartClientMap.jsx'
-import ManagerSmartMap from '../manager/ManagerSmartMap.jsx'
+import React, { useState, lazy, Suspense } from 'react'
 import { hasPermission } from '../../utils/permissionUtils.js'
-import { MapPin, Users, Compass, ShieldCheck } from 'lucide-react'
+import { MapPin, Users, Compass } from 'lucide-react'
+
+// Lazy-load both heavy map components so only the active tab chunk is downloaded
+const ManagerSmartMap = lazy(() => import('../manager/ManagerSmartMap.jsx'))
+const SmartClientMap = lazy(() => import('../sales/SmartClientMap.jsx'))
+
+// Lightweight fallback while the map chunk downloads
+function MapLoader() {
+  return (
+    <div className="flex items-center justify-center min-h-[400px] bg-[#FAF6F0] rounded-2xl border border-[#E8D8C8]">
+      <div className="flex flex-col items-center gap-3">
+        <div className="w-8 h-8 border-2 border-[#966038]/20 border-t-[#966038] rounded-full animate-spin" />
+        <span className="text-xs font-bold text-slate-400 tracking-wider uppercase">Loading Map…</span>
+      </div>
+    </div>
+  )
+}
 
 export default function TeamLeadSmartMap() {
   const canViewTeamMap = hasPermission('system.smart_map.team')
@@ -16,7 +30,7 @@ export default function TeamLeadSmartMap() {
           <MapPin className="w-5 h-5 text-[#966038]" />
           <div>
             <h2 className="text-xs font-black text-[#543D30] uppercase tracking-wider">
-              Smart Client & Live Tracking Radar (Team Lead)
+              Smart Client &amp; Live Tracking Radar (Team Lead)
             </h2>
             <p className="text-[10px] text-slate-500 font-semibold">
               Toggle between live team location tracking and personal client radar navigation map.
@@ -50,8 +64,15 @@ export default function TeamLeadSmartMap() {
         </div>
       </div>
 
+<<<<<<< HEAD
       {/* Render selected view */}
       {activeTab === 'team' && canViewTeamMap ? <ManagerSmartMap hideHeader={true} /> : <SmartClientMap />}
+=======
+      {/* Render selected view — lazy-loaded on first visit */}
+      <Suspense fallback={<MapLoader />}>
+        {activeTab === 'team' && canViewTeamMap ? <ManagerSmartMap /> : <SmartClientMap />}
+      </Suspense>
+>>>>>>> Riha
     </div>
   )
 }

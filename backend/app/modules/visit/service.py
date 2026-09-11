@@ -11,8 +11,8 @@ class VisitService:
     def __init__(self, repo: VisitRepository = None):
         self.repo = repo or VisitRepository()
 
-    def list_visits(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        return self.repo.get_all_visits(user_payload)
+    def list_visits(self, user_payload: Dict[str, Any] = None, page: int = None, limit: int = None) -> List[Dict[str, Any]]:
+        return self.repo.get_all_visits(user_payload, page=page, limit=limit)
 
     def create_visit(self, data: Any, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         payload = data.model_dump() if hasattr(data, "model_dump") else (data if isinstance(data, dict) else {})

@@ -1,3 +1,4 @@
+import anyio
 from fastapi import APIRouter, Depends, status
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
@@ -14,13 +15,16 @@ def get_service() -> VisitService:
 
 
 @router.get("", response_model=StandardResponse)
+@router.get("/all", response_model=StandardResponse)
 async def list_visits(
+    page: int | None = None,
+    limit: int | None = None,
     user_payload: dict = Depends(get_current_user_payload),
     rbac: None = Depends(CanViewVisits),
     service: VisitService = Depends(get_service)
 ):
     """Retrieve scheduled or completed field visits filtered by logged-in executive."""
-    visits = service.list_visits(user_payload)
+    visits = await anyio.to_thread.run_sync(service.list_visits, user_payload, page, limit)
     return StandardResponse.success_response(
         data=visits,
         message="Visits list retrieved successfully"

@@ -209,6 +209,7 @@ export default function ManagerVisits() {
     setExecutives([])
   }
 
+<<<<<<< HEAD
   const isSEAbsentOnDate = (seIdentifier, visitDate) => {
     if (!attendanceLogs || attendanceLogs.length === 0 || !visitDate) return false
     const targetDate = String(visitDate).split('T')[0].split(' ')[0].trim()
@@ -227,6 +228,8 @@ export default function ManagerVisits() {
     }
     return false
   }
+=======
+>>>>>>> Riha
 
   const resolveEmployeeCode = (seName, seEmail, rawCode) => {
     const n = (seName || '').toLowerCase().trim()

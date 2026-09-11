@@ -104,15 +104,53 @@ class VisitRepository:
 
         return row
 
-    def get_all_visits(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        user_id = str((user_payload or {}).get("sub") or (user_payload or {}).get("user_id") or "")
-        user_email = str((user_payload or {}).get("email") or "").lower().strip()
-        user_role = str((user_payload or {}).get("role") or "").strip()
-        user_name = str((user_payload or {}).get("name") or "").strip()
-        user_emp_code = str((user_payload or {}).get("employee_code") or (user_payload or {}).get("employee_id") or "").strip()
+    def get_all_visits(self, user_payload: Dict[str, Any] = None, page: Optional[int] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
+        allowed = get_allowed_user_identifiers(user_payload)
 
-        is_executive = user_role not in ("Admin", "Super Admin", "System Admin", "Sales Manager", "Manager", "CEO")
+        # ── P1 True DB Pagination & SQL Security Scoping Path ──
+        if page is not None and limit is not None and page > 0 and limit > 0:
+            limit = min(limit, 100)
+            offset = (page - 1) * limit
+            visits = []
+            cols = "id, visit_id, lead_id, customer_id, title, visitor_name, employee_code, visit_date, check_in_time, check_out_time, status, created_at"
+            for schema_name in [SchemaEnum.VISIT.value, "public"]:
+                try:
+                    q = self.supabase.schema(schema_name).table("visits").select(cols) if schema_name != "public" else self.supabase.table("visits").select(cols)
+                    if allowed is not None:
+                        conds = []
+                        if allowed.get("emails"):
+                            em_list = [f'"{e}"' for e in allowed["emails"] if e]
+                            if em_list:
+                                conds.append(f"visitor_email.in.({','.join(em_list)})")
+                        if allowed.get("codes"):
+                            cd_list = [f'"{c}"' for c in allowed["codes"] if c]
+                            if cd_list:
+                                conds.append(f"employee_code.in.({','.join(cd_list)})")
+                        if conds:
+                            q = q.or_(",".join(conds))
+                    res = q.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+                    if res.data:
+                        visits = [self._standardize_visit(v) for v in res.data]
+                        break
+                except Exception as e:
+                    logger.debug(f"P1 DB visits query fetch notice in {schema_name}: {e}")
 
+            if not visits:
+                all_visits = self._fetch_all_visits_unscoped()
+                res = [v for v in all_visits if is_record_accessible(v, allowed)] if allowed else list(all_visits)
+                return res[offset : offset + limit]
+
+            scoped = [v for v in visits if is_record_accessible(v, allowed)] if allowed else visits
+            return scoped
+
+        # ── Unpaginated Fallback / Lookup Path ──
+        all_visits = self._fetch_all_visits_unscoped()
+        if allowed is not None:
+            return [v for v in all_visits if is_record_accessible(v, allowed)]
+        return list(all_visits)
+
+    def _fetch_all_visits_unscoped(self) -> List[Dict[str, Any]]:
         visits = []
         try:
             res = self.supabase.schema(SchemaEnum.VISIT.value).table("visits").select("*").execute()
@@ -131,12 +169,6 @@ class VisitRepository:
 
         if not visits:
             visits = [self._standardize_visit(v) for v in _in_memory_visits]
-
-        from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
-        allowed = get_allowed_user_identifiers(user_payload)
-        if allowed is not None:
-            visits = [v for v in visits if is_record_accessible(v, allowed)]
-
         return visits
 
     def create_visit(self, data: Dict[str, Any]) -> Dict[str, Any]:

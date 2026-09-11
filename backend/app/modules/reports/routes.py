@@ -1,3 +1,4 @@
+import anyio
 from fastapi import APIRouter, Depends
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
@@ -22,7 +23,7 @@ async def get_dashboard_kpis(
     service: ReportsService = Depends(get_service)
 ):
     """Retrieve role-scoped high-level KPI dashboard metrics."""
-    kpis = service.get_dashboard_summary(user_payload)
+    kpis = await anyio.to_thread.run_sync(service.get_dashboard_summary, user_payload)
     return StandardResponse.success_response(
         data=kpis,
         message="Dashboard KPI metrics retrieved successfully"
@@ -39,7 +40,7 @@ async def get_ceo_dashboard(
     if role not in ("super_admin", "ceo", "admin"):
         raise ForbiddenException("Access to CEO Dashboard is restricted to Admin, Super Admin, and CEO roles.")
 
-    data = service.get_ceo_dashboard_kpis()
+    data = await anyio.to_thread.run_sync(service.get_ceo_dashboard_kpis)
     return StandardResponse.success_response(
         data=data,
         message="CEO Dashboard details retrieved successfully"
@@ -53,7 +54,7 @@ async def get_sales_dashboard(
     service: ReportsService = Depends(get_service)
 ):
     """Retrieve full Sales Executive Dashboard KPIs filtered by logged-in executive."""
-    data = service.get_sales_dashboard(user_payload)
+    data = await anyio.to_thread.run_sync(service.get_sales_dashboard, user_payload)
     return StandardResponse.success_response(
         data=data,
         message="Sales dashboard data retrieved successfully"
@@ -107,7 +108,7 @@ async def get_eod_reports(
     service: ReportsService = Depends(get_service)
 ):
     """Get team EOD work reports scoped by logged-in manager or executive."""
-    reports = service.get_eod_reports(user_payload)
+    reports = await anyio.to_thread.run_sync(service.get_eod_reports, user_payload)
     return StandardResponse.success_response(
         data=reports,
         message="EOD work reports retrieved successfully"
@@ -154,7 +155,7 @@ async def get_ceo_sales_overview(
         "manager_id": manager_id,
         "executive_id": executive_id
     }
-    data = service.get_ceo_sales_overview(params)
+    data = await anyio.to_thread.run_sync(service.get_ceo_sales_overview, params)
     return StandardResponse.success_response(
         data=data,
         message="CEO Sales Overview details retrieved successfully"
@@ -171,7 +172,7 @@ async def get_ceo_customer_directory(
     if role not in ("super_admin", "ceo", "admin"):
         raise ForbiddenException("Access to CEO Customer Directory is restricted to Admin, Super Admin, and CEO roles.")
 
-    data = service.get_ceo_customer_directory()
+    data = await anyio.to_thread.run_sync(service.get_ceo_customer_directory)
     return StandardResponse.success_response(
         data=data,
         message="CEO Customer Directory retrieved successfully"

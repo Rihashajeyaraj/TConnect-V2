@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
+import { createClient } from '@supabase/supabase-js'
 import {
   MapPin, Navigation, Compass, Search, Phone, Calendar,
   CheckCircle2, Clock, User, Building2, X, Plus,
@@ -12,6 +13,17 @@ import useCurrentUser, { getStoredUser } from '../../hooks/useCurrentUser.js'
 import { loadGoogleMaps } from '../../utils/loadGoogleMaps.js'
 import { filterUserItems } from '../../utils/userScope.js'
 import { detectRouteClients, shouldNotify } from '../../utils/routeProximityUtils.js'
+
+// Supabase client initialization for live tracking broadcast
+const SUPA_URL = import.meta.env.VITE_SUPABASE_URL
+const SUPA_ANON = import.meta.env.VITE_SUPABASE_ANON_KEY
+let supabaseClient = window.__supabase_client || null
+try {
+  if (SUPA_URL && SUPA_ANON && !supabaseClient) {
+    supabaseClient = createClient(SUPA_URL, SUPA_ANON)
+    window.__supabase_client = supabaseClient
+  }
+} catch (e) {}
 
 import MAP_CONFIG from '../../config/mapConfig.js'
 
@@ -233,6 +245,7 @@ export default function SmartClientMap({ isManagerView = false }) {
   const trailPolylineRef = useRef(null)         // Traveled breadcrumb polyline
   const trailPointsRef   = useRef([])           // Breadcrumb points array
   const lastTelemetryUpdate = useRef(0)         // throttled updates tracking
+  const lastUiRenderTime = useRef(0)            // P2 throttled React UI renders tracking
   const hasCenteredOnGpsRef = useRef(false)     // initial GPS pan tracking
 
   // ── GPS & Map ────────────────────────────────────────────────────────────
@@ -587,37 +600,106 @@ export default function SmartClientMap({ isManagerView = false }) {
       setGpsStatus(prev => (prev === 'loading' ? 'active' : prev))
     }, 1500)
 
+    // Initialize Supabase Realtime channels for location streaming
+    const broadcastChannels = []
+    const empId = currentUser?.employee_id || currentUser?.id
+    const empCode = currentUser?.employee_code || 'EMP000012'
+
+    if (supabaseClient) {
+      const channelNames = new Set()
+      if (empId) {
+        channelNames.add(`tracking_${empId}`)
+        channelNames.add(`tracking_${empId}_live`)
+      }
+      if (empCode && empCode !== empId) {
+        channelNames.add(`tracking_${empCode}`)
+        channelNames.add(`tracking_${empCode}_live`)
+      }
+
+      channelNames.forEach(chName => {
+        try {
+          const ch = supabaseClient.channel(chName)
+          ch.subscribe()
+          broadcastChannels.push(ch)
+        } catch (e) {}
+      })
+    }
+
     const watchId = navigator.geolocation.watchPosition(
       (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords
+        const { latitude, longitude, accuracy, speed, heading } = pos.coords
         const newPos = { lat: latitude, lng: longitude }
-        setExecutivePos(newPos)
-        setGpsAccuracy(accuracy || null)
-        setGpsStatus('active')
+        execPosRef.current = newPos
+        if (execMarkerRef.current) {
+          execMarkerRef.current.setPosition(newPos)
+        }
 
-        // Rapid backend telemetry & local cross-tab broadcast for sub-second Manager map updates
+        // P2 Optimization: Throttle React UI state updates to ~1.5s to prevent render cascades
+        const renderNow = Date.now()
+        if (renderNow - lastUiRenderTime.current > 1500) {
+          lastUiRenderTime.current = renderNow
+          setExecutivePos(newPos)
+          setGpsAccuracy(accuracy || null)
+          setGpsStatus('active')
+        }
+
+        // Rapid backend telemetry & live cross-device streaming for Manager & TeamLead maps
         const now = Date.now()
         if (now - lastTelemetryUpdate.current > 1000) {
           lastTelemetryUpdate.current = now
           const payload = {
-            employee_id:   currentUser?.employee_id || currentUser?.id,
-            employee_code: currentUser?.employee_code || 'EMP000012',
+            employee_id:   empId,
+            employee_code: empCode,
             email:         currentUser?.email || 'executive@tconnect.com',
-            name:          currentUser?.name  || 'Sales Executive',
+            name:          currentUser?.name  || currentUser?.full_name || 'Sales Executive',
             latitude, longitude,
             accuracy: accuracy || 0.0,
+            speed: speed || null,
+            heading: heading || null,
             recorded_at: new Date().toISOString()
           }
 
+          // 1. Update live telemetry API
           spatialAPI.updateLocation({
+            employee_id:   payload.employee_id,
+            employee_code: payload.employee_code,
             email:         payload.email,
             name:          payload.name,
-            employee_code: payload.employee_code,
             latitude, longitude,
             accuracy_meters: accuracy || 0.0,
+            speed: payload.speed,
+            heading: payload.heading,
             timestamp: payload.recorded_at
           }).catch(() => null)
 
+          // 2. Push breadcrumb to tracking_locations table for live breadcrumbs purple trail
+          spatialAPI.pushLocation({
+            employee_id: payload.employee_id,
+            employee_code: payload.employee_code,
+            latitude, longitude,
+            accuracy: accuracy || 10,
+            speed: payload.speed,
+            heading: payload.heading,
+            recorded_at: payload.recorded_at
+          }).catch(() => null)
+
+          // 3. Stream real-time broadcast to Manager/TeamLead map subscribers over WebSockets
+          if (broadcastChannels.length > 0) {
+            broadcastChannels.forEach(ch => {
+              try {
+                ch.send({
+                  type: 'broadcast',
+                  event: 'location',
+                  payload: {
+                    ...payload,
+                    broadcast_sent_at: Date.now()
+                  }
+                })
+              } catch (e) {}
+            })
+          }
+
+          // 4. Local cross-tab broadcast fallback
           try {
             const bc = new BroadcastChannel('tc_live_gps_stream')
             bc.postMessage(payload)
@@ -634,8 +716,11 @@ export default function SmartClientMap({ isManagerView = false }) {
     return () => {
       clearTimeout(safetyTimer)
       navigator.geolocation.clearWatch(watchId)
+      broadcastChannels.forEach(ch => {
+        try { ch.unsubscribe() } catch (e) {}
+      })
     }
-  }, [currentUser?.email])
+  }, [currentUser?.email, currentUser?.employee_id, currentUser?.employee_code])
 
   // ─── 3. Fetch scoped DB records ─────────────────────────────────────────
   const loadData = useCallback(async () => {
@@ -1115,6 +1200,7 @@ export default function SmartClientMap({ isManagerView = false }) {
         const map = new window.google.maps.Map(mapContainerRef.current, {
           center: { lat: centerLat, lng: centerLng },
           zoom: 14,
+          mapId: 'DEMO_MAP_ID', // Enables Google Vector Maps WebGL 60fps rendering & 3D buildings
           zoomControl: true,
           zoomControlOptions: {
             position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9

@@ -27,3 +27,23 @@ class NotificationService:
     def mark_as_read(self, notification_id: str) -> Dict[str, Any]:
         return self.repo.mark_as_read(notification_id)
 
+    # ── Push Subscription ────────────────────────────────────────────────────
+
+    def save_push_subscription(
+        self,
+        user_id: str,
+        user_email: str,
+        endpoint: str,
+        p256dh: str,
+        auth: str,
+    ) -> Dict[str, Any]:
+        return self.repo.save_push_subscription(
+            user_id=user_id,
+            user_email=user_email,
+            endpoint=endpoint,
+            p256dh=p256dh,
+            auth=auth,
+        )
+
+    def delete_push_subscription(self, user_id: str, endpoint: str) -> bool:
+        return self.repo.delete_push_subscription(user_id=user_id, endpoint=endpoint)

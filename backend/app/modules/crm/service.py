@@ -9,8 +9,8 @@ class CRMService:
     def __init__(self, repo: CRMRepository = None):
         self.repo = repo or CRMRepository()
 
-    def list_leads(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        return self.repo.get_all_leads(user_payload)
+    def list_leads(self, user_payload: Dict[str, Any] = None, page: int = None, limit: int = None) -> List[Dict[str, Any]]:
+        return self.repo.get_all_leads(user_payload, page=page, limit=limit)
 
     def create_lead(self, data: LeadCreate, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
         payload = data.model_dump(exclude_unset=False)

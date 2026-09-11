@@ -1,3 +1,4 @@
+import anyio
 from fastapi import APIRouter, Depends, status
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
@@ -15,12 +16,14 @@ def get_service() -> CRMService:
 
 @router.get("/leads", response_model=StandardResponse)
 async def list_leads(
+    page: int | None = None,
+    limit: int | None = None,
     user_payload: dict = Depends(get_current_user_payload),
     rbac: None = Depends(CanViewLeads),
     service: CRMService = Depends(get_service)
 ):
     """Retrieve leads filtered by authenticated user."""
-    leads = service.list_leads(user_payload)
+    leads = await anyio.to_thread.run_sync(service.list_leads, user_payload, page, limit)
     return StandardResponse.success_response(
         data=leads,
         message="Leads list retrieved successfully"
