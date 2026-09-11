@@ -34,6 +34,11 @@ class Settings(BaseSettings):
 
 
 
+    # Web Push (VAPID)
+    VAPID_PUBLIC_KEY: str = ""
+    VAPID_PRIVATE_KEY: str = ""
+    VAPID_EMAIL: str = "mailto:admin@twiteconnect.com"
+
     # Security
     SECRET_KEY: str = "twiteconnect-super-secret-key-change-in-production"
     ALGORITHM: str = "HS256"
