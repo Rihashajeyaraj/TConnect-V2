@@ -1947,15 +1947,58 @@ async def get_location_history(
         logger.warning(f"session fetch: {e}")
 
     if not session:
-        return {"success": True, "session": None, "breadcrumbs": [], "employee_id": employee_id}
+        # Fallback: Check memory telemetry cache or hrms.employee_locations for latest position
+        latest_loc = None
+        for tid in target_ids:
+            if tid and str(tid).strip() in _live_executive_telemetry:
+                latest_loc = _live_executive_telemetry[str(tid).strip()]
+                break
+            if tid and str(tid).strip().lower() in _live_executive_telemetry:
+                latest_loc = _live_executive_telemetry[str(tid).strip().lower()]
+                break
 
-    # Get breadcrumbs
+        if not latest_loc:
+            try:
+                loc_res = sp.schema("hrms").table("employee_locations").select("*").in_("employee_id", target_ids).limit(1).execute()
+                if loc_res.data:
+                    latest_loc = loc_res.data[0]
+            except Exception as loc_e:
+                logger.debug(f"Fallback employee_locations query notice: {loc_e}")
+
+        # Query any breadcrumbs recorded today for these target_ids
+        breadcrumbs = []
+        try:
+            loc_q = sp.schema("hrms").table("tracking_locations").select(
+                "id,latitude,longitude,accuracy,speed,heading,recorded_at"
+            ).in_("employee_id", target_ids).order("recorded_at").execute()
+            breadcrumbs = loc_q.data or []
+        except Exception as b_e:
+            logger.debug(f"Fallback tracking_locations query notice: {b_e}")
+
+        if latest_loc or breadcrumbs:
+            l_lat = latest_loc.get("latitude") if latest_loc else (breadcrumbs[-1]["latitude"] if breadcrumbs else None)
+            l_lng = latest_loc.get("longitude") if latest_loc else (breadcrumbs[-1]["longitude"] if breadcrumbs else None)
+            l_time = (latest_loc.get("last_seen_at") or latest_loc.get("timestamp")) if latest_loc else (breadcrumbs[-1]["recorded_at"] if breadcrumbs else datetime.datetime.utcnow().isoformat())
+            
+            session = {
+                "id": f"virtual_session_{employee_id}",
+                "employee_id": employee_id,
+                "status": "active",
+                "start_time": l_time,
+                "start_latitude": l_lat,
+                "start_longitude": l_lng,
+                "client_name": "Live GPS Tracking"
+            }
+        else:
+            return {"success": True, "session": None, "breadcrumbs": [], "employee_id": employee_id}
+
+    # Get breadcrumbs if session was found from DB
     breadcrumbs = []
     try:
         q_loc = sp.schema("hrms").table("tracking_locations").select(
             "id,latitude,longitude,accuracy,speed,heading,recorded_at"
         )
-        if session and session.get("id"):
+        if session and session.get("id") and not str(session.get("id")).startswith("virtual_session_"):
             q_loc = q_loc.eq("tracking_session_id", session["id"])
         else:
             q_loc = q_loc.in_("employee_id", target_ids)
@@ -1966,15 +2009,16 @@ async def get_location_history(
 
     # Stale detection: no ping for > 5 min → stale
     tracking_status = session.get("status", "active")
-    if tracking_status == "active" and breadcrumbs:
+    if tracking_status == "active" and (breadcrumbs or session.get("start_latitude")):
         try:
-            last_rec = breadcrumbs[-1]["recorded_at"]
-            last_dt = datetime.datetime.fromisoformat(last_rec.replace("Z", "+00:00"))
-            if last_dt.tzinfo is None:
-                last_dt = last_dt.replace(tzinfo=datetime.timezone.utc)
-            diff_sec = (datetime.datetime.now(datetime.timezone.utc) - last_dt).total_seconds()
-            if diff_sec > 300:
-                tracking_status = "stale"
+            last_rec = breadcrumbs[-1]["recorded_at"] if breadcrumbs else session.get("start_time")
+            if last_rec:
+                last_dt = datetime.datetime.fromisoformat(str(last_rec).replace("Z", "+00:00"))
+                if last_dt.tzinfo is None:
+                    last_dt = last_dt.replace(tzinfo=datetime.timezone.utc)
+                diff_sec = (datetime.datetime.now(datetime.timezone.utc) - last_dt).total_seconds()
+                if diff_sec > 300:
+                    tracking_status = "stale"
         except Exception:
             pass
 

@@ -1750,7 +1750,8 @@ export default function ManagerSmartMap() {
     setTrackStatus('loading')
     console.log("[SmartMap] Loading tracking history for executive:", executive?.employee_name, executive?.employee_id)
     try {
-      const res = await spatialAPI.getLocationHistory(executive.employee_id)
+      const targetEmpId = executive.employee_id || executive.employee_code || executive.id
+      const res = await spatialAPI.getLocationHistory(targetEmpId)
       console.log("[SmartMap] History response:", res)
       const data = res?.data || res
       const session = data?.session
