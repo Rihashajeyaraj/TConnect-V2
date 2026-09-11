@@ -164,3 +164,56 @@ async def unregister_push_subscription(
         data={"removed": success},
         message="Push subscription removed" if success else "Subscription not found"
     )
+
+
+class DirectPushTestRequest(BaseModel):
+    title: Optional[str] = "TwiteConnect Test"
+    body: Optional[str] = "Background push test"
+    unread_count: Optional[int] = 7
+
+
+@router.post("/push-test", response_model=StandardResponse)
+async def direct_push_test(
+    body: DirectPushTestRequest,
+    user_payload: dict = Depends(get_current_user_payload),
+    service: NotificationService = Depends(get_service)
+):
+    """Developer direct test endpoint to send Web Push to the authenticated user's subscriptions."""
+    user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "").strip()
+    user_email = str(
+        user_payload.get("email") or
+        (user_payload.get("user_metadata") or {}).get("email") or
+        ""
+    ).lower().strip()
+
+    subs = service.repo.get_push_subscriptions_for_user(user_id=user_id, user_email=user_email)
+    if not subs:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No push subscriptions found in system.push_subscriptions for user_id='{user_id}' email='{user_email}'"
+        )
+
+    test_payload = {
+        "type": "test_push",
+        "title": body.title or "TwiteConnect Test",
+        "body": body.body or "Background push test",
+        "unread_count": body.unread_count if body.unread_count is not None else 7,
+        "url": "/notifications"
+    }
+
+    results = []
+    for sub in subs:
+        endpoint = sub.get("endpoint") or ""
+        res = push_service.send_web_push(endpoint, sub.get("p256dh"), sub.get("auth"), test_payload)
+        results.append({
+            "endpoint_short": (endpoint[:35] + "...") if len(endpoint) > 35 else endpoint,
+            "success": res.get("success"),
+            "status_code": res.get("status_code"),
+            "error": res.get("error")
+        })
+
+    return StandardResponse.success_response(
+        data={"sent": len(results), "details": results, "payload": test_payload},
+        message="Direct test push dispatched"
+    )
+

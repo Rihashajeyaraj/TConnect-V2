@@ -116,13 +116,16 @@ async function updateOsBadge(count) {
   const numCount = Number(count) || 0
   try {
     if ('setAppBadge' in self.navigator) {
+      console.log(`[SW] setAppBadge called with count = ${numCount}`)
       if (numCount > 0) {
         await self.navigator.setAppBadge(numCount)
       } else {
         await self.navigator.clearAppBadge()
       }
     }
-  } catch (_) {}
+  } catch (err) {
+    console.warn('[SW] setAppBadge error:', err)
+  }
   await cacheUnreadCount(numCount)
 }
 
@@ -141,6 +144,7 @@ async function updateOsBadge(count) {
  * }
  */
 self.addEventListener('push', (event) => {
+  console.log('[SW] PUSH EVENT RECEIVED')
   let data = {}
   if (event.data) {
     try {
@@ -156,6 +160,7 @@ self.addEventListener('push', (event) => {
   // Use server-provided unread_count — never +1 yourself
   const unread   = Number(data.unread_count)
   const hasCount = !isNaN(unread) && unread >= 0
+  console.log(`[SW] unread_count received = ${unread}`)
 
   // Deduplicate: ignore if we already showed a notification with the same title+body
   // within the last 2 seconds (rapid consecutive messages are still shown individually)

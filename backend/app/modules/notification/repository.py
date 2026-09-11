@@ -211,19 +211,22 @@ class NotificationRepository:
         logger.info(f"[NOTIFICATION INSERT REQUEST] Inserting into system.notifications for recipient_user_id: {recip_user_id} role: {recip_role}")
 
         # 1. Primary: system.notifications
+        saved_notif = None
         try:
             res = self.supabase.schema("system").table("notifications").insert(db_payload).execute()
             if res.data and len(res.data) > 0:
                 logger.info(f"[NOTIFICATION INSERT SUCCESS] Saved notification ID: {res.data[0].get('id')}")
-                return self._standardize_notification(res.data[0])
+                saved_notif = self._standardize_notification(res.data[0])
         except Exception as e:
             logger.warning(f"system.notifications insert notice: {e}")
-
 
         # ── Web Push dispatch (fire-and-forget, never blocks notification creation) ──
         # Determine recipient identity for subscription lookup
         push_user_id   = str(recip_user_id or recip_id or "").strip()
         push_user_email = str(recip_email or "").strip().lower()
+
+        logger.info(f"[PUSH] notification created: id={notif_id} title='{title_str}'")
+        logger.info(f"[PUSH] recipient = user_id='{push_user_id}', email='{push_user_email}', role='{recip_role}'")
 
         if push_user_id or push_user_email:
             try:
@@ -232,6 +235,7 @@ class NotificationRepository:
                     "email": push_user_email,
                     "sub": push_user_id,
                 })
+                logger.info(f"[PUSH] unread_count = {fresh_unread}")
 
                 push_payload = {
                     "type":         "new_notification",
@@ -244,8 +248,10 @@ class NotificationRepository:
                 subs = self.get_push_subscriptions_for_user(
                     user_id=push_user_id, user_email=push_user_email
                 )
+                logger.info(f"[PUSH] subscriptions = {len(subs)}")
 
                 if subs:
+                    logger.info(f"[PUSH] sending push to {len(subs)} subscription(s)")
                     def _remove_stale(endpoints: List[str]) -> None:
                         for ep in endpoints:
                             self.delete_push_subscription_by_endpoint(ep)
@@ -253,15 +259,14 @@ class NotificationRepository:
                     push_service.send_push_to_subscriptions_async(
                         subs, push_payload, on_remove=_remove_stale
                     )
-                    logger.info(
-                        "[WebPush] Dispatching push to %d subscription(s) for user %s (unread=%d)",
-                        len(subs), push_user_id or push_user_email, fresh_unread
-                    )
+                    logger.info("[PUSH] push result = dispatched async")
+                else:
+                    logger.warning("[PUSH] push result = skipped (0 subscriptions found for recipient)")
             except Exception as push_err:  # noqa: BLE001
                 # Push failure must NEVER cause notification creation to fail
-                logger.warning("[WebPush] Push dispatch error (non-fatal): %s", push_err)
+                logger.warning(f"[PUSH] push result = failure: {push_err}")
 
-        return req_obj
+        return saved_notif or req_obj
 
     # ──────────────────────────────────────────────────────────────────────────
     # Push Subscription CRUD
