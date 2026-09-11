@@ -987,6 +987,7 @@ export default function ManagerSmartMap() {
           const m = new window.google.maps.Map(mapContainerRef.current, {
             center: { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng },
             zoom: 13,
+            mapId: 'DEMO_MAP_ID', // Enables Google Vector Maps WebGL 60fps rendering & 3D buildings
             zoomControl: true,
             zoomControlOptions: { position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9 },
             mapTypeControl: false,
@@ -1007,6 +1008,7 @@ export default function ManagerSmartMap() {
     const map = new window.google.maps.Map(mapContainerRef.current, {
       center: { lat: DEFAULT_CENTER.lat, lng: DEFAULT_CENTER.lng },
       zoom: 13,
+      mapId: 'DEMO_MAP_ID', // Enables Google Vector Maps WebGL 60fps rendering & 3D buildings
       zoomControl: true,
       zoomControlOptions: {
         position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9
@@ -1598,12 +1600,12 @@ export default function ManagerSmartMap() {
     if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return
 
     const crumbTime = new Date(crumb.recorded_at || crumb.timestamp || Date.now()).getTime()
-    if (crumbTime && crumbTime <= latestTimestampRef.current) {
+    if (crumbTime && crumbTime < latestTimestampRef.current) {
       console.log("[SmartMap] Ignored older/stale coordinate update:", crumb.recorded_at || crumb.timestamp)
       return
     }
     if (crumbTime) {
-      latestTimestampRef.current = crumbTime
+      latestTimestampRef.current = Math.max(latestTimestampRef.current, crumbTime)
     }
 
     const now = Date.now()

@@ -364,34 +364,42 @@ async def update_executive_location(
     """
     Live Telemetry Update:
     Resolves the authenticated user to their HRMS employee record, updates memory telemetry, 
-    and persists their latest live GPS location in Supabase hrms.employee_locations.
+    persists latest live GPS location in Supabase hrms.employee_locations, and appends to tracking_locations breadcrumbs.
     """
     import datetime
     from app.database.supabase import get_supabase_admin_client, get_supabase_client
     
-    auth_uid = user_payload.get("sub")
+    auth_uid = user_payload.get("sub") or ""
     lat = float(payload.get("latitude") or payload.get("lat") or 13.0067)
     lng = float(payload.get("longitude") or payload.get("lng") or 80.2570)
     accuracy = float(payload.get("accuracy") or payload.get("accuracy_meters") or 0.0)
+    speed = payload.get("speed")
+    heading = payload.get("heading")
     
     sp_client = get_supabase_admin_client() or get_supabase_client()
     
-    # 1. Map auth_uid to hrms.employees.employee_id
-    employee_id = auth_uid
-    employee_name = payload.get("name") or "Abi Hastro"
-    employee_code = payload.get("employee_code") or "EMP000012"
+    email = str(user_payload.get("email") or payload.get("email") or "").lower().strip()
+    employee_code = str(payload.get("employee_code") or "EMP000012").strip()
+    req_emp_id = payload.get("employee_id")
     
+    # 1. Map auth_uid / payload to hrms.employees.employee_id
+    employee_id = _resolve_emp(sp_client, auth_uid, email=email, emp_code=employee_code)
+    if req_emp_id and employee_id == auth_uid:
+        employee_id = str(req_emp_id).strip()
+    
+    employee_name = payload.get("name") or "Sales Executive"
     try:
-        emp_res = sp_client.schema("hrms").table("employees").select("employee_id, name, employee_code").or_(f"user_id.eq.{auth_uid},auth_user_id.eq.{auth_uid},employee_id.eq.{auth_uid}").limit(1).execute()
+        emp_res = sp_client.schema("hrms").table("employees").select("employee_id, name, employee_code").or_(
+            f"employee_id.eq.{employee_id},employee_code.eq.{employee_code},user_id.eq.{auth_uid}"
+        ).limit(1).execute()
         if emp_res.data:
             employee_id = emp_res.data[0]["employee_id"]
-            employee_name = emp_res.data[0]["name"] or employee_name
-            employee_code = emp_res.data[0]["employee_code"] or employee_code
+            employee_name = emp_res.data[0].get("name") or employee_name
+            employee_code = emp_res.data[0].get("employee_code") or employee_code
     except Exception as e:
         logger.warning(f"Error mapping authenticated user to employee record: {e}")
         
     # 2. Update memory telemetry cache - store under ALL keys for reliable lookup
-    email = str(user_payload.get("email") or payload.get("email") or "").lower().strip()
     now_iso = datetime.datetime.utcnow().isoformat()
     entry = {
         "employee_id": employee_id,
@@ -401,6 +409,8 @@ async def update_executive_location(
         "latitude": lat,
         "longitude": lng,
         "accuracy": accuracy,
+        "speed": speed,
+        "heading": heading,
         "last_seen_at": now_iso,
         "timestamp": now_iso,
         "is_online": True
@@ -409,11 +419,13 @@ async def update_executive_location(
     if employee_id:
         _live_executive_telemetry[str(employee_id).strip()] = entry
         _live_executive_telemetry[str(employee_id).strip().lower()] = entry
-    if employee_code and employee_code != employee_id:
+    if employee_code:
         _live_executive_telemetry[str(employee_code).strip()] = entry
         _live_executive_telemetry[str(employee_code).strip().lower()] = entry
     if email:
         _live_executive_telemetry[email] = entry
+    if auth_uid:
+        _live_executive_telemetry[str(auth_uid).strip()] = entry
     
     # 3. Persist latest location to Supabase hrms.employee_locations
     try:
@@ -423,14 +435,40 @@ async def update_executive_location(
             "longitude": lng,
             "accuracy": accuracy,
             "is_online": True,
-            "last_seen_at": datetime.datetime.utcnow().isoformat(),
-            "updated_at": datetime.datetime.utcnow().isoformat()
+            "last_seen_at": now_iso,
+            "updated_at": now_iso
         }
-        sp_client.schema("hrms").table("employee_locations").upsert(location_data).execute()
+        sp_client.schema("hrms").table("employee_locations").upsert(location_data, on_conflict="employee_id").execute()
     except Exception as e:
         logger.warning(f"Error persisting live location: {e}")
+
+    # 4. Also insert into tracking_locations breadcrumb trail if active session exists
+    try:
+        active_sess_res = sp_client.schema("hrms").table("tracking_sessions").select("id").or_(
+            f"employee_id.eq.{employee_id},employee_id.eq.{employee_code}"
+        ).eq("status", "active").limit(1).execute()
         
-    # 4. Update today's attendance record coordinates (attendance tracking remains separate)
+        session_id = active_sess_res.data[0]["id"] if active_sess_res.data else None
+        
+        crumb: Dict[str, Any] = {
+            "employee_id": employee_id,
+            "latitude": lat,
+            "longitude": lng,
+            "accuracy": accuracy,
+            "recorded_at": now_iso
+        }
+        if session_id:
+            crumb["tracking_session_id"] = session_id
+        if speed is not None:
+            crumb["speed"] = float(speed)
+        if heading is not None:
+            crumb["heading"] = float(heading)
+            
+        sp_client.schema("hrms").table("tracking_locations").insert(crumb).execute()
+    except Exception as crumb_err:
+        logger.debug(f"Tracking breadcrumb auto-insert notice: {crumb_err}")
+        
+    # 5. Update today's attendance record coordinates
     try:
         today_str = datetime.date.today().isoformat()
         sp_client.schema("hrms").table("attendance").update({
@@ -655,12 +693,14 @@ async def get_manager_team_locations(
         
         # Strictly ONLINE if active tracking session OR recent GPS update (< 15 mins) OR checked in without checkout
         is_online = False
-        if has_active_session or loc or e_id in _live_executive_telemetry:
+        if has_active_session or loc or e_id in _live_executive_telemetry or e_code in _live_executive_telemetry:
             is_online = True
             if last_seen_at:
                 try:
                     clean_ts = str(last_seen_at).replace("Z", "+00:00")
                     seen_dt = datetime.fromisoformat(clean_ts)
+                    if seen_dt.tzinfo is None:
+                        seen_dt = seen_dt.replace(tzinfo=timezone.utc)
                     now_dt = datetime.now(timezone.utc)
                     diff = abs((now_dt - seen_dt).total_seconds())
                     if diff > 900:  # 15 minutes without GPS update -> Stale
@@ -908,6 +948,127 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
             "traffic_aware": False,
             "provider": "google"
         }
+
+
+@router.post("/route-matrix")
+def compute_route_matrix(payload: Dict[str, Any] = Body(...)):
+    """
+    Google Routes API: Compute Route Matrix (traffic-aware distances & ETAs).
+    Calculates ETAs and distance matrices between multiple origins (e.g. sales executives)
+    and multiple destinations (e.g. client visit locations).
+    Falls back to Haversine/OSRM estimation matrix if key not configured or API error.
+    """
+    from app.core.config import settings as app_settings
+    import requests
+    import math
+
+    origins: List[Dict[str, Any]] = payload.get("origins") or []
+    destinations: List[Dict[str, Any]] = payload.get("destinations") or []
+
+    if not origins or not destinations:
+        raise HTTPException(status_code=400, detail="Origins and destinations lists are required.")
+
+    api_key = app_settings.GOOGLE_MAPS_API_KEY
+
+    # 1. Primary: Google Routes API (v1 computeRouteMatrix)
+    if api_key:
+        try:
+            url = "https://routes.googleapis.com/v1/computeRouteMatrix"
+            headers = {
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": api_key,
+                "X-Goog-FieldMask": "originIndex,destinationIndex,status,distanceMeters,duration,condition"
+            }
+            body = {
+                "origins": [
+                    {
+                        "waypoint": {
+                            "location": {
+                                "latLng": {
+                                    "latitude": float(o.get("latitude") or o.get("lat") or 0),
+                                    "longitude": float(o.get("longitude") or o.get("lng") or 0)
+                                }
+                            }
+                        }
+                    }
+                    for o in origins
+                ],
+                "destinations": [
+                    {
+                        "waypoint": {
+                            "location": {
+                                "latLng": {
+                                    "latitude": float(d.get("latitude") or d.get("lat") or 0),
+                                    "longitude": float(d.get("longitude") or d.get("lng") or 0)
+                                }
+                            }
+                        }
+                    }
+                    for d in destinations
+                ],
+                "travelMode": "DRIVE",
+                "routingPreference": "TRAFFIC_AWARE_OPTIMAL"
+            }
+
+            r = requests.post(url, headers=headers, json=body, timeout=10)
+            if r.status_code == 200:
+                matrix_raw = r.json()
+                results = []
+                for item in matrix_raw:
+                    o_idx = item.get("originIndex", 0)
+                    d_idx = item.get("destinationIndex", 0)
+                    dist_m = item.get("distanceMeters", 0)
+                    dur_str = item.get("duration", "0s")
+                    dur_sec = int(float(str(dur_str).replace("s", ""))) if "s" in str(dur_str) else 0
+
+                    results.append({
+                        "origin_index": o_idx,
+                        "destination_index": d_idx,
+                        "distance_km": round(dist_m / 1000.0, 2),
+                        "distance_meters": dist_m,
+                        "eta_minutes": max(1, math.ceil(dur_sec / 60.0)),
+                        "duration_seconds": dur_sec,
+                        "status": "OK"
+                    })
+                return {
+                    "success": True,
+                    "provider": "google_routes_matrix",
+                    "traffic_aware": True,
+                    "matrix": results
+                }
+        except Exception as err:
+            logger.warning(f"Google Compute Route Matrix error, falling back to Haversine matrix: {err}")
+
+    # 2. Fallback: Haversine & Traffic-adjusted estimation matrix
+    results = []
+    for o_idx, o in enumerate(origins):
+        o_lat = float(o.get("latitude") or o.get("lat") or 0)
+        o_lng = float(o.get("longitude") or o.get("lng") or 0)
+        for d_idx, d in enumerate(destinations):
+            d_lat = float(d.get("latitude") or d.get("lat") or 0)
+            d_lng = float(d.get("longitude") or d.get("lng") or 0)
+
+            dist_m = haversine_distance_meters(o_lat, o_lng, d_lat, d_lng)
+            # Estimate driving speed ~ 25 km/h in city traffic
+            dist_km = round(dist_m / 1000.0, 2)
+            eta_mins = max(1, math.ceil((dist_km / 25.0) * 60.0))
+
+            results.append({
+                "origin_index": o_idx,
+                "destination_index": d_idx,
+                "distance_km": dist_km,
+                "distance_meters": round(dist_m, 1),
+                "eta_minutes": eta_mins,
+                "duration_seconds": eta_mins * 60,
+                "status": "OK"
+            })
+
+    return {
+        "success": True,
+        "provider": "haversine_matrix_fallback",
+        "traffic_aware": False,
+        "matrix": results
+    }
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -1270,14 +1431,21 @@ def _process_tracking_events(sp, employee_id: str, employee_name: str, employee_
     except Exception as e:
         logger.error(f"Error in tracking event processor: {e}")
 
-def _resolve_emp(sp_client, auth_uid: str) -> str:
-    """Resolve auth UID → hrms.employees.employee_id."""
+def _resolve_emp(sp_client, auth_uid: str, email: str = None, emp_code: str = None) -> str:
+    """Resolve auth UID / email / employee_code → hrms.employees.employee_id."""
     try:
-        res = sp_client.schema("hrms").table("employees").select("employee_id").or_(
-            f"user_id.eq.{auth_uid},auth_user_id.eq.{auth_uid},employee_id.eq.{auth_uid}"
-        ).limit(1).execute()
-        if res.data:
-            return res.data[0]["employee_id"]
+        conds = []
+        if auth_uid:
+            conds.extend([f"user_id.eq.{auth_uid}", f"auth_user_id.eq.{auth_uid}", f"employee_id.eq.{auth_uid}"])
+        if email:
+            conds.append(f"email.eq.{str(email).lower().strip()}")
+        if emp_code:
+            conds.extend([f"employee_code.eq.{str(emp_code).strip()}", f"employee_id.eq.{str(emp_code).strip()}"])
+        
+        if conds:
+            res = sp_client.schema("hrms").table("employees").select("employee_id").or_(",".join(conds)).limit(1).execute()
+            if res.data and res.data[0].get("employee_id"):
+                return res.data[0]["employee_id"]
     except Exception as e:
         logger.debug(f"employee resolve notice: {e}")
     return auth_uid
@@ -1784,10 +1952,15 @@ async def get_location_history(
     # Get breadcrumbs
     breadcrumbs = []
     try:
-        loc_q = sp.schema("hrms").table("tracking_locations").select(
+        q_loc = sp.schema("hrms").table("tracking_locations").select(
             "id,latitude,longitude,accuracy,speed,heading,recorded_at"
-        ).eq("employee_id", employee_id).eq("tracking_session_id", session["id"]).order("recorded_at").execute()
-        breadcrumbs = loc_q.data or []
+        )
+        if session and session.get("id"):
+            q_loc = q_loc.eq("tracking_session_id", session["id"])
+        else:
+            q_loc = q_loc.in_("employee_id", target_ids)
+        loc_res = q_loc.order("recorded_at").execute()
+        breadcrumbs = loc_res.data or []
     except Exception as e:
         logger.warning(f"breadcrumbs fetch: {e}")
 
@@ -1797,6 +1970,8 @@ async def get_location_history(
         try:
             last_rec = breadcrumbs[-1]["recorded_at"]
             last_dt = datetime.datetime.fromisoformat(last_rec.replace("Z", "+00:00"))
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=datetime.timezone.utc)
             diff_sec = (datetime.datetime.now(datetime.timezone.utc) - last_dt).total_seconds()
             if diff_sec > 300:
                 tracking_status = "stale"
