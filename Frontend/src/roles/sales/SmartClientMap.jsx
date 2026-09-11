@@ -1352,10 +1352,11 @@ export default function SmartClientMap({ isManagerView = false }) {
       const mainPolyline = new window.google.maps.Polyline({
         path: pathCoords,
         geodesic: true,
-        strokeColor: '#2563eb',
-        strokeOpacity: 0.85,
-        strokeWeight: 5,
+        strokeColor: '#9333ea', // Primary bold purple line for active route navigation
+        strokeOpacity: 0.9,
+        strokeWeight: 6,
         map: map,
+        zIndex: 25
       })
       activePolylinesRef.current.push(mainPolyline)
 
@@ -1369,14 +1370,14 @@ export default function SmartClientMap({ isManagerView = false }) {
               path: 'M 0,-2 0,2',
               strokeOpacity: 1,
               scale: 2.5,
-              strokeColor: '#9333ea', // Purple dashed line for off-route deviation
+              strokeColor: '#c084fc', // Light purple dashed line for off-route deviation
               strokeWeight: 4,
             },
             offset: '0%',
             repeat: '16px',
           }],
           map: map,
-          zIndex: 20
+          zIndex: 30
         })
         activePolylinesRef.current.push(offRoutePolyline)
       }
@@ -1418,8 +1419,8 @@ export default function SmartClientMap({ isManagerView = false }) {
     if (!googleMapRef.current || !window.google || !mapLoaded) return
     if (!executivePos?.lat || !executivePos?.lng) return
 
-    // 1. Do NOT track or render polyline unless GPS fix is active
-    if (gpsStatus !== 'active') {
+    // 1. Do NOT track or render polyline if permission is explicitly denied
+    if (gpsStatus === 'denied') {
       if (trailPolylineRef.current) {
         trailPolylineRef.current.setMap(null)
         trailPolylineRef.current = null
@@ -1456,8 +1457,8 @@ export default function SmartClientMap({ isManagerView = false }) {
       distFromLastM = haversineDistance(lastPt.lat, lastPt.lng, executivePos.lat, executivePos.lng) * 1000
     }
 
-    // Append point ONLY if first real acquired point or executive moved >= 5 meters
-    if (validPts.length === 0 || distFromLastM >= 5) {
+    // Append point if first acquired point or executive moved >= 1 meter
+    if (validPts.length === 0 || distFromLastM >= 1) {
       validPts.push({ lat: executivePos.lat, lng: executivePos.lng })
     }
 
