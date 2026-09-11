@@ -245,6 +245,7 @@ export default function SmartClientMap({ isManagerView = false }) {
   const trailPolylineRef = useRef(null)         // Traveled breadcrumb polyline
   const trailPointsRef   = useRef([])           // Breadcrumb points array
   const lastTelemetryUpdate = useRef(0)         // throttled updates tracking
+  const lastUiRenderTime = useRef(0)            // P2 throttled React UI renders tracking
   const hasCenteredOnGpsRef = useRef(false)     // initial GPS pan tracking
 
   // ── GPS & Map ────────────────────────────────────────────────────────────
@@ -628,9 +629,19 @@ export default function SmartClientMap({ isManagerView = false }) {
       (pos) => {
         const { latitude, longitude, accuracy, speed, heading } = pos.coords
         const newPos = { lat: latitude, lng: longitude }
-        setExecutivePos(newPos)
-        setGpsAccuracy(accuracy || null)
-        setGpsStatus('active')
+        execPosRef.current = newPos
+        if (execMarkerRef.current) {
+          execMarkerRef.current.setPosition(newPos)
+        }
+
+        // P2 Optimization: Throttle React UI state updates to ~1.5s to prevent render cascades
+        const renderNow = Date.now()
+        if (renderNow - lastUiRenderTime.current > 1500) {
+          lastUiRenderTime.current = renderNow
+          setExecutivePos(newPos)
+          setGpsAccuracy(accuracy || null)
+          setGpsStatus('active')
+        }
 
         // Rapid backend telemetry & live cross-device streaming for Manager & TeamLead maps
         const now = Date.now()

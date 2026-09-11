@@ -102,6 +102,33 @@ class ReportsRepository:
                 logger.debug(f"Fetch failed for {table}: {e}")
         return []
 
+    def _safe_fetch_cols(self, table: str, cols: str = "*", schema=None, filters: dict = None, limit: int = 50) -> List[Dict[str, Any]]:
+        """Safely fetch rows with explicit column selection."""
+        try:
+            if schema:
+                schema_name = schema.value if hasattr(schema, "value") else str(schema)
+                q = self.supabase.schema(schema_name).table(table).select(cols).limit(limit)
+            else:
+                q = self.supabase.table(table).select(cols).limit(limit)
+            if filters:
+                for k, v in filters.items():
+                    q = q.eq(k, v)
+            res = q.execute()
+            if res.data is not None:
+                return res.data
+        except Exception:
+            try:
+                q = self.supabase.table(table).select(cols).limit(limit)
+                if filters:
+                    for k, v in filters.items():
+                        q = q.eq(k, v)
+                res = q.execute()
+                if res.data is not None:
+                    return res.data
+            except Exception as e:
+                logger.debug(f"Fetch cols failed for {table}: {e}")
+        return []
+
     def get_dashboard_counts(self) -> Dict[str, Any]:
         """Legacy method – basic counts only."""
         counts = {
@@ -302,14 +329,14 @@ class ReportsRepository:
 
                 customers.append(row)
 
-            employees = self._safe_fetch("employees", schema="hrms", limit=1000)
+            employees = self._safe_fetch_cols("employees", cols="employee_id, is_active, status, joining_date, created_at", schema="hrms", limit=1000)
             if not employees:
-                employees = self._safe_fetch("employees", limit=1000)
+                employees = self._safe_fetch_cols("employees", cols="employee_id, is_active, status, joining_date, created_at", limit=1000)
 
             from app.modules.pipeline.repository import PipelineRepository
             opportunities = PipelineRepository().get_all_opportunities()
-            attendance = self._safe_fetch("attendance", limit=1000)
-            visits = self._safe_fetch("visits", schema="field_management", limit=1000)
+            attendance = self._safe_fetch_cols("attendance", cols="date, status, clock_in", limit=1000)
+            visits = self._safe_fetch_cols("visits", cols="id, status", schema="field_management", limit=1000)
             settings_list = self._safe_fetch("company_profile", schema="organization", limit=1)
             if not settings_list:
                 settings_list = self._safe_fetch("organization_settings", limit=1)

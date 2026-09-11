@@ -1,3 +1,4 @@
+import anyio
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
@@ -21,13 +22,16 @@ def get_service() -> CustomerService:
 # ── List / Read ───────────────────────────────────────────────────────────────
 
 @router.get("/customers", response_model=StandardResponse)
+@router.get("/all", response_model=StandardResponse)
 async def list_customers(
+    page: int | None = None,
+    limit: int | None = None,
     user_payload: dict = Depends(get_current_user_payload),
     rbac: None = Depends(CanViewCustomers),
     service: CustomerService = Depends(get_service),
 ):
     """List all customer accounts scoped to the authenticated user."""
-    customers = service.list_customers(user_payload)
+    customers = await anyio.to_thread.run_sync(service.list_customers, user_payload, page, limit)
     return StandardResponse.success_response(
         data=customers,
         message="Customers list retrieved successfully",

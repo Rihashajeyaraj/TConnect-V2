@@ -16,8 +16,8 @@ class CustomerService:
 
     # ── Existing CRUD ──────────────────────────────────────────────────────
 
-    def list_customers(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        return self.repo.get_all_customers(user_payload)
+    def list_customers(self, user_payload: Dict[str, Any] = None, page: int = None, limit: int = None) -> List[Dict[str, Any]]:
+        return self.repo.get_all_customers(user_payload, page=page, limit=limit)
 
     def create_customer(self, data: CustomerCreate) -> Dict[str, Any]:
         """Direct Add flow — delegates to centralized conversion service."""

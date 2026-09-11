@@ -32,17 +32,64 @@ class CustomerRepository:
         self.supabase = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
 
-    def get_all_customers(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+    def get_all_customers(self, user_payload: Dict[str, Any] = None, page: Optional[int] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
+        from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
+        allowed = get_allowed_user_identifiers(user_payload)
+
+        # ── P1 True DB Pagination & SQL Security Scoping Path ──
+        if page is not None and limit is not None and page > 0 and limit > 0:
+            limit = min(limit, 100)
+            offset = (page - 1) * limit
+            customers = []
+            cols = "id, name, company, person, phone, email, city, lead_id, contract_value, status, created_by, assigned_to, assigned_to_email, created_at, updated_at"
+            for schema_attempt in ["crm", "public"]:
+                try:
+                    q = self.supabase.schema(schema_attempt).table("customers").select(cols) if schema_attempt != "public" else self.supabase.table("customers").select(cols)
+                    if allowed is not None:
+                        conds = []
+                        if allowed.get("emails"):
+                            em_list = [f'"{e}"' for e in allowed["emails"] if e]
+                            if em_list:
+                                conds.append(f"assigned_to_email.in.({','.join(em_list)})")
+                        if allowed.get("ids"):
+                            id_list = [f'"{i}"' for i in allowed["ids"] if i]
+                            if id_list:
+                                conds.append(f"created_by.in.({','.join(id_list)})")
+                        if conds:
+                            q = q.or_(",".join(conds))
+                    res = q.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+                    if res.data:
+                        customers = res.data
+                        break
+                except Exception as e:
+                    logger.debug(f"P1 DB customers fetch in {schema_attempt} notice: {e}")
+
+            if not customers:
+                unscoped = self._get_unscoped_cached_customers()
+                res = [c for c in unscoped if is_record_accessible(c, allowed)] if allowed else list(unscoped)
+                return res[offset : offset + limit]
+
+            # Security verification
+            scoped_customers = [c for c in customers if is_record_accessible(c, allowed)] if allowed else customers
+            return scoped_customers
+
+        # ── Unpaginated Fallback / Lookup Path ──
+        unscoped = self._get_unscoped_cached_customers()
+        if allowed is not None:
+            return [c for c in unscoped if is_record_accessible(c, allowed)]
+        return list(unscoped)
+
+    def _get_unscoped_cached_customers(self) -> List[Dict[str, Any]]:
         global _CUSTOMERS_CACHE, _CUSTOMERS_CACHE_TIMESTAMP
         import time
         now = time.time()
         if _CUSTOMERS_CACHE is not None and (now - _CUSTOMERS_CACHE_TIMESTAMP) < _CUSTOMERS_CACHE_TTL:
-            # Cache hit — apply per-request scoping on the cached unscoped list
-            from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
-            allowed = get_allowed_user_identifiers(user_payload)
-            if allowed is None:
-                return list(_CUSTOMERS_CACHE)
-            return [c for c in _CUSTOMERS_CACHE if is_record_accessible(c, allowed)]
+            return _CUSTOMERS_CACHE
+        return self._fetch_and_enrich_customers_uncached()
+
+    def _fetch_and_enrich_customers_uncached(self) -> List[Dict[str, Any]]:
+        global _CUSTOMERS_CACHE, _CUSTOMERS_CACHE_TIMESTAMP
+        import time
 
         fetched_customers = []
         for schema_attempt in ["crm", "public"]:
@@ -261,8 +308,12 @@ class CustomerRepository:
         _CUSTOMERS_CACHE = res_list
         _CUSTOMERS_CACHE_TIMESTAMP = time.time()
         if allowed is None:
-            return list(res_list)
-        return [c for c in res_list if is_record_accessible(c, allowed)]
+            res_scoped = list(res_list)
+        else:
+            res_scoped = [c for c in res_list if is_record_accessible(c, allowed)]
+        if page is not None and limit is not None and page > 0 and limit > 0:
+            return res_scoped[(page - 1) * limit : page * limit]
+        return res_scoped
 
     def create_customer(self, data: Dict[str, Any]) -> Dict[str, Any]:
         _clear_customers_cache()

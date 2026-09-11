@@ -769,15 +769,40 @@ export default function ManagerSmartMap() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
-  useEffect(() => {
-    if (!autoRefresh) return
-    const t = setInterval(() => {
-      if (!document.hidden) {
+  // ─── P2 Optimization: Realtime Primary with 45s Disconnected Fallback & Visibility Control ───
+  const fallbackTimerRef = useRef(null)
+  const isRealtimeActiveRef = useRef(false)
+
+  // Start 45s fallback polling ONLY when Realtime is disconnected
+  const startFallbackPolling = useCallback(() => {
+    if (fallbackTimerRef.current) return
+    console.log('[ManagerSmartMap] Realtime disconnected: Starting 45s fallback polling')
+    fallbackTimerRef.current = setInterval(() => {
+      if (!document.hidden && !isRealtimeActiveRef.current) {
         fetchData(true)
       }
-    }, 2000) // Fast 2-second real-time live map polling
-    return () => clearInterval(t)
-  }, [autoRefresh, fetchData])
+    }, 45000) // Safe 45-second fallback polling interval
+  }, [fetchData])
+
+  const stopFallbackPolling = useCallback(() => {
+    if (fallbackTimerRef.current) {
+      console.log('[ManagerSmartMap] Realtime connected: Stopping fallback polling')
+      clearInterval(fallbackTimerRef.current)
+      fallbackTimerRef.current = null
+    }
+  }, [])
+
+  // Page Visibility API handler: avoid updates when tab is hidden, resync on tab focus
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Resync team locations once when returning to visible tab
+        fetchData(true)
+      }
+    }
+    document.addEventListener('visibilitychange', handleVisibilityChange)
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange)
+  }, [fetchData])
 
   // ─── Load all leads + customers + visits for route-corridor nearby detection ───
   useEffect(() => {
@@ -953,7 +978,17 @@ export default function ManagerSmartMap() {
           })
         })
       })
-      .subscribe()
+      .subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          console.log('[ManagerSmartMap] Realtime channel connected: team_locations_realtime')
+          isRealtimeActiveRef.current = true
+          stopFallbackPolling()
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          console.warn('[ManagerSmartMap] Realtime channel disconnected/error:', status)
+          isRealtimeActiveRef.current = false
+          startFallbackPolling()
+        }
+      })
       
     return () => {
       if (supabase && channel) {
@@ -964,7 +999,7 @@ export default function ManagerSmartMap() {
         }
       }
     }
-  }, [supabase])
+  }, [supabase, startFallbackPolling, stopFallbackPolling])
 
   // ─── 3. Google Maps init ────────────────────────────────────────────────
   useEffect(() => {

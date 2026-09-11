@@ -33,29 +33,103 @@ class CRMRepository:
         self.supabase = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
 
-    def get_all_leads(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
-        global _LEADS_CACHE, _LEADS_CACHE_TIMESTAMP
-        now = time.time()
-        
-        all_enriched = None
-        if _LEADS_CACHE is not None and (now - _LEADS_CACHE_TIMESTAMP) < _LEADS_CACHE_TTL:
-            all_enriched = _LEADS_CACHE
-
-        if all_enriched is None:
-            with _leads_cache_lock:
-                now = time.time()
-                if _LEADS_CACHE is not None and (now - _LEADS_CACHE_TIMESTAMP) < _LEADS_CACHE_TTL:
-                    all_enriched = _LEADS_CACHE
-                else:
-                    all_enriched = self._fetch_and_enrich_leads()
-                    _LEADS_CACHE = all_enriched
-                    _LEADS_CACHE_TIMESTAMP = now
-
+    def get_all_leads(self, user_payload: Dict[str, Any] = None, page: Optional[int] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
         allowed = get_allowed_user_identifiers(user_payload)
+
+        # ── P1 True DB Pagination & SQL Security Scoping Path ──
+        if page is not None and limit is not None and page > 0 and limit > 0:
+            limit = min(limit, 100)
+            offset = (page - 1) * limit
+            leads = []
+            cols = "lead_id, lead_number, company_name, contact_person, mobile, email, city, category, priority, status, assigned_to, assigned_to_email, employee_code, notes, remarks, created_at, updated_at"
+            try:
+                q = self.supabase.schema("crm").table("leads").select(cols)
+                if allowed is not None:
+                    conds = []
+                    if allowed.get("emails"):
+                        em_list = [f'"{e}"' for e in allowed["emails"] if e]
+                        if em_list:
+                            conds.append(f"assigned_to_email.in.({','.join(em_list)})")
+                    if allowed.get("ids"):
+                        id_list = [f'"{i}"' for i in allowed["ids"] if i]
+                        if id_list:
+                            conds.append(f"assigned_to.in.({','.join(id_list)})")
+                    if allowed.get("codes"):
+                        cd_list = [f'"{c}"' for c in allowed["codes"] if c]
+                        if cd_list:
+                            conds.append(f"employee_code.in.({','.join(cd_list)})")
+                    if conds:
+                        q = q.or_(",".join(conds))
+                res = q.order("created_at", desc=True).range(offset, offset + limit - 1).execute()
+                if res.data:
+                    leads = res.data
+            except Exception as e:
+                logger.debug(f"P1 DB leads query fallback notice: {e}")
+
+            if not leads:
+                # Fallback to unscoped fetch with in-memory slicing
+                all_enriched = self._get_unscoped_cached_leads()
+                res = [l for l in all_enriched if is_record_accessible(l, allowed)] if allowed else list(all_enriched)
+                return res[offset : offset + limit]
+
+            # Fast inline enrichment for the returned page
+            user_map = self._get_user_map()
+            enriched = []
+            for l in leads:
+                row = dict(l)
+                row["id"] = row.get("lead_id") or row.get("id")
+                notes_str = str(row.get("notes") or row.get("remarks") or "")
+                if notes_str and "|" in notes_str:
+                    for part in notes_str.split("|"):
+                        p_strip = part.strip()
+                        if "Product:" in p_strip:
+                            row.setdefault("product_name", p_strip.split("Product:")[-1].strip())
+                        elif "Email:" in p_strip:
+                            row.setdefault("assigned_to_email", p_strip.split("Email:")[-1].strip().lower())
+                se_email = str(row.get("assigned_to_email") or "").lower().strip()
+                se_user = user_map.get(se_email)
+                if se_user:
+                    row.setdefault("sales_executive", se_user.get("name"))
+                    row.setdefault("reporting_manager_email", se_user.get("reporting_manager_email"))
+                enriched.append(row)
+
+            if allowed is not None:
+                return [l for l in enriched if is_record_accessible(l, allowed)]
+            return enriched
+
+        # ── Unpaginated Fallback / Lookup Path ──
+        all_enriched = self._get_unscoped_cached_leads()
         if allowed is not None:
             return [l for l in all_enriched if is_record_accessible(l, allowed)]
         return list(all_enriched)
+
+    def _get_unscoped_cached_leads(self) -> List[Dict[str, Any]]:
+        global _LEADS_CACHE, _LEADS_CACHE_TIMESTAMP
+        now = time.time()
+        if _LEADS_CACHE is not None and (now - _LEADS_CACHE_TIMESTAMP) < _LEADS_CACHE_TTL:
+            return _LEADS_CACHE
+        with _leads_cache_lock:
+            now = time.time()
+            if _LEADS_CACHE is not None and (now - _LEADS_CACHE_TIMESTAMP) < _LEADS_CACHE_TTL:
+                return _LEADS_CACHE
+            all_enriched = self._fetch_and_enrich_leads()
+            _LEADS_CACHE = all_enriched
+            _LEADS_CACHE_TIMESTAMP = now
+            return all_enriched
+
+    def _get_user_map(self) -> Dict[str, Dict[str, Any]]:
+        user_map = {}
+        try:
+            from app.modules.users.repository import UserRepository
+            users = UserRepository().get_all_users()
+            for u in users:
+                u_email = str(u.get("email") or "").lower().strip()
+                if u_email:
+                    user_map[u_email] = u
+        except Exception:
+            pass
+        return user_map
 
     def _fetch_and_enrich_leads(self) -> List[Dict[str, Any]]:
         leads = []
