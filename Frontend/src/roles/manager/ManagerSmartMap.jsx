@@ -1129,7 +1129,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
   const getProximityStatus = () => {
     if (trackStatus === 'ended') return 'Session Ended';
+    if (trackStatus === 'stopped') return 'Stopped';
     if (trackStatus === 'loading') return 'Loading...';
+    if (selectedExecutive && !selectedExecutive.is_online) return 'Offline';
+    if (lastPingMs && Date.now() - lastPingMs > 5 * 60 * 1000) return 'Offline';
     if (!latestExecPos) return 'No GPS Data';
     if (!destClient) return 'No Destination';
 
@@ -1186,6 +1189,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     const age = Date.now() - lastPingMs;
     if (age <= 60000) {
       return { label: 'Live Connection', color: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20', dot: 'bg-emerald-500 animate-pulse' };
+    }
+    if (age > 5 * 60 * 1000) {
+      return { label: 'Offline (>5m)', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20', dot: 'bg-rose-500' };
     }
     if (selectedExecutive) {
       const staleKey = `stale_${selectedExecutive.employee_id}_${Math.floor(lastPingMs / 60000)}`
