@@ -150,7 +150,16 @@ def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[s
     allowed_ids = allowed.get("ids", set())
     allowed_names = allowed.get("names", set())
 
-    # Extract all emails on record (assigned, creator, employee, reporting manager, team lead)
+    # Check if this record is a customer / lead / visit / CRM record (where plain 'email' belongs to the client/prospect)
+    is_client_record = any(
+        k in item for k in (
+            "company_name", "company", "customer_name", "customerName", "client_name",
+            "clientName", "lead_id", "leadId", "lead_number", "leadNumber", "poc_name",
+            "poc_email", "poc_phone", "visit_id", "visitId", "contract_value"
+        )
+    )
+
+    # Extract all STAFF emails on record
     emails_to_check = {
         str(item.get("assigned_to_email") or "").lower().strip(),
         str(item.get("assignedToEmail") or "").lower().strip(),
@@ -158,13 +167,20 @@ def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[s
         str(item.get("executiveEmail") or "").lower().strip(),
         str(item.get("sales_executive_email") or "").lower().strip(),
         str(item.get("employee_email") or "").lower().strip(),
-        str(item.get("email") or "").lower().strip(),
+        str(item.get("staff_email") or "").lower().strip(),
+        str(item.get("user_email") or "").lower().strip(),
         str(item.get("owner_email") or "").lower().strip(),
         str(item.get("created_by_email") or "").lower().strip(),
         str(item.get("reporting_manager_email") or "").lower().strip(),
         str(item.get("team_lead_email") or "").lower().strip(),
         str(item.get("sales_manager_email") or "").lower().strip(),
     } - {""}
+
+    if not is_client_record:
+        # For pure user/employee records, 'email' is the staff email
+        staff_em = str(item.get("email") or "").lower().strip()
+        if staff_em:
+            emails_to_check.add(staff_em)
 
     # Extract IDs / Codes on record.
     codes_to_check = {
@@ -183,6 +199,7 @@ def is_record_accessible(item: Dict[str, Any], allowed: Optional[Dict[str, Set[s
 
     # Extract Names on record
     names_to_check = {
+        str(item.get("assigned_to") or "").lower().strip(),
         str(item.get("assigned_to_name") or "").lower().strip(),
         str(item.get("assignedTo") or "").lower().strip(),
         str(item.get("executive") or "").lower().strip(),
