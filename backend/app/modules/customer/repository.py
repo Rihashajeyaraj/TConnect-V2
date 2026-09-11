@@ -74,20 +74,20 @@ class CustomerRepository:
             return scoped_customers
 
         # ── Unpaginated Fallback / Lookup Path ──
-        unscoped = self._get_unscoped_cached_customers()
+        unscoped = self._get_unscoped_cached_customers(user_payload, page=page, limit=limit)
         if allowed is not None:
             return [c for c in unscoped if is_record_accessible(c, allowed)]
         return list(unscoped)
 
-    def _get_unscoped_cached_customers(self) -> List[Dict[str, Any]]:
+    def _get_unscoped_cached_customers(self, user_payload: Dict[str, Any] = None, page: Optional[int] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         global _CUSTOMERS_CACHE, _CUSTOMERS_CACHE_TIMESTAMP
         import time
         now = time.time()
         if _CUSTOMERS_CACHE is not None and (now - _CUSTOMERS_CACHE_TIMESTAMP) < _CUSTOMERS_CACHE_TTL:
             return _CUSTOMERS_CACHE
-        return self._fetch_and_enrich_customers_uncached()
+        return self._fetch_and_enrich_customers_uncached(user_payload=user_payload, page=page, limit=limit)
 
-    def _fetch_and_enrich_customers_uncached(self) -> List[Dict[str, Any]]:
+    def _fetch_and_enrich_customers_uncached(self, user_payload: Dict[str, Any] = None, page: Optional[int] = None, limit: Optional[int] = None) -> List[Dict[str, Any]]:
         global _CUSTOMERS_CACHE, _CUSTOMERS_CACHE_TIMESTAMP
         import time
 
