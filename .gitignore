@@ -45,4 +45,6 @@ Thumbs.db
 
 # Migration CSV exports
 backend/migrations/csv_exports/
+backend/app/data/
+
 

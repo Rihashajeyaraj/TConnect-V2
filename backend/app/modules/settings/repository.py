@@ -1,9 +1,13 @@
+import json
+import os
 from typing import Dict, Any, List
 import uuid
 from app.database.supabase import get_supabase_client, get_supabase_admin_client
 from app.database.connection import get_schema_helper
 from app.core.constants import SchemaEnum
 from app.core.logger import logger
+
+SETTINGS_JSON_FILE = os.path.join(os.path.dirname(__file__), "..", "..", "data", "system_settings.json")
 
 _in_memory_settings: Dict[str, Any] = {
     "company_name": "TwiteConnect Technologies Pvt. Ltd.",
@@ -18,6 +22,12 @@ _in_memory_settings: Dict[str, Any] = {
     "time_zone": "Asia/Kolkata (IST)",
     "allow_self_signup": False,
     "rate_limit_per_min": 60,
+    "holiday_calendar_pdf": "",
+    "holiday_calendar_filename": "",
+    "holiday_calendar_uploaded_at": "",
+    "twite_handbook_pdf": "",
+    "twite_handbook_filename": "",
+    "twite_handbook_uploaded_at": "",
     "branches": [],
     "departments": [],
     "designations": [],
@@ -26,12 +36,34 @@ _in_memory_settings: Dict[str, Any] = {
     "customer_categories": []
 }
 
+def _load_local_settings_file():
+    try:
+        if os.path.exists(SETTINGS_JSON_FILE):
+            with open(SETTINGS_JSON_FILE, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                if isinstance(data, dict):
+                    _in_memory_settings.update(data)
+    except Exception as e:
+        logger.warning(f"Error reading local settings json: {e}")
+
+def _save_local_settings_file():
+    try:
+        os.makedirs(os.path.dirname(SETTINGS_JSON_FILE), exist_ok=True)
+        with open(SETTINGS_JSON_FILE, "w", encoding="utf-8") as f:
+            json.dump(_in_memory_settings, f, indent=2)
+    except Exception as e:
+        logger.warning(f"Error writing local settings json: {e}")
+
+_load_local_settings_file()
+
 
 class SettingsRepository:
     def __init__(self):
         self.client = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
+        _load_local_settings_file()
         self._setup_rls_policies()
+
 
     def _setup_rls_policies(self):
         sql = """
@@ -409,6 +441,20 @@ class SettingsRepository:
         if not company_id:
             company_id = "TC-001"
 
+        # Fallback to auto_save_drafts for persistent PDF & business settings retrieval
+        if not merged.get("holiday_calendar_pdf") or not merged.get("twite_handbook_pdf"):
+            try:
+                res_draft = self.client.table("auto_save_drafts").select("data").eq("id", "system_business_settings").execute()
+                if res_draft.data and len(res_draft.data) > 0 and res_draft.data[0].get("data"):
+                    d_data = res_draft.data[0]["data"]
+                    if isinstance(d_data, dict):
+                        for k, v in d_data.items():
+                            if v and not merged.get(k):
+                                merged[k] = v
+                                _in_memory_settings[k] = v
+            except Exception as e:
+                logger.debug(f"auto_save_drafts fallback notice: {e}")
+
         # 2. Fetch master data from normalized tables
         for field, tbl in [
             ("designations", "designations"),
@@ -609,6 +655,41 @@ class SettingsRepository:
         clean_updates.pop("products", None)
         
         _in_memory_settings.update(clean_updates)
+        _save_local_settings_file()
+
+        # Save to auto_save_drafts for cloud persistence across server restarts
+        try:
+            draft_payload = {
+                "id": "system_business_settings",
+                "user_id": "admin_system",
+                "form_id": "business_settings",
+                "data": {
+                    "company_name": _in_memory_settings.get("company_name"),
+                    "legal_name": _in_memory_settings.get("legal_name"),
+                    "tax_id_gstin": _in_memory_settings.get("tax_id_gstin"),
+                    "pan_no": _in_memory_settings.get("pan_no"),
+                    "registration_no": _in_memory_settings.get("registration_no"),
+                    "email": _in_memory_settings.get("email"),
+                    "phone": _in_memory_settings.get("phone"),
+                    "website": _in_memory_settings.get("website"),
+                    "address": _in_memory_settings.get("address"),
+                    "logo_url": _in_memory_settings.get("logo_url"),
+                    "currency": _in_memory_settings.get("currency"),
+                    "time_zone": _in_memory_settings.get("time_zone"),
+                    "allow_self_signup": _in_memory_settings.get("allow_self_signup"),
+                    "rate_limit_per_min": _in_memory_settings.get("rate_limit_per_min"),
+                    "holiday_calendar_pdf": _in_memory_settings.get("holiday_calendar_pdf"),
+                    "holiday_calendar_filename": _in_memory_settings.get("holiday_calendar_filename"),
+                    "holiday_calendar_uploaded_at": _in_memory_settings.get("holiday_calendar_uploaded_at"),
+                    "twite_handbook_pdf": _in_memory_settings.get("twite_handbook_pdf"),
+                    "twite_handbook_filename": _in_memory_settings.get("twite_handbook_filename"),
+                    "twite_handbook_uploaded_at": _in_memory_settings.get("twite_handbook_uploaded_at"),
+                }
+            }
+            self.client.table("auto_save_drafts").upsert(draft_payload).execute()
+            logger.info("Successfully persisted business settings to public.auto_save_drafts")
+        except Exception as draft_err:
+            logger.debug(f"Could not persist to auto_save_drafts: {draft_err}")
 
         # Get company_id first
         company_id = self._get_company_id()
@@ -629,6 +710,12 @@ class SettingsRepository:
             "logo_url": _in_memory_settings.get("logo_url"),
             "currency": _in_memory_settings.get("currency"),
             "departments": _in_memory_settings.get("departments"),
+            "holiday_calendar_pdf": _in_memory_settings.get("holiday_calendar_pdf"),
+            "holiday_calendar_filename": _in_memory_settings.get("holiday_calendar_filename"),
+            "holiday_calendar_uploaded_at": _in_memory_settings.get("holiday_calendar_uploaded_at"),
+            "twite_handbook_pdf": _in_memory_settings.get("twite_handbook_pdf"),
+            "twite_handbook_filename": _in_memory_settings.get("twite_handbook_filename"),
+            "twite_handbook_uploaded_at": _in_memory_settings.get("twite_handbook_uploaded_at"),
         }
         full_db_payload = {k: v for k, v in full_db_payload.items() if v is not None}
 

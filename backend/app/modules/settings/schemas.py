@@ -22,6 +22,12 @@ class SettingsUpdate(BaseModel):
     products: Optional[List[Dict[str, Any]]] = None
     lead_sources: Optional[List[Dict[str, Any]]] = None
     customer_categories: Optional[List[Dict[str, Any]]] = None
+    holiday_calendar_pdf: Optional[str] = None
+    holiday_calendar_filename: Optional[str] = None
+    holiday_calendar_uploaded_at: Optional[str] = None
+    twite_handbook_pdf: Optional[str] = None
+    twite_handbook_filename: Optional[str] = None
+    twite_handbook_uploaded_at: Optional[str] = None
 
 
 class SettingsResponse(BaseModel):
@@ -44,4 +50,10 @@ class SettingsResponse(BaseModel):
     products: Optional[List[Dict[str, Any]]] = None
     lead_sources: Optional[List[Dict[str, Any]]] = None
     customer_categories: Optional[List[Dict[str, Any]]] = None
+    holiday_calendar_pdf: Optional[str] = None
+    holiday_calendar_filename: Optional[str] = None
+    holiday_calendar_uploaded_at: Optional[str] = None
+    twite_handbook_pdf: Optional[str] = None
+    twite_handbook_filename: Optional[str] = None
+    twite_handbook_uploaded_at: Optional[str] = None
 
