@@ -280,10 +280,9 @@ class HRMSRepository:
             _EMPLOYEES_CACHE_TIMESTAMP = time.time()
             return all_employees
 
-        _EMPLOYEES_CACHE = _in_memory_employees
+        _EMPLOYEES_CACHE = []
         _EMPLOYEES_CACHE_TIMESTAMP = time.time()
-        logger.warning("No employees found from any source -- returning in-memory fallback")
-        return _in_memory_employees
+        return []
 
     # ── Create employee (called directly via HRMS routes) ─────────────────────
     def create_employee(self, data: Dict[str, Any]) -> Dict[str, Any]:
