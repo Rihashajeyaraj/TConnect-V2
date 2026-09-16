@@ -57,6 +57,8 @@ def _resolve_role_and_dashboard(role_val: str):
         return "/admin", ["admin.*", "hrms.*", "settings.*", "users.*"]
     elif "admin" in role_lower:
         return "/admin", ["admin.*", "hrms.*", "settings.*", "users.*"]
+    elif any(k in role_lower for k in ["team lead", "team_lead", "lead", "tl"]):
+        return "/team-lead", ["crm.read", "crm.write", "team.read", "visits.read", "reports.read"]
     elif "manager" in role_lower:
         return "/manager", ["crm.read", "crm.write", "team.read", "visits.read", "reports.read"]
     else:
@@ -444,11 +446,13 @@ class AuthService:
                 raise UnauthorizedException("Invalid Username or Password.")
 
         # ── Step 5: Direct Fallback for @twite.ai / @tconnect.com Company Accounts ──
-        if ("@twite.ai" in email or "@tconnect" in email or "rihasha" in email or "bavani" in email or "vedika" in email or "priya" in email) and len(password) >= 4:
+        if ("@twite.ai" in email or "@tconnect" in email or "rihasha" in email or "bavani" in email or "vedika" in email or "priya" in email or "jeeva" in email) and len(password) >= 4:
             email_handle = email.split("@")[0].lower()
             if "admin" in email_handle or "priya" in email_handle or "rihasha" in email:
                 role_val = "Admin"
-            elif "manager" in email_handle or "vedika" in email_handle or "jeeva" in email_handle or "lead" in email_handle:
+            elif "vedika" in email_handle or "jeeva" in email_handle or "lead" in email_handle or "tl" in email_handle:
+                role_val = "Team Lead"
+            elif "manager" in email_handle:
                 role_val = "Sales Manager"
             elif "ceo" in email_handle or "founder" in email_handle:
                 role_val = "CEO / Founder"
