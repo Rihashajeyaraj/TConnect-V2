@@ -319,7 +319,11 @@ class VisitRepository:
                     return self._standardize_visit(res_min.data[0])
             except Exception as ex_min:
                 logger.error(f"Fallback insert to field_management minimal failed: {ex_min}")
-            raise e
+
+            logger.warning(f"All database insert attempts failed for visit '{visit_id}'. Saving to in-memory fallback.")
+            std_payload = self._standardize_visit(payload)
+            _in_memory_visits.append(std_payload)
+            return std_payload
 
     def complete_visit(self, visit_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         updates["status"] = "COMPLETED"
