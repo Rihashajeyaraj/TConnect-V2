@@ -7,6 +7,7 @@ import {
   triggerSystemNotification,
   registerPushSubscription,
 } from '../utils/webPushManager.js';
+import { getApiBaseUrl } from '../utils/apiConfig.js';
 
 const STORAGE_KEY = 'tc_unread_message_count';
 
@@ -129,7 +130,7 @@ export default function useNotificationCount() {
           if (!p256dh || !auth) return;
 
           await fetch(
-            `${import.meta.env.VITE_API_BASE_URL}/notifications/push-subscription`,
+            `${getApiBaseUrl()}/notifications/push-subscription`,
             {
               method:  'POST',
               headers: {

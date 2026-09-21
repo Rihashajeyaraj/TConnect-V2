@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
+import { getApiBaseUrl } from '../../utils/apiConfig.js'
 import {
   MapPin, Radio, Users, Activity, Clock, RefreshCw,
   Search, Shield, Map as MapIcon, Eye, Compass, Navigation,
@@ -666,9 +667,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         }
 
         const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
-        const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api/v1";
-        const wsProto = apiBase.startsWith('https') ? 'wss' : 'ws';
-        const wsHost = apiBase.replace(/^https?:\/\//, '').replace(/\/api\/v1\/?$/, '');
+        const apiBase = getApiBaseUrl();
+        const wsProto = (apiBase.startsWith('https') || window.location.protocol === 'https:') ? 'wss' : 'ws';
+        const wsHost = apiBase.startsWith('/') ? window.location.host : apiBase.replace(/^https?:\/\//, '').replace(/\/api\/v1\/?$/, '');
         const wsUrl = `${wsProto}://${wsHost}/api/v1/spatial/ws/tracking/manager?token=${encodeURIComponent(token)}`;
 
         console.log("[Phase 2A WS] Manager connecting to FastAPI WebSocket:", wsUrl);

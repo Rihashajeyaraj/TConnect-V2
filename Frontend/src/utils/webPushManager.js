@@ -10,7 +10,8 @@
  * SECURITY: VAPID public key only — private key never touches the browser.
  */
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || ''
+import { getApiBaseUrl } from './apiConfig.js'
+
 const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || null
 
 // ── Internal state ────────────────────────────────────────────────────────────
@@ -108,7 +109,7 @@ export async function registerPushSubscription(authToken) {
     const auth   = btoa(String.fromCharCode(...new Uint8Array(rawAuth)))
 
     console.info('[WebPush] subscription registration/update attempted for endpoint:', endpoint.slice(0, 45) + '...')
-    const response = await fetch(`${API_BASE_URL}/notifications/push-subscription`, {
+    const response = await fetch(`${getApiBaseUrl()}/notifications/push-subscription`, {
       method:  'POST',
       headers: {
         'Content-Type':  'application/json',
@@ -159,7 +160,7 @@ export async function unregisterPushSubscription(authToken) {
 
     // Remove from backend first (token still valid)
     if (authToken) {
-      await fetch(`${API_BASE_URL}/notifications/push-subscription`, {
+      await fetch(`${getApiBaseUrl()}/notifications/push-subscription`, {
         method:  'DELETE',
         headers: {
           'Content-Type':  'application/json',

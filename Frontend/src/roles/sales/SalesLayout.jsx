@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { getApiBaseUrl } from "../../utils/apiConfig.js";
 import ImageCropperModal from "../../common/ImageCropperModal.jsx";
 import NotificationPermissionBanner from "../../common/NotificationPermissionBanner.jsx";
 import useNotificationCount from "../../hooks/useNotificationCount.js";
@@ -242,9 +243,9 @@ export default function SalesLayout() {
         return;
       }
       const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
-      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api/v1";
-      const wsProto = apiBase.startsWith('https') ? 'wss' : 'ws';
-      const wsHost = apiBase.replace(/^https?:\/\//, '').replace(/\/api\/v1\/?$/, '');
+      const apiBase = getApiBaseUrl();
+      const wsProto = (apiBase.startsWith('https') || window.location.protocol === 'https:') ? 'wss' : 'ws';
+      const wsHost = apiBase.startsWith('/') ? window.location.host : apiBase.replace(/^https?:\/\//, '').replace(/\/api\/v1\/?$/, '');
       const wsUrl = `${wsProto}://${wsHost}/api/v1/spatial/ws/tracking/executive?token=${encodeURIComponent(token)}`;
 
       console.log("[Phase 2A WS] Executive connecting to FastAPI WebSocket:", wsUrl);
