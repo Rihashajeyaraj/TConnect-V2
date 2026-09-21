@@ -230,6 +230,50 @@ export default function SalesLayout() {
   const gpsRetryQueue = useRef([]);
   const wakeLockRef = useRef(null);
 
+  // ── Phase 2A Dual Benchmarking: FastAPI Parallel Direct WebSocket Transport ──
+  const fastApiWsRef = useRef(null);
+  const fastApiReconnectTimerRef = useRef(null);
+  const fastApiBackoffMsRef = useRef(1000);
+
+  const _initFastApiWebSocket = useCallback(() => {
+    try {
+      if (fastApiWsRef.current && (fastApiWsRef.current.readyState === WebSocket.OPEN || fastApiWsRef.current.readyState === WebSocket.CONNECTING)) {
+        return;
+      }
+      const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+      const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api/v1";
+      const wsProto = apiBase.startsWith('https') ? 'wss' : 'ws';
+      const wsHost = apiBase.replace(/^https?:\/\//, '').replace(/\/api\/v1\/?$/, '');
+      const wsUrl = `${wsProto}://${wsHost}/api/v1/spatial/ws/tracking/executive?token=${encodeURIComponent(token)}`;
+
+      console.log("[Phase 2A WS] Executive connecting to FastAPI WebSocket:", wsUrl);
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log("[Phase 2A WS] Executive FastAPI WebSocket connected successfully.");
+        fastApiBackoffMsRef.current = 1000;
+      };
+
+      ws.onerror = (err) => {
+        console.warn("[Phase 2A WS] Executive FastAPI WebSocket error notice:", err);
+      };
+
+      ws.onclose = () => {
+        console.warn(`[Phase 2A WS] Executive FastAPI WebSocket closed. Reconnecting in ${fastApiBackoffMsRef.current}ms...`);
+        fastApiWsRef.current = null;
+        if (fastApiReconnectTimerRef.current) clearTimeout(fastApiReconnectTimerRef.current);
+        fastApiReconnectTimerRef.current = setTimeout(() => {
+          _initFastApiWebSocket();
+        }, fastApiBackoffMsRef.current);
+        fastApiBackoffMsRef.current = Math.min(fastApiBackoffMsRef.current * 2, 30000);
+      };
+
+      fastApiWsRef.current = ws;
+    } catch (err) {
+      console.warn("[Phase 2A WS] Failed to init FastAPI WebSocket:", err);
+    }
+  }, []);
+
   if (SUPA_URL && SUPA_ANON && !supabaseRef.current) {
     try {
       supabaseRef.current = createClient(SUPA_URL, SUPA_ANON);
@@ -289,7 +333,7 @@ export default function SalesLayout() {
 
     const now = Date.now();
 
-    // 1. Determine if we should broadcast to Supabase Broadcast channel
+    // 1. Determine if we should broadcast to Supabase Broadcast channel & FastAPI WebSocket
     // Broadcast if moved >= 3m OR if >= 5s elapsed since last broadcast (heartbeat)
     let shouldBroadcast = true;
     if (lastBroadcastPosRef.current) {
@@ -316,6 +360,7 @@ export default function SalesLayout() {
 
     if (shouldBroadcast) {
       const sendTs = Date.now();
+      // 1A. Supabase Broadcast Channel (Existing Phase 1 Transport)
       if (activeChannelsRef.current.length > 0) {
         activeChannelsRef.current.forEach(ch => {
           try {
@@ -332,6 +377,23 @@ export default function SalesLayout() {
           } catch {}
         });
       }
+
+      // 1B. FastAPI Direct WebSocket Transport (Phase 2A Dual Benchmarking)
+      if (fastApiWsRef.current && fastApiWsRef.current.readyState === WebSocket.OPEN) {
+        try {
+          fastApiWsRef.current.send(JSON.stringify({
+            type: 'location_update',
+            payload: {
+              ...point,
+              t1_watch: watchTs,
+              t2_ws_send: sendTs
+            }
+          }));
+        } catch (e) {
+          console.warn("[Phase 2A WS] Failed to send telemetry via FastAPI WebSocket:", e);
+        }
+      }
+
       lastBroadcastPosRef.current = { lat, lng };
       lastBroadcastTimeRef.current = now;
     }
@@ -399,8 +461,9 @@ export default function SalesLayout() {
       console.warn("[GPS TRACKING] Wake Lock API error:", e);
     }
 
-    // Initialize Supabase Broadcast channels
+    // Initialize Supabase Broadcast channels & FastAPI WebSocket (Phase 2A Dual Transport)
     _initBroadcastChannels(empId, empCode, resolvedSessionId);
+    _initFastApiWebSocket();
 
     // Push starting point if available
     if (initLat && initLng) {
@@ -454,6 +517,15 @@ export default function SalesLayout() {
       try { ch.unsubscribe(); } catch {}
     });
     activeChannelsRef.current = [];
+
+    if (fastApiReconnectTimerRef.current) {
+      clearTimeout(fastApiReconnectTimerRef.current);
+      fastApiReconnectTimerRef.current = null;
+    }
+    if (fastApiWsRef.current) {
+      try { fastApiWsRef.current.close(); } catch {}
+      fastApiWsRef.current = null;
+    }
 
     activeSessionRef.current = null;
     setGpsActive(false);

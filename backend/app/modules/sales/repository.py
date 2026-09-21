@@ -110,24 +110,56 @@ class SalesTargetRepository:
         if not inserted_row:
             raise Exception("Failed to insert sales target into database.")
 
-        return dict(inserted_row)
+        res_target = dict(inserted_row)
+        self._emit_target_notif(res_target)
+        return res_target
+
+    def _emit_target_notif(self, target_data: Dict[str, Any]):
+        try:
+            from app.modules.notification.repository import NotificationRepository
+            from app.modules.notification.helpers import build_notification_url
+            t_amt = float(target_data.get("target_amount") or 0.0)
+            period = str(target_data.get("period") or "Monthly")
+            exec_email = str(target_data.get("executive_email") or "")
+            exec_id = str(target_data.get("executive_id") or target_data.get("executive_code") or "")
+
+            notif_url = build_notification_url("TARGET_UPDATED", target_data.get("id"), role="sales")
+            NotificationRepository().create_notification({
+                "recipient_email": exec_email,
+                "recipient_id": exec_id,
+                "recipient_role": "sales",
+                "title": "Sales Target Updated",
+                "message": f"Your {period} sales target has been set to ₹{t_amt:,.0f}.",
+                "type": "TARGET_UPDATED",
+                "url": notif_url,
+            })
+        except Exception as n_err:
+            logger.warning(f"Sales target notification emission failed: {n_err}")
 
     def update_target(self, target_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         payload = {k: v for k, v in updates.items() if v is not None}
         payload["updated_at"] = datetime.utcnow().isoformat()
 
+        res_target = None
         # 1. Try sales.sales_target
         try:
             res = self.supabase.schema("sales").table("sales_target").update(payload).eq("id", target_id).execute()
             if res.data and len(res.data) > 0:
-                return res.data[0]
+                res_target = res.data[0]
         except Exception:
             try:
                 res = self.supabase.table("sales_target").update(payload).eq("id", target_id).execute()
                 if res.data and len(res.data) > 0:
-                    return res.data[0]
+                    res_target = res.data[0]
             except Exception as e:
                 logger.warning(f"sales_target update notice: {e}")
+
+        if not res_target:
+            payload["id"] = target_id
+            res_target = payload
+
+        self._emit_target_notif(res_target)
+        return res_target
 
         raise Exception("Failed to update sales target in database.")
 

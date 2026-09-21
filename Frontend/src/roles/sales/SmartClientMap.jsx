@@ -419,6 +419,33 @@ export default function SmartClientMap({ isManagerView = false }) {
     }
   }, [currentUser?.email, showToast])
 
+  // ── Auto-Open Executive Inquiry Drawer from URL query param (e.g. /sales/map?inquiry_id=xxx) ──
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const targetInquiryId = params.get('inquiry_id')
+    if (!targetInquiryId) return
+
+    const locateAndOpenInquiry = async () => {
+      try {
+        const res = await notificationAPI.getNotifications({ silentError: true })
+        const notifs = Array.isArray(res) ? res : (res?.data || [])
+        const match = notifs.find(n => {
+          const rawId = String(n.id || n.notification_id || '').toLowerCase().trim()
+          return rawId === targetInquiryId.toLowerCase().trim()
+        })
+        if (match) {
+          activeInquiryRef.current = match
+          setActiveInquiry(match)
+          setShowInquiryDrawer(true)
+        }
+      } catch (err) {
+        console.warn('Failed to auto-open executive inquiry deep link:', err)
+      }
+    }
+
+    locateAndOpenInquiry()
+  }, [])
+
   const resolveSenderBadge = (inquiry) => {
     if (!inquiry) return { role: 'Reporting Manager', icon: '👑', badgeText: 'text-amber-800 bg-amber-100 border-amber-300', title: 'Message from Reporting Manager', border: 'border-2 border-amber-400' }
     const rawRole = String(inquiry.sender_role || inquiry.role || inquiry.category || '').toLowerCase()

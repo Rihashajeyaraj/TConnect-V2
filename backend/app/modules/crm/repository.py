@@ -386,6 +386,21 @@ class CRMRepository:
                 out_lead["assigned_to_email"] = assigned_to_email
                 out_lead["employee_code"] = employee_code
                 out_lead["reporting_manager_email"] = mgr_email
+                try:
+                    from app.modules.notification.repository import NotificationRepository
+                    from app.modules.notification.helpers import build_notification_url
+                    notif_url = build_notification_url("LEAD_ASSIGNED", lead_id, role="sales")
+                    NotificationRepository().create_notification({
+                        "recipient_email": assigned_to_email,
+                        "recipient_id": assigned_user_id or employee_code,
+                        "recipient_role": "sales",
+                        "title": "New Lead Assigned",
+                        "message": f"Lead '{company_val}' ({person_val}) has been assigned to you.",
+                        "type": "LEAD_ASSIGNED",
+                        "url": notif_url,
+                    })
+                except Exception as n_err:
+                    logger.warning(f"Lead creation notification emission failed: {n_err}")
                 return out_lead
         except Exception as e:
             primary_err = str(e)
@@ -406,6 +421,21 @@ class CRMRepository:
                 out_lead["assigned_to_email"] = assigned_to_email
                 out_lead["employee_code"] = employee_code
                 out_lead["reporting_manager_email"] = mgr_email
+                try:
+                    from app.modules.notification.repository import NotificationRepository
+                    from app.modules.notification.helpers import build_notification_url
+                    notif_url = build_notification_url("LEAD_ASSIGNED", lead_id, role="sales")
+                    NotificationRepository().create_notification({
+                        "recipient_email": assigned_to_email,
+                        "recipient_id": assigned_user_id or employee_code,
+                        "recipient_role": "sales",
+                        "title": "New Lead Assigned",
+                        "message": f"Lead '{company_val}' ({person_val}) has been assigned to you.",
+                        "type": "LEAD_ASSIGNED",
+                        "url": notif_url,
+                    })
+                except Exception as n_err:
+                    logger.warning(f"Lead creation notification emission failed: {n_err}")
                 return out_lead
         except Exception as e:
             fallback_err = str(e)
@@ -549,12 +579,14 @@ class CRMRepository:
         except Exception as e_c:
             logger.debug(f"upsert_contact_record notice in update_lead: {e_c}")
 
+        res_out = {}
         for payload in [sanitized, {k: v for k, v in sanitized.items() if v is not None}]:
             # 1. Try schema 'crm' with lead_id key
             try:
                 res = self.supabase.schema("crm").table("leads").update(payload).eq("lead_id", lead_id).execute()
                 if res.data and len(res.data) > 0:
-                    return res.data[0]
+                    res_out = res.data[0]
+                    break
             except Exception:
                 pass
 
@@ -562,7 +594,8 @@ class CRMRepository:
             try:
                 res = self.supabase.schema("crm").table("leads").update(payload).eq("id", lead_id).execute()
                 if res.data and len(res.data) > 0:
-                    return res.data[0]
+                    res_out = res.data[0]
+                    break
             except Exception:
                 pass
 
@@ -570,7 +603,8 @@ class CRMRepository:
             try:
                 res = self.supabase.table("leads").update(payload).eq("lead_id", lead_id).execute()
                 if res.data and len(res.data) > 0:
-                    return res.data[0]
+                    res_out = res.data[0]
+                    break
             except Exception:
                 pass
 
@@ -578,14 +612,49 @@ class CRMRepository:
             try:
                 res = self.supabase.table("leads").update(payload).eq("id", lead_id).execute()
                 if res.data and len(res.data) > 0:
-                    return res.data[0]
+                    res_out = res.data[0]
+                    break
             except Exception:
                 pass
 
-        for lead in _in_memory_leads:
-            if str(lead.get("id")) == str(lead_id) or str(lead.get("lead_id")) == str(lead_id):
-                lead.update(updates)
-                return lead
+        if not res_out:
+            for lead in _in_memory_leads:
+                if str(lead.get("id")) == str(lead_id) or str(lead.get("lead_id")) == str(lead_id):
+                    lead.update(updates)
+                    res_out = lead
+                    break
+
+        if res_out:
+            try:
+                from app.modules.notification.repository import NotificationRepository
+                from app.modules.notification.helpers import build_notification_url
+                company_n = (updates.get("company_name") or (target_lead.get("company_name") if target_lead else None) or "Lead")
+                if updates.get("assigned_to") or updates.get("assigned_to_email"):
+                    notif_url = build_notification_url("LEAD_REASSIGNED", lead_id, role="sales")
+                    NotificationRepository().create_notification({
+                        "recipient_email": updates.get("assigned_to_email"),
+                        "recipient_id": updates.get("assigned_to"),
+                        "recipient_role": "sales",
+                        "title": "Lead Reassigned",
+                        "message": f"Lead '{company_n}' has been reassigned to you.",
+                        "type": "LEAD_REASSIGNED",
+                        "url": notif_url,
+                    })
+                elif updates.get("status") or updates.get("priority"):
+                    new_status = updates.get("status") or updates.get("priority")
+                    notif_url = build_notification_url("LEAD_STATUS_CHANGED", lead_id, role="sales")
+                    NotificationRepository().create_notification({
+                        "recipient_email": (target_lead.get("assigned_to_email") if target_lead else None),
+                        "recipient_id": (target_lead.get("assigned_to") if target_lead else None),
+                        "recipient_role": "sales",
+                        "title": "Lead Status Updated",
+                        "message": f"Lead '{company_n}' status updated to '{new_status}'.",
+                        "type": "LEAD_STATUS_CHANGED",
+                        "url": notif_url,
+                    })
+            except Exception as n_err:
+                logger.warning(f"Lead update notification emission failed: {n_err}")
+            return res_out
 
         return {}
 
@@ -881,7 +950,23 @@ class CRMRepository:
         res = self.supabase.schema("crm").table("follow_ups").insert(db_payload).execute()
         if res.data and len(res.data) > 0:
             logger.info(f"Followup created in crm.follow_ups: {res.data[0]}")
-            return self._standardize_followup(res.data[0])
+            out_flw = self._standardize_followup(res.data[0])
+            try:
+                from app.modules.notification.repository import NotificationRepository
+                from app.modules.notification.helpers import build_notification_url
+                notif_url = build_notification_url("TASK_ASSIGNED", flw_id, role="sales")
+                NotificationRepository().create_notification({
+                    "recipient_email": assigned_to_email,
+                    "recipient_id": assigned_to_uuid or assigned_to,
+                    "recipient_role": "sales",
+                    "title": "New Task Assigned",
+                    "message": f"Follow-up task for '{company}' ({person}) scheduled for {sched_date}.",
+                    "type": "TASK_ASSIGNED",
+                    "url": notif_url,
+                })
+            except Exception as n_err:
+                logger.warning(f"Follow-up creation notification emission failed: {n_err}")
+            return out_flw
         raise RuntimeError("Failed to insert follow-up into crm.follow_ups")
 
     def update_followup(self, followup_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
