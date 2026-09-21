@@ -358,7 +358,6 @@ class VisitRepository:
             })
         except Exception as n_err:
             logger.warning(f"Visit notification emission failed: {n_err}")
->>>>>>> Riha
 
     def complete_visit(self, visit_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         updates["status"] = "COMPLETED"
