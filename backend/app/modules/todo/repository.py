@@ -92,23 +92,42 @@ class TodoRepository:
         req_obj["is_completed"] = db_payload["is_completed"]
         req_obj["created_at"] = now_iso
 
+        out_todo = None
         try:
             res = self.supabase.schema("system").table("todos").insert(db_payload).execute()
             if res.data and len(res.data) > 0:
                 logger.info(f"Todo created in system.todos: {res.data[0]}")
-                return self._standardize_todo(res.data[0])
+                out_todo = self._standardize_todo(res.data[0])
         except Exception as e:
             logger.debug(f"system.todos insert warning: {e}")
             try:
                 res = self.supabase.table("todos").insert(db_payload).execute()
                 if res.data and len(res.data) > 0:
                     logger.info(f"Todo created in public.todos: {res.data[0]}")
-                    return self._standardize_todo(res.data[0])
+                    out_todo = self._standardize_todo(res.data[0])
             except Exception as e2:
                 logger.debug(f"todo insert notice: {e2}")
 
-        _in_memory_todos.insert(0, req_obj)
-        return req_obj
+        if not out_todo:
+            _in_memory_todos.insert(0, req_obj)
+            out_todo = req_obj
+
+        try:
+            from app.modules.notification.repository import NotificationRepository
+            from app.modules.notification.helpers import build_notification_url
+            notif_url = build_notification_url("TASK_ASSIGNED", todo_id, role="sales")
+            NotificationRepository().create_notification({
+                "recipient_id": str(data.get("user_id") or data.get("employee_id") or ""),
+                "recipient_role": "sales",
+                "title": "New Task Assigned",
+                "message": f"Task '{data.get('title', 'Todo Item')}' has been created.",
+                "type": "TASK_ASSIGNED",
+                "url": notif_url,
+            })
+        except Exception as n_err:
+            logger.warning(f"Todo creation notification emission failed: {n_err}")
+
+        return out_todo
 
     def update_todo(self, todo_id: str, updates: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         existing = None

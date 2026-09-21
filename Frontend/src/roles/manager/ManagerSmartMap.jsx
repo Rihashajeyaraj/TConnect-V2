@@ -328,6 +328,39 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     }
   }, [showToast])
 
+  // ── Auto-Open Manager Inquiry Drawer from URL query param (e.g. /manager/map?inquiry_id=xxx) ──
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const targetInquiryId = params.get('inquiry_id')
+    if (!targetInquiryId) return
+
+    const locateAndOpenManagerInquiry = async () => {
+      try {
+        const res = await notificationAPI.getNotifications({ silentError: true })
+        const notifs = Array.isArray(res) ? res : (res?.data || [])
+        const match = notifs.find(n => {
+          const rawId = String(n.id || n.notification_id || '').toLowerCase().trim()
+          return rawId === targetInquiryId.toLowerCase().trim()
+        })
+        if (match) {
+          const senderName = match.sender_name || match.title?.replace('💬 Reply from ', '') || 'Executive'
+          const empCode = match.employee_id || match.sender_id || ''
+          setInquiryModalEx({
+            id: empCode || match.id,
+            name: senderName,
+            full_name: senderName,
+            email: match.sender_email || match.recipient_email || '',
+            employee_id: empCode
+          })
+        }
+      } catch (err) {
+        console.warn('Failed to auto-open manager inquiry deep link:', err)
+      }
+    }
+
+    locateAndOpenManagerInquiry()
+  }, [])
+
   const getUserReplies = (ex) => {
     if (!ex) return []
     const exName = resolveRealName(ex).toLowerCase().trim()
@@ -541,7 +574,193 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const mapContainerRef = useRef(null)
   const googleMapRef    = useRef(null)
   const teamMarkersMapRef = useRef(new globalThis.Map())
+  const teamMarkerAnimFramesRef = useRef(new globalThis.Map())
   const infoWindowRef   = useRef(null)
+  const executivesRef   = useRef([])
+
+  useEffect(() => {
+    executivesRef.current = executives
+  }, [executives])
+
+  // ── Phase 1 & Phase 2A Optimization: Smooth 60fps Marker Interpolation & Dual Transport Benchmarking ──
+  const animateTeamMarker = useCallback((empId, targetLat, targetLng, locPayload = {}) => {
+    if (!googleMapRef.current || !window.google) return;
+    
+    // Check performance measurement timestamps
+    const t3_receive = locPayload.t3_mgr_receive || Date.now();
+    const t1_watch = locPayload.t1_watch || locPayload.broadcast_sent_at;
+    const t2_send = locPayload.t2_ws_send || locPayload.t2_broadcast || locPayload.broadcast_sent_at;
+    const isFastApiWs = !!locPayload.t2_ws_send;
+    const channelName = isFastApiWs ? 'FastAPI WebSocket' : 'Supabase Broadcast';
+
+    const marker = teamMarkersMapRef.current.get(empId);
+    if (!marker) return;
+
+    const fromPos = marker.getPosition();
+    if (!fromPos) return;
+
+    const prevLat = typeof fromPos.lat === 'function' ? fromPos.lat() : fromPos.lat;
+    const prevLng = typeof fromPos.lng === 'function' ? fromPos.lng() : fromPos.lng;
+
+    // If movement is negligible (< 0.00001 deg ~ 1m), set position directly
+    if (Math.abs(prevLat - targetLat) < 0.00001 && Math.abs(prevLng - targetLng) < 0.00001) {
+      marker.setLatLng(new window.google.maps.LatLng(targetLat, targetLng));
+      return;
+    }
+
+    // Cancel existing animation frame for this marker if running
+    if (teamMarkerAnimFramesRef.current.has(empId)) {
+      cancelAnimationFrame(teamMarkerAnimFramesRef.current.get(empId));
+      teamMarkerAnimFramesRef.current.delete(empId);
+    }
+
+    const t4_anim_start = Date.now();
+    const duration = 1000; // 1 second smooth sliding window
+    let startTime = null;
+
+    if (window.__TRACKING_PERF_LOG__ || process.env.NODE_ENV === 'development') {
+      const transportLatency = t2_send ? (t3_receive - t2_send) : 'N/A';
+      const mapUpdateLatency = t4_anim_start - t3_receive;
+      const totalObservableLatency = t1_watch ? (t4_anim_start - t1_watch) : 'N/A';
+      console.log(`[PERF MEASURE BENCHMARK - ${channelName}] Exec ${empId}: Transport=${transportLatency}ms | MapUpdate=${mapUpdateLatency}ms | TotalObservable=${totalObservableLatency}ms`);
+    }
+
+    const step = (timestamp) => {
+      if (!startTime) startTime = timestamp;
+      const progress = Math.min((timestamp - startTime) / duration, 1);
+      
+      const currLat = prevLat + (targetLat - prevLat) * progress;
+      const currLng = prevLng + (targetLng - prevLng) * progress;
+
+      marker.setLatLng(new window.google.maps.LatLng(currLat, currLng));
+
+      if (progress < 1) {
+        const nextFrameId = requestAnimationFrame(step);
+        teamMarkerAnimFramesRef.current.set(empId, nextFrameId);
+      } else {
+        teamMarkerAnimFramesRef.current.delete(empId);
+        const t5_anim_complete = Date.now();
+        if (window.__TRACKING_PERF_LOG__) {
+          console.log(`[PERF MEASURE BENCHMARK - ${channelName}] Exec ${empId}: Marker animation completed in ${t5_anim_complete - t4_anim_start}ms`);
+        }
+      }
+    };
+
+    const initialFrameId = requestAnimationFrame(step);
+    teamMarkerAnimFramesRef.current.set(empId, initialFrameId);
+  }, []);
+
+  // ── Phase 2A Dual Benchmarking: Manager FastAPI Direct WebSocket Subscription ──
+  const managerWsRef = useRef(null);
+  const managerWsReconnectTimerRef = useRef(null);
+  const managerWsBackoffMsRef = useRef(1000);
+
+  useEffect(() => {
+    let isSubscribed = true;
+
+    const connectManagerWebSocket = () => {
+      if (!isSubscribed) return;
+      try {
+        if (managerWsRef.current && (managerWsRef.current.readyState === WebSocket.OPEN || managerWsRef.current.readyState === WebSocket.CONNECTING)) {
+          return;
+        }
+
+        const token = localStorage.getItem('token') || localStorage.getItem('access_token') || '';
+        const apiBase = import.meta.env.VITE_API_BASE_URL || "http://localhost:8001/api/v1";
+        const wsProto = apiBase.startsWith('https') ? 'wss' : 'ws';
+        const wsHost = apiBase.replace(/^https?:\/\//, '').replace(/\/api\/v1\/?$/, '');
+        const wsUrl = `${wsProto}://${wsHost}/api/v1/spatial/ws/tracking/manager?token=${encodeURIComponent(token)}`;
+
+        console.log("[Phase 2A WS] Manager connecting to FastAPI WebSocket:", wsUrl);
+        const ws = new WebSocket(wsUrl);
+
+        ws.onopen = () => {
+          console.log("[Phase 2A WS] Manager FastAPI WebSocket connected successfully.");
+          managerWsBackoffMsRef.current = 1000;
+        };
+
+        ws.onmessage = (event) => {
+          const t3_mgr_receive = Date.now();
+          try {
+            const data = JSON.parse(event.data);
+            if (data.type === 'initial_state' && Array.isArray(data.locations)) {
+              data.locations.forEach(loc => {
+                const receivedLat = loc.latitude || loc.lat;
+                const receivedLng = loc.longitude || loc.lng;
+                const empId = loc.employee_id || loc.employee_code;
+                if (empId && receivedLat && receivedLng) {
+                  const existingMarker = teamMarkersMapRef.current.get(empId);
+                  if (existingMarker) {
+                    animateTeamMarker(empId, receivedLat, receivedLng, { ...loc, t3_mgr_receive });
+                  }
+                }
+              });
+            } else if (data.type === 'location_update' && data.payload) {
+              const loc = data.payload;
+              const receivedLat = loc.latitude || loc.lat;
+              const receivedLng = loc.longitude || loc.lng;
+              if (!receivedLat || !receivedLng) return;
+
+              let targetEmpId = null;
+              const currentExecs = executivesRef.current.length > 0 ? executivesRef.current : executives;
+              for (const e of currentExecs) {
+                const matchId = loc.employee_id && (String(e.employee_id) === String(loc.employee_id) || String(e.id) === String(loc.employee_id));
+                const matchCode = loc.employee_code && String(e.employee_code) === String(loc.employee_code);
+                const matchEmail = loc.email && String(e.email || '').toLowerCase() === String(loc.email).toLowerCase();
+                if (matchId || matchCode || matchEmail) {
+                  targetEmpId = e.employee_id || e.id;
+                  e.latitude = receivedLat;
+                  e.longitude = receivedLng;
+                  e.accuracy = loc.accuracy || e.accuracy;
+                  e.is_online = true;
+                  e.last_seen_at = loc.recorded_at || new Date().toISOString();
+                  break;
+                }
+              }
+              if (!targetEmpId) targetEmpId = loc.employee_id || loc.employee_code;
+
+              const existingMarker = targetEmpId ? teamMarkersMapRef.current.get(targetEmpId) : null;
+              if (existingMarker && targetEmpId) {
+                animateTeamMarker(targetEmpId, receivedLat, receivedLng, { ...loc, t3_mgr_receive });
+              }
+            }
+          } catch (err) {
+            console.warn("[Phase 2A WS] Error processing Manager WebSocket message:", err);
+          }
+        };
+
+        ws.onerror = (err) => {
+          console.warn("[Phase 2A WS] Manager FastAPI WebSocket error notice:", err);
+        };
+
+        ws.onclose = () => {
+          if (!isSubscribed) return;
+          console.warn(`[Phase 2A WS] Manager FastAPI WebSocket closed. Reconnecting in ${managerWsBackoffMsRef.current}ms...`);
+          managerWsRef.current = null;
+          if (managerWsReconnectTimerRef.current) clearTimeout(managerWsReconnectTimerRef.current);
+          managerWsReconnectTimerRef.current = setTimeout(() => {
+            connectManagerWebSocket();
+          }, managerWsBackoffMsRef.current);
+          managerWsBackoffMsRef.current = Math.min(managerWsBackoffMsRef.current * 2, 30000);
+        };
+
+        managerWsRef.current = ws;
+      } catch (err) {
+        console.warn("[Phase 2A WS] Failed to init Manager FastAPI WebSocket:", err);
+      }
+    };
+
+    connectManagerWebSocket();
+
+    return () => {
+      isSubscribed = false;
+      if (managerWsReconnectTimerRef.current) clearTimeout(managerWsReconnectTimerRef.current);
+      if (managerWsRef.current) {
+        try { managerWsRef.current.close(); } catch {}
+        managerWsRef.current = null;
+      }
+    };
+  }, []);
 
   // Tracking-layer refs (one set per selected executive)
   const trackRouteRef   = useRef(null)  // Polyline breadcrumb route
@@ -935,24 +1154,47 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               const receivedLng = loc.longitude || loc.lng
               if (!receivedLat || !receivedLng) return
 
-              console.log(`[ManagerMap] Broadcast update from ${chName}:`, receivedLat, receivedLng)
-
-              setExecutives(prev => prev.map(e => {
+              let targetEmpId = null
+              const currentExecs = executivesRef.current.length > 0 ? executivesRef.current : executives
+              for (const e of currentExecs) {
                 const matchId = empId && (String(e.employee_id) === String(empId) || String(e.id) === String(empId))
                 const matchCode = empCode && String(e.employee_code) === String(empCode)
                 const matchEmail = empEmail && String(e.email || '').toLowerCase() === empEmail
                 if (matchId || matchCode || matchEmail) {
-                  return {
-                    ...e,
-                    latitude: receivedLat,
-                    longitude: receivedLng,
-                    accuracy: loc.accuracy || e.accuracy,
-                    is_online: true,
-                    last_seen_at: loc.recorded_at || new Date().toISOString()
-                  }
+                  targetEmpId = e.employee_id || e.id
+                  e.latitude = receivedLat
+                  e.longitude = receivedLng
+                  e.accuracy = loc.accuracy || e.accuracy
+                  e.is_online = true
+                  e.last_seen_at = loc.recorded_at || new Date().toISOString()
+                  break
                 }
-                return e
-              }))
+              }
+
+              const existingMarker = targetEmpId ? teamMarkersMapRef.current.get(targetEmpId) : null
+
+              if (existingMarker && targetEmpId) {
+                // Direct marker position update & interpolation without component re-render
+                animateTeamMarker(targetEmpId, receivedLat, receivedLng, loc)
+              } else {
+                // Fallback: If marker isn't rendered on map yet, set state to trigger creation
+                setExecutives(prev => prev.map(e => {
+                  const matchId = empId && (String(e.employee_id) === String(empId) || String(e.id) === String(empId))
+                  const matchCode = empCode && String(e.employee_code) === String(empCode)
+                  const matchEmail = empEmail && String(e.email || '').toLowerCase() === empEmail
+                  if (matchId || matchCode || matchEmail) {
+                    return {
+                      ...e,
+                      latitude: receivedLat,
+                      longitude: receivedLng,
+                      accuracy: loc.accuracy || e.accuracy,
+                      is_online: true,
+                      last_seen_at: loc.recorded_at || new Date().toISOString()
+                    }
+                  }
+                  return e
+                }))
+              }
             })
             .subscribe((status) => {
               if (status === 'SUBSCRIBED') {
@@ -1303,6 +1545,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
     teamMarkersMapRef.current.forEach((marker, empId) => {
       if (!currentOnlineIds.has(empId)) {
+        if (teamMarkerAnimFramesRef.current.has(empId)) {
+          cancelAnimationFrame(teamMarkerAnimFramesRef.current.get(empId))
+          teamMarkerAnimFramesRef.current.delete(empId)
+        }
         marker.setMap(null)
         teamMarkersMapRef.current.delete(empId)
       }

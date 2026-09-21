@@ -5,6 +5,7 @@ class RoleEnum(str, Enum):
     SUPER_ADMIN = "Super Admin"
     CEO_FOUNDER = "CEO / Founder"
     SALES_MANAGER = "Sales Manager"
+    TEAM_LEAD = "Team Lead"
     SALES_EXECUTIVE = "Sales Executive"
 
 

@@ -5,6 +5,7 @@ CanViewCustomers = RequireRoles([
     RoleEnum.SUPER_ADMIN,
     RoleEnum.CEO_FOUNDER,
     RoleEnum.SALES_MANAGER,
+    RoleEnum.TEAM_LEAD,
     RoleEnum.SALES_EXECUTIVE
 ])
 
@@ -16,5 +17,6 @@ CanManageCustomers = RequireRoles([
     RoleEnum.SUPER_ADMIN,
     RoleEnum.CEO_FOUNDER,
     RoleEnum.SALES_MANAGER,
+    RoleEnum.TEAM_LEAD,
     RoleEnum.SALES_EXECUTIVE
 ])

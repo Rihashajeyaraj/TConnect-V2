@@ -4,7 +4,20 @@ import ExecutiveDashboard from '../sales/Dashboard.jsx'
 import { Users, User, LayoutDashboard } from 'lucide-react'
 
 export default function TeamLeadDashboard() {
-  const [activeView, setActiveView] = useState('team') // 'team' | 'personal'
+  const [activeView, setActiveView] = useState(() => {
+    try {
+      return localStorage.getItem('tc_tl_dashboard_active_view') || 'team'
+    } catch {
+      return 'team'
+    }
+  })
+
+  const handleViewChange = (view) => {
+    setActiveView(view)
+    try {
+      localStorage.setItem('tc_tl_dashboard_active_view', view)
+    } catch {}
+  }
 
   return (
     <div className="space-y-4 font-sans">
@@ -33,7 +46,7 @@ export default function TeamLeadDashboard() {
         <div className="flex items-center gap-1.5 bg-[#FAF6F0] p-1.5 rounded-xl border border-[#E8D8C8] shrink-0 self-start sm:self-auto">
           <button
             type="button"
-            onClick={() => setActiveView('team')}
+            onClick={() => handleViewChange('team')}
             className={`px-4 py-2 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-2 ${
               activeView === 'team'
                 ? 'bg-[#543D30] text-white shadow-xs'
@@ -44,7 +57,7 @@ export default function TeamLeadDashboard() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveView('personal')}
+            onClick={() => handleViewChange('personal')}
             className={`px-4 py-2 rounded-lg text-xs font-black transition cursor-pointer flex items-center gap-2 ${
               activeView === 'personal'
                 ? 'bg-[#966038] text-white shadow-xs'

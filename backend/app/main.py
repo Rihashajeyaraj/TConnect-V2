@@ -62,9 +62,22 @@ app.add_exception_handler(Exception, global_exception_handler)
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
 
+from app.modules.spatial.history_worker import history_worker
+
 @app.on_event("startup")
-def on_startup():
+async def on_startup():
     print("[INFO] Bypassing database startup checks/migrations for rapid startup.")
+    try:
+        history_worker.start()
+    except Exception as e:
+        print(f"[WARNING] Failed to start Phase 3 history worker: {e}")
+
+@app.on_event("shutdown")
+async def on_shutdown():
+    try:
+        await history_worker.stop()
+    except Exception as e:
+        print(f"[WARNING] Error stopping Phase 3 history worker: {e}")
 
 
 @app.get("/", include_in_schema=False)

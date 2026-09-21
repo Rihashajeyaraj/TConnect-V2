@@ -192,19 +192,32 @@ self.addEventListener('push', (event) => {
 })
 
 // ── Notification Click ────────────────────────────────────────────────────────
+function sanitizeInternalUrl(url) {
+  if (!url || typeof url !== 'string') return '/'
+  const trimmed = url.trim()
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.includes('javascript:')) {
+    return trimmed
+  }
+  return '/'
+}
+
 self.addEventListener('notificationclick', (event) => {
   event.notification.close()
-  const targetUrl = event.notification.data?.url || '/'
+  const rawUrl = event.notification.data?.url || '/'
+  const targetUrl = sanitizeInternalUrl(rawUrl)
 
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      // If app is already open, focus it
+      // If app is already open, focus it and navigate to target route
       for (const client of clientList) {
         if (client.url && 'focus' in client) {
+          if ('navigate' in client && targetUrl && targetUrl !== '/') {
+            client.navigate(targetUrl).catch(() => {})
+          }
           return client.focus()
         }
       }
-      // Otherwise open the target URL
+      // Otherwise open the target URL in a new window/tab
       if (clients.openWindow) {
         return clients.openWindow(targetUrl)
       }

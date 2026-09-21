@@ -33,6 +33,8 @@ def _normalize_role(role_str: str) -> str:
         return "admin"
     if "manager" in r:
         return "sales_manager"
+    if any(k in r for k in ["team lead", "lead", "tl"]):
+        return "team_lead"
     return "sales_executive"
 
 

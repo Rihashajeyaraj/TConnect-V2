@@ -129,31 +129,62 @@ class PipelineRepository:
             "updated_at": now_iso,
         }
 
+        out_opp = None
         # 1. Primary: crm.opportunities
         try:
             res = self.supabase.schema("crm").table("opportunities").insert(payload).execute()
             if res.data and len(res.data) > 0:
                 logger.info(f"[OPP INSERT SUCCESS] Opportunity saved in crm.opportunities: {res.data[0]}")
                 out_opp = self._standardize_opp(res.data[0])
-                _in_memory_opportunities.insert(0, out_opp)
-                return out_opp
         except Exception as e:
             logger.debug(f"crm.opportunities insert notice: {e}")
 
         # 2. Fallback: public.opportunities
-        try:
-            res = self.supabase.table("opportunities").insert(payload).execute()
-            if res.data and len(res.data) > 0:
-                logger.info(f"[OPP INSERT SUCCESS] Opportunity saved in public.opportunities: {res.data[0]}")
-                out_opp = self._standardize_opp(res.data[0])
-                _in_memory_opportunities.insert(0, out_opp)
-                return out_opp
-        except Exception as e:
-            logger.warning(f"public.opportunities insert notice: {e}")
+        if not out_opp:
+            try:
+                res = self.supabase.table("opportunities").insert(payload).execute()
+                if res.data and len(res.data) > 0:
+                    logger.info(f"[OPP INSERT SUCCESS] Opportunity saved in public.opportunities: {res.data[0]}")
+                    out_opp = self._standardize_opp(res.data[0])
+            except Exception as e:
+                logger.warning(f"public.opportunities insert notice: {e}")
 
-        out_opp = self._standardize_opp(payload)
+        if not out_opp:
+            out_opp = self._standardize_opp(payload)
+
         _in_memory_opportunities.insert(0, out_opp)
+        self._emit_opp_notif(out_opp, "OPPORTUNITY_CREATED")
         return out_opp
+
+    def _emit_opp_notif(self, opp_data: Dict[str, Any], event_type: str = "OPPORTUNITY_CREATED"):
+        try:
+            from app.modules.notification.repository import NotificationRepository
+            from app.modules.notification.helpers import build_notification_url
+            opp_id = str(opp_data.get("id") or opp_data.get("opportunity_id") or "")
+            comp = str(opp_data.get("company") or opp_data.get("company_name") or "Prospect")
+            title_str = str(opp_data.get("title") or f"Opportunity - {comp}")
+            rep_str = str(opp_data.get("rep") or opp_data.get("assigned_to") or "")
+            stage_str = str(opp_data.get("stage") or "Lead")
+            val_num = opp_data.get("value") or 0.0
+
+            if event_type == "OPPORTUNITY_CREATED":
+                notif_title = "New Opportunity Created"
+                msg = f"Opportunity '{title_str}' (Value: ₹{val_num:,.0f}) created for {comp}."
+            else:
+                notif_title = "Pipeline Stage Updated"
+                msg = f"Opportunity '{title_str}' moved to '{stage_str}' stage."
+
+            notif_url = build_notification_url(event_type, opp_id, role="sales")
+            NotificationRepository().create_notification({
+                "recipient_id": opp_data.get("generated_by_employee_id") or rep_str,
+                "recipient_role": "sales",
+                "title": notif_title,
+                "message": msg,
+                "type": event_type,
+                "url": notif_url,
+            })
+        except Exception as n_err:
+            logger.warning(f"Opportunity notification emission failed: {n_err}")
 
     def update_opportunity_stage(self, opp_id: str, stage: str, probability: Optional[int] = None, notes: Optional[str] = None) -> Dict[str, Any]:
         now_iso = datetime.utcnow().isoformat()
@@ -170,25 +201,32 @@ class PipelineRepository:
         if notes is not None:
             updates["notes"] = notes
 
+        out_opp = None
         try:
             res = self.supabase.schema("crm").table("opportunities").update(updates).or_(f"id.eq.{opp_id},opportunity_id.eq.{opp_id}").execute()
             if res.data and len(res.data) > 0:
-                return self._standardize_opp(res.data[0])
+                out_opp = self._standardize_opp(res.data[0])
         except Exception:
             try:
                 res = self.supabase.table("opportunities").update(updates).or_(f"id.eq.{opp_id},opportunity_id.eq.{opp_id}").execute()
                 if res.data and len(res.data) > 0:
-                    return self._standardize_opp(res.data[0])
+                    out_opp = self._standardize_opp(res.data[0])
             except Exception as e:
                 logger.warning(f"Supabase opportunity update failed: {e}")
 
-        for o in _in_memory_opportunities:
-            if str(o.get("id")) == str(opp_id) or str(o.get("opportunity_id")) == str(opp_id):
-                o.update(updates)
-                return self._standardize_opp(o)
+        if not out_opp:
+            for o in _in_memory_opportunities:
+                if str(o.get("id")) == str(opp_id) or str(o.get("opportunity_id")) == str(opp_id):
+                    o.update(updates)
+                    out_opp = self._standardize_opp(o)
+                    break
 
-        updates["id"] = opp_id
-        return self._standardize_opp(updates)
+        if not out_opp:
+            updates["id"] = opp_id
+            out_opp = self._standardize_opp(updates)
+
+        self._emit_opp_notif(out_opp, "PIPELINE_STAGE_CHANGED")
+        return out_opp
 
     def get_opportunity_by_id(self, opp_id: str) -> Optional[Dict[str, Any]]:
         opps = self.get_all_opportunities()

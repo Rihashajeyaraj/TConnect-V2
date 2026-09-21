@@ -167,12 +167,19 @@ class NotificationRepository:
             except Exception as e:
                 logger.debug(f"Employee email lookup notice: {e}")
 
+        from app.modules.notification.helpers import build_notification_url
+        raw_url = str(data.get("url") or data.get("link") or "").strip()
+        if not raw_url or raw_url.startswith("email:") or raw_url.startswith("emp_id:") or raw_url == "/notifications":
+            target_url = build_notification_url(type_str, notif_id, role=recip_role)
+        else:
+            target_url = raw_url
+
         meta_parts = []
         if recip_email:
             meta_parts.append(f"email:{str(recip_email).lower().strip()}")
         if recip_id:
             meta_parts.append(f"emp_id:{str(recip_id).strip()}")
-        link_str = "|".join(meta_parts) if meta_parts else str(data.get("link") or "")
+        link_str = target_url if target_url and target_url != "/notifications" else ("|".join(meta_parts) if meta_parts else "")
 
         # Build database-conforming payload matching system.notifications schema EXACTLY
         db_payload = {
@@ -200,6 +207,8 @@ class NotificationRepository:
             "message": msg_str,
             "category": type_str,
             "type": type_str,
+            "url": target_url,
+            "link": link_str,
             "is_read": is_read_val,
             "read": is_read_val,
             "created_at": now_iso,
@@ -225,12 +234,13 @@ class NotificationRepository:
             res = self.supabase.schema("system").table("notifications").insert(db_payload).execute()
             if res.data and len(res.data) > 0:
                 logger.info(f"[NOTIFICATION INSERT SUCCESS] Saved notification ID: {res.data[0].get('id')}")
-                saved_notif = self._standardize_notification(res.data[0])
+                saved_notif["url"] = target_url
         except Exception as e:
             try:
                 res = self.supabase.table("notifications").insert(db_payload).execute()
                 if res.data and len(res.data) > 0:
                     saved_notif = self._standardize_notification(res.data[0])
+                    saved_notif["url"] = target_url
             except Exception as inner_e:
                 logger.warning(f"notifications insert notice: {inner_e}")
 
@@ -256,7 +266,7 @@ class NotificationRepository:
                     "title":        title_str,
                     "body":         msg_str,
                     "unread_count": fresh_unread,
-                    "url":          "/notifications",
+                    "url":          target_url,
                 }
 
                 subs = self.get_push_subscriptions_for_user(

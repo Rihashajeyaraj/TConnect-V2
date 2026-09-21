@@ -263,7 +263,9 @@ class VisitRepository:
             print("[VISIT REPOSITORY] Supabase response:", res.data)
             if res.data and len(res.data) > 0:
                 logger.info(f"[VISIT INSERT SUCCESS] Saved visit in field_management.visits: {res.data[0]}")
-                return self._standardize_visit(res.data[0])
+                out_v = self._standardize_visit(res.data[0])
+                self._emit_visit_notif(out_v, "VISIT_SCHEDULED")
+                return out_v
             else:
                 raise RuntimeError("No data returned from database insert operation.")
         except Exception as e:
@@ -293,7 +295,9 @@ class VisitRepository:
                 res_pub = self.supabase.table("visits").insert(public_payload).execute()
                 if res_pub.data and len(res_pub.data) > 0:
                     logger.info(f"[VISIT INSERT SUCCESS] Saved fallback visit in public.visits: {res_pub.data[0]}")
-                    return self._standardize_visit(res_pub.data[0])
+                    out_v = self._standardize_visit(res_pub.data[0])
+                    self._emit_visit_notif(out_v, "VISIT_SCHEDULED")
+                    return out_v
             except Exception as ex_pub:
                 logger.error(f"Fallback insert to public.visits failed: {ex_pub}")
 
@@ -323,35 +327,74 @@ class VisitRepository:
             logger.warning(f"All database insert attempts failed for visit '{visit_id}'. Saving to in-memory fallback.")
             std_payload = self._standardize_visit(payload)
             _in_memory_visits.append(std_payload)
+            self._emit_visit_notif(std_payload, "VISIT_SCHEDULED")
             return std_payload
+
+    def _emit_visit_notif(self, v_data: Dict[str, Any], event_type: str = "VISIT_SCHEDULED"):
+        try:
+            from app.modules.notification.repository import NotificationRepository
+            from app.modules.notification.helpers import build_notification_url
+            v_id = str(v_data.get("id") or v_data.get("visit_id") or "")
+            cust_name = str(v_data.get("client_name") or v_data.get("customer_name") or v_data.get("company_name") or "Customer")
+            se_email = str(v_data.get("assigned_to_email") or v_data.get("employee_email") or "")
+            emp_id = str(v_data.get("employee_id") or v_data.get("employee_name") or "")
+
+            if event_type == "VISIT_SCHEDULED":
+                title = "Visit Scheduled"
+                msg = f"Customer visit to '{cust_name}' has been scheduled for {v_data.get('visit_date', 'today')} at {v_data.get('visit_time', '10:00 AM')}."
+            else:
+                title = "Visit Completed"
+                msg = f"Customer visit to '{cust_name}' was completed."
+
+            notif_url = build_notification_url(event_type, v_id, role="sales")
+            NotificationRepository().create_notification({
+                "recipient_email": se_email,
+                "recipient_id": emp_id,
+                "recipient_role": "sales",
+                "title": title,
+                "message": msg,
+                "type": event_type,
+                "url": notif_url,
+            })
+        except Exception as n_err:
+            logger.warning(f"Visit notification emission failed: {n_err}")
+>>>>>>> Riha
 
     def complete_visit(self, visit_id: str, updates: Dict[str, Any]) -> Dict[str, Any]:
         updates["status"] = "COMPLETED"
         updates["visit_status"] = "COMPLETED"
         updates["check_out_time"] = updates.get("check_out_time") or datetime.utcnow().isoformat()
 
+        res_v = None
         # Try to update field_management.visits first
         try:
             res = self.supabase.schema(SchemaEnum.VISIT.value).table("visits").update(updates).eq("id", visit_id).execute()
             if res.data and len(res.data) > 0:
                 logger.info(f"Visit {visit_id} completed in field_management.visits")
-                return self._standardize_visit(res.data[0])
+                res_v = self._standardize_visit(res.data[0])
         except Exception:
             try:
                 res = self.supabase.table("visits").update(updates).eq("id", visit_id).execute()
                 if res.data and len(res.data) > 0:
                     logger.info(f"Visit {visit_id} completed in public.visits")
-                    return self._standardize_visit(res.data[0])
+                    res_v = self._standardize_visit(res.data[0])
             except Exception as e:
                 logger.warning(f"visits complete update failed: {e}")
 
-        # Try in-memory
-        for v in _in_memory_visits:
-            if str(v.get("id")) == str(visit_id) or str(v.get("visit_id")) == str(visit_id):
-                v.update(updates)
-                return v
+        if not res_v:
+            # Try in-memory
+            for v in _in_memory_visits:
+                if str(v.get("id")) == str(visit_id) or str(v.get("visit_id")) == str(visit_id):
+                    v.update(updates)
+                    res_v = self._standardize_visit(v)
+                    break
 
-        return self.create_visit({"id": visit_id, **updates})
+        if not res_v:
+            updates["id"] = visit_id
+            res_v = self._standardize_visit(updates)
+
+        self._emit_visit_notif(res_v, "VISIT_COMPLETED")
+        return res_v
 
     def get_visit_by_id(self, visit_id: str) -> Optional[Dict[str, Any]]:
         visits = self.get_all_visits()
