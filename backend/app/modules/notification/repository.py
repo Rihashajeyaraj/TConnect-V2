@@ -61,13 +61,22 @@ class NotificationRepository:
 
         notifs = []
 
-        # 1. Primary: public notifications
+        # 1. Primary: system.notifications schema table
         try:
-            res = self.supabase.table("notifications").select("*").execute()
+            res = self.supabase.schema("system").table("notifications").select("*").execute()
             if res.data is not None and len(res.data) > 0:
                 notifs = [self._standardize_notification(n) for n in res.data]
         except Exception as e:
-            logger.debug(f"notifications fetch notice: {e}")
+            logger.debug(f"system.notifications fetch notice: {e}")
+
+        # 2. Fallback: public.notifications table
+        if not notifs:
+            try:
+                res = self.supabase.table("notifications").select("*").execute()
+                if res.data is not None and len(res.data) > 0:
+                    notifs = [self._standardize_notification(n) for n in res.data]
+            except Exception as e:
+                logger.debug(f"public.notifications fetch notice: {e}")
 
         # Combine DB notifications with in-memory notifications
         for mem in _in_memory_notifications:
@@ -210,15 +219,20 @@ class NotificationRepository:
 
         logger.info(f"[NOTIFICATION INSERT REQUEST] Inserting into system.notifications for recipient_user_id: {recip_user_id} role: {recip_role}")
 
-        # 1. Primary: notifications table
+        # 1. Primary: system.notifications table
         saved_notif = None
         try:
-            res = self.supabase.table("notifications").insert(db_payload).execute()
+            res = self.supabase.schema("system").table("notifications").insert(db_payload).execute()
             if res.data and len(res.data) > 0:
                 logger.info(f"[NOTIFICATION INSERT SUCCESS] Saved notification ID: {res.data[0].get('id')}")
                 saved_notif = self._standardize_notification(res.data[0])
         except Exception as e:
-            logger.warning(f"notifications insert notice: {e}")
+            try:
+                res = self.supabase.table("notifications").insert(db_payload).execute()
+                if res.data and len(res.data) > 0:
+                    saved_notif = self._standardize_notification(res.data[0])
+            except Exception as inner_e:
+                logger.warning(f"notifications insert notice: {inner_e}")
 
         # ── Web Push dispatch (fire-and-forget, never blocks notification creation) ──
         # Determine recipient identity for subscription lookup
@@ -295,6 +309,7 @@ class NotificationRepository:
         try:
             res = (
                 self.supabase
+                .schema("system")
                 .table("push_subscriptions")
                 .upsert(payload, on_conflict="endpoint")
                 .execute()
@@ -303,7 +318,17 @@ class NotificationRepository:
                 logger.info("[WebPush] Subscription saved for user %s", user_id[:8])
                 return res.data[0]
         except Exception as e:
-            logger.warning("[WebPush] save_push_subscription error: %s", e)
+            try:
+                res = (
+                    self.supabase
+                    .table("push_subscriptions")
+                    .upsert(payload, on_conflict="endpoint")
+                    .execute()
+                )
+                if res.data:
+                    return res.data[0]
+            except Exception as inner_e:
+                logger.warning("[WebPush] save_push_subscription error: %s", inner_e)
         return payload
 
     def delete_push_subscription(
@@ -315,6 +340,7 @@ class NotificationRepository:
         try:
             (
                 self.supabase
+                .schema("system")
                 .table("push_subscriptions")
                 .delete()
                 .eq("endpoint", endpoint)
@@ -324,14 +350,26 @@ class NotificationRepository:
             logger.info("[WebPush] Subscription deleted for user %s", user_id[:8])
             return True
         except Exception as e:
-            logger.warning("[WebPush] delete_push_subscription error: %s", e)
-            return False
+            try:
+                (
+                    self.supabase
+                    .table("push_subscriptions")
+                    .delete()
+                    .eq("endpoint", endpoint)
+                    .eq("user_id", str(user_id).strip())
+                    .execute()
+                )
+                return True
+            except Exception as inner_e:
+                logger.warning("[WebPush] delete_push_subscription error: %s", inner_e)
+                return False
 
     def delete_push_subscription_by_endpoint(self, endpoint: str) -> bool:
         """Remove stale/expired subscription by endpoint only (called from push dispatch)."""
         try:
             (
                 self.supabase
+                .schema("system")
                 .table("push_subscriptions")
                 .delete()
                 .eq("endpoint", endpoint)
@@ -340,8 +378,18 @@ class NotificationRepository:
             logger.info("[WebPush] Stale subscription removed: %s…", endpoint[:40])
             return True
         except Exception as e:
-            logger.warning("[WebPush] delete_by_endpoint error: %s", e)
-            return False
+            try:
+                (
+                    self.supabase
+                    .table("push_subscriptions")
+                    .delete()
+                    .eq("endpoint", endpoint)
+                    .execute()
+                )
+                return True
+            except Exception as inner_e:
+                logger.warning("[WebPush] delete_by_endpoint error: %s", inner_e)
+                return False
 
     def get_push_subscriptions_for_user(
         self,
@@ -351,7 +399,7 @@ class NotificationRepository:
         """Return all push subscriptions for a user (matched by id OR email)."""
         results: List[Dict[str, Any]] = []
         try:
-            q = self.supabase.table("push_subscriptions").select("*")
+            q = self.supabase.schema("system").table("push_subscriptions").select("*")
             if user_id:
                 q = q.eq("user_id", str(user_id).strip())
             elif user_email:
@@ -362,7 +410,19 @@ class NotificationRepository:
             if res.data:
                 results = res.data
         except Exception as e:
-            logger.warning("[WebPush] get_push_subscriptions error: %s", e)
+            try:
+                q = self.supabase.table("push_subscriptions").select("*")
+                if user_id:
+                    q = q.eq("user_id", str(user_id).strip())
+                elif user_email:
+                    q = q.eq("user_email", str(user_email).strip().lower())
+                else:
+                    return []
+                res = q.execute()
+                if res.data:
+                    results = res.data
+            except Exception as inner_e:
+                logger.warning("[WebPush] get_push_subscriptions error: %s", inner_e)
         return results
 
     def mark_as_read(self, notification_id: str) -> Dict[str, Any]:
@@ -376,10 +436,15 @@ class NotificationRepository:
                 n["unread"] = False
 
         try:
-            res = self.supabase.table("notifications").update(updates).eq("id", notification_id).execute()
+            res = self.supabase.schema("system").table("notifications").update(updates).eq("id", notification_id).execute()
             if res.data and len(res.data) > 0:
                 return self._standardize_notification(res.data[0])
         except Exception as e:
-            logger.warning(f"mark_as_read failed: {e}")
+            try:
+                res = self.supabase.table("notifications").update(updates).eq("id", notification_id).execute()
+                if res.data and len(res.data) > 0:
+                    return self._standardize_notification(res.data[0])
+            except Exception as inner_e:
+                logger.warning(f"mark_as_read failed: {inner_e}")
 
         return {"id": notification_id, "is_read": True}

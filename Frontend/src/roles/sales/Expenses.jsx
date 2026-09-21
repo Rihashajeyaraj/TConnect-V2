@@ -157,6 +157,12 @@ export default function Expenses(props) {
   const handleFileChange = (e) => {
     const file = e.target.files?.[0] || null;
     if (file) {
+      if (file.size > 5 * 1024 * 1024) {
+        showToast("File size exceeds 5MB limit. Please attach a smaller receipt file.", "error");
+        e.target.value = "";
+        setForm((prev) => ({ ...prev, billFile: null, billDataUrl: "" }));
+        return;
+      }
       const reader = new FileReader();
       reader.onload = (evt) => {
         setForm((prev) => ({
@@ -195,6 +201,55 @@ export default function Expenses(props) {
     }
   };
 
+  const compressImageBase64 = (dataUrl, maxWidth = 600, quality = 0.5) => {
+    return new Promise((resolve) => {
+      if (!dataUrl || typeof dataUrl !== 'string') {
+        return resolve(null);
+      }
+      if (!dataUrl.startsWith('data:image')) {
+        // For non-image files (e.g. PDF), permit only if < 150KB base64 string
+        return resolve(dataUrl.length > 150000 ? null : dataUrl);
+      }
+      const img = new Image();
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
+        if (width > maxWidth || height > maxWidth) {
+          if (width > height) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
+          } else {
+            width = Math.round((width * maxWidth) / height);
+            height = maxWidth;
+          }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        let compressed = canvas.toDataURL('image/jpeg', quality);
+
+        // Second pass if payload is still > 150KB base64
+        if (compressed.length > 150000) {
+          const canvas2 = document.createElement('canvas');
+          canvas2.width = Math.max(200, Math.round(width * 0.7));
+          canvas2.height = Math.max(200, Math.round(height * 0.7));
+          const ctx2 = canvas2.getContext('2d');
+          ctx2.drawImage(img, 0, 0, canvas2.width, canvas2.height);
+          compressed = canvas2.toDataURL('image/jpeg', 0.35);
+        }
+
+        if (compressed.length > 200000) {
+          return resolve(null);
+        }
+        resolve(compressed);
+      };
+      img.onerror = () => resolve(dataUrl.length > 150000 ? null : dataUrl);
+      img.src = dataUrl;
+    });
+  };
+
   // Submit Expense Request to Sales Manager
   const handleSubmitExpense = async (e) => {
     e.preventDefault();
@@ -211,12 +266,16 @@ export default function Expenses(props) {
     let uploadedDataUrl = "";
     if (form.billFile) {
       try {
-        uploadedDataUrl = await new Promise((resolve) => {
+        const rawDataUrl = await new Promise((resolve) => {
           const reader = new FileReader();
           reader.onload = (evt) => resolve(evt.target.result);
           reader.onerror = () => resolve("");
           reader.readAsDataURL(form.billFile);
         });
+        uploadedDataUrl = await compressImageBase64(rawDataUrl, 600, 0.5);
+        if (form.billFile && !uploadedDataUrl) {
+          showToast("Attachment was too large to transmit. Submitted claim without file voucher.", "warning");
+        }
       } catch (err) {}
     }
 

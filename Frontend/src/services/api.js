@@ -122,7 +122,11 @@ async function request(endpoint, options = {}) {
       try {
         data = await response.json()
       } catch {
-        data = { message: `HTTP ${response.status}: Failed to parse response` }
+        if (response.status === 413) {
+          data = { message: "Request payload too large (HTTP 413). Please attach a smaller file or receipt image." }
+        } else {
+          data = { message: `HTTP ${response.status}: Failed to parse response` }
+        }
       }
 
       // On 401 — attempt silent refresh once if refresh_token exists
