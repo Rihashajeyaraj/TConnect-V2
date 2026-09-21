@@ -34,9 +34,18 @@
     <script>
       if ('serviceWorker' in navigator) {
         window.addEventListener('load', () => {
-          navigator.serviceWorker.register('/sw.js')
-            .then(reg => console.log('[PWA] Service Worker registered:', reg.scope))
-            .catch(err => console.error('[PWA] Service Worker registration failed:', err));
+          if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+            navigator.serviceWorker.getRegistrations().then(registrations => {
+              for (let registration of registrations) {
+                registration.unregister();
+                console.log('[PWA] Unregistered Service Worker in local dev mode');
+              }
+            });
+          } else {
+            navigator.serviceWorker.register('/sw.js')
+              .then(reg => console.log('[PWA] Service Worker registered:', reg.scope))
+              .catch(err => console.error('[PWA] Service Worker registration failed:', err));
+          }
         });
       }
     </script>

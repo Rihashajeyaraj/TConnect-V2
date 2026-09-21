@@ -406,34 +406,67 @@ class NotificationRepository:
         user_id: str = "",
         user_email: str = "",
     ) -> List[Dict[str, Any]]:
-        """Return all push subscriptions for a user (matched by id OR email)."""
-        results: List[Dict[str, Any]] = []
-        try:
-            q = self.supabase.schema("system").table("push_subscriptions").select("*")
-            if user_id:
-                q = q.eq("user_id", str(user_id).strip())
-            elif user_email:
-                q = q.eq("user_email", str(user_email).strip().lower())
-            else:
-                return []
-            res = q.execute()
-            if res.data:
-                results = res.data
-        except Exception as e:
+        """Return all active push subscriptions for a user (safely matching by UUID, employee code, or email)."""
+        u_id = str(user_id or "").strip()
+        u_email = str(user_email or "").strip().lower()
+
+        # 1. Check if user_id string is a valid 36-char UUID format
+        is_uuid = len(u_id) == 36 and "-" in u_id
+        resolved_uuid = u_id if is_uuid else ""
+        resolved_email = u_email
+
+        # 2. If user_id is an employee_code (e.g. EMP000014) or UUID/email is missing, attempt safe resolution via hrms.employees
+        if (not resolved_uuid or not resolved_email) and (u_id or u_email):
             try:
-                q = self.supabase.table("push_subscriptions").select("*")
-                if user_id:
-                    q = q.eq("user_id", str(user_id).strip())
-                elif user_email:
-                    q = q.eq("user_email", str(user_email).strip().lower())
-                else:
-                    return []
-                res = q.execute()
+                q = self.supabase.schema("hrms").table("employees").select("user_id, email, employee_code")
+                if resolved_uuid:
+                    q = q.eq("user_id", resolved_uuid)
+                elif u_id:
+                    q = q.eq("employee_code", u_id)
+                elif u_email:
+                    q = q.eq("email", u_email)
+
+                res = q.limit(1).execute()
+                if res.data and len(res.data) > 0:
+                    emp = res.data[0]
+                    emp_uid = str(emp.get("user_id") or "").strip()
+                    if emp_uid and len(emp_uid) == 36 and "-" in emp_uid:
+                        resolved_uuid = emp_uid
+                    if emp.get("email"):
+                        resolved_email = str(emp["email"]).strip().lower()
+            except Exception as e:
+                logger.debug(f"[WebPush] identity resolution notice: {e}")
+
+        if not resolved_uuid and not resolved_email:
+            return []
+
+        subs_map: Dict[str, Dict[str, Any]] = {}
+
+        # 3. Query system.push_subscriptions by resolved UUID
+        if resolved_uuid:
+            try:
+                res = self.supabase.schema("system").table("push_subscriptions").select("*").eq("user_id", resolved_uuid).execute()
                 if res.data:
-                    results = res.data
-            except Exception as inner_e:
-                logger.warning("[WebPush] get_push_subscriptions error: %s", inner_e)
-        return results
+                    for s in res.data:
+                        if s.get("endpoint"):
+                            subs_map[s["endpoint"]] = s
+            except Exception as e:
+                logger.debug(f"[WebPush] UUID query notice: {e}")
+
+        # 4. Query system.push_subscriptions by resolved Email
+        if resolved_email:
+            try:
+                res = self.supabase.schema("system").table("push_subscriptions").select("*").eq("user_email", resolved_email).execute()
+                if res.data:
+                    for s in res.data:
+                        if s.get("endpoint"):
+                            subs_map[s["endpoint"]] = s
+            except Exception as e:
+                logger.debug(f"[WebPush] Email query notice: {e}")
+
+        final_subs = list(subs_map.values())
+        logger.info(f"[PUSH] recipient resolved: uuid='{resolved_uuid[:8]}...' email='{resolved_email}' -> subscriptions found: {len(final_subs)}")
+        return final_subs
 
     def mark_as_read(self, notification_id: str) -> Dict[str, Any]:
         updates = {"is_read": True, "read": True, "unread": False}

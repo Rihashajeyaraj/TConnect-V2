@@ -41,7 +41,12 @@ self.addEventListener('activate', (event) => {
 
 // ── Fetch ─────────────────────────────────────────────────────────────────────
 self.addEventListener('fetch', (event) => {
-  if (event.request.method !== 'GET' || event.request.url.includes('/api/')) {
+  if (
+    event.request.method !== 'GET' ||
+    event.request.url.includes('/api/') ||
+    self.location.hostname === 'localhost' ||
+    self.location.hostname === '127.0.0.1'
+  ) {
     return
   }
 
