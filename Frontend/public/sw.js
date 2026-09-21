@@ -149,7 +149,7 @@ async function updateOsBadge(count) {
  * }
  */
 self.addEventListener('push', (event) => {
-  console.log('[SW] PUSH EVENT RECEIVED')
+  console.log('[SW] Push received')
   let data = {}
   if (event.data) {
     try {
@@ -173,25 +173,35 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     (async () => {
-      // 1. Update OS app-icon badge (works on iOS 16.4+ PWA, Android Chrome 81+)
-      if (hasCount) {
-        await updateOsBadge(unread)
+      // 1. Show the notification card FIRST (Android notification shade + iOS lock-screen)
+      //    badge MUST be a PNG — SVG is not supported on Android
+      try {
+        await self.registration.showNotification(title, {
+          body,
+          icon:     '/pwa-192x192.png',
+          badge:    '/pwa-192x192.png',   // ← PNG required; SVG silently breaks Android badge
+          vibrate:  [200, 100, 200],
+          tag,
+          renotify: true,
+          data: {
+            url,
+            unread_count: hasCount ? unread : null
+          }
+        })
+        console.log('[SW] showNotification success')
+      } catch (err) {
+        console.error('[SW] showNotification failed', err)
       }
 
-      // 2. Show the notification card (Android notification shade + iOS lock-screen)
-      //    badge MUST be a PNG — SVG is not supported on Android
-      await self.registration.showNotification(title, {
-        body,
-        icon:     '/pwa-192x192.png',
-        badge:    '/pwa-192x192.png',   // ← PNG required; SVG silently breaks Android badge
-        vibrate:  [200, 100, 200],
-        tag,
-        renotify: true,
-        data: {
-          url,
-          unread_count: hasCount ? unread : null
+      // 2. Update OS app-icon badge independently (works on iOS 16.4+ PWA, Android Chrome 81+)
+      if (hasCount) {
+        try {
+          await updateOsBadge(unread)
+          console.log('[SW] badge update success')
+        } catch (err) {
+          console.warn('[SW] badge update failed', err)
         }
-      })
+      }
     })()
   )
 })
