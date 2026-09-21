@@ -75,19 +75,26 @@ export async function registerPushSubscription(authToken) {
     const reg = await navigator.serviceWorker.ready
     if (!reg.pushManager) return
 
-    // Get or create subscription
+    // Get existing subscription or create new one if granted
     let subscription = await reg.pushManager.getSubscription()
+    console.info('[WebPush] current browser subscription detected:', subscription ? 'YES' : 'NO')
+
     if (!subscription) {
+      console.info('[WebPush] Creating new PushManager subscription with VAPID key...')
       subscription = await reg.pushManager.subscribe({
         userVisibleOnly:      true,
         applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
       })
+      console.info('[WebPush] New PushManager subscription created successfully.')
     }
 
     const endpoint = subscription.endpoint
 
-    // Skip if already registered this exact subscription this session
-    if (_subscriptionRegistered && _lastEndpoint === endpoint) return
+    // Skip if already registered this exact subscription in memory this session
+    if (_subscriptionRegistered && _lastEndpoint === endpoint) {
+      console.info('[WebPush] Subscription endpoint already synced with backend this session.')
+      return
+    }
 
     // Extract keys
     const rawKey  = subscription.getKey('p256dh')
@@ -100,7 +107,7 @@ export async function registerPushSubscription(authToken) {
     const p256dh = btoa(String.fromCharCode(...new Uint8Array(rawKey)))
     const auth   = btoa(String.fromCharCode(...new Uint8Array(rawAuth)))
 
-    // POST to backend — user identity comes from the Bearer token, NOT from this payload
+    console.info('[WebPush] subscription registration/update attempted for endpoint:', endpoint.slice(0, 45) + '...')
     const response = await fetch(`${API_BASE_URL}/notifications/push-subscription`, {
       method:  'POST',
       headers: {
@@ -113,9 +120,10 @@ export async function registerPushSubscription(authToken) {
     if (response.ok) {
       _subscriptionRegistered = true
       _lastEndpoint = endpoint
-      console.info('[WebPush] Push subscription registered with backend.')
+      const resData = await response.json().catch(() => ({}))
+      console.info('[WebPush] backend response:', response.status, resData.message || 'Push subscription synced successfully')
     } else {
-      console.warn('[WebPush] Backend returned', response.status, 'for push-subscription POST.')
+      console.warn('[WebPush] backend response:', response.status, 'failed to sync push subscription')
     }
   } catch (err) {
     console.warn('[WebPush] registerPushSubscription error:', err)
