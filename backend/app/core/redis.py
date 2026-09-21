@@ -3,7 +3,11 @@ import json
 import logging
 import time
 from typing import Optional, Dict, Any, List
-import redis.asyncio as aioredis
+try:
+    import redis.asyncio as aioredis
+except ImportError:
+    aioredis = None
+
 from app.core.logger import logger
 
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -14,10 +18,13 @@ class RedisClient:
     Uses a persistent shared client so connections are reused across async operations in sub-milliseconds.
     Fails open gracefully if Redis is temporarily unreachable.
     """
-    _client: Optional[aioredis.Redis] = None
+    _client: Optional[Any] = None
 
     @classmethod
-    async def get_client(cls) -> Optional[aioredis.Redis]:
+    async def get_client(cls) -> Optional[Any]:
+        if aioredis is None:
+            logger.warning("[Redis Core] redis package is not installed.")
+            return None
         if cls._client is None:
             try:
                 logger.info(f"[Redis Core] Initializing shared persistent Redis client ({REDIS_URL})")
