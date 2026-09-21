@@ -61,13 +61,22 @@ class NotificationRepository:
 
         notifs = []
 
-        # 1. Primary: system.notifications
+        # 1. Primary: system.notifications schema table
         try:
             res = self.supabase.schema("system").table("notifications").select("*").execute()
             if res.data is not None and len(res.data) > 0:
                 notifs = [self._standardize_notification(n) for n in res.data]
         except Exception as e:
             logger.debug(f"system.notifications fetch notice: {e}")
+
+        # 2. Fallback: public.notifications table
+        if not notifs:
+            try:
+                res = self.supabase.table("notifications").select("*").execute()
+                if res.data is not None and len(res.data) > 0:
+                    notifs = [self._standardize_notification(n) for n in res.data]
+            except Exception as e:
+                logger.debug(f"public.notifications fetch notice: {e}")
 
         # Combine DB notifications with in-memory notifications
         for mem in _in_memory_notifications:
@@ -137,8 +146,15 @@ class NotificationRepository:
         type_str = str(data.get("type") or data.get("notification_type") or data.get("category") or "INFO")
         is_read_val = bool(data.get("is_read") or data.get("read") or False)
 
-        recip_email = data.get("recipient_email") or data.get("employee_email")
-        recip_id = data.get("recipient_id") or data.get("employee_id") or data.get("user_id") or data.get("recipient_user_id")
+        recip_role_clean = recip_role.lower().strip()
+
+        # When sending a reply or message targeting manager/team_lead, employee_id is the sender's code, not recipient_id
+        if recip_role_clean in ["manager", "team_lead", "lead", "tl", "admin", "ceo"] or "REPLY" in type_str.upper():
+            recip_email = data.get("recipient_email")
+            recip_id = data.get("recipient_id") or data.get("recipient_user_id")
+        else:
+            recip_email = data.get("recipient_email") or data.get("employee_email")
+            recip_id = data.get("recipient_id") or data.get("employee_id") or data.get("user_id") or data.get("recipient_user_id")
 
         recip_user_id = None
         if recip_id and len(str(recip_id)) == 36 and "-" in str(recip_id):
@@ -190,28 +206,41 @@ class NotificationRepository:
         }
         if recip_id:
             req_obj["recipient_id"] = str(recip_id)
-            req_obj["employee_id"] = str(recip_id)
         if recip_email:
             req_obj["recipient_email"] = str(recip_email).lower().strip()
+        if data.get("employee_id"):
+            req_obj["employee_id"] = str(data.get("employee_id")).strip()
+        if data.get("sender_name"):
+            req_obj["sender_name"] = str(data.get("sender_name")).strip()
+        if data.get("sender_email"):
+            req_obj["sender_email"] = str(data.get("sender_email")).strip()
 
         _in_memory_notifications.append(req_obj)
 
         logger.info(f"[NOTIFICATION INSERT REQUEST] Inserting into system.notifications for recipient_user_id: {recip_user_id} role: {recip_role}")
 
-        # 1. Primary: system.notifications
+        # 1. Primary: system.notifications table
+        saved_notif = None
         try:
             res = self.supabase.schema("system").table("notifications").insert(db_payload).execute()
             if res.data and len(res.data) > 0:
                 logger.info(f"[NOTIFICATION INSERT SUCCESS] Saved notification ID: {res.data[0].get('id')}")
-                return self._standardize_notification(res.data[0])
+                saved_notif = self._standardize_notification(res.data[0])
         except Exception as e:
-            logger.warning(f"system.notifications insert notice: {e}")
-
+            try:
+                res = self.supabase.table("notifications").insert(db_payload).execute()
+                if res.data and len(res.data) > 0:
+                    saved_notif = self._standardize_notification(res.data[0])
+            except Exception as inner_e:
+                logger.warning(f"notifications insert notice: {inner_e}")
 
         # ── Web Push dispatch (fire-and-forget, never blocks notification creation) ──
         # Determine recipient identity for subscription lookup
         push_user_id   = str(recip_user_id or recip_id or "").strip()
         push_user_email = str(recip_email or "").strip().lower()
+
+        logger.info(f"[PUSH] notification created: id={notif_id} title='{title_str}'")
+        logger.info(f"[PUSH] recipient = user_id='{push_user_id}', email='{push_user_email}', role='{recip_role}'")
 
         if push_user_id or push_user_email:
             try:
@@ -220,6 +249,7 @@ class NotificationRepository:
                     "email": push_user_email,
                     "sub": push_user_id,
                 })
+                logger.info(f"[PUSH] unread_count = {fresh_unread}")
 
                 push_payload = {
                     "type":         "new_notification",
@@ -232,8 +262,10 @@ class NotificationRepository:
                 subs = self.get_push_subscriptions_for_user(
                     user_id=push_user_id, user_email=push_user_email
                 )
+                logger.info(f"[PUSH] subscriptions = {len(subs)}")
 
                 if subs:
+                    logger.info(f"[PUSH] sending push to {len(subs)} subscription(s)")
                     def _remove_stale(endpoints: List[str]) -> None:
                         for ep in endpoints:
                             self.delete_push_subscription_by_endpoint(ep)
@@ -241,15 +273,14 @@ class NotificationRepository:
                     push_service.send_push_to_subscriptions_async(
                         subs, push_payload, on_remove=_remove_stale
                     )
-                    logger.info(
-                        "[WebPush] Dispatching push to %d subscription(s) for user %s (unread=%d)",
-                        len(subs), push_user_id or push_user_email, fresh_unread
-                    )
+                    logger.info("[PUSH] push result = dispatched async")
+                else:
+                    logger.warning("[PUSH] push result = skipped (0 subscriptions found for recipient)")
             except Exception as push_err:  # noqa: BLE001
                 # Push failure must NEVER cause notification creation to fail
-                logger.warning("[WebPush] Push dispatch error (non-fatal): %s", push_err)
+                logger.warning(f"[PUSH] push result = failure: {push_err}")
 
-        return req_obj
+        return saved_notif or req_obj
 
     # ──────────────────────────────────────────────────────────────────────────
     # Push Subscription CRUD
@@ -287,7 +318,17 @@ class NotificationRepository:
                 logger.info("[WebPush] Subscription saved for user %s", user_id[:8])
                 return res.data[0]
         except Exception as e:
-            logger.warning("[WebPush] save_push_subscription error: %s", e)
+            try:
+                res = (
+                    self.supabase
+                    .table("push_subscriptions")
+                    .upsert(payload, on_conflict="endpoint")
+                    .execute()
+                )
+                if res.data:
+                    return res.data[0]
+            except Exception as inner_e:
+                logger.warning("[WebPush] save_push_subscription error: %s", inner_e)
         return payload
 
     def delete_push_subscription(
@@ -309,8 +350,19 @@ class NotificationRepository:
             logger.info("[WebPush] Subscription deleted for user %s", user_id[:8])
             return True
         except Exception as e:
-            logger.warning("[WebPush] delete_push_subscription error: %s", e)
-            return False
+            try:
+                (
+                    self.supabase
+                    .table("push_subscriptions")
+                    .delete()
+                    .eq("endpoint", endpoint)
+                    .eq("user_id", str(user_id).strip())
+                    .execute()
+                )
+                return True
+            except Exception as inner_e:
+                logger.warning("[WebPush] delete_push_subscription error: %s", inner_e)
+                return False
 
     def delete_push_subscription_by_endpoint(self, endpoint: str) -> bool:
         """Remove stale/expired subscription by endpoint only (called from push dispatch)."""
@@ -326,8 +378,18 @@ class NotificationRepository:
             logger.info("[WebPush] Stale subscription removed: %s…", endpoint[:40])
             return True
         except Exception as e:
-            logger.warning("[WebPush] delete_by_endpoint error: %s", e)
-            return False
+            try:
+                (
+                    self.supabase
+                    .table("push_subscriptions")
+                    .delete()
+                    .eq("endpoint", endpoint)
+                    .execute()
+                )
+                return True
+            except Exception as inner_e:
+                logger.warning("[WebPush] delete_by_endpoint error: %s", inner_e)
+                return False
 
     def get_push_subscriptions_for_user(
         self,
@@ -348,7 +410,19 @@ class NotificationRepository:
             if res.data:
                 results = res.data
         except Exception as e:
-            logger.warning("[WebPush] get_push_subscriptions error: %s", e)
+            try:
+                q = self.supabase.table("push_subscriptions").select("*")
+                if user_id:
+                    q = q.eq("user_id", str(user_id).strip())
+                elif user_email:
+                    q = q.eq("user_email", str(user_email).strip().lower())
+                else:
+                    return []
+                res = q.execute()
+                if res.data:
+                    results = res.data
+            except Exception as inner_e:
+                logger.warning("[WebPush] get_push_subscriptions error: %s", inner_e)
         return results
 
     def mark_as_read(self, notification_id: str) -> Dict[str, Any]:
@@ -365,12 +439,12 @@ class NotificationRepository:
             res = self.supabase.schema("system").table("notifications").update(updates).eq("id", notification_id).execute()
             if res.data and len(res.data) > 0:
                 return self._standardize_notification(res.data[0])
-        except Exception:
+        except Exception as e:
             try:
                 res = self.supabase.table("notifications").update(updates).eq("id", notification_id).execute()
                 if res.data and len(res.data) > 0:
                     return self._standardize_notification(res.data[0])
-            except Exception as e:
-                logger.warning(f"mark_as_read failed: {e}")
+            except Exception as inner_e:
+                logger.warning(f"mark_as_read failed: {inner_e}")
 
         return {"id": notification_id, "is_read": True}

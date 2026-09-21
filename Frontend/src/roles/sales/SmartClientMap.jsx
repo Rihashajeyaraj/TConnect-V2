@@ -205,6 +205,11 @@ function initializeHTMLMapMarker() {
       this.draw()
     }
 
+    setPosition(latlng) {
+      this.latlng = latlng
+      this.draw()
+    }
+
     getPosition() {
       return this.latlng
     }
@@ -243,6 +248,8 @@ export default function SmartClientMap({ isManagerView = false }) {
   const lastRoutePos     = useRef(null)         // last OSRM fetch position
   const routeFetchTimer  = useRef(null)         // debounce timer id
   const trailPolylineRef = useRef(null)         // Traveled breadcrumb polyline
+  const trailOuterPolylineRef = useRef(null)    // Dark casing road polyline for high contrast
+  const startMarkerRef   = useRef(null)         // Green START point marker
   const trailPointsRef   = useRef([])           // Breadcrumb points array
   const lastTelemetryUpdate = useRef(0)         // throttled updates tracking
   const lastUiRenderTime = useRef(0)            // P2 throttled React UI renders tracking
@@ -631,7 +638,11 @@ export default function SmartClientMap({ isManagerView = false }) {
         const newPos = { lat: latitude, lng: longitude }
         execPosRef.current = newPos
         if (execMarkerRef.current) {
-          execMarkerRef.current.setPosition(newPos)
+          if (typeof execMarkerRef.current.setPosition === 'function') {
+            execMarkerRef.current.setPosition(newPos)
+          } else if (typeof execMarkerRef.current.setLatLng === 'function') {
+            execMarkerRef.current.setLatLng(newPos)
+          }
         }
 
         // P2 Optimization: Throttle React UI state updates to ~1.5s to prevent render cascades
@@ -1235,6 +1246,14 @@ export default function SmartClientMap({ isManagerView = false }) {
         try { accuracyCircleRef.current.setMap(null) } catch {}
         accuracyCircleRef.current = null
       }
+      if (startMarkerRef.current) {
+        try { startMarkerRef.current.setMap(null) } catch {}
+        startMarkerRef.current = null
+      }
+      if (trailOuterPolylineRef.current) {
+        try { trailOuterPolylineRef.current.setMap(null) } catch {}
+        trailOuterPolylineRef.current = null
+      }
       if (trailPolylineRef.current) {
         try { trailPolylineRef.current.setMap(null) } catch {}
         trailPolylineRef.current = null
@@ -1352,10 +1371,11 @@ export default function SmartClientMap({ isManagerView = false }) {
       const mainPolyline = new window.google.maps.Polyline({
         path: pathCoords,
         geodesic: true,
-        strokeColor: '#2563eb',
-        strokeOpacity: 0.85,
-        strokeWeight: 5,
+        strokeColor: '#9333ea', // Primary bold purple line for active route navigation
+        strokeOpacity: 0.9,
+        strokeWeight: 6,
         map: map,
+        zIndex: 25
       })
       activePolylinesRef.current.push(mainPolyline)
 
@@ -1369,14 +1389,14 @@ export default function SmartClientMap({ isManagerView = false }) {
               path: 'M 0,-2 0,2',
               strokeOpacity: 1,
               scale: 2.5,
-              strokeColor: '#9333ea', // Purple dashed line for off-route deviation
+              strokeColor: '#c084fc', // Light purple dashed line for off-route deviation
               strokeWeight: 4,
             },
             offset: '0%',
             repeat: '16px',
           }],
           map: map,
-          zIndex: 20
+          zIndex: 30
         })
         activePolylinesRef.current.push(offRoutePolyline)
       }
@@ -1418,8 +1438,12 @@ export default function SmartClientMap({ isManagerView = false }) {
     if (!googleMapRef.current || !window.google || !mapLoaded) return
     if (!executivePos?.lat || !executivePos?.lng) return
 
-    // 1. Do NOT track or render polyline unless GPS fix is active
-    if (gpsStatus !== 'active') {
+    // 1. Do NOT track or render polyline if permission is explicitly denied
+    if (gpsStatus === 'denied') {
+      if (trailOuterPolylineRef.current) {
+        trailOuterPolylineRef.current.setMap(null)
+        trailOuterPolylineRef.current = null
+      }
       if (trailPolylineRef.current) {
         trailPolylineRef.current.setMap(null)
         trailPolylineRef.current = null
@@ -1456,29 +1480,68 @@ export default function SmartClientMap({ isManagerView = false }) {
       distFromLastM = haversineDistance(lastPt.lat, lastPt.lng, executivePos.lat, executivePos.lng) * 1000
     }
 
-    // Append point ONLY if first real acquired point or executive moved >= 5 meters
-    if (validPts.length === 0 || distFromLastM >= 5) {
+    // Filter out stationary jitter (must move >= 15m) and filter out absurd GPS teleport jumps (> 500m in single tick)
+    const isReasonableMove = validPts.length === 0 || (distFromLastM >= 15 && distFromLastM < 500)
+    if (isReasonableMove) {
       validPts.push({ lat: executivePos.lat, lng: executivePos.lng })
     }
 
-    // 4. ONLY draw traveled polyline if executive has AT LEAST 2 REAL traveled points
+    // 4. Render green START marker pin at initial starting location
+    if (validPts.length > 0 && !startMarkerRef.current && googleMapRef.current && window.google) {
+      const startLatLng = new window.google.maps.LatLng(validPts[0].lat, validPts[0].lng)
+      const buildStartHtml = () => `
+        <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #10b981; border: 2.5px solid #ffffff; box-shadow: 0 4px 10px rgba(16,185,129,0.45); color: #ffffff; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">
+          START
+        </div>
+      `
+      startMarkerRef.current = createMapMarker(
+        startLatLng,
+        googleMapRef.current,
+        buildStartHtml(),
+        () => {
+          showInfoWindow(startLatLng, '<div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:4px;color:#1e293b;"><strong>🟢 Start Point</strong><br/>Your trip starting location</div>')
+        },
+        'center'
+      )
+    }
+
+    // 5. ONLY draw traveled polyline if executive has AT LEAST 2 REAL traveled points
     if (validPts.length > 1) {
       const gPath = validPts.map(p => ({ lat: p.lat, lng: p.lng }))
       
+      // Outer dark purple casing line for clean road contrast
+      if (!trailOuterPolylineRef.current) {
+        trailOuterPolylineRef.current = new window.google.maps.Polyline({
+          path: gPath,
+          geodesic: true,
+          strokeColor: '#3b0764', // Deep dark royal purple casing line
+          strokeOpacity: 0.65,
+          strokeWeight: 9,
+          map: googleMapRef.current,
+          zIndex: 34
+        })
+      } else {
+        trailOuterPolylineRef.current.setPath(gPath)
+        if (!trailOuterPolylineRef.current.getMap()) {
+          trailOuterPolylineRef.current.setMap(googleMapRef.current)
+        }
+      }
+
+      // Inner electric purple main road line
       if (!trailPolylineRef.current) {
         trailPolylineRef.current = new window.google.maps.Polyline({
           path: gPath,
           geodesic: true,
-          strokeColor: '#9333ea', // Primary bold solid purple line for traveled route
-          strokeOpacity: 0.85,
-          strokeWeight: 6,
+          strokeColor: '#a855f7', // Vibrant electric purple road path
+          strokeOpacity: 0.95,
+          strokeWeight: 5,
           icons: [{
             icon: {
               path: 'M 0,-2 0,2',
               strokeOpacity: 1,
-              scale: 2.5,
-              strokeColor: '#c084fc', // Light purple accent dash on top
-              strokeWeight: 3,
+              scale: 2.2,
+              strokeColor: '#f3e8ff', // Soft light violet accent dash on top
+              strokeWeight: 2,
             },
             offset: '0%',
             repeat: '14px',
@@ -1493,11 +1556,44 @@ export default function SmartClientMap({ isManagerView = false }) {
         }
       }
     } else {
+      if (trailOuterPolylineRef.current) {
+        trailOuterPolylineRef.current.setMap(null)
+      }
       if (trailPolylineRef.current) {
         trailPolylineRef.current.setMap(null)
       }
     }
   }, [executivePos, gpsStatus, mapLoaded])
+
+  // Pre-load executive's today's saved tracking breadcrumbs history on mount
+  useEffect(() => {
+    if (!mapLoaded) return
+    const empId = currentUser?.employee_id || currentUser?.employee_code || currentUser?.id
+    if (!empId) return
+
+    spatialAPI.getLocationHistory(empId).then(res => {
+      const data = res?.data || res
+      const crumbs = data?.breadcrumbs || []
+      if (crumbs.length > 0) {
+        const historyPts = crumbs
+          .map(c => ({ lat: Number(c.latitude), lng: Number(c.longitude) }))
+          .filter(p => !isNaN(p.lat) && !isNaN(p.lng) && p.lat !== 0 && p.lng !== 0)
+        
+        if (historyPts.length > 0) {
+          const currentPts = trailPointsRef.current
+          const combined = [...historyPts]
+          currentPts.forEach(p => {
+            if (!combined.some(c => Math.abs(c.lat - p.lat) < 0.00001 && Math.abs(c.lng - p.lng) < 0.00001)) {
+              combined.push(p)
+            }
+          })
+          trailPointsRef.current = combined
+        }
+      }
+    }).catch(err => {
+      console.warn('[SmartClientMap] Failed to pre-load tracking history:', err)
+    })
+  }, [mapLoaded, currentUser?.employee_id, currentUser?.employee_code, currentUser?.id])
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   const visibleAlerts = onRouteClients.filter(c => !dismissedAlerts.current.has(c.id))

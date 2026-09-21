@@ -66,7 +66,7 @@ export default function TeamLeadSmartMap() {
 
       {/* Render selected view — lazy-loaded on first visit */}
       <Suspense fallback={<MapLoader />}>
-        {activeTab === 'team' && canViewTeamMap ? <ManagerSmartMap /> : <SmartClientMap />}
+        {activeTab === 'team' && canViewTeamMap ? <ManagerSmartMap hideHeader={true} /> : <SmartClientMap />}
       </Suspense>
     </div>
   )

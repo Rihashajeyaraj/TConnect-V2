@@ -302,18 +302,9 @@ class CustomerRepository:
         except Exception as e_enrich:
             logger.warning(f"Error enriching customer details directory: {e_enrich}")
 
-        from app.core.scoping import get_allowed_user_identifiers, is_record_accessible
-        allowed = get_allowed_user_identifiers(user_payload)
-        # Store ALL (unscoped) enriched customers in cache — scoping applied per-request above
         _CUSTOMERS_CACHE = res_list
         _CUSTOMERS_CACHE_TIMESTAMP = time.time()
-        if allowed is None:
-            res_scoped = list(res_list)
-        else:
-            res_scoped = [c for c in res_list if is_record_accessible(c, allowed)]
-        if page is not None and limit is not None and page > 0 and limit > 0:
-            return res_scoped[(page - 1) * limit : page * limit]
-        return res_scoped
+        return res_list
 
     def create_customer(self, data: Dict[str, Any]) -> Dict[str, Any]:
         _clear_customers_cache()

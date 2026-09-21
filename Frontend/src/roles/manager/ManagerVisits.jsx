@@ -103,8 +103,8 @@ export default function ManagerVisits() {
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(10)
 
-  // Active card filter state (which top card is selected)
-  const [activeCard, setActiveCard] = useState(null) // null | 'scheduled' | 'completed' | 'pending' | 'missed' | 'followups'
+  // Active card filter state (which top card is selected, defaults to 'scheduled')
+  const [activeCard, setActiveCard] = useState('scheduled') // null | 'scheduled' | 'completed' | 'pending' | 'missed' | 'followups'
 
   // Full Audit Modal State
   const [selectedAuditModal, setSelectedAuditModal] = useState(null)
@@ -210,6 +210,7 @@ export default function ManagerVisits() {
   }
 
 
+
   const resolveEmployeeCode = (seName, seEmail, rawCode) => {
     const n = (seName || '').toLowerCase().trim()
     const e = (seEmail || '').toLowerCase().trim()
@@ -251,48 +252,80 @@ export default function ManagerVisits() {
     return 'EMP000012'
   }
 
-  const isSEAbsentOnDate = (seEmailOrName, visitDate) => {
-    if (!attendanceLoaded || !visitDate) return false
+  const getSEAttendanceStatusOnDate = (seEmailOrName, seEmpCode, visitDate, visitStatus) => {
+    if (!visitDate) return null
     
     const targetDateStr = formatDate(visitDate)
     const identifier = String(seEmailOrName || '').toLowerCase().trim()
-    if (!identifier) return false
+    const codeIdentifier = String(seEmpCode || '').toLowerCase().trim()
 
-    // Filter logs for this executive on this particular day
+    // 1. Filter attendance logs for this executive on this particular day
     const execLogs = attendanceLogs.filter((log) => {
       const logEmpCode = String(log.employee_id || log.employee_code || log.emp_code || log.user_id || '').toLowerCase().trim()
       const logEmail = String(log.email || log.user_email || '').toLowerCase().trim()
-      const logName = String(log.name || log.employee_name || '').toLowerCase().trim()
+      const logName = String(log.name || log.employee_name || log.full_name || '').toLowerCase().trim()
       
-      const emailMatch = logEmail && (identifier === logEmail || logEmail.includes(identifier) || identifier.includes(logEmail))
-      const nameMatch = logName && (identifier === logName || logName.includes(identifier) || identifier.includes(logName))
+      const codeMatch = codeIdentifier && logEmpCode && (codeIdentifier === logEmpCode || logEmpCode.includes(codeIdentifier) || codeIdentifier.includes(logEmpCode))
+      const emailMatch = logEmail && identifier && (identifier === logEmail || logEmail.includes(identifier) || identifier.includes(logEmail))
+      const nameMatch = logName && identifier && (identifier === logName || logName.includes(identifier) || identifier.includes(logName))
 
-      if (!(emailMatch || nameMatch)) return false
+      if (!(codeMatch || emailMatch || nameMatch)) return false
 
-      // Match the date
-      const logDateStr = formatDate(log.attendance_date || log.date || log.created_at || log.check_in_time)
+      const logDateStr = formatDate(log.attendance_date || log.date || log.created_at || log.check_in_time || log.punch_in)
       return logDateStr === targetDateStr
     })
 
-    if (execLogs.length === 0) {
-      // Past or today date with no logs means absent
-      const visitD = parseDateInput(visitDate)
-      if (visitD) {
-        const today = new Date()
-        today.setHours(23, 59, 59, 999)
-        if (visitD.getTime() > today.getTime()) {
-          return false
-        }
+    const isCompletedVisit = String(visitStatus || '').toLowerCase().includes('complete')
+
+    if (execLogs.length > 0) {
+      const hasPresent = execLogs.some((l) => {
+        const st = String(l.status || l.attendance_status || '').toLowerCase().trim()
+        return st === 'present' || st === 'late' || st.includes('half') || st.includes('wfh') || st.includes('office') || st.includes('check') || l.check_in_time || l.punch_in
+      })
+      const hasAbsent = execLogs.some((l) => {
+        const st = String(l.status || l.attendance_status || '').toLowerCase().trim()
+        return st === 'absent' || st.includes('leave')
+      })
+
+      if (hasPresent || isCompletedVisit) {
+        return { status: 'PRESENT', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300' }
       }
-      return true
+      if (hasAbsent) {
+        return { status: 'ABSENT', badgeClass: 'bg-rose-100 text-rose-800 border-rose-300' }
+      }
     }
 
-    const hasPresent = execLogs.some((l) => {
-      const status = String(l.status || '').toLowerCase().trim()
-      return status === 'present' || status === 'late' || status === 'half day' || status === 'half-day'
-    })
+    // 2. Search in localStorage 'tc_attendance_logs'
+    try {
+      const localLogs = JSON.parse(localStorage.getItem('tc_attendance_logs') || '[]')
+      const matchLocal = localLogs.find((log) => {
+        const lCode = String(log.employee_id || log.employee_code || log.emp_code || '').toLowerCase().trim()
+        const lEmail = String(log.email || log.user_email || '').toLowerCase().trim()
+        const lName = String(log.name || log.employee_name || '').toLowerCase().trim()
+        
+        const cM = codeIdentifier && lCode && (codeIdentifier === lCode || lCode.includes(codeIdentifier))
+        const eM = identifier && lEmail && (identifier === lEmail || lEmail.includes(identifier))
+        const nM = identifier && lName && (identifier === lName || lName.includes(identifier))
+        
+        if (!(cM || eM || nM)) return false
+        const dStr = formatDate(log.attendance_date || log.date || log.created_at || log.check_in_time)
+        return dStr === targetDateStr
+      })
 
-    return !hasPresent
+      if (matchLocal) {
+        const st = String(matchLocal.status || matchLocal.attendance_status || '').toLowerCase().trim()
+        if (st === 'absent' || st.includes('leave')) {
+          return { status: 'ABSENT', badgeClass: 'bg-rose-100 text-rose-800 border-rose-300' }
+        }
+        return { status: 'PRESENT', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300' }
+      }
+    } catch (e) {}
+
+    if (isCompletedVisit) {
+      return { status: 'PRESENT', badgeClass: 'bg-emerald-100 text-emerald-800 border-emerald-300' }
+    }
+
+    return null
   }
 
   const normalizeVisit = (v, idx = 0) => {
@@ -760,71 +793,131 @@ export default function ManagerVisits() {
                 <p className="text-sm font-bold">No visits found in this category.</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {listVisits.map((visit, idx) => (
-                  <div
-                    key={visit.id || idx}
-                    className="mgr-card bg-white border border-slate-200 rounded-3xl p-5 space-y-3 hover:shadow-md transition cursor-pointer group"
-                    onClick={() => setSelectedAuditModal(visit)}
-                  >
-                    {/* Top Row: Status badge + Date */}
-                    <div className="flex items-center justify-between">
-                      <span className={`text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${
-                        String(visit.visit_status || '').toLowerCase().includes('complete')
-                          ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                          : String(visit.visit_status || '').toLowerCase().includes('schedule')
-                          ? 'bg-mgr-primary-100 text-mgr-primary-900 border-mgr-primary-300'
-                          : String(visit.visit_status || '').toLowerCase().includes('miss') || String(visit.visit_status || '').toLowerCase().includes('cancel')
-                          ? 'bg-rose-100 text-rose-900 border-rose-300'
-                          : 'bg-mgr-accent-100 text-mgr-accent-900 border-mgr-accent-300'
-                      }`}>
-                        {visit.visit_status || 'SCHEDULED'}
-                      </span>
-                      <span className="text-[10px] font-bold text-slate-400">{visit.visit_date || 'No date'}</span>
-                    </div>
+              <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left border-collapse text-xs">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-bold text-[11px] uppercase tracking-wider">
+                        <th className="py-3 px-4">Status</th>
+                        <th className="py-3 px-4">Date & Time</th>
+                        <th className="py-3 px-4">Client / Company</th>
+                        <th className="py-3 px-4">Assigned Executive</th>
+                        <th className="py-3 px-4">Location / Area</th>
+                        <th className="py-3 px-4">Purpose & Summary</th>
+                        <th className="py-3 px-4 text-center">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {listVisits.map((visit, idx) => {
+                        const isComplete = String(visit.visit_status || '').toLowerCase().includes('complete')
+                        const isSched = String(visit.visit_status || '').toLowerCase().includes('schedule')
+                        const isMissed = String(visit.visit_status || '').toLowerCase().includes('miss') || String(visit.visit_status || '').toLowerCase().includes('cancel')
+                        const isAbsent = (isMissed || activeCard === 'missed') && isSEAbsentOnDate(visit.assigned_to_email || visit.assigned_to, visit.visit_date)
+                        const formattedDateStr = formatDate(visit.visit_date || visit.scheduledDate || visit.date)
 
-                    {/* Company / Client */}
-                    <div>
-                      <h4 className="font-black text-slate-900 text-sm group-hover:text-mgr-primary-700 transition">{visit.company || visit.customer_name || 'Enterprise Ltd'}</h4>
-                      <p className="text-[11px] font-semibold text-slate-500 mt-0.5">{visit.poc_name || 'Contact Person'}</p>
-                    </div>
+                        return (
+                          <tr
+                            key={visit.id || idx}
+                            onClick={() => setSelectedAuditModal(visit)}
+                            className="hover:bg-slate-50/80 transition cursor-pointer group"
+                          >
+                            {/* Status */}
+                            <td className="py-3.5 px-4 whitespace-nowrap">
+                              <span className={`inline-flex items-center gap-1 text-[10px] font-black uppercase px-2.5 py-1 rounded-full border ${
+                                isComplete
+                                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                  : isSched
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : isMissed
+                                  ? 'bg-rose-100 text-rose-900 border-rose-300'
+                                  : 'bg-blue-100 text-blue-900 border-blue-300'
+                              }`}>
+                                {visit.visit_status || 'SCHEDULED'}
+                              </span>
+                            </td>
 
-                    {/* SE Info */}
-                    <div className="flex items-center justify-between gap-2 bg-slate-50 border-slate-200 rounded-xl px-3 py-2">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="w-6 h-6 rounded-full bg-mgr-primary-200 text-mgr-primary-900 flex items-center justify-center font-black text-[10px] shrink-0">
-                          {(visit.assigned_to || 'S').charAt(0).toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <p className="text-xs font-black text-slate-800 truncate">{visit.assigned_to || 'Sales Executive'}</p>
-                          <p className="text-[10px] font-mono text-mgr-primary-700">{visit.employee_code || ''}</p>
-                        </div>
-                      </div>
-                      {(String(visit.visit_status || '').toLowerCase().includes('miss') || String(visit.visit_status || '').toLowerCase().includes('cancel') || activeCard === 'missed') &&
-                       isSEAbsentOnDate(visit.assigned_to_email || visit.assigned_to, visit.visit_date) && (
-                        <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-200 shrink-0">
-                          Absent
-                        </span>
-                      )}
-                    </div>
+                            {/* Date & Time (DD/MM/YYYY) */}
+                            <td className="py-3.5 px-4 whitespace-nowrap font-mono">
+                              <div className="font-bold text-slate-900">{formattedDateStr}</div>
+                              <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5 font-sans">
+                                <Clock size={10} /> {visit.visit_time || '10:00 AM'}
+                              </div>
+                            </td>
 
-                    {/* Time + Location Row */}
-                    <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500">
-                      <span className="flex items-center gap-1"><Clock size={10} /> {visit.visit_time || '10:00 AM'}</span>
-                      <span className="flex items-center gap-1"><MapPin size={10} className="text-mgr-primary-600" /> {String(visit.gps_location || 'Chennai').slice(0, 20)}</span>
-                    </div>
+                            {/* Client / Company */}
+                            <td className="py-3.5 px-4 min-w-[170px]">
+                              <div className="font-black text-slate-900 group-hover:text-amber-800 transition">
+                                {visit.company || visit.customer_name || 'Enterprise Ltd'}
+                              </div>
+                              <div className="text-[11px] text-slate-500 font-semibold mt-0.5">
+                                {visit.poc_name || 'Point of Contact'}
+                              </div>
+                            </td>
 
-                    {/* Purpose */}
-                    <p className="text-[11px] text-slate-600 font-medium line-clamp-2 bg-slate-50 border border-slate-100 rounded-xl px-3 py-2 italic">
-                      {visit.products_discussed || visit.discussion_summary || 'Field Visit'}
-                    </p>
+                            {/* Assigned Executive */}
+                            <td className="py-3.5 px-4 min-w-[180px]">
+                              <div className="flex items-center gap-2">
+                                <div className="w-7 h-7 rounded-full bg-amber-100 text-amber-900 flex items-center justify-center font-black text-xs shrink-0 border border-amber-300">
+                                  {(visit.assigned_to || 'S').charAt(0).toUpperCase()}
+                                </div>
+                                <div className="min-w-0">
+                                  <div className="font-black text-slate-800 text-xs truncate">
+                                    {visit.assigned_to || 'Sales Executive'}
+                                  </div>
+                                  <div className="text-[10px] font-mono text-amber-700 font-bold">
+                                    {visit.employee_code || ''}
+                                  </div>
+                                </div>
+                                {(() => {
+                                  const attInfo = getSEAttendanceStatusOnDate(
+                                    visit.assigned_to_email || visit.assigned_to,
+                                    visit.employee_code || visit.employee_id,
+                                    visit.visit_date || visit.scheduledDate || visit.date,
+                                    visit.visit_status
+                                  )
+                                  if (!attInfo) return null
+                                  return (
+                                    <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded border shrink-0 ml-auto ${attInfo.badgeClass}`}>
+                                      {attInfo.status}
+                                    </span>
+                                  )
+                                })()}
+                              </div>
+                            </td>
 
-                    {/* View Audit CTA */}
-                    <button className="w-full py-2 text-[11px] font-black text-mgr-primary-700 bg-mgr-primary-50 hover:bg-mgr-primary-100 border border-mgr-primary-200 rounded-xl transition flex items-center justify-center gap-1">
-                      <Eye size={12} /> View Full Audit
-                    </button>
-                  </div>
-                ))}
+                            {/* Location / Address */}
+                            <td className="py-3.5 px-4 max-w-[200px]">
+                              <div className="flex items-center gap-1 text-slate-700 font-semibold truncate">
+                                <MapPin size={12} className="text-amber-700 shrink-0" />
+                                <span className="truncate">{visit.gps_location || visit.address || 'Chennai'}</span>
+                              </div>
+                            </td>
+
+                            {/* Purpose & Summary */}
+                            <td className="py-3.5 px-4 max-w-[220px]">
+                              <p className="text-[11px] text-slate-600 font-medium truncate bg-slate-50 border border-slate-200/60 rounded-lg px-2.5 py-1 italic">
+                                {visit.products_discussed || visit.discussion_summary || 'Field Visit'}
+                              </p>
+                            </td>
+
+                            {/* Action */}
+                            <td className="py-3.5 px-4 text-center whitespace-nowrap">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation()
+                                  setSelectedAuditModal(visit)
+                                }}
+                                className="px-3 py-1.5 text-[11px] font-black text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-xl transition inline-flex items-center gap-1 cursor-pointer"
+                              >
+                                <Eye size={12} /> View Full Audit
+                              </button>
+                            </td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
               </div>
             )}
           </div>
@@ -877,12 +970,20 @@ export default function ManagerVisits() {
                   <p className="font-black text-mgr-primary-900 text-sm">{selectedAuditModal.assigned_to || selectedAuditModal.executive || 'Sales Executive'}</p>
                 </div>
                 <p className="text-slate-500 font-mono text-[11px]">{selectedAuditModal.assigned_to_email || 'executive@tconnect.com'}</p>
-                {(String(selectedAuditModal.visit_status || '').toLowerCase().includes('miss') || String(selectedAuditModal.visit_status || '').toLowerCase().includes('cancel')) &&
-                 isSEAbsentOnDate(selectedAuditModal.assigned_to_email || selectedAuditModal.assigned_to, selectedAuditModal.visit_date) && (
-                  <span className="absolute top-2 right-2 text-[9px] font-black uppercase px-2 py-0.5 rounded-md bg-rose-100 text-rose-800 border border-rose-200 shadow-2xs">
-                    Absent on Visit Date
-                  </span>
-                )}
+                {(() => {
+                  const attInfo = getSEAttendanceStatusOnDate(
+                    selectedAuditModal.assigned_to_email || selectedAuditModal.assigned_to,
+                    selectedAuditModal.employee_code || selectedAuditModal.employee_id,
+                    selectedAuditModal.visit_date,
+                    selectedAuditModal.visit_status
+                  )
+                  if (!attInfo) return null
+                  return (
+                    <span className={`absolute top-2 right-2 text-[9px] font-black uppercase px-2 py-0.5 rounded-md border shadow-2xs ${attInfo.badgeClass}`}>
+                      {attInfo.status} on Visit Date
+                    </span>
+                  )
+                })()}
               </div>
 
               <div className="p-3.5 rounded-2xl bg-mgr-primary-50/50 border border-mgr-primary-200/80 space-y-1">
@@ -897,7 +998,7 @@ export default function ManagerVisits() {
             <div className="grid grid-cols-3 gap-2 text-xs">
               <div className="p-2.5 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Scheduled Date & Time</span>
-                <p className="font-mono font-bold text-slate-800 mt-0.5">{selectedAuditModal.visit_date || '2026-08-05'} ({selectedAuditModal.visit_time || '10:30 AM'})</p>
+                <p className="font-mono font-bold text-slate-800 mt-0.5">{formatDate(selectedAuditModal.visit_date)} ({selectedAuditModal.visit_time || '10:30 AM'})</p>
               </div>
               <div className="p-2.5 rounded-xl bg-slate-50 border-slate-200">
                 <span className="text-[10px] font-bold text-slate-400">Check-In / Out Duration</span>

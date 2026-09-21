@@ -510,7 +510,79 @@ export default function ManagerSmartMap() {
   const mapContainerRef = useRef(null)
   const googleMapRef    = useRef(null)
   const teamMarkersMapRef = useRef(new globalThis.Map())
+  const teamMarkerAnimFramesRef = useRef(new globalThis.Map())
   const infoWindowRef   = useRef(null)
+  const executivesRef   = useRef([])
+
+  useEffect(() => {
+    executivesRef.current = executives
+  }, [executives])
+
+  // ── Phase 1 Optimization: Smooth 60fps Marker Interpolation without Component Re-renders ──
+  const animateTeamMarker = useCallback((empId, targetLat, targetLng, locPayload = {}) => {
+    if (!googleMapRef.current || !window.google) return;
+    
+    // Check performance measurement timestamps
+    const t3_receive = Date.now();
+    const t1_watch = locPayload.t1_watch || locPayload.broadcast_sent_at;
+    const t2_broadcast = locPayload.t2_broadcast || locPayload.broadcast_sent_at;
+
+    const marker = teamMarkersMapRef.current.get(empId);
+    if (!marker) return;
+
+    const fromPos = marker.getPosition();
+    if (!fromPos) return;
+
+    const prevLat = typeof fromPos.lat === 'function' ? fromPos.lat() : fromPos.lat;
+    const prevLng = typeof fromPos.lng === 'function' ? fromPos.lng() : fromPos.lng;
+
+    // If movement is negligible (< 0.00001 deg ~ 1m), set position directly
+    if (Math.abs(prevLat - targetLat) < 0.00001 && Math.abs(prevLng - targetLng) < 0.00001) {
+      marker.setLatLng(new window.google.maps.LatLng(targetLat, targetLng));
+      return;
+    }
+
+    // Cancel existing animation frame for this marker if running
+    if (teamMarkerAnimFramesRef.current.has(empId)) {
+      cancelAnimationFrame(teamMarkerAnimFramesRef.current.get(empId));
+      teamMarkerAnimFramesRef.current.delete(empId);
+    }
+
+    const t4_anim_start = Date.now();
+    const duration = 1000; // 1 second smooth sliding window
+    let startTime = null;
+
+    if (window.__TRACKING_PERF_LOG__ || process.env.NODE_ENV === 'development') {
+      const transportLatency = t2_broadcast ? (t3_receive - t2_broadcast) : 'N/A';
+      const mapUpdateLatency = t4_anim_start - t3_receive;
+      const totalObservableLatency = t1_watch ? (t4_anim_start - t1_watch) : 'N/A';
+      console.log(`[PERF MEASURE] Exec ${empId}: Transport=${transportLatency}ms | MapUpdate=${mapUpdateLatency}ms | TotalObservable=${totalObservableLatency}ms`);
+    }
+
+    const step = (timestamp) => {
+      if (!startTime) startTime = timestamp;
+      const progress = Math.min((timestamp - startTime) / duration, 1);
+      
+      const currLat = prevLat + (targetLat - prevLat) * progress;
+      const currLng = prevLng + (targetLng - prevLng) * progress;
+
+      marker.setLatLng(new window.google.maps.LatLng(currLat, currLng));
+
+      if (progress < 1) {
+        const nextFrameId = requestAnimationFrame(step);
+        teamMarkerAnimFramesRef.current.set(empId, nextFrameId);
+      } else {
+        teamMarkerAnimFramesRef.current.delete(empId);
+        const t5_anim_complete = Date.now();
+        if (window.__TRACKING_PERF_LOG__) {
+          console.log(`[PERF MEASURE] Exec ${empId}: Marker animation completed in ${t5_anim_complete - t4_anim_start}ms`);
+        }
+      }
+    };
+
+    const initialFrameId = requestAnimationFrame(step);
+    teamMarkerAnimFramesRef.current.set(empId, initialFrameId);
+  }, []);
 
   // Tracking-layer refs (one set per selected executive)
   const trackRouteRef   = useRef(null)  // Polyline breadcrumb route
@@ -904,24 +976,47 @@ export default function ManagerSmartMap() {
               const receivedLng = loc.longitude || loc.lng
               if (!receivedLat || !receivedLng) return
 
-              console.log(`[ManagerMap] Broadcast update from ${chName}:`, receivedLat, receivedLng)
-
-              setExecutives(prev => prev.map(e => {
+              let targetEmpId = null
+              const currentExecs = executivesRef.current.length > 0 ? executivesRef.current : executives
+              for (const e of currentExecs) {
                 const matchId = empId && (String(e.employee_id) === String(empId) || String(e.id) === String(empId))
                 const matchCode = empCode && String(e.employee_code) === String(empCode)
                 const matchEmail = empEmail && String(e.email || '').toLowerCase() === empEmail
                 if (matchId || matchCode || matchEmail) {
-                  return {
-                    ...e,
-                    latitude: receivedLat,
-                    longitude: receivedLng,
-                    accuracy: loc.accuracy || e.accuracy,
-                    is_online: true,
-                    last_seen_at: loc.recorded_at || new Date().toISOString()
-                  }
+                  targetEmpId = e.employee_id || e.id
+                  e.latitude = receivedLat
+                  e.longitude = receivedLng
+                  e.accuracy = loc.accuracy || e.accuracy
+                  e.is_online = true
+                  e.last_seen_at = loc.recorded_at || new Date().toISOString()
+                  break
                 }
-                return e
-              }))
+              }
+
+              const existingMarker = targetEmpId ? teamMarkersMapRef.current.get(targetEmpId) : null
+
+              if (existingMarker && targetEmpId) {
+                // Direct marker position update & interpolation without component re-render
+                animateTeamMarker(targetEmpId, receivedLat, receivedLng, loc)
+              } else {
+                // Fallback: If marker isn't rendered on map yet, set state to trigger creation
+                setExecutives(prev => prev.map(e => {
+                  const matchId = empId && (String(e.employee_id) === String(empId) || String(e.id) === String(empId))
+                  const matchCode = empCode && String(e.employee_code) === String(empCode)
+                  const matchEmail = empEmail && String(e.email || '').toLowerCase() === empEmail
+                  if (matchId || matchCode || matchEmail) {
+                    return {
+                      ...e,
+                      latitude: receivedLat,
+                      longitude: receivedLng,
+                      accuracy: loc.accuracy || e.accuracy,
+                      is_online: true,
+                      last_seen_at: loc.recorded_at || new Date().toISOString()
+                    }
+                  }
+                  return e
+                }))
+              }
             })
             .subscribe((status) => {
               if (status === 'SUBSCRIBED') {
@@ -1269,6 +1364,10 @@ export default function ManagerSmartMap() {
 
     teamMarkersMapRef.current.forEach((marker, empId) => {
       if (!currentOnlineIds.has(empId)) {
+        if (teamMarkerAnimFramesRef.current.has(empId)) {
+          cancelAnimationFrame(teamMarkerAnimFramesRef.current.get(empId))
+          teamMarkerAnimFramesRef.current.delete(empId)
+        }
         marker.setMap(null)
         teamMarkersMapRef.current.delete(empId)
       }

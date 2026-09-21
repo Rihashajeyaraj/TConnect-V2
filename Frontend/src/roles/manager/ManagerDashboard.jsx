@@ -272,6 +272,12 @@ export default function ManagerDashboard(props) {
     const myName = (currentUser.name || currentUser.full_name || '').toLowerCase().trim()
     const myId = String(currentUser.id || currentUser.user_id || '').trim()
 
+    // 0. Super Admin / CEO / Admin -> Allow ALL team records
+    const roleLower = String(currentUser.role || currentUser.designation || '').toLowerCase()
+    if (roleLower.includes('admin') || roleLower.includes('ceo') || roleLower.includes('super')) {
+      return true
+    }
+
     // 1. Direct Manager Ownership check
     const mgrEmail = String(item.sales_manager_email || item.manager_email || '').toLowerCase().trim()
     const mgrName = String(item.sales_manager_name || item.sales_manager || item.manager_name || '').toLowerCase().trim()
@@ -281,17 +287,29 @@ export default function ManagerDashboard(props) {
     if (myId && mgrId === myId) return true
     if (myName && mgrName && (mgrName.includes(myName) || myName.includes(mgrName))) return true
 
+    // Check if this record is a customer / lead / visit record where plain 'email' is client's email
+    const isClientRecord = Boolean(item.company || item.company_name || item.customer_id || item.lead_id || item.poc_name || item.customer_name)
+
     // 2. Subordinate Team Lead & Sales Executive Ownership check
     if (assignedExecutives.length > 0) {
+      const staffEmails = [
+        item.assigned_to_email, item.assignedToEmail, item.executiveEmail, item.team_lead_email, item.created_by_email, item.staff_email
+      ]
+      if (!isClientRecord) {
+        staffEmails.push(item.email)
+      }
+
       const fieldsToCheck = [
-        item.assigned_to_email, item.assignedToEmail, item.executiveEmail, item.email, item.team_lead_email, item.created_by_email,
+        ...staffEmails,
         item.assigned_to, item.assignedTo, item.executive, item.team_lead_name, item.reporting_manager_name, item.created_by_name, item.created_by,
         item.employee_code, item.employee_id, item.employeeId,
         item.user_id, item.userId, item.executive_id, item.team_lead_id, item.sales_executive_id
       ]
 
+      let hasIdentifiableStaff = false
       for (const rawVal of fieldsToCheck) {
         if (!rawVal) continue
+        hasIdentifiableStaff = true
         const val = String(rawVal).trim().toLowerCase()
         if (assignedIdentifiers.emails.has(val)) return true
         if (assignedIdentifiers.codes.has(val)) return true
@@ -299,6 +317,11 @@ export default function ManagerDashboard(props) {
         for (let n of assignedIdentifiers.names) {
           if (n && (val === n || val.includes(n) || n.includes(val))) return true
         }
+      }
+
+      // If record has no staff assignment tag at all, include it so newly converted/unassigned accounts are not hidden
+      if (!hasIdentifiableStaff) {
+        return true
       }
     } else {
       // If employee list not loaded yet or empty, return true so data isn't hidden prematurely

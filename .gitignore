@@ -42,3 +42,9 @@ venv.bak/
 .DS_Store
 Thumbs.db
 *.log
+
+# Migration CSV exports
+backend/migrations/csv_exports/
+backend/app/data/
+
+

@@ -312,7 +312,7 @@ export default function ManagerLeads() {
           processSubordinates(parsed)
           return
         }
-      }
+        }
     } catch (e) { }
 
     setTeamLeads([])

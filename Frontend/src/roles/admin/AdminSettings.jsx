@@ -727,12 +727,6 @@ function AdminSettings() {
         ...settingsData,
         role_permissions: rolePermissionsList
       }
-      if (payload.holiday_calendar_pdf && payload.holiday_calendar_pdf.length > 500000) {
-        payload.holiday_calendar_pdf = payload.holiday_calendar_pdf.substring(0, 300)
-      }
-      if (payload.twite_handbook_pdf && payload.twite_handbook_pdf.length > 500000) {
-        payload.twite_handbook_pdf = payload.twite_handbook_pdf.substring(0, 300)
-      }
 
       await settingsAPI.updateSettings(payload)
       showToast('System settings and Role Default Master Templates saved successfully!', 'success')

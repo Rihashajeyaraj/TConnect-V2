@@ -14,18 +14,25 @@ export function isItemOwnedByUser(item, user) {
   if (!item || !user) return false
 
   const userEmail = String(user.email || '').toLowerCase().trim()
-  const userEmpCode = String(user.employee_code || user.employee_id || '').toLowerCase().trim()
+  const userEmpCode = String(user.employee_code || user.employee_id || user.emp_code || '').toLowerCase().trim()
   const userId = String(user.id || user.user_id || '').toLowerCase().trim()
   const userName = String(user.name || user.full_name || '').toLowerCase().trim()
 
   if (!userEmail && !userEmpCode && !userId && !userName) return false
 
-  const itemEmail = String(
+  // Check if this record is a client/lead/visit record (where plain 'email' belongs to the client/prospect)
+  const isClientRecord = Boolean(
+    item.company || item.company_name || item.customer_id || item.lead_id ||
+    item.visit_id || item.poc_name || item.customer_name || item.lead_number
+  )
+
+  const itemStaffEmail = String(
     item.assigned_to_email ||
     item.assignedToEmail ||
     item.executiveEmail ||
-    item.email ||
+    item.staff_email ||
     item.owner_email ||
+    (!isClientRecord ? item.email : '') ||
     ''
   ).toLowerCase().trim()
 
@@ -58,7 +65,7 @@ export function isItemOwnedByUser(item, user) {
   ).toLowerCase().trim()
 
   // 1. Exact match on Email
-  if (userEmail && (itemEmail === userEmail || itemAssignedTo === userEmail)) {
+  if (userEmail && (itemStaffEmail === userEmail || itemAssignedTo === userEmail)) {
     return true
   }
 
@@ -72,8 +79,13 @@ export function isItemOwnedByUser(item, user) {
     return true
   }
 
-  // 4. Exact match on Full Name if email/empcode not set on record
-  if (userName && (itemAssignedTo === userName || (itemAssignedTo && userName.startsWith(itemAssignedTo)))) {
+  // 4. Match on Full Name or partial name
+  if (userName && itemAssignedTo && (itemAssignedTo === userName || userName.includes(itemAssignedTo) || itemAssignedTo.includes(userName))) {
+    return true
+  }
+
+  // 5. Fallback: If record has no staff assignment tag at all, treat as shared/unassigned so newly created records don't vanish
+  if (!itemStaffEmail && !itemEmpCode && !itemUserId && !itemAssignedTo) {
     return true
   }
 
@@ -82,15 +94,21 @@ export function isItemOwnedByUser(item, user) {
 
 /**
  * Filter an array of items to return only those belonging to the logged-in user.
- * If the user is an Admin, Super Admin, or Manager with team view, optionally bypass or apply team scope.
+ * Managers, Team Leads, CEOs, and Admins can view all team records.
  */
 export function filterUserItems(itemsArr, user) {
   if (!Array.isArray(itemsArr)) return []
-  if (!user || !user.email) return []
+  if (!user) return []
 
-  const role = String(user.role || '').toLowerCase().trim()
-  // Admin & CEO can view all records
-  if (role === 'admin' || role === 'super admin' || role === 'system admin' || role === 'ceo') {
+  const role = String(user.role || user.designation || '').toLowerCase().trim()
+  // Admin, CEO, Manager, Team Lead can view all team records
+  if (
+    role.includes('admin') ||
+    role.includes('ceo') ||
+    role.includes('manager') ||
+    role.includes('lead') ||
+    role.includes('super')
+  ) {
     return itemsArr
   }
 

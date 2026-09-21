@@ -224,6 +224,9 @@ export default function SalesLayout() {
   const gpsWatchRef = useRef(null);
   const activeSessionRef = useRef(null);
   const lastPushedPosRef = useRef(null);
+  const lastPushedTimeRef = useRef(0);
+  const lastBroadcastPosRef = useRef(null);
+  const lastBroadcastTimeRef = useRef(0);
   const gpsRetryQueue = useRef([]);
   const wakeLockRef = useRef(null);
 
@@ -274,16 +277,29 @@ export default function SalesLayout() {
     });
   }, [SUPA_URL, SUPA_ANON]);
 
-  const _pushGpsPoint = useCallback(async ({ lat, lng, accuracy = 10, speed = null, heading = null, sessionId }) => {
+  const _pushGpsPoint = useCallback(async ({ lat, lng, accuracy = 10, speed = null, heading = null, sessionId, t1_watch }) => {
+    const watchTs = t1_watch || Date.now();
     const empId = user.employee_id || user.auth_user_id || user.id || empCode;
     
-    // Client-side dedup for database persistence: skip DB write if < 10 m from last point
-    let shouldPersist = true;
-    if (lastPushedPosRef.current) {
-      const dlat = lat - lastPushedPosRef.current.lat;
-      const dlng = lng - lastPushedPosRef.current.lng;
+    // GPS Filter: Reject inaccurate fixes (> 200m)
+    if (accuracy > 200) {
+      console.warn(`[GPS Filter] Rejected fix with poor accuracy: ${accuracy}m`);
+      return;
+    }
+
+    const now = Date.now();
+
+    // 1. Determine if we should broadcast to Supabase Broadcast channel
+    // Broadcast if moved >= 3m OR if >= 5s elapsed since last broadcast (heartbeat)
+    let shouldBroadcast = true;
+    if (lastBroadcastPosRef.current) {
+      const dlat = lat - lastBroadcastPosRef.current.lat;
+      const dlng = lng - lastBroadcastPosRef.current.lng;
       const approxM = Math.sqrt(dlat * dlat + dlng * dlng) * 111000;
-      if (approxM < 10) shouldPersist = false;
+      const elapsedSecs = (now - lastBroadcastTimeRef.current) / 1000;
+      if (approxM < 3 && elapsedSecs < 5) {
+        shouldBroadcast = false;
+      }
     }
 
     const point = { 
@@ -298,31 +314,46 @@ export default function SalesLayout() {
       recorded_at: new Date().toISOString() 
     };
 
-    // 1. Broadcast immediately for near-real-time live map updates (ALWAYS)
-    if (activeChannelsRef.current.length > 0) {
-      activeChannelsRef.current.forEach(ch => {
-        try {
-          ch.send({
-            type: 'broadcast',
-            event: 'location',
-            payload: {
-              ...point,
-              broadcast_sent_at: Date.now()
-            }
-          });
-        } catch {}
-      });
+    if (shouldBroadcast) {
+      const sendTs = Date.now();
+      if (activeChannelsRef.current.length > 0) {
+        activeChannelsRef.current.forEach(ch => {
+          try {
+            ch.send({
+              type: 'broadcast',
+              event: 'location',
+              payload: {
+                ...point,
+                t1_watch: watchTs,
+                t2_broadcast: sendTs,
+                broadcast_sent_at: sendTs
+              }
+            });
+          } catch {}
+        });
+      }
+      lastBroadcastPosRef.current = { lat, lng };
+      lastBroadcastTimeRef.current = now;
     }
 
-    // Skip database writes for tiny movements to save bandwidth
+    // 2. Client-side dedup for database persistence: skip DB write if < 10m from last point AND < 30s elapsed
+    let shouldPersist = true;
+    if (lastPushedPosRef.current) {
+      const dlat = lat - lastPushedPosRef.current.lat;
+      const dlng = lng - lastPushedPosRef.current.lng;
+      const approxM = Math.sqrt(dlat * dlat + dlng * dlng) * 111000;
+      const elapsedSecs = (now - lastPushedTimeRef.current) / 1000;
+      if (approxM < 10 && elapsedSecs < 30) shouldPersist = false;
+    }
+
     if (!shouldPersist) return;
 
-    // 2. Persist to DB asynchronously
+    // 3. Persist to DB asynchronously (CONSOLIDATED: Single REST call spatialAPI.pushLocation)
     const dbPoint = { latitude: lat, longitude: lng, accuracy, speed, heading, session_id: sessionId };
     try {
       spatialAPI.pushLocation(dbPoint).catch(() => null);
       lastPushedPosRef.current = { lat, lng };
-      spatialAPI.updateLocation({ latitude: lat, longitude: lng, accuracy, employee_code: empCode, email: user.email || '' }).catch(() => null);
+      lastPushedTimeRef.current = now;
     } catch {
       // Queue for retry (cap at 20 points)
       if (gpsRetryQueue.current.length < 20) {
@@ -383,10 +414,11 @@ export default function SalesLayout() {
 
     gpsWatchRef.current = navigator.geolocation.watchPosition(
       (pos) => {
+        const t1_watch = Date.now();
         const { latitude, longitude, accuracy, speed, heading } = pos.coords;
-        if (accuracy > 500) return; // reject extreme inaccuracy
+        if (accuracy > 200) return; // reject inaccurate GPS fix (>200m)
         const currentSessId = activeSessionRef.current;
-        _pushGpsPoint({ lat: latitude, lng: longitude, accuracy, speed, heading, sessionId: currentSessId });
+        _pushGpsPoint({ lat: latitude, lng: longitude, accuracy, speed, heading, sessionId: currentSessId, t1_watch });
       },
       (err) => {
         if (err.code === 1) {

@@ -1,3 +1,4 @@
+
 """
 TwiteConnect — Backend Web Push Service
 ========================================
@@ -18,12 +19,17 @@ from typing import Any, Dict, List, Optional
 
 from app.core.logger import logger
 
+from dotenv import load_dotenv
+from app.core.config import settings, _env_path
+
+load_dotenv(_env_path)
+
 # ---------------------------------------------------------------------------
 # VAPID configuration — loaded once at module import
 # ---------------------------------------------------------------------------
-_VAPID_PRIVATE_KEY: Optional[str] = os.getenv("VAPID_PRIVATE_KEY")
-_VAPID_PUBLIC_KEY:  Optional[str] = os.getenv("VAPID_PUBLIC_KEY")
-_VAPID_EMAIL:       str           = os.getenv("VAPID_EMAIL", "mailto:admin@twiteconnect.com")
+_VAPID_PRIVATE_KEY: Optional[str] = os.getenv("VAPID_PRIVATE_KEY") or getattr(settings, "VAPID_PRIVATE_KEY", None)
+_VAPID_PUBLIC_KEY:  Optional[str] = os.getenv("VAPID_PUBLIC_KEY")  or getattr(settings, "VAPID_PUBLIC_KEY", None)
+_VAPID_EMAIL:       str           = os.getenv("VAPID_EMAIL")       or getattr(settings, "VAPID_EMAIL", "mailto:admin@twiteconnect.com")
 
 _vapid_available: bool = bool(_VAPID_PRIVATE_KEY and _VAPID_PUBLIC_KEY)
 
