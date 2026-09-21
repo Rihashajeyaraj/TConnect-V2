@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import ImageCropperModal from "../../common/ImageCropperModal.jsx";
+import NotificationPermissionBanner from "../../common/NotificationPermissionBanner.jsx";
 import useNotificationCount from "../../hooks/useNotificationCount.js";
 import { NavLink, Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import {
@@ -1027,6 +1028,7 @@ export default function SalesLayout() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
+      <NotificationPermissionBanner />
       {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
       <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
         <div className="flex items-center gap-3">

@@ -3,6 +3,7 @@ import { Link, NavLink, useLocation, Outlet, useNavigate } from 'react-router-do
 import { useToast } from '../../common/ToastContext.jsx'
 import ImageCropperModal from '../../common/ImageCropperModal.jsx'
 import PhotoLightboxModal from '../../common/PhotoLightboxModal.jsx'
+import NotificationPermissionBanner from '../../common/NotificationPermissionBanner.jsx'
 import {
   LayoutDashboard,
   Users,
@@ -621,6 +622,7 @@ export default function ManagerLayout() {
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
+      <NotificationPermissionBanner />
 
       {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
       <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
