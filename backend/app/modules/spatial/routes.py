@@ -16,6 +16,7 @@ visit_repo = VisitRepository()
 
 # Store live executive positions in memory telemetry cache
 _live_executive_telemetry: Dict[str, Dict[str, Any]] = {}
+_active_sessions_cache: Dict[str, Dict[str, Any]] = {}
 
 # Routing caches to prevent slow requests to OSRM / Google APIs in loops
 _routing_cache: Dict[str, Dict[str, Any]] = {}
@@ -401,6 +402,16 @@ async def update_executive_location(
         
     # 2. Update memory telemetry cache - store under ALL keys for reliable lookup
     now_iso = datetime.datetime.utcnow().isoformat()
+    existing_telem = _live_executive_telemetry.get(str(employee_id).strip()) or _live_executive_telemetry.get(email) or {}
+    client_id = payload.get("client_id") or existing_telem.get("client_id")
+    client_name = payload.get("client_name") or existing_telem.get("client_name")
+    company_name = payload.get("company_name") or existing_telem.get("company_name")
+    client_address = payload.get("client_address") or existing_telem.get("client_address")
+    client_lat = payload.get("client_latitude") or payload.get("client_lat") or existing_telem.get("client_latitude")
+    client_lng = payload.get("client_longitude") or payload.get("client_lng") or existing_telem.get("client_longitude")
+    route_polyline = payload.get("route_polyline") or existing_telem.get("route_polyline")
+    session_id = payload.get("session_id") or existing_telem.get("session_id")
+
     entry = {
         "employee_id": employee_id,
         "employee_code": employee_code,
@@ -413,7 +424,15 @@ async def update_executive_location(
         "heading": heading,
         "last_seen_at": now_iso,
         "timestamp": now_iso,
-        "is_online": True
+        "is_online": True,
+        "client_id": client_id,
+        "client_name": client_name,
+        "company_name": company_name,
+        "client_address": client_address,
+        "client_latitude": float(client_lat) if client_lat is not None else None,
+        "client_longitude": float(client_lng) if client_lng is not None else None,
+        "route_polyline": route_polyline,
+        "session_id": session_id
     }
     # Store under every possible key so any lookup key hits
     if employee_id:
@@ -683,10 +702,11 @@ async def get_manager_team_locations(
             longitude = preset["lng"]
             accuracy = 25.0
         
-        # A tracking session is ONLY valid if it was started TODAY and status is active
+        # A tracking session is valid if it was started TODAY or present in active caches
         sess_start = str(sess.get("start_time") or "") if sess else ""
         sess_is_today = sess_start.startswith(today_str) if sess_start else False
-        has_active_session = bool(sess and sess.get("status") == "active" and sess_is_today)
+        sess_status = str(sess.get("status") or "").lower() if sess else ""
+        has_active_session = bool(sess and sess_status in ("active", "in_progress", "started", "travelling", "stale") and sess_is_today)
         
         has_checkin = bool(att.get("check_in_time")) if att else False
         has_checkout = bool(att.get("check_out_time")) if att else False
@@ -718,14 +738,41 @@ async def get_manager_team_locations(
         client_address = None
         client_latitude = None
         client_longitude = None
+        route_polyline = None
         
-        if has_active_session and is_online:
-            client_id = sess.get("client_id")
-            client_name = sess.get("client_name")
-            company_name = sess.get("company_name")
-            client_address = sess.get("client_address")
-            client_latitude = sess.get("client_latitude")
-            client_longitude = sess.get("client_longitude")
+        # 1. Try DB tracking session
+        cand_sess = sess if (has_active_session and sess) else None
+        
+        # 2. Try in-memory active sessions cache
+        if not cand_sess:
+            for cand_k in (e_id, e_code, e_email, e_id.lower()):
+                if cand_k and cand_k in _active_sessions_cache:
+                    cand_sess = _active_sessions_cache[cand_k]
+                    break
+        
+        if cand_sess:
+            client_id = cand_sess.get("client_id")
+            client_name = cand_sess.get("client_name")
+            company_name = cand_sess.get("company_name")
+            client_address = cand_sess.get("client_address")
+            client_latitude = cand_sess.get("client_latitude")
+            client_longitude = cand_sess.get("client_longitude")
+            route_polyline = cand_sess.get("route_polyline")
+
+        # 3. Try live telemetry cache for real-time destination if missing
+        if client_latitude is None:
+            for cand_k in (e_id, e_code, e_email, e_id.lower()):
+                if cand_k and cand_k in _live_executive_telemetry:
+                    telem = _live_executive_telemetry[cand_k]
+                    if telem.get("client_latitude") is not None or telem.get("client_name"):
+                        client_id = client_id or telem.get("client_id")
+                        client_name = client_name or telem.get("client_name")
+                        company_name = company_name or telem.get("company_name")
+                        client_address = client_address or telem.get("client_address")
+                        client_latitude = client_latitude if client_latitude is not None else telem.get("client_latitude")
+                        client_longitude = client_longitude if client_longitude is not None else telem.get("client_longitude")
+                        route_polyline = route_polyline or telem.get("route_polyline")
+                        break
 
         if is_online:
             online_count += 1
@@ -741,6 +788,8 @@ async def get_manager_team_locations(
             remarks = att.get("notes") or att.get("remarks") or ""
             if "[Client Visit Mode]" in remarks or "Client" in remarks:
                 check_in_mode = "Client Visit"
+        if client_latitude is not None:
+            check_in_mode = "Client Visit"
 
         # Robust Real Employee Name Resolution
         raw_name = exec_user.get("name")
@@ -782,7 +831,8 @@ async def get_manager_team_locations(
             "company_name": company_name,
             "client_address": client_address,
             "client_latitude": client_latitude,
-            "client_longitude": client_longitude
+            "client_longitude": client_longitude,
+            "route_polyline": route_polyline
         })
         
     return {
@@ -1621,6 +1671,38 @@ async def start_tracking_session(
         session = res.data[0] if res.data else session_data
         session_id = session.get("id")
         
+        # Populate in-memory active sessions and telemetry cache
+        active_sess_entry = dict(full_session_data)
+        if session_id:
+            active_sess_entry["id"] = session_id
+            active_sess_entry["session_id"] = session_id
+        active_sess_entry["status"] = "active"
+        
+        for key in (emp_id, employee_code, payload.get("email"), auth_uid, session_id):
+            if key:
+                _active_sessions_cache[str(key).strip()] = active_sess_entry
+                _active_sessions_cache[str(key).strip().lower()] = active_sess_entry
+
+        telem_entry = _live_executive_telemetry.get(str(emp_id).strip(), {})
+        telem_entry.update({
+            "employee_id": emp_id,
+            "employee_code": employee_code,
+            "client_id": client_id,
+            "client_name": client_name,
+            "company_name": company_name,
+            "client_address": client_address,
+            "client_latitude": float(client_lat) if client_lat is not None else None,
+            "client_longitude": float(client_lng) if client_lng is not None else None,
+            "route_polyline": route_polyline,
+            "session_id": session_id,
+            "is_online": True,
+            "last_seen_at": now_iso
+        })
+        for key in (emp_id, employee_code, payload.get("email"), auth_uid):
+            if key:
+                _live_executive_telemetry[str(key).strip()] = telem_entry
+                _live_executive_telemetry[str(key).strip().lower()] = telem_entry
+
         # Log VISIT_STARTED event and send manager notification
         try:
             _create_tracking_event(
@@ -1915,9 +1997,27 @@ async def get_location_history(
             # Only consider session valid if explicitly requested OR started today and active
             if session_id:
                 session = raw_sess
-            elif start_t.startswith(today_str) and sess_status in ("active", "in_progress", "started", "travelling"):
+            elif start_t.startswith(today_str) and sess_status in ("active", "in_progress", "started", "travelling", "stale"):
                 session = raw_sess
         
+        # Fallback to in-memory active sessions cache if no active session in DB
+        if not session:
+            for tid in target_ids:
+                if tid and (tid in _active_sessions_cache or str(tid).lower() in _active_sessions_cache):
+                    session = dict(_active_sessions_cache.get(tid) or _active_sessions_cache.get(str(tid).lower()) or {})
+                    break
+
+        # Fallback to live telemetry cache for client destination if missing
+        if session:
+            if not session.get("client_latitude") or not session.get("client_name"):
+                for tid in target_ids:
+                    telem = _live_executive_telemetry.get(tid) or _live_executive_telemetry.get(str(tid).lower())
+                    if telem and (telem.get("client_latitude") is not None or telem.get("client_name")):
+                        for field in ("client_id", "client_name", "company_name", "client_address", "client_latitude", "client_longitude", "route_polyline"):
+                            if telem.get(field) is not None and not session.get(field):
+                                session[field] = telem[field]
+                        break
+
         # Enrich session with client details (phone and product) if client_id exists
         if session and session.get("client_id"):
             client_id = session.get("client_id")
@@ -1926,10 +2026,10 @@ async def get_location_history(
             
             # Try crm.leads first
             try:
-                lead_res = sp.schema("crm").table("leads").select("phone, mobile, product_name").or_(f"id.eq.{client_id},lead_id.eq.{client_id}").execute()
+                lead_res = sp.schema("crm").table("leads").select("mobile, contact_phone, product_name").or_(f"lead_id.eq.{client_id}").execute()
                 if lead_res.data:
                     lead_data = lead_res.data[0]
-                    client_phone = lead_data.get("phone") or lead_data.get("mobile")
+                    client_phone = lead_data.get("mobile") or lead_data.get("contact_phone")
                     product_name = lead_data.get("product_name") or "TwiteConnect CRM"
             except Exception as e:
                 logger.debug(f"Error querying lead for client_id {client_id}: {e}")
@@ -1937,7 +2037,7 @@ async def get_location_history(
             # Try crm.customers if not found in leads
             if not client_phone:
                 try:
-                    cust_res = sp.schema("crm").table("customers").select("phone").or_(f"id.eq.{client_id},customer_id.eq.{client_id}").execute()
+                    cust_res = sp.schema("crm").table("customers").select("phone").or_(f"customer_id.eq.{client_id}").execute()
                     if cust_res.data:
                         cust_data = cust_res.data[0]
                         client_phone = cust_data.get("phone")

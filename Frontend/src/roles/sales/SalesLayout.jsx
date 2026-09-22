@@ -235,6 +235,7 @@ export default function SalesLayout() {
   const lastBroadcastTimeRef = useRef(0);
   const gpsRetryQueue = useRef([]);
   const wakeLockRef = useRef(null);
+  const activeClientDataRef = useRef(null);
 
   // ── Phase 2A Dual Benchmarking: FastAPI Parallel Direct WebSocket Transport ──
   const fastApiWsRef = useRef(null);
@@ -352,6 +353,7 @@ export default function SalesLayout() {
       }
     }
 
+    const clientMeta = activeClientDataRef.current || {};
     const point = { 
       id: Math.random().toString(36).substring(7),
       employee_id: empId,
@@ -361,7 +363,13 @@ export default function SalesLayout() {
       accuracy, 
       speed, 
       heading, 
-      recorded_at: new Date().toISOString() 
+      recorded_at: new Date().toISOString(),
+      client_id: clientMeta.client_id || clientMeta.id || null,
+      client_name: clientMeta.client_name || clientMeta.company_name || clientMeta.title || null,
+      company_name: clientMeta.company_name || clientMeta.client_name || clientMeta.title || null,
+      client_address: clientMeta.client_address || clientMeta.address || null,
+      client_latitude: clientMeta.client_latitude != null ? Number(clientMeta.client_latitude) : (clientMeta.latitude != null ? Number(clientMeta.latitude) : null),
+      client_longitude: clientMeta.client_longitude != null ? Number(clientMeta.client_longitude) : (clientMeta.longitude != null ? Number(clientMeta.longitude) : null),
     };
 
     if (shouldBroadcast) {
@@ -417,7 +425,20 @@ export default function SalesLayout() {
     if (!shouldPersist) return;
 
     // 3. Persist to DB asynchronously (CONSOLIDATED: Single REST call spatialAPI.pushLocation)
-    const dbPoint = { latitude: lat, longitude: lng, accuracy, speed, heading, session_id: sessionId };
+    const dbPoint = {
+      latitude: lat,
+      longitude: lng,
+      accuracy,
+      speed,
+      heading,
+      session_id: sessionId,
+      client_id: point.client_id,
+      client_name: point.client_name,
+      company_name: point.company_name,
+      client_latitude: point.client_latitude,
+      client_longitude: point.client_longitude,
+      client_address: point.client_address
+    };
     try {
       spatialAPI.pushLocation(dbPoint).catch(() => null);
       lastPushedPosRef.current = { lat, lng };
@@ -446,6 +467,10 @@ export default function SalesLayout() {
     if (!navigator.geolocation) {
       showToast("GPS not available on this device.", "warning");
       return;
+    }
+
+    if (clientData && (clientData.client_latitude != null || clientData.latitude != null || clientData.title || clientData.client_name)) {
+      activeClientDataRef.current = clientData;
     }
 
     const empId = user.employee_id || user.auth_user_id || user.id || empCode;
@@ -503,6 +528,7 @@ export default function SalesLayout() {
   }, [user, empCode, _pushGpsPoint, _flushRetryQueue, _initBroadcastChannels, showToast]);
 
   const _stopGpsTracking = useCallback(() => {
+    activeClientDataRef.current = null;
     if (gpsWatchRef.current !== null) {
       navigator.geolocation.clearWatch(gpsWatchRef.current);
       gpsWatchRef.current = null;

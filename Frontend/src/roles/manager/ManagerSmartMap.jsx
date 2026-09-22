@@ -249,6 +249,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const [destRouteMeta,    setDestRouteMeta]     = useState(null)
   const [latestExecPos,    setLatestExecPos]     = useState(null)
   const [onRouteClients,   setOnRouteClients]    = useState([])
+  const [selectedRouteClient, setSelectedRouteClient] = useState(null)
+  const [showRouteAlerts,     setShowRouteAlerts]     = useState(true)
   const completedVisitIdsRef = useRef(new Set())
   const scheduledVisitIdsRef = useRef(new Set())
   const notifiedEventsRef = useRef(new Map())
@@ -1617,6 +1619,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     selectedExecutiveRef.current = null
     trackSessionRef.current = null
     setOnRouteClients([])
+    setSelectedRouteClient(null)
     setTrackEvents([])
   }, [])
 
@@ -1677,13 +1680,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     const routePath = destRoutePathRef.current;
     const destId    = destClientRef.current?.id;
 
-    // If no planned route exists yet, fall back to clearing markers silently
-    if (!routePath || routePath.length < 2) {
-      nearbyClientMarkersRef.current.forEach(m => m.setMap(null));
-      nearbyClientMarkersRef.current = [];
-      return;
-    }
-
     // Build normalised candidates from cached data or auto-fetch if empty
     let candidates = candidatesRef.current;
     if (!candidates || candidates.length === 0) {
@@ -1697,17 +1693,39 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           return {
             id: item.id || item.lead_id || item.customer_id || `${category}_${idx}`,
             title: item.company || item.company_name || item.name || item.client_name || `Client #${idx + 1}`,
+            contact_person: item.contact_person || item.person || item.name || item.contact_name || '',
             category,
             latitude: ok ? lat : null,
             longitude: ok ? lng : null,
             has_exact_coords: ok,
             address: item.address || item.location || item.city || '—',
-            phone: item.phone || item.mobile || '',
+            phone: item.phone || item.mobile || item.contact_phone || '',
+            email: item.email || item.contact_email || '',
             originalItem: item,
           };
         };
-        const leads = safeArray(lRes).map((i, idx) => toNorm(i, 'Lead', idx));
-        const custs = safeArray(cRes).map((i, idx) => toNorm(i, 'Customer', idx));
+        const rawLeads = safeArray(lRes);
+        const rawCusts = safeArray(cRes);
+
+        const localLeads = JSON.parse(localStorage.getItem('tc_sm_leads') || '[]');
+        const localCusts = JSON.parse(localStorage.getItem('tc_customer_accounts') || '[]');
+
+        const mergedLeads = [...rawLeads];
+        localLeads.forEach(l => {
+          if (l && !mergedLeads.some(m => m.id === l.id || (m.company === l.company && m.name === l.name))) {
+            mergedLeads.push(l);
+          }
+        });
+
+        const mergedCusts = [...rawCusts];
+        localCusts.forEach(c => {
+          if (c && !mergedCusts.some(m => m.id === c.id || (m.company === c.company && m.name === c.name))) {
+            mergedCusts.push(c);
+          }
+        });
+
+        const leads = mergedLeads.map((i, idx) => toNorm(i, 'Lead', idx));
+        const custs = mergedCusts.map((i, idx) => toNorm(i, 'Customer', idx));
         candidates = [...leads, ...custs].filter(c => c.has_exact_coords);
         candidatesRef.current = candidates;
       } catch (e) {
@@ -1727,12 +1745,14 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         completedVisitIds: completedVisitIdsRef.current,
         scheduledVisitIds: scheduledVisitIdsRef.current,
       });
-    } else {
-      // 2. Fallback: Radius-based detection within 2.5 km of executive
+    }
+
+    if (!matched || matched.length === 0) {
+      // 2. Fallback: Radius-based detection within 3 km of executive
       matched = candidates.filter(c => {
         if (destId && String(c.id) === String(destId)) return false;
         const d = haversineDistance(execLat, execLng, c.latitude, c.longitude);
-        return d <= 2.5;
+        return d <= 3.0;
       }).map(c => {
         const d = haversineDistance(execLat, execLng, c.latitude, c.longitude);
         const isPrev = completedVisitIdsRef.current?.has(c.id);
@@ -1770,6 +1790,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         pinHtml,
         () => {
           googleMapRef.current.panTo(itemLatLng);
+          setSelectedRouteClient(item);
           showInfoWindow(itemLatLng, `
             <div style="font-family:ui-sans-serif,system-ui,sans-serif;font-size:12px;padding:8px;color:#0f172a;min-width:240px;">
               <div style="display:flex;align-items:center;gap:6px;font-weight:900;color:${pinColor};text-transform:uppercase;font-size:10px;letter-spacing:0.5px;margin-bottom:6px;border-bottom:1.5px solid #f1f5f9;padding-bottom:4px;">
@@ -1777,6 +1798,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               </div>
               <div style="font-weight:800;font-size:13px;color:#0f172a;">${item.title}</div>
               <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 8px;font-size:11px;color:#334155;margin-top:6px;">
+                ${item.contact_person ? `
+                  <span style="font-weight:700;color:#64748b;">Contact:</span>
+                  <span style="font-weight:800;color:#0f172a;">${item.contact_person}</span>
+                ` : ''}
                 ${item.phone ? `
                   <span style="font-weight:700;color:#64748b;">Phone:</span>
                   <span style="font-weight:800;color:#2563eb;font-family:monospace;">${item.phone}</span>
@@ -2306,6 +2331,56 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       setTrackBreadcrumbs(crumbs)
       setTrackStatus(status)
 
+      // Populate client destination details from session or executive record
+      const s = session || trackSessionRef.current;
+      const ex = executive || selectedExecutiveRef.current;
+
+      const clientDestLat = s?.client_latitude != null ? Number(s.client_latitude) : (ex?.client_latitude != null ? Number(ex.client_latitude) : null);
+      const clientDestLng = s?.client_longitude != null ? Number(s.client_longitude) : (ex?.client_longitude != null ? Number(ex.client_longitude) : null);
+
+      let clientDest = null;
+      if (clientDestLat != null && clientDestLng != null && !isNaN(clientDestLat) && !isNaN(clientDestLng) && clientDestLat !== 0 && clientDestLng !== 0) {
+        clientDest = {
+          id: s?.client_id || ex?.client_id || 'dest',
+          title: s?.client_name || s?.company_name || ex?.client_name || ex?.company_name || 'Client Destination',
+          company_name: s?.company_name || s?.client_name || ex?.company_name || ex?.client_name || 'Client Destination',
+          address: s?.client_address || ex?.client_address || '',
+          phone: s?.client_phone || ex?.client_phone || '',
+          latitude: clientDestLat,
+          longitude: clientDestLng,
+          route_polyline: s?.route_polyline || ex?.route_polyline || null,
+        };
+      } else {
+        // Fallback to active nav session saved locally for dev testing
+        try {
+          const savedNavStr = localStorage.getItem('tc_active_nav_session');
+          if (savedNavStr) {
+            const savedNav = JSON.parse(savedNavStr);
+            if (savedNav?.navMode && savedNav?.selectedStop?.has_exact_coords) {
+              const stop = savedNav.selectedStop;
+              clientDest = {
+                id: stop.id,
+                title: stop.title || stop.company_name || 'Client Destination',
+                company_name: stop.company_name || stop.title || 'Client Destination',
+                address: stop.address || '',
+                phone: stop.phone || '',
+                latitude: Number(stop.latitude),
+                longitude: Number(stop.longitude),
+                route_polyline: null,
+              };
+            }
+          }
+        } catch (e) {}
+      }
+
+      if (clientDest) {
+        setDestClient(clientDest);
+        destClientRef.current = clientDest;
+      } else {
+        setDestClient(null);
+        destClientRef.current = null;
+      }
+
       if (!googleMapRef.current) return
       const map = googleMapRef.current
 
@@ -2444,10 +2519,14 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       }
 
       if (latestLat != null && latestLng != null && !isNaN(latestLat) && !isNaN(latestLng)) {
-        setLatestExecPos({ lat: latestLat, lng: latestLng })
-        _fetchAndRenderNearbyClients(latestLat, latestLng)
+        setLatestExecPos({ lat: latestLat, lng: latestLng });
+        if (clientDest) {
+          _drawRouteToDestination(latestLat, latestLng, clientDest);
+        } else {
+          _fetchAndRenderNearbyClients(latestLat, latestLng);
+        }
         if (crumbs.length > 0) {
-          latestTimestampRef.current = new Date(crumbs[crumbs.length - 1].recorded_at).getTime()
+          latestTimestampRef.current = new Date(crumbs[crumbs.length - 1].recorded_at).getTime();
         }
       }
 
@@ -3167,6 +3246,113 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               <div className="flex items-center gap-2"><div className="w-6 h-1.5 bg-blue-500 rounded flex-shrink-0" /> Driving Route</div>
               <div className="flex items-center gap-2"><div className="w-6 h-0.5 border-t-2 border-dashed border-purple-400 flex-shrink-0" /> Traveled Route</div>
               <div className="flex items-center gap-2"><span className="w-3.5 h-3.5 rounded-full bg-red-500 flex-shrink-0 flex items-center justify-center text-white font-extrabold border border-white"><svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg></span> Client destination</div>
+            </div>
+          )}
+
+          {/* ══ ON-ROUTE CLIENTS / NEARBY LEADS PANEL ══ */}
+          {onRouteClients.length > 0 && (
+            <div className="absolute bottom-24 right-5 z-20 w-80 space-y-1.5 font-sans pointer-events-auto">
+              <div className="bg-white/95 backdrop-blur-md rounded-xl border border-slate-200 shadow-lg px-3 py-2 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Activity size={13} className="text-emerald-600 animate-pulse" />
+                  <span className="text-xs font-black text-slate-900">{onRouteClients.length} client{onRouteClients.length > 1 ? 's' : ''} on route</span>
+                </div>
+                <button onClick={() => setShowRouteAlerts(v => !v)} className="text-[10px] font-black text-slate-400 hover:text-slate-700 cursor-pointer">
+                  {showRouteAlerts ? 'Hide' : 'Show'}
+                </button>
+              </div>
+              {showRouteAlerts && (
+                <div className="max-h-64 overflow-y-auto space-y-1.5 pr-0.5">
+                  {onRouteClients.map(client => {
+                    const isPrev = client.alertType === 'previous';
+                    const isSched = client.alertType === 'scheduled';
+                    const label = isPrev ? 'PREVIOUS CLIENT' : (isSched ? 'SCHEDULED VISIT' : 'NEARBY ' + (client.category || 'CLIENT'));
+                    const color = isPrev ? 'from-purple-600 to-indigo-700' : (isSched ? 'from-amber-600 to-orange-700' : 'from-emerald-600 to-teal-700');
+                    const border = isPrev ? 'border-purple-500/30' : (isSched ? 'border-amber-500/30' : 'border-emerald-500/30');
+
+                    return (
+                      <div key={client.id} className={`bg-gradient-to-r ${color} text-white px-3 py-2.5 rounded-2xl shadow-xl flex items-center justify-between gap-2 border ${border}`}>
+                        <div className="flex items-center gap-2 min-w-0 flex-1">
+                          <MapPin size={11} className="text-white flex-shrink-0" />
+                          <div className="min-w-0">
+                            <p className="text-[9px] font-black uppercase opacity-80 tracking-wider">{label}</p>
+                            <p className="text-[11px] font-black truncate">{client.title}</p>
+                            <p className="text-[9px] opacity-75">{client.distToRouteM}m from route</p>
+                          </div>
+                        </div>
+                        <div className="flex gap-1 flex-shrink-0">
+                          <button
+                            onClick={() => {
+                              setSelectedRouteClient(client);
+                              if (googleMapRef.current && client.latitude && client.longitude) {
+                                googleMapRef.current.panTo({ lat: Number(client.latitude), lng: Number(client.longitude) });
+                                googleMapRef.current.setZoom(16);
+                              }
+                            }}
+                            className="px-2 py-1 bg-white/20 hover:bg-white/30 font-black text-[10px] rounded-lg transition cursor-pointer"
+                          >
+                            View
+                          </button>
+                          <button
+                            onClick={() => setOnRouteClients(prev => prev.filter(c => c.id !== client.id))}
+                            className="px-2 py-1 bg-white/10 hover:bg-white/20 text-[10px] rounded-lg opacity-70 cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ══ SELECTED NEARBY ENTITY DETAIL CARD ══ */}
+          {selectedRouteClient && (
+            <div className="absolute bottom-5 left-5 lg:left-[22rem] z-20 w-80 bg-white/98 border border-slate-200 rounded-2xl p-4 shadow-2xl backdrop-blur-md text-slate-800 pointer-events-auto font-sans animate-in slide-in-from-bottom duration-200 space-y-2.5">
+              <div className="flex items-start justify-between gap-2 border-b border-slate-100 pb-2">
+                <div className="min-w-0 flex-1">
+                  <span className="text-[9px] font-black border px-1.5 py-0.5 rounded uppercase bg-blue-50 text-blue-700 border-blue-200">
+                    {selectedRouteClient.category || 'Lead'}
+                  </span>
+                  <h3 className="text-sm font-black text-slate-900 mt-1 leading-tight">{selectedRouteClient.title}</h3>
+                  {selectedRouteClient.contact_person && (
+                    <p className="text-[11px] text-slate-500 font-semibold mt-0.5">👤 {selectedRouteClient.contact_person}</p>
+                  )}
+                </div>
+                <button onClick={() => setSelectedRouteClient(null)} className="p-1 hover:bg-slate-100 text-slate-400 rounded-lg cursor-pointer">
+                  <X size={14} />
+                </button>
+              </div>
+
+              <div className="bg-slate-50 rounded-xl border border-slate-100 p-2.5 text-xs text-slate-600 space-y-1">
+                <p className="truncate font-medium">📍 {selectedRouteClient.address}</p>
+                {selectedRouteClient.phone && <p className="font-mono text-blue-600 font-bold">📞 {selectedRouteClient.phone}</p>}
+                {selectedRouteClient.distToRouteM && <p className="text-[10px] text-slate-400 font-bold">{selectedRouteClient.distToRouteM}m away</p>}
+              </div>
+
+              <div className="flex gap-2">
+                {selectedRouteClient.phone && (
+                  <a
+                    href={`tel:${selectedRouteClient.phone}`}
+                    className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1 transition shadow-xs text-center"
+                  >
+                    <Phone size={12} /> Call
+                  </a>
+                )}
+                <button
+                  onClick={() => {
+                    if (googleMapRef.current && selectedRouteClient.latitude && selectedRouteClient.longitude) {
+                      googleMapRef.current.panTo({ lat: Number(selectedRouteClient.latitude), lng: Number(selectedRouteClient.longitude) });
+                      googleMapRef.current.setZoom(17);
+                    }
+                  }}
+                  className="flex-1 py-2 bg-slate-900 hover:bg-slate-800 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1 transition shadow-xs cursor-pointer"
+                >
+                  <MapPin size={12} /> Focus
+                </button>
+              </div>
             </div>
           )}
         </>
