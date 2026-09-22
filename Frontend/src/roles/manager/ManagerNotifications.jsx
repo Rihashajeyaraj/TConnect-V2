@@ -65,13 +65,19 @@ export default function ManagerNotifications() {
   }, [currentUser?.email])
 
   const markAllRead = async () => {
+    setList((prev) => prev.map((n) => ({ ...n, read: true, is_read: true })))
+    showToast('All notifications marked as read!', 'success')
     try {
-      const unreadList = list.filter((n) => !n.read)
-      await Promise.allSettled(unreadList.map((n) => notificationAPI.markRead(n.id)))
-      showToast('All notifications marked as read!', 'success')
-      fetchNotifications()
+      localStorage.setItem("tc_unread_message_count", "0")
+      if (typeof window !== "undefined" && "navigator" in window && "clearAppBadge" in navigator) {
+        navigator.clearAppBadge().catch(() => {})
+      }
+    } catch (e) {}
+
+    try {
+      await notificationAPI.markAllRead()
     } catch (e) {
-      showToast('Failed to mark notifications as read', 'error')
+      console.warn('Mark all read sync error:', e)
     }
   }
 

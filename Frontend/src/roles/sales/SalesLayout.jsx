@@ -42,6 +42,10 @@ import {
   AlertCircle,
   GripVertical,
   CheckCircle2,
+  PanelLeftClose,
+  PanelLeftOpen,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { createClient } from "@supabase/supabase-js";
 import { notificationAPI, hrmsAPI, spatialAPI } from "../../services/api.js";
@@ -336,14 +340,14 @@ export default function SalesLayout() {
     const now = Date.now();
 
     // 1. Determine if we should broadcast to Supabase Broadcast channel & FastAPI WebSocket
-    // Broadcast if moved >= 3m OR if >= 5s elapsed since last broadcast (heartbeat)
+    // Broadcast if moved >= 1m OR if >= 1s elapsed since last broadcast (high-speed bike & car tracking)
     let shouldBroadcast = true;
     if (lastBroadcastPosRef.current) {
       const dlat = lat - lastBroadcastPosRef.current.lat;
       const dlng = lng - lastBroadcastPosRef.current.lng;
       const approxM = Math.sqrt(dlat * dlat + dlng * dlng) * 111000;
       const elapsedSecs = (now - lastBroadcastTimeRef.current) / 1000;
-      if (approxM < 3 && elapsedSecs < 5) {
+      if (approxM < 1 && elapsedSecs < 1) {
         shouldBroadcast = false;
       }
     }
@@ -400,14 +404,14 @@ export default function SalesLayout() {
       lastBroadcastTimeRef.current = now;
     }
 
-    // 2. Client-side dedup for database persistence: skip DB write if < 10m from last point AND < 30s elapsed
+    // 2. Client-side dedup for database persistence: high frequency (2s / 2m) when on bike/car
     let shouldPersist = true;
     if (lastPushedPosRef.current) {
       const dlat = lat - lastPushedPosRef.current.lat;
       const dlng = lng - lastPushedPosRef.current.lng;
       const approxM = Math.sqrt(dlat * dlat + dlng * dlng) * 111000;
       const elapsedSecs = (now - lastPushedTimeRef.current) / 1000;
-      if (approxM < 10 && elapsedSecs < 30) shouldPersist = false;
+      if (approxM < 2 && elapsedSecs < 2) shouldPersist = false;
     }
 
     if (!shouldPersist) return;
@@ -424,6 +428,7 @@ export default function SalesLayout() {
         gpsRetryQueue.current.push(dbPoint);
       }
     }
+
   }, [user, empCode]);
 
   const _flushRetryQueue = useCallback(async () => {
@@ -936,7 +941,7 @@ export default function SalesLayout() {
     { title: "Clients", icon: UserCheck, path: "/sales/customers" },
     { title: "Client Log", icon: ClipboardList, path: "/sales/client-log" },
     { title: "Expenses", icon: BadgeDollarSign, path: "/sales/expenses" },
-    { title: "Messages 💬", icon: Bell, path: "/sales/notifications" },
+    { title: "Notifications 🔔", icon: Bell, path: "/sales/notifications" },
     { title: "HRMS", icon: ShieldCheck, path: "/sales/hrms" },
     { title: "Tasks", icon: CheckSquare, path: "/sales/todo" },
   ];
@@ -951,8 +956,11 @@ export default function SalesLayout() {
         const titles = JSON.parse(saved);
         const ordered = [];
         titles.forEach(title => {
-          const target = title === 'Customers' ? 'Clients' : title;
-          const match = menus.find(m => m.title === target || m.title === title);
+          let target = title === 'Customers' ? 'Clients' : title;
+          if (target === 'Messages 💬' || target === 'Messages' || target === 'Notifications') {
+            target = 'Notifications 🔔';
+          }
+          const match = menus.find(m => m.title === target || m.title === title || (title.includes('Message') && m.path === '/sales/notifications'));
           if (match && !ordered.some(o => o.path === match.path)) ordered.push(match);
         });
         menus.forEach(m => {
@@ -1027,8 +1035,18 @@ export default function SalesLayout() {
     showToast("Sidebar layout reset to default.", "info");
   };
 
+  const [isSidebarMinimized, setIsSidebarMinimized] = useState(() => localStorage.getItem("tc_sidebar_minimized") === "true");
+
+  const toggleSidebarMinimize = () => {
+    setIsSidebarMinimized((prev) => {
+      const next = !prev;
+      localStorage.setItem("tc_sidebar_minimized", String(next));
+      return next;
+    });
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
+    <div className="h-screen overflow-hidden bg-slate-50 text-slate-900 flex flex-col font-sans relative">
       <NotificationPermissionBanner />
       {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
       <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 md:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
@@ -1160,7 +1178,7 @@ export default function SalesLayout() {
       </header>
 
       {/* ── Main Layout Wrapper ───────────────────────────────────────────── */}
-      <div className="flex flex-1 min-w-0 relative">
+      <div className="flex flex-1 min-h-0 min-w-0 relative overflow-hidden">
         {/* Backdrop for mobile drawer */}
         {open && (
           <div
@@ -1171,7 +1189,9 @@ export default function SalesLayout() {
 
         {/* ── Sidebar ─────────────────────────────────────────────────── */}
         <aside
-          className={`fixed inset-y-0 left-0 z-[4010] lg:z-40 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 shrink-0 flex flex-col ${
+          className={`fixed inset-y-0 left-0 z-[4010] lg:z-40 ${
+            isSidebarMinimized ? "lg:w-20" : "lg:w-64"
+          } w-64 bg-white border-r border-slate-200 transform transition-all duration-200 ease-in-out lg:translate-x-0 lg:static flex flex-col h-full shrink-0 ${
             open ? "translate-x-0" : "-translate-x-full"
           }`}
         >
@@ -1190,16 +1210,37 @@ export default function SalesLayout() {
             </button>
           </div>
 
-          <div className="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+          {/* Desktop Minimize/Maximize Sidebar Toggle Button */}
+          <div className="hidden lg:flex items-center justify-end px-3 py-2 border-b border-slate-100">
+            <button
+              type="button"
+              onClick={toggleSidebarMinimize}
+              className={`p-1.5 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-teal-600 transition cursor-pointer flex items-center gap-2 ${
+                isSidebarMinimized ? "w-full justify-center" : ""
+              }`}
+              title={isSidebarMinimized ? "Maximize Sidebar" : "Minimize Sidebar"}
+            >
+              {isSidebarMinimized ? (
+                <PanelLeftOpen size={18} className="text-teal-600" />
+              ) : (
+                <>
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Minimize</span>
+                  <PanelLeftClose size={16} />
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
             {sidebarItems.map((m, index) => (
               <div
                 key={m.path}
-                draggable={isCustomizing}
+                draggable={isCustomizing && !isSidebarMinimized}
                 onDragStart={(e) => handleDragStart(e, index)}
                 onDragOver={(e) => handleDragOver(e, index)}
                 onDrop={(e) => handleDrop(e, index)}
                 onDragEnd={handleDragEnd}
-                className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-teal-200 rounded-xl" : ""}`}
+                className={`relative ${isCustomizing && !isSidebarMinimized ? "cursor-move animate-pulse border border-dashed border-teal-200 rounded-xl" : ""}`}
               >
                 <NavLink
                   to={isCustomizing ? "#" : m.path}
@@ -1211,15 +1252,23 @@ export default function SalesLayout() {
                     if (isMobile) setOpen(false);
                   }}
                   className={({ isActive }) =>
-                    `flex items-center gap-3 px-3.5 py-3 rounded-xl text-xs font-black transition ${!isCustomizing && isActive ? "bg-teal-600 text-white shadow-md shadow-teal-600/30" : "text-slate-600 hover:bg-teal-50 hover:text-teal-900"
-                    } ${(!open && isMobile) ? "justify-center" : ""}`
+                    `flex items-center ${isSidebarMinimized ? "justify-center p-3" : "gap-3 px-3.5 py-3"} rounded-xl text-xs font-black transition ${
+                      !isCustomizing && isActive
+                        ? "bg-teal-600 text-white shadow-md shadow-teal-600/30"
+                        : "text-slate-600 hover:bg-teal-50 hover:text-teal-900"
+                    }`
                   }
-                  title={(!open && isMobile) ? m.title : undefined}
+                  title={m.title}
                 >
-                  {isCustomizing && (open || !isMobile) && <GripVertical size={14} className="text-slate-400 shrink-0 mr-1" />}
-                  <m.icon size={18} className="flex-shrink-0" />
-                  {(open || !isMobile) && <span className="truncate">{m.title}</span>}
-                  {(open || !isMobile) && notifCount > 0 && (m.path.includes("notifications") || m.title.includes("Message")) && (
+                  {isCustomizing && !isSidebarMinimized && <GripVertical size={14} className="text-slate-400 shrink-0 mr-1" />}
+                  <div className="relative flex items-center justify-center shrink-0">
+                    <m.icon size={19} className="flex-shrink-0" />
+                    {isSidebarMinimized && notifCount > 0 && (m.path.includes("notifications") || m.title.includes("Message")) && (
+                      <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
+                    )}
+                  </div>
+                  {!isSidebarMinimized && <span className="truncate">{m.title}</span>}
+                  {!isSidebarMinimized && notifCount > 0 && (m.path.includes("notifications") || m.title.includes("Message")) && (
                     <span className="ml-auto bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
                       🔴 {notifCount > 99 ? '99+' : notifCount}
                     </span>
@@ -1227,7 +1276,7 @@ export default function SalesLayout() {
                 </NavLink>
               </div>
             ))}
-            {(open || !isMobile) && (
+            {!isSidebarMinimized && (
               <div className="pt-2">
                 {isCustomizing ? (
                   <div className="pt-2 border-t border-slate-100 space-y-1.5 px-1">
@@ -1260,7 +1309,7 @@ export default function SalesLayout() {
           </div>
 
           <div className="p-3 border-t border-slate-100 flex-shrink-0">
-            {(open || !isMobile) ? (
+            {!isSidebarMinimized ? (
               <div className="flex items-center gap-2.5 p-2 rounded-xl bg-slate-50 border border-slate-200">
                 {gpsActive ? <Wifi size={16} className="text-green-600 shrink-0" /> : <WifiOff size={16} className="text-slate-400 shrink-0" />}
                 <div className="min-w-0">
@@ -1272,15 +1321,15 @@ export default function SalesLayout() {
                 {gpsActive && <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse flex-shrink-0 ml-auto" />}
               </div>
             ) : (
-              <div className="flex justify-center">
+              <div className="flex justify-center" title={gpsActive ? "Live GPS Active" : "GPS Ready"}>
                 {gpsActive ? <Wifi size={18} className="text-green-600" /> : <WifiOff size={18} className="text-slate-400" />}
               </div>
             )}
           </div>
         </aside>
 
-        {/* Page Content Container */}
-        <main className={`flex-1 min-w-0 ${
+        {/* Page Content Container - Scrollable Main Area */}
+        <main className={`flex-1 min-w-0 h-full ${
           isMapPage 
             ? "p-0 pb-14 overflow-hidden h-[calc(100vh-64px)] lg:h-[calc(100vh-80px)] lg:p-6 lg:pb-6" 
             : "p-3 sm:p-5 lg:p-6 overflow-y-auto pb-20 lg:pb-6"

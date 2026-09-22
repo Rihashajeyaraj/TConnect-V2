@@ -42,16 +42,21 @@ export default function ClientLog(props) {
   const matchesUser = (item) => {
     if (!item) return false;
     const assignedEmail = (item.assignedToEmail || item.assigned_to_email || item.executiveEmail || item.email || "").toLowerCase().trim();
-    const assignedName = (item.assignedTo || item.assigned_to || item.executive || "").toLowerCase().trim();
+    const assignedName = (item.assignedTo || item.assigned_to || item.executive || item.employee_name || "").toLowerCase().trim();
     const empCode = (item.employee_id || item.employee_code || "").toLowerCase().trim();
     const uid = (item.user_id || item.userId || item.visitor_id || "").toLowerCase().trim();
 
-    if (userEmail && (assignedEmail === userEmail || assignedName === userEmail)) return true;
+    const uEmail = userEmail.toLowerCase();
+    const uName = userName.toLowerCase();
+
+    if (uEmail && (assignedEmail === uEmail || assignedName === uEmail || assignedEmail.includes(uEmail))) return true;
     if (userEmpCode && empCode === userEmpCode.toLowerCase()) return true;
     if (userId && uid === userId.toLowerCase()) return true;
-    if (userName && assignedName === userName.toLowerCase()) return true;
+    if (uName && assignedName && (assignedName === uName || assignedName.includes(uName) || uName.includes(assignedName))) return true;
 
-    return false;
+    if (!assignedEmail && !assignedName && !empCode && !uid) return true;
+
+    return isItemOwnedByUser(item, currentUser);
   };
 
   // Active Toggle Sub-Tab: "visits" | "opportunities" | "followups"
@@ -147,8 +152,11 @@ export default function ClientLog(props) {
       .getVisits()
       .then((res) => {
         const raw = Array.isArray(res) ? res : (res?.data || []);
-        if (raw.length > 0) {
-          const apiVisits = raw.map((v) => {
+        const localVisits = JSON.parse(localStorage.getItem("tc_sales_visits") || localStorage.getItem("tc_sm_visits") || "[]");
+        const combined = [...raw, ...localVisits];
+
+        if (combined.length > 0) {
+          const apiVisits = combined.map((v) => {
             const dateScheduled = v.scheduled_time
               ? formatDate(v.scheduled_time)
               : (v.visit_date ? formatDate(v.visit_date) : (v.date ? formatDate(v.date) : formatDate(v.created_at || new Date())));
@@ -202,7 +210,12 @@ export default function ClientLog(props) {
           setVisitList(uniqueVisits);
         }
       })
-      .catch(() => { });
+      .catch(() => {
+        try {
+          const localVisits = JSON.parse(localStorage.getItem("tc_sales_visits") || localStorage.getItem("tc_sm_visits") || "[]");
+          setVisitList(localVisits);
+        } catch (_) {}
+      });
   }, [userName, userEmail]);
 
   const updateGps = () => {

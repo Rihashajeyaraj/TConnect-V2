@@ -44,6 +44,8 @@ import {
   Upload,
   FileUp,
   CheckCircle2,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 
 const navItems = [
@@ -582,13 +584,19 @@ function AdminLayout() {
   }
 
   const handleMarkAllRead = async () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, read: true })))
+    setNotifications((prev) => prev.map((n) => ({ ...n, read: true, is_read: true })))
     showToast('All notifications marked as read', 'info')
-    const unread = notifications.filter(n => !n.read)
-    for (const n of unread) {
-      try {
-        await notificationAPI.markRead(n.id)
-      } catch (e) {}
+    try {
+      localStorage.setItem("tc_unread_message_count", "0")
+      if (typeof window !== "undefined" && "navigator" in window && "clearAppBadge" in navigator) {
+        navigator.clearAppBadge().catch(() => {})
+      }
+    } catch (e) {}
+
+    try {
+      await notificationAPI.markAllRead()
+    } catch (e) {
+      console.warn("Mark all read sync error:", e)
     }
   }
 
@@ -607,8 +615,18 @@ function AdminLayout() {
     }
   }
 
+  const [isSidebarMinimized, setIsSidebarMinimized] = useState(() => localStorage.getItem("tc_sidebar_minimized") === "true");
+
+  const toggleSidebarMinimize = () => {
+    setIsSidebarMinimized((prev) => {
+      const next = !prev;
+      localStorage.setItem("tc_sidebar_minimized", String(next));
+      return next;
+    });
+  };
+
   return (
-    <div className="min-h-screen bg-[#F7F9FC] text-slate-900 flex flex-col font-sans admin-portal-root">
+    <div className="h-screen overflow-hidden bg-[#F7F9FC] text-slate-900 flex flex-col font-sans admin-portal-root">
       <style>{`
         @media (max-width: 639px) {
           .admin-portal-root {
@@ -633,16 +651,16 @@ function AdminLayout() {
           .admin-portal-root .text-2xl {
             font-size: 18.5px !important;
           }
-          .admin-portal-root .text-[9px] {
+          .admin-portal-root .text-\\[9px\\] {
             font-size: 9.5px !important;
           }
-          .admin-portal-root .text-[10px] {
+          .admin-portal-root .text-\\[10px\\] {
             font-size: 10px !important;
           }
-          .admin-portal-root .text-[11px] {
+          .admin-portal-root .text-\\[11px\\] {
             font-size: 11px !important;
           }
-          .admin-portal-root .text-[13px] {
+          .admin-portal-root .text-\\[13px\\] {
             font-size: 12.5px !important;
           }
           .admin-portal-root th,
@@ -680,16 +698,16 @@ function AdminLayout() {
           .admin-portal-root .text-2xl {
             font-size: 20px !important;
           }
-          .admin-portal-root .text-[9px] {
+          .admin-portal-root .text-\\[9px\\] {
             font-size: 10px !important;
           }
-          .admin-portal-root .text-[10px] {
+          .admin-portal-root .text-\\[10px\\] {
             font-size: 10.5px !important;
           }
-          .admin-portal-root .text-[11px] {
+          .admin-portal-root .text-\\[11px\\] {
             font-size: 11.5px !important;
           }
-          .admin-portal-root .text-[13px] {
+          .admin-portal-root .text-\\[13px\\] {
             font-size: 13px !important;
           }
           .admin-portal-root th,
@@ -727,16 +745,16 @@ function AdminLayout() {
           .admin-portal-root .text-2xl {
             font-size: 22px !important;
           }
-          .admin-portal-root .text-[9px] {
+          .admin-portal-root .text-\\[9px\\] {
             font-size: 10.5px !important;
           }
-          .admin-portal-root .text-[10px] {
+          .admin-portal-root .text-\\[10px\\] {
             font-size: 11px !important;
           }
-          .admin-portal-root .text-[11px] {
+          .admin-portal-root .text-\\[11px\\] {
             font-size: 12px !important;
           }
-          .admin-portal-root .text-[13px] {
+          .admin-portal-root .text-\\[13px\\] {
             font-size: 13.5px !important;
           }
           .admin-portal-root th,
@@ -752,7 +770,7 @@ function AdminLayout() {
         }
       `}</style>
       {/* Top Header */}
-      <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
+      <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -799,59 +817,83 @@ function AdminLayout() {
                 setProfileOpen(!profileOpen)
                 setNotificationsOpen(false)
               }}
-              className="flex items-center gap-2.5 p-1.5 px-3 rounded-xl hover:bg-slate-100 transition-colors border border-[#DCE3EF] cursor-pointer"
+              className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-slate-100 transition cursor-pointer"
             >
-              <div className="w-8 h-8 rounded-xl bg-[#061A4D] text-white font-black text-xs flex items-center justify-center shadow-md shadow-[#061A4D]/20 overflow-hidden">
+              <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center font-bold text-xs shadow-xs ring-2 ring-slate-400/20 shrink-0">
                 {profilePhoto ? (
                   <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
                 ) : (
-                  currentUser.initials || 'AD'
+                  displayInitials
                 )}
               </div>
-              <div className="hidden md:flex flex-col text-left">
-                <span className="font-bold text-xs text-slate-800 leading-tight">{currentUser.name || 'Admin'}</span>
-                <span className="text-[10px] text-slate-500 leading-tight truncate max-w-[120px]">{currentUser.email}</span>
+              <div className="hidden sm:block text-left min-w-0">
+                <p className="text-xs font-bold text-slate-900 truncate max-w-[120px]">{displayName}</p>
+                <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider">System Admin</p>
               </div>
-              <ChevronDown className="w-3.5 h-3.5 text-[#123A8C]" />
+              <ChevronDown size={14} className="text-slate-400 hidden sm:block" />
             </button>
 
             {profileOpen && (
-              <div className="absolute right-0 mt-2 w-60 bg-white border border-[#DCE3EF] rounded-2xl shadow-2xl py-2 z-50">
-                <div className="px-4 py-2.5 border-b border-slate-100">
-                  <p className="text-xs font-bold text-slate-900">{currentUser.name || 'Admin'}</p>
-                  <p className="text-[11px] font-semibold text-[#123A8C] truncate">{currentUser.email || 'admin@tconnect.com'}</p>
-                  <span className="inline-block mt-1 px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 text-[10px] font-extrabold uppercase">
-                    {currentUser.role || 'Admin'}
-                  </span>
-                </div>
-                <button
-                  onClick={() => {
-                    setMyProfileOpen(true)
+              <>
+                <div
+                  className="fixed inset-0 z-40"
+                  onClick={(e) => {
+                    e.stopPropagation()
                     setProfileOpen(false)
                   }}
-                  className="w-full text-left px-4 py-2.5 text-xs text-slate-700 font-bold hover:bg-slate-50 flex items-center gap-2 cursor-pointer border-b border-slate-100"
-                >
-                  <UserCircle className="w-4 h-4 text-[#123A8C]" /> My Profile
-                </button>
-                <button
-                  onClick={handleLogout}
-                  className="w-full text-left px-4 py-2.5 text-xs text-rose-600 font-bold hover:bg-rose-50 flex items-center gap-2 cursor-pointer"
-                >
-                  <LogOut className="w-4 h-4" /> Log out
-                </button>
-              </div>
+                />
+                <div className="absolute right-0 mt-2 w-64 bg-white border border-slate-200 rounded-2xl shadow-xl z-50 p-2 space-y-1">
+                  <div className="p-3 bg-slate-50 rounded-xl space-y-0.5">
+                    <p className="text-xs font-black text-slate-900 truncate">{displayName}</p>
+                    <p className="text-[11px] text-slate-500 truncate">{adminEmail}</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setProfileOpen(false)
+                      setMyProfileOpen(true)
+                      setEditMode(false)
+                    }}
+                    className="w-full flex items-center gap-2 p-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <UserCircle size={15} className="text-blue-600" /> My Profile
+                  </button>
+                  <Link
+                    to="/admin/settings"
+                    onClick={() => setProfileOpen(false)}
+                    className="flex items-center gap-2 p-2 rounded-xl text-xs font-bold text-slate-700 hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    <Settings size={15} className="text-slate-500" /> System Settings
+                  </Link>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      setProfileOpen(false)
+                      handleLogout()
+                    }}
+                    className="w-full flex items-center gap-2 p-2 rounded-xl text-xs font-bold text-rose-600 hover:bg-rose-50 transition cursor-pointer"
+                  >
+                    <LogOut size={14} /> Log Out
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>
       </header>
 
-      <div className="flex flex-1">
+      {/* Main Content Area */}
+      <div className="flex flex-1 min-h-0 min-w-0 relative overflow-hidden">
         {sidebarOpen && (
           <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-20 lg:hidden transition-opacity" />
         )}
         {/* Sidebar Navigation */}
         <aside
-          className={`fixed inset-y-0 left-0 z-20 w-64 bg-white border-r border-slate-200 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 flex flex-col shadow-xs ${
+          className={`fixed inset-y-0 left-0 z-20 ${
+            isSidebarMinimized ? "lg:w-20" : "lg:w-64"
+          } w-64 bg-white border-r border-slate-200 transform transition-all duration-200 ease-in-out lg:translate-x-0 lg:static flex flex-col h-full shrink-0 shadow-xs ${
             sidebarOpen ? 'translate-x-0' : '-translate-x-full'
           }`}
         >
@@ -870,6 +912,27 @@ function AdminLayout() {
             </button>
           </div>
 
+          {/* Desktop Minimize/Maximize Toggle Button */}
+          <div className="hidden lg:flex items-center justify-end px-3 py-2 border-b border-slate-100">
+            <button
+              type="button"
+              onClick={toggleSidebarMinimize}
+              className={`p-1.5 rounded-xl hover:bg-slate-100 text-slate-500 hover:text-blue-600 transition cursor-pointer flex items-center gap-2 ${
+                isSidebarMinimized ? "w-full justify-center" : ""
+              }`}
+              title={isSidebarMinimized ? "Maximize Sidebar" : "Minimize Sidebar"}
+            >
+              {isSidebarMinimized ? (
+                <PanelLeftOpen size={18} className="text-blue-600" />
+              ) : (
+                <>
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Minimize</span>
+                  <PanelLeftClose size={16} />
+                </>
+              )}
+            </button>
+          </div>
+
           <div className="flex-1 p-3 space-y-1 overflow-y-auto">
             {sidebarItems.map((item, index) => {
               const Icon = item.icon
@@ -877,12 +940,12 @@ function AdminLayout() {
               return (
                 <div
                   key={item.path}
-                  draggable={isCustomizing}
+                  draggable={isCustomizing && !isSidebarMinimized}
                   onDragStart={(e) => handleDragStart(e, index)}
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDrop={(e) => handleDrop(e, index)}
                   onDragEnd={handleDragEnd}
-                  className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-slate-300 rounded-xl" : ""}`}
+                  className={`relative ${isCustomizing && !isSidebarMinimized ? "cursor-move animate-pulse border border-dashed border-slate-300 rounded-xl" : ""}`}
                 >
                   <Link
                     to={isCustomizing ? "#" : item.path}
@@ -893,16 +956,22 @@ function AdminLayout() {
                       }
                       setSidebarOpen(false);
                     }}
-                    className={`flex items-center gap-3 px-3.5 py-2.5 rounded-xl font-bold text-xs admin-sidebar-link transition-all ${
+                    title={item.label}
+                    className={`flex items-center ${isSidebarMinimized ? "justify-center p-3" : "gap-3 px-3.5 py-2.5"} rounded-xl font-bold text-xs admin-sidebar-link transition-all ${
                       !isCustomizing && isActive
                         ? 'bg-blue-600 text-white shadow-md shadow-blue-600/20'
                         : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                     }`}
                   >
-                    {isCustomizing && <GripVertical size={14} className="text-slate-400 shrink-0" />}
-                    <Icon className={`w-4 h-4 ${!isCustomizing && isActive ? 'text-white' : 'text-slate-450'}`} />
-                    <span>{item.label}</span>
-                    {unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
+                    {isCustomizing && !isSidebarMinimized && <GripVertical size={14} className="text-slate-400 shrink-0" />}
+                    <div className="relative flex items-center justify-center shrink-0">
+                      <Icon className={`w-4 h-4 ${!isCustomizing && isActive ? 'text-white' : 'text-slate-450'}`} />
+                      {isSidebarMinimized && unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
+                      )}
+                    </div>
+                    {!isSidebarMinimized && <span>{item.label}</span>}
+                    {!isSidebarMinimized && unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
                       <span className="ml-auto bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
                         🔴 {unreadCount > 99 ? '99+' : unreadCount}
                       </span>
@@ -911,39 +980,41 @@ function AdminLayout() {
                 </div>
               )
             })}
-            <div className="pt-2">
-              {isCustomizing ? (
-                <div className="pt-2 border-t border-slate-200 space-y-1.5 px-1">
+            {!isSidebarMinimized && (
+              <div className="pt-2">
+                {isCustomizing ? (
+                  <div className="pt-2 border-t border-slate-200 space-y-1.5 px-1">
+                    <button
+                      type="button"
+                      onClick={saveCustomization}
+                      className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition cursor-pointer"
+                    >
+                      Save Order
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetCustomization}
+                      className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black transition cursor-pointer"
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+                ) : (
                   <button
                     type="button"
-                    onClick={saveCustomization}
-                    className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-black transition cursor-pointer"
+                    onClick={() => setIsCustomizing(true)}
+                    className="w-full py-2 px-3 border border-dashed border-slate-300 hover:border-slate-400 text-slate-500 hover:text-slate-800 rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    Save Order
+                    <span>⚙️ Customize Sidebar</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={resetCustomization}
-                    className="w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-black transition cursor-pointer"
-                  >
-                    Reset Default
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsCustomizing(true)}
-                  className="w-full py-2 px-3 border border-dashed border-slate-300 hover:border-slate-400 text-slate-500 hover:text-slate-800 rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <span>⚙️ Customize Sidebar</span>
-                </button>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </aside>
 
-        {/* Main Content Area */}
-        <main className="flex-1 p-4 lg:p-8 overflow-y-auto bg-[#F7F9FC]">
+        {/* Main Content Area - Scrollable */}
+        <main className="flex-1 p-4 lg:p-8 overflow-y-auto h-full bg-[#F7F9FC]">
           <Outlet />
         </main>
       </div>

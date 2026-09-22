@@ -231,19 +231,43 @@ export default function Dashboard() {
     full_address: "",
   });
 
+  const DEFAULT_PRODUCTS = [
+    "GPS Vehicle & Fleet Tracking Software",
+    "Field Force Automation & CRM",
+    "IoT Telematics & Fuel Sensor",
+    "Smart Attendance & Biometric HRMS",
+    "Enterprise Asset Management",
+  ];
+
   const [productsList, setProductsList] = useState([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isLocationPickerOpen, setIsLocationPickerOpen] = useState(false);
-  const productOptions = productsList;
+  const productOptions = productsList.length > 0 ? productsList : DEFAULT_PRODUCTS;
 
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const res = await settingsAPI.getProducts();
-        if (res?.data?.products) {
-          const activeProds = res.data.products
-            .filter((p) => p.status === 'Active' || p.status === undefined)
-            .map((p) => p.name || p.product_name || p.productName);
+        let prodsArr = [];
+        const sRes = await settingsAPI.getSettings().catch(() => null);
+        if (sRes?.data?.products || sRes?.products) {
+          prodsArr = sRes?.data?.products || sRes?.products;
+        } else {
+          const pRes = await settingsAPI.getProducts().catch(() => null);
+          prodsArr = pRes?.data?.products || pRes?.products || (Array.isArray(pRes?.data) ? pRes.data : []);
+        }
+
+        if (!Array.isArray(prodsArr) || prodsArr.length === 0) {
+          try {
+            const cachedSettings = JSON.parse(localStorage.getItem("tc_admin_settings") || localStorage.getItem("tc_company_settings") || "{}");
+            if (Array.isArray(cachedSettings.products)) prodsArr = cachedSettings.products;
+          } catch (_) {}
+        }
+
+        if (Array.isArray(prodsArr) && prodsArr.length > 0) {
+          const activeProds = prodsArr
+            .filter((p) => p && (p.status === 'Active' || p.status === 'active' || p.status === undefined))
+            .map((p) => typeof p === 'string' ? p : (p.name || p.product_name || p.title || p.label))
+            .filter(Boolean);
           if (activeProds.length > 0) {
             setProductsList(activeProds);
           }
@@ -1471,7 +1495,7 @@ export default function Dashboard() {
       {/* ── SPACIOUS ADD NEW LEAD MODAL (SE Sourced Lead Entry via Quick Actions) ── */}
       {isAddLeadModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 sm:p-8 space-y-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto animate-fadeIn">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-5xl w-full p-6 sm:p-8 space-y-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto animate-fadeIn">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
@@ -1604,8 +1628,8 @@ export default function Dashboard() {
                 </div>
               </div>
 
-              {/* Email & City Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Email, Website & City Details */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="text-slate-800 font-extrabold block mb-1.5">Email Address</label>
                   <input
@@ -1613,6 +1637,17 @@ export default function Dashboard() {
                     placeholder="contact@company.com"
                     value={addLeadForm.email}
                     onChange={(e) => setAddLeadForm({ ...addLeadForm, email: e.target.value })}
+                    className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-800 font-extrabold block mb-1.5">Company Website URL</label>
+                  <input
+                    type="url"
+                    placeholder="e.g. https://company.com"
+                    value={addLeadForm.website || ""}
+                    onChange={(e) => setAddLeadForm({ ...addLeadForm, website: e.target.value })}
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
                   />
                 </div>

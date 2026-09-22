@@ -1911,7 +1911,11 @@ async def get_location_history(
         
         if raw_sess:
             start_t = str(raw_sess.get("start_time") or "")
-            if session_id or start_t.startswith(today_str):
+            sess_status = str(raw_sess.get("status") or "").lower()
+            # Only consider session valid if explicitly requested OR started today and active
+            if session_id:
+                session = raw_sess
+            elif start_t.startswith(today_str) and sess_status in ("active", "in_progress", "started", "travelling"):
                 session = raw_sess
         
         # Enrich session with client details (phone and product) if client_id exists
@@ -1946,66 +1950,27 @@ async def get_location_history(
     except Exception as e:
         logger.warning(f"session fetch: {e}")
 
+    # If no active session for today, return ended status and empty breadcrumbs so map clears completely
     if not session:
-        # Fallback: Check memory telemetry cache or hrms.employee_locations for latest position
-        latest_loc = None
-        for tid in target_ids:
-            if tid and str(tid).strip() in _live_executive_telemetry:
-                latest_loc = _live_executive_telemetry[str(tid).strip()]
-                break
-            if tid and str(tid).strip().lower() in _live_executive_telemetry:
-                latest_loc = _live_executive_telemetry[str(tid).strip().lower()]
-                break
+        return {
+            "success": True,
+            "employee_id": employee_id,
+            "session": None,
+            "tracking_status": "ended",
+            "breadcrumbs": []
+        }
 
-        if not latest_loc:
-            try:
-                loc_res = sp.schema("hrms").table("employee_locations").select("*").in_("employee_id", target_ids).limit(1).execute()
-                if loc_res.data:
-                    latest_loc = loc_res.data[0]
-            except Exception as loc_e:
-                logger.debug(f"Fallback employee_locations query notice: {loc_e}")
-
-        # Query any breadcrumbs recorded today for these target_ids
-        breadcrumbs = []
-        try:
-            loc_q = sp.schema("hrms").table("tracking_locations").select(
-                "id,latitude,longitude,accuracy,speed,heading,recorded_at"
-            ).in_("employee_id", target_ids).order("recorded_at").execute()
-            breadcrumbs = loc_q.data or []
-        except Exception as b_e:
-            logger.debug(f"Fallback tracking_locations query notice: {b_e}")
-
-        if latest_loc or breadcrumbs:
-            l_lat = latest_loc.get("latitude") if latest_loc else (breadcrumbs[-1]["latitude"] if breadcrumbs else None)
-            l_lng = latest_loc.get("longitude") if latest_loc else (breadcrumbs[-1]["longitude"] if breadcrumbs else None)
-            l_time = (latest_loc.get("last_seen_at") or latest_loc.get("timestamp")) if latest_loc else (breadcrumbs[-1]["recorded_at"] if breadcrumbs else datetime.datetime.utcnow().isoformat())
-            
-            session = {
-                "id": f"virtual_session_{employee_id}",
-                "employee_id": employee_id,
-                "status": "active",
-                "start_time": l_time,
-                "start_latitude": l_lat,
-                "start_longitude": l_lng,
-                "client_name": "Live GPS Tracking"
-            }
-        else:
-            return {"success": True, "session": None, "breadcrumbs": [], "employee_id": employee_id}
-
-    # Get breadcrumbs if session was found from DB
+    # Fetch ONLY the breadcrumbs belonging strictly to the current active session
     breadcrumbs = []
     try:
-        q_loc = sp.schema("hrms").table("tracking_locations").select(
-            "id,latitude,longitude,accuracy,speed,heading,recorded_at"
-        )
-        if session and session.get("id") and not str(session.get("id")).startswith("virtual_session_"):
-            q_loc = q_loc.eq("tracking_session_id", session["id"])
-        else:
-            q_loc = q_loc.in_("employee_id", target_ids)
-        loc_res = q_loc.order("recorded_at").execute()
-        breadcrumbs = loc_res.data or []
+        if session.get("id"):
+            loc_res = sp.schema("hrms").table("tracking_locations").select(
+                "id,latitude,longitude,accuracy,speed,heading,recorded_at"
+            ).eq("tracking_session_id", session["id"]).order("recorded_at").execute()
+            breadcrumbs = loc_res.data or []
     except Exception as e:
         logger.warning(f"breadcrumbs fetch: {e}")
+
 
     # Stale detection: no ping for > 5 min → stale
     tracking_status = session.get("status", "active")

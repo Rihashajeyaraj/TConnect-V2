@@ -254,7 +254,8 @@ export default function SalesHRMS(props) {
   };
 
   const [reportFilterMode, setReportFilterMode] = useState("THIS MONTH");
-  const [customDateFilter, setCustomDateFilter] = useState("");
+  const [customDateFilterFrom, setCustomDateFilterFrom] = useState("");
+  const [customDateFilterTo, setCustomDateFilterTo] = useState("");
 
   // ── Leave & Permission State ────────────────────────────────────────────────
   const [showLeaveModal, setShowLeaveModal] = useState(false);
@@ -263,7 +264,14 @@ export default function SalesHRMS(props) {
   const [leaveToDate, setLeaveToDate] = useState(new Date().toISOString().split("T")[0]);
   const [leaveTimeSlot, setLeaveTimeSlot] = useState("Full Day");
   const [leaveReason, setLeaveReason] = useState("");
-  const [myLeaveRequests, setMyLeaveRequests] = useState([]);
+  const [myLeaveRequests, setMyLeaveRequests] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem("tc_leave_requests") || "[]");
+      return Array.isArray(saved) ? filterUserItems(saved, currentUser) : [];
+    } catch {
+      return [];
+    }
+  });
   const [selectedLeaveDetailType, setSelectedLeaveDetailType] = useState(null);
 
   // ── Real Live Attendance Logs ────────────────────────────────────────────────
@@ -312,7 +320,7 @@ export default function SalesHRMS(props) {
         } else {
           const listRes = await hrmsAPI.getEmployees().catch(() => null);
           const allEmps = listRes?.data || [];
-          const userEmailStr = String(currentUser.email || '').toLowerCase().trim();
+          const userEmailStr = String(currentUser.email || userEmail || '').toLowerCase().trim();
           const empCodeStr = String(empCode || currentUser.employee_code || currentUser.employee_id || '').toLowerCase().trim();
           emp = allEmps.find(e => 
             (e.email && String(e.email).toLowerCase().trim() === userEmailStr) ||
@@ -323,13 +331,13 @@ export default function SalesHRMS(props) {
         if (emp) {
           const mapped = {
             fullName: emp.name || `${emp.first_name || ""} ${emp.last_name || ""}`.trim() || emp.fullName,
-            employeeId: emp.employee_code || emp.employee_id,
-            officialEmail: emp.email,
-            role: emp.role,
-            team: emp.department,
-            designation: emp.designation,
-            reportingManager: emp.reporting_manager_name || "Not Assigned",
-            reportingManagerEmail: emp.reporting_manager_email || "",
+            employeeId: emp.employee_code || emp.employee_id || empCode,
+            officialEmail: emp.email || userEmail,
+            role: emp.role || currentUser.role || "Sales Executive",
+            team: emp.department || currentUser.department || "Sales",
+            designation: emp.designation || currentUser.designation || "Sales Executive",
+            reportingManager: emp.reporting_manager_name || currentUser.reporting_manager_name || "Not Assigned",
+            reportingManagerEmail: emp.reporting_manager_email || currentUser.reporting_manager_email || "",
             annualLeaves: emp.annual_leaves ?? emp.annualLeaves,
             sickLeaves: emp.sick_leaves ?? emp.sickLeaves,
             otherLeaves: emp.other_leaves ?? emp.otherLeaves,
@@ -343,13 +351,35 @@ export default function SalesHRMS(props) {
           };
           setProfile(mapped);
           localStorage.setItem("tc_se_profile", JSON.stringify(mapped));
+        } else if (currentUser && (currentUser.email || currentUser.id)) {
+          const mapped = {
+            fullName: currentUser.name || currentUser.full_name || (userEmail ? userEmail.split("@")[0] : "Sales Executive"),
+            employeeId: empCode,
+            officialEmail: userEmail,
+            role: currentUser.role || "Sales Executive",
+            team: currentUser.department || "Sales",
+            designation: currentUser.designation || "Sales Executive",
+            reportingManager: currentUser.reporting_manager_name || "Not Assigned",
+            reportingManagerEmail: currentUser.reporting_manager_email || "",
+            annualLeaves: currentUser.annual_leaves ?? currentUser.annualLeaves ?? 12,
+            sickLeaves: currentUser.sick_leaves ?? currentUser.sickLeaves ?? 10,
+            otherLeaves: currentUser.other_leaves ?? currentUser.otherLeaves ?? 10,
+            halfDayPermissions: currentUser.half_day_permissions ?? currentUser.halfDayPermissions ?? 6,
+            shortPermissions: currentUser.short_permissions ?? currentUser.shortPermissions ?? 2,
+            annual_leaves: currentUser.annual_leaves ?? currentUser.annualLeaves ?? 12,
+            sick_leaves: currentUser.sick_leaves ?? currentUser.sickLeaves ?? 10,
+            other_leaves: currentUser.other_leaves ?? currentUser.otherLeaves ?? 10,
+            half_day_permissions: currentUser.half_day_permissions ?? currentUser.halfDayPermissions ?? 6,
+            short_permissions: currentUser.short_permissions ?? currentUser.shortPermissions ?? 2,
+          };
+          setProfile(prev => ({ ...mapped, ...prev }));
         }
       } catch (err) {
         console.warn("Could not load employee profile for leaves:", err);
       }
     }
     loadUserProfile();
-  }, [empCode, userEmail]);
+  }, [empCode, userEmail, currentUser.id, currentUser.email]);
 
 
   const isUserAdmin = currentUser.role?.includes('Admin') || profile.role?.includes('Admin') || String(currentUser.role).toLowerCase().includes('admin');
@@ -381,59 +411,58 @@ export default function SalesHRMS(props) {
     }
   }, [isUserAdmin]);
 
-
-
   useEffect(() => {
     attendanceAPI.getLogs()
       .then((res) => {
         const raw = Array.isArray(res) ? res : (res?.data || []);
+        const localSaved = JSON.parse(localStorage.getItem("tc_attendance_logs") || "[]");
+        let scoped = [];
         if (Array.isArray(raw) && raw.length > 0) {
-          const userEmailStr = String(currentUser.email || '').toLowerCase().trim();
-          const userEmpCodeStr = String(empCode || currentUser.employee_code || currentUser.employee_id || '').toLowerCase().trim();
-          const userIdStr = String(currentUser.id || '').toLowerCase().trim();
-
-          const scoped = raw.filter(p => {
-            const pId = String(p.employee_id || p.user_id || '').toLowerCase().trim();
-            const pEmail = String(p.email || p.user_email || '').toLowerCase().trim();
-            return (userEmpCodeStr && pId === userEmpCodeStr) || (userIdStr && pId === userIdStr) || (userEmailStr && pEmail === userEmailStr);
-          });
-
-          setRealAttendanceLogs((prev) => {
-            const merged = [...scoped];
-            prev.forEach((p) => {
-              const pDate = p.date || p.attendance_date;
-              const pIn = p.loginTime || p.check_in_time;
-              if (!merged.some((m) => (m.date === pDate || m.attendance_date === pDate) && (m.loginTime === pIn || m.check_in_time === pIn))) {
-                merged.unshift(p);
-              }
-            });
-            return merged;
-          });
+          scoped = filterUserItems(raw, currentUser);
         }
-      })
-      .catch(() => null);
-  }, []);
 
-  // Fetch Leave & Permission requests from API on mount
+        const merged = [...scoped];
+        const localUserItems = filterUserItems(localSaved, currentUser);
+        localUserItems.forEach((p) => {
+          const pDate = p.date || p.attendance_date;
+          const pIn = p.loginTime || p.check_in_time;
+          if (!merged.some((m) => (m.date === pDate || m.attendance_date === pDate) && (m.loginTime === pIn || m.check_in_time === pIn))) {
+            merged.unshift(p);
+          }
+        });
+        setRealAttendanceLogs(merged);
+      })
+      .catch(() => {
+        const localSaved = JSON.parse(localStorage.getItem("tc_attendance_logs") || "[]");
+        setRealAttendanceLogs(filterUserItems(localSaved, currentUser));
+      });
+  }, [currentUser.id, currentUser.email, currentUser.employee_code, empCode]);
+
+  // Fetch Leave & Permission requests from API on mount & auth changes
   useEffect(() => {
     attendanceAPI.getLeaveRequests()
       .then((res) => {
         const raw = Array.isArray(res) ? res : (res?.data || []);
-        if (Array.isArray(raw)) {
-          const userEmailStr = String(currentUser.email || '').toLowerCase().trim();
-          const userEmpCodeStr = String(empCode || currentUser.employee_code || currentUser.employee_id || '').toLowerCase().trim();
-          const userIdStr = String(currentUser.id || '').toLowerCase().trim();
-
-          const scoped = raw.filter(p => {
-            const pId = String(p.employee_id || p.user_id || p.employee_code || '').toLowerCase().trim();
-            const pEmail = String(p.email || p.executive_email || p.user_email || '').toLowerCase().trim();
-            return (userEmpCodeStr && pId === userEmpCodeStr) || (userIdStr && pId === userIdStr) || (userEmailStr && pEmail === userEmailStr);
-          });
-          setMyLeaveRequests(scoped);
+        const localSaved = JSON.parse(localStorage.getItem("tc_leave_requests") || "[]");
+        let scoped = [];
+        if (Array.isArray(raw) && raw.length > 0) {
+          scoped = filterUserItems(raw, currentUser);
         }
+
+        const merged = [...scoped];
+        const localUserItems = filterUserItems(localSaved, currentUser);
+        localUserItems.forEach((l) => {
+          if (!merged.some((m) => m.id === l.id || (m.from_date === l.from_date && m.leave_type === l.leave_type))) {
+            merged.push(l);
+          }
+        });
+        setMyLeaveRequests(merged);
       })
-      .catch(() => null);
-  }, []);
+      .catch(() => {
+        const localSaved = JSON.parse(localStorage.getItem("tc_leave_requests") || "[]");
+        setMyLeaveRequests(filterUserItems(localSaved, currentUser));
+      });
+  }, [currentUser.id, currentUser.email, currentUser.employee_code, empCode]);
 
   const handleSubmitLeaveRequest = async (e) => {
     e.preventDefault();
@@ -526,6 +555,10 @@ export default function SalesHRMS(props) {
     };
 
     setMyLeaveRequests((prev) => [payload, ...prev]);
+    try {
+      const savedLeaves = JSON.parse(localStorage.getItem("tc_leave_requests") || "[]");
+      localStorage.setItem("tc_leave_requests", JSON.stringify([payload, ...savedLeaves]));
+    } catch (_) {}
     setShowLeaveModal(false);
     setLeaveReason("");
 
@@ -725,9 +758,15 @@ export default function SalesHRMS(props) {
     if (reportFilterMode === "THIS MONTH") {
       return logDate.getFullYear() === todayObj.getFullYear() && logDate.getMonth() === todayObj.getMonth();
     }
-    if (reportFilterMode === "CUSTOM" && customDateFilter) {
-      const customDateObj = new Date(customDateFilter);
-      return !isNaN(customDateObj.getTime()) && isSameDay(logDate, customDateObj);
+    if (reportFilterMode === "CUSTOM") {
+      if (!customDateFilterFrom && !customDateFilterTo) return true;
+      const logYear = logDate.getFullYear();
+      const logMonth = String(logDate.getMonth() + 1).padStart(2, "0");
+      const logDay = String(logDate.getDate()).padStart(2, "0");
+      const logFormatted = `${logYear}-${logMonth}-${logDay}`;
+      if (customDateFilterFrom && logFormatted < customDateFilterFrom) return false;
+      if (customDateFilterTo && logFormatted > customDateFilterTo) return false;
+      return true;
     }
     return true;
   });
@@ -750,10 +789,11 @@ export default function SalesHRMS(props) {
     : (dynamicPresentCount === 0 && (reportFilterMode === "TODAY" || reportFilterMode === "YESTERDAY") ? 1 : 0);
 
   return (
-    <div className="space-y-4 sm:space-y-6 font-sans text-slate-900 min-w-0 w-full p-1 sm:p-6 overflow-x-hidden">
+    <div className="space-y-4 sm:space-y-6 font-sans text-slate-900 min-w-0 w-full p-1 sm:p-6 overflow-x-clip">
 
-      {/* Top Header & Sub-Navigation Tabs */}
-      <div className="bg-white rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200 shadow-xs space-y-3 sm:space-y-4 min-w-0">
+      {/* Top Header & Sub-Navigation Tabs - Static & Sticky Header */}
+      <div className="sticky -top-1 sm:-top-6 z-40 bg-white/95 backdrop-blur-md rounded-2xl sm:rounded-3xl p-3 sm:p-5 border border-slate-200 shadow-md space-y-3 sm:space-y-4 min-w-0">
+
         <div className="flex flex-wrap items-center justify-between gap-2.5 sm:gap-4 min-w-0">
           <div className="min-w-0 flex-1">
             <h1 className="text-lg sm:text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2 truncate">
@@ -864,16 +904,28 @@ export default function SalesHRMS(props) {
                   ))}
                 </div>
 
-                {/* Custom Date Input */}
+                {/* Custom Date Inputs (From & To) */}
                 {reportFilterMode === "CUSTOM" && (
-                  <div className="flex items-center gap-1.5 border border-slate-200 rounded-lg px-2.5 py-1 bg-white text-[11px] font-bold text-slate-700 shadow-2xs">
-                    <span className="text-slate-400 font-medium">Select Date:</span>
-                    <input
-                      type="date"
-                      value={customDateFilter}
-                      onChange={(e) => setCustomDateFilter(e.target.value)}
-                      className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
-                    />
+                  <div className="flex flex-wrap items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1 bg-white text-[11px] font-bold text-slate-700 shadow-2xs">
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-400 font-medium">From:</span>
+                      <input
+                        type="date"
+                        value={customDateFilterFrom}
+                        onChange={(e) => setCustomDateFilterFrom(e.target.value)}
+                        className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
+                      />
+                    </div>
+                    <span className="text-slate-300 font-normal">|</span>
+                    <div className="flex items-center gap-1">
+                      <span className="text-slate-400 font-medium">To:</span>
+                      <input
+                        type="date"
+                        value={customDateFilterTo}
+                        onChange={(e) => setCustomDateFilterTo(e.target.value)}
+                        className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
+                      />
+                    </div>
                   </div>
                 )}
               </div>
@@ -921,9 +973,15 @@ export default function SalesHRMS(props) {
                     if (reportFilterMode === "THIS MONTH") {
                       return logDate.getFullYear() === todayObj.getFullYear() && logDate.getMonth() === todayObj.getMonth();
                     }
-                    if (reportFilterMode === "CUSTOM" && customDateFilter) {
-                      const customDateObj = new Date(customDateFilter);
-                      return !isNaN(customDateObj.getTime()) && isSameDay(logDate, customDateObj);
+                    if (reportFilterMode === "CUSTOM") {
+                      if (!customDateFilterFrom && !customDateFilterTo) return true;
+                      const logYear = logDate.getFullYear();
+                      const logMonth = String(logDate.getMonth() + 1).padStart(2, "0");
+                      const logDay = String(logDate.getDate()).padStart(2, "0");
+                      const logFormatted = `${logYear}-${logMonth}-${logDay}`;
+                      if (customDateFilterFrom && logFormatted < customDateFilterFrom) return false;
+                      if (customDateFilterTo && logFormatted > customDateFilterTo) return false;
+                      return true;
                     }
                     return true;
                   });

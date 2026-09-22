@@ -32,6 +32,8 @@ import {
   Upload,
   Eye,
   UserCheck,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 import { hrmsAPI } from '../../services/api.js'
 import TwiteConnectLogo from '../../common/TwiteConnectLogo.jsx'
@@ -493,35 +495,45 @@ export default function TeamLeadLayout() {
     window.location.href = '/'
   }
 
-  return (
-    <div className="min-h-screen bg-[#FAF6F0] text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
+  const [isSidebarMinimized, setIsSidebarMinimized] = useState(() => localStorage.getItem("tc_sidebar_minimized") === "true");
 
-      {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
-      <header className="relative h-16 bg-[#FCF9F5] border-b border-[#E8D8C8] flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
+  const toggleSidebarMinimize = () => {
+    setIsSidebarMinimized((prev) => {
+      const next = !prev;
+      localStorage.setItem("tc_sidebar_minimized", String(next));
+      return next;
+    });
+  };
+
+  return (
+    <div className="h-screen overflow-hidden bg-[#FAF7F2] text-slate-800 flex flex-col font-sans relative antialiased">
+
+      {/* ── Top Bar (Fixed) ───────────────────────────────────────────────── */}
+      <header className="h-16 bg-white border-b border-[#E8D8C8] flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="mgr-card lg:hidden p-2 rounded-lg text-[#6B4E3D] hover:bg-[#F3ECE2] cursor-pointer"
+            className="mgr-card lg:hidden p-2 rounded-lg text-[#543D30] hover:bg-[#F3ECE2] cursor-pointer"
             aria-label="Toggle Navigation Sidebar"
           >
             {sidebarOpen ? <X className="w-6 h-6" /> : <Menu className="w-6 h-6" />}
           </button>
-          <Link to="/team-lead" className="flex items-center gap-2.5">
+          <Link to="/team-lead/dashboard" className="flex items-center gap-2.5">
             <TwiteConnectLogo className="w-9 h-9" />
           </Link>
         </div>
 
-        {/* Center: Metallic Shimmer Indicator */}
+        {/* Center: Metallic Shimmer Indicator for Team Lead */}
         <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
-          <div className="flex items-center gap-3 bg-[#FAF3EB] border border-[#E0D0C0] rounded-full px-6 py-2.5 shadow-xs pointer-events-auto">
+          <div className="flex items-center gap-3 bg-white border border-[#E8D8C8] rounded-full px-6 py-2.5 shadow-sm pointer-events-auto">
             <span className="relative flex h-3 w-3">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#D49A6A] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-3 w-3 bg-[#D49A6A]"></span>
+              <span className="relative inline-flex rounded-full h-3 w-3 bg-[#966038]"></span>
             </span>
             <span
               className="text-sm uppercase tracking-[0.3em] font-black"
               style={{
-                background: 'linear-gradient(to right, #543D30 20%, #D49A6A 40%, #E2B284 60%, #543D30 80%)',
+                background: 'linear-gradient(to right, #543D30 20%, #966038 40%, #D49A6A 60%, #543D30 80%)',
                 backgroundSize: '200% auto',
                 color: 'transparent',
                 WebkitBackgroundClip: 'text',
@@ -530,15 +542,8 @@ export default function TeamLeadLayout() {
                 display: 'inline-block'
               }}
             >
-              Team Lead Portal
+              Sales Team Lead
             </span>
-            <style>{`
-              @keyframes tc-shimmer {
-                to {
-                  background-position: -200% center;
-                }
-              }
-            `}</style>
           </div>
         </div>
 
@@ -647,12 +652,12 @@ export default function TeamLeadLayout() {
       </header>
 
       {/* ── Main Layout ───────────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-w-0">
+      <div className="flex flex-1 min-h-0 min-w-0 relative overflow-hidden">
         {sidebarOpen && (
           <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 lg:hidden transition-opacity" />
         )}
 
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-[#543D30] border-r border-[#422E22] transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 shrink-0 flex flex-col shadow-xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <aside className={`fixed inset-y-0 left-0 z-40 ${isSidebarMinimized ? "lg:w-20" : "lg:w-72"} w-72 bg-[#543D30] border-r border-[#422E22] transform transition-all duration-200 ease-in-out lg:translate-x-0 lg:static shrink-0 flex flex-col h-full shadow-xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#422E22] shrink-0">
             <div className="flex items-center gap-2">
               <span className="w-6 h-6 rounded-lg bg-[#D49A6A] flex items-center justify-center text-[#422E22] text-[10px] font-black">TC</span>
@@ -666,33 +671,56 @@ export default function TeamLeadLayout() {
             </button>
           </div>
 
-          <div className="p-4 flex-1 overflow-y-auto space-y-6 flex flex-col">
-            <div className="flex items-center justify-between px-2 pt-2">
-              <span className="text-[10px] font-extrabold text-[#E8D8C8]/80 uppercase tracking-widest">Navigation</span>
-              {!isCustomizing ? (
-                <button
-                  onClick={() => setIsCustomizing(true)}
-                  className="text-[10px] font-extrabold text-amber-200 hover:text-white transition flex items-center gap-1 cursor-pointer bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md"
-                >
-                  <GripVertical size={11} /> Reorder
-                </button>
+          {/* Desktop Minimize/Maximize Toggle Button */}
+          <div className="hidden lg:flex items-center justify-end px-3 py-2 border-b border-white/10">
+            <button
+              type="button"
+              onClick={toggleSidebarMinimize}
+              className={`p-1.5 rounded-xl hover:bg-white/10 text-amber-100 hover:text-white transition cursor-pointer flex items-center gap-2 ${
+                isSidebarMinimized ? "w-full justify-center" : ""
+              }`}
+              title={isSidebarMinimized ? "Maximize Sidebar" : "Minimize Sidebar"}
+            >
+              {isSidebarMinimized ? (
+                <PanelLeftOpen size={18} className="text-[#D49A6A]" />
               ) : (
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={saveCustomization}
-                    className="text-[10px] font-extrabold text-emerald-300 hover:text-white bg-emerald-700/60 hover:bg-emerald-600 px-2 py-0.5 rounded-md cursor-pointer transition"
-                  >
-                    Save
-                  </button>
-                  <button
-                    onClick={resetCustomization}
-                    className="text-[10px] font-extrabold text-slate-300 hover:text-white bg-slate-700/60 px-1.5 py-0.5 rounded-md cursor-pointer transition"
-                  >
-                    Reset
-                  </button>
-                </div>
+                <>
+                  <span className="text-[11px] font-bold text-amber-200/80 uppercase tracking-wider">Minimize</span>
+                  <PanelLeftClose size={16} />
+                </>
               )}
-            </div>
+            </button>
+          </div>
+
+          <div className="p-3 flex-1 overflow-y-auto space-y-4 flex flex-col">
+            {!isSidebarMinimized && (
+              <div className="flex items-center justify-between px-2 pt-2">
+                <span className="text-[10px] font-extrabold text-[#E8D8C8]/80 uppercase tracking-widest">Navigation</span>
+                {!isCustomizing ? (
+                  <button
+                    onClick={() => setIsCustomizing(true)}
+                    className="text-[10px] font-extrabold text-amber-200 hover:text-white transition flex items-center gap-1 cursor-pointer bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded-md"
+                  >
+                    <GripVertical size={11} /> Reorder
+                  </button>
+                ) : (
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      onClick={saveCustomization}
+                      className="text-[10px] font-extrabold text-emerald-300 hover:text-white bg-emerald-700/60 hover:bg-emerald-600 px-2 py-0.5 rounded-md cursor-pointer transition"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={resetCustomization}
+                      className="text-[10px] font-extrabold text-slate-300 hover:text-white bg-slate-700/60 px-1.5 py-0.5 rounded-md cursor-pointer transition"
+                    >
+                      Reset
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             <nav className="space-y-1 flex-1">
               {sidebarItems.map((item, index) => {
@@ -702,12 +730,12 @@ export default function TeamLeadLayout() {
                 return (
                   <div
                     key={item.path}
-                    draggable={isCustomizing}
+                    draggable={isCustomizing && !isSidebarMinimized}
                     onDragStart={(e) => handleDragStart(e, index)}
                     onDragOver={(e) => handleDragOver(e, index)}
                     onDrop={(e) => handleDrop(e, index)}
                     onDragEnd={handleDragEnd}
-                    className={`relative group ${isCustomizing ? 'cursor-grab active:cursor-grabbing' : ''}`}
+                    className={`relative group ${isCustomizing && !isSidebarMinimized ? 'cursor-grab active:cursor-grabbing' : ''}`}
                   >
                     <NavLink
                       to={item.path}
@@ -715,39 +743,52 @@ export default function TeamLeadLayout() {
                         if (isCustomizing) e.preventDefault()
                         else setSidebarOpen(false)
                       }}
-                      className={`flex items-center gap-3 px-3.5 py-3 rounded-xl font-bold text-xs transition duration-150 ${
+                      title={item.label}
+                      className={`flex items-center ${isSidebarMinimized ? "justify-center p-3" : "gap-3 px-3.5 py-3"} rounded-xl font-bold text-xs transition duration-150 ${
                         isActive
                           ? 'bg-[#966038] text-white shadow-sm shadow-[#966038]/40 font-black'
                           : 'text-[#E8D8C8] hover:bg-[#6B4E3D]/60 hover:text-white'
                       }`}
                     >
-                      {isCustomizing && (
+                      {isCustomizing && !isSidebarMinimized && (
                         <GripVertical size={14} className="text-amber-200/50 shrink-0 animate-pulse" />
                       )}
-                      <Icon className={`w-4 h-4 shrink-0 transition ${isActive ? 'text-[#FFF8F0]' : 'text-[#D49A6A] group-hover:text-[#FFF8F0]'}`} />
-                      <span className="truncate">{item.label}</span>
+                      <div className="relative flex items-center justify-center shrink-0">
+                        <Icon className={`w-4 h-4 shrink-0 transition ${isActive ? 'text-[#FFF8F0]' : 'text-[#D49A6A] group-hover:text-[#FFF8F0]'}`} />
+                        {isSidebarMinimized && unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
+                          <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
+                        )}
+                      </div>
+                      {!isSidebarMinimized && <span className="truncate">{item.label}</span>}
+                      {!isSidebarMinimized && unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
+                        <span className="ml-auto bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
+                          🔴 {unreadCount > 99 ? '99+' : unreadCount}
+                        </span>
+                      )}
                     </NavLink>
                   </div>
                 )
               })}
             </nav>
 
-            <div className="pt-4 border-t border-white/10 mt-auto">
-              <div className="bg-[#422E22]/60 rounded-2xl p-3 border border-[#D49A6A]/30 flex items-center gap-3">
-                <div className="w-8 h-8 rounded-xl bg-[#966038] text-white flex items-center justify-center font-black text-xs shrink-0">
-                  {displayInitials}
-                </div>
-                <div className="min-w-0">
-                  <p className="text-xs font-black text-white truncate">{displayName}</p>
-                  <p className="text-[10px] text-amber-200/90 font-bold">Team Lead Manager</p>
+            {!isSidebarMinimized && (
+              <div className="pt-4 border-t border-white/10 mt-auto">
+                <div className="bg-[#422E22]/60 rounded-2xl p-3 border border-[#D49A6A]/30 flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-xl bg-[#966038] text-white flex items-center justify-center font-black text-xs shrink-0">
+                    {displayInitials}
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs font-black text-white truncate">{displayName}</p>
+                    <p className="text-[10px] text-amber-200/90 font-bold">Team Lead Manager</p>
+                  </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         </aside>
 
-        {/* Workspace Content */}
-        <main className={`flex-1 min-w-0 ${
+        {/* Workspace Content - Scrollable Main Area */}
+        <main className={`flex-1 min-w-0 h-full ${
           isMapPage 
             ? "p-0 overflow-hidden h-[calc(100vh-64px)] lg:h-[calc(100vh-80px)] lg:p-6 lg:pb-6" 
             : "p-4 lg:p-6 overflow-y-auto"

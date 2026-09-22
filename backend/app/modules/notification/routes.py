@@ -77,7 +77,79 @@ async def mark_notification_as_read(
     )
 
 
+@router.post("/mark-all-read", response_model=StandardResponse)
+@router.patch("/mark-all-read", response_model=StandardResponse)
+async def mark_all_notifications_as_read(
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanViewNotifications),
+    service: NotificationService = Depends(get_service)
+):
+    """Mark all notifications for current user as read in one batch query."""
+    user_id = user_payload.get("sub") or user_payload.get("user_id") or ""
+    res = service.mark_all_as_read(user_id, user_payload)
+    return StandardResponse.success_response(
+        data=res,
+        message="All notifications marked as read successfully"
+    )
+
+
+
+# ── Live Chat Endpoints ───────────────────────────────────────────────────────
+
+class ChatMessageCreate(BaseModel):
+    recipient_id: Optional[str] = None
+    recipient_name: Optional[str] = None
+    recipient_email: Optional[str] = None
+    contact_type: Optional[str] = "reporting_manager"
+    message_text: str
+
+
+@router.get("/chat/contacts", response_model=StandardResponse)
+async def get_chat_contacts(
+    user_payload: dict = Depends(get_current_user_payload),
+    service: NotificationService = Depends(get_service)
+):
+    """Get chat contacts for current user (Reporting Manager, Team Lead, Peers, HR)."""
+    contacts = service.get_chat_contacts(user_payload)
+    return StandardResponse.success_response(
+        data=contacts,
+        message="Chat contacts retrieved successfully"
+    )
+
+
+@router.get("/chat/messages", response_model=StandardResponse)
+async def get_chat_messages(
+    contact_type: Optional[str] = None,
+    contact_id: Optional[str] = None,
+    contact_email: Optional[str] = None,
+    user_payload: dict = Depends(get_current_user_payload),
+    service: NotificationService = Depends(get_service)
+):
+    """Get chat messages for current user and selected contact."""
+    messages = service.get_chat_messages(user_payload, contact_type=contact_type, contact_id=contact_id, contact_email=contact_email)
+    return StandardResponse.success_response(
+        data=messages,
+        message="Chat messages retrieved successfully"
+    )
+
+
+@router.post("/chat/messages", response_model=StandardResponse, status_code=status.HTTP_201_CREATED)
+async def send_chat_message(
+    body: ChatMessageCreate,
+    user_payload: dict = Depends(get_current_user_payload),
+    service: NotificationService = Depends(get_service)
+):
+    """Send a chat message to a contact."""
+    msg = service.send_chat_message(user_payload, body.model_dump())
+    return StandardResponse.success_response(
+        data=msg,
+        message="Chat message sent successfully"
+    )
+
+
+
 # ── Web Push Subscription ─────────────────────────────────────────────────────
+
 
 class PushSubscriptionRequest(BaseModel):
     endpoint: str

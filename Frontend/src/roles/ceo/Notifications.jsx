@@ -403,9 +403,21 @@ function Notifications() {
     loadNotifications()
   }, [])
 
-  const markAllRead = () => {
-    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false })))
+  const markAllRead = async () => {
+    setNotifications((prev) => prev.map((n) => ({ ...n, unread: false, read: true, is_read: true })))
     showToast('All notifications marked as read', 'success')
+    try {
+      localStorage.setItem("tc_unread_message_count", "0")
+      if (typeof window !== "undefined" && "navigator" in window && "clearAppBadge" in navigator) {
+        navigator.clearAppBadge().catch(() => {})
+      }
+    } catch (e) {}
+
+    try {
+      await notificationAPI.markAllRead()
+    } catch (e) {
+      console.warn('Mark all read sync error:', e)
+    }
   }
 
   const markSingleRead = (id) => {

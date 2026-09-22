@@ -26,6 +26,8 @@ try {
 } catch (e) {}
 
 import MAP_CONFIG from '../../config/mapConfig.js'
+import { snapToRoadGeometry } from '../../utils/roadSnapping.js'
+import { enqueueOfflineCrumb, flushOfflineQueue } from '../../utils/offlineQueue.js'
 
 // ─── Configuration (Centralized Technical Thresholds & Fallback Viewport) ─────
 const ROUTE_REFETCH_DISTANCE_KM = MAP_CONFIG.ROUTE_REFETCH_DISTANCE_KM
@@ -213,6 +215,60 @@ function initializeHTMLMapMarker() {
     getPosition() {
       return this.latlng
     }
+
+    animateTo(newLatLng, duration = 800, targetHeading = null) {
+      if (!this.latlng || !newLatLng) {
+        this.setLatLng(newLatLng)
+        return
+      }
+
+      const startLat = typeof this.latlng.lat === 'function' ? this.latlng.lat() : this.latlng.lat
+      const startLng = typeof this.latlng.lng === 'function' ? this.latlng.lng() : this.latlng.lng
+      const endLat = typeof newLatLng.lat === 'function' ? newLatLng.lat() : newLatLng.lat
+      const endLng = typeof newLatLng.lng === 'function' ? newLatLng.lng() : newLatLng.lng
+
+      if (Math.abs(startLat - endLat) < 0.000005 && Math.abs(startLng - endLng) < 0.000005) return
+
+      let heading = targetHeading
+      if (heading === null || heading === undefined) {
+        const dLng = (endLng - startLng) * Math.PI / 180
+        const y = Math.sin(dLng) * Math.cos(endLat * Math.PI / 180)
+        const x = Math.cos(startLat * Math.PI / 180) * Math.sin(endLat * Math.PI / 180) -
+                  Math.sin(startLat * Math.PI / 180) * Math.cos(endLat * Math.PI / 180) * Math.cos(dLng)
+        heading = (Math.atan2(y, x) * 180 / Math.PI + 360) % 360
+      }
+
+      if (this.div) {
+        const riderImg = this.div.querySelector('img')
+        if (riderImg) {
+          riderImg.style.transition = 'transform 0.4s ease'
+          riderImg.style.transform = `rotate(${heading}deg)`
+        }
+      }
+
+      if (this.animId) cancelAnimationFrame(this.animId)
+
+      const startTime = performance.now()
+      const animateStep = (now) => {
+        const elapsed = now - startTime
+        const progress = Math.min(elapsed / duration, 1)
+        const ease = progress * (2 - progress)
+
+        const curLat = startLat + (endLat - startLat) * ease
+        const curLng = startLng + (endLng - startLng) * ease
+
+        this.latlng = new window.google.maps.LatLng(curLat, curLng)
+        this.draw()
+
+        if (progress < 1) {
+          this.animId = requestAnimationFrame(animateStep)
+        } else {
+          this.animId = null
+        }
+      }
+
+      this.animId = requestAnimationFrame(animateStep)
+    }
   }
   return HTMLMapMarker
 }
@@ -226,6 +282,27 @@ function createMapMarker(latlng, map, html, onClick, anchor = 'center') {
   return new HTMLMapMarker(latlng, map, html, onClick, anchor)
 }
 
+export function loadLeaflet() {
+  if (typeof window === 'undefined') return Promise.reject(new Error('Window not defined'))
+  if (window.L && typeof window.L.map === 'function') {
+    return Promise.resolve(window.L)
+  }
+  return new Promise((resolve, reject) => {
+    if (!document.getElementById('leaflet-css')) {
+      const link = document.createElement('link')
+      link.id = 'leaflet-css'
+      link.rel = 'stylesheet'
+      link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css'
+      document.head.appendChild(link)
+    }
+    const script = document.createElement('script')
+    script.src = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.js'
+    script.onload = () => resolve(window.L)
+    script.onerror = (err) => reject(err)
+    document.head.appendChild(script)
+  })
+}
+
 // ─── Main Component ───────────────────────────────────────────────────────────
 export default function SmartClientMap({ isManagerView = false }) {
   const { showToast } = useToast()
@@ -236,6 +313,7 @@ export default function SmartClientMap({ isManagerView = false }) {
   // Refs
   const mapContainerRef  = useRef(null)
   const googleMapRef     = useRef(null)
+  const leafletMapRef    = useRef(null)
   const execMarkerRef    = useRef(null)
   const activeMarkersRef = useRef([])
   const activePolylinesRef = useRef([])
@@ -252,6 +330,7 @@ export default function SmartClientMap({ isManagerView = false }) {
   const startMarkerRef   = useRef(null)         // Green START point marker
   const trailPointsRef   = useRef([])           // Breadcrumb points array
   const lastTelemetryUpdate = useRef(0)         // throttled updates tracking
+  const lastBroadcastTime   = useRef(0)         // throttled 1s broadcast tracking
   const lastUiRenderTime = useRef(0)            // P2 throttled React UI renders tracking
   const hasCenteredOnGpsRef = useRef(false)     // initial GPS pan tracking
 
@@ -567,11 +646,15 @@ export default function SmartClientMap({ isManagerView = false }) {
       setGoogleMapsApiKey(cachedKey)
       loadGoogleMaps(cachedKey)
         .then(maps => {
-          if (!maps) return
-          initializeHTMLMapMarker()
+          if (maps && window.google?.maps?.Map) {
+            initializeHTMLMapMarker()
+          }
           setMapLoaded(true)
         })
-        .catch(err => console.warn('Cached Google Maps load notice:', err))
+        .catch(err => {
+          console.warn('Cached Google Maps load notice, loading Leaflet fallback:', err)
+          loadLeaflet().then(() => setMapLoaded(true)).catch(() => setMapLoaded(true))
+        })
     }
 
     settingsAPI.getConfig()
@@ -581,17 +664,25 @@ export default function SmartClientMap({ isManagerView = false }) {
           setGpsAccuracyThreshold(Number(threshold))
         }
         const key = res?.data?.google_maps_api_key
-        if (!key) return
-        localStorage.setItem('tc_gmaps_key', key)
-        setGoogleMapsApiKey(key)
-        return loadGoogleMaps(key)
+        if (!key && !cachedKey) {
+          return loadLeaflet()
+        }
+        if (key) {
+          localStorage.setItem('tc_gmaps_key', key)
+          setGoogleMapsApiKey(key)
+          return loadGoogleMaps(key)
+        }
       })
       .then(maps => {
-        if (!maps) return
-        initializeHTMLMapMarker()
+        if (maps && window.google?.maps?.Map) {
+          initializeHTMLMapMarker()
+        }
         setMapLoaded(true)
       })
-      .catch(err => console.error('Failed to load Google Maps SDK:', err))
+      .catch(err => {
+        console.error('Failed to load Google Maps SDK, initializing Leaflet fallback:', err)
+        loadLeaflet().then(() => setMapLoaded(true)).catch(() => setMapLoaded(true))
+      })
   }, [])
   const [selectedStop,  setSelectedStop]  = useState(null)     // current destination
   const [routePath,     setRoutePath]     = useState([])       // [[lat,lng],…]
@@ -620,7 +711,18 @@ export default function SmartClientMap({ isManagerView = false }) {
     // Fast initial position fix (low accuracy, instant return ~50ms)
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        const { latitude, longitude, accuracy } = pos.coords
+        const { latitude, longitude, accuracy, speed, heading } = pos.coords
+        const newPos = { lat: latitude, lng: longitude }
+        execPosRef.current = newPos
+        if (execMarkerRef.current) {
+          if (typeof execMarkerRef.current.animateTo === 'function') {
+            execMarkerRef.current.animateTo(newPos, 800, heading)
+          } else if (typeof execMarkerRef.current.setPosition === 'function') {
+            execMarkerRef.current.setPosition(newPos)
+          } else if (typeof execMarkerRef.current.setLatLng === 'function') {
+            execMarkerRef.current.setLatLng(newPos)
+          }
+        }
         setExecutivePos({ lat: latitude, lng: longitude })
         setGpsAccuracy(accuracy || null)
         setGpsStatus('active')
@@ -665,7 +767,9 @@ export default function SmartClientMap({ isManagerView = false }) {
         const newPos = { lat: latitude, lng: longitude }
         execPosRef.current = newPos
         if (execMarkerRef.current) {
-          if (typeof execMarkerRef.current.setPosition === 'function') {
+          if (typeof execMarkerRef.current.animateTo === 'function') {
+            execMarkerRef.current.animateTo(newPos, 800, heading)
+          } else if (typeof execMarkerRef.current.setPosition === 'function') {
             execMarkerRef.current.setPosition(newPos)
           } else if (typeof execMarkerRef.current.setLatLng === 'function') {
             execMarkerRef.current.setLatLng(newPos)
@@ -681,68 +785,78 @@ export default function SmartClientMap({ isManagerView = false }) {
           setGpsStatus('active')
         }
 
-        // Rapid backend telemetry & live cross-device streaming for Manager & TeamLead maps
         const now = Date.now()
-        if (now - lastTelemetryUpdate.current > 1000) {
-          lastTelemetryUpdate.current = now
-          const payload = {
-            employee_id:   empId,
-            employee_code: empCode,
-            email:         currentUser?.email || 'executive@tconnect.com',
-            name:          currentUser?.name  || currentUser?.full_name || 'Sales Executive',
-            latitude, longitude,
-            accuracy: accuracy || 0.0,
-            speed: speed || null,
-            heading: heading || null,
-            recorded_at: new Date().toISOString()
-          }
+        const payload = {
+          employee_id:   empId,
+          employee_code: empCode,
+          email:         currentUser?.email || 'executive@tconnect.com',
+          name:          currentUser?.name  || currentUser?.full_name || 'Sales Executive',
+          latitude, longitude,
+          accuracy: accuracy || 0.0,
+          speed: speed || null,
+          heading: heading || null,
+          recorded_at: new Date().toISOString()
+        }
 
-          // 1. Update live telemetry API
-          spatialAPI.updateLocation({
-            employee_id:   payload.employee_id,
-            employee_code: payload.employee_code,
-            email:         payload.email,
-            name:          payload.name,
-            latitude, longitude,
-            accuracy_meters: accuracy || 0.0,
-            speed: payload.speed,
-            heading: payload.heading,
-            timestamp: payload.recorded_at
-          }).catch(() => null)
+        // 1. Sub-second Live Broadcast Stream (every ~1s)
+        if (now - (lastBroadcastTime.current || 0) > 1000) {
+          lastBroadcastTime.current = now
 
-          // 2. Push breadcrumb to tracking_locations table for live breadcrumbs purple trail
-          spatialAPI.pushLocation({
-            employee_id: payload.employee_id,
-            employee_code: payload.employee_code,
-            latitude, longitude,
-            accuracy: accuracy || 10,
-            speed: payload.speed,
-            heading: payload.heading,
-            recorded_at: payload.recorded_at
-          }).catch(() => null)
-
-          // 3. Stream real-time broadcast to Manager/TeamLead map subscribers over WebSockets
           if (broadcastChannels.length > 0) {
             broadcastChannels.forEach(ch => {
               try {
-                ch.send({
-                  type: 'broadcast',
-                  event: 'location',
-                  payload: {
-                    ...payload,
-                    broadcast_sent_at: Date.now()
-                  }
-                })
+                if (ch && (ch.state === 'joined' || ch.state === 'subscribed')) {
+                  ch.send({
+                    type: 'broadcast',
+                    event: 'location',
+                    payload: { ...payload, broadcast_sent_at: Date.now() }
+                  })
+                }
               } catch (e) {}
             })
           }
 
-          // 4. Local cross-tab broadcast fallback
           try {
             const bc = new BroadcastChannel('tc_live_gps_stream')
             bc.postMessage(payload)
+            bc.close()
             localStorage.setItem('tc_executive_live_location', JSON.stringify(payload))
           } catch (e) {}
+        }
+
+        // 2. Throttled Database Persistence & Offline Queueing (every ~5s)
+        if (now - (lastTelemetryUpdate.current || 0) > 5000) {
+          lastTelemetryUpdate.current = now
+
+          if (navigator.onLine) {
+            spatialAPI.updateLocation({
+              employee_id:   payload.employee_id,
+              employee_code: payload.employee_code,
+              email:         payload.email,
+              name:          payload.name,
+              latitude, longitude,
+              accuracy_meters: accuracy || 0.0,
+              speed: payload.speed,
+              heading: payload.heading,
+              timestamp: payload.recorded_at
+            }).catch(() => {
+              enqueueOfflineCrumb(payload)
+            })
+
+            spatialAPI.pushLocation({
+              employee_id: payload.employee_id,
+              employee_code: payload.employee_code,
+              latitude, longitude,
+              accuracy: accuracy || 10,
+              speed: payload.speed,
+              heading: payload.heading,
+              recorded_at: payload.recorded_at
+            }).catch(() => {
+              enqueueOfflineCrumb(payload)
+            })
+          } else {
+            enqueueOfflineCrumb(payload)
+          }
         }
       },
       (err) => {
@@ -751,8 +865,30 @@ export default function SmartClientMap({ isManagerView = false }) {
       },
       { enableHighAccuracy: true, timeout: 15000, maximumAge: 10000 }
     )
+    const handleOnlineFlush = () => {
+      flushOfflineQueue(async (crumbs) => {
+        for (const c of crumbs) {
+          try {
+            await spatialAPI.pushLocation({
+              employee_id: c.employee_id || empId,
+              employee_code: c.employee_code || empCode,
+              latitude: c.latitude,
+              longitude: c.longitude,
+              accuracy: c.accuracy || 10,
+              speed: c.speed,
+              heading: c.heading,
+              recorded_at: c.recorded_at || c.timestamp || new Date().toISOString()
+            })
+          } catch (_) {}
+        }
+      })
+    }
+    window.addEventListener('online', handleOnlineFlush)
+    if (navigator.onLine) handleOnlineFlush()
+
     return () => {
       clearTimeout(safetyTimer)
+      window.removeEventListener('online', handleOnlineFlush)
       navigator.geolocation.clearWatch(watchId)
       broadcastChannels.forEach(ch => {
         try { ch.unsubscribe() } catch (e) {}
@@ -794,15 +930,25 @@ export default function SmartClientMap({ isManagerView = false }) {
         visitAPI.getVisits(),
       ])
 
-      const safeFilter = (res, key) => {
-        if (res.status !== 'fulfilled') return []
-        const raw = Array.isArray(res.value) ? res.value : (res.value?.data || res.value || [])
-        return filterUserItems(raw, user)
+      const safeFilter = (res, storageKey) => {
+        let raw = []
+        if (res.status === 'fulfilled') {
+          const val = res.value
+          raw = Array.isArray(val) ? val : (val?.data || val?.leads || val?.customers || val?.visits || val || [])
+        }
+        const localSaved = JSON.parse(localStorage.getItem(storageKey) || "[]")
+        const merged = [...raw]
+        localSaved.forEach(l => {
+          if (l && !merged.some(m => m.id === l.id || (m.company === l.company && m.name === l.name))) {
+            merged.push(l)
+          }
+        })
+        return filterUserItems(merged, user)
       }
 
-      setRawLeads(safeFilter(leadsRes))
-      setRawCustomers(safeFilter(custsRes))
-      setRawVisits(safeFilter(visitsRes))
+      setRawLeads(safeFilter(leadsRes, "tc_sm_leads"))
+      setRawCustomers(safeFilter(custsRes, "tc_customer_accounts"))
+      setRawVisits(safeFilter(visitsRes, "tc_sales_visits"))
     } catch (e) {
       console.warn('SmartMap data load error:', e)
     } finally {
@@ -1111,18 +1257,7 @@ export default function SmartClientMap({ isManagerView = false }) {
       setOffRoute(distToRoute > OFF_ROUTE_THRESHOLD_KM)
     }
 
-    // Dynamic traveled trail polyline (purple dotted line)
-    try {
-      const lat = executivePos.lat
-      const lng = executivePos.lng
-      const pts = trailPointsRef.current
-      const last = pts.length > 0 ? pts[pts.length - 1] : null
-      if (!last || haversineDistance(last.lat, last.lng, lat, lng) > 0.015) {
-        pts.push({ lat, lng })
-      }
-    } catch (e) {
-      console.warn("Trail update error:", e)
-    }
+    // Dynamic traveled trail points are accumulated and filtered with GPS accuracy guards in Effect 16
 
 
     // Debounced OSRM re-fetch
@@ -1217,46 +1352,72 @@ export default function SmartClientMap({ isManagerView = false }) {
     setOnRouteClients(prev => prev.filter(c => c.id !== clientId))
   }, [])
 
-  // ─── 12. Initialize Google Map ─────────────────────────────────────────
+  // ─── 12. Initialize Map (Google Maps with Leaflet OpenStreetMap Fallback) ───
   useEffect(() => {
     if (!mapLoaded) return
 
     const initMap = () => {
-      if (!mapContainerRef.current || googleMapRef.current) return
-      if (!window.google?.maps?.Map || typeof window.google.maps.Map !== 'function') {
-        setTimeout(initMap, 200)
-        return
+      if (!mapContainerRef.current || googleMapRef.current || leafletMapRef.current) return
+
+      if (window.google?.maps?.Map && typeof window.google.maps.Map === 'function') {
+        try {
+          if (mapContainerRef.current) {
+            mapContainerRef.current.innerHTML = ''
+          }
+          const centerLat = executivePos?.lat || 13.0827
+          const centerLng = executivePos?.lng || 80.2707
+
+          const map = new window.google.maps.Map(mapContainerRef.current, {
+            center: { lat: centerLat, lng: centerLng },
+            zoom: 14,
+            mapId: 'DEMO_MAP_ID',
+            zoomControl: true,
+            zoomControlOptions: {
+              position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9
+            },
+            mapTypeControl: false,
+            streetViewControl: false,
+            fullscreenControl: false,
+          })
+
+          googleMapRef.current = map
+
+          setTimeout(() => {
+            if (googleMapRef.current && window.google?.maps?.event) {
+              window.google.maps.event.trigger(googleMapRef.current, 'resize')
+            }
+          }, 200)
+          return
+        } catch (err) {
+          console.warn('[SmartClientMap] Error initializing Google Map:', err)
+        }
       }
 
-      try {
-        if (mapContainerRef.current) {
-          mapContainerRef.current.innerHTML = ''
-        }
-        const centerLat = executivePos?.lat || 13.0827
-        const centerLng = executivePos?.lng || 80.2707
-
-        const map = new window.google.maps.Map(mapContainerRef.current, {
-          center: { lat: centerLat, lng: centerLng },
-          zoom: 14,
-          mapId: 'DEMO_MAP_ID', // Enables Google Vector Maps WebGL 60fps rendering & 3D buildings
-          zoomControl: true,
-          zoomControlOptions: {
-            position: window.google?.maps?.ControlPosition?.RIGHT_BOTTOM || 9
-          },
-          mapTypeControl: false,
-          streetViewControl: false,
-          fullscreenControl: false,
-        })
-
-        googleMapRef.current = map
-
-        setTimeout(() => {
-          if (googleMapRef.current && window.google?.maps?.event) {
-            window.google.maps.event.trigger(googleMapRef.current, 'resize')
+      // Fallback: Leaflet OpenStreetMap / CartoDB Voyager Map
+      if (window.L && typeof window.L.map === 'function') {
+        try {
+          if (mapContainerRef.current) {
+            mapContainerRef.current.innerHTML = ''
           }
-        }, 200)
-      } catch (err) {
-        console.error('[SmartClientMap] Error initializing Google Map:', err)
+          const centerLat = executivePos?.lat || 13.0827
+          const centerLng = executivePos?.lng || 80.2707
+
+          const lmap = window.L.map(mapContainerRef.current, {
+            center: [centerLat, centerLng],
+            zoom: 14,
+            zoomControl: false
+          })
+
+          window.L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+          }).addTo(lmap)
+
+          leafletMapRef.current = lmap
+          setTimeout(() => lmap.invalidateSize(), 200)
+        } catch (err) {
+          console.warn('[SmartClientMap] Leaflet Map init notice:', err)
+        }
       }
     }
 
@@ -1266,7 +1427,10 @@ export default function SmartClientMap({ isManagerView = false }) {
     return () => {
       clearTimeout(timer)
       if (execMarkerRef.current) {
-        try { execMarkerRef.current.setMap(null) } catch {}
+        try {
+          if (execMarkerRef.current.setMap) execMarkerRef.current.setMap(null)
+          if (execMarkerRef.current.remove) execMarkerRef.current.remove()
+        } catch {}
         execMarkerRef.current = null
       }
       if (accuracyCircleRef.current) {
@@ -1285,10 +1449,14 @@ export default function SmartClientMap({ isManagerView = false }) {
         try { trailPolylineRef.current.setMap(null) } catch {}
         trailPolylineRef.current = null
       }
-      activeMarkersRef.current.forEach(m => { try { m.setMap(null) } catch {} })
+      activeMarkersRef.current.forEach(m => { try { m.setMap ? m.setMap(null) : m.remove() } catch {} })
       activeMarkersRef.current = []
-      activePolylinesRef.current.forEach(p => { try { p.setMap(null) } catch {} })
+      activePolylinesRef.current.forEach(p => { try { p.setMap ? p.setMap(null) : p.remove() } catch {} })
       activePolylinesRef.current = []
+      if (leafletMapRef.current) {
+        try { leafletMapRef.current.remove() } catch {}
+        leafletMapRef.current = null
+      }
       googleMapRef.current = null
     }
   }, [mapLoaded])
@@ -1316,8 +1484,8 @@ export default function SmartClientMap({ isManagerView = false }) {
           </div>
           <div style="width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #10b981; margin-top: -1px; z-index: 9;"></div>
           <div style="width: 58px; height: 46px; display: flex; align-items: center; justify-content: center; position: relative; margin-top: 2px;">
-            <div style="position: absolute; width: 48px; height: 48px; border-radius: 50%; background: rgba(16, 185, 129, 0.18); border: 1.5px solid rgba(16, 185, 129, 0.5); z-index: -1;"></div>
-            <img src="/motorcycle_rider.png" alt="Motorcycle Rider" style="width: 52px; height: 40px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5));" />
+            <div style="position: absolute; width: 48px; height: 48px; border-radius: 50%; background: rgba(234, 179, 8, 0.25); border: 1.5px solid rgba(234, 179, 8, 0.7); z-index: -1;"></div>
+            <img src="/rapido_bike_icon.jpg" alt="Rapido Bike Rider" style="width: 56px; height: 56px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5)); border-radius: 50%;" />
           </div>
         </div>
       `
@@ -1398,7 +1566,7 @@ export default function SmartClientMap({ isManagerView = false }) {
       const mainPolyline = new window.google.maps.Polyline({
         path: pathCoords,
         geodesic: true,
-        strokeColor: '#9333ea', // Primary bold purple line for active route navigation
+        strokeColor: '#2563eb', // Primary bold BLUE line for active driving route navigation
         strokeOpacity: 0.9,
         strokeWeight: 6,
         map: map,
@@ -1416,7 +1584,7 @@ export default function SmartClientMap({ isManagerView = false }) {
               path: 'M 0,-2 0,2',
               strokeOpacity: 1,
               scale: 2.5,
-              strokeColor: '#c084fc', // Light purple dashed line for off-route deviation
+              strokeColor: '#60a5fa', // Light blue dashed line for off-route deviation
               strokeWeight: 4,
             },
             offset: '0%',
@@ -1460,34 +1628,34 @@ export default function SmartClientMap({ isManagerView = false }) {
     }
   }, [executivePos, gpsAccuracy, gpsStatus, mapLoaded])
 
-  // ─── 16. Traveled Trail Polyline (Purple dashed line - Track real executive travel only) ───
+  // ─── 16. Traveled Trail Polyline (Solid RED line on road - Track real trip travel during active navigation) ───
   useEffect(() => {
     if (!googleMapRef.current || !window.google || !mapLoaded) return
-    if (!executivePos?.lat || !executivePos?.lng) return
 
-    // 1. Do NOT track or render polyline if permission is explicitly denied
-    if (gpsStatus === 'denied') {
+    // Do NOT draw traveled path if user is not actively navigating / tracking a client visit
+    if (!navMode || gpsStatus === 'denied' || !executivePos?.lat || !executivePos?.lng) {
       if (trailOuterPolylineRef.current) {
-        trailOuterPolylineRef.current.setMap(null)
+        try { trailOuterPolylineRef.current.setMap(null) } catch {}
         trailOuterPolylineRef.current = null
       }
       if (trailPolylineRef.current) {
-        trailPolylineRef.current.setMap(null)
+        try { trailPolylineRef.current.setMap(null) } catch {}
         trailPolylineRef.current = null
+      }
+      if (startMarkerRef.current) {
+        try { startMarkerRef.current.setMap ? startMarkerRef.current.setMap(null) : startMarkerRef.current.remove?.() } catch {}
+        startMarkerRef.current = null
       }
       return
     }
 
-    // 2. Ignore default fallback center (DEFAULT_CENTER) completely
+    // Ignore default fallback center (DEFAULT_CENTER) completely
     const isDefaultCenter =
       Math.abs(executivePos.lat - DEFAULT_CENTER.lat) < 0.0001 &&
       Math.abs(executivePos.lng - DEFAULT_CENTER.lng) < 0.0001
 
-    if (isDefaultCenter) {
-      return
-    }
+    if (isDefaultCenter) return
 
-    // 3. Purge any accidental DEFAULT_CENTER points from trail history
     const pts = trailPointsRef.current
     if (pts.length > 0) {
       const filtered = pts.filter(p => !(
@@ -1507,13 +1675,18 @@ export default function SmartClientMap({ isManagerView = false }) {
       distFromLastM = haversineDistance(lastPt.lat, lastPt.lng, executivePos.lat, executivePos.lng) * 1000
     }
 
-    // Filter out stationary jitter (must move >= 15m) and filter out absurd GPS teleport jumps (> 500m in single tick)
-    const isReasonableMove = validPts.length === 0 || (distFromLastM >= 15 && distFromLastM < 500)
+    // Filter position jumps & GPS drift noise (ignore small noise jumps when GPS accuracy is poor or indoor)
+    const minRequiredDistM = gpsAccuracy ? Math.max(12, Math.min(gpsAccuracy * 0.45, 45)) : 12
+    const isGpsReliable = !gpsAccuracy || gpsAccuracy <= 60
+
+    const isReasonableMove = validPts.length === 0 || (
+      isGpsReliable && distFromLastM >= minRequiredDistM && distFromLastM < 350
+    )
     if (isReasonableMove) {
       validPts.push({ lat: executivePos.lat, lng: executivePos.lng })
     }
 
-    // 4. Render green START marker pin at initial starting location
+    // Render green START marker pin at initial trip starting location
     if (validPts.length > 0 && !startMarkerRef.current && googleMapRef.current && window.google) {
       const startLatLng = new window.google.maps.LatLng(validPts[0].lat, validPts[0].lng)
       const buildStartHtml = () => `
@@ -1532,95 +1705,128 @@ export default function SmartClientMap({ isManagerView = false }) {
       )
     }
 
-    // 5. ONLY draw traveled polyline if executive has AT LEAST 2 REAL traveled points
+    // Draw traveled polyline (Solid RED line matching team radar map styling, road-snapped via OSRM)
     if (validPts.length > 1) {
-      const gPath = validPts.map(p => ({ lat: p.lat, lng: p.lng }))
-      
-      // Outer dark purple casing line for clean road contrast
-      if (!trailOuterPolylineRef.current) {
-        trailOuterPolylineRef.current = new window.google.maps.Polyline({
-          path: gPath,
-          geodesic: true,
-          strokeColor: '#3b0764', // Deep dark royal purple casing line
-          strokeOpacity: 0.65,
-          strokeWeight: 9,
-          map: googleMapRef.current,
-          zIndex: 34
-        })
-      } else {
-        trailOuterPolylineRef.current.setPath(gPath)
-        if (!trailOuterPolylineRef.current.getMap()) {
-          trailOuterPolylineRef.current.setMap(googleMapRef.current)
+      snapToRoadGeometry(validPts).then(snappedPts => {
+        if (!googleMapRef.current || !window.google) return
+        const gPath = snappedPts.map(p => ({ lat: p.lat, lng: p.lng }))
+        
+        // Outer dark red casing line for clean road contrast
+        if (!trailOuterPolylineRef.current) {
+          trailOuterPolylineRef.current = new window.google.maps.Polyline({
+            path: gPath,
+            geodesic: true,
+            strokeColor: '#7f1d1d', // Dark red casing line
+            strokeOpacity: 0.75,
+            strokeWeight: 8,
+            map: googleMapRef.current,
+            zIndex: 34
+          })
+        } else {
+          trailOuterPolylineRef.current.setPath(gPath)
+          if (!trailOuterPolylineRef.current.getMap()) {
+            trailOuterPolylineRef.current.setMap(googleMapRef.current)
+          }
         }
-      }
 
-      // Inner electric purple main road line
-      if (!trailPolylineRef.current) {
-        trailPolylineRef.current = new window.google.maps.Polyline({
-          path: gPath,
-          geodesic: true,
-          strokeColor: '#a855f7', // Vibrant electric purple road path
-          strokeOpacity: 0.95,
-          strokeWeight: 5,
-          icons: [{
-            icon: {
-              path: 'M 0,-2 0,2',
-              strokeOpacity: 1,
-              scale: 2.2,
-              strokeColor: '#f3e8ff', // Soft light violet accent dash on top
-              strokeWeight: 2,
-            },
-            offset: '0%',
-            repeat: '14px',
-          }],
-          map: googleMapRef.current,
-          zIndex: 35
-        })
-      } else {
-        trailPolylineRef.current.setPath(gPath)
-        if (!trailPolylineRef.current.getMap()) {
-          trailPolylineRef.current.setMap(googleMapRef.current)
+        // Inner solid red main road line
+        if (!trailPolylineRef.current) {
+          trailPolylineRef.current = new window.google.maps.Polyline({
+            path: gPath,
+            geodesic: true,
+            strokeColor: '#dc2626', // Solid Vibrant Red
+            strokeOpacity: 0.95,
+            strokeWeight: 5,
+            map: googleMapRef.current,
+            zIndex: 35
+          })
+        } else {
+          trailPolylineRef.current.setPath(gPath)
+          if (!trailPolylineRef.current.getMap()) {
+            trailPolylineRef.current.setMap(googleMapRef.current)
+          }
         }
-      }
+      }).catch(err => {
+        console.warn('[SmartClientMap] Road snap notice:', err)
+      })
     } else {
       if (trailOuterPolylineRef.current) {
-        trailOuterPolylineRef.current.setMap(null)
+        try { trailOuterPolylineRef.current.setMap(null) } catch {}
+        trailOuterPolylineRef.current = null
       }
       if (trailPolylineRef.current) {
-        trailPolylineRef.current.setMap(null)
+        try { trailPolylineRef.current.setMap(null) } catch {}
+        trailPolylineRef.current = null
       }
     }
-  }, [executivePos, gpsStatus, mapLoaded])
+  }, [executivePos, gpsStatus, mapLoaded, navMode])
 
-  // Pre-load executive's today's saved tracking breadcrumbs history on mount
+  // ─── 17. Midnight Auto-Reset Timer (Clears daily session trails at 12:00 AM) ───
   useEffect(() => {
-    if (!mapLoaded) return
-    const empId = currentUser?.employee_id || currentUser?.employee_code || currentUser?.id
-    if (!empId) return
-
-    spatialAPI.getLocationHistory(empId).then(res => {
-      const data = res?.data || res
-      const crumbs = data?.breadcrumbs || []
-      if (crumbs.length > 0) {
-        const historyPts = crumbs
-          .map(c => ({ lat: Number(c.latitude), lng: Number(c.longitude) }))
-          .filter(p => !isNaN(p.lat) && !isNaN(p.lng) && p.lat !== 0 && p.lng !== 0)
-        
-        if (historyPts.length > 0) {
-          const currentPts = trailPointsRef.current
-          const combined = [...historyPts]
-          currentPts.forEach(p => {
-            if (!combined.some(c => Math.abs(c.lat - p.lat) < 0.00001 && Math.abs(c.lng - p.lng) < 0.00001)) {
-              combined.push(p)
-            }
-          })
-          trailPointsRef.current = combined
+    let currentDay = new Date().getDate()
+    const midnightCheckTimer = setInterval(() => {
+      const nowDay = new Date().getDate()
+      if (nowDay !== currentDay) {
+        currentDay = nowDay
+        trailPointsRef.current = []
+        if (trailOuterPolylineRef.current) {
+          try { trailOuterPolylineRef.current.setMap(null) } catch {}
+          trailOuterPolylineRef.current = null
+        }
+        if (trailPolylineRef.current) {
+          try { trailPolylineRef.current.setMap(null) } catch {}
+          trailPolylineRef.current = null
+        }
+        if (startMarkerRef.current) {
+          try { startMarkerRef.current.setMap ? startMarkerRef.current.setMap(null) : startMarkerRef.current.remove?.() } catch {}
+          startMarkerRef.current = null
         }
       }
-    }).catch(err => {
-      console.warn('[SmartClientMap] Failed to pre-load tracking history:', err)
-    })
-  }, [mapLoaded, currentUser?.employee_id, currentUser?.employee_code, currentUser?.id])
+    }, 30000)
+    return () => clearInterval(midnightCheckTimer)
+  }, [])
+
+  // Pre-load active personal navigation session on mount ONLY if navigation was explicitly started
+  useEffect(() => {
+    if (!mapLoaded) return
+
+    const activeNavStr = localStorage.getItem('tc_active_nav_session')
+    if (!activeNavStr) {
+      setNavMode(false)
+      trailPointsRef.current = []
+      if (trailOuterPolylineRef.current) {
+        try { trailOuterPolylineRef.current.setMap(null) } catch {}
+        trailOuterPolylineRef.current = null
+      }
+      if (trailPolylineRef.current) {
+        try { trailPolylineRef.current.setMap(null) } catch {}
+        trailPolylineRef.current = null
+      }
+      if (startMarkerRef.current) {
+        try { startMarkerRef.current.setMap ? startMarkerRef.current.setMap(null) : startMarkerRef.current.remove?.() } catch {}
+        startMarkerRef.current = null
+      }
+      return
+    }
+
+    try {
+      const activeNav = JSON.parse(activeNavStr)
+      if (activeNav && activeNav.navMode && activeNav.selectedStop) {
+        setSelectedStop(activeNav.selectedStop)
+        setNavMode(true)
+        if (activeNav.navDestination) {
+          setNavDestination(activeNav.navDestination)
+        }
+      } else {
+        setNavMode(false)
+        trailPointsRef.current = []
+      }
+    } catch (e) {
+      localStorage.removeItem('tc_active_nav_session')
+      setNavMode(false)
+      trailPointsRef.current = []
+    }
+  }, [mapLoaded])
 
   // ─── Render ──────────────────────────────────────────────────────────────────
   const visibleAlerts = onRouteClients.filter(c => !dismissedAlerts.current.has(c.id))

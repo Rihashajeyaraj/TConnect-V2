@@ -130,9 +130,20 @@ function CompanyOverview() {
           currency: data.currency || prev.currency,
         }))
 
+        let parsedDepts = []
+        if (Array.isArray(data.departments)) {
+          parsedDepts = data.departments
+        } else if (typeof data.departments === 'string') {
+          try {
+            parsedDepts = JSON.parse(data.departments)
+          } catch (e) {
+            parsedDepts = []
+          }
+        }
+
         setMasterData({
           branches: Array.isArray(data.branches) ? data.branches : [],
-          departments: Array.isArray(data.departments) ? data.departments : [],
+          departments: Array.isArray(parsedDepts) ? parsedDepts : [],
           designations: Array.isArray(data.designations) ? data.designations : [],
           products: Array.isArray(data.products) ? data.products : [],
           lead_sources: Array.isArray(data.lead_sources) ? data.lead_sources : [],
@@ -228,7 +239,7 @@ function CompanyOverview() {
   }
 
   const handlePopulateSampleData = async () => {
-    if (!window.confirm('Do you want to pre-populate the master configuration settings with standard company defaults (branches, departments, designations, products, lead sources, and categories)? This will initialize system dropdown fields.')) return
+    if (!window.confirm('Do you want to pre-populate master settings with standard company defaults (branches, designations, products, lead sources, and categories)?')) return
     setSaving(true)
     const sampleSetup = {
       branches: [
@@ -236,12 +247,7 @@ function CompanyOverview() {
         { id: 2, name: 'Bangalore Office', type: 'Regional Office', location: 'Whitefield, Bangalore', staffCount: 8, status: 'Active' },
         { id: 3, name: 'Mumbai Hub', type: 'Sales Hub', location: 'Andheri East, Mumbai', staffCount: 3, status: 'Active' }
       ],
-      departments: [
-        { id: 101, name: 'Sales & Business Development', lead: 'Arun Kumar', staffCount: 18, budget: '₹15,00,000', status: 'Active' },
-        { id: 102, name: 'Human Resources', lead: 'Siva Murugan', staffCount: 2, budget: '₹3,00,050', status: 'Active' },
-        { id: 103, name: 'Engineering & Tech', lead: 'Jeeva Nathan', staffCount: 4, budget: '₹8,00,000', status: 'Active' },
-        { id: 104, name: 'Finance & Accounts', lead: 'Bavani R', staffCount: 1, budget: '₹2,00,000', status: 'Active' }
-      ],
+      departments: masterData.departments || [], // Keep Admin-created departments, do not overwrite with hardcoded defaults
       designations: [
         { id: 'DES-1', name: 'Sales Executive', status: 'Active' },
         { id: 'DES-2', name: 'Sales Manager', status: 'Active' },

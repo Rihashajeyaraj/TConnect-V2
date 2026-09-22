@@ -8,6 +8,88 @@ from app.core.logger import logger
 from app.modules.notification import push_service
 
 _in_memory_notifications: List[Dict[str, Any]] = []
+_in_memory_messages: List[Dict[str, Any]] = [
+    {
+        "id": "msg-1",
+        "sender_id": "rm-1",
+        "sender_email": "jeeva@twite.ai",
+        "sender_name": "Jeeva kumar",
+        "recipient_id": "usr_current",
+        "recipient_email": "bavani@tconnect.com",
+        "recipient_name": "Bavani sree",
+        "contact_type": "reporting_manager",
+        "message_text": "Good morning! Please update your lead status and visit reports for today.",
+        "is_read": True,
+        "created_at": "2026-09-22T09:30:00Z"
+    },
+    {
+        "id": "msg-2",
+        "sender_id": "usr_current",
+        "sender_email": "bavani@tconnect.com",
+        "sender_name": "Bavani sree",
+        "recipient_id": "rm-1",
+        "recipient_email": "jeeva@twite.ai",
+        "recipient_name": "Jeeva kumar",
+        "contact_type": "reporting_manager",
+        "message_text": "Good morning sir! Yes, I have 3 client site visits scheduled today.",
+        "is_read": True,
+        "created_at": "2026-09-22T09:35:00Z"
+    },
+    {
+        "id": "msg-3",
+        "sender_id": "rm-1",
+        "sender_email": "jeeva@twite.ai",
+        "sender_name": "Jeeva kumar",
+        "recipient_id": "usr_current",
+        "recipient_email": "bavani@tconnect.com",
+        "recipient_name": "Bavani sree",
+        "contact_type": "reporting_manager",
+        "message_text": "Great! Make sure to log the GPS location check-in for each visit.",
+        "is_read": True,
+        "created_at": "2026-09-22T09:40:00Z"
+    },
+    {
+        "id": "msg-4",
+        "sender_id": "usr_current",
+        "sender_email": "bavani@tconnect.com",
+        "sender_name": "Bavani sree",
+        "recipient_id": "rm-1",
+        "recipient_email": "jeeva@twite.ai",
+        "recipient_name": "Jeeva kumar",
+        "contact_type": "reporting_manager",
+        "message_text": "hi",
+        "is_read": True,
+        "created_at": "2026-09-22T10:50:00Z"
+    },
+    {
+        "id": "msg-5",
+        "sender_id": "tl-1",
+        "sender_email": "vedika@twite.ai",
+        "sender_name": "vedika .",
+        "recipient_id": "usr_current",
+        "recipient_email": "bavani@tconnect.com",
+        "recipient_name": "Bavani sree",
+        "contact_type": "team_lead",
+        "message_text": "Hi, how are the client follow-ups going?",
+        "is_read": True,
+        "created_at": "2026-09-22T09:15:00Z"
+    },
+    {
+        "id": "msg-6",
+        "sender_id": "usr_current",
+        "sender_email": "bavani@tconnect.com",
+        "sender_name": "Bavani sree",
+        "recipient_id": "tl-1",
+        "recipient_email": "vedika@twite.ai",
+        "recipient_name": "vedika .",
+        "contact_type": "team_lead",
+        "message_text": "Going well! Closed 2 deals this week.",
+        "is_read": True,
+        "created_at": "2026-09-22T09:20:00Z"
+    }
+]
+
+
 
 
 class NotificationRepository:
@@ -87,12 +169,12 @@ class NotificationRepository:
         # Strict privacy filtering by targeted recipient, assigned employee, reporting manager, or broadcast role
         filtered = []
         for n in notifs:
-            r_id = str(n.get("recipient_id") or n.get("recipient_user_id") or n.get("employee_id") or "").strip().lower()
+            r_id = str(n.get("recipient_id") or n.get("recipient_user_id") or "").strip().lower()
             r_email = str(n.get("recipient_email") or "").lower().strip()
             r_role = str(n.get("recipient_role") or "all").strip().lower()
 
-            assoc_email = str(n.get("assigned_to_email") or n.get("employee_email") or n.get("user_email") or "").lower().strip()
-            assoc_id = str(n.get("assigned_to_id") or n.get("user_id") or "").lower().strip()
+            assoc_email = str(n.get("assigned_to_email") or n.get("user_email") or "").lower().strip()
+            assoc_id = str(n.get("assigned_to_id") or "").lower().strip()
             mgr_email = str(n.get("manager_email") or n.get("reporting_manager_email") or "").lower().strip()
             mgr_id = str(n.get("manager_id") or n.get("reporting_manager_id") or "").lower().strip()
 
@@ -491,3 +573,211 @@ class NotificationRepository:
                 logger.warning(f"mark_as_read failed: {inner_e}")
 
         return {"id": notification_id, "is_read": True}
+
+    def mark_all_as_read(self, user_id: str, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        user_notifs = self.get_user_notifications(user_id, user_payload)
+        unread_ids = [str(n.get("id")) for n in user_notifs if not n.get("is_read") and n.get("id")]
+
+        # Always update in-memory cache first
+        for n in _in_memory_notifications:
+            if str(n.get("id")) in unread_ids or str(n.get("notification_id")) in unread_ids:
+                n["is_read"] = True
+                n["read"] = True
+                n["unread"] = False
+
+        if unread_ids:
+            updates = {"is_read": True, "read": True, "unread": False}
+            try:
+                self.supabase.schema("system").table("notifications").update(updates).in_("id", unread_ids).execute()
+            except Exception as e:
+                try:
+                    self.supabase.table("notifications").update(updates).in_("id", unread_ids).execute()
+                except Exception as inner_e:
+                    logger.warning(f"mark_all_as_read batch update notice: {inner_e}")
+
+        return {"marked_count": len(unread_ids)}
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # Live Chat & Contacts API
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def get_chat_contacts(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        from app.modules.users.repository import UserRepository
+        user_repo = UserRepository()
+        all_users = user_repo.get_all_users()
+
+        user_email = str((user_payload or {}).get("email") or "").lower().strip()
+        user_id = str((user_payload or {}).get("sub") or (user_payload or {}).get("user_id") or "").strip()
+
+        # Find current user in all_users
+        current_user = next((u for u in all_users if str(u.get("email")).lower() == user_email or str(u.get("id")) == user_id), None)
+
+        # Determine current user's reporting manager name/email
+        rm_name = (current_user.get("reporting_manager_name") if current_user else None) or "Jeeva kumar"
+        rm_email = (current_user.get("reporting_manager_email") if current_user else None) or "jeeva@tconnect.com"
+
+        # Match reporting manager from all_users if possible
+        rm_user = next((u for u in all_users if str(u.get("email")).lower() == rm_email.lower() or u.get("name") == rm_name or "jeeva" in str(u.get("name")).lower()), None)
+        if rm_user:
+            rm_name = rm_user.get("name") or rm_name
+            rm_email = rm_user.get("email") or rm_email
+
+        # Find Team Lead (e.g. Vedika)
+        tl_user = next((u for u in all_users if ("team lead" in str(u.get("role") or u.get("designation")).lower() or "tl" in str(u.get("role") or u.get("designation")).lower() or "vedika" in str(u.get("name")).lower()) and str(u.get("email")).lower() != user_email), None)
+        tl_name = tl_user.get("name") if tl_user else "vedika ."
+        tl_email = tl_user.get("email") if tl_user else "vedika@tconnect.com"
+        tl_title = (tl_user.get("designation") or tl_user.get("role")) if tl_user else "Team Lead"
+
+        # Find Team Members / Peers
+        peers = []
+        for u in all_users:
+            u_email = str(u.get("email")).lower()
+            u_role = str(u.get("role") or u.get("designation")).lower()
+            if u_email != user_email and u_email != rm_email.lower() and u_email != tl_email.lower():
+                if "executive" in u_role or "sales" in u_role:
+                    peers.append(u)
+
+        # Helper for avatar initials
+        def get_avatar(name_str):
+            parts = name_str.strip().split()
+            if len(parts) >= 2:
+                return (parts[0][0] + parts[1][0]).upper()
+            elif len(parts) == 1 and parts[0]:
+                return parts[0][:2].upper()
+            return "TC"
+
+        contacts = [
+            {
+                "id": rm_user.get("id") if rm_user else "rm-1",
+                "name": rm_name,
+                "role": "Reporting Manager",
+                "role_title": (rm_user.get("designation") or rm_user.get("role")) if rm_user else "Sales Manager",
+                "avatar": get_avatar(rm_name),
+                "online": True,
+                "email": rm_email,
+                "contact_type": "reporting_manager",
+                "last_message": "Good morning! Please update your lead status and visit reports for today.",
+                "last_time": "09:30 AM",
+                "unread": 0
+            },
+            {
+                "id": tl_user.get("id") if tl_user else "tl-1",
+                "name": tl_name,
+                "role": "Team Lead",
+                "role_title": tl_title,
+                "avatar": get_avatar(tl_name),
+                "online": True,
+                "email": tl_email,
+                "contact_type": "team_lead",
+                "last_message": "Going well! Closed 2 deals this week.",
+                "last_time": "Yesterday",
+                "unread": 0
+            }
+        ]
+
+        if peers:
+            p = peers[0]
+            p_name = p.get("name") or "Sales Executive Team"
+            contacts.append({
+                "id": p.get("id") or "se-1",
+                "name": p_name,
+                "role": "Sales Executive Team",
+                "role_title": p.get("designation") or "Sales Executive",
+                "avatar": get_avatar(p_name),
+                "online": True,
+                "email": p.get("email") or "team@tconnect.com",
+                "contact_type": "team",
+                "last_message": "Team meet scheduled at 4:30 PM today for target review.",
+                "last_time": "10:00 AM",
+                "unread": 0
+            })
+
+        # Add HR & Operations
+        contacts.append({
+            "id": "hr-1",
+            "name": "HR & Operations",
+            "role": "HR & Support",
+            "role_title": "HR Manager",
+            "avatar": "H&",
+            "online": False,
+            "email": "hr@tconnect.com",
+            "contact_type": "hr",
+            "last_message": "Welcome to TwiteHRMS! Let us know if you need assistance with leave balance.",
+            "last_time": "2 days ago",
+            "unread": 0
+        })
+
+        return contacts
+
+    def get_chat_messages(self, user_payload: Dict[str, Any], contact_type: str = None, contact_id: str = None, contact_email: str = None) -> List[Dict[str, Any]]:
+        messages = []
+        user_email = str((user_payload or {}).get("email") or "").lower().strip()
+
+        # Query public.user_messages table from Supabase
+        try:
+            res = self.supabase.table("user_messages").select("*").execute()
+            if res.data:
+                for msg in res.data:
+                    messages.append(msg)
+        except Exception as e:
+            logger.debug(f"public.user_messages query notice: {e}")
+
+        # Include in-memory messages
+        for mem in _in_memory_messages:
+            if not any(str(m.get("id")) == str(mem.get("id")) for m in messages):
+                messages.append(mem)
+
+        # Filter by contact matching
+        filtered = []
+        c_email = str(contact_email or "").lower().strip()
+        c_type = str(contact_type or "").lower().strip()
+
+        for msg in messages:
+            s_email = str(msg.get("sender_email") or "").lower().strip()
+            r_email = str(msg.get("recipient_email") or "").lower().strip()
+            c_type_msg = str(msg.get("contact_type") or "").lower().strip()
+
+            # Match criteria
+            type_match = bool(c_type and c_type_msg == c_type)
+            email_match = bool(c_email and (s_email == c_email or r_email == c_email))
+            id_match = bool(contact_id and (str(msg.get("sender_id")) == str(contact_id) or str(msg.get("recipient_id")) == str(contact_id)))
+
+            if type_match or email_match or id_match or not (c_type or c_email or contact_id):
+                filtered.append(msg)
+
+        filtered.sort(key=lambda x: str(x.get("created_at") or ""))
+        return filtered
+
+    def send_chat_message(self, user_payload: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
+        sender_id = str((user_payload or {}).get("sub") or (user_payload or {}).get("user_id") or "").strip()
+        meta = (user_payload or {}).get("user_metadata", {})
+        sender_email = str((user_payload or {}).get("email") or meta.get("email") or "").lower().strip()
+        sender_name = str((user_payload or {}).get("name") or meta.get("full_name") or meta.get("name") or sender_email.split("@")[0].title()).strip()
+
+        now_iso = datetime.utcnow().isoformat() + "Z"
+        msg_id = str(uuid.uuid4())
+
+        msg_obj = {
+            "id": msg_id,
+            "sender_id": sender_id,
+            "sender_email": sender_email,
+            "sender_name": sender_name,
+            "recipient_id": str(data.get("recipient_id") or ""),
+            "recipient_email": str(data.get("recipient_email") or "").lower().strip(),
+            "recipient_name": str(data.get("recipient_name") or ""),
+            "contact_type": str(data.get("contact_type") or "reporting_manager"),
+            "message_text": str(data.get("message_text") or data.get("text") or ""),
+            "is_read": False,
+            "created_at": now_iso
+        }
+
+        _in_memory_messages.append(msg_obj)
+
+        try:
+            self.supabase.table("user_messages").insert(msg_obj).execute()
+        except Exception as e:
+            logger.warning(f"user_messages insert notice: {e}")
+
+        return msg_obj
+
+

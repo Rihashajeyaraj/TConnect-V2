@@ -28,6 +28,8 @@ import {
   GripVertical,
   Receipt,
   MapPin,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 
 import useCurrentUser from '../../hooks/useCurrentUser.js'
@@ -73,7 +75,15 @@ function CeoLayout() {
   const currentUser = useCurrentUser()
   const { unreadCount } = useNotificationCount()
   const [sidebarOpen, setSidebarOpen] = useState(false)
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false)
+  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(() => localStorage.getItem('tc_sidebar_minimized') === 'true')
+
+  const toggleSidebarMinimize = () => {
+    setIsSidebarCollapsed((prev) => {
+      const next = !prev
+      localStorage.setItem('tc_sidebar_minimized', String(next))
+      return next
+    })
+  }
   const [searchQuery, setSearchQuery] = useState('')
   const [searchResults, setSearchResults] = useState([])
   const [showSearchResults, setShowSearchResults] = useState(false)
@@ -257,7 +267,7 @@ function CeoLayout() {
   ]
 
   return (
-    <div className="min-h-screen bg-[#f4f6f8] text-slate-800 flex flex-col font-sans antialiased relative overflow-x-hidden">
+    <div className="h-screen overflow-hidden bg-[#f4f6f8] text-slate-800 flex flex-col font-sans antialiased relative">
       {/* ── CEO Portal Micro-Animations & Responsive Styles ───────────────── */}
       <style>{`
         /* Tactile Click Effect for All Buttons, Toggles & Cards */
@@ -321,7 +331,7 @@ function CeoLayout() {
       `}</style>
 
       {/* ── Top Navigation Bar (Full Width) ────────────────────────────────── */}
-      <header className="relative h-14 sm:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
+      <header className="relative h-14 sm:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-4 lg:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
         <div className="flex items-center gap-2.5 sm:gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -426,14 +436,14 @@ function CeoLayout() {
       </header>
 
       {/* ── Main Layout Body ──────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-w-0">
+      <div className="flex flex-1 min-h-0 min-w-0 relative overflow-hidden">
         {sidebarOpen && (
           <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 lg:hidden transition-opacity" />
         )}
 
         {/* CEO Sidebar */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-60 sm:w-64 bg-[#832D51] text-white border-r border-[#EA6993]/20 shadow-2xl transition-all duration-200 ease-in-out lg:translate-x-0 lg:static shrink-0 flex flex-col ${
+          className={`fixed inset-y-0 left-0 z-40 w-60 sm:w-64 bg-[#832D51] text-white border-r border-[#EA6993]/20 shadow-2xl transition-all duration-200 ease-in-out lg:translate-x-0 lg:static shrink-0 flex flex-col h-full ${
             isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'
           } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
@@ -452,6 +462,27 @@ function CeoLayout() {
             </button>
           </div>
 
+          {/* Desktop Minimize/Maximize Toggle Button */}
+          <div className="hidden lg:flex items-center justify-end px-3 py-2 border-b border-white/10">
+            <button
+              type="button"
+              onClick={toggleSidebarMinimize}
+              className={`p-1.5 rounded-xl hover:bg-white/10 text-[#f8f0f2] hover:text-white transition cursor-pointer flex items-center gap-2 ${
+                isSidebarCollapsed ? "w-full justify-center" : ""
+              }`}
+              title={isSidebarCollapsed ? "Maximize Sidebar" : "Minimize Sidebar"}
+            >
+              {isSidebarCollapsed ? (
+                <PanelLeftOpen size={18} className="text-[#CFDD9D]" />
+              ) : (
+                <>
+                  <span className="text-[11px] font-bold text-[#f8f0f2]/80 uppercase tracking-wider">Minimize</span>
+                  <PanelLeftClose size={16} />
+                </>
+              )}
+            </button>
+          </div>
+
           {/* Navigation List - 9 Executive Items */}
           <nav className="flex-1 overflow-y-auto px-2.5 sm:px-3 py-3 sm:py-4 space-y-1 sm:space-y-1.5 bg-[#832D51] scrollbar-thin scrollbar-thumb-[#6a2240]">
             {sidebarItems.map((item, index) => {
@@ -460,12 +491,12 @@ function CeoLayout() {
               return (
                 <div
                   key={item.path}
-                  draggable={isCustomizing}
+                  draggable={isCustomizing && !isSidebarCollapsed}
                   onDragStart={(e) => handleDragStart(e, index)}
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDrop={(e) => handleDrop(e, index)}
                   onDragEnd={handleDragEnd}
-                  className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-[#EA6993]/20 rounded-xl" : ""}`}
+                  className={`relative ${isCustomizing && !isSidebarCollapsed ? "cursor-move animate-pulse border border-dashed border-[#EA6993]/20 rounded-xl" : ""}`}
                 >
                   <Link
                     to={isCustomizing ? "#" : item.path}
@@ -476,19 +507,24 @@ function CeoLayout() {
                       }
                       setSidebarOpen(false);
                     }}
-                    title={isSidebarCollapsed ? item.label : ''}
-                    className={`flex items-center gap-2.5 sm:gap-3 rounded-xl px-3 py-2 sm:px-3.5 sm:py-2.5 text-xs sm:text-sm font-semibold transition-all duration-150 group relative ${
+                    title={item.label}
+                    className={`flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-2.5 sm:gap-3 px-3 py-2 sm:px-3.5 sm:py-2.5"} rounded-xl text-xs sm:text-sm font-semibold transition-all duration-150 group relative ${
                       !isCustomizing && active
                         ? 'bg-white/10 text-white font-bold shadow-xs border border-white/20 backdrop-blur-xs'
                         : 'text-[#f8f0f2] hover:bg-white/10 hover:text-white'
                     }`}
                   >
                     {isCustomizing && !isSidebarCollapsed && <GripVertical size={14} className="text-white/40 shrink-0" />}
-                    <Icon
-                      className={`size-4.5 sm:size-5 shrink-0 transition-transform group-hover:scale-105 ${
-                        !isCustomizing && active ? 'text-[#CFDD9D]' : 'text-[#CFDD9D]/80 group-hover:text-white'
-                      }`}
-                    />
+                    <div className="relative flex items-center justify-center shrink-0">
+                      <Icon
+                        className={`size-4.5 sm:size-5 shrink-0 transition-transform group-hover:scale-105 ${
+                          !isCustomizing && active ? 'text-[#CFDD9D]' : 'text-[#CFDD9D]/80 group-hover:text-white'
+                        }`}
+                      />
+                      {isSidebarCollapsed && unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
+                      )}
+                    </div>
                     {!isSidebarCollapsed && (
                       <span className="truncate flex-1 text-left text-xs sm:text-sm">{item.label}</span>
                     )}
@@ -507,9 +543,6 @@ function CeoLayout() {
                       >
                         {item.badge}
                       </span>
-                    )}
-                    {isSidebarCollapsed && item.badge && (
-                      <span className="absolute top-2 right-2 size-2 rounded-full bg-[#3a7d63]" />
                     )}
                   </Link>
                 </div>
@@ -548,8 +581,8 @@ function CeoLayout() {
           </nav>
         </aside>
 
-        {/* Dynamic Page Content */}
-        <main className="ceo-portal-content flex-1 overflow-y-auto p-3 sm:p-5 lg:p-6 bg-[#f4f6f8] text-slate-800">
+        {/* Dynamic Page Content - Scrollable Main Area */}
+        <main className="ceo-portal-content flex-1 overflow-y-auto h-full p-3 sm:p-5 lg:p-6 bg-[#f4f6f8] text-slate-800">
           <Outlet />
         </main>
       </div>

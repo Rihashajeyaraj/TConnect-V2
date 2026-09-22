@@ -441,6 +441,16 @@ class SettingsRepository:
         if not company_id:
             company_id = "TC-001"
 
+        # Ensure departments is always a list
+        raw_depts = merged.get("departments")
+        if isinstance(raw_depts, str):
+            try:
+                merged["departments"] = json.loads(raw_depts)
+            except Exception:
+                merged["departments"] = []
+        elif not isinstance(raw_depts, list):
+            merged["departments"] = []
+
         # Fallback to auto_save_drafts for persistent PDF & business settings retrieval
         if not merged.get("holiday_calendar_pdf") or not merged.get("twite_handbook_pdf"):
             try:
@@ -719,32 +729,30 @@ class SettingsRepository:
         }
         full_db_payload = {k: v for k, v in full_db_payload.items() if v is not None}
 
-        # Save to organization.organization_settings / company_profile in Supabase
-        for tbl_name in ["organization_settings", "company_profile"]:
-            try:
-                table_ref = self.client.schema("organization").table(tbl_name)
-                existing = table_ref.select("*").limit(1).execute()
-                
-                if existing.data and len(existing.data) > 0:
-                    rec_id = existing.data[0].get("id") or existing.data[0].get("company_id")
-                    id_col = "id" if "id" in existing.data[0] else "company_id"
-                    
-                    # Clean payload to only include columns that exist in the target table
-                    cols_res = self.client.rpc("exec_sql", {"sql_query": f"SELECT column_name FROM information_schema.columns WHERE table_schema = 'organization' AND table_name = '{tbl_name}';"}).execute()
-                    if cols_res.data:
-                        tbl_cols = [c["column_name"] for c in cols_res.data]
-                        payload_cleaned = {k: v for k, v in full_db_payload.items() if k in tbl_cols}
-                    else:
-                        payload_cleaned = full_db_payload
-                    
-                    res = table_ref.update(payload_cleaned).eq(id_col, rec_id).execute()
-                else:
-                    res = table_ref.insert(full_db_payload).execute()
+        # Allowed columns in organization.organization_settings
+        ALLOWED_SETTINGS_COLS = {
+            "company_name", "company_code", "legal_name", "registration_no",
+            "tax_id_gstin", "pan_no", "email", "phone", "website", "address",
+            "logo_url", "currency", "time_zone", "annual_sales_target",
+            "branches", "departments", "updated_at"
+        }
+        payload_cleaned = {k: v for k, v in full_db_payload.items() if k in ALLOWED_SETTINGS_COLS}
 
-                logger.info(f"Saved company details to organization.{tbl_name} in Supabase!")
-                break
-            except Exception as e:
-                logger.warning(f"organization.{tbl_name} save notice: {e}")
+        # Save to organization.organization_settings in Supabase
+        try:
+            table_ref = self.client.schema("organization").table("organization_settings")
+            existing = table_ref.select("*").limit(1).execute()
+            
+            if existing.data and len(existing.data) > 0:
+                rec_id = existing.data[0].get("id") or existing.data[0].get("company_id")
+                id_col = "id" if "id" in existing.data[0] else "company_id"
+                res = table_ref.update(payload_cleaned).eq(id_col, rec_id).execute()
+            else:
+                res = table_ref.insert(payload_cleaned).execute()
+
+            logger.info("Saved company details and departments to organization.organization_settings in Supabase!")
+        except Exception as e:
+            logger.warning(f"organization.organization_settings save notice: {e}")
 
         # Save updates to other master data tables
         if "designations" in clean_updates:
@@ -907,32 +915,52 @@ class SettingsRepository:
         return payload
 
     def get_departments(self) -> List[Dict[str, Any]]:
-        for schema_attempt in ["organization", "public"]:
-            try:
-                res = self.client.schema(schema_attempt).table("departments").select("*").eq("is_active", True).execute()
-                if res.data is not None:
-                    return res.data
-            except Exception as e:
-                logger.debug(f"departments table lookup in {schema_attempt}: {e}")
+        settings = self.get_settings()
+        depts = settings.get("departments")
+        if isinstance(depts, list):
+            return depts
         return []
 
     def create_department(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        dept_id = f"DEPT-{uuid.uuid4().hex[:8]}"
-        payload = {
-            "id": dept_id,
+        current = self.get_departments()
+        d_id = data.get("id") or f"DEPT-{uuid.uuid4().hex[:8].upper()}"
+        new_item = {
+            "id": d_id,
             "name": str(data.get("name") or "").strip(),
-            "code": str(data.get("code") or "").strip(),
-            "manager_id": str(data.get("manager_id") or ""),
-            "is_active": True,
+            "lead": str(data.get("lead") or "Unassigned").strip(),
+            "staffCount": int(data.get("staffCount") or 0),
+            "budget": str(data.get("budget") or "₹0").strip(),
+            "status": str(data.get("status") or "Active").strip()
         }
-        for schema_attempt in ["organization", "public"]:
-            try:
-                res = self.client.schema(schema_attempt).table("departments").insert(payload).execute()
-                if res.data and len(res.data) > 0:
-                    return res.data[0]
-            except Exception as e:
-                logger.warning(f"Failed inserting department in {schema_attempt}: {e}")
-        return payload
+        updated = current + [new_item]
+        self.update_settings({"departments": updated})
+        return new_item
+
+    def update_department(self, dept_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        current = self.get_departments()
+        updated_item = None
+        updated_list = []
+        for item in current:
+            if str(item.get("id")) == str(dept_id):
+                item_copy = dict(item)
+                if "name" in data: item_copy["name"] = data["name"]
+                if "lead" in data: item_copy["lead"] = data["lead"]
+                if "staffCount" in data: item_copy["staffCount"] = data["staffCount"]
+                if "budget" in data: item_copy["budget"] = data["budget"]
+                if "status" in data: item_copy["status"] = data["status"]
+                updated_item = item_copy
+                updated_list.append(item_copy)
+            else:
+                updated_list.append(item)
+        if not updated_item:
+            raise ValueError(f"Department '{dept_id}' not found")
+        self.update_settings({"departments": updated_list})
+        return updated_item
+
+    def delete_department(self, dept_id: str) -> None:
+        current = self.get_departments()
+        updated_list = [item for item in current if str(item.get("id")) != str(dept_id)]
+        self.update_settings({"departments": updated_list})
 
     def get_document_types(self) -> List[Dict[str, Any]]:
         for schema_attempt in ["organization", "public"]:

@@ -1,7 +1,7 @@
 import authSession from '../utils/authSession.js'
 import { getApiBaseUrl } from '../utils/apiConfig.js'
 
-const API_BASE_URL = getApiBaseUrl()
+const getBaseUrl = () => getApiBaseUrl()
 
 
 // ─────────────────────────────────────────────────────────────
@@ -50,7 +50,7 @@ async function handleSilentRefresh() {
     if (!refreshToken) {
       return Promise.reject(new Error('No refresh token available'))
     }
-    activeRefreshPromise = fetch(`${API_BASE_URL}/auth/refresh`, {
+    activeRefreshPromise = fetch(`${getBaseUrl()}/auth/refresh`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ refresh_token: refreshToken }),
@@ -116,7 +116,7 @@ async function request(endpoint, options = {}) {
 
   const executeRequest = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}${endpoint}`, config)
+      const response = await fetch(`${getBaseUrl()}${endpoint}`, config)
       clearTimeout(timeoutId)
 
       let data
@@ -394,7 +394,15 @@ export const notificationAPI = {
   sendNotification: (data, options = {}) => request('/notifications', { method: 'POST', body: JSON.stringify(data), ...options }),
   markRead: (id, options = {}) => request(`/notifications/${id}/${typeof id === 'string' && id.includes('/') ? '' : 'read'}`, { method: 'PATCH', ...options }),
   markAsRead: (id, options = {}) => request(`/notifications/${id}/read`, { method: 'PATCH', ...options }),
+  markAllRead: (options = {}) => request('/notifications/mark-all-read', { method: 'POST', ...options }),
+  getChatContacts: (options = {}) => request('/notifications/chat/contacts', options),
+  getChatMessages: (params = {}, options = {}) => {
+    const query = new URLSearchParams(params).toString()
+    return request(`/notifications/chat/messages${query ? `?${query}` : ''}`, options)
+  },
+  sendChatMessage: (data, options = {}) => request('/notifications/chat/messages', { method: 'POST', body: JSON.stringify(data), ...options }),
 }
+
 
 export const reportAPI = {
   getSummary: () => request('/reports/summary'),
@@ -465,6 +473,8 @@ export const settingsAPI = {
   duplicateRole: (id, data) => request(`/settings/roles/${id}/duplicate`, { method: 'POST', body: JSON.stringify(data) }),
   getDepartments: () => request('/settings/departments'),
   createDepartment: (data) => request('/settings/departments', { method: 'POST', body: JSON.stringify(data) }),
+  updateDepartment: (id, data) => request(`/settings/departments/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+  deleteDepartment: (id) => request(`/settings/departments/${id}`, { method: 'DELETE' }),
   getLandmarks: () => request('/settings/landmarks'),
   createLandmark: (data) => request('/settings/landmarks', { method: 'POST', body: JSON.stringify(data) }),
   getDocumentTypes: () => request('/settings/document-types'),

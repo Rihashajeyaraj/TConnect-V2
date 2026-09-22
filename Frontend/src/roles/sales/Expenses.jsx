@@ -117,12 +117,32 @@ export default function Expenses(props) {
           };
         });
         const userOnlyExpenses = normalized.filter((item) => isItemOwnedByUser(item, currentUser));
-        setExpenseList(userOnlyExpenses);
+        if (userOnlyExpenses.length > 0) {
+          setExpenseList(userOnlyExpenses);
+        } else {
+          try {
+            const localSaved = JSON.parse(localStorage.getItem("tc_sales_expenses") || localStorage.getItem("tc_sm_expenses") || "[]");
+            setExpenseList(filterUserItems(localSaved, currentUser));
+          } catch {
+            setExpenseList([]);
+          }
+        }
       } else {
-        setExpenseList([]);
+        try {
+          const localSaved = JSON.parse(localStorage.getItem("tc_sales_expenses") || localStorage.getItem("tc_sm_expenses") || "[]");
+          setExpenseList(filterUserItems(localSaved, currentUser));
+        } catch {
+          setExpenseList([]);
+        }
       }
     } catch (err) {
       console.error("Failed fetching expenses:", err);
+      try {
+        const localSaved = JSON.parse(localStorage.getItem("tc_sales_expenses") || localStorage.getItem("tc_sm_expenses") || "[]");
+        setExpenseList(filterUserItems(localSaved, currentUser));
+      } catch {
+        setExpenseList([]);
+      }
     } finally {
       setLoading(false);
     }
@@ -553,15 +573,15 @@ export default function Expenses(props) {
 
       {/* SUBMIT EXPENSE TO SALES MANAGER MODAL */}
       {showSubmitModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-xl w-full p-6 sm:p-8 space-y-5 shadow-2xl my-auto max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-8 z-50 overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-4xl w-full p-6 sm:p-10 space-y-6 shadow-2xl my-auto max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
-                <h3 className="text-lg sm:text-xl font-black text-slate-900">Request Visit Expense Approval</h3>
-                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                  <p className="text-xs font-semibold text-teal-600">Send record directly to Sales Manager for verification</p>
-                  <span className="text-[10px] font-black text-slate-400">·</span>
-                  <span className={`text-[10px] font-black px-2 py-0.5 rounded-full transition-all ${
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900">Request Visit Expense Approval</h3>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  <p className="text-xs sm:text-sm font-semibold text-teal-600">Send record directly to Sales Manager for verification</p>
+                  <span className="text-xs font-black text-slate-400">·</span>
+                  <span className={`text-xs font-black px-2.5 py-0.5 rounded-full transition-all ${
                     formSaveStatus === "saving" ? "bg-amber-100 text-amber-700 animate-pulse" : "bg-emerald-100 text-emerald-700"
                   }`}>
                     {formSaveStatus === "saving" ? "⏳ Auto-saving..." : "✓ Saved to Supabase"}
@@ -571,22 +591,22 @@ export default function Expenses(props) {
               <button
                 type="button"
                 onClick={() => setShowSubmitModal(false)}
-                className="p-2 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
+                className="p-2.5 rounded-2xl bg-slate-100 hover:bg-rose-100 text-slate-500 hover:text-rose-600 transition cursor-pointer"
               >
-                <X size={20} />
+                <X size={22} />
               </button>
             </div>
 
-            <form onSubmit={handleSubmitExpense} className="space-y-4 text-xs sm:text-sm font-semibold">
+            <form onSubmit={handleSubmitExpense} className="space-y-5 text-xs sm:text-sm font-semibold">
               {/* Select Visit Option */}
               <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1">
+                <label className="text-xs font-extrabold text-slate-700 block mb-1.5">
                   Select Associated Client Visit (Optional)
                 </label>
                 <select
                   value={form.visitId}
                   onChange={(e) => handleVisitSelect(e.target.value)}
-                  className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-slate-50 font-bold text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer"
+                  className="w-full h-11 sm:h-12 border border-slate-200 rounded-xl px-3.5 bg-slate-50 font-bold text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer"
                 >
                   <option value="">-- General Field Visit / Standalone Expense --</option>
                   {visitsList.map((v) => (
@@ -598,40 +618,40 @@ export default function Expenses(props) {
               </div>
 
               {/* Client Name & Location */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Client / Company Name</label>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Client / Company Name</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Apex Global Solutions"
                     value={form.clientName}
                     onChange={(e) => setForm({ ...form, clientName: e.target.value })}
-                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-teal-500"
+                    className="w-full h-11 sm:h-12 border border-slate-200 rounded-xl px-3.5 bg-white font-medium focus:outline-none focus:border-teal-500"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Visit Location</label>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Visit Location</label>
                   <input
                     type="text"
                     required
                     placeholder="e.g. Coimbatore Site"
                     value={form.location}
                     onChange={(e) => setForm({ ...form, location: e.target.value })}
-                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-teal-500"
+                    className="w-full h-11 sm:h-12 border border-slate-200 rounded-xl px-3.5 bg-white font-medium focus:outline-none focus:border-teal-500"
                   />
                 </div>
               </div>
 
               {/* Category & Amount */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Expense Type</label>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Expense Type</label>
                   <select
                     value={form.type}
                     onChange={(e) => setForm({ ...form, type: e.target.value })}
-                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-bold text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer"
+                    className="w-full h-11 sm:h-12 border border-slate-200 rounded-xl px-3.5 bg-white font-bold text-slate-800 focus:outline-none focus:border-teal-500 cursor-pointer"
                   >
                     <option value="Travel / Fuel">🚗 Travel / Fuel / Toll</option>
                     <option value="Client Food & Meeting">🍔 Client Food & Refreshments</option>
@@ -647,13 +667,13 @@ export default function Expenses(props) {
                       placeholder="Type custom expense category..."
                       value={form.customType}
                       onChange={(e) => setForm({ ...form, customType: e.target.value })}
-                      className="w-full h-9 border border-teal-300 rounded-xl px-3 mt-2 bg-white font-extrabold text-slate-900 focus:outline-none focus:border-teal-600 text-xs"
+                      className="w-full h-10 border border-teal-300 rounded-xl px-3.5 mt-2 bg-white font-extrabold text-slate-900 focus:outline-none focus:border-teal-600 text-xs sm:text-sm"
                     />
                   )}
                 </div>
 
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Claim Amount (INR)</label>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Claim Amount (INR)</label>
                   <input
                     type="number"
                     required
@@ -661,54 +681,54 @@ export default function Expenses(props) {
                     placeholder="e.g. 1850"
                     value={form.amount}
                     onChange={(e) => setForm({ ...form, amount: e.target.value })}
-                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-extrabold text-slate-900 focus:outline-none focus:border-teal-500"
+                    className="w-full h-11 sm:h-12 border border-slate-200 rounded-xl px-3.5 bg-white font-extrabold text-slate-900 focus:outline-none focus:border-teal-500 text-sm sm:text-base"
                   />
                 </div>
               </div>
 
               {/* Date & Bill Upload */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 sm:gap-6">
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Visit Date</label>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Visit Date</label>
                   <input
                     type="date"
                     required
                     value={form.date}
                     onChange={(e) => setForm({ ...form, date: e.target.value })}
-                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-teal-500"
+                    className="w-full h-11 sm:h-12 border border-slate-200 rounded-xl px-3.5 bg-white font-medium focus:outline-none focus:border-teal-500"
                   />
                 </div>
 
                 <div>
-                  <label className="text-xs font-extrabold text-slate-700 block mb-1">Attach Receipt / Voucher</label>
+                  <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Attach Receipt / Voucher</label>
                   <input
                     type="file"
                     accept="image/*,.pdf"
                     onChange={handleFileChange}
-                    className="w-full h-10 border border-slate-200 rounded-xl px-2.5 bg-white text-xs font-medium text-slate-600 focus:outline-none file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-extrabold file:bg-teal-50 file:text-teal-700"
+                    className="w-full h-11 sm:h-12 border border-slate-200 rounded-xl px-3 bg-white text-xs font-medium text-slate-600 focus:outline-none file:mr-3 file:py-1.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-extrabold file:bg-teal-50 file:text-teal-700 cursor-pointer"
                   />
                 </div>
               </div>
 
               {/* Remarks */}
               <div>
-                <label className="text-xs font-extrabold text-slate-700 block mb-1">Expense Remarks / Details for Manager</label>
+                <label className="text-xs font-extrabold text-slate-700 block mb-1.5">Expense Remarks / Details for Manager</label>
                 <textarea
-                  rows="3"
+                  rows="4"
                   required
                   placeholder="e.g. Travel & toll charges for client product demo & contract signing meeting..."
                   value={form.remarks}
                   onChange={(e) => setForm({ ...form, remarks: e.target.value })}
-                  className="w-full border border-slate-200 rounded-xl p-3 bg-white font-medium focus:outline-none focus:border-teal-500"
+                  className="w-full border border-slate-200 rounded-xl p-3.5 bg-white font-medium focus:outline-none focus:border-teal-500 text-xs sm:text-sm min-h-[110px]"
                 />
               </div>
 
               {/* Submit Button */}
               <button
                 type="submit"
-                className="w-full py-3.5 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-sm shadow-md shadow-teal-600/20 flex items-center justify-center gap-2 transition cursor-pointer"
+                className="w-full py-4 rounded-2xl bg-teal-600 hover:bg-teal-700 text-white font-extrabold text-sm sm:text-base shadow-lg shadow-teal-600/20 flex items-center justify-center gap-2.5 transition cursor-pointer active:scale-98"
               >
-                <Send size={16} /> Submit Expense Request to Sales Manager
+                <Send size={18} /> Submit Expense Request to Sales Manager
               </button>
             </form>
           </div>

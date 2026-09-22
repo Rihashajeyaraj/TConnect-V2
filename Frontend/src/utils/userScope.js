@@ -20,19 +20,17 @@ export function isItemOwnedByUser(item, user) {
 
   if (!userEmail && !userEmpCode && !userId && !userName) return false
 
-  // Check if this record is a client/lead/visit record (where plain 'email' belongs to the client/prospect)
-  const isClientRecord = Boolean(
-    item.company || item.company_name || item.customer_id || item.lead_id ||
-    item.visit_id || item.poc_name || item.customer_name || item.lead_number
-  )
-
   const itemStaffEmail = String(
     item.assigned_to_email ||
     item.assignedToEmail ||
     item.executiveEmail ||
     item.staff_email ||
     item.owner_email ||
-    (!isClientRecord ? item.email : '') ||
+    item.employee_email ||
+    item.user_email ||
+    item.submitted_by_email ||
+    item.created_by_email ||
+    item.email ||
     ''
   ).toLowerCase().trim()
 
@@ -64,8 +62,8 @@ export function isItemOwnedByUser(item, user) {
     ''
   ).toLowerCase().trim()
 
-  // 1. Exact match on Email
-  if (userEmail && (itemStaffEmail === userEmail || itemAssignedTo === userEmail)) {
+  // 1. Exact or partial match on Email
+  if (userEmail && (itemStaffEmail === userEmail || itemAssignedTo === userEmail || (itemStaffEmail && itemStaffEmail.includes(userEmail)))) {
     return true
   }
 
@@ -222,32 +220,41 @@ export function filterUserNotifications(notifications, user, teamMembers = []) {
 
   // EXECUTIVE / SALES PRIVACY SCOPING (EXCLUSIVELY FOR THIS LOGGED-IN EXECUTIVE)
   return notifications.filter((n) => {
-    const recipEmail = String(n.recipient_email || n.assigned_to_email || n.email || '').toLowerCase().trim()
-    const recipId = String(n.recipient_id || n.recipient_user_id || n.employee_id || n.user_id || '').toLowerCase().trim()
-    const recipName = String(n.recipient_name || n.assigned_to || n.employee_name || '').toLowerCase().trim()
+    const recipEmail = String(n.recipient_email || n.assigned_to_email || '').toLowerCase().trim()
+    const recipId = String(n.recipient_id || n.recipient_user_id || '').toLowerCase().trim()
+    const recipName = String(n.recipient_name || n.assigned_to || '').toLowerCase().trim()
+    const recipRole = String(n.recipient_role || n.role || 'all').toLowerCase().trim()
     const titleMsg = `${n.title || ''} ${n.message || ''}`.toLowerCase()
 
-    // 1. Direct match on email, employee code, or full name
+    // 1. Privacy barrier: if notification explicitly specifies another user's recipient email, ID or name, filter it out
+    if (recipEmail && userEmail && recipEmail !== userEmail) return false
+    if (recipId && userEmpCode && recipId !== userEmpCode) return false
+    if (recipName && userName && recipName !== userName && !userName.includes(recipName) && !recipName.includes(userName)) return false
+
+    // 2. Direct match on email, employee code, or full name
     if (userEmail && recipEmail && recipEmail === userEmail) return true
     if (userEmpCode && recipId && recipId === userEmpCode) return true
-    if (userName && recipName && recipName === userName) return true
+    if (userName && recipName && (recipName === userName || userName.includes(recipName))) return true
 
-    // 2. Explicit message targeting for this user
+    // 3. Explicit message targeting for this user
     if (titleMsg.includes('you have been') || titleMsg.includes('assigned to you')) return true
     if (userEmail && titleMsg.includes(userEmail)) return true
     if (userName && titleMsg.includes(userName)) return true
 
-    // 3. Privacy barrier: if notification specifies another user's recipient details, FILTER IT OUT!
-    if (recipEmail && recipEmail !== userEmail) return false
-    if (recipId && recipId !== userEmpCode) return false
-
-    // 4. Untargeted general system broadcasts
-    const recipRole = String(n.recipient_role || '').toLowerCase()
-    if (!recipEmail && !recipId && (recipRole === 'all' || recipRole === 'everyone' || recipRole === 'executive')) {
+    // 4. Broadcast/general notifications for sales executives or all users
+    if (
+      recipRole === 'all' ||
+      recipRole === 'everyone' ||
+      recipRole === 'general' ||
+      recipRole.includes('sales') ||
+      recipRole.includes('executive') ||
+      role.includes(recipRole)
+    ) {
       return true
     }
 
-    return false
+    // 5. Default fallback for untargeted system notifications
+    return !recipEmail && !recipId
   })
 }
 

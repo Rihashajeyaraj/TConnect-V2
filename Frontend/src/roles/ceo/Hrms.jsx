@@ -1054,81 +1054,85 @@ function CeoHrms({ initialTab = 'employees' }) {
   }
 
   return (
-    <div className="mx-auto max-w-[1600px] space-y-6 pb-12">
-      {/* Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/30 text-[#832D51]">
-              <Briefcase className="size-4.5" />
-            </span>
-            <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-              Executive HRMS & Clearances
-            </h1>
-          </div>
-          <p className="mt-1 text-xs text-slate-500 font-medium max-w-3xl">
-            Direct CEO management of organizational staff, leave approvals, field permission requests, and daily attendance logs.
-          </p>
-        </div>
-
-        {/* Quick Pending Counter */}
-        <div className="flex items-center gap-2">
-          <span className="rounded-xl bg-[#F8CAE4]/20 border border-[#EA6993]/20 px-3 py-1.5 text-xs font-bold text-[#832D51]">
-            {pendingLeaves.length + pendingPermissions.length} Pending Clearances
-          </span>
-        </div>
-      </div>
-
-      {/* Primary HRMS Navigation Tabs */}
-      <div className="flex items-center flex-nowrap whitespace-nowrap gap-1 overflow-x-auto bg-white p-1.5 rounded-xl border border-slate-200/80 shadow-2xs scrollbar-thin">
-        {hrmsTabs.map((tabItem) => {
-          const Icon = tabItem.icon
-          const isActive = activeTab === tabItem.id
-          const badgeVal = getBadgeValue ? getBadgeValue(tabItem.id) : (tabItem.id === 'employees' ? employees.length : tabItem.id === 'leaves' ? pendingLeaves.length : tabItem.id === 'permissions' ? pendingPermissions.length : null)
-          const alertVal = hasAlert ? hasAlert(tabItem.id) : (tabItem.id === 'leaves' ? pendingLeaves.length > 0 : tabItem.id === 'permissions' ? pendingPermissions.length > 0 : false)
-          return (
-            <div
-              key={tabItem.id}
-              onClick={() => setActiveTab(tabItem.id)}
-              className="flex items-center shrink-0 whitespace-nowrap transition cursor-pointer"
-            >
-              <button
-                type="button"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setActiveTab(tabItem.id);
-                }}
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap ${isActive
-                    ? 'bg-[#832D51] text-white shadow-2xs'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-              >
-                <Icon className="size-3.5" />
-                <span>{tabItem.label}</span>
-                {badgeVal !== null && badgeVal !== undefined && (
-                  <span
-                    className={`rounded-full px-2 py-0.2 text-[10px] font-black ${isActive
-                        ? 'bg-white text-[#832D51]'
-                        : alertVal
-                          ? 'bg-[#EA6993] text-white'
-                          : 'bg-slate-200 text-slate-700'
-                      }`}
-                  >
-                    {badgeVal}
-                  </span>
-                )}
-              </button>
+    <div className="mx-auto max-w-[1600px] space-y-6 pb-12 overflow-x-clip">
+      {/* Sticky Header & Primary HRMS Navigation Tabs */}
+      <div className="sticky -top-3 sm:-top-5 z-40 bg-slate-50/95 backdrop-blur-md pb-2 pt-1 space-y-3 min-w-0">
+        {/* Header */}
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/30 text-[#832D51]">
+                <Briefcase className="size-4.5" />
+              </span>
+              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
+                Executive HRMS & Clearances
+              </h1>
             </div>
-          )
-        })}
-        <button
-          type="button"
-          onClick={resetHrmsTabs}
-          className="ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
-        >
-          Reset Order
-        </button>
+            <p className="mt-1 text-xs text-slate-500 font-medium max-w-3xl">
+              Direct CEO management of organizational staff, leave approvals, field permission requests, and daily attendance logs.
+            </p>
+          </div>
+
+          {/* Quick Pending Counter */}
+          <div className="flex items-center gap-2">
+            <span className="rounded-xl bg-[#F8CAE4]/20 border border-[#EA6993]/20 px-3 py-1.5 text-xs font-bold text-[#832D51]">
+              {pendingLeaves.length + pendingPermissions.length} Pending Clearances
+            </span>
+          </div>
+        </div>
+
+        {/* Primary HRMS Navigation Tabs */}
+        <div className="flex items-center flex-nowrap whitespace-nowrap gap-1 overflow-x-auto bg-white p-1.5 rounded-xl border border-slate-200/80 shadow-2xs scrollbar-thin">
+          {hrmsTabs.map((tabItem) => {
+            const Icon = tabItem.icon
+            const isActive = activeTab === tabItem.id
+            const badgeVal = getBadgeValue ? getBadgeValue(tabItem.id) : (tabItem.id === 'employees' ? employees.length : tabItem.id === 'leaves' ? pendingLeaves.length : tabItem.id === 'permissions' ? pendingPermissions.length : null)
+            const alertVal = hasAlert ? hasAlert(tabItem.id) : (tabItem.id === 'leaves' ? pendingLeaves.length > 0 : tabItem.id === 'permissions' ? pendingPermissions.length > 0 : false)
+            return (
+              <div
+                key={tabItem.id}
+                onClick={() => setActiveTab(tabItem.id)}
+                className="flex items-center shrink-0 whitespace-nowrap transition cursor-pointer"
+              >
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveTab(tabItem.id);
+                  }}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap ${isActive
+                      ? 'bg-[#832D51] text-white shadow-2xs'
+                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                    }`}
+                >
+                  <Icon className="size-3.5" />
+                  <span>{tabItem.label}</span>
+                  {badgeVal !== null && badgeVal !== undefined && (
+                    <span
+                      className={`rounded-full px-2 py-0.2 text-[10px] font-black ${isActive
+                          ? 'bg-white text-[#832D51]'
+                          : alertVal
+                            ? 'bg-[#EA6993] text-white'
+                            : 'bg-slate-200 text-slate-700'
+                        }`}
+                    >
+                      {badgeVal}
+                    </span>
+                  )}
+                </button>
+              </div>
+            )
+          })}
+          <button
+            type="button"
+            onClick={resetHrmsTabs}
+            className="ml-auto px-2 py-1 text-[10px] font-bold text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
+          >
+            Reset Order
+          </button>
+        </div>
       </div>
+
 
       {/* ── TAB 1: EMPLOYEES DIRECTORY ────────────────────────── */}
       {activeTab === 'employees' && (

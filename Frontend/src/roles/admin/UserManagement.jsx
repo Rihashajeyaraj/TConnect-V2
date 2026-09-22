@@ -38,6 +38,8 @@ import {
   ChevronDown,
   ChevronUp,
   Filter,
+  RotateCcw,
+  Calendar,
 } from 'lucide-react'
 import { hrmsAPI, userAPI, settingsAPI, attendanceAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
@@ -1141,15 +1143,15 @@ function UserDirectoryTable({
 
   return (
     <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-      <div className="overflow-x-auto">
+      <div className="overflow-x-auto overflow-y-auto max-h-[60vh] relative">
         <table className="w-full text-left border-collapse text-xs">
-          <thead>
-            <tr className="bg-slate-50 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-              <th className="px-4 py-3">Emp ID</th>
-              <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Role</th>
-              <th className="px-4 py-3">Assignment</th>
-              <th className="px-4 py-3 text-center">Action</th>
+          <thead className="sticky top-0 z-20 bg-slate-100/95 backdrop-blur-xs shadow-2xs">
+            <tr className="bg-slate-100 border-b border-slate-200 text-[10px] font-extrabold uppercase tracking-wider text-slate-600">
+              <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Emp ID</th>
+              <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Name</th>
+              <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Role</th>
+              <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Assignment</th>
+              <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3 text-center">Action</th>
             </tr>
           </thead>
           <tbody>
@@ -1482,6 +1484,14 @@ function UserManagement() {
   const [directoryViewMode, setDirectoryViewMode] = useState('hierarchy') // 'hierarchy' | 'table'
   const [showAddModal, setShowAddModal] = useState(false)
 
+  // Deactivated / Past Employee Accounts Filter States
+  const [deactivatedSearchQuery, setDeactivatedSearchQuery] = useState('')
+  const [deactivatedDeptFilter, setDeactivatedDeptFilter] = useState('ALL')
+  const [deactivatedRoleFilter, setDeactivatedRoleFilter] = useState('ALL')
+  const [deactivatedDatePreset, setDeactivatedDatePreset] = useState('ALL')
+  const [deactivatedStartDate, setDeactivatedStartDate] = useState('')
+  const [deactivatedEndDate, setDeactivatedEndDate] = useState('')
+
   // Auto-open modal or focus search if requested via navigation state (e.g. from Admin Dashboard Quick Action)
   useEffect(() => {
     if (location.state?.openAddModal) {
@@ -1722,6 +1732,13 @@ function UserManagement() {
   const [reassignRoleFilter, setReassignRoleFilter] = useState('ALL')
   const [reassignSearchQuery, setReassignSearchQuery] = useState('')
 
+  // Assign Executive Modal Search & Filter States
+  const [assignTargetRoleFilter, setAssignTargetRoleFilter] = useState('ALL')
+  const [assignSearchQuery, setAssignSearchQuery] = useState('')
+  const [assignDeptFilter, setAssignDeptFilter] = useState('ALL')
+  const [assignRoleFilter, setAssignRoleFilter] = useState('ALL')
+  const [assignStatusFilter, setAssignStatusFilter] = useState('ALL')
+
   // Derived lists
   const salesManagers = useMemo(() => {
     return users.filter((u) => {
@@ -1737,6 +1754,129 @@ function UserManagement() {
       return !isManagerOrAdmin
     })
   }, [users])
+
+  // All Potential Target Leaders (Managers, Team Leads, CEOs, Admins)
+  const assignableLeaders = useMemo(() => {
+    return users.filter((u) => {
+      const r = (u.role || '').toLowerCase()
+      return r.includes('manager') || r.includes('admin') || r.includes('ceo') || r.includes('founder') || r.includes('team lead') || r.includes('tl') || r.includes('head')
+    }).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }, [users])
+
+  const filteredAssignLeaders = useMemo(() => {
+    return assignableLeaders.filter((m) => {
+      if (assignTargetRoleFilter === 'ALL') return true
+      const r = (m.role || '').toLowerCase()
+      if (assignTargetRoleFilter === 'MANAGER') return r.includes('manager') && !r.includes('team lead') && !r.includes('tl')
+      if (assignTargetRoleFilter === 'TEAM_LEAD') return r.includes('team lead') || r.includes('tl')
+      if (assignTargetRoleFilter === 'ADMIN_CEO') return r.includes('admin') || r.includes('ceo') || r.includes('founder')
+      return true
+    })
+  }, [assignableLeaders, assignTargetRoleFilter])
+
+  // All Assignable Staff Members
+  const assignableExecutives = useMemo(() => {
+    return users.filter((u) => {
+      if (selectedManagerId && String(u.id || u.employee_id) === String(selectedManagerId)) return false
+      return true
+    }).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
+  }, [users, selectedManagerId])
+
+  const assignModalDeptOptions = useMemo(() => {
+    const set = new Set()
+    users.forEach((u) => {
+      const d = (u.department || u.dept || '').trim()
+      if (d) set.add(d)
+    })
+    return Array.from(set).sort()
+  }, [users])
+
+  const assignModalRoleOptions = useMemo(() => {
+    const set = new Set()
+    users.forEach((u) => {
+      const r = (u.role || '').trim()
+      if (r) set.add(r)
+    })
+    return Array.from(set).sort()
+  }, [users])
+
+  const filteredAssignExecutives = useMemo(() => {
+    const selectedMgrObj = selectedManagerId ? users.find(u => String(u.id) === String(selectedManagerId) || String(u.employee_id) === String(selectedManagerId)) : null
+    const selEmail = String(selectedMgrObj?.email || '').toLowerCase().trim()
+    const selId = String(selectedManagerId).toLowerCase().trim()
+    const selCode = String(selectedMgrObj?.employee_code || '').toLowerCase().trim()
+
+    return assignableExecutives.filter((exec) => {
+      // Search
+      if (assignSearchQuery.trim()) {
+        const q = assignSearchQuery.toLowerCase().trim()
+        const name = (exec.name || '').toLowerCase()
+        const email = (exec.email || '').toLowerCase()
+        const code = (exec.employee_code || exec.employee_id || '').toLowerCase()
+        if (!name.includes(q) && !email.includes(q) && !code.includes(q)) return false
+      }
+
+      // Department
+      if (assignDeptFilter !== 'ALL') {
+        const dept = (exec.department || exec.dept || '').toLowerCase().trim()
+        if (dept !== assignDeptFilter.toLowerCase().trim()) return false
+      }
+
+      // Role
+      if (assignRoleFilter !== 'ALL') {
+        const role = (exec.role || exec.designation || '').toLowerCase().trim()
+        if (role !== assignRoleFilter.toLowerCase().trim()) return false
+      }
+
+      // Assignment Status
+      if (assignStatusFilter !== 'ALL') {
+        const currMgrId = String(exec.reporting_manager_id || '').toLowerCase().trim()
+        const currMgrEmail = String(exec.reporting_manager_email || '').toLowerCase().trim()
+        const isUnassigned = !exec.reporting_manager_name || exec.reporting_manager_name === 'Unassigned' || (!currMgrId && !currMgrEmail)
+        
+        const isCurrentSelected = Boolean(selectedManagerId) && (
+          (currMgrId && (currMgrId === selId || (selCode && currMgrId === selCode))) ||
+          (currMgrEmail && selEmail && currMgrEmail === selEmail)
+        )
+
+        if (assignStatusFilter === 'UNASSIGNED') {
+          if (!isUnassigned) return false
+        } else if (assignStatusFilter === 'CURRENT_LEADER') {
+          if (!isCurrentSelected) return false
+        } else if (assignStatusFilter === 'OTHER_LEADER') {
+          if (isUnassigned || isCurrentSelected) return false
+        }
+      }
+
+      return true
+    })
+  }, [assignableExecutives, assignSearchQuery, assignDeptFilter, assignRoleFilter, assignStatusFilter, selectedManagerId, users])
+
+  const handleToggleSelectAllFiltered = () => {
+    const filteredIds = filteredAssignExecutives.map((e) => String(e.id))
+    const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedExecIds.includes(id))
+
+    if (allFilteredSelected) {
+      setSelectedExecIds((prev) => prev.filter((id) => !filteredIds.includes(id)))
+    } else {
+      setSelectedExecIds((prev) => Array.from(new Set([...prev, ...filteredIds])))
+    }
+  }
+
+  const handleOpenAssignModal = (initialManagerId = '') => {
+    setAssignTargetRoleFilter('ALL')
+    setAssignSearchQuery('')
+    setAssignDeptFilter('ALL')
+    setAssignRoleFilter('ALL')
+    setAssignStatusFilter('ALL')
+    if (initialManagerId) {
+      handleManagerSelect(initialManagerId)
+    } else {
+      setSelectedManagerId('')
+      setSelectedExecIds([])
+    }
+    setShowAssignModal(true)
+  }
 
   const hierarchyManagers = useMemo(() => {
     return users.filter((u) => {
@@ -2509,6 +2649,86 @@ function UserManagement() {
     }
   }, [users])
 
+  // Date parsing helper
+  const parseDateToYYYYMMDD = (rawDate) => {
+    if (!rawDate) return ''
+    const str = String(rawDate).trim()
+    if (!str || str === '—' || str === 'N/A' || str === 'null' || str === 'undefined') return ''
+    const isoPart = str.split('T')[0].split(' ')[0]
+    if (/^\d{4}-\d{2}-\d{2}$/.test(isoPart)) {
+      return isoPart
+    }
+    if (str.includes('/')) {
+      const parts = str.split('/')
+      if (parts.length === 3) {
+        if (parts[2].length === 4) {
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`
+        } else if (parts[0].length === 4) {
+          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`
+        }
+      }
+    }
+    const dObj = new Date(str)
+    if (!isNaN(dObj.getTime())) {
+      return dObj.toISOString().split('T')[0]
+    }
+    return ''
+  }
+
+  // Deactivated Users Filtering & Memos
+  const deactivatedUsersList = useMemo(() => {
+    return users.filter(u => u.status === 'Inactive' || u.status === 'Deactivated' || u.is_active === false)
+  }, [users])
+
+  const filteredDeactivatedUsers = useMemo(() => {
+    return deactivatedUsersList.filter(u => {
+      // 1. Search Query
+      if (deactivatedSearchQuery.trim()) {
+        const q = deactivatedSearchQuery.toLowerCase().trim()
+        const name = (u.name || u.full_name || `${u.first_name || ''} ${u.last_name || ''}`).toLowerCase()
+        const email = (u.email || '').toLowerCase()
+        const code = (u.employee_code || u.code || '').toLowerCase()
+        const phone = (u.phone || u.phone_number || '').toLowerCase()
+        if (!name.includes(q) && !email.includes(q) && !code.includes(q) && !phone.includes(q)) {
+          return false
+        }
+      }
+
+      // 2. Department Filter
+      if (deactivatedDeptFilter !== 'ALL') {
+        const d = (u.department || u.work_department || u.dept || '').toLowerCase().trim()
+        const target = deactivatedDeptFilter.toLowerCase().trim()
+        if (d !== target && !d.includes(target) && !target.includes(d)) {
+          return false
+        }
+      }
+
+      // 3. Designation / Role Filter
+      if (deactivatedRoleFilter !== 'ALL') {
+        const r = (u.role || u.designation || '').toLowerCase().trim()
+        const target = deactivatedRoleFilter.toLowerCase().trim()
+        if (target === 'sales_executive' && !r.includes('executive')) return false
+        if (target === 'team_lead' && (!r.includes('lead') && !r.includes('tl'))) return false
+        if (target === 'manager' && (!r.includes('manager') || r.includes('lead'))) return false
+        if (target !== 'sales_executive' && target !== 'team_lead' && target !== 'manager') {
+          if (r !== target && !r.includes(target)) return false
+        }
+      }
+
+      // 4. Date Filter
+      if (deactivatedDatePreset !== 'ALL' || deactivatedStartDate || deactivatedEndDate) {
+        const dateRaw = u.updated_at || u.deactivated_at || u.created_at || u.doj || ''
+        const dateStr = parseDateToYYYYMMDD(dateRaw)
+        if (dateStr) {
+          if (deactivatedStartDate && dateStr < deactivatedStartDate) return false
+          if (deactivatedEndDate && dateStr > deactivatedEndDate) return false
+        }
+      }
+
+      return true
+    })
+  }, [deactivatedUsersList, deactivatedSearchQuery, deactivatedDeptFilter, deactivatedRoleFilter, deactivatedDatePreset, deactivatedStartDate, deactivatedEndDate])
+
   return (
     <div className="mx-auto max-w-[1400px] space-y-6 font-sans">
       <canvas ref={canvasRef} className="hidden" />
@@ -2522,10 +2742,20 @@ function UserManagement() {
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <button
-            onClick={() => setShowAssignModal(true)}
+            onClick={() => setActiveTab(activeTab === 'deactivated' ? 'directory' : 'deactivated')}
+            className={`inline-flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer ${activeTab === 'deactivated'
+                ? 'bg-rose-700 text-white ring-2 ring-rose-300'
+                : 'bg-rose-600 hover:bg-rose-700 text-white'
+              }`}
+          >
+            <UserX className="w-4 h-4 text-rose-100" />
+            <span>Deactivated Accounts ({deactivatedUsersList.length})</span>
+          </button>
+          <button
+            onClick={() => handleOpenAssignModal()}
             className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-md transition-all cursor-pointer"
           >
-            <UserCheck className="w-4 h-4" /> Assign Sales Executives
+            <UserCheck className="w-4 h-4" /> Assign Sales Executives & Staff
           </button>
           <button
             onClick={() => setShowAddModal(true)}
@@ -2645,6 +2875,18 @@ function UserManagement() {
           >
             <Key className="w-4 h-4" />
             <span>🔑 Password Reset Requests</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setActiveTab('deactivated')}
+            className={`flex-1 sm:flex-initial px-4 py-2.5 rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center justify-center gap-2 ${activeTab === 'deactivated'
+                ? 'bg-rose-700 text-white shadow-sm'
+                : 'bg-transparent text-slate-600 hover:bg-slate-200/60'
+              }`}
+          >
+            <UserX className="w-4 h-4" />
+            <span>🚫 Deactivated Accounts ({deactivatedUsersList.length})</span>
           </button>
         </div>
 
@@ -2860,6 +3102,237 @@ function UserManagement() {
       {activeTab === 'password-resets' && (
         <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs animate-in fade-in duration-150">
           <PasswordResetRequestsPanel />
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* TAB 4: DEACTIVATED & PAST EMPLOYEE ACCOUNTS             */}
+      {/* ======================================================== */}
+      {activeTab === 'deactivated' && (
+        <div className="space-y-6 animate-in fade-in duration-150">
+          {/* Header Banner */}
+          <div className="bg-gradient-to-r from-rose-900 via-rose-800 to-slate-900 rounded-3xl p-6 text-white shadow-xl flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="p-3 bg-white/10 border border-white/20 rounded-2xl shadow-inner">
+                <UserX className="w-8 h-8 text-rose-200" />
+              </div>
+              <div>
+                <h2 className="text-xl font-extrabold text-white tracking-tight flex items-center gap-2">
+                  Deactivated & Past Employee Records
+                  <span className="text-xs bg-rose-500/30 text-rose-100 border border-rose-400/40 px-3 py-1 rounded-full font-bold">
+                    {deactivatedUsersList.length} Archived Accounts
+                  </span>
+                </h2>
+                <p className="text-xs text-rose-100/90 font-medium mt-1">
+                  Archived past employee directory. Search and filter by Department, Date, Designation/Role, or reactivate access instantly.
+                </p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setDeactivatedSearchQuery('')
+                setDeactivatedDeptFilter('ALL')
+                setDeactivatedRoleFilter('ALL')
+                setDeactivatedDatePreset('ALL')
+                setDeactivatedStartDate('')
+                setDeactivatedEndDate('')
+              }}
+              className="px-4 py-2 bg-white/10 hover:bg-white/20 border border-white/20 text-white rounded-xl text-xs font-extrabold transition cursor-pointer flex items-center gap-1.5"
+            >
+              <RotateCcw className="w-3.5 h-3.5" /> Clear All Filters
+            </button>
+          </div>
+
+          {/* Search & Multi-Filter Control Toolbar */}
+          <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+              {/* Search Bar */}
+              <div className="relative md:col-span-2">
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search past employee name, email, employee code, phone..."
+                  value={deactivatedSearchQuery}
+                  onChange={(e) => setDeactivatedSearchQuery(e.target.value)}
+                  className="w-full h-10 pl-10 pr-4 bg-slate-50 border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:border-rose-500 focus:bg-white transition shadow-2xs"
+                />
+              </div>
+
+              {/* Department Filter */}
+              <div>
+                <select
+                  value={deactivatedDeptFilter}
+                  onChange={(e) => setDeactivatedDeptFilter(e.target.value)}
+                  className="w-full h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-500 cursor-pointer shadow-2xs"
+                >
+                  <option value="ALL">🏢 All Departments ({deptOptions.length})</option>
+                  {deptOptions.map(dept => (
+                    <option key={dept} value={dept}>{dept}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Designation / Role Filter */}
+              <div>
+                <select
+                  value={deactivatedRoleFilter}
+                  onChange={(e) => setDeactivatedRoleFilter(e.target.value)}
+                  className="w-full h-10 px-3 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-500 cursor-pointer shadow-2xs"
+                >
+                  <option value="ALL">👔 All Designations / Roles</option>
+                  <option value="sales_executive">Sales Executive</option>
+                  <option value="team_lead">Team Lead</option>
+                  <option value="manager">Sales Manager</option>
+                  <option value="ceo">CEO / Admin</option>
+                </select>
+              </div>
+            </div>
+
+            {/* Date Range Selector Bar */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-100">
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="flex items-center gap-2 text-xs font-extrabold text-slate-700">
+                  <Calendar className="w-4 h-4 text-rose-600" />
+                  <span>Filter Date:</span>
+                  <select
+                    value={deactivatedDatePreset}
+                    onChange={(e) => {
+                      setDeactivatedDatePreset(e.target.value)
+                      if (e.target.value !== 'CUSTOM') {
+                        setDeactivatedStartDate('')
+                        setDeactivatedEndDate('')
+                      }
+                    }}
+                    className="bg-slate-50 border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-500 cursor-pointer"
+                  >
+                    <option value="ALL">All Time</option>
+                    <option value="THIS_MONTH">This Month</option>
+                    <option value="THIS_YEAR">This Year</option>
+                    <option value="CUSTOM">Custom Date Range</option>
+                  </select>
+                </div>
+
+                {(deactivatedDatePreset === 'CUSTOM' || deactivatedStartDate || deactivatedEndDate) && (
+                  <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+                    <input
+                      type="date"
+                      value={deactivatedStartDate}
+                      onChange={(e) => {
+                        setDeactivatedStartDate(e.target.value)
+                        setDeactivatedDatePreset('CUSTOM')
+                      }}
+                      className="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-500"
+                    />
+                    <span className="text-slate-400">to</span>
+                    <input
+                      type="date"
+                      value={deactivatedEndDate}
+                      onChange={(e) => {
+                        setDeactivatedEndDate(e.target.value)
+                        setDeactivatedDatePreset('CUSTOM')
+                      }}
+                      className="bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:border-rose-500"
+                    />
+                  </div>
+                )}
+              </div>
+
+              <div className="text-xs text-slate-500 font-bold">
+                Showing <span className="text-rose-700 font-black">{filteredDeactivatedUsers.length}</span> matching archived records
+              </div>
+            </div>
+          </div>
+
+          {/* Table Directory List */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+            {filteredDeactivatedUsers.length === 0 ? (
+              <div className="p-16 text-center text-slate-400 space-y-3">
+                <UserX className="w-12 h-12 text-slate-300 mx-auto" />
+                <h3 className="text-base font-extrabold text-slate-700">No Deactivated Accounts Found</h3>
+                <p className="text-xs text-slate-500 max-w-md mx-auto">
+                  {deactivatedUsersList.length === 0
+                    ? 'All system employee accounts are currently active.'
+                    : 'No past employee records match the active search or filter criteria.'}
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto overflow-y-auto max-h-[60vh] relative">
+                <table className="w-full text-left border-collapse text-xs">
+                  <thead className="sticky top-0 z-20 bg-slate-100/95 backdrop-blur-xs shadow-2xs">
+                    <tr className="bg-slate-100 border-b border-slate-200 text-slate-600 font-extrabold uppercase tracking-wider text-[10px]">
+                      <th className="sticky top-0 bg-slate-100 z-20 px-5 py-3.5">Employee Detail</th>
+                      <th className="sticky top-0 bg-slate-100 z-20 px-5 py-3.5">Role / Designation</th>
+                      <th className="sticky top-0 bg-slate-100 z-20 px-5 py-3.5">Department</th>
+                      <th className="sticky top-0 bg-slate-100 z-20 px-5 py-3.5">Contact Info</th>
+                      <th className="sticky top-0 bg-slate-100 z-20 px-5 py-3.5">Account Status</th>
+                      <th className="sticky top-0 bg-slate-100 z-20 px-5 py-3.5 text-center">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-semibold text-slate-800">
+                    {filteredDeactivatedUsers.map((emp) => {
+                      const empName = emp.name || emp.full_name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || 'Employee'
+                      const empRole = emp.role || emp.designation || 'Staff'
+                      const empDept = emp.department || emp.work_department || emp.dept || 'Sales & Business'
+                      const empCode = emp.employee_code || emp.code || `EMP-${String(emp.id).slice(-4)}`
+
+                      return (
+                        <tr key={emp.id} className="hover:bg-slate-50/70 transition">
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <div className="w-9 h-9 rounded-xl bg-slate-200 text-slate-700 font-black text-xs flex items-center justify-center border border-slate-300 shrink-0">
+                                {empName.slice(0, 2).toUpperCase()}
+                              </div>
+                              <div>
+                                <div className="font-extrabold text-slate-900 text-xs">{empName}</div>
+                                <div className="text-[10px] font-mono text-slate-400 mt-0.5">{empCode}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 border border-slate-200 font-bold text-[11px]">
+                              {empRole}
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-slate-650 font-bold">
+                            {empDept}
+                          </td>
+                          <td className="px-5 py-4 space-y-0.5">
+                            <div className="text-slate-900 font-bold text-[11px]">{emp.email || '—'}</div>
+                            <div className="text-slate-400 text-[10px]">{emp.phone || emp.phone_number || '—'}</div>
+                          </td>
+                          <td className="px-5 py-4">
+                            <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-extrabold">
+                              <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                              Deactivated / Inactive
+                            </span>
+                          </td>
+                          <td className="px-5 py-4 text-center">
+                            <div className="flex items-center justify-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => toggleUserStatus(emp.id)}
+                                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-2xs cursor-pointer flex items-center gap-1"
+                              >
+                                <UserCheck className="w-3.5 h-3.5" /> Reactivate
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedEmployeeProfile(emp)}
+                                className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition cursor-pointer"
+                              >
+                                Details
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 
@@ -3134,335 +3607,343 @@ function UserManagement() {
 
       {/* Add User Modal (Admin Creates Access Email & Password) */}
       {showAddModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl max-w-3xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[90vh] text-left text-xs font-semibold text-slate-800">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 z-50">
+          <div className="bg-white rounded-3xl max-w-5xl w-full flex flex-col border border-slate-200 shadow-2xl overflow-hidden max-h-[92vh] text-left text-xs font-semibold text-slate-800 font-sans">
 
             {/* Modal Header */}
-            <div className="bg-gradient-to-r from-[#071A45] via-[#0D2866] to-[#14398A] text-white p-5 flex items-center justify-between border-b border-slate-800 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-blue-500/20 border border-blue-400/30 text-blue-300 rounded-2xl shadow-inner">
-                  <UserCheck className="w-5 h-5" />
+            <div className="bg-gradient-to-r from-[#0B2545] via-[#133C6D] to-[#1E88E5] text-white p-6 flex items-center justify-between border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-3.5">
+                <div className="p-3 bg-white/10 border border-white/20 text-white rounded-2xl shadow-inner flex items-center justify-center">
+                  <UserPlus className="w-6 h-6 text-blue-200" />
                 </div>
                 <div>
-                  <h3 className="font-extrabold text-base text-white tracking-tight">Create System Employee Portal Account</h3>
-                  <p className="text-[11px] text-slate-300 font-medium mt-0.5">Creates credentials, employee profile, and assigns team hierarchy.</p>
+                  <h3 className="font-extrabold text-lg text-white tracking-tight">Create System Employee Portal Account</h3>
+                  <p className="text-xs text-blue-100 font-medium mt-0.5">Configure login credentials, employee profile details, work department, hierarchy reporting, and leave quotas.</p>
                 </div>
               </div>
               <button
                 type="button"
                 onClick={() => setShowAddModal(false)}
-                className="text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-xl text-xs font-bold transition cursor-pointer"
+                className="text-slate-300 hover:text-white bg-white/10 hover:bg-white/20 p-2 rounded-xl text-sm font-bold transition cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleAddUser} autoComplete="off" className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Fake hidden input traps to block browser autofill */}
-              <input type="text" name="fake_usernamenotremembered" style={{ display: 'none' }} tabIndex={-1} />
-              <input type="password" name="fake_passwordnotremembered" style={{ display: 'none' }} tabIndex={-1} />
+            <form onSubmit={handleAddUser} autoComplete="off" className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-6 sm:p-8 space-y-6 overflow-y-auto flex-1">
+                {/* Fake hidden input traps to block browser autofill */}
+                <input type="text" name="fake_usernamenotremembered" style={{ display: 'none' }} tabIndex={-1} />
+                <input type="password" name="fake_passwordnotremembered" style={{ display: 'none' }} tabIndex={-1} />
 
-              {/* SECTION 1: Personal & Account Credentials */}
-              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 space-y-3.5">
-                <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
-                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 font-black text-[10px] flex items-center justify-center">1</span>
-                  <h4 className="font-extrabold text-xs text-[#071A45] uppercase tracking-wider">Personal & Account Credentials</h4>
-                </div>
+                {/* SECTION 1: Personal & Account Credentials */}
+                <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center gap-2.5 border-b border-slate-200 pb-3">
+                    <span className="w-6.5 h-6.5 rounded-full bg-blue-600 text-white font-black text-xs flex items-center justify-center shadow-xs">1</span>
+                    <h4 className="font-extrabold text-xs text-[#0B2545] uppercase tracking-wider">Personal & Account Credentials</h4>
+                  </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">First Name *</label>
-                    <input
-                      type="text" required
-                      placeholder="e.g. Arun"
-                      value={newUser.first_name}
-                      onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value, name: `${e.target.value} ${newUser.last_name}`.trim() })}
-                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-600 shadow-2xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Last Name</label>
-                    <input
-                      type="text"
-                      placeholder="e.g. Kumar"
-                      value={newUser.last_name}
-                      onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value, name: `${newUser.first_name} ${e.target.value}`.trim() })}
-                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
-                    />
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Access Email Address *</label>
-                    <input
-                      type="email" required
-                      name="new_user_login_email"
-                      id="new_user_login_email"
-                      placeholder="e.g. employee.name@company.com"
-                      value={newUser.email}
-                      onChange={(e) => setNewUser({ ...newUser, email: e.target.value, name: `${newUser.first_name} ${newUser.last_name}`.trim() })}
-                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Portal Login Password *</label>
-                    <div className="relative">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">First Name <span className="text-rose-500">*</span></label>
                       <input
-                        type={showAddPassword ? 'text' : 'password'}
-                        name="new_user_login_password"
-                        id="new_user_login_password"
-                        placeholder="Min 6 characters"
-                        value={newUser.password}
-                        onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
-                        className="w-full h-10 pl-3 pr-10 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
-                        autoComplete="new-password"
-                        required
+                        type="text" required
+                        placeholder="e.g. Arun"
+                        value={newUser.first_name}
+                        onChange={(e) => setNewUser({ ...newUser, first_name: e.target.value, name: `${e.target.value} ${newUser.last_name}`.trim() })}
+                        className="w-full h-11 px-3.5 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 shadow-2xs"
                       />
-                      <button
-                        type="button"
-                        onClick={() => setShowAddPassword(!showAddPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                      >
-                        {showAddPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Last Name</label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Kumar"
+                        value={newUser.last_name}
+                        onChange={(e) => setNewUser({ ...newUser, last_name: e.target.value, name: `${newUser.first_name} ${e.target.value}`.trim() })}
+                        className="w-full h-11 px-3.5 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 shadow-2xs"
+                      />
                     </div>
                   </div>
-                </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Gender</label>
-                    <select
-                      value={newUser.gender}
-                      onChange={(e) => setNewUser({ ...newUser, gender: e.target.value })}
-                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer shadow-2xs"
-                    >
-                      <option value="Male">Male</option>
-                      <option value="Female">Female</option>
-                      <option value="Other">Other</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Phone Number</label>
-                    <input
-                      type="tel"
-                      maxLength={10}
-                      value={newUser.phone}
-                      onChange={(e) => setNewUser({ ...newUser, phone: normalizePhoneNumber(e.target.value) })}
-                      placeholder="10-digit phone"
-                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Emergency Contact</label>
-                    <input
-                      type="tel"
-                      maxLength={10}
-                      value={newUser.emergency_contact}
-                      onChange={(e) => setNewUser({ ...newUser, emergency_contact: normalizePhoneNumber(e.target.value) })}
-                      placeholder="Emergency contact"
-                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 2: Role & Department Assignment */}
-              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 space-y-3.5">
-                <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
-                  <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 font-black text-[10px] flex items-center justify-center">2</span>
-                  <h4 className="font-extrabold text-xs text-[#071A45] uppercase tracking-wider">Role & Department Assignment</h4>
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Assigned Role *</label>
-                    <select
-                      value={newUser.role}
-                      onChange={(e) => handleAddRoleChange(e.target.value)}
-                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer shadow-2xs"
-                    >
-                      <option value="Sales Executive">Sales Executive</option>
-                      <option value="Team Lead">Team Lead</option>
-                      <option value="Sales Manager">Sales Manager</option>
-                      <option value="System Admin">System Admin</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Work Department</label>
-                    <select
-                      value={newUser.dept}
-                      onChange={(e) => setNewUser({ ...newUser, dept: e.target.value })}
-                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer shadow-2xs"
-                    >
-                      {deptOptions.map((dept) => (
-                        <option key={dept} value={dept}>
-                          {dept}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* SECTION 3: Reporting Hierarchy (Manager & Team Lead Assignment) */}
-              {(() => {
-                const r = (newUser.role || '').toLowerCase().trim()
-                const isExec = r.includes('executive') || r.includes('sales executive')
-                const isTopRole = r.includes('admin') || r.includes('ceo') || r.includes('founder')
-
-                if (isTopRole) {
-                  return (
-                    <div className="bg-indigo-50/40 border border-indigo-200/80 rounded-2xl p-4 space-y-2">
-                      <div className="flex items-center gap-2 border-b border-indigo-200/60 pb-2">
-                        <span className="w-6 h-6 rounded-full bg-indigo-600 text-white font-black text-[10px] flex items-center justify-center">3</span>
-                        <h4 className="font-extrabold text-xs text-indigo-950 uppercase tracking-wider">Reporting Hierarchy Assignment</h4>
-                      </div>
-                      <p className="text-xs text-indigo-700 font-semibold italic">
-                        👑 {newUser.role} is a top-level organization role (No reporting manager or team lead required).
-                      </p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Access Email Address <span className="text-rose-500">*</span></label>
+                      <input
+                        type="email" required
+                        name="new_user_login_email"
+                        id="new_user_login_email"
+                        placeholder="e.g. employee.name@company.com"
+                        value={newUser.email}
+                        onChange={(e) => setNewUser({ ...newUser, email: e.target.value, name: `${newUser.first_name} ${newUser.last_name}`.trim() })}
+                        className="w-full h-11 px-3.5 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 shadow-2xs"
+                      />
                     </div>
-                  )
-                }
-
-                return (
-                  <div className="bg-indigo-50/40 border border-indigo-200/80 rounded-2xl p-4 space-y-3.5">
-                    <div className="flex items-center justify-between border-b border-indigo-200/60 pb-2">
-                      <div className="flex items-center gap-2">
-                        <span className="w-6 h-6 rounded-full bg-indigo-600 text-white font-black text-[10px] flex items-center justify-center">3</span>
-                        <h4 className="font-extrabold text-xs text-indigo-950 uppercase tracking-wider">Reporting Hierarchy Assignment</h4>
-                      </div>
-                      <span className="text-[10px] font-extrabold text-indigo-700 bg-indigo-100/80 px-2.5 py-0.5 rounded-full">
-                        {isExec ? '3-Tier Structure (Manager & Team Lead)' : '2-Tier Structure (Sales Manager)'}
-                      </span>
-                    </div>
-
-                    <p className="text-[11px] text-slate-600 font-medium leading-relaxed">
-                      {isExec
-                        ? 'Assign a Sales Manager and/or Team Lead during creation to link this Executive into the hierarchy.'
-                        : `Assign a Sales Manager for this ${newUser.role}.`}
-                    </p>
-
-                    <div className={`grid grid-cols-1 ${isExec ? 'sm:grid-cols-2' : 'sm:grid-cols-1'} gap-4`}>
-                      {/* Select Sales Manager */}
-                      <div>
-                        <label className="block text-[10px] font-black text-indigo-900 uppercase tracking-wider mb-1">
-                          👔 Assign Sales Manager
-                        </label>
-                        <select
-                          value={newUser.reporting_manager_id || ''}
-                          onChange={(e) => setNewUser({ ...newUser, reporting_manager_id: e.target.value })}
-                          className="w-full h-10 px-3 border border-indigo-200 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-600 cursor-pointer shadow-2xs"
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Portal Login Password <span className="text-rose-500">*</span></label>
+                      <div className="relative">
+                        <input
+                          type={showAddPassword ? 'text' : 'password'}
+                          name="new_user_login_password"
+                          id="new_user_login_password"
+                          placeholder="Min 6 characters"
+                          value={newUser.password}
+                          onChange={(e) => setNewUser({ ...newUser, password: e.target.value })}
+                          className="w-full h-11 pl-3.5 pr-10 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 shadow-2xs"
+                          autoComplete="new-password"
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowAddPassword(!showAddPassword)}
+                          className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer p-1"
                         >
-                          <option value="">-- No Manager Assigned (Unassigned) --</option>
-                          {potentialReportingManagers
-                            .filter(m => {
-                              const roleLower = (m.role || '').toLowerCase()
-                              return roleLower.includes('manager') || roleLower.includes('admin') || roleLower.includes('ceo')
-                            })
-                            .map((m) => (
-                              <option key={m.id} value={m.id}>
-                                {m.name} ({m.role}) - {m.email}
-                              </option>
-                            ))}
-                        </select>
+                          {showAddPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Gender</label>
+                      <select
+                        value={newUser.gender}
+                        onChange={(e) => setNewUser({ ...newUser, gender: e.target.value })}
+                        className="w-full h-11 px-3.5 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 cursor-pointer shadow-2xs"
+                      >
+                        <option value="Male">Male</option>
+                        <option value="Female">Female</option>
+                        <option value="Other">Other</option>
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Phone Number</label>
+                      <input
+                        type="tel"
+                        maxLength={10}
+                        value={newUser.phone}
+                        onChange={(e) => setNewUser({ ...newUser, phone: normalizePhoneNumber(e.target.value) })}
+                        placeholder="10-digit phone"
+                        className="w-full h-11 px-3.5 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 shadow-2xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Emergency Contact</label>
+                      <input
+                        type="tel"
+                        maxLength={10}
+                        value={newUser.emergency_contact}
+                        onChange={(e) => setNewUser({ ...newUser, emergency_contact: normalizePhoneNumber(e.target.value) })}
+                        placeholder="Emergency contact"
+                        className="w-full h-11 px-3.5 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-600 focus:ring-2 focus:ring-blue-100 shadow-2xs"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* SECTION 2: Role & Department Assignment */}
+                <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center gap-2.5 border-b border-slate-200 pb-3">
+                    <span className="w-6.5 h-6.5 rounded-full bg-indigo-600 text-white font-black text-xs flex items-center justify-center shadow-xs">2</span>
+                    <h4 className="font-extrabold text-xs text-[#0B2545] uppercase tracking-wider">Role & Work Department Assignment</h4>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Assigned System Role <span className="text-rose-500">*</span></label>
+                      <select
+                        value={newUser.role}
+                        onChange={(e) => handleAddRoleChange(e.target.value)}
+                        className="w-full h-11 px-3.5 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-600 cursor-pointer shadow-2xs"
+                      >
+                        <option value="Sales Executive">Sales Executive</option>
+                        <option value="Team Lead">Team Lead</option>
+                        <option value="Sales Manager">Sales Manager</option>
+                        <option value="System Admin">System Admin</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Work Department</label>
+                      <select
+                        value={newUser.dept}
+                        onChange={(e) => setNewUser({ ...newUser, dept: e.target.value })}
+                        className="w-full h-11 px-3.5 border border-slate-300 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-600 cursor-pointer shadow-2xs"
+                      >
+                        {deptOptions.map((dept) => (
+                          <option key={dept} value={dept}>
+                            {dept}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* SECTION 3: Reporting Hierarchy (Manager & Team Lead Assignment) */}
+                {(() => {
+                  const r = (newUser.role || '').toLowerCase().trim()
+                  const isExec = r.includes('executive') || r.includes('sales executive')
+                  const isTopRole = r.includes('admin') || r.includes('ceo') || r.includes('founder')
+
+                  if (isTopRole) {
+                    return (
+                      <div className="bg-purple-50/60 border border-purple-200/90 rounded-2xl p-5 space-y-2">
+                        <div className="flex items-center gap-2.5 border-b border-purple-200 pb-3">
+                          <span className="w-6.5 h-6.5 rounded-full bg-purple-600 text-white font-black text-xs flex items-center justify-center shadow-xs">3</span>
+                          <h4 className="font-extrabold text-xs text-purple-950 uppercase tracking-wider">Reporting Hierarchy Assignment</h4>
+                        </div>
+                        <p className="text-xs text-purple-800 font-semibold italic">
+                          👑 <strong>{newUser.role}</strong> is a top-level organization role (No reporting manager or team lead required).
+                        </p>
+                      </div>
+                    )
+                  }
+
+                  return (
+                    <div className="bg-purple-50/50 border border-purple-200/90 rounded-2xl p-5 space-y-4">
+                      <div className="flex items-center justify-between border-b border-purple-200 pb-3">
+                        <div className="flex items-center gap-2.5">
+                          <span className="w-6.5 h-6.5 rounded-full bg-purple-600 text-white font-black text-xs flex items-center justify-center shadow-xs">3</span>
+                          <h4 className="font-extrabold text-xs text-purple-950 uppercase tracking-wider">Reporting Hierarchy Assignment</h4>
+                        </div>
+                        <span className="text-[10px] font-black text-purple-700 bg-purple-100/90 px-3 py-1 rounded-full border border-purple-200">
+                          {isExec ? '3-Tier Structure (Sales Manager & Team Lead)' : '2-Tier Structure (Sales Manager)'}
+                        </span>
                       </div>
 
-                      {/* Select Team Lead (ONLY when creating Sales Executive) */}
-                      {isExec && (
+                      <p className="text-xs text-slate-600 font-medium">
+                        {isExec
+                          ? 'Assign a Sales Manager and/or Team Lead during creation to link this Executive into the organizational hierarchy.'
+                          : `Assign a Sales Manager for this ${newUser.role}.`}
+                      </p>
+
+                      <div className={`grid grid-cols-1 ${isExec ? 'sm:grid-cols-2' : 'sm:grid-cols-1'} gap-5`}>
+                        {/* Select Sales Manager */}
                         <div>
-                          <label className="block text-[10px] font-black text-indigo-900 uppercase tracking-wider mb-1">
-                            🔰 Assign Team Lead
+                          <label className="block text-[11px] font-extrabold text-purple-900 uppercase tracking-wider mb-1.5">
+                            👔 Assign Sales Manager
                           </label>
                           <select
-                            value={newUser.reporting_team_lead_id || ''}
-                            onChange={(e) => setNewUser({ ...newUser, reporting_team_lead_id: e.target.value })}
-                            className="w-full h-10 px-3 border border-indigo-200 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-indigo-600 cursor-pointer shadow-2xs"
+                            value={newUser.reporting_manager_id || ''}
+                            onChange={(e) => setNewUser({ ...newUser, reporting_manager_id: e.target.value })}
+                            className="w-full h-11 px-3.5 border border-purple-300 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-purple-600 cursor-pointer shadow-2xs"
                           >
-                            <option value="">-- No Team Lead Assigned (Direct to Manager) --</option>
-                            {users
-                              .filter(u => {
-                                const roleLower = (u.role || '').toLowerCase()
-                                return roleLower.includes('lead') || roleLower.includes('tl')
+                            <option value="">-- No Manager Assigned (Unassigned) --</option>
+                            {potentialReportingManagers
+                              .filter(m => {
+                                const roleLower = (m.role || '').toLowerCase()
+                                return roleLower.includes('manager') || roleLower.includes('admin') || roleLower.includes('ceo')
                               })
-                              .map((tl) => (
-                                <option key={tl.id} value={tl.id}>
-                                  {tl.name} (Team Lead) - {tl.email}
+                              .map((m) => (
+                                <option key={m.id} value={m.id}>
+                                  👤 {m.name} ({m.role}) - {m.email}
                                 </option>
                               ))}
                           </select>
                         </div>
-                      )}
+
+                        {/* Select Team Lead (ONLY when creating Sales Executive) */}
+                        {isExec && (
+                          <div>
+                            <label className="block text-[11px] font-extrabold text-purple-900 uppercase tracking-wider mb-1.5">
+                              🔰 Assign Team Lead
+                            </label>
+                            <select
+                              value={newUser.reporting_team_lead_id || ''}
+                              onChange={(e) => setNewUser({ ...newUser, reporting_team_lead_id: e.target.value })}
+                              className="w-full h-11 px-3.5 border border-purple-300 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-purple-600 cursor-pointer shadow-2xs"
+                            >
+                              <option value="">-- No Team Lead Assigned (Direct to Manager) --</option>
+                              {users
+                                .filter(u => {
+                                  const roleLower = (u.role || '').toLowerCase()
+                                  return roleLower.includes('lead') || roleLower.includes('tl')
+                                })
+                                .map((tl) => (
+                                  <option key={tl.id} value={tl.id}>
+                                    👤 {tl.name} (Team Lead) - {tl.email}
+                                  </option>
+                                ))}
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )
+                })()}
+
+                {/* SECTION 4: Leave Quotas & Permissions */}
+                <div className="bg-slate-50/90 border border-slate-200/90 rounded-2xl p-5 space-y-4">
+                  <div className="flex items-center gap-2.5 border-b border-slate-200 pb-3">
+                    <span className="w-6.5 h-6.5 rounded-full bg-emerald-600 text-white font-black text-xs flex items-center justify-center shadow-xs">4</span>
+                    <h4 className="font-extrabold text-xs text-[#0B2545] uppercase tracking-wider">Leave & Permission Quotas</h4>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Annual Leaves Quota</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={newUser.annualLeaves || 12}
+                        onChange={(e) => setNewUser({ ...newUser, annualLeaves: Number(e.target.value) })}
+                        className="w-full h-11 px-3.5 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-emerald-600 shadow-2xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Half-Day Slots</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={newUser.halfDayPermissions || 6}
+                        onChange={(e) => setNewUser({ ...newUser, halfDayPermissions: Number(e.target.value) })}
+                        className="w-full h-11 px-3.5 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-emerald-600 shadow-2xs"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-700 uppercase tracking-wider mb-1.5">Short Perm (Hrs)</label>
+                      <input
+                        type="number"
+                        min={0}
+                        value={newUser.shortPermissions || 2}
+                        onChange={(e) => setNewUser({ ...newUser, shortPermissions: Number(e.target.value) })}
+                        className="w-full h-11 px-3.5 border border-slate-300 rounded-xl bg-white text-xs font-semibold text-slate-900 focus:outline-none focus:border-emerald-600 shadow-2xs"
+                      />
                     </div>
                   </div>
-                )
-              })()}
-
-              {/* SECTION 4: Leaves Quota & Permissions */}
-              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4 space-y-3.5">
-                <div className="flex items-center gap-2 border-b border-slate-200/80 pb-2">
-                  <span className="w-6 h-6 rounded-full bg-emerald-100 text-emerald-700 font-black text-[10px] flex items-center justify-center">4</span>
-                  <h4 className="font-extrabold text-xs text-[#071A45] uppercase tracking-wider">Leave & Permission Quotas</h4>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Annual Leaves Quota</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={newUser.annualLeaves || 12}
-                      onChange={(e) => setNewUser({ ...newUser, annualLeaves: Number(e.target.value) })}
-                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Half-Day Slots</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={newUser.halfDayPermissions || 6}
-                      onChange={(e) => setNewUser({ ...newUser, halfDayPermissions: Number(e.target.value) })}
-                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider mb-1">Short Perm (Hrs)</label>
-                    <input
-                      type="number"
-                      min={0}
-                      value={newUser.shortPermissions || 2}
-                      onChange={(e) => setNewUser({ ...newUser, shortPermissions: Number(e.target.value) })}
-                      className="w-full h-10 px-3 border border-slate-250 rounded-xl bg-white text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-600 shadow-2xs"
-                    />
-                  </div>
-                </div>
+                {/* SECTION 5: Granular Page & Action Permissions */}
+                <PermissionMatrixEditor
+                  role={newUser.role}
+                  permissions={newUser.custom_permissions || {}}
+                  onChange={(perms) => setNewUser({ ...newUser, custom_permissions: perms })}
+                />
               </div>
 
-              {/* SECTION 5: Granular Page & Action Permissions */}
-              <PermissionMatrixEditor
-                role={newUser.role}
-                permissions={newUser.custom_permissions || {}}
-                onChange={(perms) => setNewUser({ ...newUser, custom_permissions: perms })}
-              />
-
               {/* Modal Footer Actions */}
-              <div className="flex items-center gap-3 pt-4 justify-end border-t border-slate-200 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setShowAddModal(false)}
-                  className="px-5 py-2.5 border border-slate-300 rounded-xl text-slate-700 font-extrabold text-xs hover:bg-slate-100 transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-2"
-                >
-                  <span>✓ Create Account & Assign Team Hierarchy</span>
-                </button>
+              <div className="flex items-center justify-between gap-3 p-5 border-t border-slate-200 bg-white shrink-0">
+                <div className="text-xs font-bold text-slate-600 hidden sm:block">
+                  Creating Account for: <strong className="text-blue-700 font-extrabold">{newUser.name || 'New Employee'}</strong> ({newUser.role})
+                </div>
+
+                <div className="flex items-center gap-2.5 ml-auto">
+                  <button
+                    type="button"
+                    onClick={() => setShowAddModal(false)}
+                    className="px-5 py-2.5 border border-slate-300 rounded-xl text-slate-700 font-bold text-xs hover:bg-slate-100 transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-6 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center gap-2"
+                  >
+                    <span>✓ Create Account & Assign Team Hierarchy</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>
@@ -3834,126 +4315,249 @@ function UserManagement() {
         </div>
       )}
 
-      {/* Assign Sales Executives to Sales Manager Modal */}
+      {/* Assign Sales Executives & Staff to Sales Manager / Team Lead Modal */}
       {showAssignModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-lg w-full p-6 space-y-4 border border-slate-200 shadow-2xl">
-            <div className="flex items-center justify-between border-b pb-3">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 z-50">
+          <div className="bg-white rounded-2xl max-w-4xl w-full max-h-[90vh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden text-left font-sans">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-5 border-b border-slate-200 shrink-0 bg-slate-50/50">
               <div>
-                <h3 className="font-extrabold text-slate-900 text-base flex items-center gap-2">
-                  <UserCheck className="w-5 h-5 text-emerald-600" /> Assign Sales Executives to Manager
+                <h3 className="font-extrabold text-slate-900 text-lg flex items-center gap-2">
+                  <UserCheck className="w-5.5 h-5.5 text-emerald-600" /> Assign Executives & Staff to Leader
                 </h3>
-                <p className="text-[11px] text-slate-500 font-semibold mt-0.5">
-                  Select a Sales Manager and check off the Sales Executives assigned to report to them.
+                <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                  Select a Sales Manager or Team Lead and check off the staff members assigned to report to them.
                 </p>
               </div>
-              <button onClick={() => setShowAssignModal(false)} className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1">
+              <button
+                onClick={() => setShowAssignModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-base font-bold cursor-pointer p-1.5 hover:bg-slate-200/60 rounded-full transition"
+              >
                 ✕
               </button>
             </div>
 
-            <form onSubmit={handleSaveAssignments} className="space-y-4 text-xs">
-              {/* Select Sales Manager */}
-              <div>
-                <label className="block text-slate-800 font-extrabold mb-1.5">
-                  1. Select Target Sales Manager <span className="text-rose-500">*</span>
-                </label>
-                <select
-                  value={selectedManagerId}
-                  onChange={(e) => handleManagerSelect(e.target.value)}
-                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-emerald-600 bg-slate-50"
-                  required
-                >
-                  <option value="">-- Choose Sales Manager --</option>
-                  {salesManagers.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      👤 {m.name} ({m.email}) [{m.role}]
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Select Sales Executives Checklist */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-slate-800 font-extrabold">
-                    2. Select Assigned Sales Executives ({selectedExecIds.length} selected)
-                  </label>
-                  {salesExecutives.length > 0 && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (selectedExecIds.length === salesExecutives.length) {
-                          setSelectedExecIds([])
-                        } else {
-                          setSelectedExecIds(salesExecutives.map((e) => String(e.id)))
-                        }
-                      }}
-                      className="text-[11px] font-bold text-emerald-600 hover:underline cursor-pointer"
-                    >
-                      {selectedExecIds.length === salesExecutives.length ? 'Deselect All' : 'Select All'}
-                    </button>
-                  )}
-                </div>
-
-                <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-xl p-2 space-y-1.5 bg-slate-50">
-                  {salesExecutives.length === 0 ? (
-                    <p className="text-slate-400 font-medium py-3 text-center">No Sales Executives available.</p>
-                  ) : (
-                    salesExecutives.map((exec) => {
-                      const isChecked = selectedExecIds.includes(String(exec.id))
-                      const currManager = exec.reporting_manager_name || 'Unassigned'
-                      return (
-                        <label
-                          key={exec.id}
-                          className={`flex items-center justify-between p-2.5 rounded-xl border transition cursor-pointer ${isChecked
-                              ? 'bg-emerald-50/80 border-emerald-300 text-emerald-950 shadow-xs'
-                              : 'bg-white border-slate-200 hover:bg-slate-100/70 text-slate-800'
-                            }`}
+            <form onSubmit={handleSaveAssignments} className="flex flex-col flex-1 overflow-hidden">
+              <div className="p-5 space-y-4 overflow-y-auto flex-1 text-xs">
+                
+                {/* STEP 1: Select Target Leader (Sales Manager / Team Lead) */}
+                <div className="bg-slate-50/80 p-4 rounded-2xl border border-slate-200/80 space-y-2.5">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="block text-slate-900 font-extrabold text-xs uppercase tracking-wider">
+                      1. Select Target Manager / Team Lead <span className="text-rose-500">*</span>
+                    </label>
+                    {/* Role Category Filter */}
+                    <div className="flex items-center gap-1 bg-white border border-slate-200 p-1 rounded-xl">
+                      {[
+                        { key: 'ALL', label: 'All Leaders' },
+                        { key: 'MANAGER', label: 'Managers Only' },
+                        { key: 'TEAM_LEAD', label: 'Team Leads Only' },
+                      ].map((t) => (
+                        <button
+                          key={t.key}
+                          type="button"
+                          onClick={() => setAssignTargetRoleFilter(t.key)}
+                          className={`px-2.5 py-1 rounded-lg text-[10px] font-extrabold transition cursor-pointer ${
+                            assignTargetRoleFilter === t.key
+                              ? 'bg-emerald-600 text-white shadow-xs'
+                              : 'text-slate-600 hover:bg-slate-100'
+                          }`}
                         >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <input
-                              type="checkbox"
-                              checked={isChecked}
-                              onChange={() => handleToggleExecSelection(exec.id)}
-                              className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 shrink-0"
-                            />
-                            <div className="min-w-0">
-                              <p className="font-extrabold text-xs text-slate-900 truncate">{exec.name}</p>
-                              <p className="text-[10px] text-slate-500 truncate">{exec.email}</p>
-                            </div>
-                          </div>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${currManager !== 'Unassigned'
-                                ? 'bg-blue-100 text-blue-800'
-                                : 'bg-slate-200 text-slate-600'
-                              }`}
+                          {t.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <select
+                    value={selectedManagerId}
+                    onChange={(e) => handleManagerSelect(e.target.value)}
+                    className="w-full h-11 border border-slate-300 rounded-xl px-3.5 text-slate-900 font-extrabold focus:outline-none focus:border-emerald-600 bg-white text-xs shadow-xs"
+                    required
+                  >
+                    <option value="">-- Choose Sales Manager or Team Lead --</option>
+                    {filteredAssignLeaders.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        👤 {m.name} ({m.email}) · [{m.role || 'Leader'}] {m.department ? `· Dept: ${m.department}` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* STEP 2: Filter & Search Staff Members */}
+                <div className="space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <label className="block text-slate-900 font-extrabold text-xs uppercase tracking-wider">
+                      2. Select Assigned Staff Members ({selectedExecIds.length} selected)
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-slate-500">
+                        Showing {filteredAssignExecutives.length} of {assignableExecutives.length}
+                      </span>
+                      {filteredAssignExecutives.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={handleToggleSelectAllFiltered}
+                          className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-250 hover:bg-emerald-100 text-[11px] font-black rounded-lg transition cursor-pointer"
+                        >
+                          {filteredAssignExecutives.length > 0 && filteredAssignExecutives.every((e) => selectedExecIds.includes(String(e.id)))
+                            ? 'Deselect Filtered'
+                            : 'Select All Filtered'}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Filter Toolbar Inputs */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-2 bg-slate-100/70 p-3 rounded-2xl border border-slate-200">
+                    {/* Search */}
+                    <div className="relative">
+                      <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        placeholder="Search name, email, code..."
+                        value={assignSearchQuery}
+                        onChange={(e) => setAssignSearchQuery(e.target.value)}
+                        className="w-full h-9 pl-8 pr-3 bg-white border border-slate-300 rounded-xl text-xs font-semibold focus:outline-none focus:border-emerald-600"
+                      />
+                    </div>
+
+                    {/* Department Filter */}
+                    <select
+                      value={assignDeptFilter}
+                      onChange={(e) => setAssignDeptFilter(e.target.value)}
+                      className="h-9 bg-white border border-slate-300 rounded-xl px-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600"
+                    >
+                      <option value="ALL">🏢 All Departments</option>
+                      {assignModalDeptOptions.map((d) => (
+                        <option key={d} value={d}>{d}</option>
+                      ))}
+                    </select>
+
+                    {/* Role Filter */}
+                    <select
+                      value={assignRoleFilter}
+                      onChange={(e) => setAssignRoleFilter(e.target.value)}
+                      className="h-9 bg-white border border-slate-300 rounded-xl px-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600"
+                    >
+                      <option value="ALL">💼 All Roles / Designations</option>
+                      {assignModalRoleOptions.map((r) => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+
+                    {/* Status Filter */}
+                    <select
+                      value={assignStatusFilter}
+                      onChange={(e) => setAssignStatusFilter(e.target.value)}
+                      className="h-9 bg-white border border-slate-300 rounded-xl px-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-emerald-600"
+                    >
+                      <option value="ALL">📋 All Statuses</option>
+                      <option value="UNASSIGNED">Unassigned Staff Only</option>
+                      <option value="CURRENT_LEADER">Assigned to Selected Leader</option>
+                      <option value="OTHER_LEADER">Assigned to Other Leaders</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* STEP 3: Staff Members Checklist Cards Grid */}
+                <div className="max-h-[380px] min-h-[180px] overflow-y-auto border border-slate-200 rounded-2xl p-2 bg-slate-50/50">
+                  {filteredAssignExecutives.length === 0 ? (
+                    <div className="py-12 text-center text-xs text-slate-400 font-semibold space-y-1">
+                      <p>No staff members match the current search & filters.</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAssignSearchQuery('')
+                          setAssignDeptFilter('ALL')
+                          setAssignRoleFilter('ALL')
+                          setAssignStatusFilter('ALL')
+                        }}
+                        className="text-emerald-600 font-bold hover:underline cursor-pointer"
+                      >
+                        Reset Search Filters
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      {filteredAssignExecutives.map((exec) => {
+                        const isChecked = selectedExecIds.includes(String(exec.id))
+                        const currManager = exec.reporting_manager_name || 'Unassigned'
+                        const isReportingToSelected = selectedManagerId && (
+                          String(exec.reporting_manager_id) === String(selectedManagerId) ||
+                          (exec.reporting_manager_email && users.find(u => String(u.id) === String(selectedManagerId))?.email === exec.reporting_manager_email)
+                        )
+
+                        return (
+                          <label
+                            key={exec.id}
+                            className={`flex items-center justify-between p-3 rounded-xl border transition cursor-pointer ${
+                              isChecked
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-950 shadow-xs'
+                                : 'bg-white border-slate-200 hover:bg-slate-100/70 text-slate-800'
+                            }`}
                           >
-                            {currManager !== 'Unassigned' ? `Reports to: ${currManager}` : 'Unassigned'}
-                          </span>
-                        </label>
-                      )
-                    })
+                            <div className="flex items-center gap-3 min-w-0">
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => handleToggleExecSelection(exec.id)}
+                                className="w-4 h-4 rounded text-emerald-600 focus:ring-emerald-500 border-slate-300 shrink-0 cursor-pointer"
+                              />
+                              <div className="min-w-0 space-y-0.5">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="font-extrabold text-xs text-slate-900 truncate">{exec.name}</span>
+                                  {exec.role && (
+                                    <span className="text-[9px] font-black bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200">
+                                      {exec.role}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[10px] text-slate-500 truncate">{exec.email} {exec.department ? `· ${exec.department}` : ''}</p>
+                              </div>
+                            </div>
+
+                            <span
+                              className={`text-[9px] font-bold px-2 py-0.5 rounded-full shrink-0 ml-2 ${
+                                isReportingToSelected
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-250 font-black'
+                                  : currManager !== 'Unassigned'
+                                  ? 'bg-blue-50 text-blue-800 border border-blue-200'
+                                  : 'bg-slate-100 text-slate-500 border border-slate-200'
+                              }`}
+                            >
+                              {currManager !== 'Unassigned' ? `Reports to: ${currManager}` : 'Unassigned'}
+                            </span>
+                          </label>
+                        )
+                      })}
+                    </div>
                   )}
                 </div>
               </div>
 
-              {/* Action buttons */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t">
-                <button
-                  type="button"
-                  onClick={() => setShowAssignModal(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={assigning || !selectedManagerId}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs shadow-md transition cursor-pointer disabled:opacity-50"
-                >
-                  {assigning ? 'Saving Assignment...' : 'Save Executive Assignment'}
-                </button>
+              {/* Action Buttons Footer */}
+              <div className="flex items-center justify-between gap-3 p-4 border-t border-slate-200 bg-white shrink-0">
+                <div className="text-xs font-bold text-slate-600">
+                  Total Selected: <strong className="text-emerald-700 font-extrabold">{selectedExecIds.length}</strong> staff member{selectedExecIds.length !== 1 ? 's' : ''}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAssignModal(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={assigning || !selectedManagerId}
+                    className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs shadow-md transition cursor-pointer disabled:opacity-50 flex items-center gap-1.5"
+                  >
+                    {assigning ? 'Saving Assignment...' : 'Save Executive Assignment'}
+                  </button>
+                </div>
               </div>
             </form>
           </div>

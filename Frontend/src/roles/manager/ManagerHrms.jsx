@@ -494,73 +494,77 @@ export default function ManagerHrms(props) {
   ]
 
   return (
-    <div className="space-y-4 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-4 pb-12">
+    <div className="space-y-4 font-sans text-slate-900 min-w-0 w-full p-2 sm:p-4 pb-12 overflow-x-clip">
 
-      {/* ── TOP HEADER ── Premium Dark Accent ─────────────────────────────── */}
-      <div className="bg-gradient-to-br from-slate-950 to-[#0b3c5d] text-white rounded-3xl p-5 border border-slate-800 shadow-md space-y-4 relative overflow-hidden">
-        {/* Soft glow background */}
-        <div className="absolute right-0 top-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
-          <div className="space-y-1.5">
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 text-white">
-              <ShieldCheck className="w-6.5 h-6.5 text-[#F2C76E]" /> {headerTitle}
-            </h1>
-            <div className="flex flex-wrap items-center gap-2 text-slate-300 text-xs font-semibold">
-              <span>{managerName}</span>
-              <span className="text-slate-600">•</span>
-              <span>Code: <strong className="text-white font-mono">{empCode}</strong></span>
-              <span className="text-slate-600">•</span>
-              <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
-                Active
-              </span>
+      {/* ── STICKY TOP HEADER & TABS NAVIGATION ── */}
+      <div className="sticky -top-2 sm:-top-4 z-40 bg-slate-50/95 backdrop-blur-md pb-2 pt-1 space-y-3 min-w-0">
+        {/* ── TOP HEADER ── Premium Dark Accent ─────────────────────────────── */}
+        <div className="bg-gradient-to-br from-slate-950 to-[#0b3c5d] text-white rounded-3xl p-5 border border-slate-800 shadow-md space-y-4 relative overflow-hidden">
+          {/* Soft glow background */}
+          <div className="absolute right-0 top-0 w-32 h-32 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+          
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 relative z-10">
+            <div className="space-y-1.5">
+              <h1 className="text-xl sm:text-2xl font-black tracking-tight flex items-center gap-2 text-white">
+                <ShieldCheck className="w-6.5 h-6.5 text-[#F2C76E]" /> {headerTitle}
+              </h1>
+              <div className="flex flex-wrap items-center gap-2 text-slate-300 text-xs font-semibold">
+                <span>{managerName}</span>
+                <span className="text-slate-600">•</span>
+                <span>Code: <strong className="text-white font-mono">{empCode}</strong></span>
+                <span className="text-slate-600">•</span>
+                <span className="inline-flex items-center gap-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider">
+                  Active
+                </span>
+              </div>
+            </div>
+            <div className="flex flex-col sm:items-end gap-0.5 bg-white/5 border border-white/10 p-2.5 rounded-2xl sm:text-right shrink-0">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Department</span>
+              <span className="text-xs font-black text-[#F2C76E]">Sales & Business Development</span>
             </div>
           </div>
-          <div className="flex flex-col sm:items-end gap-0.5 bg-white/5 border border-white/10 p-2.5 rounded-2xl sm:text-right shrink-0">
-            <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Department</span>
-            <span className="text-xs font-black text-[#F2C76E]">Sales & Business Development</span>
+        </div>
+
+        {/* ── TABS NAVIGATION BAR ── Compact & Sleek ─────────────────────── */}
+        <div className="bg-white border border-slate-200 p-1.5 rounded-xl shadow-2xs flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full shrink-0">
+          <div className="flex items-center flex-nowrap gap-1">
+            {hrmsTabs.map(({ key, label, icon: Icon }) => {
+              const active = activeSection === key
+              return (
+                <div
+                  key={key}
+                  onClick={() => setActiveSection(key)}
+                  className="flex items-center shrink-0 whitespace-nowrap transition cursor-pointer"
+                >
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setActiveSection(key);
+                    }}
+                    className={`mgr-card px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer whitespace-nowrap border ${
+                      active 
+                        ? 'bg-[#0b3c5d] text-white border-[#0b3c5d] shadow-2xs' 
+                        : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-950'
+                    }`}
+                  >
+                    <Icon size={13} />
+                    {label}
+                  </button>
+                </div>
+              )
+            })}
           </div>
+          <button
+            type="button"
+            onClick={resetHrmsTabs}
+            className="mgr-card ml-auto px-2 py-1 text-[9px] font-medium text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
+          >
+            Reset Order
+          </button>
         </div>
       </div>
 
-      {/* ── TABS NAVIGATION BAR ── Compact & Sleek ─────────────────────── */}
-      <div className="bg-white border border-slate-200 p-1.5 rounded-xl shadow-2xs flex items-center gap-1.5 overflow-x-auto no-scrollbar max-w-full shrink-0">
-        <div className="flex items-center flex-nowrap gap-1">
-          {hrmsTabs.map(({ key, label, icon: Icon }) => {
-            const active = activeSection === key
-            return (
-              <div
-                key={key}
-                onClick={() => setActiveSection(key)}
-                className="flex items-center shrink-0 whitespace-nowrap transition cursor-pointer"
-              >
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setActiveSection(key);
-                  }}
-                  className={`mgr-card px-2.5 py-1.5 rounded-lg text-[11px] font-bold flex items-center gap-1.5 transition shrink-0 cursor-pointer whitespace-nowrap border ${
-                    active 
-                      ? 'bg-[#0b3c5d] text-white border-[#0b3c5d] shadow-2xs' 
-                      : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-950'
-                  }`}
-                >
-                  <Icon size={13} />
-                  {label}
-                </button>
-              </div>
-            )
-          })}
-        </div>
-        <button
-          type="button"
-          onClick={resetHrmsTabs}
-          className="mgr-card ml-auto px-2 py-1 text-[9px] font-medium text-slate-400 hover:text-slate-600 transition cursor-pointer shrink-0"
-        >
-          Reset Order
-        </button>
-      </div>
 
       {/* ── MAIN CONTENT AREA ────────────────────────────────────────────── */}
 

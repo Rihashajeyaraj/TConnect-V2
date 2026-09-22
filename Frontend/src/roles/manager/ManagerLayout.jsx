@@ -36,6 +36,8 @@ import {
   Save,
   Camera,
   GripVertical,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react'
 import { hrmsAPI } from '../../services/api.js'
 import TwiteConnectLogo from '../../common/TwiteConnectLogo.jsx'
@@ -620,12 +622,22 @@ export default function ManagerLayout() {
   }
 
 
+  const [isSidebarMinimized, setIsSidebarMinimized] = useState(() => localStorage.getItem("tc_sidebar_minimized") === "true");
+
+  const toggleSidebarMinimize = () => {
+    setIsSidebarMinimized((prev) => {
+      const next = !prev;
+      localStorage.setItem("tc_sidebar_minimized", String(next));
+      return next;
+    });
+  };
+
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col font-sans relative overflow-x-hidden">
+    <div className="h-screen overflow-hidden bg-slate-50 text-slate-900 flex flex-col font-sans relative">
       <NotificationPermissionBanner />
 
       {/* ── Top Navigation Bar ────────────────────────────────────────────── */}
-      <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs">
+      <header className="relative h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 lg:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
         <div className="flex items-center gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -786,12 +798,12 @@ export default function ManagerLayout() {
       </header>
 
       {/* ── Main Layout ───────────────────────────────────────────────────── */}
-      <div className="flex flex-1 min-w-0">
+      <div className="flex flex-1 min-h-0 min-w-0 relative overflow-hidden">
         {sidebarOpen && (
           <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 lg:hidden transition-opacity" />
         )}
 
-        <aside className={`fixed inset-y-0 left-0 z-40 w-72 bg-[#0b3c5d] border-r border-[#0b3c5d]/80 transform transition-transform duration-200 ease-in-out lg:translate-x-0 lg:static lg:pt-0 shrink-0 flex flex-col shadow-xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
+        <aside className={`fixed inset-y-0 left-0 z-40 ${isSidebarMinimized ? 'lg:w-20' : 'lg:w-72'} w-72 bg-[#0b3c5d] border-r border-[#0b3c5d]/80 transform transition-all duration-200 ease-in-out lg:translate-x-0 lg:static flex flex-col h-full shrink-0 shadow-xl ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}>
           {/* Mobile-only Sidebar Close Header */}
           <div className="lg:hidden flex items-center justify-between px-4 py-3 border-b border-white/10 bg-[#072438] shrink-0">
             <div className="flex items-center gap-2">
@@ -806,19 +818,41 @@ export default function ManagerLayout() {
               <X size={18} />
             </button>
           </div>
-          <div className="flex-1 p-4 space-y-1.5 overflow-y-auto pt-4 lg:pt-5">
+
+          {/* Desktop Minimize/Maximize Toggle Button */}
+          <div className="hidden lg:flex items-center justify-end px-3 py-2 border-b border-white/10">
+            <button
+              type="button"
+              onClick={toggleSidebarMinimize}
+              className={`p-1.5 rounded-xl hover:bg-white/10 text-slate-300 hover:text-white transition cursor-pointer flex items-center gap-2 ${
+                isSidebarMinimized ? "w-full justify-center" : ""
+              }`}
+              title={isSidebarMinimized ? "Maximize Sidebar" : "Minimize Sidebar"}
+            >
+              {isSidebarMinimized ? (
+                <PanelLeftOpen size={18} className="text-[#f5ab27]" />
+              ) : (
+                <>
+                  <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Minimize</span>
+                  <PanelLeftClose size={16} />
+                </>
+              )}
+            </button>
+          </div>
+
+          <div className="flex-1 p-3 space-y-1.5 overflow-y-auto pt-3">
             {sidebarItems.map((item, index) => {
               const Icon = item.icon
               const isActive = location.pathname === item.path
               return (
                 <div
                   key={item.path}
-                  draggable={isCustomizing}
+                  draggable={isCustomizing && !isSidebarMinimized}
                   onDragStart={(e) => handleDragStart(e, index)}
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDrop={(e) => handleDrop(e, index)}
                   onDragEnd={handleDragEnd}
-                  className={`relative ${isCustomizing ? "cursor-move animate-pulse border border-dashed border-[#0b3c5d]/20 rounded-2xl" : ""}`}
+                  className={`relative ${isCustomizing && !isSidebarMinimized ? "cursor-move animate-pulse border border-dashed border-[#0b3c5d]/20 rounded-2xl" : ""}`}
                 >
                   <Link
                     to={isCustomizing ? "#" : item.path}
@@ -829,15 +863,21 @@ export default function ManagerLayout() {
                       }
                       setSidebarOpen(false);
                     }}
-                    className={`flex items-center gap-3.5 px-4 py-3 rounded-2xl font-semibold text-sm transition ${!isCustomizing && isActive
+                    title={item.label}
+                    className={`flex items-center ${isSidebarMinimized ? "justify-center p-3" : "gap-3.5 px-4 py-3"} rounded-2xl font-semibold text-sm transition ${!isCustomizing && isActive
                         ? 'bg-white/15 text-white shadow-md border-l-4 border-[#f5ab27]'
                         : 'text-slate-300 hover:bg-white/10 hover:text-white'
                       }`}
                   >
-                    {isCustomizing && <GripVertical size={15} className="text-slate-400 shrink-0" />}
-                    <Icon className={`w-5 h-5 shrink-0 ${!isCustomizing && isActive ? 'text-[#f5ab27]' : 'text-slate-400'}`} />
-                    <span className="truncate tracking-tight">{item.label}</span>
-                    {unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
+                    {isCustomizing && !isSidebarMinimized && <GripVertical size={15} className="text-slate-400 shrink-0" />}
+                    <div className="relative flex items-center justify-center shrink-0">
+                      <Icon className={`w-5 h-5 shrink-0 ${!isCustomizing && isActive ? 'text-[#f5ab27]' : 'text-slate-400'}`} />
+                      {isSidebarMinimized && unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
+                      )}
+                    </div>
+                    {!isSidebarMinimized && <span className="truncate tracking-tight">{item.label}</span>}
+                    {!isSidebarMinimized && unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
                       <span className="ml-auto bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
                         🔴 {unreadCount > 99 ? '99+' : unreadCount}
                       </span>
@@ -846,38 +886,40 @@ export default function ManagerLayout() {
                 </div>
               )
             })}
-            <div className="pt-2">
-              {isCustomizing ? (
-                <div className="pt-2 border-t border-white/10 space-y-1.5 px-1">
+            {!isSidebarMinimized && (
+              <div className="pt-2">
+                {isCustomizing ? (
+                  <div className="pt-2 border-t border-white/10 space-y-1.5 px-1">
+                    <button
+                      type="button"
+                      onClick={saveCustomization}
+                      className="mgr-card w-full py-2 px-3 bg-[#0b3c5d] hover:bg-[#072438] text-white rounded-xl text-xs font-black transition cursor-pointer"
+                    >
+                      Save Order
+                    </button>
+                    <button
+                      type="button"
+                      onClick={resetCustomization}
+                      className="mgr-card w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black transition cursor-pointer"
+                    >
+                      Reset Default
+                    </button>
+                  </div>
+                ) : (
                   <button
                     type="button"
-                    onClick={saveCustomization}
-                    className="mgr-card w-full py-2 px-3 bg-[#0b3c5d] hover:bg-[#072438] text-white rounded-xl text-xs font-black transition cursor-pointer"
+                    onClick={() => setIsCustomizing(true)}
+                    className="mgr-card w-full py-2 px-3 border border-dashed border-white/20 hover:border-[#f5ab27] text-slate-400 hover:text-white rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
                   >
-                    Save Order
+                    <span>⚙️ Customize Sidebar</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={resetCustomization}
-                    className="mgr-card w-full py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-xl text-xs font-black transition cursor-pointer"
-                  >
-                    Reset Default
-                  </button>
-                </div>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsCustomizing(true)}
-                  className="mgr-card w-full py-2 px-3 border border-dashed border-white/20 hover:border-[#f5ab27] text-slate-400 hover:text-white rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
-                >
-                  <span>⚙️ Customize Sidebar</span>
-                </button>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </aside>
 
-        <main className={`flex-1 min-w-0 ${
+        <main className={`flex-1 min-w-0 h-full ${
           isMapPage 
             ? "p-0 overflow-hidden h-[calc(100vh-64px)] lg:h-[calc(100vh-80px)] lg:p-6 lg:pb-6" 
             : "p-4 lg:p-6 overflow-y-auto w-full pb-20 lg:pb-6 bg-[#F0F4F8]"

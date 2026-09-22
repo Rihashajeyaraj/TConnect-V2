@@ -63,6 +63,12 @@ class SettingsService:
     def create_department(self, data: Dict[str, Any]) -> Dict[str, Any]:
         return self.repo.create_department(data)
 
+    def update_department(self, dept_id: str, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repo.update_department(dept_id, data)
+
+    def delete_department(self, dept_id: str) -> None:
+        self.repo.delete_department(dept_id)
+
     def get_document_types(self) -> List[Dict[str, Any]]:
         return self.repo.get_document_types()
 

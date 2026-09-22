@@ -27,6 +27,9 @@ class NotificationService:
     def mark_as_read(self, notification_id: str) -> Dict[str, Any]:
         return self.repo.mark_as_read(notification_id)
 
+    def mark_all_as_read(self, user_id: str, user_payload: Dict[str, Any] = None) -> Dict[str, Any]:
+        return self.repo.mark_all_as_read(user_id, user_payload)
+
     # ── Push Subscription ────────────────────────────────────────────────────
 
     def save_push_subscription(
@@ -47,3 +50,21 @@ class NotificationService:
 
     def delete_push_subscription(self, user_id: str, endpoint: str) -> bool:
         return self.repo.delete_push_subscription(user_id=user_id, endpoint=endpoint)
+
+    # ── Live Chat Service ───────────────────────────────────────────────────
+
+    def get_chat_contacts(self, user_payload: Dict[str, Any] = None) -> List[Dict[str, Any]]:
+        return self.repo.get_chat_contacts(user_payload)
+
+    def get_chat_messages(
+        self,
+        user_payload: Dict[str, Any],
+        contact_type: str = None,
+        contact_id: str = None,
+        contact_email: str = None
+    ) -> List[Dict[str, Any]]:
+        return self.repo.get_chat_messages(user_payload, contact_type=contact_type, contact_id=contact_id, contact_email=contact_email)
+
+    def send_chat_message(self, user_payload: Dict[str, Any], data: Dict[str, Any]) -> Dict[str, Any]:
+        return self.repo.send_chat_message(user_payload, data)
+

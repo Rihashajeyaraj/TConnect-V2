@@ -57,26 +57,52 @@ export default function Leads(props) {
   const location = useLocation();
   const { showToast } = useToast();
   const currentUser = useCurrentUser();
+  const DEFAULT_PRODUCTS = [
+    "GPS Vehicle & Fleet Tracking Software",
+    "Field Force Automation & CRM",
+    "IoT Telematics & Fuel Sensor",
+    "Smart Attendance & Biometric HRMS",
+    "Enterprise Asset Management",
+  ];
+
   const [productsList, setProductsList] = useState([]);
 
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const res = await settingsAPI.getProducts();
-        if (res?.data?.products) {
-          const activeProds = res.data.products
-            .filter((p) => p.status === 'Active' || p.status === undefined)
-            .map((p) => p.name || p.product_name || p.productName);
-          setProductsList(activeProds);
+        let prodsArr = [];
+        const sRes = await settingsAPI.getSettings().catch(() => null);
+        if (sRes?.data?.products || sRes?.products) {
+          prodsArr = sRes?.data?.products || sRes?.products;
+        } else {
+          const pRes = await settingsAPI.getProducts().catch(() => null);
+          prodsArr = pRes?.data?.products || pRes?.products || (Array.isArray(pRes?.data) ? pRes.data : []);
+        }
+
+        if (!Array.isArray(prodsArr) || prodsArr.length === 0) {
+          try {
+            const cachedSettings = JSON.parse(localStorage.getItem("tc_admin_settings") || localStorage.getItem("tc_company_settings") || "{}");
+            if (Array.isArray(cachedSettings.products)) prodsArr = cachedSettings.products;
+          } catch (_) {}
+        }
+
+        if (Array.isArray(prodsArr) && prodsArr.length > 0) {
+          const activeProds = prodsArr
+            .filter((p) => p && (p.status === 'Active' || p.status === 'active' || p.status === undefined))
+            .map((p) => typeof p === 'string' ? p : (p.name || p.product_name || p.title || p.label))
+            .filter(Boolean);
+          if (activeProds.length > 0) {
+            setProductsList(activeProds);
+          }
         }
       } catch (err) {
-        console.warn("Failed to load company products from Supabase products table:", err);
+        console.warn("Failed to load company products from Supabase:", err);
       }
     }
     fetchProducts();
   }, []);
 
-  const productOptions = productsList;
+  const productOptions = productsList.length > 0 ? productsList : DEFAULT_PRODUCTS;
   const isModalView = props?.isModalView || false;
 
   // Active view tab: "leads" | "followups" | "visits" | "opportunities"
@@ -101,15 +127,21 @@ export default function Leads(props) {
   });
 
   const [isOppModalOpen, setIsOppModalOpen] = useState(false);
+  const [locationPickerTarget, setLocationPickerTarget] = useState("addLead"); // "addLead" | "addOpp"
   const [oppForm, setOppForm] = useState({
     companyName: "",
     source: "Field Research (SE)",
+    customSource: "",
     productRequirement: "",
     customProductRequirement: "",
     contactPerson: "",
     phone: "",
+    email: "",
+    website: "",
     location: "",
-    value: "450000",
+    latitude: null,
+    longitude: null,
+    full_address: "",
     remarks: "",
   });
 
@@ -780,6 +812,10 @@ export default function Leads(props) {
       showToast("Company name and location are required.", "error");
       return;
     }
+    const selectedSource = oppForm.source === "custom" 
+      ? (oppForm.customSource?.trim() || "Custom Source") 
+      : (oppForm.source || "Field Research (SE)");
+
     const requirementVal = oppForm.productRequirement === "custom" 
       ? (oppForm.customProductRequirement?.trim() || "Custom Product/Service") 
       : (oppForm.productRequirement || "");
@@ -789,14 +825,18 @@ export default function Leads(props) {
       date: formatDate(new Date()),
       customer: oppForm.companyName.trim(),
       company: oppForm.companyName.trim(),
-      source: oppForm.source,
+      source: selectedSource,
       productRequirement: requirementVal,
       contactPerson: oppForm.contactPerson.trim(),
       phone: oppForm.phone.trim(),
+      email: (oppForm.email || "").trim(),
+      website: (oppForm.website || "").trim(),
       address: oppForm.location.trim(),
       location: oppForm.location.trim(),
+      latitude: oppForm.latitude || null,
+      longitude: oppForm.longitude || null,
+      full_address: oppForm.full_address || null,
       remarks: oppForm.remarks.trim(),
-      value: oppForm.value ? (oppForm.value.startsWith('₹') ? oppForm.value : `₹${Number(oppForm.value).toLocaleString('en-IN')}`) : "₹0",
       stage: "Qualification",
       assignedTo: userName,
       assignedToEmail: userEmail,
@@ -819,11 +859,13 @@ export default function Leads(props) {
         customer_name: newOpp.company,
         contact_person: newOpp.contactPerson,
         phone: newOpp.phone,
-        value: parseFloat(String(oppForm.value || "450000").replace(/[^0-9.]/g, "")) || 450000,
-        expected_revenue: parseFloat(String(oppForm.value || "450000").replace(/[^0-9.]/g, "")) || 450000,
+        email: newOpp.email,
+        website: newOpp.website,
         stage: "Qualification",
         probability: 60,
         location: newOpp.location,
+        latitude: newOpp.latitude,
+        longitude: newOpp.longitude,
         lead_source: newOpp.source,
         requirement: newOpp.productRequirement,
         notes: newOpp.remarks,
@@ -837,12 +879,17 @@ export default function Leads(props) {
     setOppForm({
       companyName: "",
       source: "Field Research (SE)",
+      customSource: "",
       productRequirement: "",
       customProductRequirement: "",
       contactPerson: "",
       phone: "",
+      email: "",
+      website: "",
       location: "",
-      value: "450000",
+      latitude: null,
+      longitude: null,
+      full_address: "",
       remarks: "",
     });
     showToast(`🎯 Opportunity for "${newOpp.customer}" added successfully!`, "success");
@@ -2395,7 +2442,7 @@ export default function Leads(props) {
       {/* ── SPACIOUS ADD NEW LEAD MODAL (SE Sourced Lead Entry) ────────────────── */}
       {isAddModalOpen && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 z-50 overflow-y-auto">
-          <div className="bg-white border border-slate-200 rounded-3xl max-w-3xl w-full p-6 sm:p-8 space-y-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto">
+          <div className="bg-white border border-slate-200 rounded-3xl max-w-5xl w-full p-6 sm:p-8 space-y-6 shadow-2xl my-auto max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-4">
               <div>
                 <h3 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
@@ -2548,8 +2595,8 @@ export default function Leads(props) {
                 </div>
               </div>
 
-              {/* Email & City Details */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {/* Email, Website & City Details */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="text-slate-800 font-extrabold block mb-1.5">Email Address</label>
                   <input
@@ -2557,6 +2604,17 @@ export default function Leads(props) {
                     placeholder="contact@company.com"
                     value={addForm.email}
                     onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                    className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
+                  />
+                </div>
+
+                <div>
+                  <label className="text-slate-800 font-extrabold block mb-1.5">Company Website URL</label>
+                  <input
+                    type="url"
+                    placeholder="e.g. https://company.com"
+                    value={addForm.website || ""}
+                    onChange={(e) => setAddForm({ ...addForm, website: e.target.value })}
                     className="w-full border border-slate-200 rounded-2xl p-3.5 bg-slate-50 text-slate-900 focus:outline-none focus:border-teal-500 focus:bg-white font-semibold text-sm transition"
                   />
                 </div>
@@ -3251,7 +3309,7 @@ export default function Leads(props) {
       {/* ── ADD OPPORTUNITY MODAL (SE Field Prospecting / Pipeline Discovery) ── */}
       {isOppModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-lg w-full shadow-2xl border border-slate-200 animate-scaleUp">
+          <div className="bg-white rounded-3xl p-6 sm:p-7 max-w-4xl w-full shadow-2xl border border-slate-200 animate-scaleUp">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3.5 mb-4">
               <div className="flex items-center gap-2">
                 <div className="w-9 h-9 rounded-xl bg-amber-500/10 text-amber-600 flex items-center justify-center">
@@ -3298,58 +3356,57 @@ export default function Leads(props) {
                     <option value="Inbound Enquiry">Inbound Enquiry</option>
                     <option value="Client Referral">Client Referral</option>
                     <option value="LinkedIn Outreach">LinkedIn Outreach</option>
+                    <option value="Website / Google Search">Website / Google Search</option>
+                    <option value="Trade Expo / Event">Trade Expo / Event</option>
+                    <option value="custom">✍️ Custom Lead / Opp Source</option>
                   </select>
-                </div>
-              </div>
-
-              {/* Product Requirement & Deal Value */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-slate-700 font-extrabold mb-1">Product / Requirement (*Why reach out)</label>
-                  <select
-                    value={oppForm.productRequirement}
-                    onChange={(e) => setOppForm({ ...oppForm, productRequirement: e.target.value })}
-                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm cursor-pointer"
-                  >
-                    <option value="">-- Select Product Requirement --</option>
-                    {productOptions.map((prod) => (
-                      <option key={prod} value={prod}>{prod}</option>
-                    ))}
-                    <option value="custom">✍️ Custom Product / Service</option>
-                  </select>
-                  {oppForm.productRequirement === "custom" && (
+                  {oppForm.source === "custom" && (
                     <input
                       type="text"
-                      placeholder="Enter custom product requirement"
-                      value={oppForm.customProductRequirement || ""}
-                      onChange={(e) => setOppForm({ ...oppForm, customProductRequirement: e.target.value })}
+                      placeholder="Enter custom lead/opp source"
+                      value={oppForm.customSource || ""}
+                      onChange={(e) => setOppForm({ ...oppForm, customSource: e.target.value })}
                       className="w-full h-10 mt-2 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
                     />
                   )}
                 </div>
+              </div>
 
-                <div>
-                  <label className="block text-slate-700 font-extrabold mb-1">Estimated Deal Value (₹)</label>
+              {/* Product Requirement */}
+              <div>
+                <label className="block text-slate-700 font-extrabold mb-1">Product / Requirement (*Why reach out)</label>
+                <select
+                  value={oppForm.productRequirement}
+                  onChange={(e) => setOppForm({ ...oppForm, productRequirement: e.target.value })}
+                  className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm cursor-pointer"
+                >
+                  <option value="">-- Select Product Requirement --</option>
+                  {productOptions.map((prod) => (
+                    <option key={prod} value={prod}>{prod}</option>
+                  ))}
+                  <option value="custom">✍️ Custom Product / Service</option>
+                </select>
+                {oppForm.productRequirement === "custom" && (
                   <input
                     type="text"
-                    placeholder="450000"
-                    value={oppForm.value}
-                    onChange={(e) => setOppForm({ ...oppForm, value: e.target.value })}
-                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-bold text-slate-900 focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
+                    placeholder="Enter custom product requirement"
+                    value={oppForm.customProductRequirement || ""}
+                    onChange={(e) => setOppForm({ ...oppForm, customProductRequirement: e.target.value })}
+                    className="w-full h-10 mt-2 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
                   />
-                </div>
+                )}
               </div>
 
               {/* Contact Person & Phone */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-slate-700 font-extrabold mb-1">Point of Contact</label>
+                  <label className="block text-slate-700 font-extrabold mb-1">Point of Contact Person</label>
                   <input
                     type="text"
                     placeholder="e.g. Rajesh Kumar (MD)"
                     value={oppForm.contactPerson}
                     onChange={(e) => setOppForm({ ...oppForm, contactPerson: e.target.value })}
-                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500"
+                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
                   />
                 </div>
 
@@ -3361,12 +3418,37 @@ export default function Leads(props) {
                     placeholder="10-digit number e.g. 9876543210"
                     value={oppForm.phone}
                     onChange={(e) => setOppForm({ ...oppForm, phone: normalizePhoneNumber(e.target.value) })}
-                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500"
+                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
                   />
                 </div>
               </div>
 
-              {/* Location */}
+              {/* Email & Website */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-slate-700 font-extrabold mb-1">Email Address</label>
+                  <input
+                    type="email"
+                    placeholder="contact@company.com"
+                    value={oppForm.email || ""}
+                    onChange={(e) => setOppForm({ ...oppForm, email: e.target.value })}
+                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-slate-700 font-extrabold mb-1">Company Website URL</label>
+                  <input
+                    type="url"
+                    placeholder="e.g. https://company.com"
+                    value={oppForm.website || ""}
+                    onChange={(e) => setOppForm({ ...oppForm, website: e.target.value })}
+                    className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
+                  />
+                </div>
+              </div>
+
+              {/* Location Input & Map Widget */}
               <div>
                 <label className="block text-slate-700 font-extrabold mb-1">Location / Address (*Required)</label>
                 <input
@@ -3375,8 +3457,60 @@ export default function Leads(props) {
                   placeholder="e.g. Guindy Industrial Estate, Chennai"
                   value={oppForm.location}
                   onChange={(e) => setOppForm({ ...oppForm, location: e.target.value })}
-                  className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500"
+                  className="w-full h-10 border border-slate-200 rounded-xl px-3 bg-white font-medium focus:outline-none focus:border-amber-500 text-xs sm:text-sm"
                 />
+              </div>
+
+              {/* ── 📍 LOCATION PICKER WIDGET FOR OPPORTUNITY ── */}
+              <div className="bg-amber-50/80 border-2 border-amber-200 rounded-2xl p-4 space-y-3">
+                <div className="flex items-center justify-between flex-wrap gap-2">
+                  <div className="flex items-center gap-2">
+                    <MapPin className="w-5 h-5 text-amber-600" />
+                    <label className="text-xs font-black text-amber-950 uppercase tracking-wider">
+                      Exact Client Location (for Smart Map)
+                    </label>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setLocationPickerTarget("addOpp");
+                      setIsLocationPickerOpen(true);
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-sm transition cursor-pointer"
+                  >
+                    <MapPin size={13} /> Pick Location on Map
+                  </button>
+                </div>
+
+                {oppForm.latitude && oppForm.longitude ? (
+                  <div className="flex items-start gap-3 bg-emerald-50 border border-emerald-200 rounded-xl p-3">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 flex items-center justify-center flex-shrink-0">
+                      <CheckCircle2 size={16} className="text-emerald-600" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-[10px] font-black text-emerald-700 uppercase tracking-wide">Location Confirmed</p>
+                      {oppForm.full_address && (
+                        <p className="text-[11px] font-semibold text-slate-700 truncate mt-0.5">{oppForm.full_address}</p>
+                      )}
+                      <p className="text-[10px] font-bold text-slate-500 mt-0.5 font-mono">
+                        {Number(oppForm.latitude).toFixed(6)}, {Number(oppForm.longitude).toFixed(6)}
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setOppForm({ ...oppForm, latitude: null, longitude: null, full_address: '' })}
+                      className="ml-auto p-1 text-slate-300 hover:text-rose-500 transition flex-shrink-0"
+                      title="Clear location"
+                    >
+                      <X size={13} />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2 text-slate-400 text-xs font-semibold px-1">
+                    <AlertCircle size={13} className="text-amber-500" />
+                    No location selected. Click "Pick Location on Map" to set exact coordinates.
+                  </div>
+                )}
               </div>
 
               {/* Remarks */}
@@ -3413,24 +3547,34 @@ export default function Leads(props) {
         </div>
       )}
 
-      {/* ── Location Picker Modal (Add Lead) ── */}
+      {/* ── Location Picker Modal (Add Lead / Add Opp) ── */}
       <LocationPickerModal
         isOpen={isLocationPickerOpen}
         onClose={() => setIsLocationPickerOpen(false)}
-        initialLat={addForm.latitude || 13.0067}
-        initialLng={addForm.longitude || 80.2570}
-        initialAddress={addForm.full_address || addForm.address || addForm.location || addForm.city || ''}
-        title="Pick Lead Location"
+        initialLat={locationPickerTarget === "addOpp" ? (oppForm.latitude || 13.0067) : (addForm.latitude || 13.0067)}
+        initialLng={locationPickerTarget === "addOpp" ? (oppForm.longitude || 80.2570) : (addForm.longitude || 80.2570)}
+        initialAddress={locationPickerTarget === "addOpp" ? (oppForm.full_address || oppForm.location || '') : (addForm.full_address || addForm.address || addForm.location || addForm.city || '')}
+        title={locationPickerTarget === "addOpp" ? "Pick Opportunity Location" : "Pick Lead Location"}
         onConfirm={(lat, lng, address) => {
-          setAddForm(prev => ({
-            ...prev,
-            latitude: lat,
-            longitude: lng,
-            full_address: address,
-            address: address,
-            location: address,
-            city: address.split(',')[0]?.trim() || prev.city,
-          }));
+          if (locationPickerTarget === "addOpp") {
+            setOppForm(prev => ({
+              ...prev,
+              latitude: lat,
+              longitude: lng,
+              full_address: address,
+              location: address,
+            }));
+          } else {
+            setAddForm(prev => ({
+              ...prev,
+              latitude: lat,
+              longitude: lng,
+              full_address: address,
+              address: address,
+              location: address,
+              city: address.split(',')[0]?.trim() || prev.city,
+            }));
+          }
           setIsLocationPickerOpen(false);
         }}
       />

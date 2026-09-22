@@ -216,6 +216,21 @@ function CeoCustomers() {
     return false
   }
 
+  // Helper to check if a person is specifically a Team Lead
+  function isPersonTeamLead(personName) {
+    if (!personName || personName === 'Unassigned' || personName === 'Direct / Unassigned' || personName === 'Unassigned / Direct') return false
+    const norm = normName(personName)
+    const empMatch = employees.find(emp => {
+      const eName = normName(emp.name || emp.full_name || `${emp.first_name || ''} ${emp.last_name || ''}`)
+      return eName === norm || (eName && (norm.includes(eName) || eName.includes(norm)))
+    })
+    if (empMatch) {
+      const r = (empMatch.role || empMatch.designation || '').toLowerCase()
+      return r.includes('team lead') || r.includes('team_lead') || r.includes('lead') || r.includes('tl')
+    }
+    return false
+  }
+
   // Map executive -> team lead & manager from employees array
   const empByNameMap = {}
   const execToTeamLeadMap = {}
@@ -293,12 +308,18 @@ function CeoCustomers() {
     if (seenCustKeys.has(custId)) return
     seenCustKeys.add(custId)
 
-    const finalExecName = execName || cust.executive_name || cust.sales_executive || cust.assigned_to || ''
-    const execKey = finalExecName.toLowerCase().trim()
+    const rawExecName = execName || cust.executive_name || cust.sales_executive || cust.assigned_to || ''
+    const execKey = rawExecName.toLowerCase().trim()
+
+    const execIsTL = isPersonTeamLead(rawExecName)
 
     // 1. Resolve Team Lead and Manager
     let tlFromCust = cust.team_lead_name || cust.team_lead || cust.reporting_team_lead_name || ''
     let mgrFromCust = mgrName || cust.manager_name || cust.sales_manager || cust.reporting_manager_name || ''
+
+    if (execIsTL) {
+      tlFromCust = rawExecName
+    }
 
     if (mgrFromCust && isTeamLeadOrNonManager(mgrFromCust)) {
       if (!tlFromCust || tlFromCust === 'Unassigned') {
@@ -313,9 +334,14 @@ function CeoCustomers() {
     }
 
     const tlFromMap = execToTeamLeadMap[execKey] || ''
-    const finalTL = (tlFromCust && tlFromCust !== 'Unassigned' && tlFromCust !== 'Direct / Unassigned' && tlFromCust !== 'Unassigned / Direct')
+    let finalTL = (tlFromCust && tlFromCust !== 'Unassigned' && tlFromCust !== 'Direct / Unassigned' && tlFromCust !== 'Unassigned / Direct')
       ? tlFromCust
-      : (tlFromMap || 'Unassigned')
+      : (tlFromMap || (execIsTL ? rawExecName : 'Unassigned'))
+
+    const isDirectTL = execIsTL || (finalTL && rawExecName && normName(finalTL) === normName(rawExecName))
+    if (isDirectTL && rawExecName) {
+      finalTL = rawExecName
+    }
 
     // 2. Resolve Sales Manager
     const mgrFromMap = execToManagerMap[execKey] || (finalTL !== 'Unassigned' ? execToManagerMap[finalTL.toLowerCase()] : '') || ''
@@ -334,9 +360,11 @@ function CeoCustomers() {
       company_name: cust.company_name || cust.company || cust.customer_name || cust.name || 'Company',
       manager_id: mgrId || cust.manager_id || '',
       manager_name: finalMgrName,
-      executive_id: execId || cust.executive_id || '',
-      executive_name: finalExecName || 'Unassigned',
+      executive_id: isDirectTL ? '' : (execId || cust.executive_id || ''),
+      executive_name: isDirectTL ? '' : (rawExecName || 'Unassigned'),
       team_lead_name: finalTL,
+      is_direct_tl: isDirectTL,
+      raw_executive_name: rawExecName,
       product: cust.product || cust.product_name || 'TwiteConnect CRM',
       amount: cust.amount || cust.contract_value || cust.revenue || 0,
       date: cust.date || cust.onboarding_date || cust.created_at || ''
@@ -369,22 +397,41 @@ function CeoCustomers() {
 
   const getLeadManagerName = (lead) => {
     if (!lead) return 'Unassigned'
-    const mgr = lead.manager_name || lead.sales_manager || lead.reporting_manager_name || ''
-    if (mgr && mgr !== 'Unassigned' && mgr !== 'Direct / Unassigned' && mgr !== 'Unassigned / Direct') return mgr
+    let mgr = lead.manager_name || lead.sales_manager || lead.reporting_manager_name || ''
+
+    if (mgr && isTeamLeadOrNonManager(mgr)) {
+      const tlEmp = employees.find(e => normName(e.name || e.full_name) === normName(mgr))
+      if (tlEmp && tlEmp.reporting_manager_name && !isTeamLeadOrNonManager(tlEmp.reporting_manager_name)) {
+        mgr = tlEmp.reporting_manager_name
+      } else {
+        const mappedFromTL = execToManagerMap[normName(mgr)]
+        mgr = (mappedFromTL && !isTeamLeadOrNonManager(mappedFromTL)) ? mappedFromTL : 'Unassigned'
+      }
+    }
+
+    if (mgr && mgr !== 'Unassigned' && mgr !== 'Direct / Unassigned' && mgr !== 'Unassigned / Direct' && !isTeamLeadOrNonManager(mgr)) {
+      return mgr
+    }
+
     const execName = (lead.sales_executive || lead.assigned_to || '').toLowerCase().trim()
     const mappedMgr = execToManagerMap[execName]
-    if (mappedMgr) return mappedMgr
+    if (mappedMgr && !isTeamLeadOrNonManager(mappedMgr)) return mappedMgr
+
     const mappedTL = execToTeamLeadMap[execName]
-    if (mappedTL && execToManagerMap[mappedTL.toLowerCase()]) return execToManagerMap[mappedTL.toLowerCase()]
+    if (mappedTL && execToManagerMap[mappedTL.toLowerCase()] && !isTeamLeadOrNonManager(execToManagerMap[mappedTL.toLowerCase()])) {
+      return execToManagerMap[mappedTL.toLowerCase()]
+    }
+
     return 'Unassigned'
   }
 
   const getLeadTeamLeadName = (lead) => {
     if (!lead) return 'Unassigned'
+    const execName = (lead.sales_executive || lead.assigned_to || '').trim()
+    if (execName && isPersonTeamLead(execName)) return execName
     const tl = lead.team_lead_name || lead.team_lead || lead.reporting_team_lead_name || ''
     if (tl && tl !== 'Unassigned' && tl !== 'Direct / Unassigned' && tl !== 'Unassigned / Direct') return tl
-    const execName = (lead.sales_executive || lead.assigned_to || '').toLowerCase().trim()
-    return execToTeamLeadMap[execName] || 'Unassigned'
+    return execToTeamLeadMap[execName.toLowerCase()] || 'Unassigned'
   }
 
   // Extract filter dropdown options from raw data
@@ -1061,12 +1108,12 @@ function CeoCustomers() {
                   </div>
                 ) : activeTab === 'customers' ? (
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto overflow-y-auto max-h-[62vh] relative">
                       <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-slate-50/80 border-b border-slate-200/70 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                        <thead className="sticky top-0 z-20 bg-slate-100/95 backdrop-blur-xs shadow-2xs">
+                          <tr className="bg-slate-100 border-b border-slate-250 text-slate-600 font-extrabold uppercase tracking-wider text-[10px]">
                             {isAdmin && (
-                              <th className="px-4 py-3 w-12">
+                              <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3 w-12">
                                 <input
                                   type="checkbox"
                                   checked={filteredCustomers.length > 0 && selectedCustIds.length === filteredCustomers.length}
@@ -1081,16 +1128,16 @@ function CeoCustomers() {
                                 />
                               </th>
                             )}
-                            <th className="px-4 py-3">Date</th>
-                            <th className="px-4 py-3">Client Name</th>
-                            <th className="px-4 py-3">Company Name</th>
-                            <th className="px-4 py-3">Product</th>
-                            <th className="px-4 py-3">Sales Manager</th>
-                            <th className="px-4 py-3">Team Lead</th>
-                            <th className="px-4 py-3">Sales Executive</th>
-                            <th className="px-4 py-3 text-center">Assignment Status</th>
-                            {!isAdmin && <th className="px-4 py-3 text-right">Amount</th>}
-                            {isAdmin && <th className="px-4 py-3 text-center">Action</th>}
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Date</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Client Name</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Company Name</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Product</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Sales Manager</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Team Lead</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Sales Executive</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3 text-center">Assignment Status</th>
+                            {!isAdmin && <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3 text-right">Amount</th>}
+                            {isAdmin && <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3 text-center">Action</th>}
 
                           </tr>
                         </thead>
@@ -1114,13 +1161,19 @@ function CeoCustomers() {
                           ) : (
                             paginatedCustomers.map((cust, ci) => {
                               const custId = cust.customer_id || cust.id
-                              const hasExec = !!(cust.executive_id && cust.executive_name && cust.executive_name !== 'Direct / Unassigned' && cust.executive_name !== 'Unassigned')
+                              const isDirectTL = cust.is_direct_tl || (cust.raw_executive_name && isPersonTeamLead(cust.raw_executive_name)) || (cust.executive_name && isPersonTeamLead(cust.executive_name)) || (cust.team_lead_name && isPersonTeamLead(cust.team_lead_name) && (!cust.executive_name || cust.executive_name === cust.team_lead_name))
+                              const finalTL = isDirectTL ? (cust.team_lead_name || cust.raw_executive_name || cust.executive_name) : (cust.team_lead_name || 'Unassigned')
+                              const hasExec = isDirectTL ? true : !!(cust.executive_id && cust.executive_name && cust.executive_name !== 'Direct / Unassigned' && cust.executive_name !== 'Unassigned')
                               const isManagerUnassigned = !cust.manager_name || cust.manager_name === 'Unassigned / Direct' || cust.manager_name === 'Unassigned'
 
                               return (
                                 <tr
                                   key={`${custId}_${ci}`}
-                                  className="hover:bg-slate-50/60 transition cursor-pointer"
+                                  className={`transition cursor-pointer ${
+                                    isDirectTL
+                                      ? 'bg-amber-50/45 hover:bg-amber-100/60 border-l-4 border-l-amber-500 shadow-2xs'
+                                      : 'hover:bg-slate-50/60'
+                                  }`}
                                   onClick={() => setSelectedCust(cust)}
                                 >
                                   {isAdmin && (
@@ -1155,10 +1208,23 @@ function CeoCustomers() {
                                     {isManagerUnassigned ? 'Unassigned' : cust.manager_name}
                                   </td>
                                   <td className="px-4 py-3 text-indigo-700 font-bold">
-                                    {cust.team_lead_name || 'Unassigned'}
+                                    {finalTL && finalTL !== 'Unassigned' ? (
+                                      <span className="inline-flex items-center gap-1.5">
+                                        {isDirectTL && (
+                                          <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[9px] font-black uppercase border border-amber-250 shadow-2xs">
+                                            TL Direct
+                                          </span>
+                                        )}
+                                        {finalTL}
+                                      </span>
+                                    ) : (
+                                      'Unassigned'
+                                    )}
                                   </td>
                                   <td className="px-4 py-3 text-slate-900 font-bold">
-                                    {hasExec ? (
+                                    {isDirectTL ? (
+                                      <span className="text-slate-400 italic font-semibold text-[11px]">—</span>
+                                    ) : hasExec ? (
                                       cust.executive_name
                                     ) : (
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-slate-100 text-slate-500 border border-slate-200">
@@ -1167,11 +1233,14 @@ function CeoCustomers() {
                                     )}
                                   </td>
                                   <td className="px-4 py-3 text-center">
-                                    <span className={`px-2.5 py-0.5 rounded-md text-[9px] font-extrabold uppercase border ${!hasExec
-                                        ? 'bg-slate-50 text-slate-500 border-slate-200'
-                                        : (cust.reassigned_at ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-250')
-                                      }`}>
-                                      {!hasExec ? 'Not Assigned' : (cust.reassigned_at ? 'Reassigned' : 'Assigned')}
+                                    <span className={`px-2.5 py-0.5 rounded-md text-[9px] font-extrabold uppercase border ${
+                                      isDirectTL
+                                        ? 'bg-amber-100/80 text-amber-900 border-amber-300'
+                                        : !hasExec
+                                          ? 'bg-slate-50 text-slate-500 border-slate-200'
+                                          : (cust.reassigned_at ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-emerald-50 text-emerald-700 border-emerald-250')
+                                    }`}>
+                                      {isDirectTL ? 'Assigned (TL Direct)' : (!hasExec ? 'Not Assigned' : (cust.reassigned_at ? 'Reassigned' : 'Assigned'))}
                                     </span>
                                   </td>
                                   {!isAdmin && (
@@ -1240,12 +1309,12 @@ function CeoCustomers() {
                   </div>
                 ) : (
                   <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto overflow-y-auto max-h-[62vh] relative">
                       <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-slate-50/80 border-b border-slate-200/70 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                        <thead className="sticky top-0 z-20 bg-slate-100/95 backdrop-blur-xs shadow-2xs">
+                          <tr className="bg-slate-100 border-b border-slate-250 text-slate-600 font-extrabold uppercase tracking-wider text-[10px]">
                             {isAdmin && (
-                              <th className="px-4 py-3 w-12">
+                              <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3 w-12">
                                 <input
                                   type="checkbox"
                                   checked={filteredLeads.length > 0 && selectedCustIds.length === filteredLeads.length}
@@ -1260,17 +1329,17 @@ function CeoCustomers() {
                                 />
                               </th>
                             )}
-                            <th className="px-4 py-3">Date</th>
-                            <th className="px-4 py-3">Name</th>
-                            <th className="px-4 py-3">Company Name</th>
-                            <th className="px-4 py-3">Sales Manager</th>
-                            <th className="px-4 py-3">Team Lead</th>
-                            <th className="px-4 py-3">Sales Executive</th>
-                            <th className="px-4 py-3">Location</th>
-                            <th className="px-4 py-3">Category</th>
-                            <th className="px-4 py-3">Product</th>
-                            <th className="px-4 py-3 text-center">Assignment Status</th>
-                            {isAdmin && <th className="px-4 py-3 text-center">Action</th>}
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Date</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Name</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Company Name</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Sales Manager</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Team Lead</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Sales Executive</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Location</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Category</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3">Product</th>
+                            <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3 text-center">Assignment Status</th>
+                            {isAdmin && <th className="sticky top-0 bg-slate-100 z-20 px-4 py-3 text-center">Action</th>}
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-medium">
@@ -1281,12 +1350,19 @@ function CeoCustomers() {
                           ) : (
                             paginatedLeads.map((lead, li) => {
                               const leadId = lead.id || lead.lead_id
-                              const hasOwner = !!(lead.sales_executive || lead.assigned_to || lead.assigned_to_email || lead.employee_code)
+                              const execName = (lead.sales_executive || lead.assigned_to || '').trim()
+                              const isDirectTL = isPersonTeamLead(execName) || (lead.team_lead_name && isPersonTeamLead(lead.team_lead_name) && (!execName || execName === lead.team_lead_name))
+                              const finalTL = isDirectTL ? (execName || getLeadTeamLeadName(lead)) : getLeadTeamLeadName(lead)
+                              const hasOwner = isDirectTL ? true : !!(lead.sales_executive || lead.assigned_to || lead.assigned_to_email || lead.employee_code)
 
                               return (
                                 <tr
                                   key={`${leadId}_${li}`}
-                                  className="hover:bg-slate-50/60 transition"
+                                  className={`transition ${
+                                    isDirectTL
+                                      ? 'bg-amber-50/45 hover:bg-amber-100/60 border-l-4 border-l-amber-500 shadow-2xs'
+                                      : 'hover:bg-slate-50/60'
+                                  }`}
                                 >
                                   {isAdmin && (
                                     <td className="px-4 py-3">
@@ -1317,10 +1393,23 @@ function CeoCustomers() {
                                     {getLeadManagerName(lead)}
                                   </td>
                                   <td className="px-4 py-3 text-indigo-700 font-bold">
-                                    {getLeadTeamLeadName(lead)}
+                                    {finalTL && finalTL !== 'Unassigned' ? (
+                                      <span className="inline-flex items-center gap-1.5">
+                                        {isDirectTL && (
+                                          <span className="px-1.5 py-0.5 rounded-md bg-amber-100 text-amber-800 text-[9px] font-black uppercase border border-amber-250 shadow-2xs">
+                                            TL Direct
+                                          </span>
+                                        )}
+                                        {finalTL}
+                                      </span>
+                                    ) : (
+                                      'Unassigned'
+                                    )}
                                   </td>
                                   <td className="px-4 py-3 text-slate-900 font-bold">
-                                    {hasOwner ? (
+                                    {isDirectTL ? (
+                                      <span className="text-slate-400 italic font-semibold text-[11px]">—</span>
+                                    ) : hasOwner ? (
                                       lead.sales_executive || lead.assigned_to
                                     ) : (
                                       <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase bg-slate-100 text-slate-500 border border-slate-200">

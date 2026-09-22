@@ -504,8 +504,29 @@ export default function AdminDashboard() {
     }
   }
 
+  // Load cached dashboard data instantly on mount for zero-latency initial render
+  useEffect(() => {
+    try {
+      const cached = sessionStorage.getItem('tconnect_admin_dashboard_cache') || localStorage.getItem('tconnect_admin_dashboard_cache')
+      if (cached) {
+        const parsed = JSON.parse(cached)
+        if (parsed.stats) setStats(parsed.stats)
+        if (parsed.kpiData) setKpiData(parsed.kpiData)
+        if (Array.isArray(parsed.allEmployees) && parsed.allEmployees.length > 0) setAllEmployees(parsed.allEmployees)
+        if (Array.isArray(parsed.systemActivities)) setSystemActivities(parsed.systemActivities)
+        if (Array.isArray(parsed.attendanceLogs)) setAttendanceLogs(parsed.attendanceLogs)
+        if (Array.isArray(parsed.systemRoles)) setSystemRoles(parsed.systemRoles)
+        setLoading(false)
+      }
+    } catch (e) {
+      console.warn('Dashboard cache restore notice:', e)
+    }
+  }, [])
+
   async function loadAdminDashboardData() {
-    if (allEmployees.length === 0) setLoading(true)
+    if (allEmployees.length === 0 && !sessionStorage.getItem('tconnect_admin_dashboard_cache')) {
+      setLoading(true)
+    }
     try {
       const periodParam = dateRange === 'Today' ? 'today' : (dateRange === 'This Week' ? 'week' : (dateRange === 'This Month' ? 'month' : 'all'));
 
@@ -516,7 +537,6 @@ export default function AdminDashboard() {
         adminAPI.getKPIs(periodParam),
         settingsAPI.getSettings()
       ])
-
 
       const empsList = empRes.status === 'fulfilled' && empRes.value?.data ? empRes.value.data : []
       const attList = attRes.status === 'fulfilled' && attRes.value?.data ? attRes.value.data : []
@@ -565,18 +585,20 @@ export default function AdminDashboard() {
       const lateCount = lateEmpSet.size
       const absentCount = Math.max(0, empsList.length - presentCount)
 
-      setStats({
+      const computedStats = {
         totalUsers: empsList.length,
         adminsCount: totalAdmins,
         salesManagers: totalManagers,
         salesExecutives: totalExecutives,
         auditLogsCount: auditList.length,
         attendanceSummary: { present: presentCount, absent: absentCount, late: lateCount },
-      })
+      }
+      setStats(computedStats)
 
       // Map real audit logs into systemActivities
+      let mappedActivities = []
       if (auditList.length > 0) {
-        setSystemActivities(auditList.slice(0, 10).map((a, i) => ({
+        mappedActivities = auditList.slice(0, 10).map((a, i) => ({
           id: a.id || `audit_${i}`,
           user: a.user_email || a.email || 'System User',
           role: a.user_role || 'Staff',
@@ -584,10 +606,25 @@ export default function AdminDashboard() {
           module: a.module || 'system',
           time: a.created_at || new Date().toISOString(),
           details: a.description || (typeof a.details === 'string' ? a.details : a.details?.description) || 'System operation executed'
-        })))
+        }))
+        setSystemActivities(mappedActivities)
       } else {
         setSystemActivities([])
       }
+
+      // Save to instant local cache
+      try {
+        const cachePayload = JSON.stringify({
+          stats: computedStats,
+          kpiData: kpisObj || kpiData,
+          allEmployees: empsList,
+          systemActivities: mappedActivities,
+          attendanceLogs: attList,
+          systemRoles: settingsObj?.role_permissions || systemRoles
+        })
+        sessionStorage.setItem('tconnect_admin_dashboard_cache', cachePayload)
+        localStorage.setItem('tconnect_admin_dashboard_cache', cachePayload)
+      } catch (cacheErr) {}
 
       // Parse and collect pending document approvals
       const pending = []

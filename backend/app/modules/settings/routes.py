@@ -385,6 +385,40 @@ async def create_department(
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
 
+@router.put("/departments/{dept_id}", response_model=StandardResponse)
+async def update_department(
+    dept_id: str,
+    data: dict,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        updated = service.update_department(dept_id, data)
+        return StandardResponse.success_response(
+            data=updated,
+            message="Department updated successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@router.delete("/departments/{dept_id}", response_model=StandardResponse)
+async def delete_department(
+    dept_id: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    rbac: None = Depends(CanManageSettings),
+    service: SettingsService = Depends(get_service)
+):
+    from fastapi import HTTPException
+    try:
+        service.delete_department(dept_id)
+        return StandardResponse.success_response(
+            message="Department deleted successfully"
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
 
 # Document Types CRUD
 @router.get("/document-types", response_model=StandardResponse)
