@@ -16,6 +16,9 @@ import {
   MapPin,
   Target,
   ChevronRight,
+  ChevronLeft,
+  Search,
+  Calendar,
   CheckCircle2,
   Clock3,
   Send,
@@ -33,6 +36,7 @@ import { formatDate, getLeaveRequestDays, parseDateInput } from "../../utils/dat
 import { reportAPI, attendanceAPI, hrmsAPI, adminAPI, holidaysAPI, handbookAPI, settingsAPI } from "../../services/api.js";
 import { useToast } from "../../common/ToastContext.jsx";
 import Attendance, { calculateWorkHours } from "./Attendance.jsx";
+import HolidayCalendar from "../../common/HolidayCalendar.jsx";
 
 const NAV_ITEMS = [
   { key: "dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -256,6 +260,9 @@ export default function SalesHRMS(props) {
   const [reportFilterMode, setReportFilterMode] = useState("THIS MONTH");
   const [customDateFilterFrom, setCustomDateFilterFrom] = useState("");
   const [customDateFilterTo, setCustomDateFilterTo] = useState("");
+  const [attendanceSearchDate, setAttendanceSearchDate] = useState("");
+  const [attendancePage, setAttendancePage] = useState(1);
+  const ATTENDANCE_PER_PAGE = 10;
 
   // ── Leave & Permission State ────────────────────────────────────────────────
   const [showLeaveModal, setShowLeaveModal] = useState(false);
@@ -887,51 +894,90 @@ export default function SalesHRMS(props) {
                 </button>
               </div>
 
-              {/* Filter Controls Bar (TODAY | YESTERDAY | THIS WEEK | THIS MONTH | CUSTOM) */}
-              <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-                <div className="flex items-center gap-0.5 bg-slate-100/80 p-0.5 rounded-lg border border-slate-200/80 flex-wrap">
-                  {["TODAY", "YESTERDAY", "THIS WEEK", "THIS MONTH", "CUSTOM"].map((mode) => (
+              {/* Filter Controls Bar (ALL | TODAY | YESTERDAY | THIS WEEK | THIS MONTH | CUSTOM + Date Picker) */}
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3.5">
+                <div className="flex items-center gap-1 bg-slate-100/80 p-1 rounded-xl border border-slate-200/80 flex-wrap">
+                  {["ALL", "TODAY", "YESTERDAY", "THIS WEEK", "THIS MONTH", "CUSTOM"].map((mode) => (
                     <button
                       key={mode}
                       type="button"
-                      onClick={() => setReportFilterMode(mode)}
-                      className={`px-2 py-0.5 rounded-md text-[10px] font-extrabold tracking-wide transition cursor-pointer ${
-                        reportFilterMode === mode ? "bg-teal-600 text-white shadow-2xs" : "text-slate-500 hover:text-slate-900"
+                      onClick={() => {
+                        setReportFilterMode(mode);
+                        setAttendancePage(1);
+                      }}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black tracking-wide transition cursor-pointer ${
+                        reportFilterMode === mode ? "bg-teal-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900 hover:bg-slate-200/50"
                       }`}
                     >
-                      {mode === "CUSTOM" ? "CUSTOM DATE" : mode}
+                      {mode === "CUSTOM" ? "CUSTOM RANGE" : mode}
                     </button>
                   ))}
                 </div>
 
-                {/* Custom Date Inputs (From & To) */}
-                {reportFilterMode === "CUSTOM" && (
-                  <div className="flex flex-wrap items-center gap-2 border border-slate-200 rounded-lg px-2.5 py-1 bg-white text-[11px] font-bold text-slate-700 shadow-2xs">
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-400 font-medium">From:</span>
-                      <input
-                        type="date"
-                        value={customDateFilterFrom}
-                        onChange={(e) => setCustomDateFilterFrom(e.target.value)}
-                        className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
-                      />
-                    </div>
-                    <span className="text-slate-300 font-normal">|</span>
-                    <div className="flex items-center gap-1">
-                      <span className="text-slate-400 font-medium">To:</span>
-                      <input
-                        type="date"
-                        value={customDateFilterTo}
-                        onChange={(e) => setCustomDateFilterTo(e.target.value)}
-                        className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
-                      />
-                    </div>
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Direct Date Picker Search */}
+                  <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs font-bold text-slate-700 shadow-2xs">
+                    <Calendar size={13} className="text-teal-600 shrink-0" />
+                    <span className="text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">Date:</span>
+                    <input
+                      type="date"
+                      value={attendanceSearchDate}
+                      onChange={(e) => {
+                        setAttendanceSearchDate(e.target.value);
+                        setAttendancePage(1);
+                      }}
+                      className="bg-transparent focus:outline-none cursor-pointer text-xs font-bold text-slate-800"
+                    />
+                    {attendanceSearchDate && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttendanceSearchDate("");
+                          setAttendancePage(1);
+                        }}
+                        className="text-slate-400 hover:text-slate-700 font-bold ml-1"
+                        title="Clear date filter"
+                      >
+                        ✕
+                      </button>
+                    )}
                   </div>
-                )}
+
+                  {/* Custom Date Inputs (From & To) */}
+                  {reportFilterMode === "CUSTOM" && (
+                    <div className="flex flex-wrap items-center gap-2 border border-slate-200 rounded-xl px-2.5 py-1 bg-white text-[11px] font-bold text-slate-700 shadow-2xs">
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400 font-medium">From:</span>
+                        <input
+                          type="date"
+                          value={customDateFilterFrom}
+                          onChange={(e) => {
+                            setCustomDateFilterFrom(e.target.value);
+                            setAttendancePage(1);
+                          }}
+                          className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
+                        />
+                      </div>
+                      <span className="text-slate-300 font-normal">|</span>
+                      <div className="flex items-center gap-1">
+                        <span className="text-slate-400 font-medium">To:</span>
+                        <input
+                          type="date"
+                          value={customDateFilterTo}
+                          onChange={(e) => {
+                            setCustomDateFilterTo(e.target.value);
+                            setAttendancePage(1);
+                          }}
+                          className="text-xs font-bold bg-transparent focus:outline-none cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
               </div>
 
-              {/* Attendance Report Data Table */}
-              <div className="overflow-x-auto">
+              {/* Attendance Report Data Table with 10-Row Pagination */}
+              <div>
                 {(() => {
                   const todayObj = new Date();
                   
@@ -950,6 +996,22 @@ export default function SalesHRMS(props) {
 
                   const filteredLogs = realAttendanceLogs.filter((log) => {
                     const dStr = String(log.date || log.attendance_date || "");
+                    
+                    // Filter by specific search date if selected
+                    if (attendanceSearchDate) {
+                      const logDateObj = new Date(dStr);
+                      let logFormatted = "";
+                      if (!isNaN(logDateObj.getTime())) {
+                        const logYear = logDateObj.getFullYear();
+                        const logMonth = String(logDateObj.getMonth() + 1).padStart(2, "0");
+                        const logDay = String(logDateObj.getDate()).padStart(2, "0");
+                        logFormatted = `${logYear}-${logMonth}-${logDay}`;
+                      }
+                      if (logFormatted !== attendanceSearchDate && !dStr.includes(attendanceSearchDate)) {
+                        return false;
+                      }
+                    }
+
                     const logDate = new Date(dStr);
                     if (isNaN(logDate.getTime())) {
                       return true;
@@ -989,46 +1051,114 @@ export default function SalesHRMS(props) {
                   if (filteredLogs.length === 0) {
                     return (
                       <div className="p-8 text-center bg-slate-50 border border-slate-200 rounded-2xl text-xs font-semibold text-slate-500 space-y-2">
-                        <p className="font-extrabold text-slate-700 text-sm">No attendance records found.</p>
+                        <p className="font-extrabold text-slate-700 text-sm">No attendance records found for selected period.</p>
                       </div>
                     );
                   }
 
+                  // ── 10-Row Pagination Calculation ──
+                  const totalLogsCount = filteredLogs.length;
+                  const totalPages = Math.ceil(totalLogsCount / ATTENDANCE_PER_PAGE) || 1;
+                  const currentPageClamped = Math.min(Math.max(1, attendancePage), totalPages);
+
+                  const paginatedLogs = filteredLogs.slice(
+                    (currentPageClamped - 1) * ATTENDANCE_PER_PAGE,
+                    currentPageClamped * ATTENDANCE_PER_PAGE
+                  );
+
                   return (
-                    <table className="w-full text-left font-semibold text-xs text-slate-800">
-                      <thead className="border-b border-slate-200 text-slate-400 font-black text-[10px] uppercase tracking-wider bg-slate-50">
-                        <tr>
-                          {isUserAdmin && <th className="py-3 px-4">EMPLOYEE NAME</th>}
-                          {isUserAdmin && <th className="py-3 px-4">EMPLOYEE ID</th>}
-                          <th className="py-3 px-4">DATE</th>
-                          <th className="py-3 px-4">LOGIN TIME</th>
-                          <th className="py-3 px-4">LOGOUT TIME</th>
-                          <th className="py-3 px-4 min-w-[200px]">LOGIN LOCATION</th>
-                          <th className="py-3 px-4 min-w-[200px]">LOGOUT LOCATION</th>
-                          <th className="py-3 px-4 min-w-[160px]">REMARKS</th>
-                          <th className="py-3 px-4">DURATION</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {filteredLogs.map((row, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50/80 transition">
-                            {isUserAdmin && <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{row.employee_name || row.name || "System User"}</td>}
-                            {isUserAdmin && <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.employee_id || "—"}</td>}
-                            <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{formatDate(row.date || row.attendance_date)}</td>
-                            <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.loginTime || row.check_in_time || "—"}</td>
-                            <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.logoutTime || row.check_out_time || "—"}</td>
-                            <td className="py-4 px-4 text-slate-600 font-semibold text-[11px] leading-snug">{row.loginLocation || row.check_in_address || "—"}</td>
-                            <td className="py-4 px-4 text-slate-600 font-semibold text-[11px] leading-snug">{row.logoutLocation || row.check_out_address || "—"}</td>
-                            <td className="py-4 px-4 text-teal-700 font-bold text-xs truncate max-w-[180px]">{row.remarks || row.notes || "—"}</td>
-                            <td className="py-4 px-4 font-black text-slate-900 whitespace-nowrap">
-                              {calculateWorkHours(row.loginTime || row.check_in_time, row.logoutTime || row.check_out_time) !== "—"
-                                ? calculateWorkHours(row.loginTime || row.check_in_time, row.logoutTime || row.check_out_time)
-                                : (row.workHours && row.workHours !== "9:46:13" ? row.workHours : "—")}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
+                    <div className="space-y-4">
+                      <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                        <table className="w-full text-left font-semibold text-xs text-slate-800">
+                          <thead className="border-b border-slate-200 text-slate-400 font-black text-[10px] uppercase tracking-wider bg-slate-50">
+                            <tr>
+                              {isUserAdmin && <th className="py-3 px-4">EMPLOYEE NAME</th>}
+                              {isUserAdmin && <th className="py-3 px-4">EMPLOYEE ID</th>}
+                              <th className="py-3 px-4">DATE</th>
+                              <th className="py-3 px-4">LOGIN TIME</th>
+                              <th className="py-3 px-4">LOGOUT TIME</th>
+                              <th className="py-3 px-4 min-w-[200px]">LOGIN LOCATION</th>
+                              <th className="py-3 px-4 min-w-[200px]">LOGOUT LOCATION</th>
+                              <th className="py-3 px-4 min-w-[160px]">REMARKS</th>
+                              <th className="py-3 px-4">DURATION</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {paginatedLogs.map((row, idx) => (
+                              <tr key={idx} className="hover:bg-slate-50/80 transition">
+                                {isUserAdmin && <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{row.employee_name || row.name || "System User"}</td>}
+                                {isUserAdmin && <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.employee_id || "—"}</td>}
+                                <td className="py-4 px-4 font-bold text-slate-900 whitespace-nowrap">{formatDate(row.date || row.attendance_date)}</td>
+                                <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.loginTime || row.check_in_time || "—"}</td>
+                                <td className="py-4 px-4 font-bold text-slate-800 whitespace-nowrap">{row.logoutTime || row.check_out_time || "—"}</td>
+                                <td className="py-4 px-4 text-slate-600 font-semibold text-[11px] leading-snug">{row.loginLocation || row.check_in_address || "—"}</td>
+                                <td className="py-4 px-4 text-slate-600 font-semibold text-[11px] leading-snug">{row.logoutLocation || row.check_out_address || "—"}</td>
+                                <td className="py-4 px-4 text-teal-700 font-bold text-xs truncate max-w-[180px]">{row.remarks || row.notes || "—"}</td>
+                                <td className="py-4 px-4 font-black text-slate-900 whitespace-nowrap">
+                                  {calculateWorkHours(row.loginTime || row.check_in_time, row.logoutTime || row.check_out_time) !== "—"
+                                    ? calculateWorkHours(row.loginTime || row.check_in_time, row.logoutTime || row.check_out_time)
+                                    : (row.workHours && row.workHours !== "9:46:13" ? row.workHours : "—")}
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Pagination Bar (10 rows per page) */}
+                      {totalLogsCount > 0 && (
+                        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs font-semibold text-slate-600">
+                          <div>
+                            Showing <span className="font-bold text-slate-900">{(currentPageClamped - 1) * ATTENDANCE_PER_PAGE + 1}</span> to{" "}
+                            <span className="font-bold text-slate-900">{Math.min(currentPageClamped * ATTENDANCE_PER_PAGE, totalLogsCount)}</span> of{" "}
+                            <span className="font-bold text-slate-900">{totalLogsCount}</span> attendance records
+                          </div>
+
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              disabled={currentPageClamped <= 1}
+                              onClick={() => setAttendancePage(prev => Math.max(1, prev - 1))}
+                              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-slate-700 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                            >
+                              <ChevronLeft size={14} /> Previous
+                            </button>
+
+                            {Array.from({ length: totalPages }, (_, i) => i + 1)
+                              .filter(p => p === 1 || p === totalPages || Math.abs(p - currentPageClamped) <= 1)
+                              .map((p, i, arr) => {
+                                const prevPage = arr[i - 1];
+                                const showEllipsis = prevPage && p - prevPage > 1;
+                                return (
+                                  <React.Fragment key={p}>
+                                    {showEllipsis && <span className="px-1 text-slate-400">...</span>}
+                                    <button
+                                      type="button"
+                                      onClick={() => setAttendancePage(p)}
+                                      className={`w-8 h-8 rounded-xl font-extrabold text-xs transition cursor-pointer ${
+                                        currentPageClamped === p
+                                          ? "bg-teal-600 text-white shadow-2xs"
+                                          : "border border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                                      }`}
+                                    >
+                                      {p}
+                                    </button>
+                                  </React.Fragment>
+                                );
+                              })}
+
+                            <button
+                              type="button"
+                              disabled={currentPageClamped >= totalPages}
+                              onClick={() => setAttendancePage(prev => Math.min(totalPages, prev + 1))}
+                              className="px-3 py-1.5 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed font-bold text-slate-700 transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                            >
+                              Next <ChevronRight size={14} />
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   );
                 })()}
               </div>
@@ -2088,87 +2218,7 @@ export default function SalesHRMS(props) {
 
         {/* ── HOLIDAY CALENDAR ── */}
         {activeSection === "calendar" && (
-          <div className="max-w-4xl space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-              <div>
-                <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <CalendarDays className="w-5 h-5 text-teal-600" /> Holiday Calendar
-                </h1>
-                <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                  Official company holiday list and admin-uploaded holiday schedule document.
-                </p>
-              </div>
-
-              {holidayPdfData && (
-                <div className="flex items-center gap-2 shrink-0">
-                  <a
-                    href={holidayPdfData.url}
-                    download={holidayPdfData.name || "Holiday_Calendar.pdf"}
-                    className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-black text-xs rounded-xl shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
-                  >
-                    📥 Download PDF
-                  </a>
-                  <button
-                    onClick={() => {
-                      const win = window.open();
-                      if (win) win.document.write(`<iframe src="${holidayPdfData.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-                    }}
-                    className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
-                  >
-                    🔍 Fullscreen
-                  </button>
-                </div>
-              )}
-            </div>
-
-            {holidayPdfData ? (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
-                <div className="flex items-center justify-between text-xs text-slate-500 font-bold px-1">
-                  <span>📄 Official Document: <strong>{holidayPdfData.name}</strong></span>
-                  {holidayPdfData.date && <span>Uploaded by Admin on: {new Date(holidayPdfData.date).toLocaleDateString()}</span>}
-                </div>
-                <iframe
-                  src={holidayPdfData.url}
-                  className="w-full h-[650px] rounded-xl border border-slate-200 bg-slate-50"
-                  title="Holiday Calendar PDF"
-                />
-              </div>
-            ) : (
-              <div className="bg-amber-50/80 border border-amber-200 rounded-2xl p-4 text-xs font-bold text-amber-900 flex items-center gap-2">
-                <span>📄 Official Holiday Calendar PDF has not been uploaded by Admin yet. Below is the active holiday list:</span>
-              </div>
-            )}
-
-            {loadingHolidays ? (
-              <p className="text-slate-400 text-sm font-semibold p-4">Loading holiday calendar...</p>
-            ) : dbHolidays.length === 0 ? (
-              <div className="bg-white rounded-2xl border border-slate-200 p-8 text-center">
-                <CalendarDays size={32} className="mx-auto text-slate-300 mb-2" />
-                <p className="font-bold text-slate-700">No holidays configured</p>
-                <p className="text-xs text-slate-400 font-medium">No company holidays have been scheduled for this period.</p>
-              </div>
-            ) : (
-              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100">
-                <div className="p-4 bg-slate-50 border-b border-slate-100 font-black text-xs text-slate-700 uppercase tracking-wider">
-                  Annual Company Holidays
-                </div>
-                {dbHolidays.map(h => (
-                  <div key={h.id || h.date} className="px-5 py-3.5 flex items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-center text-lg shrink-0">
-                        {h.type === "National" ? "🇮🇳" : h.type === "Festival" ? "🎉" : "🌅"}
-                      </div>
-                      <div>
-                        <p className="text-sm font-black text-slate-900">{h.name}</p>
-                        <p className="text-[11px] text-slate-500 font-semibold">{h.date}</p>
-                      </div>
-                    </div>
-                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${h.type === "National" ? "bg-blue-50 text-blue-700 border-blue-200" : h.type === "Festival" ? "bg-amber-50 text-amber-700 border-amber-200" : "bg-violet-50 text-violet-700 border-violet-200"}`}>{h.type || "Mandatory"}</span>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+          <HolidayCalendar />
         )}
 
         {/* ── CAREER LADDER ── */}

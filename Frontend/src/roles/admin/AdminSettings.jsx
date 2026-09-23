@@ -28,6 +28,7 @@ import {
 import { settingsAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import { normalizePhoneNumber } from '../../utils/formatUtils.js'
+import HolidayCalendar from '../../common/HolidayCalendar.jsx'
 
 const MODULE_LABELS_BY_ROLE = {
   'Sales Executive': [
@@ -877,6 +878,9 @@ function AdminSettings() {
               </div>
             </div>
           </div>
+
+          {/* INTERACTIVE HOLIDAY CALENDAR & ADMIN EXCEL/ADHOC LEAVE MANAGEMENT */}
+          <HolidayCalendar />
 
           {/* NEW SECTION: OFFICIAL DOCUMENTATION PDF MANAGEMENT (Holiday Calendar & Twite Handbook) */}
           <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-xs space-y-4">

@@ -59,7 +59,7 @@ export async function snapToRoadGeometry(pts) {
     }
   }
 
-  // 2. Secondary Fallback: OSRM Match Engine
+  // 2. Secondary: OSRM Match Engine
   try {
     let sampled = cleanPts;
     if (cleanPts.length > 80) {
@@ -90,9 +90,36 @@ export async function snapToRoadGeometry(pts) {
       }
     }
   } catch (err) {
-    console.warn('[RoadSnap] OSRM match notice (falling back to raw points):', err);
+    console.warn('[RoadSnap] OSRM match notice (trying OSRM route fallback):', err);
   }
 
-  // 3. Final Fallback: Raw filtered points
+  // 3. Tertiary Fallback: OSRM Route Engine (Guarantees turn-by-turn road geometry along streets between sparse points)
+  try {
+    let sampled = cleanPts;
+    if (cleanPts.length > 40) {
+      const step = Math.ceil(cleanPts.length / 40);
+      sampled = cleanPts.filter((_, idx) => idx % step === 0 || idx === cleanPts.length - 1);
+    }
+
+    const coordStr = sampled.map(p => `${p.lng},${p.lat}`).join(';');
+    const routeUrl = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`;
+
+    const res = await fetch(routeUrl);
+    if (res.ok) {
+      const data = await res.json();
+      if (data && data.code === 'Ok' && Array.isArray(data.routes) && data.routes.length > 0) {
+        const routeGeo = data.routes[0].geometry;
+        if (routeGeo && Array.isArray(routeGeo.coordinates) && routeGeo.coordinates.length > 1) {
+          const snappedPoints = routeGeo.coordinates.map(c => ({ lat: c[1], lng: c[0] }));
+          addToCache(cacheKey, snappedPoints);
+          return snappedPoints;
+        }
+      }
+    }
+  } catch (routeErr) {
+    console.warn('[RoadSnap] OSRM route notice (falling back to raw points):', routeErr);
+  }
+
+  // 4. Final Fallback: Raw filtered points
   return cleanPts;
 }

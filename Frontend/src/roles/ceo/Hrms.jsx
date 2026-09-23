@@ -5,6 +5,7 @@ import {
   Briefcase,
   Users,
   Calendar,
+  CalendarDays,
   Clock,
   CheckCircle2,
   XCircle,
@@ -30,6 +31,7 @@ import {
 } from 'lucide-react'
 import { hrmsAPI, attendanceAPI, userAPI, reportAPI } from '../../services/api.js'
 import { exportToCSV } from '../../utils/exportUtils.js'
+import HolidayCalendar from '../../common/HolidayCalendar.jsx'
 
 const EmployeeProfileModal = ({ employee, onClose }) => {
   const [previewDoc, setPreviewDoc] = useState(null);
@@ -243,6 +245,7 @@ const DEFAULT_CEO_TABS_LIST = [
   { id: 'employees', label: 'Employee Directory', icon: Users },
   { id: 'daily_reports', label: 'Daily Report', icon: FileText },
   { id: 'leaves', label: 'Leave Management', icon: Calendar },
+  { id: 'calendar', label: 'Holiday Calendar', icon: CalendarDays },
 ];
 
 function CeoHrms({ initialTab = 'employees' }) {
@@ -920,7 +923,7 @@ function CeoHrms({ initialTab = 'employees' }) {
 
   const DEPT_CARD_PALETTES = [
     {
-      active: 'bg-[#832D51] text-white border-[#832D51] shadow-md ring-2 ring-[#832D51]/30',
+      active: 'bg-purple-200 text-purple-950 border-purple-300 shadow-2xs font-extrabold',
       inactive: 'bg-rose-50/80 border-rose-200 text-rose-950 hover:bg-rose-100/70 shadow-2xs',
       badgeActive: 'bg-white/20 text-white',
       badgeInactive: 'bg-rose-200/70 text-rose-900',
@@ -1061,11 +1064,11 @@ function CeoHrms({ initialTab = 'employees' }) {
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
           <div>
             <div className="flex items-center gap-2">
-              <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/30 text-[#832D51]">
+              <span className="grid size-8 place-items-center rounded-lg bg-purple-100 text-purple-700">
                 <Briefcase className="size-4.5" />
               </span>
-              <h1 className="text-2xl font-black text-slate-900 tracking-tight">
-                Executive HRMS & Clearances
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                HRMS Executive Directory & Attendance
               </h1>
             </div>
             <p className="mt-1 text-xs text-slate-500 font-medium max-w-3xl">
@@ -1075,7 +1078,7 @@ function CeoHrms({ initialTab = 'employees' }) {
 
           {/* Quick Pending Counter */}
           <div className="flex items-center gap-2">
-            <span className="rounded-xl bg-[#F8CAE4]/20 border border-[#EA6993]/20 px-3 py-1.5 text-xs font-bold text-[#832D51]">
+            <span className="rounded-xl bg-purple-100 border border-purple-200 px-3 py-1.5 text-xs font-bold text-purple-800">
               {pendingLeaves.length + pendingPermissions.length} Pending Clearances
             </span>
           </div>
@@ -1101,8 +1104,8 @@ function CeoHrms({ initialTab = 'employees' }) {
                     setActiveTab(tabItem.id);
                   }}
                   className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold transition whitespace-nowrap ${isActive
-                      ? 'bg-[#832D51] text-white shadow-2xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      ? 'bg-purple-200 text-purple-950 border border-purple-300 shadow-2xs font-extrabold'
+                      : 'text-slate-600 hover:bg-purple-50 hover:text-purple-700 font-bold'
                     }`}
                 >
                   <Icon className="size-3.5" />
@@ -1110,9 +1113,9 @@ function CeoHrms({ initialTab = 'employees' }) {
                   {badgeVal !== null && badgeVal !== undefined && (
                     <span
                       className={`rounded-full px-2 py-0.2 text-[10px] font-black ${isActive
-                          ? 'bg-white text-[#832D51]'
+                          ? 'bg-white text-purple-800'
                           : alertVal
-                            ? 'bg-[#EA6993] text-white'
+                            ? 'bg-purple-500 text-white'
                             : 'bg-slate-200 text-slate-700'
                         }`}
                     >
@@ -1347,7 +1350,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                           <td className="py-3 px-3 text-right">
                             <button
                               onClick={() => setSelectedEmployee(emp)}
-                              className="px-2.5 py-1.5 bg-[#832D51] hover:bg-[#68243f] text-white font-extrabold rounded-xl text-[10px] shadow-xs transition cursor-pointer"
+                              className="px-2.5 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-[10px] shadow-xs transition cursor-pointer"
                             >
                               View Profile
                             </button>
@@ -1555,7 +1558,7 @@ function CeoHrms({ initialTab = 'employees' }) {
                             setReportCeoRemarksInput(report.ceo_remarks || '')
                             setReportReviewModalOpen(true)
                           }}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-[#832D51] hover:bg-[#68243f] text-white font-extrabold rounded-xl text-xs shadow-xs transition cursor-pointer"
+                          className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-xs shadow-xs transition cursor-pointer"
                         >
                           <Eye className="size-3.5" />
                           View
@@ -1975,6 +1978,11 @@ function CeoHrms({ initialTab = 'employees' }) {
         </div>
       )}
 
+      {/* ── TAB 4: HOLIDAY CALENDAR ───────────────────────────── */}
+      {activeTab === 'calendar' && (
+        <HolidayCalendar />
+      )}
+
       {/* Review Modal */}
       {reviewModalOpen && selectedRequest && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
@@ -2094,7 +2102,7 @@ function CeoHrms({ initialTab = 'employees' }) {
               </button>
               <button
                 onClick={() => handleSaveReportReview('Reviewed')}
-                className="px-5 py-2 bg-[#832D51] hover:bg-[#68243f] text-white font-extrabold rounded-xl text-xs shadow-sm transition cursor-pointer"
+                className="px-5 py-2 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-extrabold rounded-xl text-xs shadow-sm transition cursor-pointer"
               >
                 Mark Reviewed & Send Feedback
               </button>

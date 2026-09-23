@@ -487,6 +487,13 @@ export const holidaysAPI = {
     return request(`/holidays${query ? `?${query}` : ''}`)
   },
   createHoliday: (data) => request('/holidays', { method: 'POST', body: JSON.stringify(data) }),
+  uploadExcelHolidays: (dataOrFormData) => {
+    if (Array.isArray(dataOrFormData)) {
+      return request('/holidays/upload-excel', { method: 'POST', body: JSON.stringify(dataOrFormData) })
+    }
+    return request('/holidays/upload-excel', { method: 'POST', body: dataOrFormData })
+  },
+  createAdhocHoliday: (data) => request('/holidays/adhoc', { method: 'POST', body: JSON.stringify(data) }),
   updateHoliday: (id, data) => request(`/holidays/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
   deleteHoliday: (id) => request(`/holidays/${id}`, { method: 'DELETE' }),
 }
@@ -534,6 +541,16 @@ export const spatialAPI = {
   getLocationHistory: (employeeId, sessionId = null) => {
     const qs = sessionId ? `?session_id=${sessionId}` : ''
     return request(`/spatial/location/history/${employeeId}${qs}`)
+  },
+  /** Manager / CEO spatial & trip history audit reports for executive visits. */
+  getExecutiveHistoryReport: (params = {}) => {
+    const query = new URLSearchParams(params).toString()
+    return request(`/spatial/reports/executive-history${query ? `?${query}` : ''}`)
+  },
+  /** Point-in-Time Location Lookup ("Where was executive at X time on Y date"). */
+  lookupPointInTimeLocation: (params = {}) => {
+    const query = new URLSearchParams(params).toString()
+    return request(`/spatial/lookup/point-in-time${query ? `?${query}` : ''}`)
   },
 }
 

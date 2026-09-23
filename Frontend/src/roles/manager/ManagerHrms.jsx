@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import ManagerSalesReports from './ManagerSalesReports.jsx'
+import HolidayCalendar from '../../common/HolidayCalendar.jsx'
 import {
   LayoutDashboard,
   ClipboardList,
@@ -1210,73 +1211,7 @@ export default function ManagerHrms(props) {
 
       {/* 6. HOLIDAY CALENDAR */}
       {activeSection === 'calendar' && (
-        <div className="max-w-4xl space-y-5">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
-            <div>
-              <h2 className="text-2xl font-black text-slate-900 flex items-center gap-2">
-                <CalendarDays className="w-6 h-6 text-mgr-primary-600" /> Holiday Calendar 2026–27
-              </h2>
-              <p className="text-xs text-slate-500 font-medium mt-1">
-                Official holiday schedule published by HR & Management.
-              </p>
-            </div>
-            {holidayPdfData && (
-              <div className="flex items-center gap-2">
-                <a
-                  href={holidayPdfData.url}
-                  download={holidayPdfData.name || "Holiday_Calendar.pdf"}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
-                >
-                  <Download className="w-4 h-4" /> Download PDF
-                </a>
-                <button
-                  type="button"
-                  onClick={() => {
-                    const win = window.open('', '_blank');
-                    if (win) win.document.write(`<iframe src="${holidayPdfData.url}" frameborder="0" style="border:0; top:0px; left:0px; bottom:0px; right:0px; width:100%; height:100%;" allowfullscreen></iframe>`);
-                  }}
-                  className="px-4 py-2 bg-mgr-primary-600 hover:bg-mgr-primary-700 text-white rounded-xl text-xs font-bold transition shadow-xs flex items-center gap-1.5"
-                >
-                  <Eye className="w-4 h-4" /> View Fullscreen
-                </button>
-              </div>
-            )}
-          </div>
-
-          {holidayPdfData ? (
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs p-4 space-y-3">
-              <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1">
-                <span>📄 Official Document: <strong>{holidayPdfData.name}</strong></span>
-                {holidayPdfData.date && <span>Uploaded by Admin on: {new Date(holidayPdfData.date).toLocaleDateString()}</span>}
-              </div>
-              <iframe
-                src={holidayPdfData.url}
-                className="w-full h-[650px] rounded-xl border border-slate-200 shadow-inner bg-slate-900/5"
-                title="Official Holiday Calendar PDF"
-              />
-            </div>
-          ) : (
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs font-semibold text-amber-800 flex items-center gap-2">
-              <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
-              <span>📄 Official Holiday Calendar PDF has not been uploaded by Admin yet. Below is the general holiday list:</span>
-            </div>
-          )}
-
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xs divide-y divide-slate-100">
-            {HOLIDAYS.map((h) => (
-              <div key={h.date} className="px-5 py-3.5 flex items-center justify-between gap-3">
-                <div>
-                  <p className="font-black text-slate-900 text-sm">{h.name}</p>
-                  <p className="text-xs text-slate-400 font-mono mt-0.5">{h.date}</p>
-                </div>
-                <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${h.type === 'National' ? 'bg-blue-50 text-blue-800 border-blue-200' :
-                    h.type === 'Festival' ? 'bg-mgr-primary-50 text-mgr-primary-800 border-mgr-primary-200' :
-                      'bg-emerald-50 text-emerald-800 border-emerald-200'
-                  }`}>{h.type}</span>
-              </div>
-            ))}
-          </div>
-        </div>
+        <HolidayCalendar />
       )}
 
       {/* 7. MANAGER HANDBOOK */}

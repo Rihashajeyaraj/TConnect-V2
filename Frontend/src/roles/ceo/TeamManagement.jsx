@@ -620,7 +620,7 @@ function TeamManagement() {
                 <td className="px-4 py-3">
                   <span className={`inline-flex rounded-md px-2 py-0.5 text-[9px] font-black uppercase ${
                     emp.role.includes('Admin') ? 'bg-purple-100 text-purple-800 border border-purple-200' :
-                    emp.role.includes('Manager') ? 'bg-[#F8CAE4]/40 text-[#832D51] border border-[#832D51]/30' :
+                    emp.role.includes('Manager') ? 'bg-purple-100 text-purple-800 border border-purple-200' :
                     'bg-blue-100 text-blue-800 border border-blue-200'
                   }`}>
                     {emp.role}
@@ -677,7 +677,7 @@ function TeamManagement() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
+            <span className="grid size-8 place-items-center rounded-lg bg-purple-100 text-purple-700">
               <Users2 className="size-4.5" />
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -689,15 +689,15 @@ function TeamManagement() {
         <div className="flex items-center gap-2">
           <button
             onClick={handleOpenMyProfile}
-            className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 px-4 py-2.5 text-xs font-black transition shadow-xs cursor-pointer"
+            className="flex items-center gap-2 rounded-xl border border-purple-200 bg-white hover:bg-purple-50 text-purple-700 px-4 py-2.5 text-xs font-black transition shadow-xs cursor-pointer"
           >
-            <User className="size-4 text-[#832D51]" />
+            <User className="size-4 text-purple-600" />
             My Profile
           </button>
           
           <button
             onClick={handleOpenAdd}
-            className="flex items-center gap-2 rounded-xl bg-[#832D51] hover:bg-[#6a2240] text-white px-4 py-2.5 text-xs font-black transition shadow-xs cursor-pointer"
+            className="flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white px-4 py-2.5 text-xs font-black transition shadow-xs cursor-pointer"
           >
             <Plus className="size-4" />
             Add Employee / Rep
@@ -721,7 +721,7 @@ function TeamManagement() {
             placeholder="Search Department or Employee..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-4 text-xs font-bold placeholder:text-slate-400 outline-none focus:border-[#832D51] transition"
+            className="h-10 w-full rounded-xl border border-slate-200 pl-9 pr-4 text-xs font-bold placeholder:text-slate-400 outline-none focus:border-purple-500 transition"
           />
         </div>
       </div>
@@ -737,12 +737,12 @@ function TeamManagement() {
             <div
               key={dept.name}
               onClick={() => setSelectedDeptModal(dept)}
-              className="rounded-3xl border-2 border-slate-200 bg-white p-5 shadow-xs transition-all duration-150 hover:border-[#832D51] hover:shadow-md hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900 space-y-4"
+              className="rounded-3xl border-2 border-slate-200 bg-white p-5 shadow-xs transition-all duration-150 hover:border-purple-300 hover:shadow-md hover:scale-[1.01] active:scale-95 cursor-pointer text-slate-900 space-y-4"
             >
               {/* Card Top */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="grid size-11 place-items-center rounded-2xl bg-[#832D51]/10 text-[#832D51] font-black">
+                  <span className="grid size-11 place-items-center rounded-2xl bg-purple-100 text-purple-700 font-black">
                     <Building className="size-5.5" />
                   </span>
                   <div>
@@ -758,7 +758,7 @@ function TeamManagement() {
               {/* Hierarchy Counts Pill (Managers, Team Leads & Executives) */}
               <div className="bg-slate-50 rounded-2xl p-3 border border-slate-100 flex items-center justify-between text-xs">
                 <div className="text-center">
-                  <span className="text-[9px] font-black uppercase text-[#832D51] block">Managers</span>
+                  <span className="text-[9px] font-black uppercase text-purple-700 block">Managers</span>
                   <span className="font-black text-slate-900 text-sm">{dept.managers.length}</span>
                 </div>
                 <div className="h-6 w-px bg-slate-200" />
@@ -781,12 +781,12 @@ function TeamManagement() {
                 </div>
                 <div className="text-right">
                   <span className="text-[9px] font-bold text-slate-400 uppercase">Department Revenue</span>
-                  <p className="font-black text-emerald-700">₹{dept.totalRevenue.toLocaleString()}</p>
+                  <p className="font-black text-purple-700">₹{dept.totalRevenue.toLocaleString()}</p>
                 </div>
               </div>
 
               {/* Card Footer Call to Action */}
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-black text-[#832D51]">
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] font-black text-purple-700">
                 <span>▶ Click to view staff hierarchy details</span>
                 <span>→</span>
               </div>
@@ -808,13 +808,13 @@ function TeamManagement() {
             {/* Modal Header with Close Symbol (X) */}
             <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/70 shrink-0">
               <div className="flex items-center gap-3">
-                <span className="grid size-11 place-items-center rounded-2xl bg-[#832D51] text-white font-black">
+                <span className="grid size-11 place-items-center rounded-2xl bg-purple-600 text-white font-black">
                   <Building className="size-6" />
                 </span>
                 <div>
                   <div className="flex items-center gap-2">
                     <h3 className="text-base sm:text-lg font-black text-slate-900">{selectedDeptModal.name} Department</h3>
-                    <span className="px-2.5 py-0.5 rounded-full bg-[#832D51]/10 text-[#832D51] text-xs font-black">
+                    <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs font-black">
                       {selectedDeptModal.members.length} Total Staff
                     </span>
                   </div>
@@ -852,7 +852,7 @@ function TeamManagement() {
                     {/* Expand All / Minimize All Global Toolbar */}
                     <div className="flex items-center justify-between bg-white border border-slate-200/90 px-4 py-3 rounded-2xl shadow-2xs">
                       <div className="flex items-center gap-2">
-                        <Network className="size-4 text-[#832D51]" />
+                        <Network className="size-4 text-purple-600" />
                         <span className="text-xs font-black text-slate-800 uppercase tracking-wider">Department Staff Hierarchy View</span>
                       </div>
                       <div className="flex items-center gap-2">
@@ -863,7 +863,7 @@ function TeamManagement() {
                           }}
                           className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 text-xs font-bold transition cursor-pointer flex items-center gap-1"
                         >
-                          <ChevronDown className="size-3.5 text-emerald-600" />
+                          <ChevronDown className="size-3.5 text-purple-600" />
                           Expand All
                         </button>
                         <button
@@ -895,16 +895,16 @@ function TeamManagement() {
                       const isMgrCollapsed = Boolean(collapsedManagers[mgrKey])
 
                       return (
-                        <div key={mIdx} className="border-2 border-[#832D51]/20 bg-white rounded-3xl overflow-hidden shadow-xs space-y-4 p-4 sm:p-5">
+                        <div key={mIdx} className="border-2 border-purple-200 bg-white rounded-3xl overflow-hidden shadow-xs space-y-4 p-4 sm:p-5">
                           {/* Manager Header Bar */}
-                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80 bg-[#832D51]/5 -mx-4 sm:-mx-5 -mt-4 sm:-mt-5 p-4 sm:p-5">
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200/80 bg-purple-50/50 -mx-4 sm:-mx-5 -mt-4 sm:-mt-5 p-4 sm:p-5">
                             <div className="flex items-center gap-3">
-                              <div className="size-10 rounded-2xl bg-[#832D51] text-white flex items-center justify-center font-black text-sm shadow-xs">
+                              <div className="size-10 rounded-2xl bg-purple-600 text-white flex items-center justify-center font-black text-sm shadow-xs">
                                 <UserCheck className="size-5" />
                               </div>
                               <div>
                                 <div className="flex items-center gap-2">
-                                  <span className="text-[10px] font-black uppercase tracking-wider text-[#832D51] bg-[#F8CAE4]/60 px-2 py-0.5 rounded-md">
+                                  <span className="text-[10px] font-black uppercase tracking-wider text-purple-700 bg-purple-100 px-2 py-0.5 rounded-md">
                                     SALES MANAGER
                                   </span>
                                   <h4 className="text-base font-black text-slate-950">{mgrTree.manager.name}</h4>
@@ -922,7 +922,7 @@ function TeamManagement() {
                               </div>
                               <div className="text-right">
                                 <span className="text-[9px] font-bold text-slate-400 uppercase block">Revenue Output</span>
-                                <span className="font-black text-emerald-700 text-xs">₹{(mgrTree.manager.revenue || 0).toLocaleString()}</span>
+                                <span className="font-black text-purple-700 text-xs">₹{(mgrTree.manager.revenue || 0).toLocaleString()}</span>
                               </div>
                               <div className="flex items-center gap-2 pl-2 border-l border-slate-200">
                                 <button onClick={() => handleOpenView(mgrTree.manager)} title="View Profile" className="p-1.5 rounded-lg text-slate-400 hover:bg-slate-200 hover:text-slate-700 transition cursor-pointer">
@@ -940,12 +940,12 @@ function TeamManagement() {
                                   {isMgrCollapsed ? (
                                     <>
                                       <span>Expand</span>
-                                      <ChevronDown className="size-4 text-[#832D51]" />
+                                      <ChevronDown className="size-4 text-purple-600" />
                                     </>
                                   ) : (
                                     <>
                                       <span>Minimize</span>
-                                      <ChevronUp className="size-4 text-[#832D51]" />
+                                      <ChevronUp className="size-4 text-purple-600" />
                                     </>
                                   )}
                                 </button>
@@ -1157,7 +1157,7 @@ function TeamManagement() {
                   value={formData.name}
                   onChange={(e) => setFormData({ ...formData, name: e.target.value })}
                   placeholder="e.g. Rahul Verma"
-                  className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#832D51]"
+                  className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-purple-500"
                 />
               </div>
 
@@ -1169,7 +1169,7 @@ function TeamManagement() {
                     value={formData.email}
                     onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                     placeholder="email@tconnect.com"
-                    className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#832D51]"
+                    className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-purple-500"
                   />
                 </div>
                 <div>
@@ -1180,7 +1180,7 @@ function TeamManagement() {
                     value={formData.phone}
                     onChange={(e) => setFormData({ ...formData, phone: normalizePhoneNumber(e.target.value) })}
                     placeholder="10-digit number e.g. 9876543210"
-                    className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-[#832D51]"
+                    className="w-full rounded-xl border border-slate-200 p-2.5 font-semibold text-slate-800 outline-none focus:border-purple-500"
                   />
                 </div>
               </div>
@@ -1326,7 +1326,7 @@ function TeamManagement() {
                 </button>
                 <button
                   type="submit"
-                  className="rounded-xl bg-[#832D51] px-5 py-2 font-bold text-white hover:bg-[#6a2240]"
+                  className="rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 px-5 py-2 font-bold text-white transition shadow-xs cursor-pointer"
                 >
                   Save Employee
                 </button>
@@ -1341,16 +1341,16 @@ function TeamManagement() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-xs">
           <div className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-200 space-y-6 relative overflow-hidden">
             {/* Header branding line */}
-            <div className="absolute top-0 left-0 right-0 h-1.5 bg-[#832D51]" />
+            <div className="absolute top-0 left-0 right-0 h-1.5 bg-gradient-to-r from-purple-600 to-indigo-600" />
             
             <div className="flex items-center justify-between border-b border-slate-100 pb-4 mt-2">
               <div className="flex items-center gap-3">
-                <span className="grid size-12 place-items-center rounded-2xl bg-[#832D51] text-white font-black text-sm shadow-sm">
+                <span className="grid size-12 place-items-center rounded-2xl bg-purple-600 text-white font-black text-sm shadow-sm">
                   {viewingEmp.name.split(' ').map((n) => n[0]).join('').toUpperCase()}
                 </span>
                 <div>
                   <h3 className="text-lg font-black text-slate-900">{viewingEmp.name}</h3>
-                  <span className="inline-flex rounded-md bg-[#F8CAE4]/20 px-2 py-0.5 mt-0.5 text-[10px] font-black text-[#832D51]">
+                  <span className="inline-flex rounded-md bg-purple-100 px-2 py-0.5 mt-0.5 text-[10px] font-black text-purple-700">
                     {viewingEmp.role}
                   </span>
                 </div>
@@ -1369,7 +1369,7 @@ function TeamManagement() {
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs font-semibold text-slate-800">
                 <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
-                  <Mail className="size-4 text-[#832D51] shrink-0" />
+                  <Mail className="size-4 text-purple-600 shrink-0" />
                   <div className="truncate">
                     <p className="text-[9px] uppercase font-bold text-slate-400">Email Address</p>
                     <p className="truncate">{viewingEmp.email}</p>
@@ -1377,7 +1377,7 @@ function TeamManagement() {
                 </div>
 
                 <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
-                  <Phone className="size-4 text-[#832D51] shrink-0" />
+                  <Phone className="size-4 text-purple-600 shrink-0" />
                   <div>
                     <p className="text-[9px] uppercase font-bold text-slate-400">Phone Number</p>
                     <p>{viewingEmp.phone || 'N/A'}</p>
@@ -1385,7 +1385,7 @@ function TeamManagement() {
                 </div>
 
                 <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
-                  <Building className="size-4 text-[#832D51] shrink-0" />
+                  <Building className="size-4 text-purple-600 shrink-0" />
                   <div>
                     <p className="text-[9px] uppercase font-bold text-slate-400">Department</p>
                     <p>{viewingEmp.department}</p>
@@ -1393,7 +1393,7 @@ function TeamManagement() {
                 </div>
 
                 <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50">
-                  <Network className="size-4 text-[#832D51] shrink-0" />
+                  <Network className="size-4 text-purple-600 shrink-0" />
                   <div>
                     <p className="text-[9px] uppercase font-bold text-slate-400">Reporting To</p>
                     <p>{viewingEmp.manager || 'CEO Office'}</p>
@@ -1402,12 +1402,12 @@ function TeamManagement() {
               </div>
 
               <div className="flex items-center gap-2.5 p-3 rounded-xl border border-slate-100 bg-slate-50/50 text-xs">
-                <ShieldCheck className="size-4 text-[#832D51] shrink-0" />
+                <ShieldCheck className="size-4 text-purple-600 shrink-0" />
                 <div>
                   <p className="text-[9px] uppercase font-bold text-slate-400">Status</p>
                   <span className={`inline-flex rounded-full px-2 py-0.5 text-[9px] font-black border mt-0.5 ${
                     viewingEmp.status?.toLowerCase() === 'active'
-                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      ? 'bg-purple-50 text-purple-700 border-purple-200'
                       : 'bg-rose-50 text-rose-700 border-rose-200'
                   }`}>
                     {viewingEmp.status}

@@ -2,6 +2,7 @@ import { Sparkles, MapPin, Users, MessageSquare, Handshake, CheckCircle2, Chevro
 import salesGuyImg from '../assets/sales-guy-checking-routes.png'
 import chennaiMapBg from '../assets/chennai-map-bg.png'
 import handshakePartnersImg from '../assets/handshake-partners.png'
+import bikeIcon from '../assets/bike-icon.png'
 
 function BrandPanel() {
   return (
@@ -212,13 +213,14 @@ function BrandPanel() {
                 <path d="M -50,-20 L -80,-20 M -45,-10 L -70,-10 M -55,-30 L -75,-30" stroke="#3b82f6" strokeWidth="3" strokeLinecap="round" opacity="0.65" />
                 <path d="M -45,-20 L -70,-20" stroke="#60a5fa" strokeWidth="6" strokeLinecap="round" opacity="0.4" filter="url(#glow)" />
 
-                {/* 3D Motorcycle Rider PNG Image */}
+                {/* Blue Sport Motorcycle Rider PNG Image */}
                 <image 
-                  href="/motorcycle_rider.png" 
-                  x="-75" 
-                  y="-70" 
-                  width="130" 
-                  height="73" 
+                  href={bikeIcon} 
+                  x="-55" 
+                  y="-55" 
+                  width="95" 
+                  height="58" 
+                  style={{ filter: 'drop-shadow(0px 4px 12px rgba(14, 165, 233, 0.6))' }}
                 />
 
                 {/* Subtle Wheel Rotation overlay (Spinning spoke details) */}

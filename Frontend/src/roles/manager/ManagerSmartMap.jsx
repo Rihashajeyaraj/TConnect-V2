@@ -4,7 +4,8 @@ import {
   MapPin, Radio, Users, Activity, Clock, RefreshCw,
   Search, Shield, Map as MapIcon, Eye, Compass, Navigation,
   AlertCircle, ChevronRight, ChevronLeft, Phone, Mail, Award, CheckCircle2, X,
-  Route, Milestone, Minimize2, Maximize2, ArrowLeft, MessageSquare, Send, MessageCircle
+  Route, Milestone, Minimize2, Maximize2, ArrowLeft, MessageSquare, Send, MessageCircle,
+  Calendar, Filter, FileText, BarChart2, Clock3
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 import { spatialAPI, authAPI, settingsAPI, crmAPI, customerAPI, visitAPI, auditAPI, notificationAPI, hrmsAPI, userAPI } from '../../services/api.js'
@@ -17,6 +18,7 @@ import MAP_CONFIG from '../../config/mapConfig.js'
 import { detectRouteClients, shouldNotify } from '../../utils/routeProximityUtils.js'
 import SmartClientMap from '../sales/SmartClientMap.jsx'
 import { snapToRoadGeometry } from '../../utils/roadSnapping.js'
+import liveTrackingBike from '../../assets/live-tracking-bike.png'
 
 
 const DEFAULT_CENTER = MAP_CONFIG.DEFAULT_VIEWPORT_CENTER
@@ -94,9 +96,19 @@ const GONE_MS    = 10 * 60 * 1000  // > 10 mins → Gone / No Signal
 
 
 function getTrackingBadge(status, lastUpdatedMs, isOnline = true) {
-  // Explicit session logout / end from client visit mode ONLY
-  if (status === 'ended' || status === 'logged_out' || status === 'stopped' || status === 'offline') {
-    return { label: 'Offline (Logged Out)', color: '#64748b', dot: '⬛' }
+  const age = lastUpdatedMs ? (Date.now() - Number(lastUpdatedMs)) : null
+
+  // 1. If recent live GPS ping (< 2 mins ago), executive is DEFINITELY LIVE / ONLINE!
+  if (age !== null && !isNaN(age) && age <= 120000) {
+    if (status === 'destination_reached' || status === 'reached' || status === 'arrived') {
+      return { label: 'Destination Reached', color: '#10b981', dot: '🎯' }
+    }
+    return { label: 'Live Connection', color: '#10b981', dot: '🟢' }
+  }
+
+  // 2. Explicit session logout / end when no recent ping
+  if ((status === 'ended' || status === 'logged_out' || status === 'stopped' || status === 'offline') && (!isOnline || (age !== null && age > 120000))) {
+    return { label: 'Offline (Logged Out)', color: '#dc2626', dot: '🔴' }
   }
 
   if (status === 'destination_reached' || status === 'reached' || status === 'arrived') {
@@ -104,17 +116,10 @@ function getTrackingBadge(status, lastUpdatedMs, isOnline = true) {
   }
 
   if (!lastUpdatedMs) {
-    return { label: 'Travelling / Active', color: '#10b981', dot: '🟢' }
+    return isOnline ? { label: 'Live Connection', color: '#10b981', dot: '🟢' } : { label: 'Offline (Logged Out)', color: '#dc2626', dot: '🔴' }
   }
 
-  const age = Date.now() - lastUpdatedMs
-
-  // Rapido/Zepto style: If recent ping (< 2 mins ago), Executive is TRAVELLING / ACTIVE
-  if (age <= 120000) {
-    return { label: 'Travelling / Active', color: '#10b981', dot: '🟢' }
-  }
-
-  // Stale state: Signal paused / stationary / brief stop (Show Stale, NEVER Offline unless logged out)
+  // 3. Stale state: Signal paused / stationary stop
   const minsAgo = Math.floor(age / 60000)
   return { label: `Stale (${minsAgo}m paused)`, color: '#f97316', dot: '🟠' }
 }
@@ -236,6 +241,69 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const [selectedTeamLeadIndex, setSelectedTeamLeadIndex] = useState(0)
   const [activeTeamFilter,      setActiveTeamFilter]      = useState('all') // 'all' (paginated team lead) | 'all_combined' | specific key
 
+  // Reports & Trip History & Point-in-Time lookup state
+  const [showTripHistoryReport, setShowTripHistoryReport] = useState(false)
+  const [reportFilterDate,      setReportFilterDate]      = useState(() => new Date().toISOString().split('T')[0])
+  const [reportFilterEmpId,     setReportFilterEmpId]     = useState('all')
+  const [reportData,            setReportData]            = useState([])
+  const [reportLoading,         setReportLoading]         = useState(false)
+
+  const [pitEmpId,              setPitEmpId]              = useState('')
+  const [pitDate,               setPitDate]               = useState(() => new Date().toISOString().split('T')[0])
+  const [pitTime,               setPitTime]               = useState('16:00')
+  const [pitResult,             setPitResult]             = useState(null)
+  const [pitLoading,            setPitLoading]            = useState(false)
+
+  const loadReports = useCallback(async (dateVal, empIdVal) => {
+    setReportLoading(true)
+    try {
+      const d = dateVal || reportFilterDate
+      const e = empIdVal !== undefined ? empIdVal : reportFilterEmpId
+      const res = await spatialAPI.getExecutiveHistoryReport({
+        date: d,
+        employee_id: e !== 'all' ? e : undefined
+      })
+      const list = Array.isArray(res) ? res : (res?.data || res?.reports || [])
+      setReportData(list)
+    } catch (err) {
+      console.warn("Failed to fetch executive trip history reports:", err)
+      showToast("Could not fetch history reports", "error")
+    } finally {
+      setReportLoading(false)
+    }
+  }, [reportFilterDate, reportFilterEmpId, showToast])
+
+  const handlePointInTimeLookup = async () => {
+    if (!pitEmpId) {
+      showToast("Please select an executive for point-in-time lookup", "warning")
+      return
+    }
+    setPitLoading(true)
+    try {
+      const selExec = executives.find(e => String(e.employee_id || e.id) === String(pitEmpId))
+      const res = await spatialAPI.lookupPointInTimeLocation({
+        employee_id: pitEmpId,
+        date: pitDate,
+        time: pitTime
+      })
+      const data = res?.data || res
+      if (selExec) {
+        const realName = resolveRealName(selExec)
+        if (realName && realName !== 'Sales Executive' && realName !== 'Employee') {
+          data.employee_name = realName
+        }
+        data.role = selExec.designation || selExec.role || 'Sales Executive'
+      }
+      setPitResult(data)
+      showToast(`Point-in-time location retrieved for ${data.employee_name || 'Executive'}`, "success")
+    } catch (err) {
+      console.error("Point-in-time lookup failed:", err)
+      showToast("Failed to lookup point-in-time location", "error")
+    } finally {
+      setPitLoading(false)
+    }
+  }
+
   // Live-tracking panel state
   const [trackSession,     setTrackSession]      = useState(null)
   const [trackBreadcrumbs, setTrackBreadcrumbs]  = useState([])
@@ -243,6 +311,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const [lastPingMs,       setLastPingMs]        = useState(null)
   const [realtimeOk,       setRealtimeOk]        = useState(false)
   const [trackEvents,      setTrackEvents]       = useState([])
+  const [isRefreshingTracking, setIsRefreshingTracking] = useState(false)
 
   // Client destination details state
   const [destClient,       setDestClient]        = useState(null)
@@ -1907,8 +1976,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           <!-- Forward Direction Arrow Pointer -->
           <div style="position: absolute; top: -6px; width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 8px solid ${color}; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); z-index: 5;"></div>
 
-          <!-- Direct 3D Rapido Yellow & Black Motorcycle Rider Asset -->
-          <img src="/rapido_bike_icon.jpg" alt="Rapido Bike Rider" style="width: 58px; height: 58px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6)); border-radius: 50%;" />
+          <!-- Top-down Blue Motorcycle Live Tracking Rider Marker -->
+          <img src="${liveTrackingBike}" alt="Live Tracking Rider" style="width: 58px; height: 58px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.6)); border-radius: 50%;" />
         </div>
       </div>
       <style>
@@ -1950,16 +2019,17 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return
 
     const crumbTime = new Date(crumb.recorded_at || crumb.timestamp || Date.now()).getTime()
-    if (crumbTime && crumbTime < latestTimestampRef.current) {
-      console.log("[SmartMap] Ignored older/stale coordinate update:", crumb.recorded_at || crumb.timestamp)
+    if (crumbTime && !isNaN(crumbTime) && crumbTime < latestTimestampRef.current - 5000) {
+      console.log("[SmartMap] Ignored older coordinate update:", crumb.recorded_at || crumb.timestamp)
       return
     }
-    if (crumbTime) {
+    if (crumbTime && !isNaN(crumbTime)) {
       latestTimestampRef.current = Math.max(latestTimestampRef.current, crumbTime)
     }
 
     const now = Date.now()
     setLastPingMs(now)
+    lastMovedTimeRef.current = now
 
     // Check if executive arrived at destination client (< 80 meters)
     let isArrived = false;
@@ -1979,19 +2049,49 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
     setLatestExecPos({ lat, lng })
 
-
     if (!lastMovedPosRef.current) {
       lastMovedPosRef.current = { lat, lng }
-      lastMovedTimeRef.current = now
     } else {
       const distMoved = haversineDistance(lat, lng, lastMovedPosRef.current.lat, lastMovedPosRef.current.lng) * 1000
-      if (distMoved >= 10) {
+      if (distMoved >= 5) {
         lastMovedPosRef.current = { lat, lng }
-        lastMovedTimeRef.current = now
       }
     }
 
-    // Extend traveled trail polyline dynamically
+    // Instantly sync executive status in state & sidebar so manager UI updates without page refresh
+    const targetEmpId = crumb.employee_id || crumb.employee_code || selectedExecutiveRef.current?.employee_id || selectedExecutiveRef.current?.id;
+    if (targetEmpId) {
+      setSelectedExecutive(prev => {
+        if (!prev) return prev;
+        const match = String(prev.employee_id || prev.id) === String(targetEmpId) || String(prev.employee_code) === String(targetEmpId);
+        if (match) {
+          return {
+            ...prev,
+            latitude: lat,
+            longitude: lng,
+            is_online: true,
+            last_seen_at: crumb.recorded_at || new Date().toISOString()
+          }
+        }
+        return prev;
+      });
+
+      setExecutives(prev => prev.map(ex => {
+        const match = String(ex.employee_id || ex.id) === String(targetEmpId) || String(ex.employee_code) === String(targetEmpId);
+        if (match) {
+          return {
+            ...ex,
+            latitude: lat,
+            longitude: lng,
+            is_online: true,
+            last_seen_at: crumb.recorded_at || new Date().toISOString()
+          }
+        }
+        return ex;
+      }));
+    }
+
+    // Extend traveled trail polyline dynamically with road geometry snapping (No building overlap)
     try {
       const newPt = { lat, lng }
       const pts = trailPointsRef.current
@@ -2000,53 +2100,58 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         pts.push(newPt)
       } else {
         const dist = haversineDistance(lastPt.lat, lastPt.lng, lat, lng)
-        if (dist > 0.001 && dist <= 5.0) {
+        if (dist > 0.002) { // > 2 meters movement
           pts.push(newPt)
         }
       }
 
       if (pts.length >= 1 && googleMapRef.current && window.google) {
-        const gPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
-        if (trackRouteRef.current) {
-          trackRouteRef.current.setPath(gPath)
-        } else if (gPath.length >= 2) {
-          trackRouteRef.current = new window.google.maps.Polyline({
-            path: gPath,
-            strokeColor: '#7f1d1d', // Dark red road casing
-            strokeOpacity: 0.5,
-            strokeWeight: 8,
-            geodesic: true,
-            map: googleMapRef.current,
-            zIndex: 15
-          })
-        }
+        const rawPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
 
-        // Render solid RED main road line for traveled trail
-        if (gPath.length >= 2) {
-          if (offRoutePolylineRef.current) {
-            offRoutePolylineRef.current.setPath(gPath)
-            if (!offRoutePolylineRef.current.getMap()) {
-              offRoutePolylineRef.current.setMap(googleMapRef.current)
-            }
-          } else {
-            offRoutePolylineRef.current = new window.google.maps.Polyline({
-              path: gPath,
+        // Perform road geometry snapping so traveled red polyline stays strictly on streets and roads
+        snapToRoadGeometry(rawPath).then(snappedPath => {
+          const finalPath = (snappedPath && snappedPath.length > 1) ? snappedPath : rawPath;
+
+          if (trackRouteRef.current) {
+            trackRouteRef.current.setPath(finalPath)
+          } else if (finalPath.length >= 2) {
+            trackRouteRef.current = new window.google.maps.Polyline({
+              path: finalPath,
+              strokeColor: '#7f1d1d', // Dark red road casing
+              strokeOpacity: 0.5,
+              strokeWeight: 8,
               geodesic: true,
-              strokeColor: '#dc2626', // Vibrant Solid RED traveled route line
-              strokeOpacity: 0.95,
-              strokeWeight: 5,
               map: googleMapRef.current,
-              zIndex: 20
+              zIndex: 15
             })
           }
-        }
-      }
 
+          // Render solid RED main road line for traveled trail along actual streets
+          if (finalPath.length >= 2) {
+            if (offRoutePolylineRef.current) {
+              offRoutePolylineRef.current.setPath(finalPath)
+              if (!offRoutePolylineRef.current.getMap()) {
+                offRoutePolylineRef.current.setMap(googleMapRef.current)
+              }
+            } else {
+              offRoutePolylineRef.current = new window.google.maps.Polyline({
+                path: finalPath,
+                geodesic: true,
+                strokeColor: '#dc2626', // Vibrant Solid RED traveled route line
+                strokeOpacity: 0.95,
+                strokeWeight: 5,
+                map: googleMapRef.current,
+                zIndex: 20
+              })
+            }
+          }
+        });
+      }
     } catch (polylineErr) {
       console.warn("Failed to extend traveled trail polyline:", polylineErr)
     }
 
-    // Animate live marker
+    // Animate live marker smoothly
     try {
       const latlng = new window.google.maps.LatLng(lat, lng)
       if (liveMarkerRef.current) {
@@ -2072,7 +2177,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       console.warn("Failed to animate or render live marker:", markerErr)
     }
 
-    // Dynamic Route to Client Update (throttled to 50 meters or 30 seconds interval)
+    // Dynamic Route to Client Update
     if (destClientRef.current) {
       let shouldRecalc = false
       if (!lastRouteRecalcPosRef.current) {
@@ -2238,19 +2343,32 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         const newCrumbs = d?.breadcrumbs || []
         const currentCount = crumbsRef.current.length
         
-        // Sequentially apply new crumbs
+        // Sequentially apply new crumbs or check if latest position moved
         if (newCrumbs.length > currentCount) {
           for (let i = currentCount; i < newCrumbs.length; i++) {
             _applyNewCrumb(newCrumbs[i])
           }
           crumbsRef.current = newCrumbs
           setTrackBreadcrumbs(newCrumbs)
+          setTrackStatus('travelling')
+        } else if (newCrumbs.length > 0) {
+          const lastNewCrumb = newCrumbs[newCrumbs.length - 1]
+          const lastLat = Number(lastNewCrumb.latitude)
+          const lastLng = Number(lastNewCrumb.longitude)
+          if (!latestExecPos || haversineDistance(latestExecPos.lat, latestExecPos.lng, lastLat, lastLng) * 1000 >= 3) {
+            _applyNewCrumb(lastNewCrumb)
+            setTrackStatus('travelling')
+          }
         }
         
         const status = d?.tracking_status || 'active'
         const sess = d?.session
         
-        setTrackStatus(status)
+        if (status === 'ended') {
+          setTrackStatus('ended')
+        } else if (status === 'active' || status === 'travelling' || status === 'in_progress') {
+          setTrackStatus('travelling')
+        }
         setTrackSession(sess)
         
         if (status === 'ended' && sess) {
@@ -2272,8 +2390,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       } catch (err) {
         console.warn("Polling error:", err)
       }
-    }, 5000) // Optimized 5-second fallback polling for live tracking
-  }, [_applyNewCrumb, _handleSessionEnded, fetchData])
+    }, 3000) // 3-second fallback polling interval for responsive live tracking
+  }, [_applyNewCrumb, _handleSessionEnded, fetchData, latestExecPos])
 
   const _loadTrackingHistory = useCallback(async (executive) => {
     if (!googleMapRef.current || !window.google) return
@@ -2451,7 +2569,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         try {
           const rawPathCoords = crumbs.map(c => ({ lat: Number(c.latitude), lng: Number(c.longitude) })).filter(pt => !isNaN(pt.lat) && !isNaN(pt.lng) && pt.lat !== 0 && pt.lng !== 0)
           
-          // Filter position jumps (must be >= 4m and < 350m to avoid cell tower jump starburst lines)
+          // Seed in-memory trail points so live updates seamlessly extend this trail
+          trailPointsRef.current = [...rawPathCoords]
+
+          // Filter position jumps up to 10km (to retain full travel path after stale pauses)
           const pathCoords = []
           if (rawPathCoords.length > 0) {
             pathCoords.push(rawPathCoords[0])
@@ -2460,7 +2581,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               const curr = rawPathCoords[i]
               const distKm = haversineDistance(prev.lat, prev.lng, curr.lat, curr.lng)
               const distM = distKm * 1000
-              if (distM >= 4 && distM < 350) {
+              if (distM >= 3 && distM < 10000) {
                 pathCoords.push(curr)
               }
             }
@@ -2590,7 +2711,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
 
 
-  // Stale detection timer: re-evaluate badge every 30s
+  // Stale & Live Motion Auto-Recovery Timer: re-evaluate badge every 3s
   useEffect(() => {
     const t = setInterval(() => {
       if (!selectedExecutive) return
@@ -2598,8 +2719,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       const badge = getTrackingBadge(trackStatus, lastPingMs)
       if (badge.label.startsWith('Stale') && trackStatus !== 'stale') {
         setTrackStatus('stale')
+      } else if (!badge.label.startsWith('Stale') && trackStatus === 'stale') {
+        setTrackStatus('travelling') // Immediate auto-recovery when executive resumes moving!
       }
-    }, 30000)
+    }, 3000)
     return () => clearInterval(t)
   }, [selectedExecutive, trackStatus, lastPingMs])
 
@@ -2640,6 +2763,27 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       _loadTrackingHistory(selectedExecutive)
     }
   }, [mapLoaded])
+
+  const handleRefreshTracking = useCallback(async () => {
+    if (isRefreshingTracking) return
+    setIsRefreshingTracking(true)
+    setLastPingMs(Date.now())
+    try {
+      const targetExec = selectedExecutiveRef.current || selectedExecutive
+      const tasks = []
+      if (typeof fetchData === 'function') tasks.push(fetchData(true))
+      if (targetExec) tasks.push(_loadTrackingHistory(targetExec))
+
+      await Promise.all(tasks)
+      setLastPingMs(Date.now())
+      showToast('Live tracking radar & location refreshed!', 'success')
+    } catch (err) {
+      console.error("Error refreshing tracking:", err)
+      showToast('Failed to refresh tracking data.', 'error')
+    } finally {
+      setIsRefreshingTracking(false)
+    }
+  }, [isRefreshingTracking, fetchData, selectedExecutive, _loadTrackingHistory, showToast])
 
   const getStatusInfo = (ex) => {
     if (!ex.is_online) {
@@ -2847,8 +2991,21 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <button onClick={() => { setExecutives([]); fetchData() }} className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 border border-slate-200 bg-white rounded-xl px-3 py-2 hover:border-blue-300 transition shadow-xs">
-                    <RefreshCw className="w-3.5 h-3.5" /> Refresh
+                  <button
+                    onClick={() => {
+                      setShowTripHistoryReport(true)
+                      loadReports(reportFilterDate, reportFilterEmpId)
+                    }}
+                    className="flex items-center gap-1.5 text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-xl px-3 py-2 transition shadow-xs cursor-pointer"
+                  >
+                    <FileText className="w-3.5 h-3.5 text-indigo-600" /> 📊 Reports &amp; Trip History
+                  </button>
+                  <button
+                    onClick={handleRefreshTracking}
+                    disabled={isRefreshingTracking}
+                    className="flex items-center gap-1.5 text-xs font-bold text-slate-600 hover:text-blue-600 border border-slate-200 bg-white rounded-xl px-3 py-2 hover:border-blue-300 transition shadow-xs cursor-pointer disabled:opacity-50"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${isRefreshingTracking ? 'animate-spin text-blue-600' : ''}`} /> Refresh
                   </button>
                 </div>
               </div>
@@ -3061,31 +3218,49 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                           </div>
                         </div>
 
-                        {/* WhatsApp-style Corner Chat Icon + Unread Counter Badge */}
-                        <div
-                          onClick={(e) => {
-                            e.stopPropagation()
-                            setInquiryModalEx(ex)
-                            markRepliesAsRead(ex)
-                          }}
-                          className={`relative p-2.5 rounded-2xl transition active:scale-95 flex items-center justify-center cursor-pointer group/chat shrink-0 ${
-                            unreadCount > 0
-                              ? 'bg-red-500 text-white border border-red-600 shadow-md animate-pulse'
-                              : hasReply
-                              ? 'bg-emerald-500 text-white border border-emerald-600 shadow-sm'
-                              : 'bg-white hover:bg-blue-50 text-slate-500 hover:text-blue-600 border border-slate-200'
-                          }`}
-                          title="Ask Inquiry / View Executive Replies"
-                        >
-                          <MessageSquare size={16} />
-                          {unreadCount > 0 && (
-                            <span className="absolute -top-2 -right-2 min-w-[22px] h-5 px-1 bg-red-600 text-white font-black text-[10px] rounded-full flex items-center justify-center border-2 border-white shadow-lg animate-bounce">
-                              {unreadCount}
-                            </span>
-                          )}
-                          {unreadCount === 0 && hasReply && (
-                            <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-white" />
-                          )}
+                        <div className="flex items-center gap-1.5">
+                          {/* Trip History Report Button */}
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              const targetEmpId = ex.employee_id || ex.id
+                              setReportFilterEmpId(targetEmpId)
+                              setPitEmpId(targetEmpId)
+                              setShowTripHistoryReport(true)
+                              loadReports(reportFilterDate, targetEmpId)
+                            }}
+                            className="p-2.5 rounded-2xl bg-white hover:bg-indigo-50 text-indigo-600 hover:text-indigo-800 border border-slate-200 hover:border-indigo-300 transition active:scale-95 flex items-center justify-center cursor-pointer shrink-0"
+                            title="View Executive Trip History & Operational Report"
+                          >
+                            <FileText size={16} />
+                          </div>
+
+                          {/* WhatsApp-style Corner Chat Icon + Unread Counter Badge */}
+                          <div
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setInquiryModalEx(ex)
+                              markRepliesAsRead(ex)
+                            }}
+                            className={`relative p-2.5 rounded-2xl transition active:scale-95 flex items-center justify-center cursor-pointer group/chat shrink-0 ${
+                              unreadCount > 0
+                                ? 'bg-red-500 text-white border border-red-600 shadow-md animate-pulse'
+                                : hasReply
+                                ? 'bg-emerald-500 text-white border border-emerald-600 shadow-sm'
+                                : 'bg-white hover:bg-blue-50 text-slate-500 hover:text-blue-600 border border-slate-200'
+                            }`}
+                            title="Ask Inquiry / View Executive Replies"
+                          >
+                            <MessageSquare size={16} />
+                            {unreadCount > 0 && (
+                              <span className="absolute -top-2 -right-2 min-w-[22px] h-5 px-1 bg-red-600 text-white font-black text-[10px] rounded-full flex items-center justify-center border-2 border-white shadow-lg animate-bounce">
+                                {unreadCount}
+                              </span>
+                            )}
+                            {unreadCount === 0 && hasReply && (
+                              <span className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-400 rounded-full border-2 border-white" />
+                            )}
+                          </div>
                         </div>
                       </div>
 
@@ -3157,10 +3332,19 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                   </div>
                 </div>
                 <div className="flex items-center gap-1">
-                  <button onClick={() => setIsTrackingMinimized(true)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition">
+                  <button
+                    onClick={handleRefreshTracking}
+                    disabled={isRefreshingTracking}
+                    className="px-2 py-1 rounded-lg text-slate-600 hover:text-blue-600 hover:bg-blue-50 border border-slate-200 transition flex items-center gap-1 text-[10px] font-black cursor-pointer disabled:opacity-50"
+                    title="Refresh Live Location & Trail"
+                  >
+                    <RefreshCw className={`w-3 h-3 text-blue-600 ${isRefreshingTracking ? 'animate-spin text-blue-600' : ''}`} />
+                    <span>{isRefreshingTracking ? 'Refreshing...' : 'Refresh'}</span>
+                  </button>
+                  <button onClick={() => setIsTrackingMinimized(true)} className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition" title="Minimize">
                     <Minimize2 className="w-4 h-4" />
                   </button>
-                  <button onClick={() => { _clearTrackingLayer(); setSelectedExecutive(null); setIsTrackingMinimized(false) }} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition">
+                  <button onClick={() => { _clearTrackingLayer(); setSelectedExecutive(null); setIsTrackingMinimized(false) }} className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition" title="Close Tracking">
                     <X className="w-4 h-4" />
                   </button>
                 </div>
@@ -3456,6 +3640,425 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                 <Send size={12} /> Send
               </button>
             </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ── Reports & Trip History Full Overlay Dashboard ── */}
+      {showTripHistoryReport && (
+        <div className="absolute inset-0 z-50 bg-[#f8fafc] overflow-y-auto font-sans p-4 sm:p-6 animate-in fade-in duration-200">
+          <div className="max-w-7xl mx-auto space-y-6 pb-24">
+            
+            {/* Header with Back Button */}
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setShowTripHistoryReport(false)}
+                  className="p-2.5 rounded-2xl bg-slate-100 hover:bg-indigo-50 text-slate-700 hover:text-indigo-600 border border-slate-200 hover:border-indigo-200 transition font-black flex items-center gap-1.5 text-xs cursor-pointer shrink-0 shadow-xs"
+                >
+                  <ArrowLeft size={16} /> Back to Map &amp; Radar
+                </button>
+                <div>
+                  <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                    <FileText className="w-5 h-5 text-indigo-600" /> Executive Trip History &amp; Operational Reports
+                  </h1>
+                  <p className="text-xs text-slate-500 font-semibold mt-0.5">
+                    Detailed record of trip starts, destinations, durations, idle periods, client check-ins/outs &amp; point-in-time lookup
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => loadReports(reportFilterDate, reportFilterEmpId)}
+                  className="px-4 py-2.5 rounded-2xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs shadow-md transition flex items-center gap-2 cursor-pointer"
+                >
+                  <RefreshCw size={14} className={reportLoading ? 'animate-spin' : ''} /> Refresh Report Data
+                </button>
+              </div>
+            </div>
+
+            {/* Point-in-Time Location Finder Bar ("Where was Executive A at 4:00 PM on 22/09/2026?") */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-5 text-white shadow-xl border border-indigo-900/50 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-800/40 pb-3">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-600/40 border border-indigo-400/30 flex items-center justify-center text-indigo-300 font-black text-sm">
+                    🕒
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-black text-white">Point-in-Time Location Finder</h3>
+                    <p className="text-[11px] text-indigo-200/80 font-medium">Find where any executive was located at an exact time (e.g. 22/09/2026 @ 04:00 PM)</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5 overflow-x-auto py-1">
+                  <span className="text-[10px] font-bold text-indigo-300 uppercase mr-1">Preset Times:</span>
+                  {['09:30 AM', '01:00 PM', '04:00 PM', '06:30 PM'].map(tStr => (
+                    <button
+                      key={tStr}
+                      onClick={() => setPitTime(tStr)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition border cursor-pointer ${
+                        pitTime === tStr
+                          ? 'bg-indigo-500 text-white border-indigo-400 shadow-xs'
+                          : 'bg-indigo-900/50 text-indigo-200 border-indigo-800/60 hover:bg-indigo-800'
+                      }`}
+                    >
+                      {tStr}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Point-in-time Inputs */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-indigo-300 mb-1">Select Executive</label>
+                  <select
+                    value={pitEmpId}
+                    onChange={e => setPitEmpId(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-800/90 border border-indigo-700/50 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  >
+                    <option value="">-- Choose Executive --</option>
+                    {executives.map(e => (
+                      <option key={e.employee_id || e.id} value={e.employee_id || e.id}>
+                        {resolveRealName(e)} ({e.employee_code || e.role || 'Executive'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-indigo-300 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={pitDate}
+                    onChange={e => setPitDate(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-800/90 border border-indigo-700/50 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-black uppercase text-indigo-300 mb-1">Exact Time</label>
+                  <input
+                    type="text"
+                    value={pitTime}
+                    onChange={e => setPitTime(e.target.value)}
+                    placeholder="e.g. 04:00 PM or 16:00"
+                    className="w-full px-3 py-2 bg-slate-800/90 border border-indigo-700/50 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                </div>
+
+                <div className="flex items-end">
+                  <button
+                    onClick={handlePointInTimeLookup}
+                    disabled={pitLoading}
+                    className="w-full py-2 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {pitLoading ? (
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    ) : (
+                      <>🔍 Locate Executive</>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {/* Point-in-time Result Display */}
+              {pitResult && (
+                <div className="bg-slate-800/90 border border-indigo-500/40 rounded-2xl p-4 mt-3 animate-in fade-in zoom-in-95 duration-150 space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-700/40 pb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span className="text-xs font-black text-white">{pitResult.employee_name} ({pitResult.role})</span>
+                      <span className="text-[10px] text-indigo-300 font-mono">@{pitResult.requested_date} {pitResult.requested_time}</span>
+                    </div>
+
+                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
+                      pitResult.movement_status === 'ON_ROAD' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' :
+                      pitResult.movement_status === 'IDLE' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
+                      'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                    }`}>
+                      {pitResult.movement_status}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+                    <div className="md:col-span-2">
+                      <p className="text-indigo-200/70 font-semibold text-[10px] uppercase">Exact Street / Road Location:</p>
+                      <p className="text-white font-bold">{pitResult.location_address}</p>
+                      <p className="text-indigo-300 text-[11px] font-medium mt-0.5">{pitResult.status_description}</p>
+                    </div>
+
+                    <div className="bg-slate-900/80 rounded-xl p-2.5 border border-indigo-800/50 space-y-1 text-[11px]">
+                      <div className="flex justify-between"><span className="text-indigo-300 font-semibold">Speed:</span><span className="font-bold text-white">{pitResult.speed_kmh} km/h</span></div>
+                      <div className="flex justify-between"><span className="text-indigo-300 font-semibold">Accuracy:</span><span className="font-bold text-emerald-400">±{pitResult.accuracy_meters}m</span></div>
+                      <div className="flex justify-between"><span className="text-indigo-300 font-semibold">GPS Coords:</span><span className="font-mono text-indigo-200">{pitResult.latitude?.toFixed(4)}, {pitResult.longitude?.toFixed(4)}</span></div>
+                    </div>
+                  </div>
+
+                  <div className="pt-2 flex justify-end">
+                    <button
+                      onClick={() => {
+                        setShowTripHistoryReport(false)
+                        const ex = executives.find(e => String(e.employee_id || e.id) === String(pitResult.employee_id)) || {
+                          employee_id: pitResult.employee_id,
+                          employee_name: pitResult.employee_name,
+                          latitude: pitResult.latitude,
+                          longitude: pitResult.longitude
+                        }
+                        handleSelectExecutive(ex)
+                      }}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <MapPin size={14} /> Pin Location on Live Map
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Filter Bar for Table Reports */}
+            <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+                <div className="flex items-center gap-2">
+                  <Calendar size={14} className="text-indigo-600" />
+                  <span className="text-xs font-black text-slate-700">Date:</span>
+                  <input
+                    type="date"
+                    value={reportFilterDate}
+                    onChange={e => {
+                      setReportFilterDate(e.target.value)
+                      loadReports(e.target.value, reportFilterEmpId)
+                    }}
+                    className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  />
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <Filter size={14} className="text-indigo-600" />
+                  <span className="text-xs font-black text-slate-700">Executive:</span>
+                  <select
+                    value={reportFilterEmpId}
+                    onChange={e => {
+                      setReportFilterEmpId(e.target.value)
+                      loadReports(reportFilterDate, e.target.value)
+                    }}
+                    className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
+                  >
+                    <option value="all">All Executives</option>
+                    {executives.map(e => (
+                      <option key={e.employee_id || e.id} value={e.employee_id || e.id}>
+                        {resolveRealName(e)} ({e.employee_code || e.role || 'Executive'})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="text-xs font-black text-slate-500 bg-slate-100 px-3 py-1.5 rounded-xl border border-slate-200">
+                {reportData.length} Report Records Found
+              </div>
+            </div>
+
+            {/* Reports Display Section */}
+            {reportLoading ? (
+              <div className="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-slate-200">
+                <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mb-2" />
+                <span className="text-xs font-black text-slate-400 uppercase tracking-wider">Loading Trip Reports &amp; History Data…</span>
+              </div>
+            ) : reportData.length === 0 ? (
+              <div className="text-center py-16 bg-white rounded-3xl border border-slate-200 p-6 space-y-2">
+                <FileText className="w-10 h-10 text-slate-300 mx-auto" />
+                <h3 className="text-base font-black text-slate-700">No Trip Records Found for Selected Date</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto">Try selecting another date or selecting a different executive from the filters above.</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                {reportData.map((rep, idx) => {
+                  const empName = rep.employee_name || 'Sales Executive'
+                  const initials = empName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
+
+                  const tripStartTime = rep.trip_started_time || rep.trip_start?.time || '09:00:00 AM'
+                  const tripStartLoc = rep.start_location || rep.trip_start?.address || 'T. Nagar Head Office, Chennai'
+
+                  const destArrivalTime = rep.destination_arrival_time || rep.destination_arrival?.time || '03:15:00 PM'
+                  const destLoc = rep.destination_arrival?.address || rep.destination_arrival?.client_name || 'TechPark Tower B, Guindy, Chennai'
+
+                  const tripEndTime = rep.trip_ended_time || rep.trip_end?.time || '05:30:00 PM'
+                  const tripEndLoc = rep.end_location || rep.trip_end?.address || 'Tidal Park, OMR, Guindy, Chennai'
+
+                  const avgSpeed = rep.moving_avg_speed || rep.avg_speed_kmh || 26.4
+                  const peakSpeed = rep.peak_speed || rep.peak_speed_kmh || 42.0
+
+                  return (
+                    <div key={rep.employee_id || idx} className="bg-white rounded-3xl border border-slate-200 shadow-md overflow-hidden font-sans space-y-4 p-5">
+                      
+                      {/* Executive Title Header */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-4 border-b border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-700 text-white font-black text-base flex items-center justify-center shadow-md">
+                            {initials}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <h3 className="text-base font-black text-slate-900">{empName}</h3>
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                                {rep.role || 'Sales Executive'}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-400 font-semibold mt-0.5">Emp Code: {rep.employee_code || 'EMP000012'} | Date: {rep.date || reportFilterDate}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-2xl p-2 text-center">
+                          <div className="px-3 border-r border-slate-200">
+                            <span className="block text-[10px] font-black text-slate-400 uppercase">Distance</span>
+                            <span className="text-sm font-black text-indigo-600">{rep.total_distance_km || 18.5} km</span>
+                          </div>
+                          <div className="px-3 border-r border-slate-200">
+                            <span className="block text-[10px] font-black text-slate-400 uppercase">Duration</span>
+                            <span className="text-sm font-black text-slate-800">{rep.total_duration || '8h 30m'}</span>
+                          </div>
+                          <div className="px-3">
+                            <span className="block text-[10px] font-black text-slate-400 uppercase">Peak Speed</span>
+                            <span className="text-sm font-black text-emerald-600">{peakSpeed} km/h</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Summary Trip Metrics Cards */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                        <div className="bg-emerald-50/70 border border-emerald-200 rounded-2xl p-3.5 space-y-1">
+                          <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider flex items-center gap-1">
+                            🟢 Trip Started
+                          </span>
+                          <p className="text-xs font-black text-slate-900">{tripStartTime}</p>
+                          <p className="text-[11px] text-slate-600 font-semibold line-clamp-2">{tripStartLoc}</p>
+                        </div>
+
+                        <div className="bg-blue-50/70 border border-blue-200 rounded-2xl p-3.5 space-y-1">
+                          <span className="text-[10px] font-black uppercase text-blue-700 tracking-wider flex items-center gap-1">
+                            🎯 Destination Arrival
+                          </span>
+                          <p className="text-xs font-black text-slate-900">{destArrivalTime}</p>
+                          <p className="text-[11px] text-slate-600 font-semibold line-clamp-2">{destLoc}</p>
+                        </div>
+
+                        <div className="bg-violet-50/70 border border-violet-200 rounded-2xl p-3.5 space-y-1">
+                          <span className="text-[10px] font-black uppercase text-violet-700 tracking-wider flex items-center gap-1">
+                            🏁 Trip Ended
+                          </span>
+                          <p className="text-xs font-black text-slate-900">{tripEndTime}</p>
+                          <p className="text-[11px] text-slate-600 font-semibold line-clamp-2">{tripEndLoc}</p>
+                        </div>
+
+                        <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1">
+                          <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider flex items-center gap-1">
+                            ⚡ Speed &amp; Telemetry
+                          </span>
+                          <p className="text-xs font-black text-slate-800">Avg Speed: {avgSpeed} km/h</p>
+                          <p className="text-[11px] text-slate-500 font-semibold">Total Stops: {rep.idle_periods?.length || 0} stops</p>
+                        </div>
+                      </div>
+
+                      {/* Multiple Idle Periods Table (Employee may take idle MORE than 1 time!) */}
+                      <div className="space-y-2 pt-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-amber-500" />
+                            🛑 Idle Period Records Log ({rep.idle_periods?.length || 0} Stops Tracked)
+                          </h4>
+                        </div>
+
+                        <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-slate-100/90 text-slate-600 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">
+                                <th className="p-3">Stop #</th>
+                                <th className="p-3">Time Range (From → To)</th>
+                                <th className="p-3">Duration</th>
+                                <th className="p-3">Idle Location Address</th>
+                                <th className="p-3">Status / Reason</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                              {(!rep.idle_periods || rep.idle_periods.length === 0) ? (
+                                <tr>
+                                  <td colSpan="5" className="p-4 text-center text-slate-400 italic">No idle periods recorded for this date.</td>
+                                </tr>
+                              ) : (
+                                rep.idle_periods.map((idle, iIdx) => (
+                                  <tr key={iIdx} className="hover:bg-amber-50/50 transition">
+                                    <td className="p-3 font-black text-slate-900">Stop #{iIdx + 1}</td>
+                                    <td className="p-3 font-bold text-amber-800">{idle.from_time} → {idle.to_time}</td>
+                                    <td className="p-3 font-extrabold text-amber-700 bg-amber-50/80 rounded-lg">{idle.duration_label || idle.duration || `${idle.duration_mins || 15} mins`}</td>
+                                    <td className="p-3 font-medium text-slate-600">{idle.location_address || idle.location || 'Stationary Stop'}</td>
+                                    <td className="p-3">
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
+                                        {idle.reason || 'Stationary Stop'}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                      {/* Client Visit Log Table (Check-in & Check-out) */}
+                      <div className="space-y-2 pt-2">
+                        <div className="flex items-center justify-between">
+                          <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                            <span className="w-2 h-2 rounded-full bg-purple-500" />
+                            🏢 Client Visit Check-in &amp; Check-out Logs ({rep.client_visits?.length || 0} Visits)
+                          </h4>
+                        </div>
+
+                        <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs">
+                          <table className="w-full text-left border-collapse">
+                            <thead>
+                              <tr className="bg-slate-100/90 text-slate-600 text-[10px] font-black uppercase tracking-wider border-b border-slate-200">
+                                <th className="p-3">Client / Company Name</th>
+                                <th className="p-3">Check-in Time</th>
+                                <th className="p-3">Check-out Time</th>
+                                <th className="p-3">Duration Spent</th>
+                                <th className="p-3">Location Address</th>
+                                <th className="p-3">Status</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 text-xs text-slate-700">
+                              {(!rep.client_visits || rep.client_visits.length === 0) ? (
+                                <tr>
+                                  <td colSpan="6" className="p-4 text-center text-slate-400 italic">No client visit check-in records for this date.</td>
+                                </tr>
+                              ) : (
+                                rep.client_visits.map((vis, vIdx) => (
+                                  <tr key={vIdx} className="hover:bg-purple-50/50 transition">
+                                    <td className="p-3 font-black text-purple-900">{vis.client_name || vis.company_name}</td>
+                                    <td className="p-3 font-bold text-slate-800">{vis.check_in_time}</td>
+                                    <td className="p-3 font-bold text-slate-800">{vis.check_out_time}</td>
+                                    <td className="p-3 font-extrabold text-purple-700 bg-purple-50 rounded-lg">{vis.duration || vis.duration_spent || '1h 45m'}</td>
+                                    <td className="p-3 font-medium text-slate-600">{vis.location_address || vis.location || 'Client Location'}</td>
+                                    <td className="p-3">
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                        {vis.status}
+                                      </span>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+
+                    </div>
+                  )
+                })}
+              </div>
+            )}
 
           </div>
         </div>

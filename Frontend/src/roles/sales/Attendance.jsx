@@ -119,6 +119,8 @@ export default function Attendance(props) {
   const [activeTab, setActiveTab] = useState("punch"); // punch, report
   const [reportFilterMode, setReportFilterMode] = useState("MONTH");
   const [customDateFilter, setCustomDateFilter] = useState("");
+  const [attendancePage, setAttendancePage] = useState(1);
+  const ATTENDANCE_PER_PAGE = 10;
   const [selectedMonth, setSelectedMonth] = useState("August, 2026");
   const [showExportMenu, setShowExportMenu] = useState(false);
 
@@ -1450,10 +1452,13 @@ export default function Attendance(props) {
             {/* Filter segments */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div className="flex items-center gap-0.5 bg-slate-100 p-0.5 rounded-lg">
-                {["TODAY", "YESTERDAY", "WEEK", "MONTH", "CUSTOM"].map((mode) => (
+                {["ALL", "TODAY", "YESTERDAY", "WEEK", "MONTH", "CUSTOM"].map((mode) => (
                   <button
                     key={mode}
-                    onClick={() => setReportFilterMode(mode)}
+                    onClick={() => {
+                      setReportFilterMode(mode);
+                      setAttendancePage(1);
+                    }}
                     className={`px-3 py-1 rounded-md text-[10px] font-black transition cursor-pointer ${
                       reportFilterMode === mode ? "bg-slate-900 text-white shadow-xs" : "text-slate-500 hover:text-slate-900"
                     }`}
@@ -1469,7 +1474,10 @@ export default function Attendance(props) {
                   <input
                     type="date"
                     value={customDateFilter}
-                    onChange={(e) => setCustomDateFilter(e.target.value)}
+                    onChange={(e) => {
+                      setCustomDateFilter(e.target.value);
+                      setAttendancePage(1);
+                    }}
                     className="bg-transparent focus:outline-none cursor-pointer"
                   />
                 </div>
@@ -1482,99 +1490,148 @@ export default function Attendance(props) {
             </div>
 
             {/* Logs list table */}
-            <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              {(() => {
-                const filtered = attendanceLogs.filter((log) => {
-                  const dStr = String(log.date || "");
-                  const logDateObj = parseDateInput(log.date);
-                  const now = new Date();
+            {(() => {
+              const filtered = attendanceLogs.filter((log) => {
+                const dStr = String(log.date || "");
+                const logDateObj = parseDateInput(log.date);
+                const now = new Date();
 
-                  if (reportFilterMode === "TODAY") {
-                    if (logDateObj) {
-                      return logDateObj.getFullYear() === now.getFullYear() &&
-                             logDateObj.getMonth() === now.getMonth() &&
-                             logDateObj.getDate() === now.getDate();
-                    }
-                    const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-                    const todayStr = formatDate(now);
-                    return dStr.includes(todayISO) || dStr.includes(todayStr);
+                if (reportFilterMode === "TODAY") {
+                  if (logDateObj) {
+                    return logDateObj.getFullYear() === now.getFullYear() &&
+                           logDateObj.getMonth() === now.getMonth() &&
+                           logDateObj.getDate() === now.getDate();
                   }
-                  if (reportFilterMode === "YESTERDAY") {
-                    const yest = new Date(now);
-                    yest.setDate(yest.getDate() - 1);
-                    if (logDateObj) {
-                      return logDateObj.getFullYear() === yest.getFullYear() &&
-                             logDateObj.getMonth() === yest.getMonth() &&
-                             logDateObj.getDate() === yest.getDate();
-                    }
-                    const yestISO = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
-                    return dStr.includes(yestISO);
-                  }
-                  if (reportFilterMode === "WEEK") {
-                    const itemTime = logDateObj ? logDateObj.getTime() : new Date(log.date).getTime();
-                    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
-                    return !isNaN(itemTime) && itemTime >= sevenDaysAgo;
-                  }
-                  if (reportFilterMode === "CUSTOM" && customDateFilter) {
-                    if (logDateObj) {
-                      const cDate = parseDateInput(customDateFilter);
-                      if (cDate) {
-                        return logDateObj.getFullYear() === cDate.getFullYear() &&
-                               logDateObj.getMonth() === cDate.getMonth() &&
-                               logDateObj.getDate() === cDate.getDate();
-                      }
-                    }
-                    return dStr.includes(customDateFilter);
-                  }
-                  return true;
-                });
-
-                if (filtered.length === 0) {
-                  return (
-                    <div className="p-8 text-center bg-slate-50 text-xs font-bold text-slate-500">
-                      No records matched for selected period.
-                    </div>
-                  );
+                  const todayISO = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                  const todayStr = formatDate(now);
+                  return dStr.includes(todayISO) || dStr.includes(todayStr);
                 }
+                if (reportFilterMode === "YESTERDAY") {
+                  const yest = new Date(now);
+                  yest.setDate(yest.getDate() - 1);
+                  if (logDateObj) {
+                    return logDateObj.getFullYear() === yest.getFullYear() &&
+                           logDateObj.getMonth() === yest.getMonth() &&
+                           logDateObj.getDate() === yest.getDate();
+                  }
+                  const yestISO = `${yest.getFullYear()}-${String(yest.getMonth() + 1).padStart(2, '0')}-${String(yest.getDate()).padStart(2, '0')}`;
+                  return dStr.includes(yestISO);
+                }
+                if (reportFilterMode === "WEEK") {
+                  const itemTime = logDateObj ? logDateObj.getTime() : new Date(log.date).getTime();
+                  const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+                  return !isNaN(itemTime) && itemTime >= sevenDaysAgo;
+                }
+                if (reportFilterMode === "CUSTOM" && customDateFilter) {
+                  if (logDateObj) {
+                    const cDate = parseDateInput(customDateFilter);
+                    if (cDate) {
+                      return logDateObj.getFullYear() === cDate.getFullYear() &&
+                             logDateObj.getMonth() === cDate.getMonth() &&
+                             logDateObj.getDate() === cDate.getDate();
+                    }
+                  }
+                  return dStr.includes(customDateFilter);
+                }
+                return true;
+              });
 
+              const totalCount = filtered.length;
+              const totalPages = Math.ceil(totalCount / ATTENDANCE_PER_PAGE) || 1;
+              const currentPage = Math.min(attendancePage, totalPages);
+              const startIndex = (currentPage - 1) * ATTENDANCE_PER_PAGE;
+              const paginatedLogs = filtered.slice(startIndex, startIndex + ATTENDANCE_PER_PAGE);
+
+              if (filtered.length === 0) {
                 return (
-                  <table className="w-full text-left border-collapse text-xs font-semibold text-slate-700">
-                    <thead>
-                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
-                        <th className="px-5 py-3">Date</th>
-                        <th className="px-5 py-3">In</th>
-                        <th className="px-5 py-3">Out</th>
-                        <th className="px-5 py-3">Work Hours</th>
-                        <th className="px-5 py-3">Location Address</th>
-                        <th className="px-5 py-3">Remarks / Purpose</th>
-                        <th className="px-5 py-3 text-center">Map</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 bg-white">
-                      {filtered.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50/50 transition">
-                          <td className="px-5 py-3.5 font-bold text-slate-900 whitespace-nowrap">{row.date}</td>
-                          <td className="px-5 py-3.5 font-bold text-emerald-700 whitespace-nowrap">{row.loginTime}</td>
-                          <td className="px-5 py-3.5 font-bold text-rose-700 whitespace-nowrap">{row.logoutTime}</td>
-                          <td className="px-5 py-3.5 font-black text-slate-900 whitespace-nowrap">{row.workHours}</td>
-                          <td className="px-5 py-3.5 text-slate-555 max-w-xs truncate" title={row.loginLocation}>{row.loginLocation}</td>
-                          <td className="px-5 py-3.5 text-slate-555 max-w-xs truncate font-medium" title={row.remarks}>{row.remarks}</td>
-                          <td className="px-5 py-3.5 text-center whitespace-nowrap">
-                            <button
-                              onClick={() => setSelectedLogForMap(row)}
-                              className="p-1 rounded-lg bg-slate-100 hover:bg-teal-50 text-slate-500 hover:text-teal-600 transition cursor-pointer"
-                              title="View Map"
-                            >
-                              <Map size={13} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  <div className="p-8 text-center bg-slate-50 text-xs font-bold text-slate-500 rounded-xl border border-slate-200">
+                    No records matched for selected period.
+                  </div>
                 );
-              })()}
-            </div>
+              }
+
+              return (
+                <div className="space-y-3">
+                  <div className="overflow-x-auto border border-slate-200 rounded-xl">
+                    <table className="w-full text-left border-collapse text-xs font-semibold text-slate-700">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-extrabold text-[10px] uppercase tracking-wider">
+                          <th className="px-5 py-3">Date</th>
+                          <th className="px-5 py-3">In</th>
+                          <th className="px-5 py-3">Out</th>
+                          <th className="px-5 py-3">Work Hours</th>
+                          <th className="px-5 py-3">Location Address</th>
+                          <th className="px-5 py-3">Remarks / Purpose</th>
+                          <th className="px-5 py-3 text-center">Map</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {paginatedLogs.map((row, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50/50 transition">
+                            <td className="px-5 py-3.5 font-bold text-slate-900 whitespace-nowrap">{row.date}</td>
+                            <td className="px-5 py-3.5 font-bold text-emerald-700 whitespace-nowrap">{row.loginTime}</td>
+                            <td className="px-5 py-3.5 font-bold text-rose-700 whitespace-nowrap">{row.logoutTime}</td>
+                            <td className="px-5 py-3.5 font-black text-slate-900 whitespace-nowrap">{row.workHours}</td>
+                            <td className="px-5 py-3.5 text-slate-555 max-w-xs truncate" title={row.loginLocation}>{row.loginLocation}</td>
+                            <td className="px-5 py-3.5 text-slate-555 max-w-xs truncate font-medium" title={row.remarks}>{row.remarks}</td>
+                            <td className="px-5 py-3.5 text-center whitespace-nowrap">
+                              <button
+                                onClick={() => setSelectedLogForMap(row)}
+                                className="p-1 rounded-lg bg-slate-100 hover:bg-teal-50 text-slate-500 hover:text-teal-600 transition cursor-pointer"
+                                title="View Map"
+                              >
+                                <Map size={13} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Pagination Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-3 px-2 py-2 bg-slate-50 rounded-xl border border-slate-200">
+                    <p className="text-[11px] font-bold text-slate-500">
+                      Showing <span className="text-slate-900 font-extrabold">{totalCount === 0 ? 0 : startIndex + 1}</span> to{" "}
+                      <span className="text-slate-900 font-extrabold">{Math.min(startIndex + ATTENDANCE_PER_PAGE, totalCount)}</span> of{" "}
+                      <span className="text-slate-900 font-extrabold">{totalCount}</span> records (10 per page)
+                    </p>
+
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        onClick={() => setAttendancePage((p) => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 text-xs font-bold hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent transition cursor-pointer"
+                      >
+                        Prev
+                      </button>
+
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((pg) => (
+                        <button
+                          key={pg}
+                          onClick={() => setAttendancePage(pg)}
+                          className={`w-7 h-7 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                            currentPage === pg
+                              ? "bg-teal-600 text-white shadow-xs"
+                              : "border border-slate-200 text-slate-600 hover:bg-white"
+                          }`}
+                        >
+                          {pg}
+                        </button>
+                      ))}
+
+                      <button
+                        onClick={() => setAttendancePage((p) => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="px-2.5 py-1 rounded-lg border border-slate-200 text-slate-600 text-xs font-bold hover:bg-white disabled:opacity-40 disabled:hover:bg-transparent transition cursor-pointer"
+                      >
+                        Next
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}

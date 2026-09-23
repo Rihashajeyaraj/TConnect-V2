@@ -1300,25 +1300,32 @@ export default function AdminDashboard() {
             {/* Modal Body / Table View */}
             <div className="flex-1 overflow-auto p-5 bg-[#F7F9FC]">
               {(() => {
-                const filteredAudits = allAuditLogs.map((a, i) => ({
-                  id: a.id || `audit_${i}`,
-                  user: a.user_email || a.email || 'System User',
-                  role: a.user_role || 'Staff',
-                  action: a.action || 'System Action',
-                  module: a.module || 'system',
-                  time: a.created_at || new Date().toISOString(),
-                  details: a.description || (typeof a.details === 'string' ? a.details : a.details?.description) || 'System operation executed'
-                })).filter(a => {
-                  if (selectedAuditModuleTab === 'All') return true;
-                  const m = String(a.module).toUpperCase();
-                  if (selectedAuditModuleTab === 'Authentication') return m === 'AUTHENTICATION' || m === 'AUTH' || m === 'LOGIN';
-                  if (selectedAuditModuleTab === 'HRMS') return m === 'HRMS' || m === 'ATTENDANCE' || m === 'LEAVE';
-                  if (selectedAuditModuleTab === 'CRM & Sales') return m === 'CRM' || m === 'SALES' || m === 'EXPENSE' || m === 'CUSTOMER' || m === 'VISIT' || m === 'SPATIAL';
-                  if (selectedAuditModuleTab === 'Others') {
-                    return !(m === 'AUTHENTICATION' || m === 'AUTH' || m === 'LOGIN' || m === 'HRMS' || m === 'ATTENDANCE' || m === 'LEAVE' || m === 'CRM' || m === 'SALES' || m === 'EXPENSE' || m === 'CUSTOMER' || m === 'VISIT' || m === 'SPATIAL');
-                  }
-                  return true;
-                });
+                const filteredAudits = allAuditLogs
+                  .filter(a => {
+                    const r = String(a.role || a.user_role || '').toLowerCase();
+                    const e = String(a.user_email || a.email || '').toLowerCase();
+                    const isCeo = r.includes('ceo') || r.includes('founder') || e === 'ceo@tconnect.com' || e.startsWith('ceo@');
+                    return !isCeo;
+                  })
+                  .map((a, i) => ({
+                    id: a.id || `audit_${i}`,
+                    user: a.user_email || a.email || 'System User',
+                    role: a.user_role || a.role || 'Staff',
+                    action: a.action || 'System Action',
+                    module: a.module || 'system',
+                    time: a.created_at || new Date().toISOString(),
+                    details: a.description || (typeof a.details === 'string' ? a.details : a.details?.description) || 'System operation executed'
+                  })).filter(a => {
+                    if (selectedAuditModuleTab === 'All') return true;
+                    const m = String(a.module).toUpperCase();
+                    if (selectedAuditModuleTab === 'Authentication') return m === 'AUTHENTICATION' || m === 'AUTH' || m === 'LOGIN';
+                    if (selectedAuditModuleTab === 'HRMS') return m === 'HRMS' || m === 'ATTENDANCE' || m === 'LEAVE';
+                    if (selectedAuditModuleTab === 'CRM & Sales') return m === 'CRM' || m === 'SALES' || m === 'EXPENSE' || m === 'CUSTOMER' || m === 'VISIT' || m === 'SPATIAL';
+                    if (selectedAuditModuleTab === 'Others') {
+                      return !(m === 'AUTHENTICATION' || m === 'AUTH' || m === 'LOGIN' || m === 'HRMS' || m === 'ATTENDANCE' || m === 'LEAVE' || m === 'CRM' || m === 'SALES' || m === 'EXPENSE' || m === 'CUSTOMER' || m === 'VISIT' || m === 'SPATIAL');
+                    }
+                    return true;
+                  });
 
                 if (filteredAudits.length === 0) {
                   return (

@@ -641,7 +641,7 @@ function Reports() {
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-6 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
+            <span className="grid size-8 place-items-center rounded-lg bg-purple-100 text-purple-700">
               <FileText className="size-4.5" />
             </span>
             <h1 className="text-2xl font-black text-slate-900 tracking-tight">
@@ -669,10 +669,10 @@ function Reports() {
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <span className="text-xs font-black uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-            <Building2 className="size-3.5 text-[#832D51]" /> Select Department
+            <Building2 className="size-3.5 text-purple-600" /> Select Department
           </span>
           <span className="text-[11px] font-bold text-slate-500">
-            Showing <strong className="text-[#832D51] font-black">{filteredRows.length}</strong> records in <span className="underline decoration-[#832D51]">{selectedDepartment}</span>
+            Showing <strong className="text-purple-700 font-black">{filteredRows.length}</strong> records in <span className="underline decoration-purple-400">{selectedDepartment}</span>
           </span>
         </div>
 
@@ -681,8 +681,8 @@ function Reports() {
             onClick={() => setSelectedDepartment('All Departments')}
             className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
               selectedDepartment === 'All Departments'
-                ? 'bg-[#832D51] text-white border-[#832D51] shadow-xs'
-                : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-purple-600 shadow-xs'
+                : 'bg-white text-slate-700 border-slate-200 hover:border-purple-300'
             }`}
           >
             <span className={`text-[10px] font-black uppercase tracking-wider ${selectedDepartment === 'All Departments' ? 'text-pink-200' : 'text-slate-400'}`}>
@@ -690,7 +690,7 @@ function Reports() {
             </span>
             <div className="mt-2 flex items-baseline justify-between">
               <span className="text-lg font-black">{activeDataset.rows.length}</span>
-              <span className={`text-[9px] font-bold ${selectedDepartment === 'All Departments' ? 'text-white' : 'text-[#832D51]'}`}>Total Records</span>
+              <span className={`text-[9px] font-bold ${selectedDepartment === 'All Departments' ? 'text-white' : 'text-purple-700'}`}>Total Records</span>
             </div>
           </button>
 
@@ -700,8 +700,8 @@ function Reports() {
               onClick={() => setSelectedDepartment(ds.dept)}
               className={`p-3 rounded-xl border text-left transition cursor-pointer flex flex-col justify-between ${
                 selectedDepartment === ds.dept
-                  ? 'bg-[#832D51] text-white border-[#832D51] shadow-xs'
-                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                  ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white border-purple-600 shadow-xs'
+                  : 'bg-white text-slate-700 border-slate-200 hover:border-purple-300'
               }`}
             >
               <span className={`text-[10px] font-black uppercase tracking-wider truncate ${selectedDepartment === ds.dept ? 'text-pink-200' : 'text-slate-400'}`}>
@@ -709,7 +709,7 @@ function Reports() {
               </span>
               <div className="mt-2 flex items-baseline justify-between">
                 <span className="text-lg font-black">{ds.count}</span>
-                <span className={`text-[9px] font-bold ${selectedDepartment === ds.dept ? 'text-white' : 'text-[#832D51]'}`}>Records</span>
+                <span className={`text-[9px] font-bold ${selectedDepartment === ds.dept ? 'text-white' : 'text-purple-700'}`}>Records</span>
               </div>
             </button>
           ))}
@@ -743,7 +743,7 @@ function Reports() {
               placeholder={`Search within ${selectedDepartment} report...`}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-[#832D51]"
+              className="w-full bg-white border border-slate-200 rounded-xl pl-9 pr-4 py-2 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-purple-500"
             />
           </div>
 
@@ -752,7 +752,7 @@ function Reports() {
             <select
               value={selectedDepartment}
               onChange={(e) => setSelectedDepartment(e.target.value)}
-              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-[#832D51] cursor-pointer shadow-2xs"
+              className="bg-white border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-purple-500 cursor-pointer shadow-2xs"
             >
               {availableDepartments.map((d) => (
                 <option key={d} value={d}>{d}</option>
@@ -773,7 +773,7 @@ function Reports() {
             </button>
             <button
               onClick={() => handleExport('pdf')}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-[#832D51] hover:bg-[#6a2240] text-white font-bold text-xs rounded-lg transition cursor-pointer"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-bold text-xs rounded-lg transition cursor-pointer shadow-xs"
             >
               <Download className="size-3.5" /> PDF
             </button>

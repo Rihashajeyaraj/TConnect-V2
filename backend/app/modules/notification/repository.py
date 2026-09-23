@@ -169,19 +169,80 @@ class NotificationRepository:
         # Strict privacy filtering by targeted recipient, assigned employee, reporting manager, or broadcast role
         filtered = []
         for n in notifs:
+            cat = str(n.get("category") or n.get("type") or "").upper().strip()
             r_id = str(n.get("recipient_id") or n.get("recipient_user_id") or "").strip().lower()
             r_email = str(n.get("recipient_email") or "").lower().strip()
             r_role = str(n.get("recipient_role") or "all").strip().lower()
+
+            sender_email = str(n.get("sender_email") or "").lower().strip()
+            sender_id = str(n.get("sender_id") or n.get("employee_id") or "").lower().strip()
 
             assoc_email = str(n.get("assigned_to_email") or n.get("user_email") or "").lower().strip()
             assoc_id = str(n.get("assigned_to_id") or "").lower().strip()
             mgr_email = str(n.get("manager_email") or n.get("reporting_manager_email") or "").lower().strip()
             mgr_id = str(n.get("manager_id") or n.get("reporting_manager_id") or "").lower().strip()
 
-            if any(role_kw in user_role for role_kw in ["admin", "ceo"]):
+            is_admin = any(kw in user_role for kw in ["admin", "system admin", "super admin"])
+            is_ceo = "ceo" in user_role
+
+            # 1. ADMIN PRIVACY RULE:
+            # Admin receives ONLY Admin-related system details (user creation, system alerts, role changes).
+            # Admin MUST NOT receive executive chats, expense claims, location inquiries/replies, or live tracking updates!
+            if is_admin:
+                if any(kw in cat for kw in ["INQUIRY", "REPLY", "EXPENSE", "CLAIM", "TRACKING", "GPS", "CHAT", "MESSAGE"]):
+                    # Block private chats, inquiries, expense claims, and live tracking from Admin
+                    continue
+                # Include system/admin events or explicit notifications targeted to admin email/id/role
+                if any(kw in cat for kw in ["ADMIN", "SYSTEM", "USER", "ROLE", "SECURITY"]) or r_role in ["admin", "super admin", "system admin"] or (r_email and user_email and r_email == user_email) or (r_id and (r_id == user_id_str or r_id == user_emp_code)):
+                    filtered.append(n)
+                continue
+
+            # 2. CEO PRIVACY RULE:
+            # CEO receives high-level executive notifications, but NOT private location inquiries/replies or private chats between individual employees
+            if is_ceo:
+                if any(kw in cat for kw in ["INQUIRY", "REPLY", "CHAT", "MESSAGE"]):
+                    if not ((r_email and user_email and r_email == user_email) or (r_id and (r_id == user_id_str or r_id == user_emp_code))):
+                        continue
                 filtered.append(n)
                 continue
 
+            # 3. LOCATION INQUIRY & REPLY STRICT PRIVACY:
+            # Must go ONLY to the explicit recipient or sender! Team leads and other managers are strictly excluded.
+            if "INQUIRY" in cat or "REPLY" in cat:
+                is_direct_recipient = bool(
+                    (r_email and user_email and r_email == user_email) or
+                    (r_id and (r_id == user_id_str or r_id == user_emp_code))
+                )
+                is_direct_sender = bool(
+                    (sender_email and user_email and sender_email == user_email) or
+                    (sender_id and (sender_id == user_id_str or sender_id == user_emp_code))
+                )
+                if is_direct_recipient or is_direct_sender:
+                    filtered.append(n)
+                continue
+
+            # 4. EXPENSE CLAIMS & LIVE TRACKING REPORTING MANAGER PRIVACY:
+            # Expense claims and live tracking updates must go ONLY to the executive's direct Reporting Manager!
+            if any(kw in cat for kw in ["EXPENSE", "CLAIM", "TRACKING", "GPS", "LOCATION"]):
+                is_owner = bool(
+                    (r_email and user_email and r_email == user_email) or
+                    (assoc_email and user_email and assoc_email == user_email) or
+                    (r_id and (r_id == user_id_str or r_id == user_emp_code)) or
+                    (sender_email and user_email and sender_email == user_email) or
+                    (sender_id and (sender_id == user_id_str or sender_id == user_emp_code))
+                )
+                is_reporting_manager = bool(
+                    ("manager" in user_role) and not ("lead" in user_role or "tl" in user_role) and (
+                        (mgr_email and user_email and mgr_email == user_email) or
+                        (mgr_id and (mgr_id == user_id_str or mgr_id == user_emp_code)) or
+                        (r_email and user_email and r_email == user_email)
+                    )
+                )
+                if is_owner or is_reporting_manager:
+                    filtered.append(n)
+                continue
+
+            # 5. GENERAL NOTIFICATION MATCHING (Direct recipient, assigned, or untargeted role broadcast)
             email_match = bool((r_email and user_email and r_email == user_email) or (assoc_email and user_email and assoc_email == user_email))
             id_match = bool((r_id and (r_id == user_id_str or r_id == user_emp_code)) or (assoc_id and (assoc_id == user_id_str or assoc_id == user_emp_code)))
             mgr_match = bool(("manager" in user_role or "lead" in user_role or "tl" in user_role) and ((mgr_email and user_email and mgr_email == user_email) or (mgr_id and (mgr_id == user_id_str or mgr_id == user_emp_code))))

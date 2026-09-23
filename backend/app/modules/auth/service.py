@@ -18,9 +18,9 @@ _password_reset_requests: Dict[str, Dict[str, Any]] = {}
 # All default accounts require explicit password verification.
 KNOWN_ACCOUNTS: Dict[str, Dict[str, Any]] = {
     # Super Admin accounts
-    "admin@tconnect.com":         {"role": "Super Admin",     "passwords": ["Admin2026#", "AdminPassword2026#", "TConnectAdmin2026#"]},
-    "admin@twiteconnect.com":     {"role": "Super Admin",     "passwords": ["Admin2026#", "AdminPassword2026#", "TConnectAdmin2026#"]},
-    "superadmin@tconnect.com":    {"role": "Super Admin",     "passwords": ["Admin2026#", "AdminPassword2026#", "TConnectAdmin2026#"]},
+    "admin@tconnect.com":         {"role": "Super Admin",     "passwords": ["TConnect2026#", "Admin2026#", "AdminPassword2026#", "TConnectAdmin2026#"]},
+    "admin@twiteconnect.com":     {"role": "Super Admin",     "passwords": ["TConnect2026#", "Admin2026#", "AdminPassword2026#", "TConnectAdmin2026#"]},
+    "superadmin@tconnect.com":    {"role": "Super Admin",     "passwords": ["TConnect2026#", "Admin2026#", "AdminPassword2026#", "TConnectAdmin2026#"]},
 
     # CEO accounts
     "ceo@tconnect.com":           {"role": "CEO / Founder",   "passwords": ["Admin2026#", "Ceo2026#", "CeoPassword2026#", "TConnectAdmin2026#", "TConnect2026#", "admin123", "password"]},
@@ -368,7 +368,7 @@ class AuthService:
             if status_val in ["disabled", "inactive", "suspended", "terminated"]:
                 raise UnauthorizedException("Account is disabled or inactive. Please contact Administrator.")
 
-        # ── Step 2: Attempt Supabase GoTrue Auth ─────────────────────────────
+        # ── Step 2: Attempt Supabase GoTrue Auth (Strict Email + Password Check) ─────────────
         try:
             res = self.repo.sign_in_with_password(email, password)
             if res and getattr(res, "session", None) and getattr(res, "user", None):
@@ -404,27 +404,33 @@ class AuthService:
         except Exception as e:
             logger.info(f"Supabase GoTrue sign-in notice for {email}: {e}")
 
-        # ── Step 3: Validate Password against DB user record & Employee Fallbacks ──
+        # ── Step 3: Validate Password against DB user record & Defaults ──
         if user_record:
             saved_pass = str(user_record.get("accessPassword") or user_record.get("password") or "").strip()
             role_val = user_record.get("role") or user_record.get("designation") or "Sales Executive"
-            role_lower = str(role_val).lower()
 
+            # 1. Direct match with saved password (case-sensitive or case-insensitive)
             if saved_pass and saved_pass.lower() != "set via supabase auth":
-                if saved_pass == password:
+                if saved_pass == password or saved_pass.lower() == password.lower():
                     logger.info(f"DB Record AUTH SUCCESS: {email} -> {role_val}")
                     return self.generate_dev_token(DevTokenRequest(email=email, role=role_val))
 
-            # Role default passwords & employee fallback passwords for existing active employees
+            # 2. Check fallback default passwords & KNOWN_ACCOUNTS passwords
             email_handle = email.split("@")[0].lower()
             allowed_defaults = {
                 "tconnect2026#", "salespassword2026#", "executive2026#", "admin2026#",
                 "managerpassword2026#", "manager2026#", "ceopassword2026#", "ceo2026#",
-                "12345678", "123456", "password", "password123", "admin123",
+                "12345678", "123456", "password", "password123", "admin123", "tconnectadmin2026#",
                 f"{email_handle}123", f"{email_handle}2026#", f"{email_handle}1"
             }
-            if password.lower() in allowed_defaults or len(password) >= 4:
-                logger.info(f"Employee Fallback AUTH SUCCESS for DB user: {email} -> {role_val}")
+            known_acc = KNOWN_ACCOUNTS.get(email, {})
+            if known_acc and known_acc.get("passwords"):
+                for p in known_acc["passwords"]:
+                    allowed_defaults.add(p)
+                    allowed_defaults.add(p.lower())
+
+            if password in allowed_defaults or password.lower() in allowed_defaults:
+                logger.info(f"Employee Default Password AUTH SUCCESS for DB user: {email} -> {role_val}")
                 return self.generate_dev_token(DevTokenRequest(email=email, role=role_val))
 
         # ── Step 4: Validate Password against KNOWN_ACCOUNTS defaults ────────
@@ -437,32 +443,38 @@ class AuthService:
 
         if account:
             accepted_passwords = account.get("passwords") or []
-            if password in accepted_passwords or len(password) >= 4:
+            accepted_lower = [p.lower() for p in accepted_passwords]
+            if password in accepted_passwords or password.lower() in accepted_lower:
                 role_val = account["role"]
                 logger.info(f"Known Account AUTH SUCCESS: {email} -> {role_val}")
                 return self.generate_dev_token(DevTokenRequest(email=email, role=role_val))
-            else:
-                logger.warning(f"Known Account AUTH FAILURE (wrong password) for {email}")
-                raise UnauthorizedException("Invalid Username or Password.")
 
-        # ── Step 5: Direct Fallback for @twite.ai / @tconnect.com Company Accounts ──
-        if ("@twite.ai" in email or "@tconnect" in email or "rihasha" in email or "bavani" in email or "vedika" in email or "priya" in email or "jeeva" in email) and len(password) >= 4:
-            email_handle = email.split("@")[0].lower()
-            if "admin" in email_handle or "priya" in email_handle or "rihasha" in email:
-                role_val = "Admin"
-            elif "vedika" in email_handle or "jeeva" in email_handle or "lead" in email_handle or "tl" in email_handle:
-                role_val = "Team Lead"
-            elif "manager" in email_handle:
-                role_val = "Sales Manager"
-            elif "ceo" in email_handle or "founder" in email_handle:
-                role_val = "CEO / Founder"
-            else:
-                role_val = "Sales Executive"
-            
-            logger.info(f"Company Email Direct Fallback AUTH SUCCESS: {email} -> {role_val}")
-            return self.generate_dev_token(DevTokenRequest(email=email, role=role_val))
+        # ── Step 5: Check Company Email Account Defaults ──────────────────
+        is_company_email = any(domain in email for domain in ["@twite.ai", "@tconnect.com", "@twiteconnect.com", "@twiteconnect.in"])
+        if is_company_email:
+            company_defaults = {
+                "admin2026#", "ceopassword2026#", "ceo2026#", "managerpassword2026#",
+                "manager2026#", "salespassword2026#", "executive2026#", "tconnect2026#",
+                "12345678", "123456", "password", "password123", "admin123", "tconnectadmin2026#"
+            }
+            if password in company_defaults or password.lower() in company_defaults:
+                email_handle = email.split("@")[0].lower()
+                if "admin" in email_handle or "priya" in email_handle or "rihasha" in email_handle:
+                    role_val = "Admin"
+                elif "vedika" in email_handle or "jeeva" in email_handle or "lead" in email_handle or "tl" in email_handle:
+                    role_val = "Team Lead"
+                elif "manager" in email_handle:
+                    role_val = "Sales Manager"
+                elif "ceo" in email_handle or "founder" in email_handle:
+                    role_val = "CEO / Founder"
+                else:
+                    role_val = "Sales Executive"
+                
+                logger.info(f"Company Email AUTH SUCCESS: {email} -> {role_val}")
+                return self.generate_dev_token(DevTokenRequest(email=email, role=role_val))
 
         # ── Step 6: Authentication Failed ────────────────────────────────────
+        logger.warning(f"Authentication failed for {email}: Invalid credentials.")
         raise UnauthorizedException("Invalid Username or Password.")
 
     def signup(self, credentials: SignUpRequest) -> Dict[str, Any]:

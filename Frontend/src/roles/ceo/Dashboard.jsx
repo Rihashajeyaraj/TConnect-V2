@@ -47,6 +47,7 @@ import {
   userAPI,
   hrmsAPI,
   visitAPI,
+  settingsAPI,
 } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
 import { exportToPDF, exportToExcel, exportToCSV } from '../../utils/exportUtils.js'
@@ -75,6 +76,16 @@ function CeoDashboard() {
   const [ledgerFromDate, setLedgerFromDate] = useState('')
   const [ledgerToDate, setLedgerToDate] = useState('')
 
+  // Revenue / P&L Modal Filter States
+  const [revenueModalYear, setRevenueModalYear] = useState('ALL')
+  const [revenueModalManager, setRevenueModalManager] = useState('ALL')
+  const [revenueModalTeamLead, setRevenueModalTeamLead] = useState('ALL')
+  const [revenueModalExecutive, setRevenueModalExecutive] = useState('ALL')
+  const [revenueModalTeam, setRevenueModalTeam] = useState('ALL')
+  const [revenueModalProduct, setRevenueModalProduct] = useState('ALL')
+  const [revenueModalType, setRevenueModalType] = useState('ALL') // 'ALL' | 'revenue' | 'reimbursement' | 'incentive' | 'salary'
+  const [supabaseProducts, setSupabaseProducts] = useState([])
+
   // Customer Win Toggle & Selected Manager Card State
   const [customerWinToggle, setCustomerWinToggle] = useState(false)
   const [selectedManagerCard, setSelectedManagerCard] = useState(null)
@@ -101,7 +112,34 @@ function CeoDashboard() {
   const [salariesList, setSalariesList] = useState([])
   const [rawExpenses, setRawExpenses] = useState([])
 
-  // Executive Core Data State
+  // Fetch product list directly from Supabase via settingsAPI
+  useEffect(() => {
+    const fetchSupabaseProducts = async () => {
+      try {
+        const res = await settingsAPI.getProducts().catch(() => null)
+        let list = []
+        if (res?.data?.products && Array.isArray(res.data.products)) {
+          list = res.data.products
+        } else if (res?.products && Array.isArray(res.products)) {
+          list = res.products
+        } else if (Array.isArray(res)) {
+          list = res
+        }
+        const names = list.map(p => typeof p === 'string' ? p : (p.name || p.product_name || p.title || p.product_code || '')).filter(Boolean)
+        if (names.length > 0) {
+          setSupabaseProducts(names)
+        } else {
+          const sRes = await settingsAPI.getSettings().catch(() => null)
+          const sProducts = sRes?.data?.products || sRes?.products || []
+          const sNames = sProducts.map(p => typeof p === 'string' ? p : (p.name || p.product_name || p.title || '')).filter(Boolean)
+          if (sNames.length > 0) setSupabaseProducts(sNames)
+        }
+      } catch (e) {
+        console.warn('Failed to load products from Supabase:', e)
+      }
+    }
+    fetchSupabaseProducts()
+  }, [])
   const [metrics, setMetrics] = useState({
     totalRevenue: 0,
     monthlyRevenue: 0,
@@ -969,15 +1007,15 @@ function CeoDashboard() {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-7 place-items-center rounded-lg bg-[#F8CAE4]/20 text-[#832D51]">
-              <Sparkles className="size-4" />
+            <span className="grid size-8 place-items-center rounded-lg bg-purple-100 text-purple-700">
+              <Sparkles className="size-4.5" />
             </span>
-            <h1 className="text-xl font-black text-slate-900 tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
               Executive Dashboard
             </h1>
           </div>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Click any KPI card below to inspect its detailed analytics and records.
+          <p className="text-xs text-slate-500 font-medium mt-1">
+            Click any KPI card below to inspect detailed analytics, staff attendance, and corporate ledgers.
           </p>
         </div>
 
@@ -1000,8 +1038,8 @@ function CeoDashboard() {
                     setLedgerToDate('')
                   }
                 }}
-                className={`px-2.5 py-1 rounded-lg transition-all duration-150 active:scale-95 cursor-pointer ${
-                  timeRange === t ? 'bg-[#832D51] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                className={`px-3 py-1.5 rounded-lg transition-all duration-150 active:scale-95 cursor-pointer ${
+                  timeRange === t ? 'bg-purple-200 text-purple-950 border border-purple-300/80 shadow-2xs font-extrabold' : 'text-slate-600 hover:text-purple-800 hover:bg-purple-50 font-bold'
                 }`}
               >
                 {t}
@@ -1016,7 +1054,7 @@ function CeoDashboard() {
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="h-7 bg-white border border-slate-200 rounded-lg px-2 text-[11px] font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
+                className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-purple-500"
                 required
               />
               <span className="text-[10px] font-black text-slate-400">TO</span>
@@ -1024,12 +1062,12 @@ function CeoDashboard() {
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="h-7 bg-white border border-slate-200 rounded-lg px-2 text-[11px] font-bold text-slate-800 focus:outline-none focus:border-[#832D51]"
+                className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-purple-500"
                 required
               />
               <button
                 type="submit"
-                className="bg-[#832D51] hover:bg-[#6a2240] text-white text-[11px] font-bold px-3 py-1 rounded-lg cursor-pointer transition active:scale-95"
+                className="bg-purple-200 hover:bg-purple-300 text-purple-950 border border-purple-300 text-xs font-extrabold px-3 py-1.5 rounded-lg cursor-pointer transition active:scale-95 shadow-2xs"
               >
                 Apply
               </button>
@@ -1038,7 +1076,7 @@ function CeoDashboard() {
 
           <button
             onClick={() => handleExport('pdf')}
-            className="flex items-center gap-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2.5 py-1 text-[11px] sm:text-xs font-bold text-slate-700 transition-all duration-150 active:scale-95 cursor-pointer"
+            className="flex items-center gap-1.5 rounded-xl bg-white hover:bg-purple-50 border border-purple-200 px-3 py-2 text-xs font-bold text-purple-700 transition-all duration-150 active:scale-95 cursor-pointer shadow-2xs"
           >
             <Download className="size-3.5" />
             Export Brief
@@ -1046,120 +1084,129 @@ function CeoDashboard() {
         </div>
       </div>
 
-      {/* ── INTERACTIVE KPI CARDS GRID (Compact, Vibrant Colors & Click Effects) ── */}
-      <div className="grid gap-2.5 sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-7">
+      {/* ── INTERACTIVE KPI CARDS GRID (Compact & Sleek Card Dimensions) ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
         {kpiCards.map((kpi) => {
           const Icon = kpi.icon
           const isSelected = activeModal === kpi.id
 
           const cardTheme = {
             revenue: {
-              card: 'bg-[#DCFCE7] border border-[#16A34A] text-slate-900 shadow-2xs hover:shadow-xs',
-              title: 'text-[#15803D] font-black',
-              value: 'text-slate-950',
-              subtitle: 'text-[#166534] font-bold',
-              icon: 'bg-[#16A34A]/20 text-[#15803D]',
-              badge: 'bg-[#16A34A]/20 text-[#15803D] border border-[#16A34A]/40',
-              bar: 'bg-[#16A34A]'
+              card: 'bg-emerald-50/90 border border-emerald-200 text-slate-800 shadow-2xs hover:border-emerald-400 hover:shadow-sm hover:scale-[1.015]',
+              title: 'text-emerald-800 font-black',
+              value: 'text-emerald-950 text-xl sm:text-2xl',
+              subtitle: 'text-slate-500 font-semibold',
+              icon: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
+              badge: 'bg-emerald-100 text-emerald-800 border border-emerald-300',
+              footer: 'text-emerald-700 border-slate-100 hover:text-emerald-800',
             },
             customers: {
-              card: 'bg-[#DBEAFE] border border-[#2563EB] text-slate-900 shadow-2xs hover:shadow-xs',
-              title: 'text-[#1E40AF] font-black',
-              value: 'text-slate-950',
-              subtitle: 'text-[#1D4ED8] font-bold',
-              icon: 'bg-[#2563EB]/20 text-[#1E40AF]',
-              badge: 'bg-[#2563EB]/20 text-[#1E40AF] border border-[#2563EB]/40',
-              bar: 'bg-[#2563EB]'
+              card: 'bg-blue-50/90 border border-blue-200 text-slate-800 shadow-2xs hover:border-blue-400 hover:shadow-sm hover:scale-[1.015]',
+              title: 'text-blue-800 font-black',
+              value: 'text-blue-950 text-xl sm:text-2xl',
+              subtitle: 'text-slate-500 font-semibold',
+              icon: 'bg-blue-100 text-blue-700 border border-blue-200',
+              badge: 'bg-blue-100 text-blue-800 border border-blue-300',
+              footer: 'text-blue-700 border-slate-100 hover:text-blue-800',
             },
             employees: {
-              card: 'bg-[#F3E8FF] border border-[#9333EA] text-slate-900 shadow-2xs hover:shadow-xs',
-              title: 'text-[#6B21A8] font-black',
-              value: 'text-slate-950',
-              subtitle: 'text-[#7E22CE] font-bold',
-              icon: 'bg-[#9333EA]/20 text-[#6B21A8]',
-              badge: 'bg-[#9333EA]/20 text-[#6B21A8] border border-[#9333EA]/40',
-              bar: 'bg-[#9333EA]'
+              card: 'bg-purple-50/90 border border-purple-200 text-slate-800 shadow-2xs hover:border-purple-400 hover:shadow-sm hover:scale-[1.015]',
+              title: 'text-purple-800 font-black',
+              value: 'text-purple-950 text-xl sm:text-2xl',
+              subtitle: 'text-slate-500 font-semibold',
+              icon: 'bg-purple-100 text-purple-700 border border-purple-200',
+              badge: 'bg-purple-100 text-purple-800 border border-purple-300',
+              footer: 'text-purple-700 border-slate-100 hover:text-purple-800',
             },
             present: {
-              card: 'bg-[#DCFCE7] border border-[#16A34A] text-slate-900 shadow-2xs hover:shadow-xs',
-              title: 'text-[#15803D] font-black',
-              value: 'text-slate-950',
-              subtitle: 'text-[#166534] font-bold',
-              icon: 'bg-[#16A34A]/20 text-[#15803D]',
-              badge: 'bg-[#16A34A]/20 text-[#15803D] border border-[#16A34A]/40',
-              bar: 'bg-[#16A34A]'
+              card: 'bg-white border border-emerald-200/90 text-slate-800 shadow-2xs hover:border-emerald-300 hover:shadow-sm hover:scale-[1.015]',
+              title: 'text-emerald-800 font-black',
+              value: 'text-emerald-950 text-lg sm:text-xl',
+              subtitle: 'text-slate-500 font-semibold',
+              icon: 'bg-emerald-100/70 text-emerald-700 border border-emerald-200',
+              badge: 'bg-emerald-100/80 text-emerald-800 border border-emerald-300',
+              footer: 'text-emerald-700 border-slate-100 hover:text-emerald-800',
             },
             absent: {
-              card: 'bg-[#FFE4E6] border border-[#E11D48] text-slate-900 shadow-2xs hover:shadow-xs',
-              title: 'text-[#9F1239] font-black',
-              value: 'text-slate-950',
-              subtitle: 'text-[#BE123C] font-bold',
-              icon: 'bg-[#E11D48]/20 text-[#9F1239]',
-              badge: 'bg-[#E11D48]/20 text-[#9F1239] border border-[#E11D48]/40',
-              bar: 'bg-[#E11D48]'
+              card: 'bg-white border border-rose-200/90 text-slate-800 shadow-2xs hover:border-rose-300 hover:shadow-sm hover:scale-[1.015]',
+              title: 'text-rose-800 font-black',
+              value: 'text-rose-950 text-lg sm:text-xl',
+              subtitle: 'text-slate-500 font-semibold',
+              icon: 'bg-rose-100/70 text-rose-700 border border-rose-200',
+              badge: 'bg-rose-100/80 text-rose-800 border border-rose-300',
+              footer: 'text-rose-700 border-slate-100 hover:text-rose-800',
             },
             field_visit: {
-              card: 'bg-[#FEF08A] border border-[#CA8A04] text-slate-900 shadow-2xs hover:shadow-xs',
-              title: 'text-[#854D0E] font-black',
-              value: 'text-slate-950',
-              subtitle: 'text-[#854D0E] font-bold',
-              icon: 'bg-[#CA8A04]/20 text-[#854D0E]',
-              badge: 'bg-[#CA8A04]/20 text-[#854D0E] border border-[#CA8A04]/40',
-              bar: 'bg-[#CA8A04]'
+              card: 'bg-white border border-amber-200/90 text-slate-800 shadow-2xs hover:border-amber-300 hover:shadow-sm hover:scale-[1.015]',
+              title: 'text-amber-800 font-black',
+              value: 'text-amber-950 text-lg sm:text-xl',
+              subtitle: 'text-slate-500 font-semibold',
+              icon: 'bg-amber-100/70 text-amber-700 border border-amber-200',
+              badge: 'bg-amber-100/80 text-amber-800 border border-amber-300',
+              footer: 'text-amber-700 border-slate-100 hover:text-amber-800',
             },
             approvals: {
-              card: 'bg-[#FFE4E6] border border-[#E11D48] text-slate-900 shadow-2xs hover:shadow-xs',
-              title: 'text-[#9F1239] font-black',
-              value: 'text-slate-950',
-              subtitle: 'text-[#BE123C] font-bold',
-              icon: 'bg-[#E11D48]/20 text-[#9F1239]',
-              badge: 'bg-[#E11D48]/20 text-[#9F1239] border border-[#E11D48]/40',
-              bar: 'bg-[#E11D48]'
+              card: 'bg-white border border-purple-200/90 text-slate-800 shadow-2xs hover:border-purple-300 hover:shadow-sm hover:scale-[1.015]',
+              title: 'text-purple-800 font-black',
+              value: 'text-purple-950 text-lg sm:text-xl',
+              subtitle: 'text-slate-500 font-semibold',
+              icon: 'bg-purple-100/70 text-purple-700 border border-purple-200',
+              badge: 'bg-purple-100/80 text-purple-800 border border-purple-300',
+              footer: 'text-purple-700 border-slate-100 hover:text-purple-800',
             }
           }[kpi.id] || {
-            card: 'bg-[#FEF08A] border border-[#CA8A04] text-slate-900 shadow-2xs',
-            title: 'text-[#854D0E] font-black',
-            value: 'text-slate-950',
-            subtitle: 'text-[#854D0E] font-bold',
-            icon: 'bg-[#CA8A04]/20 text-[#854D0E]',
-            badge: 'bg-[#CA8A04]/20 text-[#854D0E]',
-            bar: 'bg-[#CA8A04]'
+            card: 'bg-white border border-slate-200 text-slate-800 shadow-2xs hover:shadow-sm hover:scale-[1.015]',
+            title: 'text-purple-800 font-black',
+            value: 'text-slate-900 text-lg sm:text-xl',
+            subtitle: 'text-slate-500 font-semibold',
+            icon: 'bg-purple-100 text-purple-700',
+            badge: 'bg-purple-100 text-purple-800',
+            footer: 'text-purple-700 border-slate-100 hover:text-purple-800',
           }
 
           return (
             <button
               key={kpi.id}
               onClick={() => setActiveModal(kpi.id)}
-              className={`text-left rounded-xl p-2.5 sm:p-3 transition-all duration-150 cursor-pointer relative overflow-hidden group hover:scale-[1.01] active:scale-95 ${cardTheme.card}`}
+              className={`text-left rounded-xl p-3 sm:p-3.5 transition-all duration-200 cursor-pointer relative overflow-hidden group flex flex-col justify-between ${cardTheme.card} ${
+                isSelected ? 'ring-2 ring-purple-500 ring-offset-1' : ''
+              }`}
             >
-              {/* Header */}
-              <div className="flex items-center justify-between gap-1">
-                <span className={`text-[9px] uppercase tracking-wider truncate ${cardTheme.title}`}>
-                  {kpi.title}
-                </span>
-                <span className={`grid size-6 shrink-0 place-items-center rounded-md shadow-2xs ${cardTheme.icon}`}>
-                  <Icon className="size-3.5" />
-                </span>
-              </div>
-
-              {/* Value */}
-              <div className="mt-1">
-                <p className={`text-base sm:text-lg font-black tracking-tight ${cardTheme.value}`}>
-                  {kpi.value}
-                </p>
-                <div className="flex items-center justify-between gap-1 mt-0.5">
-                  <p className={`text-[9px] truncate max-w-[95px] ${cardTheme.subtitle}`}>
-                    {kpi.subtitle}
-                  </p>
-                  <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded uppercase tracking-wider shrink-0 ${cardTheme.badge}`}>
-                    {kpi.badge}
+              {/* Header: Title & Icon */}
+              <div>
+                <div className="flex items-center justify-between gap-2">
+                  <span className={`text-[11px] sm:text-xs uppercase tracking-wider font-extrabold ${cardTheme.title}`}>
+                    {kpi.title}
                   </span>
+                  <span className={`grid size-7.5 sm:size-8 shrink-0 place-items-center rounded-lg transition-transform group-hover:scale-105 ${cardTheme.icon}`}>
+                    <Icon className="size-3.5 sm:size-4" />
+                  </span>
+                </div>
+
+                {/* Main Metric Value */}
+                <div className="mt-1.5 sm:mt-2">
+                  <p className={`font-black tracking-tight ${cardTheme.value}`}>
+                    {kpi.value}
+                  </p>
                 </div>
               </div>
 
-              {/* Showing list indicator link */}
-              <div className="mt-1.5 pt-1 border-t border-black/10 flex items-center gap-1 text-[9px] font-bold opacity-85">
-                <span>▼ Showing list</span>
+              {/* Subtitle & Badge Row */}
+              <div className="mt-2.5 pt-2 border-t border-current/10 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <p className={`text-[11px] truncate ${cardTheme.subtitle}`}>
+                    {kpi.subtitle}
+                  </p>
+                  <span className={`text-[9px] sm:text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider shrink-0 ${cardTheme.badge}`}>
+                    {kpi.badge}
+                  </span>
+                </div>
+
+                {/* Interactive Footer Action */}
+                <div className={`flex items-center justify-between text-[11px] font-bold pt-0.5 transition ${cardTheme.footer}`}>
+                  <span>Inspect Details</span>
+                  <span className="text-xs transition-transform group-hover:translate-x-1">→</span>
+                </div>
               </div>
             </button>
           )
@@ -1176,16 +1223,16 @@ function CeoDashboard() {
           />
 
           {/* Modal Card wrapper */}
-          <div className="relative w-full max-w-7xl max-h-[93vh] overflow-hidden rounded-3xl bg-white border border-slate-200 shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200">
+          <div className="relative w-full max-w-[96vw] lg:max-w-[1550px] max-h-[94vh] overflow-hidden rounded-3xl bg-white border border-slate-200 shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200">
             {/* Modal Header */}
             <div className={`flex items-center justify-between border-b px-6 py-4.5 transition-colors ${
               activeModal === 'revenue'
-                ? 'bg-[#832D51] text-white border-[#832D51]'
+                ? 'bg-gradient-to-r from-purple-100 via-purple-50 to-indigo-100 text-purple-950 border-purple-200/80'
                 : 'bg-slate-50/50 text-slate-900 border-slate-100'
             }`}>
               <div className="flex items-center gap-2.5">
                 <span className={`grid size-9 place-items-center rounded-xl ${
-                  activeModal === 'revenue' ? 'bg-white/20 text-white' : 'bg-[#F8CAE4]/30 text-[#832D51]'
+                  activeModal === 'revenue' ? 'bg-purple-200/80 text-purple-800' : 'bg-purple-100/60 text-purple-700'
                 }`}>
                   {activeModal === 'revenue' && <TrendingUp className="size-5" />}
                   {activeModal === 'customers' && <Building2 className="size-5" />}
@@ -1206,7 +1253,7 @@ function CeoDashboard() {
                     {activeModal === 'field_visit' && "Today's Active Field Visits"}
                   </h3>
                   <p className={`text-[10px] font-bold tracking-wide uppercase mt-0.5 ${
-                    activeModal === 'revenue' ? 'text-pink-100' : 'text-slate-400'
+                    activeModal === 'revenue' ? 'text-purple-700' : 'text-slate-400'
                   }`}>
                     {activeModal === 'revenue' && 'REAL-TIME REVENUE, REIMBURSEMENTS & INCENTIVES ANALYSIS'}
                     {activeModal === 'customers' && 'Active SLAs & Won Deals'}
@@ -1241,186 +1288,354 @@ function CeoDashboard() {
                   const st = (e.status || e.status_label || 'Approved').toLowerCase()
                   return st.includes('approve') || st === 'approved' || st === 'paid'
                 })
-                const reimbursementsTotal = (approvedExpenses.length > 0 ? approvedExpenses : (dashboardData?.pendingExpenseClaims || []))
-                  .reduce((s, e) => s + Number(e.amount || e.total_amount || 0), 0)
 
-                // 2. Dynamic Incentives (5% Commission per converted revenue deal from Sales Executive/Manager page)
-                const incentivesTotal = filteredRevenue.reduce((sum, r) => sum + Math.round(Number(r.amount || 0) * 0.05), 0)
+                // Resolve team lead & department from employee directory if missing
+                const empDirectory = dashboardData?.employeeSummary?.employeesList || []
+                const findEmpInfo = (nameOrEmail) => {
+                  if (!nameOrEmail) return null
+                  const q = String(nameOrEmail).toLowerCase().trim()
+                  return empDirectory.find(e => {
+                    const eMail = String(e.email || '').toLowerCase().trim()
+                    const eName = String(e.name || e.full_name || '').toLowerCase().trim()
+                    const eCode = String(e.employee_code || e.id || '').toLowerCase().trim()
+                    return (eMail && q.includes(eMail)) || (eName && q.includes(eName)) || (eCode && q === eCode)
+                  })
+                }
 
-                // 3. Dynamic Total Team Salaries
+                // Combine Revenue deals + Reimbursement claims into one comprehensive date ledger
+                const revenueItems = filteredRevenue.map((r) => {
+                  const empInfo = findEmpInfo(r.sales_executive || r.executive_name)
+                  const resolvedTL = r.team_lead || empInfo?.manager || 'Vedika'
+                  const resolvedTeam = empInfo?.department || empInfo?.dept_name || 'Sales Team'
+                  const resolvedProduct = r.product || r.product_name || r.package || r.service || r.products_discussed || (r.customer_name ? `${r.customer_name} Software Package` : 'Enterprise Solution Suite')
+                  const itemDate = r.date || '2026-08-20'
+                  const itemYear = itemDate.split('-')[0] || '2026'
+
+                  return {
+                    id: r.id || `REV-${Math.random()}`,
+                    type: 'revenue',
+                    date: itemDate,
+                    year: itemYear,
+                    team_lead: resolvedTL,
+                    sales_manager: r.sales_manager || r.manager_name || 'Jeeva kumar',
+                    sales_executive: r.sales_executive || r.executive_name || 'Aaron Fdo',
+                    team: resolvedTeam,
+                    product: resolvedProduct,
+                    revenue: Number(r.amount || 0),
+                    reimbursement: 0,
+                    salary: 0,
+                    incentive: Math.round(Number(r.amount || 0) * 0.05),
+                  }
+                })
+
+                const expenseItems = (approvedExpenses.length > 0 ? approvedExpenses : (dashboardData?.pendingExpenseClaims || [])).map((e) => {
+                  const empInfo = findEmpInfo(e.submitted_by || e.employee_name || e.sales_executive)
+                  const resolvedTL = e.team_lead || empInfo?.manager || 'Akila'
+                  const resolvedTeam = empInfo?.department || empInfo?.dept_name || 'Field Operations'
+                  const resolvedProduct = e.title || e.purpose || e.category || 'Field Visit & Travel Allowance'
+                  const itemDate = e.date || e.created_at?.split('T')[0] || '2026-08-14'
+                  const itemYear = itemDate.split('-')[0] || '2026'
+
+                  return {
+                    id: e.id || `EXP-${Math.random()}`,
+                    type: 'reimbursement',
+                    date: itemDate,
+                    year: itemYear,
+                    team_lead: resolvedTL,
+                    sales_manager: e.manager_name || e.approved_by || 'Jeeva kumar',
+                    sales_executive: e.employee_name || e.submitted_by || e.sales_executive || 'Bavani sree',
+                    team: resolvedTeam,
+                    product: resolvedProduct,
+                    revenue: 0,
+                    reimbursement: Number(e.amount || e.total_amount || 0),
+                    salary: 0,
+                    incentive: 0,
+                  }
+                })
+
+                const allLedgerItems = [...revenueItems, ...expenseItems]
+
+                // Extract unique dropdown lists dynamically
+                const availableYears = [...new Set(allLedgerItems.map(i => i.year).filter(Boolean))].sort((a, b) => b - a)
+                const availableManagers = [...new Set(allLedgerItems.map(i => i.sales_manager).filter(Boolean))].sort()
+                const availableTeamLeads = [...new Set(allLedgerItems.map(i => i.team_lead).filter(Boolean))].sort()
+                const availableExecutives = [...new Set(allLedgerItems.map(i => i.sales_executive).filter(Boolean))].sort()
+                const availableTeams = [...new Set(allLedgerItems.map(i => i.team).filter(Boolean))].sort()
+                const availableProducts = [...new Set([...supabaseProducts, ...allLedgerItems.map(i => i.product).filter(Boolean)])].sort()
+
+                // Multi-attribute Filtering Logic
+                const filteredLedgerItems = allLedgerItems.filter(item => {
+                  const d = item.date || ''
+                  if (ledgerFromDate && d < ledgerFromDate) return false
+                  if (ledgerToDate && d > ledgerToDate) return false
+                  if (revenueModalYear !== 'ALL' && item.year !== revenueModalYear) return false
+                  if (revenueModalManager !== 'ALL' && item.sales_manager !== revenueModalManager) return false
+                  if (revenueModalTeamLead !== 'ALL' && item.team_lead !== revenueModalTeamLead) return false
+                  if (revenueModalExecutive !== 'ALL' && item.sales_executive !== revenueModalExecutive) return false
+                  if (revenueModalTeam !== 'ALL' && item.team !== revenueModalTeam) return false
+                  if (revenueModalProduct !== 'ALL' && item.product !== revenueModalProduct) return false
+
+                  if (revenueModalType !== 'ALL') {
+                    if (revenueModalType === 'revenue' && item.revenue <= 0) return false
+                    if (revenueModalType === 'reimbursement' && item.reimbursement <= 0) return false
+                    if (revenueModalType === 'incentive' && item.incentive <= 0) return false
+                    if (revenueModalType === 'salary' && item.salary <= 0) return false
+                  }
+                  return true
+                })
+
+                // Recalculate summary metrics dynamically based on active filters
+                const ledgerRevenueTotal = filteredLedgerItems.reduce((s, item) => s + (item.revenue || 0), 0)
+                const ledgerReimbursementTotal = filteredLedgerItems.reduce((s, item) => s + (item.reimbursement || 0), 0)
+                const ledgerIncentiveTotal = filteredLedgerItems.reduce((s, item) => s + (item.incentive || 0), 0)
+                
                 const salariesTotal = (salariesList || []).reduce((acc, s) => {
                   const val = Number(s.monthly_salary || s.base_salary || s.salary || s.gross_salary || 0)
                   return acc + (val > 0 ? val : 0)
                 }, 0) || ((metrics.totalEmployees || 15) * 35000)
 
-                const totalExpenses = reimbursementsTotal + incentivesTotal + salariesTotal
-                const netDiff = totalRevenueAmount - totalExpenses
-                const isNetProfit = netDiff >= 0
-
-                // Combine Revenue deals + Reimbursement claims into one comprehensive date ledger
-                const revenueItems = filteredRevenue.map(r => ({
-                  date: r.date || '2026-08-20',
-                  team_lead: r.team_lead || '',
-                  sales_manager: r.sales_manager || r.manager_name || 'Jeeva kumar',
-                  sales_executive: r.sales_executive || r.executive_name || 'Aaron Fdo',
-                  product: r.product || r.product_name || (r.customer_name ? `Deal - ${r.customer_name}` : 'TwiteConnect CRM'),
-                  revenue: Number(r.amount || 0),
-                  reimbursement: 0,
-                  salary: 0,
-                  incentive: Math.round(Number(r.amount || 0) * 0.05),
-                }))
-
-                const expenseItems = (approvedExpenses.length > 0 ? approvedExpenses : (dashboardData?.pendingExpenseClaims || [])).map(e => ({
-                  date: e.date || e.created_at?.split('T')[0] || '2026-08-14',
-                  team_lead: e.team_lead || '',
-                  sales_manager: e.manager_name || e.approved_by || 'Jeeva kumar',
-                  sales_executive: e.employee_name || e.submitted_by || e.sales_executive || 'Bavani sree',
-                  product: e.title || e.purpose || e.category || 'Field Reimbursement',
-                  revenue: 0,
-                  reimbursement: Number(e.amount || e.total_amount || 0),
-                  salary: 0,
-                  incentive: 0,
-                }))
-
-                const allLedgerItems = [...revenueItems, ...expenseItems]
-
-                // Date-wise filtering for transaction ledger
-                const filteredLedgerItems = allLedgerItems.filter(item => {
-                  const d = item.date || ''
-                  if (ledgerFromDate && d < ledgerFromDate) return false
-                  if (ledgerToDate && d > ledgerToDate) return false
-                  return true
-                })
-
-                // Recalculate summary metrics dynamically based on active date range
-                const ledgerRevenueTotal = filteredLedgerItems.reduce((s, item) => s + (item.revenue || 0), 0)
-                const ledgerReimbursementTotal = filteredLedgerItems.reduce((s, item) => s + (item.reimbursement || 0), 0)
-                const ledgerIncentiveTotal = filteredLedgerItems.reduce((s, item) => s + (item.incentive || 0), 0)
-                const ledgerNetDiff = ledgerRevenueTotal - (ledgerReimbursementTotal + ledgerIncentiveTotal + salariesTotal)
+                const ledgerSalaryTotal = revenueModalType === 'salary' || revenueModalType === 'ALL' ? salariesTotal : 0
+                const ledgerTotalExpenses = ledgerReimbursementTotal + ledgerIncentiveTotal + ledgerSalaryTotal
+                const ledgerNetDiff = ledgerRevenueTotal - ledgerTotalExpenses
                 const isLedgerProfit = ledgerNetDiff >= 0
+
+                const isAnyFilterActive = ledgerFromDate || ledgerToDate || revenueModalYear !== 'ALL' || revenueModalManager !== 'ALL' || revenueModalTeamLead !== 'ALL' || revenueModalExecutive !== 'ALL' || revenueModalTeam !== 'ALL' || revenueModalProduct !== 'ALL' || revenueModalType !== 'ALL'
+
+                const resetAllLedgerFilters = () => {
+                  setLedgerFromDate('')
+                  setLedgerToDate('')
+                  setRevenueModalYear('ALL')
+                  setRevenueModalManager('ALL')
+                  setRevenueModalTeamLead('ALL')
+                  setRevenueModalExecutive('ALL')
+                  setRevenueModalTeam('ALL')
+                  setRevenueModalProduct('ALL')
+                  setRevenueModalType('ALL')
+                }
 
                 return (
                   <div className="space-y-4">
-                    {/* DATE-WISE FILTER OPTION BAR */}
-                    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2.5 bg-slate-50 p-2.5 rounded-2xl border border-slate-200/80 shadow-2xs">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs shadow-2xs">
-                          <Calendar className="size-3.5 text-[#832D51]" />
-                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">FROM</span>
-                          <input
-                            type="date"
-                            value={ledgerFromDate}
-                            onChange={(e) => setLedgerFromDate(e.target.value)}
-                            className="text-[11px] font-bold text-slate-800 focus:outline-none cursor-pointer"
-                          />
-                        </div>
-
-                        <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs shadow-2xs">
-                          <Calendar className="size-3.5 text-[#832D51]" />
-                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">TO</span>
-                          <input
-                            type="date"
-                            value={ledgerToDate}
-                            onChange={(e) => setLedgerToDate(e.target.value)}
-                            className="text-[11px] font-bold text-slate-800 focus:outline-none cursor-pointer"
-                          />
-                        </div>
-
-                        {(ledgerFromDate || ledgerToDate) && (
-                          <button
-                            onClick={() => {
-                              setLedgerFromDate('')
-                              setLedgerToDate('')
-                            }}
-                            className="text-[11px] font-bold text-rose-600 hover:underline px-2 cursor-pointer"
-                          >
-                            Reset Date Filter
-                          </button>
-                        )}
-                      </div>
-
-                      <div className="flex items-center gap-1 bg-slate-200/60 p-0.5 rounded-xl">
-                        {[
-                          { label: 'All Time', from: '', to: '' },
-                          { label: 'Today', from: new Date().toISOString().split('T')[0], to: new Date().toISOString().split('T')[0] },
-                          { label: 'This Month', from: `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}-01`, to: new Date().toISOString().split('T')[0] },
-                        ].map((preset) => {
-                          const isActive = ledgerFromDate === preset.from && ledgerToDate === preset.to
-                          return (
+                    {/* TOP MULTI-ATTRIBUTE FILTER CONTROL PANEL */}
+                    <div className="bg-purple-50 p-3 sm:p-4 rounded-2xl border border-purple-200 space-y-3 shadow-2xs">
+                      
+                      {/* Row 1: Transaction Type Tabs & Date Inputs */}
+                      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-purple-100">
+                        {/* Transaction Type Filter Tabs */}
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-black text-slate-500 uppercase tracking-wider mr-1">TYPE:</span>
+                          {[
+                            { key: 'ALL', label: 'All Transactions', icon: Layers },
+                            { key: 'revenue', label: '💰 Revenue Deals', icon: DollarSign },
+                            { key: 'reimbursement', label: '🧾 Reimbursements', icon: Wallet },
+                            { key: 'incentive', label: '🏆 Incentives', icon: Award },
+                            { key: 'salary', label: '👥 Salaries', icon: Users },
+                          ].map(t => (
                             <button
-                              key={preset.label}
-                              onClick={() => {
-                                setLedgerFromDate(preset.from)
-                                setLedgerToDate(preset.to)
-                              }}
-                              className={`px-3 py-1 rounded-lg text-[10px] font-extrabold uppercase transition cursor-pointer ${
-                                isActive ? 'bg-[#832D51] text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                              key={t.key}
+                              onClick={() => setRevenueModalType(t.key)}
+                              className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1 ${
+                                revenueModalType === t.key
+                                  ? 'bg-purple-200 text-purple-950 border border-purple-300 shadow-2xs font-extrabold'
+                                  : 'bg-white text-slate-700 hover:bg-purple-100/70 hover:text-purple-800 border border-slate-200/80'
                               }`}
                             >
-                              {preset.label}
+                              {t.label}
                             </button>
-                          )
-                        })}
+                          ))}
+                        </div>
+
+                        {/* Date Range Inputs & Presets */}
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs shadow-2xs">
+                            <Calendar className="size-3.5 text-purple-600" />
+                            <span className="text-[10px] font-black text-slate-500 uppercase">FROM</span>
+                            <input
+                              type="date"
+                              value={ledgerFromDate}
+                              onChange={(e) => setLedgerFromDate(e.target.value)}
+                              className="text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                            />
+                          </div>
+
+                          <div className="flex items-center gap-1.5 bg-white border border-slate-200 rounded-xl px-2.5 py-1 text-xs shadow-2xs">
+                            <Calendar className="size-3.5 text-purple-600" />
+                            <span className="text-[10px] font-black text-slate-500 uppercase">TO</span>
+                            <input
+                              type="date"
+                              value={ledgerToDate}
+                              onChange={(e) => setLedgerToDate(e.target.value)}
+                              className="text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                            />
+                          </div>
+                        </div>
                       </div>
+
+                      {/* Row 2: Multi-attribute Dropdowns Grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
+                        {/* 1. Year Filter */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">📅 Year</label>
+                          <select
+                            value={revenueModalYear}
+                            onChange={(e) => setRevenueModalYear(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-purple-500 cursor-pointer shadow-2xs"
+                          >
+                            <option value="ALL">All Years</option>
+                            {availableYears.map(y => (
+                              <option key={y} value={y}>{y}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* 2. Sales Manager Filter */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">👔 Sales Manager</label>
+                          <select
+                            value={revenueModalManager}
+                            onChange={(e) => setRevenueModalManager(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-purple-500 cursor-pointer shadow-2xs"
+                          >
+                            <option value="ALL">All Sales Managers</option>
+                            {availableManagers.map(m => (
+                              <option key={m} value={m}>{m}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* 3. Team Lead Filter */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">🛡️ Team Lead</label>
+                          <select
+                            value={revenueModalTeamLead}
+                            onChange={(e) => setRevenueModalTeamLead(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-purple-500 cursor-pointer shadow-2xs"
+                          >
+                            <option value="ALL">All Team Leads</option>
+                            {availableTeamLeads.map(tl => (
+                              <option key={tl} value={tl}>{tl}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* 4. Sales Executive Filter */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">👤 Sales Executive</label>
+                          <select
+                            value={revenueModalExecutive}
+                            onChange={(e) => setRevenueModalExecutive(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-purple-500 cursor-pointer shadow-2xs"
+                          >
+                            <option value="ALL">All Executives</option>
+                            {availableExecutives.map(ex => (
+                              <option key={ex} value={ex}>{ex}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* 5. Team / Department Filter */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">🏢 Team / Dept</label>
+                          <select
+                            value={revenueModalTeam}
+                            onChange={(e) => setRevenueModalTeam(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-purple-500 cursor-pointer shadow-2xs"
+                          >
+                            <option value="ALL">All Teams</option>
+                            {availableTeams.map(t => (
+                              <option key={t} value={t}>{t}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* 6. Product Filter */}
+                        <div>
+                          <label className="text-[10px] font-black uppercase tracking-wider text-slate-500 block mb-1">📦 Product Filter</label>
+                          <select
+                            value={revenueModalProduct}
+                            onChange={(e) => setRevenueModalProduct(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 outline-none focus:border-purple-500 cursor-pointer shadow-2xs"
+                          >
+                            <option value="ALL">All Products</option>
+                            {availableProducts.map(p => (
+                              <option key={p} value={p}>{p}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      {/* Filter Reset Indicator */}
+                      {isAnyFilterActive && (
+                        <div className="flex items-center justify-between pt-2 border-t border-purple-100">
+                          <span className="text-xs font-bold text-purple-700">
+                            ⚡ Active Filter Applied ({filteredLedgerItems.length} records matching)
+                          </span>
+                          <button
+                            onClick={resetAllLedgerFilters}
+                            className="px-3 py-1 bg-purple-100 hover:bg-purple-200 text-purple-800 rounded-lg text-xs font-black transition cursor-pointer"
+                          >
+                            Clear All Filters ✕
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {/* 5 Compact Summary Cards Grid */}
-                    <div className="grid gap-2.5 sm:grid-cols-2 lg:grid-cols-5">
+                    {/* 5 DYNAMIC SUMMARY CARDS GRID */}
+                    <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                       {/* 1. TOTAL SALES REVENUE */}
-                      <div className="bg-slate-50 border border-slate-200/70 p-3 rounded-xl relative">
-                        <div className="flex justify-between items-center text-slate-400">
-                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider">TOTAL SALES REVENUE</span>
-                          <DollarSign className="size-3.5 text-[#832D51]" />
+                      <div className="bg-emerald-50/70 border border-emerald-200 p-3.5 rounded-2xl relative shadow-2xs">
+                        <div className="flex justify-between items-center text-emerald-800">
+                          <span className="text-xs font-black uppercase tracking-wider">TOTAL SALES REVENUE</span>
+                          <DollarSign className="size-4 text-emerald-600" />
                         </div>
-                        <h4 className="text-lg sm:text-xl font-black text-slate-900 mt-1.5">₹{ledgerRevenueTotal.toLocaleString()}</h4>
-                        <p className="text-[9px] text-slate-400 font-bold mt-0.5 leading-tight">Sum of closed won deals</p>
+                        <h4 className="text-xl sm:text-2xl font-black text-emerald-950 mt-1.5">₹{ledgerRevenueTotal.toLocaleString()}</h4>
+                        <p className="text-xs text-emerald-700 font-semibold mt-0.5 leading-tight">Sum of closed won deals</p>
                       </div>
 
                       {/* 2. REIMBURSEMENTS */}
-                      <div className="bg-slate-50 border border-slate-200/70 p-3 rounded-xl relative">
-                        <div className="flex justify-between items-center text-slate-400">
-                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider">REIMBURSEMENTS</span>
-                          <Wallet className="size-3.5 text-[#832D51]" />
+                      <div className="bg-amber-50/70 border border-amber-200 p-3.5 rounded-2xl relative shadow-2xs">
+                        <div className="flex justify-between items-center text-amber-800">
+                          <span className="text-xs font-black uppercase tracking-wider">REIMBURSEMENTS</span>
+                          <Wallet className="size-4 text-amber-600" />
                         </div>
-                        <h4 className="text-lg sm:text-xl font-black text-slate-900 mt-1.5">₹{ledgerReimbursementTotal.toLocaleString()}</h4>
-                        <p className="text-[9px] text-slate-400 font-bold mt-0.5 leading-tight">Approved executive claims</p>
+                        <h4 className="text-xl sm:text-2xl font-black text-amber-950 mt-1.5">₹{ledgerReimbursementTotal.toLocaleString()}</h4>
+                        <p className="text-xs text-amber-700 font-semibold mt-0.5 leading-tight">Approved executive claims</p>
                       </div>
 
                       {/* 3. INCENTIVES GIVEN */}
-                      <div className="bg-slate-50 border border-slate-200/70 p-3 rounded-xl relative">
-                        <div className="flex justify-between items-center text-slate-400">
-                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider">INCENTIVES GIVEN</span>
-                          <Award className="size-3.5 text-[#832D51]" />
+                      <div className="bg-purple-50/70 border border-purple-200 p-3.5 rounded-2xl relative shadow-2xs">
+                        <div className="flex justify-between items-center text-purple-800">
+                          <span className="text-xs font-black uppercase tracking-wider">INCENTIVES GIVEN</span>
+                          <Award className="size-4 text-purple-600" />
                         </div>
-                        <h4 className="text-lg sm:text-xl font-black text-slate-900 mt-1.5">₹{ledgerIncentiveTotal.toLocaleString()}</h4>
-                        <p className="text-[9px] text-slate-400 font-bold mt-0.5 leading-tight">5% deal commission</p>
+                        <h4 className="text-xl sm:text-2xl font-black text-purple-950 mt-1.5">₹{ledgerIncentiveTotal.toLocaleString()}</h4>
+                        <p className="text-xs text-purple-700 font-semibold mt-0.5 leading-tight">5% deal commission</p>
                       </div>
 
                       {/* 4. TOTAL TEAM SALARIES */}
-                      <div className="bg-slate-50 border border-slate-200/70 p-3 rounded-xl relative">
-                        <div className="flex justify-between items-center text-slate-400">
-                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider">TOTAL SALARIES</span>
-                          <Users className="size-3.5 text-[#832D51]" />
+                      <div className="bg-blue-50/70 border border-blue-200 p-3.5 rounded-2xl relative shadow-2xs">
+                        <div className="flex justify-between items-center text-blue-800">
+                          <span className="text-xs font-black uppercase tracking-wider">TOTAL SALARIES</span>
+                          <Users className="size-4 text-blue-600" />
                         </div>
-                        <h4 className="text-lg sm:text-xl font-black text-slate-900 mt-1.5">₹{salariesTotal.toLocaleString()}</h4>
-                        <p className="text-[9px] text-slate-400 font-bold mt-0.5 leading-tight">Monthly staff payroll</p>
+                        <h4 className="text-xl sm:text-2xl font-black text-blue-950 mt-1.5">₹{salariesTotal.toLocaleString()}</h4>
+                        <p className="text-xs text-blue-700 font-semibold mt-0.5 leading-tight">Monthly staff payroll</p>
                       </div>
 
                       {/* 5. NET PROFIT / NET LOSS (Calculated with Salaries) */}
-                      <div className={`p-3 rounded-xl border relative ${
+                      <div className={`p-3.5 rounded-2xl border relative shadow-2xs ${
                         isLedgerProfit 
-                          ? 'bg-emerald-50/70 border-emerald-200/90 text-emerald-950' 
-                          : 'bg-rose-50/70 border-rose-200/90 text-rose-950'
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-950' 
+                          : 'bg-rose-50 border-rose-300 text-rose-950'
                       }`}>
                         <div className="flex justify-between items-center">
-                          <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-wider opacity-85">
+                          <span className="text-xs font-black uppercase tracking-wider">
                             {isLedgerProfit ? 'NET PROFIT' : 'NET LOSS'}
                           </span>
-                          <Sparkles className={`size-3.5 ${isLedgerProfit ? 'text-emerald-600' : 'text-rose-600'}`} />
+                          <Sparkles className={`size-4 ${isLedgerProfit ? 'text-emerald-600' : 'text-rose-600'}`} />
                         </div>
-                        <h4 className="text-lg sm:text-xl font-black mt-1.5">₹{Math.abs(ledgerNetDiff).toLocaleString()}</h4>
-                        <p className="text-[9px] font-bold mt-0.5 opacity-75 leading-tight">
-                          {isLedgerProfit ? 'Revenue - Expenses & Salaries = Net' : 'Expenses & Salaries exceeded Revenue'}
+                        <h4 className="text-xl sm:text-2xl font-black mt-1.5">₹{Math.abs(ledgerNetDiff).toLocaleString()}</h4>
+                        <p className="text-xs font-semibold mt-0.5 leading-tight opacity-90">
+                          {isLedgerProfit ? 'Revenue - Expenses = Net Profit' : 'Expenses exceeded Revenue'}
                         </p>
                       </div>
                     </div>
@@ -1428,62 +1643,68 @@ function CeoDashboard() {
                     {/* DATE-WISE TRANSACTION LEDGER Header Block */}
                     <div className="flex items-center justify-between pt-1">
                       <div className="flex items-center gap-1.5">
-                        <Calendar className="size-3.5 text-slate-500" />
-                        <span className="text-[11px] font-black uppercase tracking-wider text-slate-700">
-                          DATE-WISE TRANSACTION LEDGER ({filteredLedgerItems.length} RECORDS)
+                        <Calendar className="size-4 text-purple-600" />
+                        <span className="text-xs font-black uppercase tracking-wider text-slate-800">
+                          DATE-WISE TRANSACTION LEDGER ({filteredLedgerItems.length} RECORDS MATCHING)
                         </span>
                       </div>
-                      <span className="text-[10px] font-bold text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-md">
+                      <span className="text-xs font-black text-purple-800 bg-purple-100 border border-purple-200 px-3 py-1 rounded-xl shadow-2xs">
                         Filtered Revenue: ₹{ledgerRevenueTotal.toLocaleString()}
                       </span>
                     </div>
 
                     {/* Detailed Ledger Table */}
-                    <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
+                    <div className="border border-slate-200 rounded-2xl overflow-hidden shadow-xs bg-white">
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
-                            <tr className="bg-slate-50/80 border-b border-slate-200/80 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                              <th className="px-3 py-2.5 whitespace-nowrap">DATE</th>
-                              <th className="px-3 py-2.5 whitespace-nowrap">SALES MANAGER</th>
-                              <th className="px-3 py-2.5 whitespace-nowrap">TEAM LEAD</th>
-                              <th className="px-3 py-2.5 whitespace-nowrap">SALES EXECUTIVE</th>
-                              <th className="px-3 py-2.5 whitespace-nowrap">PRODUCT</th>
-                              <th className="px-3 py-2.5 text-right whitespace-nowrap">REVENUE</th>
-                              <th className="px-3 py-2.5 text-right whitespace-nowrap">REIMBURSEMENT</th>
-                              <th className="px-3 py-2.5 text-right whitespace-nowrap">SALARY</th>
-                              <th className="px-3 py-2.5 text-right whitespace-nowrap">INCENTIVES</th>
+                            <tr className="bg-slate-900 text-white font-bold uppercase tracking-wider text-xs">
+                              <th className="px-4 py-3 whitespace-nowrap">DATE</th>
+                              <th className="px-4 py-3 whitespace-nowrap">SALES MANAGER</th>
+                              <th className="px-4 py-3 whitespace-nowrap">TEAM LEAD</th>
+                              <th className="px-4 py-3 whitespace-nowrap">SALES EXECUTIVE</th>
+                              <th className="px-4 py-3 whitespace-nowrap">TEAM / DEPT</th>
+                              <th className="px-4 py-3 whitespace-nowrap">PRODUCT</th>
+                              <th className="px-4 py-3 text-right whitespace-nowrap">REVENUE</th>
+                              <th className="px-4 py-3 text-right whitespace-nowrap">REIMBURSEMENT</th>
+                              <th className="px-4 py-3 text-right whitespace-nowrap">SALARY</th>
+                              <th className="px-4 py-3 text-right whitespace-nowrap">INCENTIVES</th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-100 font-medium">
                             {filteredLedgerItems.length === 0 ? (
                               <tr>
-                                <td colSpan={9} className="py-10 text-center text-slate-400 font-bold">
-                                  No transaction records found for selected date range.
+                                <td colSpan={10} className="py-12 text-center text-slate-400 font-bold text-sm">
+                                  No transaction records found matching the active filter criteria.
                                 </td>
                               </tr>
                             ) : (
                               filteredLedgerItems.map((rec, i) => (
-                                <tr key={i} className="hover:bg-slate-50/50">
-                                  <td className="px-3 py-2.5 text-slate-900 font-black text-[11px] whitespace-nowrap">{formatDDMMYYYY(rec.date)}</td>
-                                  <td className="px-3 py-2.5 text-slate-800 font-bold text-[11px] whitespace-nowrap">{rec.sales_manager || '—'}</td>
-                                  <td className="px-3 py-2.5 text-[11px] whitespace-nowrap">
-                                    <span className="inline-flex items-center gap-1 bg-violet-50 text-violet-700 border border-violet-200 rounded-md px-2 py-0.5 font-bold">
+                                <tr key={rec.id || i} className="hover:bg-purple-50/50 transition">
+                                  <td className="px-4 py-3 text-slate-900 font-black text-xs whitespace-nowrap font-mono">{formatDDMMYYYY(rec.date)}</td>
+                                  <td className="px-4 py-3 text-slate-800 font-bold text-xs whitespace-nowrap">{rec.sales_manager || '—'}</td>
+                                  <td className="px-4 py-3 text-xs whitespace-nowrap">
+                                    <span className="inline-flex items-center gap-1 bg-violet-100 text-violet-800 border border-violet-200 rounded-lg px-2.5 py-0.5 font-bold">
                                       {rec.team_lead || '—'}
                                     </span>
                                   </td>
-                                  <td className="px-3 py-2.5 text-slate-700 font-semibold text-[11px] whitespace-nowrap">{rec.sales_executive}</td>
-                                  <td className="px-3 py-2.5 text-slate-600 font-medium text-[11px]">{rec.product || '—'}</td>
-                                  <td className="px-3 py-2.5 text-right font-black text-slate-950 text-[11px]">
+                                  <td className="px-4 py-3 text-slate-700 font-bold text-xs whitespace-nowrap">{rec.sales_executive}</td>
+                                  <td className="px-4 py-3 text-xs whitespace-nowrap">
+                                    <span className="inline-flex items-center gap-1 bg-slate-100 text-slate-700 border border-slate-200 rounded-lg px-2 py-0.5 font-semibold">
+                                      {rec.team || 'Sales Team'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-3 text-slate-900 font-bold text-xs">{rec.product || '—'}</td>
+                                  <td className="px-4 py-3 text-right font-black text-emerald-700 text-xs">
                                     {rec.revenue > 0 ? `₹${rec.revenue.toLocaleString()}` : '—'}
                                   </td>
-                                  <td className="px-3 py-2.5 text-right font-black text-amber-600 text-[11px]">
+                                  <td className="px-4 py-3 text-right font-black text-amber-700 text-xs">
                                     {rec.reimbursement > 0 ? `₹${rec.reimbursement.toLocaleString()}` : '—'}
                                   </td>
-                                  <td className="px-3 py-2.5 text-right font-black text-blue-700 text-[11px]">
+                                  <td className="px-4 py-3 text-right font-black text-blue-700 text-xs">
                                     {rec.salary > 0 ? `₹${rec.salary.toLocaleString()}` : '—'}
                                   </td>
-                                  <td className="px-3 py-2.5 text-right font-black text-purple-700 text-[11px]">
+                                  <td className="px-4 py-3 text-right font-black text-purple-700 text-xs">
                                     {rec.incentive > 0 ? `₹${rec.incentive.toLocaleString()}` : '—'}
                                   </td>
                                 </tr>
@@ -1498,7 +1719,7 @@ function CeoDashboard() {
                     <div className="flex justify-end pt-1">
                       <button
                         onClick={() => setActiveModal(null)}
-                        className="bg-[#832D51] hover:bg-[#6a2240] text-white px-5 py-2 rounded-lg font-black text-[11px] shadow-sm transition cursor-pointer active:scale-95"
+                        className="bg-purple-200 hover:bg-purple-300 text-purple-950 border border-purple-300 px-6 py-2.5 rounded-xl font-black text-xs shadow-2xs transition cursor-pointer active:scale-95"
                       >
                         Close Statement
                       </button>

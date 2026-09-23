@@ -267,7 +267,7 @@ function CeoLayout() {
   ]
 
   return (
-    <div className="h-screen overflow-hidden bg-[#f4f6f8] text-slate-800 flex flex-col font-sans antialiased relative">
+    <div className="h-screen overflow-hidden bg-purple-50/30 text-slate-800 flex flex-col font-sans antialiased relative">
       {/* ── CEO Portal Micro-Animations & Responsive Styles ───────────────── */}
       <style>{`
         /* Tactile Click Effect for All Buttons, Toggles & Cards */
@@ -286,59 +286,94 @@ function CeoLayout() {
           transform: scale(0.96) !important;
         }
 
+        /* CEO Portal Global Font Size Increase & High Legibility Styles */
+        .ceo-portal-content {
+          font-size: 1rem; /* 16px base font size */
+          line-height: 1.55;
+        }
+        .ceo-portal-content .text-xs {
+          font-size: 0.84375rem !important; /* ~13.5px */
+        }
+        .ceo-portal-content .text-\[9px\],
+        .ceo-portal-content .text-\[10px\],
+        .ceo-portal-content .text-\[11px\] {
+          font-size: 0.8125rem !important; /* ~13px minimum */
+        }
+        .ceo-portal-content .text-sm {
+          font-size: 0.96875rem !important; /* ~15.5px */
+        }
+        .ceo-portal-content .text-base {
+          font-size: 1.09375rem !important; /* ~17.5px */
+        }
+        .ceo-portal-content .text-lg {
+          font-size: 1.28125rem !important; /* ~20.5px */
+        }
+        .ceo-portal-content .text-xl {
+          font-size: 1.46875rem !important; /* ~23.5px */
+        }
+        .ceo-portal-content .text-2xl {
+          font-size: 1.8125rem !important; /* ~29px */
+        }
+        .ceo-portal-content .text-3xl {
+          font-size: 2.25rem !important; /* ~36px */
+        }
+        .ceo-portal-content .text-4xl {
+          font-size: 2.625rem !important; /* ~42px */
+        }
+
         @media (max-width: 640px) {
           .ceo-portal-content {
-            font-size: 13px;
+            font-size: 0.90625rem;
           }
           .ceo-portal-content h1 {
-            font-size: 1.125rem !important;
+            font-size: 1.25rem !important;
             line-height: 1.35 !important;
           }
           .ceo-portal-content h2 {
-            font-size: 1rem !important;
+            font-size: 1.125rem !important;
             line-height: 1.35 !important;
           }
           .ceo-portal-content h3 {
-            font-size: 0.875rem !important;
+            font-size: 1rem !important;
             line-height: 1.35 !important;
           }
           .ceo-portal-content .text-sm {
-            font-size: 0.75rem !important;
+            font-size: 0.84375rem !important;
           }
           .ceo-portal-content .text-xs {
-            font-size: 0.6875rem !important;
+            font-size: 0.78125rem !important;
           }
           .ceo-portal-content table th,
           .ceo-portal-content table td {
-            padding: 0.5rem 0.5rem !important;
-            font-size: 0.71875rem !important;
+            padding: 0.625rem 0.625rem !important;
+            font-size: 0.8125rem !important;
           }
           .ceo-portal-content .p-5,
           .ceo-portal-content .p-6,
           .ceo-portal-content .p-8 {
-            padding: 0.875rem !important;
+            padding: 1rem !important;
           }
           .ceo-portal-content .px-6,
           .ceo-portal-content .px-8 {
-            padding-left: 0.75rem !important;
-            padding-right: 0.75rem !important;
+            padding-left: 0.875rem !important;
+            padding-right: 0.875rem !important;
           }
           .ceo-portal-content .gap-4,
           .ceo-portal-content .gap-6 {
-            gap: 0.75rem !important;
+            gap: 0.875rem !important;
           }
         }
       `}</style>
 
       {/* ── Top Navigation Bar (Full Width) ────────────────────────────────── */}
-      <header className="relative h-14 sm:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-3 sm:px-4 lg:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
+      <header className="relative h-14 sm:h-16 bg-white/95 backdrop-blur-md border-b border-purple-100 flex items-center justify-between px-3 sm:px-4 lg:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
         <div className="flex items-center gap-2.5 sm:gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="lg:hidden p-1.5 sm:p-2 rounded-lg text-slate-600 hover:bg-slate-100 cursor-pointer"
+            className="lg:hidden p-1.5 sm:p-2 rounded-lg text-slate-600 hover:bg-purple-50 cursor-pointer"
             aria-label="Toggle Navigation Sidebar"
           >
-            {sidebarOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
+            {sidebarOpen ? <X className="w-5 h-5 text-purple-700" /> : <Menu className="w-5 h-5 text-purple-700" />}
           </button>
           <Link to="/ceo" className="flex items-center gap-2">
             <TwiteConnectLogo className="w-7 h-7 sm:w-9 sm:h-9" />
@@ -347,13 +382,13 @@ function CeoLayout() {
 
         {/* Center: CEO Role Tag Badge */}
         <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
-          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-full px-3.5 sm:px-5 py-1 sm:py-1.5 shadow-xs pointer-events-auto">
+          <div className="flex items-center gap-2 bg-purple-100 border border-purple-200 rounded-full px-3.5 sm:px-5 py-1 sm:py-1.5 shadow-2xs pointer-events-auto">
             <span className="relative flex h-2 w-2 sm:h-2.5 sm:w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 sm:h-2.5 sm:w-2.5 bg-emerald-500"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 sm:h-2.5 sm:w-2.5 bg-purple-600"></span>
             </span>
-            <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-blue-600">
-              CEO
+            <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-purple-900">
+              CEO PORTAL
             </span>
           </div>
         </div>
@@ -363,7 +398,7 @@ function CeoLayout() {
           {/* Notification Bell */}
           <button
             onClick={() => navigate('/ceo/notifications')}
-            className="p-1.5 sm:p-2 rounded-xl text-slate-600 hover:bg-slate-100 relative transition cursor-pointer border border-slate-200"
+            className="p-1.5 sm:p-2 rounded-xl text-purple-700 hover:bg-purple-50 relative transition cursor-pointer border border-purple-200/80 bg-white"
             title="Notifications & Messages"
           >
             <Bell size={18} />
@@ -378,25 +413,25 @@ function CeoLayout() {
           <div className="relative">
             <button
               onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-              className="flex items-center gap-2 p-1 sm:p-1.5 rounded-xl hover:bg-slate-100 transition cursor-pointer border border-slate-200"
+              className="flex items-center gap-2 p-1 sm:p-1.5 rounded-xl hover:bg-purple-50 transition cursor-pointer border border-purple-200/80 bg-white"
             >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-gradient-to-br from-blue-900 via-blue-700 to-blue-600 flex items-center justify-center text-white font-black text-[11px] sm:text-xs shadow-xs ring-2 ring-blue-500/20 shrink-0">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-purple-200 border border-purple-300 flex items-center justify-center text-purple-950 font-black text-[11px] sm:text-xs shadow-2xs shrink-0">
                 {currentUser?.initials || 'CEO'}
               </div>
               <div className="hidden md:flex flex-col text-left">
                 <span className="font-extrabold text-[11px] sm:text-xs text-slate-800 leading-tight flex items-center gap-1">
-                  {currentUser?.name || 'Dr. Twite Executive'} <ChevronDown size={12} className="text-slate-400" />
+                  {currentUser?.name || 'Dr. Twite Executive'} <ChevronDown size={12} className="text-purple-400" />
                 </span>
-                <span className="text-[9px] sm:text-[10px] text-blue-600 font-extrabold leading-tight truncate max-w-[120px]">CEO</span>
+                <span className="text-[9px] sm:text-[10px] text-purple-700 font-extrabold leading-tight truncate max-w-[120px]">CEO</span>
               </div>
             </button>
 
             {profileDropdownOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setProfileDropdownOpen(false)} />
-                <div className="absolute right-0 mt-2 w-60 sm:w-64 bg-white border border-slate-200 rounded-2xl shadow-2xl z-50 p-2 overflow-hidden">
-                  <div className="flex items-center gap-2.5 p-2.5 sm:p-3 bg-gradient-to-r from-[#832D51] to-[#6a2240] rounded-xl text-white mb-2 shadow-sm">
-                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden bg-white text-[#832D51] flex items-center justify-center text-xs sm:text-sm font-black shadow-md shrink-0">
+                <div className="absolute right-0 mt-2 w-60 sm:w-64 bg-white border border-purple-100 rounded-2xl shadow-2xl z-50 p-2 overflow-hidden">
+                  <div className="flex items-center gap-2.5 p-2.5 sm:p-3 bg-purple-100 border border-purple-200 rounded-xl text-purple-950 mb-2 shadow-2xs">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden bg-white text-purple-800 flex items-center justify-center text-xs sm:text-sm font-black shadow-md shrink-0">
                       {currentUser?.initials || 'CEO'}
                     </div>
                     <div className="min-w-0">
@@ -410,13 +445,13 @@ function CeoLayout() {
                     <Link
                       to="/ceo/settings"
                       onClick={() => setProfileDropdownOpen(false)}
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-slate-50 text-slate-700 font-bold text-xs transition"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-purple-50 text-slate-700 font-bold text-xs transition"
                     >
-                      <Settings size={14} className="text-[#832D51]" /> Account & Security Settings
+                      <Settings size={14} className="text-purple-600" /> Account & Security Settings
                     </Link>
                   </div>
 
-                  <div className="my-1.5 border-t border-slate-100" />
+                  <div className="my-1.5 border-t border-purple-100" />
 
                   <button
                     type="button"
@@ -438,24 +473,24 @@ function CeoLayout() {
       {/* ── Main Layout Body ──────────────────────────────────────────────── */}
       <div className="flex flex-1 min-h-0 min-w-0 relative overflow-hidden">
         {sidebarOpen && (
-          <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-30 lg:hidden transition-opacity" />
+          <div onClick={() => setSidebarOpen(false)} className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-30 lg:hidden transition-opacity" />
         )}
 
         {/* CEO Sidebar */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-60 sm:w-64 bg-[#832D51] text-white border-r border-[#EA6993]/20 shadow-2xl transition-all duration-200 ease-in-out lg:translate-x-0 lg:static shrink-0 flex flex-col h-full ${
+          className={`fixed inset-y-0 left-0 z-40 w-60 sm:w-64 bg-white text-slate-700 border-r border-purple-100 shadow-xl shadow-purple-950/5 transition-all duration-200 ease-in-out lg:translate-x-0 lg:static shrink-0 flex flex-col h-full ${
             isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'
           } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
           {/* Mobile-only Sidebar Close Header */}
-          <div className="lg:hidden flex items-center justify-between px-3.5 py-2.5 border-b border-white/10 bg-[#591732] shrink-0">
+          <div className="lg:hidden flex items-center justify-between px-3.5 py-2.5 border-b border-purple-200 bg-purple-100 text-purple-950 shrink-0">
             <div className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-lg bg-[#CFDD9D] flex items-center justify-center text-[#832D51] text-[9px] font-black">TC</span>
+              <span className="w-5 h-5 rounded-lg bg-white flex items-center justify-center text-purple-700 text-[9px] font-black">TC</span>
               <span className="text-[11px] font-black text-white uppercase tracking-widest">CEO Portal</span>
             </div>
             <button
               onClick={() => setSidebarOpen(false)}
-              className="p-1 rounded-xl text-slate-300 hover:bg-white/10 hover:text-white transition cursor-pointer"
+              className="p-1 rounded-xl text-white/80 hover:bg-white/20 hover:text-white transition cursor-pointer"
               aria-label="Close sidebar"
             >
               <X className="w-4 h-4" />
@@ -463,20 +498,20 @@ function CeoLayout() {
           </div>
 
           {/* Desktop Minimize/Maximize Toggle Button */}
-          <div className="hidden lg:flex items-center justify-end px-3 py-2 border-b border-white/10">
+          <div className="hidden lg:flex items-center justify-end px-3 py-2 border-b border-purple-100">
             <button
               type="button"
               onClick={toggleSidebarMinimize}
-              className={`p-1.5 rounded-xl hover:bg-white/10 text-[#f8f0f2] hover:text-white transition cursor-pointer flex items-center gap-2 ${
+              className={`p-1.5 rounded-xl hover:bg-purple-50 text-slate-500 hover:text-purple-700 transition cursor-pointer flex items-center gap-2 ${
                 isSidebarCollapsed ? "w-full justify-center" : ""
               }`}
               title={isSidebarCollapsed ? "Maximize Sidebar" : "Minimize Sidebar"}
             >
               {isSidebarCollapsed ? (
-                <PanelLeftOpen size={18} className="text-[#CFDD9D]" />
+                <PanelLeftOpen size={18} className="text-purple-600" />
               ) : (
                 <>
-                  <span className="text-[11px] font-bold text-[#f8f0f2]/80 uppercase tracking-wider">Minimize</span>
+                  <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Minimize</span>
                   <PanelLeftClose size={16} />
                 </>
               )}
@@ -484,7 +519,7 @@ function CeoLayout() {
           </div>
 
           {/* Navigation List - 9 Executive Items */}
-          <nav className="flex-1 overflow-y-auto px-2.5 sm:px-3 py-3 sm:py-4 space-y-1 sm:space-y-1.5 bg-[#832D51] scrollbar-thin scrollbar-thumb-[#6a2240]">
+          <nav className="flex-1 overflow-y-auto px-2.5 sm:px-3 py-3 sm:py-4 space-y-1 sm:space-y-1.5 bg-white scrollbar-thin scrollbar-thumb-purple-200">
             {sidebarItems.map((item, index) => {
               const Icon = item.icon
               const active = isNavActive(item.path)
@@ -496,7 +531,7 @@ function CeoLayout() {
                   onDragOver={(e) => handleDragOver(e, index)}
                   onDrop={(e) => handleDrop(e, index)}
                   onDragEnd={handleDragEnd}
-                  className={`relative ${isCustomizing && !isSidebarCollapsed ? "cursor-move animate-pulse border border-dashed border-[#EA6993]/20 rounded-xl" : ""}`}
+                  className={`relative ${isCustomizing && !isSidebarCollapsed ? "cursor-move animate-pulse border border-dashed border-purple-300 rounded-xl" : ""}`}
                 >
                   <Link
                     to={isCustomizing ? "#" : item.path}
@@ -508,37 +543,37 @@ function CeoLayout() {
                       setSidebarOpen(false);
                     }}
                     title={item.label}
-                    className={`flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-2.5 sm:gap-3 px-3 py-2 sm:px-3.5 sm:py-2.5"} rounded-xl text-xs sm:text-sm font-semibold transition-all duration-150 group relative ${
+                    className={`flex items-center ${isSidebarCollapsed ? "justify-center p-3" : "gap-3 sm:gap-3.5 px-3.5 py-2.5 sm:px-4 sm:py-3"} rounded-xl text-sm sm:text-base font-bold transition-all duration-150 group relative ${
                       !isCustomizing && active
-                        ? 'bg-white/10 text-white font-bold shadow-xs border border-white/20 backdrop-blur-xs'
-                        : 'text-[#f8f0f2] hover:bg-white/10 hover:text-white'
+                        ? 'bg-purple-200 text-purple-950 border border-purple-300/80 font-extrabold shadow-2xs'
+                        : 'text-slate-700 hover:bg-purple-50/80 hover:text-purple-800'
                     }`}
                   >
-                    {isCustomizing && !isSidebarCollapsed && <GripVertical size={14} className="text-white/40 shrink-0" />}
+                    {isCustomizing && !isSidebarCollapsed && <GripVertical size={16} className="text-slate-400 shrink-0" />}
                     <div className="relative flex items-center justify-center shrink-0">
                       <Icon
-                        className={`size-4.5 sm:size-5 shrink-0 transition-transform group-hover:scale-105 ${
-                          !isCustomizing && active ? 'text-[#CFDD9D]' : 'text-[#CFDD9D]/80 group-hover:text-white'
+                        className={`size-5 sm:size-5.5 shrink-0 transition-transform group-hover:scale-105 ${
+                          !isCustomizing && active ? 'text-purple-950' : 'text-purple-600 group-hover:text-purple-700'
                         }`}
                       />
                       {isSidebarCollapsed && unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
-                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
+                        <span className="absolute -top-1 -right-1 w-3 h-3 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
                       )}
                     </div>
                     {!isSidebarCollapsed && (
-                      <span className="truncate flex-1 text-left text-xs sm:text-sm">{item.label}</span>
+                      <span className="truncate flex-1 text-left text-sm sm:text-[15px] font-extrabold">{item.label}</span>
                     )}
                     {!isSidebarCollapsed && unreadCount > 0 && (item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
-                      <span className="ml-auto bg-rose-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
+                      <span className="ml-auto bg-rose-500 text-white text-xs font-black px-2.5 py-0.5 rounded-full shadow-xs ring-2 ring-white animate-pulse">
                         🔴 {unreadCount > 99 ? '99+' : unreadCount}
                       </span>
                     )}
                     {!isSidebarCollapsed && item.badge && !(item.path.includes("notifications") || item.label.includes("Notification") || item.label.includes("Message")) && (
                       <span
-                        className={`rounded-full px-1.5 sm:px-2 py-0.5 text-[9px] sm:text-[10px] font-extrabold ${
+                        className={`rounded-full px-2 py-0.5 text-xs font-black ${
                           !isCustomizing && active
-                            ? 'bg-[#EA6993]/40 text-white border border-[#EA6993]/50'
-                            : 'bg-[#3a7d63] text-white shadow-xs'
+                            ? 'bg-purple-300 text-purple-950 border border-purple-400'
+                            : 'bg-purple-100 text-purple-700 border border-purple-200 shadow-xs'
                         }`}
                       >
                         {item.badge}
@@ -551,18 +586,18 @@ function CeoLayout() {
             {!isSidebarCollapsed && (
               <div className="pt-2">
                 {isCustomizing ? (
-                  <div className="pt-2 border-t border-[#EA6993]/20 space-y-1.5">
+                  <div className="pt-2 border-t border-purple-100 space-y-1.5">
                     <button
                       type="button"
                       onClick={saveCustomization}
-                      className="w-full py-1.5 sm:py-2 px-3 bg-[#CFDD9D] hover:bg-[#c0ce8e] text-[#832D51] rounded-xl text-xs font-black transition cursor-pointer"
+                      className="w-full py-1.5 sm:py-2 px-3 bg-purple-200 hover:bg-purple-300 text-purple-950 border border-purple-300 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
                     >
                       Save Order
                     </button>
                     <button
                       type="button"
                       onClick={resetCustomization}
-                      className="w-full py-1.5 sm:py-2 px-3 bg-[#6a2240] hover:bg-[#591732] text-white rounded-xl text-xs font-black transition cursor-pointer"
+                      className="w-full py-1.5 sm:py-2 px-3 bg-purple-100 hover:bg-purple-200 text-purple-800 rounded-xl text-xs font-black transition cursor-pointer"
                     >
                       Reset Default
                     </button>
@@ -571,7 +606,7 @@ function CeoLayout() {
                   <button
                     type="button"
                     onClick={() => setIsCustomizing(true)}
-                    className="w-full py-1.5 sm:py-2 px-3 border border-dashed border-[#EA6993]/30 hover:border-[#EA6993] text-[#d8d8d8] hover:text-white rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
+                    className="w-full py-1.5 sm:py-2 px-3 border border-dashed border-purple-200 hover:border-purple-400 text-purple-700 hover:bg-purple-50 rounded-xl text-[10px] font-black tracking-wider uppercase transition cursor-pointer flex items-center justify-center gap-1.5"
                   >
                     <span>⚙️ Customize Sidebar</span>
                   </button>
@@ -582,7 +617,7 @@ function CeoLayout() {
         </aside>
 
         {/* Dynamic Page Content - Scrollable Main Area */}
-        <main className="ceo-portal-content flex-1 overflow-y-auto h-full p-3 sm:p-5 lg:p-6 bg-[#f4f6f8] text-slate-800">
+        <main className="ceo-portal-content flex-1 overflow-y-auto h-full p-3 sm:p-5 lg:p-6 bg-purple-50/20 text-slate-800">
           <Outlet />
         </main>
       </div>

@@ -4,8 +4,8 @@ import { useToast } from './ToastContext.jsx'
 import { authAPI } from '../services/api.js'
 import { Mail, Lock, Eye, EyeOff, ArrowRight } from 'lucide-react'
 import TwiteConnectLogo from './TwiteConnectLogo.jsx'
-
 import authSession from '../utils/authSession.js'
+import bikeIcon from '../assets/bike-icon.png'
 
 function LoginForm() {
   const { showToast } = useToast()
@@ -13,6 +13,7 @@ function LoginForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [authProgress, setAuthProgress] = useState(0)
   const [errorMsg, setErrorMsg] = useState('')
 
   const navigate = useNavigate()
@@ -27,19 +28,41 @@ function LoginForm() {
 
     setLoading(true)
     setErrorMsg('')
+    setAuthProgress(15)
+
+    // Smoothly advance bike progress indicator during authentication
+    const progressInterval = setInterval(() => {
+      setAuthProgress((prev) => {
+        if (prev < 88) return prev + Math.floor(Math.random() * 6 + 4)
+        return prev
+      })
+    }, 120)
 
     try {
-      // 1. Authenticate strictly via Backend API (no client-side bypass)
-      const res = await authAPI.login({ email: email.trim(), password: password.trim() })
+      const cleanEmail = email.trim().toLowerCase()
+      const cleanPassword = password.trim()
 
-      if (res && res.data && res.data.access_token) {
-        const userObj = res.data.user || {}
+      // 1. Authenticate strictly via Backend API
+      const res = await authAPI.login({ email: cleanEmail, password: cleanPassword })
+
+      const sessionPayload = res?.data?.access_token ? res.data : (res?.access_token ? res : (res?.data || res))
+      const token = sessionPayload?.access_token || res?.access_token
+
+      if (token && sessionPayload) {
+        clearInterval(progressInterval)
+        setAuthProgress(100) // Complete full loading on authentication success
+
+        const userObj = sessionPayload.user || res?.user || {}
 
         // Save session using canonical authSession utility
-        authSession.saveSession(res.data)
+        authSession.saveSession({
+          access_token: token,
+          refresh_token: sessionPayload.refresh_token || res?.refresh_token,
+          user: userObj
+        })
 
         const roleLower = (userObj.role || userObj.designation || '').toLowerCase()
-        showToast(`Authentication successful! Welcome ${userObj.full_name || userObj.employee_name || roleLower}.`, 'success')
+        showToast(`Authentication successful! Welcome ${userObj.full_name || userObj.employee_name || userObj.name || roleLower}.`, 'success')
 
         // Redirect strictly to assigned role portal
         const targetRoute = authSession.getDashboardForUser(userObj)
@@ -49,29 +72,30 @@ function LoginForm() {
           showToast('Admin has reset your password. Please set a new password to continue.', 'warning')
           setTimeout(() => {
             navigate('/change-password')
-          }, 200)
+          }, 350)
           return
         }
 
         setTimeout(() => {
           navigate(targetRoute, { replace: true })
-        }, 200)
+        }, 350)
 
       } else {
-        throw new Error('Invalid Username or Password.')
+        throw new Error(res?.message || 'Invalid email or password.')
       }
     } catch (err) {
-      const errorMsg = err?.message || err?.data?.message || err?.detail || 'Invalid email or password. Please try again.'
-      showToast(errorMsg, 'error')
-      setErrorMsg(errorMsg)
-      authSession.clearSession()
-    } finally {
+      clearInterval(progressInterval)
+      setAuthProgress(0)
       setLoading(false)
+      const errorMsgText = err?.message || err?.data?.message || err?.detail || 'Invalid email or password. Please try again.'
+      showToast(errorMsgText, 'error')
+      setErrorMsg(errorMsgText)
+      authSession.clearSession()
     }
   }
 
   return (
-    <div className="w-full max-w-md mx-auto space-y-4">
+    <div className="w-full max-w-md mx-auto space-y-5">
       {/* Brand Header */}
       <div className="space-y-2">
         <TwiteConnectLogo className="w-12 h-12" textClassName="text-slate-950 font-black text-3xl tracking-tight" />
@@ -162,6 +186,40 @@ function LoginForm() {
             </>
           )}
         </button>
+
+        {/* Dynamic Bike Loading Progress Indicator below Authentication Button */}
+        {loading && (
+          <div className="relative w-full h-16 bg-gradient-to-r from-blue-900/10 via-sky-800/10 to-indigo-900/10 border border-blue-200/90 rounded-2xl p-2.5 flex flex-col justify-between shadow-xs overflow-hidden transition-all duration-300">
+            <div className="flex items-center justify-between text-[11px] font-black text-blue-900 px-1">
+              <span className="flex items-center gap-1.5">
+                <span className="w-2 h-2 rounded-full bg-blue-600 animate-ping" />
+                Authenticating Access...
+              </span>
+              <span className="font-mono text-blue-700 font-bold">{authProgress}%</span>
+            </div>
+
+            {/* Road Track Line */}
+            <div className="relative w-full h-7 flex items-center">
+              <div className="w-full h-0.5 border-b-2 border-dashed border-blue-500/70 relative">
+                {/* Animated Sport Bike Progress */}
+                <div 
+                  className="absolute -top-3.5 flex items-center transition-all duration-300 ease-out"
+                  style={{ left: `calc(${authProgress}% - ${authProgress > 85 ? '38px' : '15px'})` }}
+                >
+                  <div className="relative flex items-center">
+                    <img 
+                      src={bikeIcon} 
+                      alt="TwiteConnect Bike" 
+                      className="h-8 w-auto object-contain filter drop-shadow-[0_4px_8px_rgba(37,99,235,0.45)]" 
+                    />
+                    {/* Speed trail glow */}
+                    <div className="absolute -left-5 top-1/2 -translate-y-1/2 w-6 h-1.5 bg-gradient-to-r from-transparent to-blue-500/80 rounded-full blur-[1px]" />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
       </form>
 
       {/* Footer */}

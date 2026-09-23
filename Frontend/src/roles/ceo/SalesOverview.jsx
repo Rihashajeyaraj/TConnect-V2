@@ -703,7 +703,7 @@ function SalesOverview({ initialSection }) {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-xl bg-[#F8CAE4]/25 text-[#832D51]">
+            <span className="grid size-8 place-items-center rounded-xl bg-purple-100 text-purple-700">
               <TrendingUp className="size-4.5" />
             </span>
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
@@ -728,8 +728,8 @@ function SalesOverview({ initialSection }) {
                 }}
                 className={`px-2.5 py-1 rounded-lg transition-all duration-150 active:scale-95 cursor-pointer ${
                   dateFilter === t
-                    ? 'bg-[#832D51] text-white shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
+                    ? 'bg-purple-200 text-purple-950 border border-purple-300 shadow-2xs font-extrabold'
+                    : 'text-slate-600 hover:text-purple-800'
                 }`}
               >
                 {t}
@@ -773,7 +773,7 @@ function SalesOverview({ initialSection }) {
           </div>
           <button
             type="submit"
-            className="bg-[#832D51] hover:bg-[#6a2240] text-white text-xs font-bold px-3 py-1.5 rounded-xl transition-all duration-150 active:scale-95 cursor-pointer"
+            className="bg-purple-200 hover:bg-purple-300 text-purple-950 border border-purple-300 text-xs font-extrabold px-3 py-1.5 rounded-xl transition-all duration-150 active:scale-95 cursor-pointer shadow-2xs"
           >
             Apply Range
           </button>
@@ -1010,9 +1010,8 @@ function SalesOverview({ initialSection }) {
 
       {/* ── Product Detail Panel ─────────────────────────────────────────────── */}
       {selectedProduct && (
-        <div className="rounded-2xl border border-[#832D51]/20 overflow-hidden bg-white shadow-sm">
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-3.5 bg-[#832D51] text-white">
+        <div className="rounded-2xl border border-purple-200 overflow-hidden bg-white shadow-sm">
+          <div className="flex items-center justify-between px-5 py-3.5 bg-gradient-to-r from-purple-700 via-purple-800 to-indigo-800 text-white">
             <div className="flex items-center gap-2.5">
               <Layers className="size-4" />
               <div>
@@ -1033,7 +1032,7 @@ function SalesOverview({ initialSection }) {
           {/* KPI tiles */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-5 border-b border-slate-100">
             {[
-              { label: 'Total Revenue', value: `₹${selectedProduct.revenue.toLocaleString()}`, color: 'text-[#832D51]' },
+              { label: 'Total Revenue', value: `₹${selectedProduct.revenue.toLocaleString()}`, color: 'text-purple-700' },
               { label: 'Total Clients', value: selectedProduct.deals, color: 'text-slate-900' },
               { label: 'Avg Deal Size', value: `₹${selectedProduct.avg_deal.toLocaleString()}`, color: 'text-indigo-700' },
               { label: 'Revenue Share', value: `${selectedProduct.share}%`, color: 'text-emerald-700' },
@@ -1428,64 +1427,37 @@ function SalesOverview({ initialSection }) {
 
                 {/* Qualitative Remarks */}
                 <div className="space-y-4 border-t border-slate-100 pt-4">
-                  <h4 className="text-xs font-black uppercase text-[#832D51] tracking-wider">Manager Analysis Remarks</h4>
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <h4 className="text-xs font-black uppercase text-purple-900 tracking-wider">Manager Executive Remarks</h4>
+                  <div className="grid gap-4 sm:grid-cols-3">
                     <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                      <span className="text-[9px] uppercase text-slate-400 font-black block">Key Achievements</span>
-                      <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.keyAchievements || 'None'}</p>
+                      <span className="text-[9px] uppercase text-slate-400 font-black block">Key Achievements & Wins</span>
+                      <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.keyAchievements || 'None reported'}</p>
                     </div>
-                    {isWeekly ? (
-                      <>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block">Pending Activities</span>
-                          <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.pendingActivities || 'None'}</p>
-                        </div>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block text-rose-800">Issues / Escalations</span>
-                          <p className="font-semibold text-rose-900 mt-1 whitespace-pre-wrap">{met.issuesEscalations || 'None'}</p>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block">Major Challenges</span>
-                          <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.majorChallenges || 'None'}</p>
-                        </div>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block">Lost Deal Analysis</span>
-                          <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.lostDealAnalysis || 'None'}</p>
-                        </div>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block">Forecast (₹)</span>
-                          <p className="font-bold text-slate-900 mt-1">₹{Number(met.forecastVal || 0).toLocaleString()}</p>
-                        </div>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block">Month-on-Month Comparison</span>
-                          <p className="font-semibold text-slate-800 mt-1">{met.prevMonthComparison || 'N/A'}</p>
-                        </div>
-                      </>
-                    )}
+                    <div className="bg-rose-50/50 p-3.5 rounded-xl border border-rose-200">
+                      <span className="text-[9px] uppercase text-rose-800 font-black block">Blockers & CEO Escalations</span>
+                      <p className="font-semibold text-rose-950 mt-1 whitespace-pre-wrap">{met.issuesEscalations || 'None reported'}</p>
+                    </div>
                     <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
                       <span className="text-[9px] uppercase text-slate-400 font-black block">Action Plan / Next Steps</span>
-                      <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.nextPeriodPlan || 'None'}</p>
+                      <p className="font-semibold text-slate-800 mt-1 whitespace-pre-wrap">{met.nextPeriodPlan || 'None reported'}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* CEO Feedback Editor */}
-                <div className="bg-[#832D51]/5 border border-[#832D51]/15 p-5 rounded-2xl space-y-3">
-                  <h4 className="text-xs font-black uppercase text-[#832D51] tracking-wider flex items-center gap-1.5">
-                    <CheckCircle className="size-4" />
-                    CEO Review & Remarks Feedback
+                <div className="bg-purple-50/50 border border-purple-200 p-5 rounded-2xl space-y-3">
+                  <h4 className="text-xs font-black uppercase text-purple-950 tracking-wider flex items-center gap-1.5">
+                    <CheckCircle className="size-4 text-purple-700" />
+                    CEO Management Feedback & Review Remarks
                   </h4>
                   <div className="space-y-1.5">
-                    <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Remarks / Notes</label>
+                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Remarks / Strategic Feedback</label>
                     <textarea
                       rows={3}
-                      placeholder="Add CEO remarks, suggestions, and targets updates..."
+                      placeholder="Add CEO remarks, suggestions, and quota approval notes..."
                       value={ceoRemarks}
                       onChange={(e) => setCeoRemarks(e.target.value)}
-                      className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-medium focus:outline-none focus:border-[#832D51] text-slate-950"
+                      className="w-full bg-white border border-slate-200 rounded-xl p-3 text-xs font-medium focus:outline-none focus:border-purple-500 text-slate-950"
                     />
                   </div>
                 </div>
@@ -1494,7 +1466,7 @@ function SalesOverview({ initialSection }) {
               <div className="px-6 py-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center">
                 <button
                   onClick={() => setViewingCeoReport(null)}
-                  className="px-4 py-2 border border-slate-200 hover:bg-slate-100 rounded-xl text-xs font-black cursor-pointer transition shadow-2xs"
+                  className="px-4 py-2 border border-slate-300 bg-slate-100 hover:bg-slate-200 rounded-xl text-xs font-black text-slate-700 cursor-pointer transition shadow-2xs"
                 >
                   Close View
                 </button>
@@ -1507,7 +1479,7 @@ function SalesOverview({ initialSection }) {
                         ? await reportAPI.reviewSalesReport(rep.id, { status: 'Reviewed', ceo_remarks: ceoRemarks })
                         : await hrmsAPI.reviewSalesReport(rep.id, { status: 'Reviewed', ceo_remarks: ceoRemarks })
                       if (res && res.data) {
-                        showToast('Report reviewed successfully!', 'success')
+                        showToast('Report reviewed & approved successfully!', 'success')
                         fetchCeoReports()
                         setViewingCeoReport(null)
                       }
@@ -1517,9 +1489,9 @@ function SalesOverview({ initialSection }) {
                       setSubmittingRemarks(false)
                     }
                   }}
-                  className="px-5 py-2.5 bg-[#832D51] hover:bg-[#6c2442] text-white rounded-xl text-xs font-black cursor-pointer shadow-md transition"
+                  className="px-5 py-2.5 bg-purple-200 hover:bg-purple-300 text-purple-950 border border-purple-300 rounded-xl text-xs font-black cursor-pointer shadow-xs transition"
                 >
-                  Submit Remarks
+                  Submit CEO Remarks
                 </button>
               </div>
 
@@ -1535,7 +1507,7 @@ function SalesOverview({ initialSection }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-7xl max-h-[93vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-[#832D51] text-white">
+            <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-gradient-to-r from-purple-700 via-purple-800 to-indigo-800 text-white">
               <div className="flex items-center gap-2.5">
                 <span className="grid size-9 place-items-center rounded-xl bg-white/20 text-white">
                   <TrendingUp className="size-5" />
@@ -1774,7 +1746,7 @@ function SalesOverview({ initialSection }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
           <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
             {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-[#832D51] text-white">
+            <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-gradient-to-r from-purple-700 via-purple-800 to-indigo-800 text-white">
               <div className="flex items-center gap-2.5">
                 <span className="grid size-9 place-items-center rounded-xl bg-white/20 text-white">
                   <Target className="size-5" />

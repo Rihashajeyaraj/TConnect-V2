@@ -17,7 +17,7 @@ router = APIRouter(prefix="/admin", tags=["Admin Operations"])
 def check_admin_access(user_payload: dict = Depends(get_current_user_payload)) -> None:
     """Dependency to enforce that only users with system admin roles can call admin APIs."""
     role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
-    if role not in ("super_admin", "admin"):
+    if role not in ("super_admin", "admin", "ceo"):
         raise ForbiddenException("Access to Admin Dashboard statistics is restricted to system administrators.")
 
 

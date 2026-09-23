@@ -670,106 +670,44 @@ export default function ManagerSalesReports() {
               </div>
             </div>
 
-            {/* ── QUALITATIVE MANAGER INPUTS (WEEKLY vs MONTHLY) ───────────────── */}
-            <div className="space-y-5 border-t border-slate-100 pt-5">
-              <h3 className="text-xs font-black uppercase tracking-wider text-[#832D51]">
-                Qualitative Analysis & Executive Remarks
+            {/* ── QUALITATIVE MANAGER INPUTS (EXECUTIVE SUMMARY) ───────────────── */}
+            <div className="space-y-4 border-t border-slate-100 pt-5">
+              <h3 className="text-xs font-black uppercase tracking-wider text-purple-900 flex items-center gap-1.5">
+                <FileText className="size-4 text-purple-700" />
+                Executive Summary & CEO Remarks
               </h3>
 
-              <div className="grid gap-5 md:grid-cols-2">
+              <div className="grid gap-4 md:grid-cols-3">
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Key Achievements</label>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Key Achievements & Wins</label>
                   <textarea
-                    rows={3}
-                    placeholder="Describe major wins, completed client SLAs, team milestones..."
+                    rows={4}
+                    placeholder="Major revenue wins, enterprise deal closures, key client milestones..."
                     value={keyAchievements}
                     onChange={(e) => setKeyAchievements(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs font-medium focus:outline-none focus:border-[#832D51] text-slate-900"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium focus:outline-none focus:border-purple-500 text-slate-900"
                   />
                 </div>
 
-                {reportType === 'weekly' ? (
-                  <>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Pending Activities</label>
-                      <textarea
-                        rows={3}
-                        placeholder="Pending proposals, ongoing demonstrations, follow-up backlog..."
-                        value={pendingActivities}
-                        onChange={(e) => setPendingActivities(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs font-medium focus:outline-none focus:border-[#832D51] text-slate-900"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Issues / Escalations</label>
-                      <textarea
-                        rows={3}
-                        placeholder="Pricing blocks, client objections, delays in dispatch..."
-                        value={issuesEscalations}
-                        onChange={(e) => setIssuesEscalations(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs font-medium focus:outline-none focus:border-[#832D51] text-slate-900"
-                      />
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Major Challenges</label>
-                      <textarea
-                        rows={3}
-                        placeholder="Market competition, product feature requests, resource bottlenecks..."
-                        value={majorChallenges}
-                        onChange={(e) => setMajorChallenges(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs font-medium focus:outline-none focus:border-[#832D51] text-slate-900"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Lost Deal Analysis</label>
-                      <textarea
-                        rows={3}
-                        placeholder="Why did we lose deals? Pricing, timeline mismatch, competitor win..."
-                        value={lostDealAnalysis}
-                        onChange={(e) => setLostDealAnalysis(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs font-medium focus:outline-none focus:border-[#832D51] text-slate-900"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Next Month Sales Forecast (₹)</label>
-                      <input
-                        type="number"
-                        placeholder="₹ Expected target completion forecast value"
-                        value={forecastVal}
-                        onChange={(e) => setForecastVal(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs font-medium focus:outline-none focus:border-[#832D51] text-slate-900"
-                      />
-                    </div>
-
-                    <div className="space-y-1.5">
-                      <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Previous Month Comparison Details</label>
-                      <input
-                        type="text"
-                        placeholder="e.g. 5% Increase in conversion, 10L revenue boost..."
-                        value={prevMonthComparison}
-                        onChange={(e) => setPrevMonthComparison(e.target.value)}
-                        className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs font-medium focus:outline-none focus:border-[#832D51] text-slate-900"
-                      />
-                    </div>
-                  </>
-                )}
+                <div className="space-y-1.5">
+                  <label className="text-[10px] font-black text-rose-700 uppercase tracking-wider block">Blockers & CEO Escalations</label>
+                  <textarea
+                    rows={4}
+                    placeholder="Pricing blocks, client objections, resource needs for CEO review..."
+                    value={issuesEscalations}
+                    onChange={(e) => setIssuesEscalations(e.target.value)}
+                    className="w-full bg-rose-50/50 border border-rose-200 rounded-xl p-3 text-xs font-medium focus:outline-none focus:border-rose-400 text-slate-900"
+                  />
+                </div>
 
                 <div className="space-y-1.5">
-                  <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">
-                    {reportType === 'weekly' ? 'Next Week Action Plan' : 'Next Month Action Plan'}
-                  </label>
+                  <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block">Next Period Action Plan</label>
                   <textarea
-                    rows={3}
-                    placeholder="Outline targeted accounts, campaigns, training, or strategic moves..."
+                    rows={4}
+                    placeholder="Targeted client accounts, high-priority deals, key sales execution steps..."
                     value={nextPeriodPlan}
                     onChange={(e) => setNextPeriodPlan(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-2xl p-3.5 text-xs font-medium focus:outline-none focus:border-[#832D51] text-slate-900"
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs font-medium focus:outline-none focus:border-purple-500 text-slate-900"
                   />
                 </div>
               </div>
@@ -780,17 +718,17 @@ export default function ManagerSalesReports() {
               <button
                 disabled={submitting}
                 onClick={() => handleSaveReport('Draft')}
-                className="px-5 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-black flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
+                className="px-5 py-2.5 rounded-xl border border-slate-300 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-black flex items-center gap-1.5 cursor-pointer transition shadow-2xs"
               >
-                <Save className="size-4 text-slate-500" />
-                Save as Draft
+                <Save className="size-4 text-slate-600" />
+                Save Draft
               </button>
               <button
                 disabled={submitting}
                 onClick={() => handleSaveReport('Submitted')}
-                className="px-5 py-2.5 rounded-xl bg-[#832D51] hover:bg-[#6e2343] text-white text-xs font-black flex items-center gap-1.5 cursor-pointer transition shadow-md"
+                className="px-5 py-2.5 rounded-xl bg-purple-200 hover:bg-purple-300 text-purple-950 border border-purple-300 text-xs font-black flex items-center gap-1.5 cursor-pointer transition shadow-xs"
               >
-                <Send className="size-4" />
+                <Send className="size-4 text-purple-900" />
                 Submit Report to CEO
               </button>
             </div>
@@ -988,46 +926,19 @@ export default function ManagerSalesReports() {
 
                 {/* Analysis & Remarks details */}
                 <div className="space-y-4 border-t border-slate-100 pt-4">
-                  <h4 className="text-xs font-black uppercase text-[#832D51] tracking-wider">Manager Analysis Remarks</h4>
-                  <div className="grid gap-4 sm:grid-cols-2">
+                  <h4 className="text-xs font-black uppercase text-purple-900 tracking-wider">Manager Analysis Remarks</h4>
+                  <div className="grid gap-4 sm:grid-cols-3">
                     <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                      <span className="text-[9px] uppercase text-slate-400 font-black block">Key Achievements</span>
-                      <p className="font-semibold text-slate-850 mt-1 whitespace-pre-wrap">{met.keyAchievements || 'None'}</p>
+                      <span className="text-[9px] uppercase text-slate-400 font-black block">Key Achievements & Wins</span>
+                      <p className="font-semibold text-slate-850 mt-1 whitespace-pre-wrap">{met.keyAchievements || 'None reported'}</p>
                     </div>
-                    {isWeekly ? (
-                      <>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block">Pending Activities</span>
-                          <p className="font-semibold text-slate-850 mt-1 whitespace-pre-wrap">{met.pendingActivities || 'None'}</p>
-                        </div>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block">Issues / Escalations</span>
-                          <p className="font-semibold text-rose-900 mt-1 whitespace-pre-wrap">{met.issuesEscalations || 'None'}</p>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block">Major Challenges</span>
-                          <p className="font-semibold text-slate-850 mt-1 whitespace-pre-wrap">{met.majorChallenges || 'None'}</p>
-                        </div>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block">Lost Deal Analysis</span>
-                          <p className="font-semibold text-slate-850 mt-1 whitespace-pre-wrap">{met.lostDealAnalysis || 'None'}</p>
-                        </div>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block">Forecast Forecast (₹)</span>
-                          <p className="font-bold text-slate-900 mt-1">₹{Number(met.forecastVal || 0).toLocaleString()}</p>
-                        </div>
-                        <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
-                          <span className="text-[9px] uppercase text-slate-400 font-black block">Month-on-Month Trend</span>
-                          <p className="font-semibold text-slate-800 mt-1">{met.prevMonthComparison || 'N/A'}</p>
-                        </div>
-                      </>
-                    )}
+                    <div className="bg-rose-50/50 p-3.5 rounded-xl border border-rose-200">
+                      <span className="text-[9px] uppercase text-rose-800 font-black block">Blockers & CEO Escalations</span>
+                      <p className="font-semibold text-rose-950 mt-1 whitespace-pre-wrap">{met.issuesEscalations || 'None reported'}</p>
+                    </div>
                     <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-150">
                       <span className="text-[9px] uppercase text-slate-400 font-black block">Action Plan / Next Steps</span>
-                      <p className="font-semibold text-slate-850 mt-1 whitespace-pre-wrap">{met.nextPeriodPlan || 'None'}</p>
+                      <p className="font-semibold text-slate-850 mt-1 whitespace-pre-wrap">{met.nextPeriodPlan || 'None reported'}</p>
                     </div>
                   </div>
                 </div>

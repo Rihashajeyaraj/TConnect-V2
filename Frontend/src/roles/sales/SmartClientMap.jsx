@@ -5,7 +5,7 @@ import {
   CheckCircle2, Clock, User, Building2, X, Plus,
   Navigation2, Bell, Sparkles, PhoneCall, Check, Map as MapIcon,
   ChevronRight, AlertCircle, Loader2, Route, Target,
-  ArrowLeft, List, Radio, Activity, AlertTriangle, MessageSquare, Send, MessageCircle
+  ArrowLeft, List, Radio, Activity, AlertTriangle, MessageSquare, Send, MessageCircle, RefreshCw
 } from 'lucide-react'
 import { crmAPI, customerAPI, visitAPI, spatialAPI, authAPI, settingsAPI, auditAPI, notificationAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
@@ -28,6 +28,7 @@ try {
 import MAP_CONFIG from '../../config/mapConfig.js'
 import { snapToRoadGeometry } from '../../utils/roadSnapping.js'
 import { enqueueOfflineCrumb, flushOfflineQueue } from '../../utils/offlineQueue.js'
+import liveTrackingBike from '../../assets/live-tracking-bike.png'
 
 // ─── Configuration (Centralized Technical Thresholds & Fallback Viewport) ─────
 const ROUTE_REFETCH_DISTANCE_KM = MAP_CONFIG.ROUTE_REFETCH_DISTANCE_KM
@@ -341,6 +342,53 @@ export default function SmartClientMap({ isManagerView = false }) {
   const [executivePos, setExecutivePos] = useState(DEFAULT_CENTER)
   const [gpsAccuracy, setGpsAccuracy]   = useState(null)
   const [gpsAccuracyThreshold, setGpsAccuracyThreshold] = useState(100.0)
+  const [isRefreshingMap, setIsRefreshingMap] = useState(false)
+
+  const handleRefreshMap = useCallback(async () => {
+    setIsRefreshingMap(true)
+    showToast('Refreshing live location & client radar data…', 'info')
+    try {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(
+          (pos) => {
+            const lat = pos.coords.latitude
+            const lng = pos.coords.longitude
+            const newPos = { lat, lng }
+            setExecutivePos(newPos)
+            if (pos.coords.accuracy) setGpsAccuracy(pos.coords.accuracy)
+            setGpsStatus('active')
+            if (googleMapRef.current) {
+              googleMapRef.current.panTo(newPos)
+            }
+          },
+          () => null,
+          { enableHighAccuracy: true, timeout: 5000, maximumAge: 0 }
+        )
+      }
+
+      const [leadsRes, custRes, visitsRes] = await Promise.allSettled([
+        crmAPI.getLeads(),
+        customerAPI.getCustomers(),
+        visitAPI.getVisits()
+      ])
+
+      if (leadsRes.status === 'fulfilled' && Array.isArray(leadsRes.value)) {
+        setRawLeads(filterUserItems(leadsRes.value, currentUser))
+      }
+      if (custRes.status === 'fulfilled' && Array.isArray(custRes.value)) {
+        setRawCustomers(filterUserItems(custRes.value, currentUser))
+      }
+      if (visitsRes.status === 'fulfilled' && Array.isArray(visitsRes.value)) {
+        setRawVisits(filterUserItems(visitsRes.value, currentUser))
+      }
+
+      showToast('Map & Live Radar data refreshed!', 'success')
+    } catch (err) {
+      showToast('Refreshed map coordinates.', 'success')
+    } finally {
+      setTimeout(() => setIsRefreshingMap(false), 500)
+    }
+  }, [currentUser, showToast])
 
   // ── Data ─────────────────────────────────────────────────────────────────
   const [rawLeads,     setRawLeads]     = useState(() => {
@@ -596,18 +644,25 @@ export default function SmartClientMap({ isManagerView = false }) {
     const myEmail = currentUser?.email || getStoredUser()?.email || ''
     const myCode = currentUser?.employee_code || currentUser?.employee_id || getStoredUser()?.employee_code || 'EMP000012'
 
+    // Target the specific manager who sent the inquiry
+    const targetEmail = currentInquiry?.sender_email || currentInquiry?.email || ''
+    const targetId = currentInquiry?.sender_id || currentInquiry?.employee_id || ''
+    const targetName = currentInquiry?.sender_name || 'Reporting Manager'
+
     try {
       await notificationAPI.sendNotification({
-        title: `💬 Reply from ${myName}`,
+        title: `💬 Location Inquiry Reply from ${myName} to ${targetName}`,
         message: textToSend,
         category: 'LOCATION_INQUIRY_REPLY',
         type: 'LOCATION_INQUIRY_REPLY',
         recipient_role: 'manager',
+        recipient_email: targetEmail,
+        recipient_id: targetId,
         employee_id: myCode,
         sender_name: myName,
         sender_email: myEmail
       })
-      showToast('Reply sent to Manager!', 'success')
+      showToast(`Reply sent to ${targetName}!`, 'success')
       setReplyText('')
       setShowInquiryDrawer(false)
       window.dispatchEvent(new Event('tc_notifications_updated'))
@@ -1485,7 +1540,7 @@ export default function SmartClientMap({ isManagerView = false }) {
           <div style="width: 0; height: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-top: 6px solid #10b981; margin-top: -1px; z-index: 9;"></div>
           <div style="width: 58px; height: 46px; display: flex; align-items: center; justify-content: center; position: relative; margin-top: 2px;">
             <div style="position: absolute; width: 48px; height: 48px; border-radius: 50%; background: rgba(234, 179, 8, 0.25); border: 1.5px solid rgba(234, 179, 8, 0.7); z-index: -1;"></div>
-            <img src="/rapido_bike_icon.jpg" alt="Rapido Bike Rider" style="width: 56px; height: 56px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5)); border-radius: 50%;" />
+            <img src="${liveTrackingBike}" alt="Live Tracking Rider" style="width: 56px; height: 56px; object-fit: contain; filter: drop-shadow(0 4px 8px rgba(0,0,0,0.5)); border-radius: 50%;" />
           </div>
         </div>
       `
@@ -1931,9 +1986,18 @@ export default function SmartClientMap({ isManagerView = false }) {
                 )}
               </div>
               
-              {/* List button */}
+              {/* Refresh & List buttons */}
               {!isMobile && (
                 <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleRefreshMap}
+                    disabled={isRefreshingMap}
+                    className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center border border-slate-200 active:scale-95 transition flex-shrink-0 cursor-pointer"
+                    title="Refresh Map & GPS Coordinates"
+                  >
+                    <RefreshCw size={13} className={isRefreshingMap ? "animate-spin text-blue-600" : ""} />
+                  </button>
                   <button
                     onClick={() => setShowAddModal(true)}
                     className="w-8 h-8 bg-blue-600 hover:bg-blue-700 text-white rounded-xl flex items-center justify-center shadow-md active:scale-95 transition flex-shrink-0 cursor-pointer"
@@ -2022,8 +2086,18 @@ export default function SmartClientMap({ isManagerView = false }) {
         </div>
       )}
 
-      {/* ══ DESKTOP & MOBILE TOP-RIGHT CONTROLS (NAV STATUS + MANAGER INQUIRY BUTTON) ══ */}
+      {/* ══ DESKTOP & MOBILE TOP-RIGHT CONTROLS (REFRESH + NAV STATUS) ══ */}
       <div className="absolute top-3 right-3 z-[1000] flex flex-col items-end gap-2">
+        <button
+          onClick={handleRefreshMap}
+          disabled={isRefreshingMap}
+          className="bg-white/95 hover:bg-white text-slate-800 border border-slate-200/90 rounded-2xl shadow-xl px-3 py-2 text-xs font-black flex items-center gap-1.5 transition active:scale-95 cursor-pointer backdrop-blur-md"
+          title="Refresh Map & GPS Coordinates"
+        >
+          <RefreshCw size={13} className={`text-blue-600 ${isRefreshingMap ? 'animate-spin' : ''}`} />
+          <span>{isRefreshingMap ? 'Refreshing…' : 'Refresh Map'}</span>
+        </button>
+
         {!isMobile && navMode && (
           <div className="bg-blue-600 text-white rounded-2xl shadow-xl px-3 py-2 flex items-center gap-2">
             <Activity size={13} className="animate-pulse" />

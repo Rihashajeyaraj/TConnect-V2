@@ -98,6 +98,29 @@ class AuditRepository:
 
             norm_role = normalize_user_role(user_role)
 
+            # ── CEO Privacy Enforcement ──────────────────────────────────────────────
+            # Non-CEO users (including Admin & Super Admin) MUST NOT see CEO audit logs.
+            if norm_role != "ceo":
+                non_ceo_logs = []
+                for log in logs:
+                    actor_role_str = str(log.get("role") or "").lower().strip()
+                    actor_email_str = str(log.get("user_email") or log.get("email") or "").lower().strip()
+                    details = log.get("details") or {}
+                    target_role_str = str(details.get("user_role") or details.get("role") or "").lower().strip()
+                    target_email_str = str(details.get("user_email") or details.get("email") or "").lower().strip()
+
+                    is_ceo_activity = (
+                        any(k in actor_role_str for k in ["ceo", "founder", "chief executive"]) or
+                        any(k in target_role_str for k in ["ceo", "founder", "chief executive"]) or
+                        actor_email_str == "ceo@tconnect.com" or
+                        target_email_str == "ceo@tconnect.com" or
+                        actor_email_str.startswith("ceo@") or
+                        target_email_str.startswith("ceo@")
+                    )
+                    if not is_ceo_activity:
+                        non_ceo_logs.append(log)
+                logs = non_ceo_logs
+
             if norm_role not in ("super_admin", "ceo", "admin"):
                 allowed_logs = []
                 # Fetch allowed scope mapping

@@ -328,6 +328,11 @@ export default function ManagerVisits() {
     return null
   }
 
+  const isSEAbsentOnDate = (seEmailOrName, visitDate, seEmpCode = null) => {
+    const attInfo = getSEAttendanceStatusOnDate(seEmailOrName, seEmpCode, visitDate)
+    return attInfo?.status === 'ABSENT'
+  }
+
   const normalizeVisit = (v, idx = 0) => {
     if (!v) return null
     const id = v.id || v.visit_id || `VST-${1001 + idx}`
