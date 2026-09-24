@@ -534,6 +534,12 @@ export const spatialAPI = {
   /** Push a GPS breadcrumb. Rejects poor accuracy & duplicates server-side. */
   pushLocation: (data, options = {}) =>
     request('/spatial/location/push', { method: 'POST', body: JSON.stringify(data), silentError: true, timeout: 8000, ...options }),
+  /** Batch push offline/pocket GPS breadcrumbs. */
+  pushBatchLocations: (breadcrumbs, sessionId = null) =>
+    request('/spatial/location/breadcrumbs/batch', { method: 'POST', body: JSON.stringify({ breadcrumbs, session_id: sessionId }), silentError: true }),
+  /** Update session target destination (e.g. Set as Route for en-route client). */
+  updateSessionDestination: (data) =>
+    request('/spatial/location/session/update_destination', { method: 'POST', body: JSON.stringify(data) }),
   /** End the tracking session when executive clocks out. */
   endSession: (data) =>
     request('/spatial/location/session/end', { method: 'POST', body: JSON.stringify(data) }),
@@ -542,6 +548,9 @@ export const spatialAPI = {
     const qs = sessionId ? `?session_id=${sessionId}` : ''
     return request(`/spatial/location/history/${employeeId}${qs}`)
   },
+  /** Manager fetches all today's sessions for an executive (for multi-visit map visualization). */
+  getTodaySessions: (employeeId) =>
+    request(`/spatial/location/sessions/today/${employeeId}`),
   /** Manager / CEO spatial & trip history audit reports for executive visits. */
   getExecutiveHistoryReport: (params = {}) => {
     const query = new URLSearchParams(params).toString()

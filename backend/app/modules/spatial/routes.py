@@ -1855,6 +1855,290 @@ async def push_live_location(
     return {"success": True, "employee_id": emp_id, "lat": lat, "lng": lng, "session_id": session_id}
 
 
+@router.post("/location/breadcrumbs/batch")
+async def push_batch_breadcrumbs(
+    payload: Dict[str, Any] = Body(...),
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """
+    Batch push offline/buffered GPS breadcrumbs collected while phone was in pocket or offline.
+    Persists all pings into hrms.tracking_locations, updates tracking_sessions distance, and updates employee_locations.
+    """
+    import datetime
+    from app.database.supabase import get_supabase_admin_client, get_supabase_client
+
+    sp = get_supabase_admin_client() or get_supabase_client()
+    auth_uid = user_payload.get("sub") or ""
+    emp_id = _resolve_emp(sp, auth_uid)
+    
+    breadcrumbs = payload.get("breadcrumbs") or payload.get("pings") or []
+    if not breadcrumbs:
+        return {"success": True, "count": 0}
+
+    # Resolve active session ID if not provided in breadcrumb items
+    active_session_id = payload.get("session_id")
+    if not active_session_id:
+        try:
+            active_sess_res = sp.schema("hrms").table("tracking_sessions").select("id").eq("employee_id", emp_id).eq("status", "active").order("start_time", desc=True).limit(1).execute()
+            if active_sess_res.data:
+                active_session_id = active_sess_res.data[0]["id"]
+        except Exception:
+            pass
+
+    records_to_insert = []
+    latest_lat = None
+    latest_lng = None
+    latest_time = None
+    added_dist = 0.0
+    last_pt = None
+
+    for bc in breadcrumbs:
+        lat = float(bc.get("latitude") or bc.get("lat") or 0)
+        lng = float(bc.get("longitude") or bc.get("lng") or 0)
+        acc = float(bc.get("accuracy") or 15.0)
+        
+        if lat == 0 and lng == 0:
+            continue
+        if acc > 300:
+            continue
+            
+        rec_time = bc.get("recorded_at") or bc.get("timestamp") or datetime.datetime.utcnow().isoformat()
+        sess_id = bc.get("tracking_session_id") or active_session_id
+
+        if last_pt:
+            dist = haversine_distance_meters(last_pt[0], last_pt[1], lat, lng)
+            if dist > 5:  # dedup close pings
+                added_dist += dist
+                last_pt = (lat, lng)
+        else:
+            last_pt = (lat, lng)
+
+        item = {
+            "employee_id": emp_id,
+            "latitude": lat,
+            "longitude": lng,
+            "accuracy": acc,
+            "recorded_at": rec_time
+        }
+        if sess_id:
+            item["tracking_session_id"] = sess_id
+        if bc.get("speed") is not None:
+            item["speed"] = float(bc["speed"])
+        if bc.get("heading") is not None:
+            item["heading"] = float(bc["heading"])
+
+        records_to_insert.append(item)
+        latest_lat = lat
+        latest_lng = lng
+        latest_time = rec_time
+
+    if not records_to_insert:
+        return {"success": True, "count": 0}
+
+    # Bulk insert breadcrumbs into hrms.tracking_locations
+    try:
+        sp.schema("hrms").table("tracking_locations").insert(records_to_insert).execute()
+    except Exception as e:
+        logger.warning(f"Batch breadcrumbs insert error: {e}")
+
+    # Upsert latest employee location
+    if latest_lat is not None and latest_lng is not None:
+        try:
+            sp.schema("hrms").table("employee_locations").upsert({
+                "employee_id": emp_id,
+                "latitude": latest_lat,
+                "longitude": latest_lng,
+                "accuracy": 15.0,
+                "is_online": True,
+                "last_seen_at": latest_time or datetime.datetime.utcnow().isoformat(),
+                "updated_at": datetime.datetime.utcnow().isoformat()
+            }, on_conflict="employee_id").execute()
+            
+            # Store in memory telemetry
+            _live_executive_telemetry[emp_id] = {
+                "employee_id": emp_id,
+                "latitude": latest_lat,
+                "longitude": latest_lng,
+                "is_online": True,
+                "last_seen_at": latest_time or datetime.datetime.utcnow().isoformat()
+            }
+        except Exception as e:
+            logger.warning(f"Batch location upsert error: {e}")
+
+    # Update tracking session total distance & end location
+    if active_session_id and added_dist > 0:
+        try:
+            sess_res = sp.schema("hrms").table("tracking_sessions").select("total_distance").eq("id", active_session_id).limit(1).execute()
+            if sess_res.data:
+                curr_dist = float(sess_res.data[0].get("total_distance") or 0)
+                sp.schema("hrms").table("tracking_sessions").update({
+                    "total_distance": round(curr_dist + added_dist, 1),
+                    "end_latitude": latest_lat,
+                    "end_longitude": latest_lng,
+                    "updated_at": datetime.datetime.utcnow().isoformat()
+                }).eq("id", active_session_id).execute()
+        except Exception as e:
+            logger.debug(f"Batch session distance update error: {e}")
+
+    return {"success": True, "count": len(records_to_insert), "added_distance_m": round(added_dist, 1)}
+
+
+@router.get("/location/sessions/today/{employee_id}")
+async def get_today_executive_sessions(
+    employee_id: str,
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """
+    Fetch ALL tracking sessions started today for an executive (for Manager Map multi-visit visualization).
+    Includes completed visits (Client A) and active visits (Client B), along with their breadcrumb paths and reroutes.
+    """
+    import datetime
+    from app.database.supabase import get_supabase_admin_client, get_supabase_client
+    from app.core.scoping import normalize_user_role
+
+    sp = get_supabase_admin_client() or get_supabase_client()
+    auth_uid = user_payload.get("sub") or ""
+    role = normalize_user_role(user_payload.get("role") or "")
+    caller_emp_id = _resolve_emp(sp, auth_uid)
+
+    if employee_id.lower() == "self":
+        employee_id = caller_emp_id
+
+    if role not in ("sales_manager", "ceo", "admin", "super_admin"):
+        if caller_emp_id != employee_id:
+            raise HTTPException(status_code=403, detail="Access denied.")
+    elif role == "sales_manager":
+        if caller_emp_id != employee_id and not _is_subordinate_of(sp, caller_emp_id, employee_id, user_payload):
+            raise HTTPException(status_code=403, detail="Not your assigned executive.")
+
+    today_str = datetime.date.today().isoformat()
+    
+    target_ids = [employee_id]
+    try:
+        emp_res = sp.schema("hrms").table("employees").select("employee_id, id, employee_code, email").or_(f"employee_id.eq.{employee_id},id.eq.{employee_id},employee_code.eq.{employee_id}").limit(1).execute()
+        if emp_res.data:
+            row = emp_res.data[0]
+            for k in ("employee_id", "id", "employee_code", "email"):
+                if row.get(k) and str(row[k]) not in target_ids:
+                    target_ids.append(str(row[k]))
+    except Exception:
+        pass
+
+    or_conds = ",".join([f"employee_id.eq.{tid}" for tid in target_ids if tid])
+    sessions = []
+
+    try:
+        sess_res = sp.schema("hrms").table("tracking_sessions").select("*").or_(or_conds).gte("start_time", f"{today_str}T00:00:00").order("start_time", asc=True).execute()
+        sessions = sess_res.data or []
+    except Exception as e:
+        logger.warning(f"Failed to query today's sessions: {e}")
+
+    # Fetch breadcrumbs for all today's sessions
+    enriched_sessions = []
+    for sess in sessions:
+        s_id = sess.get("id")
+        crumbs = []
+        if s_id:
+            try:
+                c_res = sp.schema("hrms").table("tracking_locations").select("latitude,longitude,accuracy,speed,recorded_at").eq("tracking_session_id", s_id).order("recorded_at", asc=True).execute()
+                crumbs = c_res.data or []
+            except Exception:
+                crumbs = []
+
+        sess_item = dict(sess)
+        sess_item["breadcrumbs"] = crumbs
+        enriched_sessions.append(sess_item)
+
+    return {
+        "success": True,
+        "employee_id": employee_id,
+        "date": today_str,
+        "session_count": len(enriched_sessions),
+        "sessions": enriched_sessions
+    }
+
+
+@router.post("/location/session/update_destination")
+async def update_session_destination(
+    payload: Dict[str, Any] = Body(...),
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """Update destination for an active tracking session (e.g. Set as Route for en-route client)."""
+    import datetime
+    from app.database.supabase import get_supabase_admin_client, get_supabase_client
+
+    sp = get_supabase_admin_client() or get_supabase_client()
+    auth_uid = user_payload.get("sub") or ""
+    emp_id = _resolve_emp(sp, auth_uid)
+    session_id = payload.get("session_id")
+    client_name = payload.get("client_name") or payload.get("name") or "En-Route Client"
+    client_id = payload.get("client_id") or payload.get("id")
+    client_lat = payload.get("client_latitude") or payload.get("latitude")
+    client_lng = payload.get("client_longitude") or payload.get("longitude")
+    is_enroute = bool(payload.get("is_enroute_diversion") or payload.get("is_enroute"))
+    now_iso = datetime.datetime.utcnow().isoformat()
+
+    upd = {
+        "client_name": client_name,
+        "client_id": client_id,
+        "updated_at": now_iso,
+    }
+    if is_enroute:
+        upd["is_enroute_diversion"] = True
+    if client_lat is not None and client_lng is not None:
+        upd["client_latitude"] = float(client_lat)
+        upd["client_longitude"] = float(client_lng)
+
+    try:
+        try:
+            q = sp.schema("hrms").table("tracking_sessions").update(upd).eq("employee_id", emp_id)
+            if session_id:
+                q = q.eq("id", session_id)
+            else:
+                q = q.eq("status", "active")
+            q.execute()
+        except Exception as upd_err:
+            if "column" in str(upd_err).lower():
+                upd.pop("is_enroute_diversion", None)
+                q = sp.schema("hrms").table("tracking_sessions").update(upd).eq("employee_id", emp_id)
+                if session_id:
+                    q = q.eq("id", session_id)
+                else:
+                    q = q.eq("status", "active")
+                q.execute()
+            else:
+                raise upd_err
+
+        # Log event and notify manager if dynamic en-route diversion
+        if is_enroute:
+            try:
+                mgr_id = None
+                emp_name = "Sales Executive"
+                emp_code = "EMP000012"
+                e_info = sp.schema("hrms").table("employees").select("reporting_manager, name, employee_code").eq("employee_id", emp_id).limit(1).execute()
+                if e_info.data:
+                    mgr_id = e_info.data[0].get("reporting_manager")
+                    emp_name = e_info.data[0].get("name") or emp_name
+                    emp_code = e_info.data[0].get("employee_code") or emp_code
+
+                _create_tracking_event(
+                    sp, session_id or "", emp_id, mgr_id,
+                    "DIVERTED_TO_NEARBY_CLIENT", client_lat or 0.0, client_lng or 0.0, client_id,
+                    {"client_name": client_name, "is_enroute": True}
+                )
+                _send_manager_notif(
+                    sp, mgr_id, emp_id, emp_code,
+                    "⚡ Dynamic En-Route Reroute", f"{emp_name} set route to nearby client {client_name} en route."
+                )
+            except Exception as ev_err:
+                logger.warning(f"Error logging enroute diversion event: {ev_err}")
+
+    except Exception as e:
+        logger.warning(f"session destination update error: {e}")
+
+    return {"success": True, "employee_id": emp_id, "session_id": session_id, "client_name": client_name, "is_enroute_diversion": is_enroute}
+
+
 @router.post("/location/session/end")
 async def end_tracking_session(
     payload: Dict[str, Any] = Body(...),

@@ -1,3 +1,5 @@
+import { spatialAPI } from '../services/api.js';
+
 /**
  * Offline Location Queue: Uses IndexedDB to store location breadcrumbs when cell network is lost (basements/tunnels)
  * and flushes stored pings in compressed batch payloads upon network restoration.
@@ -75,9 +77,11 @@ export async function flushOfflineQueue(syncFn) {
   if (!crumbs || crumbs.length === 0) return;
 
   try {
-    console.log(`[OfflineQueue] Syncing ${crumbs.length} queued offline pings...`);
+    console.log(`[OfflineQueue] Syncing ${crumbs.length} queued offline/pocket pings...`);
     if (typeof syncFn === 'function') {
       await syncFn(crumbs);
+    } else if (spatialAPI && typeof spatialAPI.pushBatchLocations === 'function') {
+      await spatialAPI.pushBatchLocations(crumbs);
     }
     await clearOfflineCrumbs();
     console.log('[OfflineQueue] Successfully flushed offline queue.');

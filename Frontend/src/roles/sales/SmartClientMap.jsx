@@ -1170,23 +1170,51 @@ export default function SmartClientMap({ isManagerView = false }) {
     return path
   }, [executivePos])
 
-  // ── Auto-Restore Active Navigation Route on Mount / Page Switch ────────────
+  // ── Auto-Restore Active Navigation Route & Historical Traveled Path on Mount ────────────
   useEffect(() => {
-    try {
-      const savedNavStr = localStorage.getItem('tc_active_nav_session')
-      if (savedNavStr) {
-        const savedNav = JSON.parse(savedNavStr)
-        if (savedNav && savedNav.navMode === true && savedNav.selectedStop && savedNav.selectedStop.has_exact_coords) {
-          console.log('[SmartClientMap] Restoring active navigation to:', savedNav.selectedStop.title)
-          setSelectedStop(savedNav.selectedStop)
-          fetchRoute(savedNav.selectedStop)
-          setNavMode(true)
-          setNavDestination(savedNav.navDestination || { lat: savedNav.selectedStop.latitude, lng: savedNav.selectedStop.longitude })
+    const restoreSession = async () => {
+      // 1. Flush any offline/pocket pings to server
+      try {
+        await flushOfflineQueue()
+      } catch (_) {}
+
+      // 2. Load active tracking session & breadcrumbs from server
+      try {
+        const histRes = await spatialAPI.getLocationHistory('self')
+        const histData = histRes?.data || histRes
+        if (histData && histData.breadcrumbs && histData.breadcrumbs.length > 0) {
+          const loadedPts = histData.breadcrumbs.map(b => ({
+            lat: Number(b.latitude),
+            lng: Number(b.longitude)
+          })).filter(p => !isNaN(p.lat) && !isNaN(p.lng) && p.lat !== 0 && p.lng !== 0)
+          
+          if (loadedPts.length > 0) {
+            trailPointsRef.current = loadedPts
+          }
         }
+      } catch (err) {
+        console.warn('[SmartClientMap] Breadcrumb history restore notice:', err)
       }
-    } catch (e) {
-      console.warn('[SmartClientMap] Nav session restore err:', e)
+
+      // 3. Restore active navigation state
+      try {
+        const savedNavStr = localStorage.getItem('tc_active_nav_session')
+        if (savedNavStr) {
+          const savedNav = JSON.parse(savedNavStr)
+          if (savedNav && savedNav.navMode === true && savedNav.selectedStop && savedNav.selectedStop.has_exact_coords) {
+            console.log('[SmartClientMap] Restoring active navigation to:', savedNav.selectedStop.title)
+            setSelectedStop(savedNav.selectedStop)
+            fetchRoute(savedNav.selectedStop)
+            setNavMode(true)
+            setNavDestination(savedNav.navDestination || { lat: savedNav.selectedStop.latitude, lng: savedNav.selectedStop.longitude })
+          }
+        }
+      } catch (e) {
+        console.warn('[SmartClientMap] Nav session restore err:', e)
+      }
     }
+
+    restoreSession()
   }, [fetchRoute])
 
   // ─── 7. Select destination ──────────────────────────────────────────────
@@ -1334,9 +1362,6 @@ export default function SmartClientMap({ isManagerView = false }) {
   useEffect(() => { allCandidatesRef.current = allCandidates }, [allCandidates])
 
   // ─── 10. On-route client detection (route-corridor, ahead-only, hysteresis) ───
-  // Deliberately omits executivePos + allCandidates from deps — those are read
-  // via refs so this effect only fires when the ROUTE or DESTINATION changes,
-  // not on every GPS tick (which caused the infinite re-render loop).
   useEffect(() => {
     if (routePath.length < 2) {
       setOnRouteClients([])
@@ -1366,9 +1391,6 @@ export default function SmartClientMap({ isManagerView = false }) {
         client.alertType === 'previous'  ? '🔄 Previous Client Nearby' :
         client.alertType === 'scheduled' ? '📅 Scheduled Visit Nearby' : '📍 Nearby Client'
 
-      // Event is tracked and aggregated in the combined FAB drawer.
-      // Individual toast notifications are disabled to prevent map crowding.
-
       auditAPI.logEvent({
         action: 'NEARBY_CLIENT_DETECTED',
         entity_type: client.category,
@@ -1397,10 +1419,26 @@ export default function SmartClientMap({ isManagerView = false }) {
     }
   }, [])
 
-  const handleSelectAsDestination = useCallback((client) => {
+  const handleSelectAsDestination = useCallback(async (client) => {
     handleSelectStop(client)
     setSelectedEntity(null)
-  }, [handleSelectStop])
+
+    // Notify backend about dynamic en-route diversion ("Set as route")
+    try {
+      const sessId = localStorage.getItem('tc_tracking_session')
+      await spatialAPI.updateSessionDestination({
+        session_id: sessId,
+        client_id: client.id,
+        client_name: client.title,
+        client_latitude: client.latitude,
+        client_longitude: client.longitude,
+        is_enroute_diversion: true
+      })
+      showToast(`Set as route: Dynamic visit to ${client.title}`, 'info')
+    } catch (err) {
+      console.warn('Set as route notice:', err)
+    }
+  }, [handleSelectStop, showToast])
 
   const handleDismissAlert = useCallback((clientId) => {
     dismissedAlerts.current.add(clientId)
