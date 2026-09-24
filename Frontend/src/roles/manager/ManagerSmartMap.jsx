@@ -1695,12 +1695,19 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         if (!ex.is_online) return
         
         // Hide selected executive's static team marker to prevent duplication with tracking layer
-        if (selectedExecutive) {
-          const selId = String(selectedExecutive.employee_id || selectedExecutive.employee_code || selectedExecutive.id || '').toLowerCase().trim();
-          const exId = String(ex.employee_id || ex.employee_code || ex.id || '').toLowerCase().trim();
-          const selEmail = String(selectedExecutive.email || '').toLowerCase().trim();
-          const exEmail = String(ex.email || '').toLowerCase().trim();
-          if ((selId && exId && selId === exId) || (selEmail && exEmail && selEmail === exEmail)) {
+        const activeSelected = selectedExecutiveRef.current || selectedExecutive;
+        if (activeSelected) {
+          const selIds = [activeSelected.employee_id, activeSelected.employee_code, activeSelected.id, activeSelected.email].filter(Boolean).map(s => String(s).toLowerCase().trim());
+          const exIds = [ex.employee_id, ex.employee_code, ex.id, ex.email].filter(Boolean).map(s => String(s).toLowerCase().trim());
+          if (selIds.some(id => exIds.includes(id))) {
+            let existingMarker = teamMarkersMapRef.current.get(ex.employee_id || ex.id)
+            if (existingMarker) {
+              try { existingMarker.setMap(null); } catch {}
+              if (existingMarker.div?.parentNode) {
+                try { existingMarker.div.parentNode.removeChild(existingMarker.div); } catch {}
+              }
+              teamMarkersMapRef.current.delete(ex.employee_id || ex.id)
+            }
             return;
           }
         }
@@ -1824,14 +1831,38 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
   // ─── 6. Live tracking: load history + subscribe Realtime ─────────────────
   const _clearTrackingLayer = useCallback(() => {
-    if (trackRouteRef.current)  { trackRouteRef.current.setMap(null);  trackRouteRef.current  = null }
+    if (trackRouteRef.current)  { try { trackRouteRef.current.setMap(null); } catch {} trackRouteRef.current = null }
     trailPointsRef.current = []
-    if (startMarkerRef.current) { startMarkerRef.current.setMap(null); startMarkerRef.current = null }
-    if (liveMarkerRef.current)  { liveMarkerRef.current.setMap(null);  liveMarkerRef.current  = null }
-    if (endMarkerRef.current)   { endMarkerRef.current.setMap(null);   endMarkerRef.current   = null }
-    if (destMarkerRef.current)  { destMarkerRef.current.setMap(null);  destMarkerRef.current  = null }
-    if (destRouteRef.current)   { destRouteRef.current.setMap(null);   destRouteRef.current   = null }
-    if (offRoutePolylineRef.current) { offRoutePolylineRef.current.setMap(null); offRoutePolylineRef.current = null }
+    if (startMarkerRef.current) {
+      try { startMarkerRef.current.setMap(null); } catch {}
+      if (startMarkerRef.current.div?.parentNode) {
+        try { startMarkerRef.current.div.parentNode.removeChild(startMarkerRef.current.div); } catch {}
+      }
+      startMarkerRef.current = null
+    }
+    if (liveMarkerRef.current)  {
+      try { liveMarkerRef.current.setMap(null); } catch {}
+      if (liveMarkerRef.current.div?.parentNode) {
+        try { liveMarkerRef.current.div.parentNode.removeChild(liveMarkerRef.current.div); } catch {}
+      }
+      liveMarkerRef.current = null
+    }
+    if (endMarkerRef.current)   {
+      try { endMarkerRef.current.setMap(null); } catch {}
+      if (endMarkerRef.current.div?.parentNode) {
+        try { endMarkerRef.current.div.parentNode.removeChild(endMarkerRef.current.div); } catch {}
+      }
+      endMarkerRef.current = null
+    }
+    if (destMarkerRef.current)  {
+      try { destMarkerRef.current.setMap(null); } catch {}
+      if (destMarkerRef.current.div?.parentNode) {
+        try { destMarkerRef.current.div.parentNode.removeChild(destMarkerRef.current.div); } catch {}
+      }
+      destMarkerRef.current = null
+    }
+    if (destRouteRef.current)   { try { destRouteRef.current.setMap(null); } catch {} destRouteRef.current = null }
+    if (offRoutePolylineRef.current) { try { offRoutePolylineRef.current.setMap(null); } catch {} offRoutePolylineRef.current = null }
     if (nearbyClientMarkersRef.current) {
       nearbyClientMarkersRef.current.forEach(m => m.setMap(null))
       nearbyClientMarkersRef.current = []
@@ -2710,8 +2741,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         try {
           if (typeof liveMarkerRef.current.setMap === 'function') {
             liveMarkerRef.current.setMap(null);
-          } else if (typeof liveMarkerRef.current.remove === 'function') {
-            liveMarkerRef.current.remove();
+          }
+          if (liveMarkerRef.current.div?.parentNode) {
+            liveMarkerRef.current.div.parentNode.removeChild(liveMarkerRef.current.div);
           }
         } catch (e) {}
         liveMarkerRef.current = null;
@@ -2997,6 +3029,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     setIsRefreshingTracking(true)
     try {
       const targetExec = selectedExecutiveRef.current || selectedExecutive
+      
+      // Clear tracking layer completely before reloading history & team locations
+      _clearTrackingLayer()
+
       const tasks = []
       if (typeof fetchData === 'function') tasks.push(fetchData(true))
       if (targetExec) tasks.push(_loadTrackingHistory(targetExec))
@@ -3009,7 +3045,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     } finally {
       setIsRefreshingTracking(false)
     }
-  }, [isRefreshingTracking, fetchData, selectedExecutive, _loadTrackingHistory, showToast])
+  }, [isRefreshingTracking, fetchData, selectedExecutive, _loadTrackingHistory, _clearTrackingLayer, showToast])
 
   const getStatusInfo = (ex) => {
     if (!ex.is_online) {
