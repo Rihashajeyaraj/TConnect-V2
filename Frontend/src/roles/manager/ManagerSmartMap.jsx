@@ -1690,7 +1690,15 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         if (!ex.is_online) return
         
         // Hide selected executive's static team marker to prevent duplication with tracking layer
-        if (selectedExecutive && selectedExecutive.employee_id === ex.employee_id) return
+        if (selectedExecutive) {
+          const selId = String(selectedExecutive.employee_id || selectedExecutive.employee_code || selectedExecutive.id || '').toLowerCase().trim();
+          const exId = String(ex.employee_id || ex.employee_code || ex.id || '').toLowerCase().trim();
+          const selEmail = String(selectedExecutive.email || '').toLowerCase().trim();
+          const exEmail = String(ex.email || '').toLowerCase().trim();
+          if ((selId && exId && selId === exId) || (selEmail && exEmail && selEmail === exEmail)) {
+            return;
+          }
+        }
 
         const empId = ex.employee_id
         currentOnlineIds.add(empId)
@@ -2339,7 +2347,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         liveMarkerRef.current = createMapMarker(
           latlng,
           googleMapRef.current,
-          _buildLiveIcon('#8b5cf6', initialHeading, selectedExecutiveRef.current?.employee_name),
+          _buildLiveIcon('#8b5cf6', initialHeading, resolveRealName(selectedExecutiveRef.current)),
           () => {
             showInfoWindow(latlng, _buildLivePopupContent(selectedExecutiveRef.current, trackSessionRef.current, destClientRef.current))
           },
@@ -2707,7 +2715,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         liveMarkerRef.current = createMapMarker(
           latlng,
           map,
-          _buildLiveIcon(badgeColor, 0, executive?.employee_name),
+          _buildLiveIcon(badgeColor, 0, resolveRealName(executive)),
           () => {
             showInfoWindow(latlng, _buildLivePopupContent(executive, session, null))
           },
@@ -2730,7 +2738,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         liveMarkerRef.current = createMapMarker(
           latlng,
           map,
-          _buildLiveIcon(badgeColor, initialHeading, executive?.employee_name),
+          _buildLiveIcon(badgeColor, initialHeading, resolveRealName(executive)),
           () => {
             showInfoWindow(latlng, _buildLivePopupContent(executive, session, null))
           },
@@ -2745,7 +2753,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         liveMarkerRef.current = createMapMarker(
           latlng,
           map,
-          _buildLiveIcon(badgeColor, 0, executive?.employee_name),
+          _buildLiveIcon(badgeColor, 0, resolveRealName(executive)),
           () => {
             showInfoWindow(latlng, _buildLivePopupContent(executive, session, null))
           },
