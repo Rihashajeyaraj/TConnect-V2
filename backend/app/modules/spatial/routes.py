@@ -785,11 +785,13 @@ async def get_manager_team_locations(
         if att:
             check_in_time = att.get("check_in_time")
             check_in_address = att.get("check_in_address")
-            remarks = att.get("notes") or att.get("remarks") or ""
-            if "[Client Visit Mode]" in remarks or "Client" in remarks:
+            check_in_mode = att.get("check_in_mode") or att.get("work_mode") or att.get("check_in_type") or "Office"
+            remarks = str(att.get("notes") or att.get("remarks") or "")
+            addr_str = str(check_in_address or "")
+            if "[Client Visit Mode]" in remarks or "Client Visit" in remarks or "CLIENT_VISIT_DESTINATION" in addr_str:
                 check_in_mode = "Client Visit"
-        if client_latitude is not None:
-            check_in_mode = "Client Visit"
+            elif check_in_mode not in ("Client Visit", "Office", "Work From Home"):
+                check_in_mode = "Office"
 
         # Robust Real Employee Name Resolution
         raw_name = exec_user.get("name")
