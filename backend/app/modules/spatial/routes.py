@@ -2000,12 +2000,16 @@ async def get_location_history(
             elif start_t.startswith(today_str) and sess_status in ("active", "in_progress", "started", "travelling", "stale"):
                 session = raw_sess
         
-        # Fallback to in-memory active sessions cache if no active session in DB
+        # Fallback to in-memory active sessions cache if no active session in DB (ONLY if started TODAY)
         if not session:
             for tid in target_ids:
                 if tid and (tid in _active_sessions_cache or str(tid).lower() in _active_sessions_cache):
-                    session = dict(_active_sessions_cache.get(tid) or _active_sessions_cache.get(str(tid).lower()) or {})
-                    break
+                    cand = dict(_active_sessions_cache.get(tid) or _active_sessions_cache.get(str(tid).lower()) or {})
+                    if cand:
+                        cand_start = str(cand.get("start_time") or "")
+                        if session_id or cand_start.startswith(today_str):
+                            session = cand
+                            break
 
         # Fallback to live telemetry cache for client destination if missing
         if session:
@@ -2060,14 +2064,21 @@ async def get_location_history(
             "breadcrumbs": []
         }
 
-    # Fetch ONLY the breadcrumbs belonging strictly to the current active session
+    # Fetch ONLY the breadcrumbs recorded TODAY (since 12 AM midnight) for live tracking
     breadcrumbs = []
     try:
         if session.get("id"):
-            loc_res = sp.schema("hrms").table("tracking_locations").select(
+            q_loc = sp.schema("hrms").table("tracking_locations").select(
                 "id,latitude,longitude,accuracy,speed,heading,recorded_at"
-            ).eq("tracking_session_id", session["id"]).order("recorded_at").execute()
-            breadcrumbs = loc_res.data or []
+            ).eq("tracking_session_id", session["id"])
+            if not session_id:
+                q_loc = q_loc.gte("recorded_at", f"{today_str}T00:00:00")
+            loc_res = q_loc.order("recorded_at").execute()
+            raw_bc = loc_res.data or []
+            if not session_id:
+                breadcrumbs = [b for b in raw_bc if str(b.get("recorded_at") or "").startswith(today_str)]
+            else:
+                breadcrumbs = raw_bc
     except Exception as e:
         logger.warning(f"breadcrumbs fetch: {e}")
 

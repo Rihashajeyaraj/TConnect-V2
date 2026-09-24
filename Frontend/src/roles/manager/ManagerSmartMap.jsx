@@ -2441,8 +2441,15 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       const data = res?.data || res
       const session = data?.session
       trackSessionRef.current = session
-      const crumbs  = data?.breadcrumbs || []
-      const status  = data?.tracking_status || 'active'
+      const rawCrumbs = data?.breadcrumbs || []
+      const status = data?.tracking_status || 'active'
+
+      // Filter breadcrumbs to ensure ONLY location points recorded TODAY (since 12 AM midnight) are displayed on the live radar map
+      const todayIsoStr = new Date().toISOString().split('T')[0]
+      const crumbs = rawCrumbs.filter(c => {
+        const recStr = c.recorded_at || c.timestamp || ''
+        return recStr.startsWith(todayIsoStr)
+      })
 
       setTrackSession(session)
       crumbsRef.current = crumbs
@@ -2726,6 +2733,23 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     return () => clearInterval(t)
   }, [selectedExecutive, trackStatus, lastPingMs])
 
+
+  // 12:00 AM Midnight Auto-Reset: Clears previous day records automatically when the date rolls over
+  useEffect(() => {
+    let currentDayStr = new Date().toISOString().split('T')[0]
+    const midnightTimer = setInterval(() => {
+      const newDayStr = new Date().toISOString().split('T')[0]
+      if (newDayStr !== currentDayStr) {
+        console.log('[SmartMap] 12:00 AM Midnight rollover detected. Auto-clearing previous day live tracking history...')
+        currentDayStr = newDayStr
+        _clearTrackingLayer()
+        if (selectedExecutiveRef.current) {
+          _loadTrackingHistory(selectedExecutiveRef.current)
+        }
+      }
+    }, 15000)
+    return () => clearInterval(midnightTimer)
+  }, [_clearTrackingLayer, _loadTrackingHistory])
 
   // Clean up on unmount
   useEffect(() => () => _clearTrackingLayer(), [_clearTrackingLayer])
