@@ -219,6 +219,104 @@ function createMapMarker(latlng, map, html, onClick, anchor = 'center') {
   return new HTMLMapMarker(latlng, map, html, onClick, anchor)
 }
 
+/**
+ * Checks if a candidate lead, customer, or visit record belongs strictly to a specific executive (e.g. Bavani sree).
+ */
+function isItemOwnedByExecutive(item, exec) {
+  if (!item || !exec) return false;
+
+  const rawItem = item.originalItem || item;
+
+  const execEmail = String(exec.email || '').toLowerCase().trim();
+  const execEmpCode = String(exec.employee_code || exec.employee_id || exec.emp_code || exec.code || '').toLowerCase().trim();
+  const execId = String(exec.id || exec.user_id || exec.auth_user_id || exec.employee_id || '').toLowerCase().trim();
+  const execName = String(exec.employee_name || exec.name || exec.full_name || '').toLowerCase().trim();
+
+  if (!execEmail && !execEmpCode && !execId && !execName) return false;
+
+  const itemStaffEmail = String(
+    rawItem.assigned_to_email ||
+    rawItem.assignedToEmail ||
+    rawItem.executiveEmail ||
+    rawItem.staff_email ||
+    rawItem.owner_email ||
+    rawItem.employee_email ||
+    rawItem.user_email ||
+    rawItem.email ||
+    item.email ||
+    ''
+  ).toLowerCase().trim();
+
+  const itemEmpCode = String(
+    rawItem.employee_code ||
+    rawItem.employee_id ||
+    rawItem.emp_code ||
+    rawItem.employeeCode ||
+    item.employee_code ||
+    item.employee_id ||
+    ''
+  ).toLowerCase().trim();
+
+  const itemUserId = String(
+    rawItem.user_id ||
+    rawItem.userId ||
+    rawItem.assigned_to_id ||
+    rawItem.created_by_id ||
+    rawItem.executive_id ||
+    rawItem.created_by ||
+    item.user_id ||
+    ''
+  ).toLowerCase().trim();
+
+  const itemAssignedTo = String(
+    rawItem.assigned_to ||
+    rawItem.assigned_to_name ||
+    rawItem.assignedTo ||
+    rawItem.executive ||
+    rawItem.accountManager ||
+    rawItem.sales_executive ||
+    rawItem.employee_name ||
+    rawItem.employeeName ||
+    rawItem.submitted_by ||
+    rawItem.contact_person ||
+    item.assigned_to ||
+    item.assigned_to_name ||
+    ''
+  ).toLowerCase().trim();
+
+  // 1. Email Match
+  if (execEmail && (itemStaffEmail === execEmail || itemAssignedTo === execEmail)) {
+    return true;
+  }
+
+  // 2. Employee Code Match
+  if (execEmpCode && (itemEmpCode === execEmpCode || itemUserId === execEmpCode)) {
+    return true;
+  }
+
+  // 3. User / Employee ID Match
+  if (execId && (itemUserId === execId || itemEmpCode === execId)) {
+    return true;
+  }
+
+  // 4. Name Match (Exact, Substring, or Token Match)
+  if (execName && itemAssignedTo) {
+    if (itemAssignedTo === execName || execName.includes(itemAssignedTo) || itemAssignedTo.includes(execName)) {
+      return true;
+    }
+    const execParts = execName.split(/\s+/).filter(p => p.length >= 3);
+    const itemParts = itemAssignedTo.split(/\s+/).filter(p => p.length >= 3);
+    for (const ep of execParts) {
+      if (itemAssignedTo.includes(ep)) return true;
+      for (const ip of itemParts) {
+        if (ep === ip) return true;
+      }
+    }
+  }
+
+  return false;
+}
+
 export default function ManagerSmartMap({ hideHeader = false }) {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
@@ -321,6 +419,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const [showRouteAlerts,     setShowRouteAlerts]     = useState(true)
   const completedVisitIdsRef = useRef(new Set())
   const scheduledVisitIdsRef = useRef(new Set())
+  const rawVisitsRef         = useRef([])
   const notifiedEventsRef = useRef(new Map())
 
   // Executive replies & inquiry modal state
@@ -1166,6 +1265,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         const leads = safeArray(leadsRes).map((i, idx) => toNorm(i, 'Lead', idx))
         const custs = safeArray(custsRes).map((i, idx) => toNorm(i, 'Customer', idx))
         const visits = safeArray(visitsRes)
+        rawVisitsRef.current = visits
 
         const completedIds = new Set(
           visits.filter(v => ['COMPLETED', 'CHECKED_OUT', 'visited', 'completed'].includes(v.status || v.visit_status))
@@ -1802,6 +1902,31 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     }
     if (!candidates || candidates.length === 0) return;
 
+    // Filter candidates strictly for the currently selected executive (e.g. Bavani sree)
+    const activeExec = selectedExecutiveRef.current || selectedExecutive;
+    if (activeExec) {
+      candidates = candidates.filter(c => isItemOwnedByExecutive(c, activeExec));
+    }
+
+    // Compute executive-scoped completed and scheduled visit IDs
+    let completedVisitIds = completedVisitIdsRef.current;
+    let scheduledVisitIds = scheduledVisitIdsRef.current;
+    if (activeExec && rawVisitsRef.current && rawVisitsRef.current.length > 0) {
+      const execVisits = rawVisitsRef.current.filter(v => isItemOwnedByExecutive(v, activeExec));
+      const compSet = new Set(
+        execVisits.filter(v => ['COMPLETED', 'CHECKED_OUT', 'visited', 'completed'].includes(v.status || v.visit_status))
+                  .map(v => v.lead_id || v.customer_id || v.client_id || v.id)
+                  .filter(Boolean)
+      );
+      const schedSet = new Set(
+        execVisits.filter(v => !compSet.has(v.lead_id || v.customer_id || v.client_id || v.id))
+                  .map(v => v.lead_id || v.customer_id || v.client_id || v.id)
+                  .filter(Boolean)
+      );
+      completedVisitIds = compSet;
+      scheduledVisitIds = schedSet;
+    }
+
     let matched = [];
     if (routePath && routePath.length >= 2) {
       // 1. Run shared detection (500m hard corridor, segment-based, ahead-only)
@@ -1810,8 +1935,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         routePath,
         execPos:  { lat: execLat, lng: execLng },
         destId,
-        completedVisitIds: completedVisitIdsRef.current,
-        scheduledVisitIds: scheduledVisitIdsRef.current,
+        completedVisitIds,
+        scheduledVisitIds,
       });
     }
 
@@ -1823,8 +1948,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         return d <= 3.0;
       }).map(c => {
         const d = haversineDistance(execLat, execLng, c.latitude, c.longitude);
-        const isPrev = completedVisitIdsRef.current?.has(c.id);
-        const isSched = scheduledVisitIdsRef.current?.has(c.id);
+        const isPrev = completedVisitIds?.has(c.id);
+        const isSched = scheduledVisitIds?.has(c.id);
         return {
           ...c,
           distToRouteM: Math.round(d * 1000),
