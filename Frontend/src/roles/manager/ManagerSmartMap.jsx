@@ -333,6 +333,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const [executives,       setExecutives]        = useState([])
   const [selectedExecutive,setSelectedExecutive] = useState(null)
   const [stats,            setStats]             = useState({ total: 0, online: 0, offline: 0 })
+  const [statusFilter,     setStatusFilter]      = useState('all') // 'all' | 'online' | 'offline'
   const [initialFitDone,   setInitialFitDone]    = useState(false)
   const [isTrackingMinimized, setIsTrackingMinimized] = useState(false)
   const [selectedTeamLeadIndex, setSelectedTeamLeadIndex] = useState(0)
@@ -3125,11 +3126,16 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     return teamGroups.find(g => g.key === activeTeamFilter) || teamGroups[validIdx] || teamGroups[0]
   }, [teamGroups, selectedTeamLeadIndex, activeTeamFilter])
 
-  // Filter executives based on searchQuery AND active Team Lead filter
+  // Filter executives based on searchQuery, active Team Lead filter, AND statusFilter (All / Online / Offline)
   const filteredExecutives = useMemo(() => {
     let list = executives
     if (activeTeamFilter !== 'all_combined' && currentTeamGroup) {
       list = currentTeamGroup.executives || []
+    }
+    if (statusFilter === 'online') {
+      list = list.filter(e => Boolean(e.is_online))
+    } else if (statusFilter === 'offline') {
+      list = list.filter(e => !e.is_online)
     }
     if (!searchQuery.trim()) return list
     const q = searchQuery.toLowerCase()
@@ -3140,7 +3146,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       const code = (e.employee_code || e.employee_id || '').toLowerCase()
       return name.includes(q) || email.includes(q) || role.includes(q) || code.includes(q)
     })
-  }, [executives, currentTeamGroup, activeTeamFilter, searchQuery])
+  }, [executives, currentTeamGroup, activeTeamFilter, statusFilter, searchQuery])
 
   if (activeMapTab === 'own' && !isCeo) {
     return (
@@ -3219,6 +3225,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
             <div className="grid grid-cols-3 gap-3">
               {[
                 {
+                  key: 'all',
                   label: 'Total',
                   value: executives.length,
                   bg: 'bg-gradient-to-br from-[#0b3c5d] to-[#1a5a8a]',
@@ -3228,6 +3235,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                   icon: <Users className="w-5 h-5 mx-auto text-blue-200" />,
                 },
                 {
+                  key: 'online',
                   label: 'Online',
                   value: executives.filter(e => e.is_online).length,
                   bg: 'bg-gradient-to-br from-emerald-700 to-emerald-500',
@@ -3242,6 +3250,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                   ),
                 },
                 {
+                  key: 'offline',
                   label: 'Offline',
                   value: executives.filter(e => !e.is_online).length,
                   bg: 'bg-gradient-to-br from-slate-600 to-slate-500',
@@ -3254,13 +3263,28 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                     </span>
                   ),
                 },
-              ].map(s => (
-                <div key={s.label} className={`mgr-card rounded-2xl border ${s.bg} ${s.border} p-4 text-center shadow-md hover:shadow-lg hover:scale-[1.02] transition-all duration-200 flex flex-col justify-between items-center min-h-[110px]`}>
-                  <div className="h-6 flex items-center justify-center">{s.icon}</div>
-                  <div className={`text-3xl font-black ${s.numColor} my-1`}>{s.value}</div>
-                  <div className={`text-[10px] font-black uppercase tracking-widest ${s.labelColor}`}>{s.label}</div>
-                </div>
-              ))}
+              ].map(s => {
+                const isActive = statusFilter === s.key
+                return (
+                  <button
+                    key={s.label}
+                    type="button"
+                    onClick={() => setStatusFilter(s.key)}
+                    className={`mgr-card rounded-2xl border ${s.bg} ${s.border} p-4 text-center shadow-md hover:shadow-lg transition-all duration-200 flex flex-col justify-between items-center min-h-[110px] cursor-pointer relative ${
+                      isActive
+                        ? 'ring-4 ring-offset-2 ring-blue-500 scale-[1.03] z-10 shadow-2xl'
+                        : 'opacity-85 hover:opacity-100 hover:scale-[1.02]'
+                    }`}
+                  >
+                    <div className="h-6 flex items-center justify-center">{s.icon}</div>
+                    <div className={`text-3xl font-black ${s.numColor} my-1`}>{s.value}</div>
+                    <div className="flex items-center gap-1">
+                      <span className={`text-[10px] font-black uppercase tracking-widest ${s.labelColor}`}>{s.label}</span>
+                      {isActive && <span className="text-[8px] bg-white/20 text-white font-black px-1.5 py-0.5 rounded-full border border-white/30">Active</span>}
+                    </div>
+                  </button>
+                )
+              })}
             </div>
 
             {/* Team Lead / Manager Selector & Pagination Control */}
@@ -3279,7 +3303,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                             : (currentTeamGroup?.title || (isCeo ? 'Sales Managers View' : 'Team Lead View'))}
                         </h3>
                         <span className="bg-blue-50 text-blue-700 border border-blue-200 text-xs font-black px-2.5 py-0.5 rounded-full">
-                          {filteredExecutives.length} {isCeo ? 'Managers' : 'Executives'}
+                          {filteredExecutives.length} {isCeo ? 'Managers' : 'Executives'} {statusFilter !== 'all' ? `(${statusFilter.toUpperCase()})` : ''}
                         </span>
                       </div>
                       <p className="text-xs text-slate-400 font-semibold mt-0.5">
