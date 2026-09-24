@@ -529,6 +529,50 @@ export default function SalesLayout() {
 
   const _stopGpsTracking = useCallback(() => {
     activeClientDataRef.current = null;
+
+    // Broadcast explicit "stopped" status to Supabase Realtime & FastAPI WebSocket before closing
+    try {
+      const empId = user?.employee_id || user?.auth_user_id || user?.id || empCode;
+      const statusPayload = {
+        type: 'broadcast',
+        event: 'status',
+        payload: {
+          employee_id: empId,
+          employee_code: empCode,
+          status: 'stopped',
+          tracking_status: 'stopped',
+          is_online: false,
+          timestamp: new Date().toISOString()
+        }
+      };
+      activeChannelsRef.current.forEach(ch => {
+        try { ch.send(statusPayload); } catch (e) {}
+      });
+      if (fastApiWsRef.current && fastApiWsRef.current.readyState === WebSocket.OPEN) {
+        try {
+          fastApiWsRef.current.send(JSON.stringify({
+            type: 'status',
+            event: 'status',
+            employee_id: empId,
+            status: 'stopped',
+            tracking_status: 'stopped',
+            is_online: false,
+            timestamp: new Date().toISOString()
+          }));
+        } catch (e) {}
+      }
+      localStorage.setItem('tc_executive_live_location', JSON.stringify({
+        employee_id: empId,
+        status: 'stopped',
+        tracking_status: 'stopped',
+        is_online: false,
+        timestamp: new Date().toISOString()
+      }));
+      window.dispatchEvent(new CustomEvent('tc_location_update', {
+        detail: { employee_id: empId, status: 'stopped', tracking_status: 'stopped', is_online: false }
+      }));
+    } catch (e) {}
+
     if (gpsWatchRef.current !== null) {
       navigator.geolocation.clearWatch(gpsWatchRef.current);
       gpsWatchRef.current = null;
@@ -562,7 +606,7 @@ export default function SalesLayout() {
 
     activeSessionRef.current = null;
     setGpsActive(false);
-  }, [_flushRetryQueue]);
+  }, [user, empCode, _flushRetryQueue]);
 
   const _resumeGpsTracking = useCallback(async (savedSessionId) => {
     const empId = user.employee_id || user.auth_user_id || user.id || empCode;

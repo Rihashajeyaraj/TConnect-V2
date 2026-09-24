@@ -96,9 +96,9 @@ const GONE_MS    = 10 * 60 * 1000  // > 10 mins → Gone / No Signal
 
 
 function getTrackingBadge(status, lastUpdatedMs, isOnline = true) {
-  // If executive is not logged in / offline, or session is stopped/ended, return Offline
+  // If executive is not logged in / offline, or session is stopped/ended, return Stopped
   if (isOnline === false || status === 'ended' || status === 'logged_out' || status === 'stopped' || status === 'offline') {
-    return { label: 'Offline (Logged Out)', color: '#dc2626', dot: '🔴' }
+    return { label: 'Stopped', color: '#64748b', dot: '⚪' }
   }
 
   if (!lastUpdatedMs) {
@@ -1330,6 +1330,28 @@ export default function ManagerSmartMap({ hideHeader = false }) {
             .on('broadcast', { event: 'location' }, (msg) => {
               const loc = msg.payload
               if (!loc) return
+              if (loc.status === 'stopped' || loc.tracking_status === 'stopped' || loc.event === 'stop') {
+                setExecutives(prev => prev.map(e => {
+                  const matchId = empId && (String(e.employee_id) === String(empId) || String(e.id) === String(empId))
+                  const matchCode = empCode && String(e.employee_code) === String(empCode)
+                  const matchEmail = empEmail && String(e.email || '').toLowerCase() === empEmail
+                  if (matchId || matchCode || matchEmail) {
+                    return { ...e, is_online: false, tracking_status: 'stopped', status: 'stopped' }
+                  }
+                  return e
+                }))
+                if (selectedExecutiveRef.current) {
+                  const sEx = selectedExecutiveRef.current
+                  const matchId = empId && (String(sEx.employee_id) === String(empId) || String(sEx.id) === String(empId))
+                  const matchCode = empCode && String(sEx.employee_code) === String(empCode)
+                  const matchEmail = empEmail && String(sEx.email || '').toLowerCase() === empEmail
+                  if (matchId || matchCode || matchEmail) {
+                    setTrackStatus('stopped')
+                  }
+                }
+                return
+              }
+
               const receivedLat = loc.latitude || loc.lat
               const receivedLng = loc.longitude || loc.lng
               if (!receivedLat || !receivedLng) return
@@ -1374,6 +1396,30 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                   }
                   return e
                 }))
+              }
+            })
+            .on('broadcast', { event: 'status' }, (msg) => {
+              const loc = msg.payload || msg
+              if (!loc) return
+              if (loc.status === 'stopped' || loc.tracking_status === 'stopped' || loc.event === 'stop') {
+                setExecutives(prev => prev.map(e => {
+                  const matchId = empId && (String(e.employee_id) === String(empId) || String(e.id) === String(empId))
+                  const matchCode = empCode && String(e.employee_code) === String(empCode)
+                  const matchEmail = empEmail && String(e.email || '').toLowerCase() === empEmail
+                  if (matchId || matchCode || matchEmail) {
+                    return { ...e, is_online: false, tracking_status: 'stopped', status: 'stopped' }
+                  }
+                  return e
+                }))
+                if (selectedExecutiveRef.current) {
+                  const sEx = selectedExecutiveRef.current
+                  const matchId = empId && (String(sEx.employee_id) === String(empId) || String(sEx.id) === String(empId))
+                  const matchCode = empCode && String(sEx.employee_code) === String(empCode)
+                  const matchEmail = empEmail && String(sEx.email || '').toLowerCase() === empEmail
+                  if (matchId || matchCode || matchEmail) {
+                    setTrackStatus('stopped')
+                  }
+                }
               }
             })
             .subscribe((status) => {
@@ -1550,10 +1596,12 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   }
 
   const getProximityStatus = () => {
-    if (trackStatus === 'ended') return 'Session Ended';
-    if (trackStatus === 'stopped') return 'Stopped';
+    if (trackStatus === 'ended' || trackStatus === 'stopped') return 'Stopped';
+    if (trackSession?.status === 'ended' || trackSession?.status === 'stopped') return 'Stopped';
+    if (selectedExecutive && (selectedExecutive.is_online === false || selectedExecutive.tracking_status === 'stopped' || selectedExecutive.tracking_status === 'ended')) {
+      return 'Stopped';
+    }
     if (trackStatus === 'loading') return 'Loading...';
-    if (selectedExecutive && !selectedExecutive.is_online) return 'Offline';
     if (!latestExecPos) return 'No GPS Data';
     if (!destClient) return 'No Destination';
 
@@ -2449,9 +2497,19 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       try {
         const raw = e.type === 'storage' ? e.newValue : e.detail
         const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-        if (parsed && parsed.latitude && parsed.longitude) {
-          _applyNewCrumb(parsed)
-          fetchData(true)
+        if (parsed) {
+          if (parsed.status === 'stopped' || parsed.tracking_status === 'stopped') {
+            setTrackStatus('stopped')
+            setExecutives(prev => prev.map(ex => {
+              if (parsed.employee_id && (ex.employee_id === parsed.employee_id || ex.id === parsed.employee_id)) {
+                return { ...ex, is_online: false, tracking_status: 'stopped' }
+              }
+              return ex
+            }))
+          } else if (parsed.latitude && parsed.longitude) {
+            _applyNewCrumb(parsed)
+            fetchData(true)
+          }
         }
       } catch (err) {}
     }
@@ -3528,6 +3586,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                         prox === 'At Start Location' ? 'bg-amber-100 text-amber-800' :
                         prox === 'Idle' ? 'bg-orange-100 text-orange-700 animate-pulse' :
                         prox === 'Travelling' ? 'bg-violet-100 text-violet-700' :
+                        prox === 'Stopped' || prox === 'Session Ended' ? 'bg-slate-100 text-slate-600 border border-slate-200 font-bold' :
                         'bg-slate-100 text-slate-400'
                       }`}>{prox}</span>
                     </div>
