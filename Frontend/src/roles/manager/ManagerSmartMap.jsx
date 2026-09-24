@@ -1114,17 +1114,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     if (routeFetched && routePts.length > 1) {
       const pathCoords = routePts.map(pt => ({ lat: pt[0], lng: pt[1] }))
 
+      // Do NOT draw pre-computed blue route line to destination on map per user requirement ("dont draw extra... no need of any other lines")
       if (destRouteRef.current) {
-        destRouteRef.current.setPath(pathCoords);
-      } else {
-        destRouteRef.current = new window.google.maps.Polyline({
-          path: pathCoords,
-          geodesic: true,
-          strokeColor: '#2563eb',
-          strokeWeight: 5,
-          strokeOpacity: 0.9,
-          map: googleMapRef.current
-        });
+        try { destRouteRef.current.setMap(null); } catch {}
+        destRouteRef.current = null;
       }
 
       setDestRouteMeta({
@@ -2287,46 +2280,32 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       }
 
       if (pts.length >= 1 && googleMapRef.current && window.google) {
-        const rawPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
+        const rawPath = pts.map(p => ({ lat: p.lat, lng: p.lng }));
 
-        // Perform road geometry snapping so traveled red polyline stays strictly on streets and roads
-        snapToRoadGeometry(rawPath).then(snappedPath => {
-          const finalPath = (snappedPath && snappedPath.length > 1) ? snappedPath : rawPath;
+        // Render single vibrant RED traveled line matching exact physical movement points (No synthetic OSRM route loops)
+        if (rawPath.length >= 2) {
+          if (offRoutePolylineRef.current) {
+            try { offRoutePolylineRef.current.setMap(null); } catch {}
+            offRoutePolylineRef.current = null;
+          }
 
           if (trackRouteRef.current) {
-            trackRouteRef.current.setPath(finalPath)
-          } else if (finalPath.length >= 2) {
-            trackRouteRef.current = new window.google.maps.Polyline({
-              path: finalPath,
-              strokeColor: '#7f1d1d', // Dark red road casing
-              strokeOpacity: 0.5,
-              strokeWeight: 8,
-              geodesic: true,
-              map: googleMapRef.current,
-              zIndex: 15
-            })
-          }
-
-          // Render solid RED main road line for traveled trail along actual streets
-          if (finalPath.length >= 2) {
-            if (offRoutePolylineRef.current) {
-              offRoutePolylineRef.current.setPath(finalPath)
-              if (!offRoutePolylineRef.current.getMap()) {
-                offRoutePolylineRef.current.setMap(googleMapRef.current)
-              }
-            } else {
-              offRoutePolylineRef.current = new window.google.maps.Polyline({
-                path: finalPath,
-                geodesic: true,
-                strokeColor: '#dc2626', // Vibrant Solid RED traveled route line
-                strokeOpacity: 0.95,
-                strokeWeight: 5,
-                map: googleMapRef.current,
-                zIndex: 20
-              })
+            trackRouteRef.current.setPath(rawPath);
+            if (!trackRouteRef.current.getMap()) {
+              trackRouteRef.current.setMap(googleMapRef.current);
             }
+          } else {
+            trackRouteRef.current = new window.google.maps.Polyline({
+              path: rawPath,
+              geodesic: true,
+              strokeColor: '#dc2626', // Vibrant Solid RED traveled route line
+              strokeOpacity: 0.95,
+              strokeWeight: 5,
+              map: googleMapRef.current,
+              zIndex: 25
+            });
           }
-        });
+        }
       }
     } catch (polylineErr) {
       console.warn("Failed to extend traveled trail polyline:", polylineErr)
@@ -2802,35 +2781,28 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           }
 
           if (pathCoords.length > 1) {
-            snapToRoadGeometry(pathCoords).then(snappedPath => {
-              const finalPath = snappedPath && snappedPath.length > 1 ? snappedPath : pathCoords;
+            // Render single vibrant RED traveled line matching exact recorded breadcrumbs (No synthetic OSRM route loops)
+            if (offRoutePolylineRef.current) {
+              try { offRoutePolylineRef.current.setMap(null); } catch {}
+              offRoutePolylineRef.current = null;
+            }
 
-              if (trackRouteRef.current) {
-                try { trackRouteRef.current.setMap(null); } catch {}
+            if (trackRouteRef.current) {
+              trackRouteRef.current.setPath(pathCoords);
+              if (!trackRouteRef.current.getMap()) {
+                trackRouteRef.current.setMap(map);
               }
+            } else {
               trackRouteRef.current = new window.google.maps.Polyline({
-                path: finalPath,
-                strokeColor: '#7f1d1d', // Dark red road casing
-                strokeOpacity: 0.5,
-                strokeWeight: 8,
-                geodesic: true,
-                map: map,
-                zIndex: 15
-              });
-
-              if (offRoutePolylineRef.current) {
-                try { offRoutePolylineRef.current.setMap(null); } catch {}
-              }
-              offRoutePolylineRef.current = new window.google.maps.Polyline({
-                path: finalPath,
+                path: pathCoords,
                 strokeColor: '#dc2626', // Vibrant Solid RED traveled route line
                 strokeOpacity: 0.95,
                 strokeWeight: 5,
                 geodesic: true,
                 map: map,
-                zIndex: 20
+                zIndex: 25
               });
-            });
+            }
           }
         } catch (trailErr) {
           console.error("[SmartMap] Error rendering traveled trail:", trailErr)

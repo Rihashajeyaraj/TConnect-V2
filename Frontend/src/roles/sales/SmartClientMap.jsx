@@ -1738,42 +1738,7 @@ export default function SmartClientMap({ isManagerView = false }) {
       if (candMarker) activeMarkersRef.current.push(candMarker)
     })
 
-    if (routePath.length > 1) {
-      const pathCoords = routePath.map(pt => ({ lat: pt[0], lng: pt[1] }))
-      
-      const mainPolyline = new window.google.maps.Polyline({
-        path: pathCoords,
-        geodesic: true,
-        strokeColor: '#2563eb', // Primary bold BLUE line for active driving route navigation
-        strokeOpacity: 0.9,
-        strokeWeight: 6,
-        map: map,
-        zIndex: 25
-      })
-      activePolylinesRef.current.push(mainPolyline)
-
-      if (offRoute) {
-        const offRoutePolyline = new window.google.maps.Polyline({
-          path: pathCoords,
-          geodesic: true,
-          strokeOpacity: 0,
-          icons: [{
-            icon: {
-              path: 'M 0,-2 0,2',
-              strokeOpacity: 1,
-              scale: 2.5,
-              strokeColor: '#60a5fa', // Light blue dashed line for off-route deviation
-              strokeWeight: 4,
-            },
-            offset: '0%',
-            repeat: '16px',
-          }],
-          map: map,
-          zIndex: 30
-        })
-        activePolylinesRef.current.push(offRoutePolyline)
-      }
-    }
+    // Do NOT draw pre-computed blue destination route line or off-route dashed blue lines on map per user requirement ("dont draw extra... no need of any other lines")
   }, [selectedStop, onRouteClients, nearbyCandidates, routePath, offRoute, handleViewRouteClient, mapLoaded])
 
   // ─── 15. Dynamic location accuracy circle update ───────────────────────────
@@ -1883,50 +1848,32 @@ export default function SmartClientMap({ isManagerView = false }) {
       )
     }
 
-    // Draw traveled polyline (Solid RED line matching team radar map styling, road-snapped via OSRM)
+    // Draw traveled polyline (Solid RED line matching exact physical movement points without synthetic OSRM route loops)
     if (validPts.length > 1) {
-      snapToRoadGeometry(validPts).then(snappedPts => {
-        if (!googleMapRef.current || !window.google) return
-        const gPath = snappedPts.map(p => ({ lat: p.lat, lng: p.lng }))
-        
-        // Outer dark red casing line for clean road contrast
-        if (!trailOuterPolylineRef.current) {
-          trailOuterPolylineRef.current = new window.google.maps.Polyline({
-            path: gPath,
-            geodesic: true,
-            strokeColor: '#7f1d1d', // Dark red casing line
-            strokeOpacity: 0.75,
-            strokeWeight: 8,
-            map: googleMapRef.current,
-            zIndex: 34
-          })
-        } else {
-          trailOuterPolylineRef.current.setPath(gPath)
-          if (!trailOuterPolylineRef.current.getMap()) {
-            trailOuterPolylineRef.current.setMap(googleMapRef.current)
-          }
-        }
+      if (!googleMapRef.current || !window.google) return
+      const gPath = validPts.map(p => ({ lat: p.lat, lng: p.lng }))
 
-        // Inner solid red main road line
-        if (!trailPolylineRef.current) {
-          trailPolylineRef.current = new window.google.maps.Polyline({
-            path: gPath,
-            geodesic: true,
-            strokeColor: '#dc2626', // Solid Vibrant Red
-            strokeOpacity: 0.95,
-            strokeWeight: 5,
-            map: googleMapRef.current,
-            zIndex: 35
-          })
-        } else {
-          trailPolylineRef.current.setPath(gPath)
-          if (!trailPolylineRef.current.getMap()) {
-            trailPolylineRef.current.setMap(googleMapRef.current)
-          }
+      if (trailOuterPolylineRef.current) {
+        try { trailOuterPolylineRef.current.setMap(null); } catch {}
+        trailOuterPolylineRef.current = null;
+      }
+
+      if (!trailPolylineRef.current) {
+        trailPolylineRef.current = new window.google.maps.Polyline({
+          path: gPath,
+          geodesic: true,
+          strokeColor: '#dc2626', // Solid Vibrant Red
+          strokeOpacity: 0.95,
+          strokeWeight: 5,
+          map: googleMapRef.current,
+          zIndex: 35
+        })
+      } else {
+        trailPolylineRef.current.setPath(gPath)
+        if (!trailPolylineRef.current.getMap()) {
+          trailPolylineRef.current.setMap(googleMapRef.current)
         }
-      }).catch(err => {
-        console.warn('[SmartClientMap] Road snap notice:', err)
-      })
+      }
     } else {
       if (trailOuterPolylineRef.current) {
         try { trailOuterPolylineRef.current.setMap(null) } catch {}

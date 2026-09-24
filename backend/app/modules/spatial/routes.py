@@ -1725,6 +1725,97 @@ async def start_tracking_session(
         return {"success": False, "error": str(e)}
 
 
+@router.post("/location/session/end")
+async def end_tracking_session(
+    payload: Dict[str, Any] = Body(...),
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """
+    End an active tracking session when executive stops navigation or completes visit.
+    Updates tracking_sessions in DB with status='ended', end_latitude, end_longitude, end_time.
+    Clears memory cache and sends manager notification.
+    """
+    import datetime
+    from app.database.supabase import get_supabase_admin_client, get_supabase_client
+
+    sp = get_supabase_admin_client() or get_supabase_client()
+    auth_uid = user_payload.get("sub") or ""
+    emp_id = _resolve_emp(sp, auth_uid)
+    session_id = payload.get("session_id")
+    lat = payload.get("latitude") or payload.get("lat")
+    lng = payload.get("longitude") or payload.get("lng")
+    reason = payload.get("reason") or "navigation_stopped"
+    now_iso = datetime.datetime.utcnow().isoformat()
+
+    manager_id = None
+    employee_name = "Sales Executive"
+    employee_code = "EMP000012"
+    try:
+        emp_res = sp.schema("hrms").table("employees").select("reporting_manager, name, employee_code").eq("employee_id", emp_id).limit(1).execute()
+        if emp_res.data:
+            manager_id = emp_res.data[0].get("reporting_manager")
+            employee_name = emp_res.data[0].get("name") or employee_name
+            employee_code = emp_res.data[0].get("employee_code") or employee_code
+    except Exception as mgr_err:
+        logger.warning(f"Error finding employee manager on session end: {mgr_err}")
+
+    upd: Dict[str, Any] = {
+        "status": "ended",
+        "end_time": now_iso,
+        "updated_at": now_iso
+    }
+    if lat is not None and lng is not None:
+        upd["end_latitude"] = float(lat)
+        upd["end_longitude"] = float(lng)
+
+    ended_session_id = session_id
+    try:
+        q = sp.schema("hrms").table("tracking_sessions").update(upd)
+        if session_id:
+            q = q.eq("id", session_id)
+        else:
+            q = q.eq("employee_id", emp_id).eq("status", "active")
+        res = q.execute()
+        if res.data:
+            ended_session_id = res.data[0].get("id") or session_id
+    except Exception as db_err:
+        logger.warning(f"Error updating tracking_session end status: {db_err}")
+
+    # Remove active session from in-memory cache
+    for key in (emp_id, employee_code, payload.get("email"), auth_uid, session_id, ended_session_id):
+        if key:
+            _active_sessions_cache.pop(str(key).strip(), None)
+            _active_sessions_cache.pop(str(key).strip().lower(), None)
+
+    # Update in-memory telemetry status
+    telem = _live_executive_telemetry.get(str(emp_id).strip(), {})
+    telem.update({
+        "tracking_status": "ended",
+        "is_online": True,
+        "last_seen_at": now_iso
+    })
+    for key in (emp_id, employee_code, payload.get("email"), auth_uid):
+        if key:
+            _live_executive_telemetry[str(key).strip()] = telem
+            _live_executive_telemetry[str(key).strip().lower()] = telem
+
+    # Log event & notify manager
+    try:
+        _create_tracking_event(
+            sp, ended_session_id, emp_id, manager_id,
+            "VISIT_ENDED", lat, lng, None,
+            {"reason": reason, "employee_name": employee_name}
+        )
+        _send_manager_notif(
+            sp, manager_id, emp_id, employee_code,
+            "⚪ Navigation Stopped", f"{employee_name} has stopped navigation."
+        )
+    except Exception as event_err:
+        logger.warning(f"Error logging visit ended event: {event_err}")
+
+    return {"success": True, "session_id": ended_session_id, "employee_id": emp_id, "status": "ended"}
+
+
 @router.post("/location/push")
 async def push_live_location(
     payload: Dict[str, Any] = Body(...),
