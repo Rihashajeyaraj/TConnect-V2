@@ -1765,6 +1765,17 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           </div>
         `
 
+        // If executive is currently selected for live tracking, hide team marker to prevent duplicate markers
+        const selectedId = String(selectedExecutiveRef.current?.employee_id || selectedExecutiveRef.current?.id || selectedExecutive?.employee_id || selectedExecutive?.id || '')
+        if (selectedId && String(empId) === selectedId) {
+          let existingMarker = teamMarkersMapRef.current.get(empId)
+          if (existingMarker) {
+            try { existingMarker.setMap(null); } catch {}
+            teamMarkersMapRef.current.delete(empId)
+          }
+          return
+        }
+
         let existingMarker = teamMarkersMapRef.current.get(empId)
         if (existingMarker) {
           existingMarker.setLatLng(latlng)
@@ -2694,11 +2705,22 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         destClientRef.current = null;
       }
 
-      if (!googleMapRef.current) return
-      const map = googleMapRef.current
+      // Clean up any previously rendered live marker instance before creating a new one on refresh
+      if (liveMarkerRef.current) {
+        try {
+          if (typeof liveMarkerRef.current.setMap === 'function') {
+            liveMarkerRef.current.setMap(null);
+          } else if (typeof liveMarkerRef.current.remove === 'function') {
+            liveMarkerRef.current.remove();
+          }
+        } catch (e) {}
+        liveMarkerRef.current = null;
+      }
 
-      // Check if session is actively in progress right now
-      const isSessionActive = session && (session.status === 'active' || session.status === 'in_progress' || session.status === 'travelling') && status !== 'ended';
+      // Sort location history crumbs strictly by recorded_at timestamp ascending
+      if (Array.isArray(crumbs) && crumbs.length > 0) {
+        crumbs.sort((a, b) => new Date(a.recorded_at || 0).getTime() - new Date(b.recorded_at || 0).getTime());
+      }
 
       // Render live/end marker coordinates
       let latestLat = null
