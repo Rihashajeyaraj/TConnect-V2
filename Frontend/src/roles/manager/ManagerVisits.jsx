@@ -354,6 +354,14 @@ export default function ManagerVisits() {
     const purposeStr = v.purpose || v.products_discussed || v.product || v.visit_purpose || 'Site Visit / Product Demo'
     const locationStr = v.gps_location || v.location || v.address || v.city || 'Chennai'
 
+    const rawNotes = String(v.notes || v.remarks || v.discussion_summary || '').toLowerCase()
+    const rawPurp = String(purposeStr).toLowerCase()
+    const vType = v.visit_type || v.visitType || (
+      rawNotes.includes('unplanned') || rawPurp.includes('unplanned') ? 'UNPLANNED' :
+      rawNotes.includes('nearby lead') || rawPurp.includes('nearby lead') ? 'NEARBY_LEAD' :
+      rawNotes.includes('map nav') || rawPurp.includes('map nav') ? 'MAP_NAVIGATION' : 'PLANNED'
+    )
+
     return {
       id: id,
       visit_id: id,
@@ -372,6 +380,7 @@ export default function ManagerVisits() {
       scheduledTime: rawSchedTime,
       purpose: purposeStr,
       visit_purpose: purposeStr,
+      visit_type: vType,
       products_discussed: purposeStr,
       discussion_summary: v.discussion_summary || v.notes || v.remarks || purposeStr,
       gps_location: locationStr,
@@ -851,8 +860,19 @@ export default function ManagerVisits() {
 
                             {/* Client / Company */}
                             <td className="py-3.5 px-4 min-w-[170px]">
-                              <div className="font-black text-slate-900 group-hover:text-amber-800 transition">
-                                {visit.company || visit.customer_name || 'Enterprise Ltd'}
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-black text-slate-900 group-hover:text-amber-800 transition">
+                                  {visit.company || visit.customer_name || 'Enterprise Ltd'}
+                                </span>
+                                {visit.visit_type === 'UNPLANNED' ? (
+                                  <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-purple-100 text-purple-800 border border-purple-300">⚡ Unplanned</span>
+                                ) : visit.visit_type === 'NEARBY_LEAD' ? (
+                                  <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-teal-100 text-teal-800 border border-teal-300">📍 Nearby Lead</span>
+                                ) : visit.visit_type === 'MAP_NAVIGATION' ? (
+                                  <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">🗺️ Map Nav</span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-md text-[9px] font-black bg-blue-100 text-blue-800 border border-blue-300">📅 Planned</span>
+                                )}
                               </div>
                               <div className="text-[11px] text-slate-500 font-semibold mt-0.5">
                                 {visit.poc_name || 'Point of Contact'}

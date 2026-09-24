@@ -147,7 +147,7 @@ export default function ClientLog(props) {
 
 
 
-  useEffect(() => {
+  const fetchVisits = useCallback(() => {
     visitAPI
       .getVisits()
       .then((res) => {
@@ -161,6 +161,14 @@ export default function ClientLog(props) {
               ? formatDate(v.scheduled_time)
               : (v.visit_date ? formatDate(v.visit_date) : (v.date ? formatDate(v.date) : formatDate(v.created_at || new Date())));
 
+            const rawNotes = (v.remarks || v.notes || v.discussion_summary || "").toLowerCase();
+            const rawPurpose = (v.purpose || v.product || "").toLowerCase();
+            const vType = v.visit_type || v.visitType || (
+              rawNotes.includes('unplanned') || rawPurpose.includes('unplanned') ? 'UNPLANNED' :
+              rawNotes.includes('nearby lead') || rawPurpose.includes('nearby lead') ? 'NEARBY_LEAD' :
+              rawNotes.includes('map nav') || rawPurpose.includes('map nav') ? 'MAP_NAVIGATION' : 'PLANNED'
+            );
+
             return {
               id: v.visit_id || v.id,
               visit_id: v.visit_id || v.id,
@@ -172,6 +180,7 @@ export default function ClientLog(props) {
               company: v.company_name || v.company || v.client_name || v.customer_name || "Client Account",
               product: v.product || v.product_name || v.purpose || "GPS Tracking Software",
               purpose: v.purpose || v.product || "Site Visit & Product Demo",
+              visit_type: vType,
               contactPerson: v.contact_person || v.contactPerson || v.poc_name || v.person || "Point of Contact",
               person: v.contact_person || v.contactPerson || v.poc_name || v.person || "Point of Contact",
               phone: v.phone || v.mobile || v.employee_phone || v.poc_mobile || "N/A",
@@ -217,6 +226,13 @@ export default function ClientLog(props) {
         } catch (_) {}
       });
   }, [userName, userEmail]);
+
+  useEffect(() => {
+    fetchVisits();
+    const handleVisitCreated = () => fetchVisits();
+    window.addEventListener("tc:visit-created", handleVisitCreated);
+    return () => window.removeEventListener("tc:visit-created", handleVisitCreated);
+  }, [fetchVisits]);
 
   const updateGps = () => {
     if (navigator.geolocation) {
@@ -671,8 +687,19 @@ export default function ClientLog(props) {
 
                         {/* 2. Client & Contact Person */}
                         <td className="py-3.5 px-4 align-top">
-                          <div className="font-black text-slate-900 text-sm truncate">
-                            {item.customer || item.client || item.company || item.customer_name}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            <span className="font-black text-slate-900 text-sm truncate">
+                              {item.customer || item.client || item.company || item.customer_name}
+                            </span>
+                            {item.visit_type === 'UNPLANNED' ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-purple-100 text-purple-800 border border-purple-300 shadow-2xs">⚡ Unplanned</span>
+                            ) : item.visit_type === 'NEARBY_LEAD' ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-teal-100 text-teal-800 border border-teal-300 shadow-2xs">📍 Nearby Lead</span>
+                            ) : item.visit_type === 'MAP_NAVIGATION' ? (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shadow-2xs">🗺️ Map Nav</span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-black bg-blue-100 text-blue-800 border border-blue-300 shadow-2xs">📅 Planned</span>
+                            )}
                           </div>
                           <div className="text-xs text-slate-600 font-semibold truncate flex items-center gap-1.5 mt-0.5">
                             <User size={12} className="text-teal-600 shrink-0" />

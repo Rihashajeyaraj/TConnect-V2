@@ -415,6 +415,21 @@ export default function SmartClientMap({ isManagerView = false }) {
   const [nearbyRadiusKm, setNearbyRadiusKm] = useState(5)
   const [showOnlyNearby, setShowOnlyNearby] = useState(true)
 
+  // ── Unplanned / Quick Visit Modal State ─────────────────────────────────────
+  const [showUnplannedModal, setShowUnplannedModal] = useState(false)
+  const [unplannedForm, setUnplannedForm] = useState({
+    client_name: '',
+    contact_person: '',
+    phone: '',
+    location: '',
+    purpose: 'Unplanned Client Meeting & Site Visit',
+    notes: '',
+    latitude: null,
+    longitude: null,
+    useCurrentGps: true
+  })
+  const activeNavVisitIdRef = useRef(null)
+
   // ── Executive Mobile Inquiry Response State ────────────────────────────────
   const [activeInquiry, setActiveInquiry] = useState(null)
   const activeInquiryRef = useRef(null)
@@ -1283,6 +1298,103 @@ export default function SmartClientMap({ isManagerView = false }) {
     fetchRoute(entity)
   }, [fetchRoute, showToast])
 
+  // ─── Unplanned Visit Save Handler ───────────────────────────────────────
+  const handleSaveUnplannedVisit = useCallback(async (startNavImmediately = false) => {
+    if (!unplannedForm.client_name.trim() || !unplannedForm.location.trim()) {
+      showToast('Please enter Client Name and Location!', 'error')
+      return
+    }
+
+    const lat = unplannedForm.latitude || executivePos.lat
+    const lng = unplannedForm.longitude || executivePos.lng
+    const visitId = `VISIT-UNP-${Date.now()}`
+    const nowIso = new Date().toISOString()
+    const todayDate = nowIso.slice(0, 10)
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+
+    const newVisit = {
+      id: visitId,
+      visit_id: visitId,
+      lead_id: `LD-UNP-${String(Date.now()).slice(-6)}`,
+      lead_number: `LD-UNP-${String(Date.now()).slice(-6)}`,
+      customer_name: unplannedForm.client_name.trim(),
+      client_name: unplannedForm.client_name.trim(),
+      company_name: unplannedForm.client_name.trim(),
+      company: unplannedForm.client_name.trim(),
+      contact_person: unplannedForm.contact_person.trim() || 'Point of Contact',
+      phone: unplannedForm.phone.trim() || 'N/A',
+      location: unplannedForm.location.trim(),
+      address: unplannedForm.location.trim(),
+      purpose: unplannedForm.purpose || 'Unplanned Client Meeting',
+      visit_type: 'UNPLANNED',
+      status: startNavImmediately ? 'IN_PROGRESS' : 'SCHEDULED',
+      visit_status: startNavImmediately ? 'IN_PROGRESS' : 'SCHEDULED',
+      check_in_time: startNavImmediately ? nowIso : null,
+      latitude: lat,
+      longitude: lng,
+      visit_date: todayDate,
+      visit_time: timeStr,
+      scheduledDate: todayDate,
+      scheduledTime: timeStr,
+      created_at: nowIso,
+      employee_name: currentUser.name || currentUser.full_name || 'Sales Executive',
+      employee_code: currentUser.employee_code || currentUser.employee_id || '',
+      assigned_to_email: currentUser.email || '',
+      assigned_to: currentUser.name || currentUser.full_name || 'Sales Executive',
+      executive: currentUser.name || currentUser.full_name || 'Sales Executive',
+      notes: unplannedForm.notes.trim() ? `${unplannedForm.notes.trim()} | Unplanned Visit` : 'Unplanned Client Visit'
+    }
+
+    setRawVisits(prev => [newVisit, ...prev])
+    try {
+      const localSales = JSON.parse(localStorage.getItem('tc_sales_visits') || '[]')
+      localStorage.setItem('tc_sales_visits', JSON.stringify([newVisit, ...localSales]))
+      const localSm = JSON.parse(localStorage.getItem('tc_sm_visits') || '[]')
+      localStorage.setItem('tc_sm_visits', JSON.stringify([newVisit, ...localSm]))
+    } catch (e) {}
+
+    try {
+      await visitAPI.createVisit(newVisit)
+    } catch (err) {
+      console.warn('Backend visit create note:', err)
+    }
+
+    window.dispatchEvent(new CustomEvent('tc:visit-created', { detail: newVisit }))
+    showToast(`Unplanned visit for "${newVisit.client_name}" logged!`, 'success')
+    setShowUnplannedModal(false)
+
+    setUnplannedForm({
+      client_name: '',
+      contact_person: '',
+      phone: '',
+      location: '',
+      purpose: 'Unplanned Client Meeting & Site Visit',
+      notes: '',
+      latitude: null,
+      longitude: null,
+      useCurrentGps: true
+    })
+
+    if (startNavImmediately) {
+      const stopEntity = {
+        id: visitId,
+        title: newVisit.client_name,
+        address: newVisit.location,
+        phone: newVisit.phone,
+        latitude: lat,
+        longitude: lng,
+        has_exact_coords: true,
+        isUnplanned: true,
+        visitType: 'UNPLANNED',
+        visitRecord: newVisit
+      }
+      handleSelectStop(stopEntity)
+      setTimeout(() => {
+        startNavigation()
+      }, 300)
+    }
+  }, [unplannedForm, executivePos, currentUser, handleSelectStop, showToast])
+
   // ─── 8. Start Navigation Mode ───────────────────────────────────────────
   const startNavigation = useCallback(async () => {
     if (!selectedStop?.has_exact_coords) return
@@ -1311,6 +1423,70 @@ export default function SmartClientMap({ isManagerView = false }) {
       googleMapRef.current.setZoom(15)
     }
 
+    // ── AUTO-LOG VISIT RECORD IF NOT ALREADY LOGGED ──
+    const nowIso = new Date().toISOString()
+    const todayDate = nowIso.slice(0, 10)
+    const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    const isUnplanned = selectedStop.isUnplanned || selectedStop.visitType === 'UNPLANNED'
+    const isLead = selectedStop.isLead || selectedStop.category === 'lead' || (selectedStop.id && String(selectedStop.id).startsWith('LD'))
+    const visitTypeStr = isUnplanned ? 'UNPLANNED' : (isLead ? 'NEARBY_LEAD' : 'MAP_NAVIGATION')
+    
+    const navVisitId = selectedStop.visitRecord?.id || selectedStop.id || `VISIT-NAV-${Date.now()}`
+    activeNavVisitIdRef.current = navVisitId
+
+    const autoVisitPayload = selectedStop.visitRecord || {
+      id: navVisitId,
+      visit_id: navVisitId,
+      lead_id: selectedStop.lead_id || `LD-${String(Date.now()).slice(-6)}`,
+      lead_number: selectedStop.lead_id || `LD-${String(Date.now()).slice(-6)}`,
+      customer_name: selectedStop.title || 'Client Account',
+      client_name: selectedStop.title || 'Client Account',
+      company_name: selectedStop.title || 'Client Account',
+      company: selectedStop.title || 'Client Account',
+      contact_person: selectedStop.contactPerson || selectedStop.person || 'Point of Contact',
+      phone: selectedStop.phone || selectedStop.mobile || 'N/A',
+      location: selectedStop.address || selectedStop.location || 'Client Location',
+      address: selectedStop.address || selectedStop.location || 'Client Location',
+      purpose: isUnplanned ? (selectedStop.purpose || 'Unplanned Client Visit') : (isLead ? 'Nearby Lead Visit & Survey' : 'Map Navigation Visit'),
+      visit_type: visitTypeStr,
+      status: 'IN_PROGRESS',
+      visit_status: 'IN_PROGRESS',
+      check_in_time: nowIso,
+      checkInTime: `${todayDate} at ${timeStr}`,
+      latitude: selectedStop.latitude,
+      longitude: selectedStop.longitude,
+      visit_date: todayDate,
+      visit_time: timeStr,
+      scheduledDate: todayDate,
+      scheduledTime: timeStr,
+      created_at: nowIso,
+      employee_name: currentUser.name || currentUser.full_name || 'Sales Executive',
+      employee_code: currentUser.employee_code || currentUser.employee_id || '',
+      assigned_to_email: currentUser.email || '',
+      assigned_to: currentUser.name || currentUser.full_name || 'Sales Executive',
+      executive: currentUser.name || currentUser.full_name || 'Sales Executive',
+      notes: `Navigation Started to ${selectedStop.title} | Type: ${visitTypeStr}`
+    }
+
+    setRawVisits(prev => {
+      const exists = prev.some(v => v.id === navVisitId || v.visit_id === navVisitId)
+      return exists ? prev : [autoVisitPayload, ...prev]
+    })
+
+    try {
+      const saveToStore = (key) => {
+        const arr = JSON.parse(localStorage.getItem(key) || '[]')
+        if (!arr.some(v => v.id === navVisitId || v.visit_id === navVisitId)) {
+          localStorage.setItem(key, JSON.stringify([autoVisitPayload, ...arr]))
+        }
+      }
+      saveToStore('tc_sales_visits')
+      saveToStore('tc_sm_visits')
+    } catch (e) {}
+
+    visitAPI.createVisit(autoVisitPayload).catch(err => console.warn('Auto visit save note:', err))
+    window.dispatchEvent(new CustomEvent('tc:visit-created', { detail: autoVisitPayload }))
+
     try {
       const clientData = {
         client_id: selectedStop.id,
@@ -1336,7 +1512,7 @@ export default function SmartClientMap({ isManagerView = false }) {
         detail: { lat: executivePos.lat, lng: executivePos.lng, clientData: selectedStop, sessionId: null }
       }))
     }
-  }, [selectedStop, executivePos, showToast])
+  }, [selectedStop, executivePos, currentUser, showToast])
 
   const stopNavigation = useCallback(async () => {
     setNavMode(false)
@@ -1352,10 +1528,42 @@ export default function SmartClientMap({ isManagerView = false }) {
     }
     trailPointsRef.current = []
 
+    // Complete active visit record if tracking session was active
+    if (activeNavVisitIdRef.current) {
+      const activeId = activeNavVisitIdRef.current
+      const nowIso = new Date().toISOString()
+      const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      
+      setRawVisits(prev => prev.map(v => {
+        if (v.id === activeId || v.visit_id === activeId) {
+          return { ...v, status: 'COMPLETED', visit_status: 'COMPLETED', check_out_time: nowIso, checkOutTime: timeStr }
+        }
+        return v
+      }))
+
+      try {
+        const updateStore = (key) => {
+          const arr = JSON.parse(localStorage.getItem(key) || '[]')
+          const updated = arr.map(v => {
+            if (v.id === activeId || v.visit_id === activeId) {
+              return { ...v, status: 'COMPLETED', visit_status: 'COMPLETED', check_out_time: nowIso, checkOutTime: timeStr }
+            }
+            return v
+          })
+          localStorage.setItem(key, JSON.stringify(updated))
+        }
+        updateStore('tc_sales_visits')
+        updateStore('tc_sm_visits')
+      } catch (e) {}
+
+      visitAPI.completeVisit(activeId, { status: 'COMPLETED', visit_status: 'COMPLETED', check_out_time: nowIso }).catch(() => {})
+      activeNavVisitIdRef.current = null
+    }
+
     // Clear persistent navigation session on explicit Stop Nav click
     localStorage.removeItem('tc_active_nav_session')
 
-    showToast('Navigation stopped.', 'info')
+    showToast('Navigation stopped & visit logged.', 'info')
 
     const sessId = localStorage.getItem('tc_tracking_session')
     if (sessId) {
@@ -2075,6 +2283,15 @@ export default function SmartClientMap({ isManagerView = false }) {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
+                    onClick={() => setShowUnplannedModal(true)}
+                    className="h-8 px-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white rounded-xl flex items-center justify-center gap-1 shadow-md active:scale-95 transition flex-shrink-0 text-xs font-black cursor-pointer whitespace-nowrap"
+                    title="Log Quick / Unplanned Client Visit"
+                  >
+                    <Zap size={13} />
+                    <span>Quick Visit</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={handleRefreshMap}
                     disabled={isRefreshingMap}
                     className="w-8 h-8 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl flex items-center justify-center border border-slate-200 active:scale-95 transition flex-shrink-0 cursor-pointer"
@@ -2653,6 +2870,166 @@ export default function SmartClientMap({ isManagerView = false }) {
         )
       })()}
 
+      {/* ══ QUICK / UNPLANNED CLIENT VISIT MODAL ══ */}
+      {showUnplannedModal && (
+        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-md flex items-center justify-center z-[9999] p-4">
+          <div className="bg-white rounded-3xl w-full max-w-lg shadow-2xl overflow-hidden border border-slate-100 animate-in fade-in zoom-in duration-200">
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-6 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-400/30 flex items-center justify-center text-purple-400">
+                  <Zap size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-white">Log Quick / Unplanned Visit</h3>
+                  <p className="text-[10px] text-slate-300">Record sudden client visits or field drop-ins</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUnplannedModal(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={(e) => { e.preventDefault(); handleSaveUnplannedVisit(false); }} className="p-6 space-y-4">
+              {/* Client / Company Name */}
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1">
+                  Client / Company Name <span className="text-rose-500">*</span>
+                </label>
+                <div className="relative">
+                  <Building2 className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Apex Tech Solutions"
+                    value={unplannedForm.client_name}
+                    onChange={(e) => setUnplannedForm(prev => ({ ...prev, client_name: e.target.value }))}
+                    className="w-full h-10 pl-9 pr-3 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none transition text-slate-900"
+                  />
+                </div>
+              </div>
+
+              {/* Contact Person & Phone */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1">Contact Person</label>
+                  <div className="relative">
+                    <User className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder="e.g. Rahul Sharma"
+                      value={unplannedForm.contact_person}
+                      onChange={(e) => setUnplannedForm(prev => ({ ...prev, contact_person: e.target.value }))}
+                      className="w-full h-10 pl-9 pr-3 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none transition text-slate-900"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1">Phone Number</label>
+                  <div className="relative">
+                    <Phone className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="tel"
+                      placeholder="+91 98765 43210"
+                      value={unplannedForm.phone}
+                      onChange={(e) => setUnplannedForm(prev => ({ ...prev, phone: e.target.value }))}
+                      className="w-full h-10 pl-9 pr-3 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none transition text-slate-900"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Location / Address */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-black text-slate-700 uppercase tracking-wider">
+                    Location / Address <span className="text-rose-500">*</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (executivePos.lat && executivePos.lng) {
+                        setUnplannedForm(prev => ({
+                          ...prev,
+                          location: `Current GPS (${executivePos.lat.toFixed(4)}, ${executivePos.lng.toFixed(4)})`,
+                          latitude: executivePos.lat,
+                          longitude: executivePos.lng,
+                          useCurrentGps: true
+                        }))
+                        showToast('Filled with current GPS location!', 'success')
+                      } else {
+                        showToast('GPS position unavailable', 'warning')
+                      }
+                    }}
+                    className="text-[10px] font-black text-purple-600 hover:text-purple-700 flex items-center gap-1 cursor-pointer"
+                  >
+                    <Target size={11} /> Use My Current GPS
+                  </button>
+                </div>
+                <div className="relative">
+                  <MapPin className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Guindy Tech Park, Phase 2, Chennai"
+                    value={unplannedForm.location}
+                    onChange={(e) => setUnplannedForm(prev => ({ ...prev, location: e.target.value }))}
+                    className="w-full h-10 pl-9 pr-3 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-purple-500 focus:ring-2 focus:ring-purple-500/20 outline-none transition text-slate-900"
+                  />
+                </div>
+              </div>
+
+              {/* Purpose */}
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1">Purpose of Visit</label>
+                <select
+                  value={unplannedForm.purpose}
+                  onChange={(e) => setUnplannedForm(prev => ({ ...prev, purpose: e.target.value }))}
+                  className="w-full h-10 px-3 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-purple-500 outline-none transition text-slate-900"
+                >
+                  <option value="Unplanned Client Meeting & Site Visit">⚡ Unplanned Client Meeting & Site Visit</option>
+                  <option value="Urgent Product Demo / Survey">🚀 Urgent Product Demo / Survey</option>
+                  <option value="Nearby Lead Drop-in">📍 Nearby Lead Drop-in</option>
+                  <option value="Client Support / Service Escalation">🛠️ Client Support / Service Escalation</option>
+                  <option value="Cold Call / Prospecting">💼 Cold Call / Prospecting</option>
+                </select>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-black text-slate-700 uppercase tracking-wider mb-1">Discussion Notes / Remarks</label>
+                <textarea
+                  rows={2}
+                  placeholder="Add visit details or discussion topics…"
+                  value={unplannedForm.notes}
+                  onChange={(e) => setUnplannedForm(prev => ({ ...prev, notes: e.target.value }))}
+                  className="w-full p-3 text-xs font-bold bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:border-purple-500 outline-none transition resize-none text-slate-900"
+                />
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex gap-2 pt-2">
+                <button
+                  type="submit"
+                  className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-black text-xs rounded-xl transition active:scale-95 cursor-pointer"
+                >
+                  Log Visit Only
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleSaveUnplannedVisit(true)}
+                  className="flex-1 py-2.5 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 text-white font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-lg active:scale-95 transition cursor-pointer"
+                >
+                  <Navigation size={13} /> Log & Start Nav 🚀
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
 
     </div>
   )
