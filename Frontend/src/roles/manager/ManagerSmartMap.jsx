@@ -1114,10 +1114,22 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     if (routeFetched && routePts.length > 1) {
       const pathCoords = routePts.map(pt => ({ lat: pt[0], lng: pt[1] }))
 
-      // Do NOT draw pre-computed blue route line to destination on map per user requirement ("dont draw extra... no need of any other lines")
+      // Render primary bold BLUE driving route polyline to destination
       if (destRouteRef.current) {
-        try { destRouteRef.current.setMap(null); } catch {}
-        destRouteRef.current = null;
+        destRouteRef.current.setPath(pathCoords);
+        if (!destRouteRef.current.getMap()) {
+          destRouteRef.current.setMap(googleMapRef.current);
+        }
+      } else {
+        destRouteRef.current = new window.google.maps.Polyline({
+          path: pathCoords,
+          geodesic: true,
+          strokeColor: '#2563eb', // Primary bold BLUE driving route to client
+          strokeWeight: 5,
+          strokeOpacity: 0.85,
+          map: googleMapRef.current,
+          zIndex: 10
+        });
       }
 
       setDestRouteMeta({
@@ -2273,8 +2285,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       if (!lastPt) {
         pts.push(newPt)
       } else {
-        const dist = haversineDistance(lastPt.lat, lastPt.lng, lat, lng)
-        if (dist > 0.002) { // > 2 meters movement
+        const distKm = haversineDistance(lastPt.lat, lastPt.lng, lat, lng)
+        const distM = distKm * 1000
+        // Ignore stationary GPS jitter (< 8m) and GPS teleport jumps (> 400m) to ensure true travel path
+        if (distM >= 8 && distM <= 400) {
           pts.push(newPt)
         }
       }
@@ -2749,7 +2763,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           // Seed in-memory trail points so live updates seamlessly extend this trail
           trailPointsRef.current = [...rawPathCoords]
 
-          // Filter position jumps up to 10km (to retain full travel path after stale pauses)
+          // Filter stationary micro-jitter (< 8 meters) and cell-tower teleports (> 400 meters)
           const pathCoords = []
           if (rawPathCoords.length > 0) {
             pathCoords.push(rawPathCoords[0])
@@ -2758,7 +2772,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               const curr = rawPathCoords[i]
               const distKm = haversineDistance(prev.lat, prev.lng, curr.lat, curr.lng)
               const distM = distKm * 1000
-              if (distM >= 3 && distM < 10000) {
+              if (distM >= 8 && distM <= 400) {
                 pathCoords.push(curr)
               }
             }

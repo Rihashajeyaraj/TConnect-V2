@@ -1738,7 +1738,21 @@ export default function SmartClientMap({ isManagerView = false }) {
       if (candMarker) activeMarkersRef.current.push(candMarker)
     })
 
-    // Do NOT draw pre-computed blue destination route line or off-route dashed blue lines on map per user requirement ("dont draw extra... no need of any other lines")
+    // Render primary bold BLUE driving route polyline to destination
+    if (routePath && routePath.length > 1) {
+      const pathCoords = routePath.map(pt => ({ lat: pt[0], lng: pt[1] }))
+      
+      const mainPolyline = new window.google.maps.Polyline({
+        path: pathCoords,
+        geodesic: true,
+        strokeColor: '#2563eb', // Primary bold BLUE line for active driving route navigation
+        strokeOpacity: 0.85,
+        strokeWeight: 5,
+        map: map,
+        zIndex: 15
+      })
+      activePolylinesRef.current.push(mainPolyline)
+    }
   }, [selectedStop, onRouteClients, nearbyCandidates, routePath, offRoute, handleViewRouteClient, mapLoaded])
 
   // ─── 15. Dynamic location accuracy circle update ───────────────────────────
