@@ -711,9 +711,11 @@ async def get_manager_team_locations(
         has_checkin = bool(att.get("check_in_time")) if att else False
         has_checkout = bool(att.get("check_out_time")) if att else False
         
-        # Strictly ONLINE if active tracking session OR recent GPS update (< 15 mins) OR checked in without checkout
+        # Strictly ONLINE if checked in without checkout AND (has active tracking session OR recent GPS update < 15 mins)
         is_online = False
-        if has_active_session or loc or e_id in _live_executive_telemetry or e_code in _live_executive_telemetry:
+        if has_checkout:
+            is_online = False
+        elif (has_active_session or loc or e_id in _live_executive_telemetry or e_code in _live_executive_telemetry):
             is_online = True
             if last_seen_at:
                 try:
@@ -740,15 +742,18 @@ async def get_manager_team_locations(
         client_longitude = None
         route_polyline = None
         
-        # 1. Try DB tracking session
-        cand_sess = sess if (has_active_session and sess) else None
-        
-        # 2. Try in-memory active sessions cache
-        if not cand_sess:
-            for cand_k in (e_id, e_code, e_email, e_id.lower()):
-                if cand_k and cand_k in _active_sessions_cache:
-                    cand_sess = _active_sessions_cache[cand_k]
-                    break
+        # Only attach active trip session if executive is currently logged in / online
+        cand_sess = None
+        if is_online:
+            # 1. Try DB tracking session
+            cand_sess = sess if (has_active_session and sess) else None
+            
+            # 2. Try in-memory active sessions cache
+            if not cand_sess:
+                for cand_k in (e_id, e_code, e_email, e_id.lower()):
+                    if cand_k and cand_k in _active_sessions_cache:
+                        cand_sess = _active_sessions_cache[cand_k]
+                        break
         
         if cand_sess:
             client_id = cand_sess.get("client_id")
@@ -1787,17 +1792,17 @@ async def end_tracking_session(
             _active_sessions_cache.pop(str(key).strip(), None)
             _active_sessions_cache.pop(str(key).strip().lower(), None)
 
-    # Update in-memory telemetry status
+    # Update in-memory telemetry status to offline/ended
     telem = _live_executive_telemetry.get(str(emp_id).strip(), {})
     telem.update({
         "tracking_status": "ended",
-        "is_online": True,
+        "is_online": False,
         "last_seen_at": now_iso
     })
     for key in (emp_id, employee_code, payload.get("email"), auth_uid):
         if key:
-            _live_executive_telemetry[str(key).strip()] = telem
-            _live_executive_telemetry[str(key).strip().lower()] = telem
+            _live_executive_telemetry.pop(str(key).strip(), None)
+            _live_executive_telemetry.pop(str(key).strip().lower(), None)
 
     # Log event & notify manager
     try:

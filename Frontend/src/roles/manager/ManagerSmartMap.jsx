@@ -1602,11 +1602,11 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   }
 
   const getProximityStatus = () => {
+    if (selectedExecutive && (!selectedExecutive.is_online || selectedExecutive.check_out_time || trackStatus === 'stopped' || trackStatus === 'ended' || trackStatus === 'logged_out' || trackStatus === 'offline')) {
+      return 'Offline (Logged Out)';
+    }
     if (trackStatus === 'ended' || trackStatus === 'stopped') return 'Stopped';
     if (trackSession?.status === 'ended' || trackSession?.status === 'stopped') return 'Stopped';
-    if (selectedExecutive && (selectedExecutive.is_online === false || selectedExecutive.tracking_status === 'stopped' || selectedExecutive.tracking_status === 'ended')) {
-      return 'Stopped';
-    }
     if (trackStatus === 'loading') return 'Loading...';
     if (!latestExecPos) return 'No GPS Data';
     if (!destClient) return 'No Destination';
@@ -1653,11 +1653,11 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   };
 
   const getHeartbeatStatus = () => {
+    if (selectedExecutive && (!selectedExecutive.is_online || selectedExecutive.check_out_time || trackStatus === 'ended' || trackStatus === 'stopped' || trackStatus === 'logged_out' || trackStatus === 'offline')) {
+      return { label: 'Offline (Logged Out)', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20', dot: 'bg-rose-500' };
+    }
     if (trackStatus === 'ended' || trackStatus === 'stopped') {
       return { label: 'Stopped', color: 'text-slate-400 bg-slate-500/10 border-slate-500/20', dot: 'bg-slate-500' };
-    }
-    if (selectedExecutive && !selectedExecutive.is_online) {
-      return { label: 'Offline (Logged Out)', color: 'text-rose-400 bg-rose-500/10 border-rose-500/20', dot: 'bg-rose-500' };
     }
     if (!lastPingMs) return { label: 'No Signal', color: 'text-slate-400 bg-slate-500/10 border-slate-500/20', dot: 'bg-slate-500' };
     
@@ -2681,20 +2681,26 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         return recStr.startsWith(todayIsoStr)
       })
 
-      setTrackSession(session)
+      const ex = executive || selectedExecutiveRef.current;
+      const isLoggedOut = Boolean(ex && (ex.is_online === false || ex.check_out_time || status === 'ended' || status === 'stopped' || status === 'logged_out' || status === 'offline'));
+
+      if (isLoggedOut) {
+        setTrackStatus('stopped');
+      } else {
+        setTrackStatus(status);
+      }
+
       crumbsRef.current = crumbs
       setTrackBreadcrumbs(crumbs)
-      setTrackStatus(status)
 
-      // Populate client destination details from session or executive record
+      // Populate client destination details ONLY if executive is currently logged in and tracking session is active
       const s = session || trackSessionRef.current;
-      const ex = executive || selectedExecutiveRef.current;
 
       const clientDestLat = s?.client_latitude != null ? Number(s.client_latitude) : (ex?.client_latitude != null ? Number(ex.client_latitude) : null);
       const clientDestLng = s?.client_longitude != null ? Number(s.client_longitude) : (ex?.client_longitude != null ? Number(ex.client_longitude) : null);
 
       let clientDest = null;
-      if (clientDestLat != null && clientDestLng != null && !isNaN(clientDestLat) && !isNaN(clientDestLng) && clientDestLat !== 0 && clientDestLng !== 0) {
+      if (!isLoggedOut && clientDestLat != null && clientDestLng != null && !isNaN(clientDestLat) && !isNaN(clientDestLng) && clientDestLat !== 0 && clientDestLng !== 0) {
         clientDest = {
           id: s?.client_id || ex?.client_id || 'dest',
           title: s?.client_name || s?.company_name || ex?.client_name || ex?.company_name || 'Client Destination',
@@ -2705,27 +2711,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           longitude: clientDestLng,
           route_polyline: s?.route_polyline || ex?.route_polyline || null,
         };
-      } else {
-        // Fallback to active nav session saved locally for dev testing
-        try {
-          const savedNavStr = localStorage.getItem('tc_active_nav_session');
-          if (savedNavStr) {
-            const savedNav = JSON.parse(savedNavStr);
-            if (savedNav?.navMode && savedNav?.selectedStop?.has_exact_coords) {
-              const stop = savedNav.selectedStop;
-              clientDest = {
-                id: stop.id,
-                title: stop.title || stop.company_name || 'Client Destination',
-                company_name: stop.company_name || stop.title || 'Client Destination',
-                address: stop.address || '',
-                phone: stop.phone || '',
-                latitude: Number(stop.latitude),
-                longitude: Number(stop.longitude),
-                route_polyline: null,
-              };
-            }
-          }
-        } catch (e) {}
       }
 
       if (clientDest) {
