@@ -5,7 +5,7 @@ import {
   CheckCircle2, Clock, User, Building2, X, Plus,
   Navigation2, Bell, Sparkles, PhoneCall, Check, Map as MapIcon,
   ChevronRight, AlertCircle, Loader2, Route, Target,
-  ArrowLeft, List, Radio, Activity, AlertTriangle, MessageSquare, Send, MessageCircle, RefreshCw
+  ArrowLeft, List, Radio, Activity, AlertTriangle, MessageSquare, Send, MessageCircle, RefreshCw, Zap
 } from 'lucide-react'
 import { crmAPI, customerAPI, visitAPI, spatialAPI, authAPI, settingsAPI, auditAPI, notificationAPI } from '../../services/api.js'
 import { useToast } from '../../common/ToastContext.jsx'
