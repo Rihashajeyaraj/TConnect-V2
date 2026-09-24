@@ -96,32 +96,31 @@ const GONE_MS    = 10 * 60 * 1000  // > 10 mins → Gone / No Signal
 
 
 function getTrackingBadge(status, lastUpdatedMs, isOnline = true) {
-  const age = lastUpdatedMs ? (Date.now() - Number(lastUpdatedMs)) : null
-
-  // 1. If recent live GPS ping (< 2 mins ago), executive is DEFINITELY LIVE / ONLINE!
-  if (age !== null && !isNaN(age) && age <= 120000) {
-    if (status === 'destination_reached' || status === 'reached' || status === 'arrived') {
-      return { label: 'Destination Reached', color: '#10b981', dot: '🎯' }
-    }
-    return { label: 'Live Connection', color: '#10b981', dot: '🟢' }
+  // If executive is not logged in / offline, or session is stopped/ended, return Offline
+  if (isOnline === false || status === 'ended' || status === 'logged_out' || status === 'stopped' || status === 'offline') {
+    return { label: 'Offline (Logged Out)', color: '#dc2626', dot: '🔴' }
   }
 
-  // 2. Explicit session logout / end when no recent ping
-  if ((status === 'ended' || status === 'logged_out' || status === 'stopped' || status === 'offline') && (!isOnline || (age !== null && age > 120000))) {
+  if (!lastUpdatedMs) {
     return { label: 'Offline (Logged Out)', color: '#dc2626', dot: '🔴' }
+  }
+
+  const age = Date.now() - Number(lastUpdatedMs)
+
+  // If last ping was > 5 minutes ago (or ping is missing), executive is stale/offline
+  if (isNaN(age) || age > 5 * 60 * 1000) {
+    const minsAgo = Math.floor(age / 60000)
+    if (isNaN(minsAgo) || minsAgo > 60 * 24) {
+      return { label: 'Offline (Logged Out)', color: '#dc2626', dot: '🔴' }
+    }
+    return { label: `Stale (${minsAgo}m paused)`, color: '#f97316', dot: '🟠' }
   }
 
   if (status === 'destination_reached' || status === 'reached' || status === 'arrived') {
     return { label: 'Destination Reached', color: '#10b981', dot: '🎯' }
   }
 
-  if (!lastUpdatedMs) {
-    return isOnline ? { label: 'Live Connection', color: '#10b981', dot: '🟢' } : { label: 'Offline (Logged Out)', color: '#dc2626', dot: '🔴' }
-  }
-
-  // 3. Stale state: Signal paused / stationary stop
-  const minsAgo = Math.floor(age / 60000)
-  return { label: `Stale (${minsAgo}m paused)`, color: '#f97316', dot: '🟠' }
+  return { label: 'Live Connection', color: '#10b981', dot: '🟢' }
 }
 
 
@@ -2791,7 +2790,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const handleRefreshTracking = useCallback(async () => {
     if (isRefreshingTracking) return
     setIsRefreshingTracking(true)
-    setLastPingMs(Date.now())
     try {
       const targetExec = selectedExecutiveRef.current || selectedExecutive
       const tasks = []
@@ -2799,7 +2797,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       if (targetExec) tasks.push(_loadTrackingHistory(targetExec))
 
       await Promise.all(tasks)
-      setLastPingMs(Date.now())
       showToast('Live tracking radar & location refreshed!', 'success')
     } catch (err) {
       console.error("Error refreshing tracking:", err)
@@ -2826,7 +2823,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     return { label: 'LIVE', color: '#10b981', bg: 'rgba(16,185,129,0.15)', dot: '🟢' }
   }
 
-  const badge = getTrackingBadge(trackStatus === 'ended' ? 'ended' : trackStatus, lastPingMs)
+  const badge = getTrackingBadge(trackStatus === 'ended' ? 'ended' : trackStatus, lastPingMs, selectedExecutive?.is_online)
   const proxStatus = getProximityStatus()
   const hb = getHeartbeatStatus()
 
