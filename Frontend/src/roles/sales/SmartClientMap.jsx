@@ -1832,12 +1832,12 @@ export default function SmartClientMap({ isManagerView = false }) {
       distFromLastM = haversineDistance(lastPt.lat, lastPt.lng, executivePos.lat, executivePos.lng) * 1000
     }
 
-    // Filter position jumps & GPS drift noise (ignore small noise jumps when GPS accuracy is poor or indoor)
-    const minRequiredDistM = gpsAccuracy ? Math.max(12, Math.min(gpsAccuracy * 0.45, 45)) : 12
-    const isGpsReliable = !gpsAccuracy || gpsAccuracy <= 60
+    // Filter position jumps & GPS drift noise (require 25m displacement anchoring from last vertex to eliminate stationary building scribbles)
+    const minRequiredDistM = 25
+    const isGpsReliable = !gpsAccuracy || gpsAccuracy <= 70
 
     const isReasonableMove = validPts.length === 0 || (
-      isGpsReliable && distFromLastM >= minRequiredDistM && distFromLastM < 350
+      isGpsReliable && distFromLastM >= minRequiredDistM && distFromLastM < 500
     )
     if (isReasonableMove) {
       validPts.push({ lat: executivePos.lat, lng: executivePos.lng })

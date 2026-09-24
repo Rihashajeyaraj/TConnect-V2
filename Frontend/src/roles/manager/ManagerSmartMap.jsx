@@ -2287,14 +2287,18 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       } else {
         const distKm = haversineDistance(lastPt.lat, lastPt.lng, lat, lng)
         const distM = distKm * 1000
-        // Ignore stationary GPS jitter (< 8m) and GPS teleport jumps (> 400m) to ensure true travel path
-        if (distM >= 8 && distM <= 400) {
+        // Require at least 25m displacement from last anchored vertex to prevent stationary building scribbles
+        if (distM >= 25 && distM <= 600) {
           pts.push(newPt)
         }
       }
 
       if (pts.length >= 1 && googleMapRef.current && window.google) {
         const rawPath = pts.map(p => ({ lat: p.lat, lng: p.lng }));
+        // Append current live position to trail if it moved > 3m from last anchor (without adding a permanent vertex until 25m)
+        if (pts.length === 1 || (lastPt && haversineDistance(lastPt.lat, lastPt.lng, lat, lng) * 1000 > 3)) {
+          rawPath.push(newPt);
+        }
 
         // Render single vibrant RED traveled line matching exact physical movement points (No synthetic OSRM route loops)
         if (rawPath.length >= 2) {
@@ -2760,23 +2764,24 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         try {
           const rawPathCoords = crumbs.map(c => ({ lat: Number(c.latitude), lng: Number(c.longitude) })).filter(pt => !isNaN(pt.lat) && !isNaN(pt.lng) && pt.lat !== 0 && pt.lng !== 0)
           
-          // Seed in-memory trail points so live updates seamlessly extend this trail
-          trailPointsRef.current = [...rawPathCoords]
-
-          // Filter stationary micro-jitter (< 8 meters) and cell-tower teleports (> 400 meters)
+          // Apply 25m Displacement Anchoring filter to location history crumbs (Eliminates building scribbles & cell-tower teleports)
           const pathCoords = []
           if (rawPathCoords.length > 0) {
             pathCoords.push(rawPathCoords[0])
+            let lastAnchor = rawPathCoords[0]
             for (let i = 1; i < rawPathCoords.length; i++) {
-              const prev = pathCoords[pathCoords.length - 1]
               const curr = rawPathCoords[i]
-              const distKm = haversineDistance(prev.lat, prev.lng, curr.lat, curr.lng)
+              const distKm = haversineDistance(lastAnchor.lat, lastAnchor.lng, curr.lat, curr.lng)
               const distM = distKm * 1000
-              if (distM >= 8 && distM <= 400) {
+              if (distM >= 25 && distM <= 600) {
                 pathCoords.push(curr)
+                lastAnchor = curr
               }
             }
           }
+          
+          // Seed in-memory trail points with clean anchored vertices so live updates seamlessly extend this trail
+          trailPointsRef.current = [...pathCoords]
 
           let startLat = session?.start_latitude != null ? Number(session.start_latitude) : Number(crumbs[0].latitude)
           let startLng = session?.start_longitude != null ? Number(session.start_longitude) : Number(crumbs[0].longitude)
