@@ -412,6 +412,8 @@ export default function SmartClientMap({ isManagerView = false }) {
   const [dataLoading,  setDataLoading]  = useState(() => {
     return !(localStorage.getItem("tc_sm_leads") || localStorage.getItem("tc_customer_accounts"));
   })
+  const [nearbyRadiusKm, setNearbyRadiusKm] = useState(5)
+  const [showOnlyNearby, setShowOnlyNearby] = useState(true)
 
   // ── Executive Mobile Inquiry Response State ────────────────────────────────
   const [activeInquiry, setActiveInquiry] = useState(null)
@@ -1077,6 +1079,44 @@ export default function SmartClientMap({ isManagerView = false }) {
     [...allLeads, ...allCustomers]
   , [allLeads, allCustomers])
 
+  const nearbyLeads = useMemo(() => {
+    if (!showOnlyNearby) return allLeads
+    return allLeads.filter(l => l.distanceKm != null && parseFloat(l.distanceKm) <= nearbyRadiusKm)
+  }, [allLeads, showOnlyNearby, nearbyRadiusKm])
+
+  const nearbyCustomers = useMemo(() => {
+    if (!showOnlyNearby) return allCustomers
+    return allCustomers.filter(c => c.distanceKm != null && parseFloat(c.distanceKm) <= nearbyRadiusKm)
+  }, [allCustomers, showOnlyNearby, nearbyRadiusKm])
+
+  const nearbyVisits = useMemo(() => {
+    if (!showOnlyNearby) return allVisits
+    return allVisits.filter(v => v.distanceKm != null && parseFloat(v.distanceKm) <= nearbyRadiusKm)
+  }, [allVisits, showOnlyNearby, nearbyRadiusKm])
+
+  const nearbyCandidates = useMemo(() => {
+    if (!showOnlyNearby) return allCandidates
+    return allCandidates.filter(c => c.distanceKm != null && parseFloat(c.distanceKm) <= nearbyRadiusKm)
+  }, [allCandidates, showOnlyNearby, nearbyRadiusKm])
+
+  // Helper to check route corridor clients immediately when a route is computed
+  const checkAndNotifyRouteClients = useCallback((routePath, pos, destId) => {
+    if (!routePath || routePath.length < 2) return
+    const found = detectRouteClients({
+      candidates: allCandidatesRef.current,
+      routePath,
+      execPos: pos,
+      destId,
+      completedVisitIds,
+      scheduledVisitIds: scheduledVisitClientIds,
+      dismissedIds: dismissedAlerts.current,
+    })
+    setOnRouteClients(found)
+    if (found.length > 0) {
+      showToast(`📍 ${found.length} nearby client/lead(s) detected along your driving route!`, 'success')
+    }
+  }, [completedVisitIds, scheduledVisitClientIds, showToast])
+
   // ─── 5. Search suggestions ──────────────────────────────────────────────
   const searchSuggestions = useMemo(() => {
     const q = searchQuery.toLowerCase().trim()
@@ -1118,6 +1158,7 @@ export default function SmartClientMap({ isManagerView = false }) {
         })
         setRouteStatus('found')
         lastRoutePos.current = { lat: pos.lat, lng: pos.lng }
+        checkAndNotifyRouteClients(path, pos, dest.id)
         return path
       }
     } catch (e) {
@@ -1148,6 +1189,7 @@ export default function SmartClientMap({ isManagerView = false }) {
         })
         setRouteStatus('found')
         lastRoutePos.current = { lat: pos.lat, lng: pos.lng }
+        checkAndNotifyRouteClients(path, pos, dest.id)
         return path
       }
     } catch (e) {
@@ -1167,8 +1209,9 @@ export default function SmartClientMap({ isManagerView = false }) {
     })
     setRouteStatus('fallback')
     lastRoutePos.current = { lat: pos.lat, lng: pos.lng }
+    checkAndNotifyRouteClients(path, pos, dest.id)
     return path
-  }, [executivePos])
+  }, [executivePos, checkAndNotifyRouteClients])
 
   // ── Auto-Restore Active Navigation Route & Historical Traveled Path on Mount ────────────
   useEffect(() => {
@@ -1368,7 +1411,7 @@ export default function SmartClientMap({ isManagerView = false }) {
       return
     }
 
-    const execPos    = execPosRef.current
+    const execPos    = executivePos || execPosRef.current
     const candidates = allCandidatesRef.current
 
     const found = detectRouteClients({
@@ -1383,13 +1426,16 @@ export default function SmartClientMap({ isManagerView = false }) {
 
     setOnRouteClients(found)
 
-    // Notify with hysteresis
+    // Notify with hysteresis while travelling
     found.forEach(client => {
       if (!shouldNotify(client.id, execPos, notifiedClientsMap.current)) return
 
       const typeLabel =
-        client.alertType === 'previous'  ? '🔄 Previous Client Nearby' :
-        client.alertType === 'scheduled' ? '📅 Scheduled Visit Nearby' : '📍 Nearby Client'
+        client.alertType === 'previous'  ? '🔄 Previous Visited Client Nearby' :
+        client.alertType === 'scheduled' ? '📅 Scheduled Visit Nearby' : '📍 Nearby Client / Lead'
+
+      // Display real-time toast notification while travelling
+      showToast(`${typeLabel}: ${client.title} (${client.distToRouteM}m on route)`, 'info')
 
       auditAPI.logEvent({
         action: 'NEARBY_CLIENT_DETECTED',
@@ -1406,8 +1452,7 @@ export default function SmartClientMap({ isManagerView = false }) {
         }
       }).catch(() => null)
     })
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [routePath, selectedStop, completedVisitIds, scheduledVisitClientIds])
+  }, [routePath, executivePos, selectedStop, completedVisitIds, scheduledVisitClientIds, showToast])
 
 
   // ─── 11. View client from route alert ──────────────────────────────────
@@ -1650,7 +1695,47 @@ export default function SmartClientMap({ isManagerView = false }) {
         },
         'center'
       )
-      activeMarkersRef.current.push(clientMarker)
+      if (clientMarker) activeMarkersRef.current.push(clientMarker)
+    })
+
+    // Render nearby candidate markers (leads & clients <= nearbyRadiusKm) on map canvas as color-coded pins
+    nearbyCandidates.forEach(cand => {
+      if (!cand.has_exact_coords) return
+      if (selectedStop && String(cand.id) === String(selectedStop.id)) return
+      if (onRouteClients.some(c => String(c.id) === String(cand.id))) return
+
+      const isCust = cand.category === 'Customer'
+      const bgColor = isCust ? '#059669' : '#e11d48'
+      const icon = isCust ? '🏢' : '👤'
+
+      const candHtml = `
+        <div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; cursor: pointer; user-select: none;">
+          <div style="background: ${bgColor}; border: 2px solid #ffffff; border-radius: 16px; padding: 2px 7px; color: #ffffff; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 800; white-space: nowrap; box-shadow: 0 2px 8px rgba(0,0,0,0.35); display: flex; align-items: center; gap: 4px;">
+            <span>${icon}</span>
+            <span>${cand.title.length > 14 ? cand.title.substring(0, 14) + '…' : cand.title}</span>
+          </div>
+          <div style="width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid ${bgColor}; margin-top: -1px;"></div>
+        </div>
+      `
+      const candLatLng = new window.google.maps.LatLng(cand.latitude, cand.longitude)
+      const candMarker = createMapMarker(
+        candLatLng,
+        map,
+        candHtml,
+        () => {
+          setSelectedEntity(cand)
+          showInfoWindow(candLatLng, `
+            <div style="font-family: ui-sans-serif, system-ui, sans-serif; padding: 2px;">
+              <span style="font-size: 9px; font-weight: 900; text-transform: uppercase; background: ${isCust ? '#ecfdf5' : '#fff1f2'}; color: ${isCust ? '#047857' : '#be123c'}; padding: 2px 6px; border-radius: 4px; border: 1px solid ${isCust ? '#a7f3d0' : '#fecdd3'};">${cand.category}</span>
+              <h4 style="font-size: 12px; font-weight: 800; color: #0f172a; margin-top: 4px; margin-bottom: 2px;">${cand.title}</h4>
+              <p style="font-size: 10px; color: #64748b; margin: 0;">📍 ${cand.address}</p>
+              ${cand.distanceKm ? `<p style="font-size: 10px; font-weight: 700; color: #2563eb; margin-top: 2px;">${cand.distanceKm} km away</p>` : ''}
+            </div>
+          `)
+        },
+        'bottom'
+      )
+      if (candMarker) activeMarkersRef.current.push(candMarker)
     })
 
     if (routePath.length > 1) {
@@ -1689,7 +1774,7 @@ export default function SmartClientMap({ isManagerView = false }) {
         activePolylinesRef.current.push(offRoutePolyline)
       }
     }
-  }, [selectedStop, onRouteClients, routePath, offRoute, handleViewRouteClient, mapLoaded])
+  }, [selectedStop, onRouteClients, nearbyCandidates, routePath, offRoute, handleViewRouteClient, mapLoaded])
 
   // ─── 15. Dynamic location accuracy circle update ───────────────────────────
   useEffect(() => {
@@ -2371,16 +2456,29 @@ export default function SmartClientMap({ isManagerView = false }) {
             </div>
             <div className="flex items-center justify-between px-5 py-3 border-b border-slate-100 flex-shrink-0">
               <h3 className="text-sm font-black text-slate-900 flex items-center gap-2"><MapPin className="w-4 h-4 text-blue-600" /> Select Destination</h3>
-              <button onClick={() => setShowAddModal(false)} className="p-1.5 hover:bg-slate-100 text-slate-400 rounded-xl"><X size={16} /></button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowOnlyNearby(prev => !prev)}
+                  className={`px-2.5 py-1 rounded-xl text-[10px] font-black transition border cursor-pointer ${
+                    showOnlyNearby
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                      : 'bg-slate-100 text-slate-600 border-slate-200'
+                  }`}
+                >
+                  {showOnlyNearby ? `📍 Nearby (<= ${nearbyRadiusKm}km)` : '🌐 All Clients'}
+                </button>
+                <button onClick={() => setShowAddModal(false)} className="p-1.5 hover:bg-slate-100 text-slate-400 rounded-xl"><X size={16} /></button>
+              </div>
             </div>
 
             {/* Tabs */}
             <div className="px-4 py-2 flex-shrink-0">
               <div className="flex gap-1 bg-slate-100 p-1 rounded-xl">
                 {[
-                  { key: 'leads', label: 'Leads', count: allLeads.length },
-                  { key: 'customers', label: 'Customers', count: allCustomers.length },
-                  { key: 'visits', label: 'Visits', count: allVisits.length },
+                  { key: 'leads', label: 'Leads', count: nearbyLeads.length },
+                  { key: 'customers', label: 'Customers', count: nearbyCustomers.length },
+                  { key: 'visits', label: 'Visits', count: nearbyVisits.length },
                 ].map(tab => (
                   <button key={tab.key} onClick={() => setActiveTab(tab.key)}
                     className={`flex-1 py-2 rounded-lg text-xs font-black transition cursor-pointer ${
@@ -2398,15 +2496,42 @@ export default function SmartClientMap({ isManagerView = false }) {
                 ? <div className="flex items-center justify-center py-12 gap-2 text-xs text-slate-400"><Loader2 size={16} className="animate-spin text-blue-500" /> Loading…</div>
                 : (
                   <>
-                    {activeTab === 'leads' && (allLeads.length === 0
-                      ? <p className="text-xs text-slate-400 text-center py-10">No leads assigned.</p>
-                      : allLeads.map(l => <DestItem key={l.id} item={l} onSelect={() => handleSelectStop(l)} isSelected={selectedStop?.id === l.id} />))}
-                    {activeTab === 'customers' && (allCustomers.length === 0
-                      ? <p className="text-xs text-slate-400 text-center py-10">No customers assigned.</p>
-                      : allCustomers.map(c => <DestItem key={c.id} item={c} onSelect={() => handleSelectStop(c)} isSelected={selectedStop?.id === c.id} />))}
-                    {activeTab === 'visits' && (allVisits.length === 0
-                      ? <p className="text-xs text-slate-400 text-center py-10">No visits scheduled.</p>
-                      : allVisits.map(v => <DestItem key={v.id} item={v} onSelect={() => handleSelectStop(v)} isSelected={selectedStop?.id === v.id} />))}
+                    {activeTab === 'leads' && (nearbyLeads.length === 0
+                      ? (
+                        <div className="text-center py-10 space-y-2">
+                          <p className="text-xs text-slate-400 font-semibold">No leads assigned{showOnlyNearby ? ` within ${nearbyRadiusKm} km` : ''}.</p>
+                          {showOnlyNearby && (
+                            <button onClick={() => setShowOnlyNearby(false)} className="px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-xs font-black">
+                              Show All Leads
+                            </button>
+                          )}
+                        </div>
+                      )
+                      : nearbyLeads.map(l => <DestItem key={l.id} item={l} onSelect={() => handleSelectStop(l)} isSelected={selectedStop?.id === l.id} />))}
+                    {activeTab === 'customers' && (nearbyCustomers.length === 0
+                      ? (
+                        <div className="text-center py-10 space-y-2">
+                          <p className="text-xs text-slate-400 font-semibold">No customers assigned{showOnlyNearby ? ` within ${nearbyRadiusKm} km` : ''}.</p>
+                          {showOnlyNearby && (
+                            <button onClick={() => setShowOnlyNearby(false)} className="px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-xs font-black">
+                              Show All Customers
+                            </button>
+                          )}
+                        </div>
+                      )
+                      : nearbyCustomers.map(c => <DestItem key={c.id} item={c} onSelect={() => handleSelectStop(c)} isSelected={selectedStop?.id === c.id} />))}
+                    {activeTab === 'visits' && (nearbyVisits.length === 0
+                      ? (
+                        <div className="text-center py-10 space-y-2">
+                          <p className="text-xs text-slate-400 font-semibold">No visits scheduled{showOnlyNearby ? ` within ${nearbyRadiusKm} km` : ''}.</p>
+                          {showOnlyNearby && (
+                            <button onClick={() => setShowOnlyNearby(false)} className="px-3 py-1.5 bg-blue-50 text-blue-600 border border-blue-200 rounded-xl text-xs font-black">
+                              Show All Visits
+                            </button>
+                          )}
+                        </div>
+                      )
+                      : nearbyVisits.map(v => <DestItem key={v.id} item={v} onSelect={() => handleSelectStop(v)} isSelected={selectedStop?.id === v.id} />))}
                   </>
                 )}
             </div>
