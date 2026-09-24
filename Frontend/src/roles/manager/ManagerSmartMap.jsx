@@ -2736,6 +2736,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         destClientRef.current = null;
       }
 
+      if (!googleMapRef.current || !window.google) return
+      const map = googleMapRef.current
+
       // Check if tracking session is active or has recorded breadcrumbs
       const isSessionActive = (session && (session.status === 'active' || session.status === 'in_progress' || session.status === 'travelling') && status !== 'ended') || (crumbs && crumbs.length > 0);
 
