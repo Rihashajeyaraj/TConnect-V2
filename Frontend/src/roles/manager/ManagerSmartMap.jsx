@@ -4338,7 +4338,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                           : 0
 
                         return (
-                          <tr key={rep.employee_id || idx} className="hover:bg-slate-50/80 transition-colors duration-150">
+                          <tr key={rep.id || rep.session_id || `${rep.employee_id || 'rep'}_${idx}`} className="hover:bg-slate-50/80 transition-colors duration-150">
                             
                             {/* 1. EXEC CODE / LEAD NUMBER */}
                             <td className="py-4 px-4 align-top">
