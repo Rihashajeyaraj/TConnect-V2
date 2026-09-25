@@ -527,8 +527,8 @@ export const spatialAPI = {
     request('/spatial/match-route', { method: 'POST', body: JSON.stringify({ points }) }),
   computeRouteMatrix: (origins, destinations) =>
     request('/spatial/route-matrix', { method: 'POST', body: JSON.stringify({ origins, destinations }) }),
-  getTeamLocations: () =>
-    request('/spatial/manager/team-locations'),
+  getTeamLocations: (opts = {}) =>
+    request('/spatial/manager/team-locations', opts),
 
   // ── Live GPS Tracking ──────────────────────────────────────────────────────
   startSession: (lat, lng, clientData = {}) =>

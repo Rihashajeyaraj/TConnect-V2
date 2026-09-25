@@ -809,7 +809,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true)
     try {
-      const res = await spatialAPI.getTeamLocations().catch(() => null)
+      const res = await spatialAPI.getTeamLocations({ silentError: true, timeoutMs: 10000 }).catch(() => null)
       const payload = res?.data || res || {}
       let list = Array.isArray(payload?.executives) ? [...payload.executives] : []
 
