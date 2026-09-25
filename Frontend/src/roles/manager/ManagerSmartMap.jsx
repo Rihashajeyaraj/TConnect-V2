@@ -2534,7 +2534,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         });
       }
     }
-  }, [])
 
     // Animate live marker smoothly ONLY when genuine movement occurs or when initializing marker
     try {
