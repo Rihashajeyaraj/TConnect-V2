@@ -1005,7 +1005,7 @@ def compute_route(payload: Dict[str, Any] = Body(...)):
 
     def get_osrm_route(o_lat, o_lng, d_lat, d_lng):
         try:
-            osrm_url = f"http://router.project-osrm.org/route/v1/driving/{o_lng},{o_lat};{d_lng},{d_lat}?overview=full"
+            osrm_url = f"https://router.project-osrm.org/route/v1/driving/{o_lng},{o_lat};{d_lng},{d_lat}?overview=full"
             r = requests.get(osrm_url, timeout=2.5)
             if r.status_code == 200:
                 res_data = r.json()
@@ -1301,7 +1301,7 @@ def get_osrm_route_polyline(o_lat: float, o_lng: float, d_lat: float, d_lng: flo
         return _polyline_cache[cache_key]
     import requests
     try:
-        osrm_url = f"http://router.project-osrm.org/route/v1/driving/{o_lng},{o_lat};{d_lng},{d_lat}?overview=full"
+        osrm_url = f"https://router.project-osrm.org/route/v1/driving/{o_lng},{o_lat};{d_lng},{d_lat}?overview=full"
         r = requests.get(osrm_url, timeout=5)
         if r.status_code == 200:
             res_data = r.json()

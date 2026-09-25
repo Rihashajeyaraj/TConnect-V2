@@ -1188,7 +1188,7 @@ export default function SmartClientMap({ isManagerView = false }) {
 
     setRoutePath(preliminaryPath)
     setRouteDetails(prev => ({
-      distanceKm: (distDirectKm * 1.25).toFixed(1), // ~1.25 road curvature factor
+      distanceKm: (distDirectKm * 1.25).toFixed(1),
       durationMins: preliminaryMins,
       staticDurationMins: null,
       trafficAware: false,
@@ -1197,55 +1197,97 @@ export default function SmartClientMap({ isManagerView = false }) {
     }))
     setRouteStatus('found')
 
-    // 1. Try Google Maps traffic-aware routing via Backend (with 4s timeout)
+    // 1. Client-Side Google Directions API (Direct JS SDK Driving Route along roads with traffic)
+    if (window.google && window.google.maps && window.google.maps.DirectionsService) {
+      try {
+        const ds = new window.google.maps.DirectionsService()
+        const clientResult = await new Promise((resolve) => {
+          ds.route({
+            origin: new window.google.maps.LatLng(pos.lat, pos.lng),
+            destination: new window.google.maps.LatLng(Number(dest.latitude), Number(dest.longitude)),
+            travelMode: window.google.maps.TravelMode.DRIVING
+          }, (res, status) => {
+            if (status === 'OK' && res?.routes?.[0]?.overview_path?.length > 1) {
+              const path = res.routes[0].overview_path.map(pt => [pt.lat(), pt.lng()])
+              const leg = res.routes[0].legs?.[0]
+              resolve({
+                path,
+                distanceKm: leg?.distance?.value ? (leg.distance.value / 1000).toFixed(1) : (distDirectKm * 1.25).toFixed(1),
+                durationMins: leg?.duration_in_traffic?.value ? Math.ceil(leg.duration_in_traffic.value / 60) : (leg?.duration?.value ? Math.ceil(leg.duration.value / 60) : preliminaryMins),
+                trafficAware: !!leg?.duration_in_traffic,
+                provider: 'google_js_sdk'
+              })
+            } else {
+              resolve(null)
+            }
+          })
+        })
+
+        if (clientResult && clientResult.path && clientResult.path.length >= 2) {
+          setRoutePath(clientResult.path)
+          setRouteDetails({
+            distanceKm: clientResult.distanceKm,
+            durationMins: clientResult.durationMins,
+            staticDurationMins: clientResult.durationMins,
+            trafficAware: clientResult.trafficAware,
+            provider: clientResult.provider
+          })
+          setRouteStatus('found')
+          lastRoutePos.current = { lat: pos.lat, lng: pos.lng }
+          checkAndNotifyRouteClients(clientResult.path, pos, dest.id)
+          return clientResult.path
+        }
+      } catch (err) {
+        console.warn('Client-side Google DirectionsService notice:', err)
+      }
+    }
+
+    // 2. Backend Routing API (Google Routes API / OSRM)
     try {
       const res = await spatialAPI.getRoute(
         { latitude: pos.lat, longitude: pos.lng },
         { latitude: dest.latitude, longitude: dest.longitude }
       ).catch(() => null)
 
-      if (res && res.success && (res.polyline || res.distance_km)) {
-        let path = preliminaryPath
-        if (res.polyline) {
-          path = decodePolyline(res.polyline)
-          if (path.length > 0) {
-            path[path.length - 1] = [Number(dest.latitude), Number(dest.longitude)]
-          }
+      if (res && res.success && res.polyline && typeof res.polyline === 'string' && res.polyline.length > 5) {
+        const decoded = decodePolyline(res.polyline)
+        if (decoded && decoded.length >= 2) {
+          decoded[decoded.length - 1] = [Number(dest.latitude), Number(dest.longitude)]
+          setRoutePath(decoded)
+          setRouteDetails({
+            distanceKm: res.distance_km,
+            durationMins: res.eta_minutes,
+            staticDurationMins: res.static_eta_minutes || res.eta_minutes,
+            trafficAware: res.traffic_aware,
+            provider: res.provider || 'google_backend',
+          })
+          setRouteStatus('found')
+          lastRoutePos.current = { lat: pos.lat, lng: pos.lng }
+          checkAndNotifyRouteClients(decoded, pos, dest.id)
+          return decoded
         }
-        setRoutePath(path)
-        setRouteDetails({
-          distanceKm: res.distance_km,
-          durationMins: res.eta_minutes,
-          staticDurationMins: res.static_eta_minutes || res.eta_minutes,
-          trafficAware: res.traffic_aware,
-          provider: res.provider || 'google',
-        })
-        setRouteStatus('found')
-        lastRoutePos.current = { lat: pos.lat, lng: pos.lng }
-        checkAndNotifyRouteClients(path, pos, dest.id)
-        return path
       }
     } catch (e) {
       console.warn('Backend route service notice:', e)
     }
 
-    // 2. Fallback to OSRM (non-traffic road routing, 3s timeout)
+    // 3. Fallback to HTTPS OSRM (non-traffic road routing)
     const coordStr = `${pos.lng},${pos.lat};${dest.longitude},${dest.latitude}`
     const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`
 
     try {
-      const res  = await fetch(url, { signal: AbortSignal.timeout(3000) }).catch(() => null)
+      const res = await fetch(url, { signal: AbortSignal.timeout(4000) }).catch(() => null)
       if (res && res.ok) {
         const data = await res.json()
         if (data.code === 'Ok' && data.routes?.length > 0) {
           const route = data.routes[0]
-          const path  = route.geometry.coordinates.map(c => [c[1], c[0]])
+          const path = route.geometry.coordinates.map(c => [c[1], c[0]])
           if (path.length > 0) {
             path[path.length - 1] = [Number(dest.latitude), Number(dest.longitude)]
           }
           setRoutePath(path)
           setRouteDetails({
-            distanceKm:   (route.distance / 1000).toFixed(1),
+            distanceKm: (route.distance / 1000).toFixed(1),
             durationMins: Math.ceil(route.duration / 60),
             staticDurationMins: null,
             trafficAware: false,
@@ -1261,7 +1303,7 @@ export default function SmartClientMap({ isManagerView = false }) {
       console.warn('OSRM road route fallback notice:', e)
     }
 
-    // 3. Fallback to Straight-line route
+    // 4. Final fallback
     setRouteStatus('found')
     lastRoutePos.current = { lat: pos.lat, lng: pos.lng }
     checkAndNotifyRouteClients(preliminaryPath, pos, dest.id)
