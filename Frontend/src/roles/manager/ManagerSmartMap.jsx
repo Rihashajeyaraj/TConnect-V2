@@ -96,28 +96,48 @@ const OFFLINE_MS = 5 * 60 * 1000   // > 5 mins → Offline
 const GONE_MS    = OFFLINE_MS      // backward compatibility alias
 const RealMapSnapshotCard = ({ snap, index, executiveName }) => {
   const [imgError, setImgError] = useState(false)
-  const imageUrl = snap?.image_url || snap?.url || snap?.snapshot_data
+  const rawUrl = snap?.image_url || snap?.url || snap?.snapshot_data
 
-  if (!imageUrl || imgError) {
-    return (
-      <div className="relative w-full h-full bg-slate-900 flex flex-col items-center justify-center text-slate-400 p-4 select-none">
-        <Camera size={28} className="mb-2 text-slate-500 animate-pulse" />
-        <span className="text-xs font-semibold text-slate-300">Capturing Map Screenshot...</span>
-      </div>
-    )
-  }
+  const backendOrigin = useMemo(() => {
+    try {
+      return getApiBaseUrl().replace(/\/api\/v1\/?$/, '')
+    } catch (_) {
+      return 'http://localhost:8000'
+    }
+  }, [])
+
+  const imageUrl = useMemo(() => {
+    if (!rawUrl) return null
+    if (rawUrl.startsWith('http://') || rawUrl.startsWith('https://')) return rawUrl
+    return `${backendOrigin}${rawUrl.startsWith('/') ? '' : '/'}${rawUrl}`
+  }, [rawUrl, backendOrigin])
+
+  const lat = snap?.latitude ? Number(snap.latitude) : 13.0795
+  const lng = snap?.longitude ? Number(snap.longitude) : 80.2261
+
+  // Static map fallback URL centered at the exact snapshot GPS coordinates
+  const fallbackOsmUrl = `https://static-maps.yandex.ru/1.x/?l=map&ll=${lng},${lat}&z=15&size=450,250&pt=${lng},${lat},pm2rdm`
+
+  const displayUrl = (!imgError && imageUrl) ? imageUrl : fallbackOsmUrl
 
   return (
     <div className="relative w-full h-full bg-slate-900 overflow-hidden group select-none">
       <img
-        src={imageUrl}
+        src={displayUrl}
         alt={snap?.title || `Snapshot ${index + 1}`}
         className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-        onError={() => setImgError(true)}
+        onError={() => {
+          if (!imgError && imageUrl) {
+            setImgError(true)
+          }
+        }}
       />
       <div className="absolute top-2.5 left-2.5 bg-slate-900/80 backdrop-blur-xs text-white px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1.5 shadow-md border border-white/20">
         <span className={`w-2 h-2 rounded-full ${index === 0 ? 'bg-emerald-400' : index === 1 ? 'bg-sky-400' : 'bg-rose-500'}`}></span>
         <span>{snap?.title || `Snapshot ${index + 1}`}</span>
+      </div>
+      <div className="absolute bottom-2 right-2 bg-slate-950/80 backdrop-blur-xs text-[9px] text-white/90 px-2 py-0.5 rounded-md font-mono border border-white/10">
+        📍 {lat.toFixed(4)}°, {lng.toFixed(4)}°
       </div>
     </div>
   )
