@@ -546,9 +546,9 @@ export const spatialAPI = {
   endSession: (data) =>
     request('/spatial/location/session/end', { method: 'POST', body: JSON.stringify(data) }),
   /** Manager fetches breadcrumb history for a specific executive (authorized). */
-  getLocationHistory: (employeeId, sessionId = null) => {
+  getLocationHistory: (employeeId, sessionId = null, opts = {}) => {
     const qs = sessionId ? `?session_id=${sessionId}` : ''
-    return request(`/spatial/location/history/${employeeId}${qs}`)
+    return request(`/spatial/location/history/${employeeId}${qs}`, opts)
   },
   /** Manager fetches all today's sessions for an executive (for multi-visit map visualization). */
   getTodaySessions: (employeeId) =>

@@ -581,7 +581,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   useEffect(() => {
     const fetchReplies = async () => {
       try {
-        const res = await notificationAPI.getNotifications()
+        const res = await notificationAPI.getNotifications({ silentError: true, timeoutMs: 5000 }).catch(() => null)
         const notifs = Array.isArray(res) ? res : (res?.data || [])
         const chatNotifs = notifs.filter(n => {
           const cat = String(n.category || n.type || '').toUpperCase()
@@ -645,7 +645,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     }
 
     fetchReplies()
-    const interval = setInterval(fetchReplies, 3000)
+    const interval = setInterval(fetchReplies, 15000)
     const handleEvent = () => fetchReplies()
     window.addEventListener('tc_notifications_updated', handleEvent)
     window.addEventListener('tc_inquiry_received', handleEvent)
@@ -2761,10 +2761,11 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     window.addEventListener('storage', handleInstantLocationUpdate)
     window.addEventListener('tc_location_update', handleInstantLocationUpdate)
 
-    // Always start polling timer as secure backend API fallback
+    // Secure backend API fallback polling (runs only when realtime is disconnected)
     pollTimerRef.current = setInterval(async () => {
+      if (document.hidden || realtimeOk) return;
       try {
-        const r = await spatialAPI.getLocationHistory(employeeId, sessionId)
+        const r = await spatialAPI.getLocationHistory(employeeId, sessionId, { silentError: true, timeoutMs: 5000 })
         const d = r?.data || r
         const newCrumbs = d?.breadcrumbs || []
         const currentCount = crumbsRef.current.length
@@ -2816,8 +2817,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       } catch (err) {
         console.warn("Polling error:", err)
       }
-    }, 3000) // 3-second fallback polling interval for responsive live tracking
-  }, [_applyNewCrumb, _handleSessionEnded, fetchData, latestExecPos])
+    }, 15000) // 15-second quiet fallback polling interval
+  }, [_applyNewCrumb, _handleSessionEnded, fetchData, latestExecPos, realtimeOk])
 
   const _loadTrackingHistory = useCallback(async (executive) => {
     if (!googleMapRef.current || !window.google) return
