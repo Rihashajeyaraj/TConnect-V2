@@ -2513,8 +2513,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     // Extend traveled trail polyline dynamically with road geometry snapping & stationary jitter filter
     try {
       const accuracy = Number(crumb.accuracy || 10)
-      // Only append to polyline vertices if accuracy <= 60m
-      if (accuracy <= 60) {
+      // Only append to polyline vertices if accuracy <= 35m (filter coarse cell pings)
+      if (accuracy <= 35) {
         const newPt = { lat, lng }
         const pts = trailPointsRef.current
         const lastPt = pts.length > 0 ? pts[pts.length - 1] : null
@@ -2524,21 +2524,36 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         } else {
           const distKm = haversineDistance(lastPt.lat, lastPt.lng, lat, lng)
           const distM = distKm * 1000
-          // Require at least 12m displacement from last anchored vertex to prevent stationary jitter scribbles
-          if (distM >= 12 && distM <= 800) {
-            // Back-and-forth spike filter: if 2+ points exist, check if heading reverses (> 140 deg) over < 35m
-            if (pts.length >= 2) {
-              const prevPt = pts[pts.length - 2]
-              const h1 = getBearing(prevPt.lat, prevPt.lng, lastPt.lat, lastPt.lng)
-              const h2 = getBearing(lastPt.lat, lastPt.lng, lat, lng)
-              let diff = Math.abs(h1 - h2)
-              if (diff > 180) diff = 360 - diff
-              if (diff > 140 && distM < 35) {
-                pts.pop() // remove jitter spike
+          // Require at least 12m displacement & max 350m to prevent stationary jitter & cell-tower teleports
+          if (distM >= 12 && distM <= 350) {
+            // Check if new point ping-pongs back to an earlier point (like start location) over 60m away
+            let isPingPong = false
+            if (pts.length >= 2 && distM > 60) {
+              for (let k = 0; k < pts.length - 1; k++) {
+                const earlierPt = pts[k]
+                const distToEarlier = haversineDistance(earlierPt.lat, earlierPt.lng, lat, lng) * 1000
+                if (distToEarlier < 30) {
+                  isPingPong = true
+                  break
+                }
               }
             }
-            pts.push(newPt)
-            _triggerBatchRoadMatching(pts)
+
+            if (!isPingPong) {
+              // Back-and-forth spike filter: if 2+ points exist, check if heading reverses (> 140 deg) over < 35m
+              if (pts.length >= 2) {
+                const prevPt = pts[pts.length - 2]
+                const h1 = getBearing(prevPt.lat, prevPt.lng, lastPt.lat, lastPt.lng)
+                const h2 = getBearing(lastPt.lat, lastPt.lng, lat, lng)
+                let diff = Math.abs(h1 - h2)
+                if (diff > 180) diff = 360 - diff
+                if (diff > 140 && distM < 35) {
+                  pts.pop() // remove jitter spike
+                }
+              }
+              pts.push(newPt)
+              _triggerBatchRoadMatching(pts)
+            }
           }
         }
       }

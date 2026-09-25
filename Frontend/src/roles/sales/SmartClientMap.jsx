@@ -2100,14 +2100,38 @@ export default function SmartClientMap({ isManagerView = false }) {
       distFromLastM = haversineDistance(lastPt.lat, lastPt.lng, executivePos.lat, executivePos.lng) * 1000
     }
 
-    // Filter position jumps & GPS drift noise (accuracy <= 60m gate & 15m displacement anchoring)
-    const minRequiredDistM = 15
-    const isGpsReliable = gpsAccuracy != null ? gpsAccuracy <= 60 : true
+    // Filter position jumps, cell-tower teleports, and ping-pong noise
+    const minRequiredDistM = 12
+    const maxAllowedDistM = 350
+    const isGpsReliable = gpsAccuracy != null ? gpsAccuracy <= 35 : true
 
-    const isReasonableMove = (validPts.length === 0 && isGpsReliable) || (
-      isGpsReliable && distFromLastM >= minRequiredDistM && distFromLastM < 600
+    // Check if new point ping-pongs back to an earlier point (like start location) over 60m away
+    let isPingPong = false
+    if (validPts.length >= 2 && distFromLastM > 60) {
+      for (let k = 0; k < validPts.length - 1; k++) {
+        const earlierPt = validPts[k]
+        const distToEarlier = haversineDistance(earlierPt.lat, earlierPt.lng, executivePos.lat, executivePos.lng) * 1000
+        if (distToEarlier < 30) {
+          isPingPong = true
+          break
+        }
+      }
+    }
+
+    const isReasonableMove = !isPingPong && (
+      (validPts.length === 0 && isGpsReliable) ||
+      (isGpsReliable && distFromLastM >= minRequiredDistM && distFromLastM <= maxAllowedDistM)
     )
+
     if (isReasonableMove) {
+      // Remove temporary spike if previous point backtracked sharply
+      if (validPts.length >= 2) {
+        const prevPt = validPts[validPts.length - 2]
+        const distToPrevPrev = haversineDistance(prevPt.lat, prevPt.lng, executivePos.lat, executivePos.lng) * 1000
+        if (distToPrevPrev < 30 && distFromLastM > 60) {
+          validPts.pop()
+        }
+      }
       validPts.push({ lat: executivePos.lat, lng: executivePos.lng })
       _triggerBatchRoadMatching(validPts)
     }
