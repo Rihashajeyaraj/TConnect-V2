@@ -2851,7 +2851,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         if (supabase && sess) {
           const { data: evs, error: evsErr } = await supabase
             .schema('hrms')
-            .table('tracking_events')
+            .from('tracking_events')
             .select('*')
             .eq('session_id', sess.id)
             .order('created_at', { ascending: false })
