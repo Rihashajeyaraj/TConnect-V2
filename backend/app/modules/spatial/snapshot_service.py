@@ -24,11 +24,12 @@ async def render_real_map_png(
     start_lat: float, start_lng: float,
     current_lat: float, current_lng: float,
     dest_lat: Optional[float] = None, dest_lng: Optional[float] = None,
-    polyline_points: Optional[List[Dict[str, float]]] = None
+    polyline_points: Optional[List[Dict[str, float]]] = None,
+    executive_name: str = "Sales Executive"
 ) -> Optional[bytes]:
     """
-    Renders an actual map view using Playwright headless Chromium with map tiles,
-    Start Pin, Executive Bike Marker, Destination Pin, and Route Polyline.
+    Renders an actual Google Maps view using Playwright headless Chromium with Google Maps tiles,
+    Start Pin, Executive Bike Marker with Name Pill, Destination Pin, and Red Traveled Polyline.
     Returns PNG image bytes if size check passes (> 20KB), else None.
     """
     try:
@@ -36,22 +37,24 @@ async def render_real_map_png(
             logger.warning("[SnapshotService] async_playwright unavailable, skipping map PNG render.")
             return None
 
-        # Format polyline points for Leaflet JS
+        # Format polyline points for Google Maps JS
         pts_js = []
         if polyline_points:
             for p in polyline_points:
                 try:
                     lat_val = float(p.get("lat") if p.get("lat") is not None else p.get("latitude"))
                     lng_val = float(p.get("lng") if p.get("lng") is not None else p.get("longitude"))
-                    pts_js.append([lat_val, lng_val])
+                    pts_js.append({"lat": lat_val, "lng": lng_val})
                 except Exception:
                     pass
         if not pts_js:
-            pts_js = [[start_lat, start_lng], [current_lat, current_lng]]
+            pts_js = [{"lat": start_lat, "lng": start_lng}, {"lat": current_lat, "lng": current_lng}]
 
         dest_lat_val = dest_lat if dest_lat is not None else current_lat
         dest_lng_val = dest_lng if dest_lng is not None else current_lng
         has_dest = "true" if dest_lat is not None else "false"
+
+        gmaps_key = getattr(settings, "GOOGLE_MAPS_API_KEY", "")
 
         html_template = f"""
         <!DOCTYPE html>
@@ -59,78 +62,135 @@ async def render_real_map_png(
         <head>
             <meta charset="utf-8"/>
             <style>
-                html, body, #map {{ height: 100%; margin: 0; padding: 0; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }}
-                .custom-pin {{
-                    width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
-                    color: white; font-weight: 800; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.45); border: 2.5px solid white;
+                html, body, #map {{ height: 100%; margin: 0; padding: 0; background: #0f172a; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }}
+                @keyframes scootyRadarPulse {{
+                    0% {{ transform: scale(0.85); opacity: 0.9; }}
+                    60% {{ transform: scale(1.45); opacity: 0.25; }}
+                    100% {{ transform: scale(1.6); opacity: 0; }}
                 }}
-                .pin-start {{ background: #10b981; }}
-                .pin-exec {{ background: #2563eb; width: 38px; height: 38px; font-size: 16px; }}
-                .pin-dest {{ background: #f43f5e; }}
-                .leaflet-tooltip {{
-                    background: rgba(15, 23, 42, 0.9) !important;
-                    color: #f8fafc !important;
-                    border: 1px solid rgba(255, 255, 255, 0.2) !important;
-                    border-radius: 8px !important;
-                    font-weight: 700 !important;
-                    font-size: 11px !important;
-                    padding: 4px 8px !important;
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+                @keyframes liveBlink {{
+                    0%, 100% {{ opacity: 1; transform: scale(1); }}
+                    50% {{ opacity: 0.3; transform: scale(0.8); }}
                 }}
             </style>
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
-            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+            <script src="https://maps.googleapis.com/maps/api/js?key={gmaps_key}&libraries=geometry,places,marker,routes"></script>
         </head>
         <body>
             <div id="map"></div>
             <script>
-                const startPt = [{start_lat}, {start_lng}];
-                const execPt = [{current_lat}, {current_lng}];
-                const destPt = [{dest_lat_val}, {dest_lng_val}];
+                const startPt = {{ lat: {start_lat}, lng: {start_lng} }};
+                const execPt = {{ lat: {current_lat}, lng: {current_lng} }};
+                const destPt = {{ lat: {dest_lat_val}, lng: {dest_lng_val} }};
                 const pathPts = {pts_js};
 
-                const map = L.map('map', {{ zoomControl: false, attributionControl: false }});
-
-                L.tileLayer('https://mt1.google.com/vt/lyrs=m&x={{x}}&y={{y}}&z={{z}}', {{
-                    maxZoom: 19
-                }}).addTo(map);
-
-                const polyline = L.polyline(pathPts, {{ color: '#2563eb', weight: 5, opacity: 0.85, lineJoin: 'round' }}).addTo(map);
-
-                const allBounds = [startPt, execPt];
-                if ({has_dest}) allBounds.push(destPt);
-                pathPts.forEach(pt => allBounds.push(pt));
-
-                const bounds = L.latLngBounds(allBounds);
-                map.fitBounds(bounds, {{ padding: [60, 60] }});
-
-                // Start Marker
-                const startIcon = L.divIcon({{
-                    className: '',
-                    html: '<div class="custom-pin pin-start">▶</div>',
-                    iconSize: [32, 32], iconAnchor: [16, 16]
+                const map = new google.maps.Map(document.getElementById('map'), {{
+                    center: execPt,
+                    zoom: 15,
+                    mapTypeId: 'roadmap',
+                    disableDefaultUI: true,
+                    gestureHandling: 'none',
+                    styles: [
+                        {{ featureType: "poi", elementType: "labels", stylers: [{{ visibility: "off" }}] }}
+                    ]
                 }});
-                L.marker(startPt, {{ icon: startIcon }}).addTo(map).bindTooltip("START LOCATION", {{ permanent: true, direction: "top" }});
 
-                // Executive Bike Live Marker
-                const execIcon = L.divIcon({{
-                    className: '',
-                    html: '<div class="custom-pin pin-exec">🏍️</div>',
-                    iconSize: [38, 38], iconAnchor: [19, 19]
+                // Red Polyline for traveled route
+                const polyline = new google.maps.Polyline({{
+                    path: pathPts,
+                    geodesic: true,
+                    strokeColor: '#dc2626',
+                    strokeWeight: 5,
+                    strokeOpacity: 0.95,
+                    map: map
                 }});
-                L.marker(execPt, {{ icon: execIcon }}).addTo(map).bindTooltip("LIVE EXECUTIVE", {{ permanent: true, direction: "bottom" }});
 
-                // Destination Marker
-                if ({has_dest}) {{
-                    const destIcon = L.divIcon({{
-                        className: '',
-                        html: '<div class="custom-pin pin-dest">🏁</div>',
-                        iconSize: [32, 32], iconAnchor: [16, 16]
-                    }});
-                    L.marker(destPt, {{ icon: destIcon }}).addTo(map).bindTooltip("DESTINATION SITE", {{ permanent: true, direction: "top" }});
+                // Fit bounds
+                const bounds = new google.maps.LatLngBounds();
+                bounds.extend(startPt);
+                bounds.extend(execPt);
+                if ({has_dest}) bounds.extend(destPt);
+                pathPts.forEach(pt => bounds.extend(pt));
+                map.fitBounds(bounds, 60);
+
+                // OverlayView for custom HTML markers
+                class HTMLMapMarker extends google.maps.OverlayView {{
+                    constructor(latlng, html, anchor = 'center') {{
+                        super();
+                        this.latlng = latlng;
+                        this.html = html;
+                        this.anchor = anchor;
+                        this.div = null;
+                        this.setMap(map);
+                    }}
+                    onAdd() {{
+                        const div = document.createElement('div');
+                        div.style.position = 'absolute';
+                        div.innerHTML = this.html;
+                        this.div = div;
+                        const panes = this.getPanes();
+                        panes.overlayImage.appendChild(div);
+                    }}
+                    draw() {{
+                        if (!this.div) return;
+                        const projection = this.getProjection();
+                        if (!projection) return;
+                        const point = projection.fromLatLngToDivPixel(this.latlng);
+                        if (point) {{
+                            const width = this.div.offsetWidth || 32;
+                            const height = this.div.offsetHeight || 32;
+                            this.div.style.left = (point.x - width / 2) + 'px';
+                            if (this.anchor === 'bottom') {{
+                                this.div.style.top = (point.y - height) + 'px';
+                            }} else {{
+                                this.div.style.top = (point.y - height / 2) + 'px';
+                            }}
+                        }}
+                    }}
+                    onRemove() {{
+                        if (this.div && this.div.parentNode) {{
+                            this.div.parentNode.removeChild(this.div);
+                            this.div = null;
+                        }}
+                    }}
                 }}
 
-                window.__map_rendered = true;
+                // 1. START Marker
+                new HTMLMapMarker(
+                    startPt,
+                    `<div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #10b981; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(16,185,129,0.4); color: #fff; font-family: sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">START</div>`,
+                    'center'
+                );
+
+                // 2. Executive Bike Marker
+                const execName = "{executive_name}";
+                const shortName = execName ? execName.split(' ')[0] : 'Executive';
+                new HTMLMapMarker(
+                    execPt,
+                    `<div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; user-select: none;">
+                        <div style="background: rgba(15, 23, 42, 0.92); border: 1.5px solid #10b981; border-radius: 20px; padding: 2px 8px; color: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 800; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); margin-bottom: 2px; display: flex; align-items: center; gap: 4px; z-index: 10;">
+                          <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; animation: liveBlink 1.2s infinite ease-in-out;"></span>
+                          <span>${{shortName}}</span>
+                        </div>
+                        <div style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; position: relative;">
+                          <div style="position: absolute; width: 44px; height: 44px; border-radius: 50%; background: rgba(16,185,129,0.2); border: 1.5px solid rgba(16,185,129,0.5); animation: scootyRadarPulse 2s infinite cubic-bezier(0.2, 0.8, 0.2, 1); z-index: 1;"></div>
+                          <div style="width: 38px; height: 38px; border-radius: 50%; background: #2563eb; border: 2.5px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; font-size: 18px; z-index: 5;">🏍️</div>
+                        </div>
+                    </div>`,
+                    'center'
+                );
+
+                // 3. Destination Marker
+                if ({has_dest}) {{
+                    new HTMLMapMarker(
+                        destPt,
+                        `<div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #dc2626; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(220,38,38,0.4); color: #fff; font-family: sans-serif; font-size: 14px; font-weight: 900;">🎯</div>`,
+                        'bottom'
+                    );
+                }}
+
+                google.maps.event.addListenerOnce(map, 'idle', () => {{
+                    setTimeout(() => {{ window.__map_rendered = true; }}, 1500);
+                }});
             </script>
         </body>
         </html>
@@ -140,8 +200,7 @@ async def render_real_map_png(
             browser = await p.chromium.launch(headless=True)
             page = await browser.new_page(viewport={"width": 800, "height": 500})
             await page.set_content(html_template)
-            await page.wait_for_function("window.__map_rendered === true", timeout=5000)
-            await page.wait_for_timeout(2000)  # Wait for map tiles to complete loading
+            await page.wait_for_function("window.__map_rendered === true", timeout=12000)
 
             screenshot_bytes = await page.screenshot(type="png")
             await browser.close()
@@ -246,7 +305,8 @@ async def capture_and_store_snapshot(
         start_lat=start_lat, start_lng=start_lng,
         current_lat=current_lat, current_lng=current_lng,
         dest_lat=dest_lat, dest_lng=dest_lng,
-        polyline_points=polyline_points
+        polyline_points=polyline_points,
+        executive_name=employee_name
     )
 
     if not png_bytes:
