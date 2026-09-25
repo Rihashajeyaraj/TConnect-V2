@@ -3029,6 +3029,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                 }
                 pathCoords.push(curr)
                 lastAnchor = curr
+              } else if (distM > 800) {
+                // Reset anchor on large GPS jumps so lines do not crisscross back across town
+                lastAnchor = curr
+                pathCoords.push(curr)
               }
             }
           }

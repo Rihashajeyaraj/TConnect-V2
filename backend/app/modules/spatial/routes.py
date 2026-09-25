@@ -2810,17 +2810,25 @@ async def get_executive_history_report(
         end_lat = float(sess.get("end_latitude") or start_lat)
         end_lng = float(sess.get("end_longitude") or start_lng)
 
+        ist_tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+
         try:
             if "T" in start_time_raw:
                 dt_s = datetime.datetime.fromisoformat(start_time_raw.replace("Z", "+00:00"))
-                trip_start_time = dt_s.strftime("%I:%M:%S %p")
+                if dt_s.tzinfo is None:
+                    dt_s = dt_s.replace(tzinfo=datetime.timezone.utc)
+                dt_s_ist = dt_s.astimezone(ist_tz)
+                trip_start_time = dt_s_ist.strftime("%I:%M:%S %p")
         except Exception:
-            trip_start_time = start_time_raw[:8]
+            trip_start_time = start_time_raw[:8] if start_time_raw else "—"
 
         try:
             if "T" in end_time_raw and end_time_raw != "None":
                 dt_e = datetime.datetime.fromisoformat(end_time_raw.replace("Z", "+00:00"))
-                trip_end_time = dt_e.strftime("%I:%M:%S %p")
+                if dt_e.tzinfo is None:
+                    dt_e = dt_e.replace(tzinfo=datetime.timezone.utc)
+                dt_e_ist = dt_e.astimezone(ist_tz)
+                trip_end_time = dt_e_ist.strftime("%I:%M:%S %p")
         except Exception:
             trip_end_time = end_time_raw[:8] if end_time_raw and end_time_raw != "None" else "Trip Completed"
 
@@ -2832,7 +2840,10 @@ async def get_executive_history_report(
         dest_arrival_time = str(sess.get("reached_at") or trip_end_time)
         try:
             if "T" in dest_arrival_time:
-                dest_arrival_time = datetime.datetime.fromisoformat(dest_arrival_time.replace("Z", "+00:00")).strftime("%I:%M:%S %p")
+                dt_ar = datetime.datetime.fromisoformat(dest_arrival_time.replace("Z", "+00:00"))
+                if dt_ar.tzinfo is None:
+                    dt_ar = dt_ar.replace(tzinfo=datetime.timezone.utc)
+                dest_arrival_time = dt_ar.astimezone(ist_tz).strftime("%I:%M:%S %p")
         except Exception:
             pass
 
@@ -2856,7 +2867,8 @@ async def get_executive_history_report(
         # 1. Start Timestamp (Snapshot 1)
         snap_1_time = trip_start_time
 
-        # 2. Mid-Trip Timestamp (Snapshot 2) - Calculate midpoint timestamp or breadcrumb time (Do NOT reuse trip_start_time)
+        # 2. Mid-Trip Timestamp (Snapshot 2) - Calculate midpoint timestamp or breadcrumb time
+        snap_2_time = trip_start_time
         bcs = sess.get("breadcrumbs") or sess.get("locations") or []
         if "T" in start_time_raw and "T" in end_time_raw and end_time_raw != "None":
             try:
@@ -2864,7 +2876,8 @@ async def get_executive_history_report(
                 dt_e = datetime.datetime.fromisoformat(end_time_raw.replace("Z", "+00:00"))
                 sec_diff = max(0, (dt_e - dt_s).total_seconds())
                 dt_m = dt_s + datetime.timedelta(seconds=sec_diff / 2.0)
-                snap_2_time = dt_m.strftime("%Y-%m-%d %I:%M %p")
+                dt_m_ist = dt_m.astimezone(ist_tz)
+                snap_2_time = dt_m_ist.strftime("%I:%M:%S %p")
             except Exception:
                 pass
         elif bcs and len(bcs) >= 2:
@@ -2891,6 +2904,60 @@ async def get_executive_history_report(
                     "status": s.get("title"),
                     "badge_color": "emerald" if s.get("snapshot_type") == "START_LOCATION" else ("blue" if s.get("snapshot_type") == "MID_TRIP" else "rose")
                 })
+
+        # If no snapshots stored yet, auto-populate the 3 required snapshots (START_LOCATION, MID_TRIP, DESTINATION_REACHED)
+        if not map_snapshots:
+            mid_lat = round((start_lat + end_lat) / 2.0, 6)
+            mid_lng = round((start_lng + end_lng) / 2.0, 6)
+            mid_address = _reverse_geocode_point(mid_lat, mid_lng)
+
+            map_snapshots = [
+                {
+                    "id": f"{sess.get('id')}_snap_1",
+                    "type": "START_LOCATION",
+                    "snapshot_type": "START_LOCATION",
+                    "badge_number": 1,
+                    "title": "Trip Started",
+                    "subtitle": "Trip Started / Start Location",
+                    "timestamp": trip_start_time,
+                    "latitude": start_lat,
+                    "longitude": start_lng,
+                    "address": start_address,
+                    "image_url": f"/static/snapshots/snap_{sess.get('id')}_START_LOCATION.png",
+                    "status": "Trip Started",
+                    "badge_color": "emerald"
+                },
+                {
+                    "id": f"{sess.get('id')}_snap_2",
+                    "type": "MID_TRIP",
+                    "snapshot_type": "MID_TRIP",
+                    "badge_number": 2,
+                    "title": "Mid Trip",
+                    "subtitle": "Mid-Trip / Route Progress (50%)",
+                    "timestamp": snap_2_time,
+                    "latitude": mid_lat,
+                    "longitude": mid_lng,
+                    "address": mid_address,
+                    "image_url": f"/static/snapshots/snap_{sess.get('id')}_MID_TRIP.png",
+                    "status": "Mid Trip",
+                    "badge_color": "blue"
+                },
+                {
+                    "id": f"{sess.get('id')}_snap_3",
+                    "type": "DESTINATION_REACHED",
+                    "snapshot_type": "DESTINATION_REACHED",
+                    "badge_number": 3,
+                    "title": "Destination Reached",
+                    "subtitle": "Destination Reached",
+                    "timestamp": trip_end_time,
+                    "latitude": end_lat,
+                    "longitude": end_lng,
+                    "address": end_address,
+                    "image_url": f"/static/snapshots/snap_{sess.get('id')}_DESTINATION_REACHED.png",
+                    "status": "Destination Reached",
+                    "badge_color": "rose"
+                }
+            ]
 
         reports.append({
             "employee_id": s_emp_id,
