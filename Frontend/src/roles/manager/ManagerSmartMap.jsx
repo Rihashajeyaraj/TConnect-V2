@@ -93,6 +93,7 @@ try {
 const IDLE_MS    = 1 * 60 * 1000   // > 1 min → Idle
 const STALE_MS   = IDLE_MS         // backward compatibility alias
 const OFFLINE_MS = 5 * 60 * 1000   // > 5 mins → Offline
+const GONE_MS    = OFFLINE_MS      // backward compatibility alias
 const RealMapSnapshotCard = ({ snap, index, executiveName }) => {
   const [imgError, setImgError] = useState(false)
   const imageUrl = snap?.image_url || snap?.url || snap?.snapshot_data
