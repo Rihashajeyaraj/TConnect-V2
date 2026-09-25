@@ -210,10 +210,10 @@ export const authAPI = {
 }
 
 export const crmAPI = {
-  getLeads: () => request('/crm/leads'),
-  getTeamLeads: (params = {}) => {
+  getLeads: (opts = {}) => request('/crm/leads', opts),
+  getTeamLeads: (params = {}, opts = {}) => {
     const query = new URLSearchParams(params).toString()
-    return request(`/crm/team-leads${query ? `?${query}` : ''}`)
+    return request(`/crm/team-leads${query ? `?${query}` : ''}`, opts)
   },
   createLead: (data) => request('/crm/leads', { method: 'POST', body: JSON.stringify(data) }),
   getLeadById: (id) => request(`/crm/leads/${id}`),
@@ -266,8 +266,8 @@ export const crmAPI = {
 }
 
 export const customerAPI = {
-  getCustomers: () => request('/customer/customers'),
-  getCustomerById: (id) => request(`/customer/customers/${id}`),
+  getCustomers: (opts = {}) => request('/customer/customers', opts),
+  getCustomerById: (id, opts = {}) => request(`/customer/customers/${id}`, opts),
 
   /**
    * Direct Add Customer.

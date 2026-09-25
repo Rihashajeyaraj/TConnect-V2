@@ -1409,9 +1409,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     async function loadCandidates() {
       try {
         const [leadsRes, custsRes, visitsRes] = await Promise.allSettled([
-          crmAPI.getLeads(),
-          customerAPI.getCustomers(),
-          visitAPI.getVisits(),
+          crmAPI.getLeads({ silentError: true, timeoutMs: 8000 }),
+          customerAPI.getCustomers({ silentError: true, timeoutMs: 8000 }),
+          visitAPI.getVisits({ silentError: true, timeoutMs: 8000 }),
         ])
         const safeArray = (res) => {
           if (res.status !== 'fulfilled') return []
@@ -2124,7 +2124,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     let candidates = candidatesRef.current;
     if (!candidates || candidates.length === 0) {
       try {
-        const [lRes, cRes] = await Promise.allSettled([crmAPI.getLeads(), customerAPI.getCustomers()]);
+        const [lRes, cRes] = await Promise.allSettled([
+          crmAPI.getLeads({ silentError: true, timeoutMs: 8000 }),
+          customerAPI.getCustomers({ silentError: true, timeoutMs: 8000 })
+        ]);
         const safeArray = (r) => (r.status === 'fulfilled' ? (Array.isArray(r.value) ? r.value : (r.value?.data || [])) : []);
         const toNorm = (item, category, idx) => {
           const lat = item.latitude != null ? Number(item.latitude) : null;
