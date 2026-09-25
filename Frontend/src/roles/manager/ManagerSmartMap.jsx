@@ -93,146 +93,33 @@ try {
 const IDLE_MS    = 1 * 60 * 1000   // > 1 min → Idle
 const STALE_MS   = IDLE_MS         // backward compatibility alias
 const OFFLINE_MS = 5 * 60 * 1000   // > 5 mins → Offline
-const SnapshotMapGraphic = ({ snap, index, executiveName }) => {
-  const isStart = index === 0
-  const isMid = index === 1
-  const isEnd = index === 2
+const RealMapSnapshotCard = ({ snap, index, executiveName }) => {
+  const [imgError, setImgError] = useState(false)
+  const imageUrl = snap?.image_url || snap?.url || snap?.snapshot_data
 
-  const firstName = (executiveName || 'Executive').split(' ')[0]
+  if (!imageUrl || imgError) {
+    return (
+      <div className="relative w-full h-full bg-slate-100 flex flex-col items-center justify-center text-slate-400 p-4 select-none">
+        <MapPin size={32} className="mb-2 text-slate-300" />
+        <span className="text-xs font-bold text-slate-600">Real Map Snapshot</span>
+        {snap?.address && (
+          <span className="text-[10px] text-slate-400 text-center mt-1 line-clamp-1">{snap.address}</span>
+        )}
+      </div>
+    )
+  }
 
   return (
-    <div className="relative w-full h-full bg-[#f4f6f8] overflow-hidden select-none">
-      {/* Map Tile Vector Graphics */}
-      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice">
-        {/* Background Land blocks */}
-        <rect width="320" height="200" fill="#f4f6f8" />
-
-        {/* Cooum River curved water path */}
-        <path
-          d="M -10 40 Q 60 20 130 50 T 260 30 T 330 60 L 330 0 L -10 0 Z"
-          fill="#cbd5e1"
-          opacity="0.25"
-        />
-        <path
-          d="M -10 42 Q 60 22 130 52 T 260 32 T 330 62"
-          fill="none"
-          stroke="#93c5fd"
-          strokeWidth="28"
-          strokeLinecap="round"
-        />
-        <text x="165" y="28" fill="#3b82f6" fontSize="9" fontWeight="700" opacity="0.8" transform="rotate(-4 165 28)">
-          Cooum River
-        </text>
-
-        {/* Secondary Road Grid Lines */}
-        <g stroke="#ffffff" strokeWidth="6" strokeLinecap="round" opacity="0.95">
-          <line x1="20" y1="180" x2="300" y2="40" />
-          <line x1="120" y1="190" x2="160" y2="10" />
-          <line x1="220" y1="190" x2="260" y2="10" />
-          <line x1="10" y1="120" x2="310" y2="120" />
-          <line x1="10" y1="70" x2="310" y2="70" />
-          <line x1="50" y1="190" x2="90" y2="10" />
-        </g>
-        <g stroke="#e2e8f0" strokeWidth="2.5" strokeLinecap="round">
-          <line x1="20" y1="180" x2="300" y2="40" />
-          <line x1="120" y1="190" x2="160" y2="10" />
-          <line x1="220" y1="190" x2="260" y2="10" />
-          <line x1="10" y1="120" x2="310" y2="120" />
-          <line x1="10" y1="70" x2="310" y2="70" />
-          <line x1="50" y1="190" x2="90" y2="10" />
-        </g>
-
-        {/* 1. Planned Driving Route (Dashed Light Blue Line) */}
-        <path
-          d="M 235 155 L 140 105 L 80 140 L 150 175 L 235 110"
-          fill="none"
-          stroke="#60a5fa"
-          strokeWidth="3"
-          strokeDasharray="5 3"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          opacity="0.8"
-        />
-
-        {/* 2. Travelled Path (Solid Red Polyline following actual movement) */}
-        {isStart && (
-          <path
-            d="M 235 155 L 180 130"
-            fill="none"
-            stroke="#ef4444"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        )}
-        {isMid && (
-          <path
-            d="M 235 155 L 140 105 L 110 120"
-            fill="none"
-            stroke="#ef4444"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        )}
-        {isEnd && (
-          <path
-            d="M 235 155 L 140 105 L 80 140 L 150 175 L 235 110"
-            fill="none"
-            stroke="#ef4444"
-            strokeWidth="4"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-          />
-        )}
-
-        {/* Place Names & Landmarks */}
-        <text x="45" y="102" fill="#64748b" fontSize="8" fontWeight="600">Koyambedu</text>
-        <text x="55" y="152" fill="#64748b" fontSize="7" fontWeight="500">Vegetable market</text>
-        <text x="210" y="145" fill="#64748b" fontSize="7" fontWeight="500">Anna Nagar</text>
-      </svg>
-
-      {/* HTML Overlays (Badges, Pins, Executive Marker) */}
-      
-      {/* 1. Executive Live Rider Marker */}
-      <div 
-        className="absolute transition-all duration-300 flex flex-col items-center pointer-events-none"
-        style={{
-          top: isStart ? '62%' : isMid ? '58%' : '52%',
-          left: isStart ? '56%' : isMid ? '34%' : '72%',
-          transform: 'translate(-50%, -50%)'
-        }}
-      >
-        {/* Black Name Pill */}
-        <div className="bg-black text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md border border-slate-700 whitespace-nowrap mb-0.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-          <span>{firstName}</span>
-        </div>
-        {/* Bike Icon Circle */}
-        <div className="w-7 h-7 rounded-full bg-sky-500 border-2 border-white shadow-lg flex items-center justify-center text-white text-xs">
-          🏍️
-        </div>
-      </div>
-
-      {/* 2. START Point Pin Badge (Green) */}
-      <div 
-        className="absolute flex items-center justify-center pointer-events-none"
-        style={{ top: '76%', left: '74%', transform: 'translate(-50%, -50%)' }}
-      >
-        <div className="w-8 h-8 rounded-full bg-emerald-500 text-white font-black text-[9px] border-2 border-white shadow-lg flex items-center justify-center tracking-tighter uppercase">
-          START
-        </div>
-      </div>
-
-      {/* 3. DESTINATION Client Pin Badge (Red) */}
-      <div 
-        className="absolute flex items-center pointer-events-none"
-        style={{ top: '52%', left: '74%', transform: 'translate(-50%, -50%)' }}
-      >
-        <div className="bg-rose-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md border border-white">
-          <MapPin size={11} className="fill-white" />
-          <span>Client</span>
-        </div>
+    <div className="relative w-full h-full bg-slate-900 overflow-hidden group select-none">
+      <img
+        src={imageUrl}
+        alt={snap?.title || `Snapshot ${index + 1}`}
+        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+        onError={() => setImgError(true)}
+      />
+      <div className="absolute top-2.5 left-2.5 bg-slate-900/80 backdrop-blur-xs text-white px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1.5 shadow-md border border-white/20">
+        <span className={`w-2 h-2 rounded-full ${index === 0 ? 'bg-emerald-400' : index === 1 ? 'bg-sky-400' : 'bg-rose-500'}`}></span>
+        <span>{snap?.title || `Snapshot ${index + 1}`}</span>
       </div>
     </div>
   )
@@ -4576,38 +4463,26 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           return defaultTitle
         }
 
-        const snapshots = [
-          {
-            ...(rawSnaps[0] || {}),
-            id: 'snap_1',
-            badge_number: 1,
-            title: cleanTitle(rawSnaps[0]?.title, 'Trip Started'),
-            subtitle: 'Trip Started / Start Location',
-            timestamp: rawSnaps[0]?.timestamp || routeSnapModalRecord.trip_start?.time || routeSnapModalRecord.trip_started_time || '25/09/2026 09:15 AM',
-            address: rawSnaps[0]?.address || routeSnapModalRecord.trip_start?.address || routeSnapModalRecord.start_location || 'Koyambedu, Chennai, Tamil Nadu 600107, India',
-            badge_color: 'emerald'
-          },
-          {
-            ...(rawSnaps[1] || {}),
-            id: 'snap_2',
-            badge_number: 2,
-            title: cleanTitle(rawSnaps[1]?.title, 'Mid Trip'),
-            subtitle: 'Mid-Trip / Route Progress',
-            timestamp: rawSnaps[1]?.timestamp || '25/09/2026 10:32 AM',
-            address: rawSnaps[1]?.address || 'Near Koyambedu Market, Chennai, Tamil Nadu 600107, India',
-            badge_color: 'blue'
-          },
-          {
-            ...(rawSnaps[2] || {}),
-            id: 'snap_3',
-            badge_number: 3,
-            title: cleanTitle(rawSnaps[2]?.title, 'Destination Reached'),
-            subtitle: 'Destination Reached',
-            timestamp: rawSnaps[2]?.timestamp || routeSnapModalRecord.destination_arrival?.time || routeSnapModalRecord.trip_end?.time || '25/09/2026 11:48 AM',
-            address: rawSnaps[2]?.address || routeSnapModalRecord.destination_arrival?.address || routeSnapModalRecord.destination_address || 'Baskin Robin, Anna Nagar, Chennai, Tamil Nadu 600107, India',
-            badge_color: 'rose'
-          }
-        ]
+        const snapshots = rawSnaps.length > 0 
+          ? rawSnaps.map((s, idx) => ({
+              ...s,
+              id: s.id || `snap_${idx + 1}`,
+              badge_number: s.badge_number || (idx + 1),
+              title: cleanTitle(s.title, idx === 0 ? 'Trip Started' : idx === 1 ? 'Mid Trip' : 'Destination Reached'),
+              timestamp: s.timestamp || '—',
+              address: s.address || '—'
+            }))
+          : [
+              {
+                id: 'snap_1',
+                badge_number: 1,
+                title: 'Trip Started',
+                subtitle: 'Trip Started / Start Location',
+                timestamp: routeSnapModalRecord.trip_start?.time || routeSnapModalRecord.trip_started_time || '—',
+                address: routeSnapModalRecord.trip_start?.address || routeSnapModalRecord.start_location || 'Location Address Not Available',
+                image_url: routeSnapModalRecord.trip_start?.image_url
+              }
+            ]
 
         return (
           <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200 font-sans">
@@ -4624,7 +4499,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                       Route Snapshots
                     </h2>
                     <p className="text-sm text-slate-500 font-medium mt-0.5">
-                      {routeSnapModalRecord.employee_name || 'Executive'} • 3 Snapshots (Auto Captured)
+                      {routeSnapModalRecord.employee_name || 'Executive'} • {snapshots.length} Snapshot{snapshots.length === 1 ? '' : 's'} (Auto Captured)
                     </p>
                   </div>
                 </div>
@@ -4637,14 +4512,14 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                 </button>
               </div>
 
-              {/* 3 Snapshot Cards Grid */}
+              {/* Snapshot Cards Grid */}
               <div className="p-6 bg-slate-50/50">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                <div className={`grid grid-cols-1 ${snapshots.length === 1 ? 'max-w-md mx-auto' : snapshots.length === 2 ? 'md:grid-cols-2 max-w-3xl mx-auto' : 'md:grid-cols-3'} gap-5`}>
                   {snapshots.map((snap, idx) => (
                     <div key={snap.id || idx} className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs hover:shadow-md transition-all duration-200 flex flex-col space-y-3">
-                      {/* Map Graphic Box with Live Tracking Details */}
-                      <div className="w-full h-52 rounded-xl overflow-hidden border border-slate-200 relative bg-sky-50 shadow-inner">
-                        <SnapshotMapGraphic snap={snap} index={idx} executiveName={routeSnapModalRecord.employee_name} />
+                      {/* Real Map Image Box */}
+                      <div className="w-full h-52 rounded-xl overflow-hidden border border-slate-200 relative bg-slate-900 shadow-inner">
+                        <RealMapSnapshotCard snap={snap} index={idx} executiveName={routeSnapModalRecord.employee_name} />
                       </div>
 
                       {/* Card Title line with circular badge number */}
@@ -4652,26 +4527,26 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                         <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-black shadow-2xs shrink-0 ${
                           idx === 0 ? 'bg-emerald-600' : idx === 1 ? 'bg-blue-600' : 'bg-rose-600'
                         }`}>
-                          {idx + 1}
+                          {snap.badge_number || (idx + 1)}
                         </div>
                         <h3 className="font-extrabold text-slate-900 text-base">
                           {snap.title}
                         </h3>
                       </div>
 
-                        {/* Timestamp */}
-                        <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-                          <Clock size={14} className="text-slate-400 shrink-0" />
-                          <span>{snap.timestamp || '—'}</span>
-                        </div>
-
-                        {/* Location Address */}
-                        <div className="flex items-start gap-1.5 text-xs text-slate-500 font-medium">
-                          <MapPin size={14} className="text-slate-400 shrink-0 mt-0.5" />
-                          <span className="line-clamp-2 leading-relaxed">{snap.address || 'Location Address Not Available'}</span>
-                        </div>
+                      {/* Timestamp */}
+                      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                        <Clock size={14} className="text-slate-400 shrink-0" />
+                        <span>{snap.timestamp || '—'}</span>
                       </div>
-                    ))}
+
+                      {/* Location Address */}
+                      <div className="flex items-start gap-1.5 text-xs text-slate-500 font-medium">
+                        <MapPin size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                        <span className="line-clamp-2 leading-relaxed">{snap.address || 'Location Address Not Available'}</span>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
 

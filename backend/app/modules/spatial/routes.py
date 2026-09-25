@@ -2848,10 +2848,40 @@ async def get_executive_history_report(
             except Exception:
                 pass
 
-        # 3 Automatic Sequence Snapshots: Trip Started -> Mid Trip -> Destination Reached
-        mid_lat = (start_lat + end_lat) / 2.0 if (start_lat and end_lat) else start_lat
-        mid_lng = (start_lng + end_lng) / 2.0 if (start_lng and end_lng) else start_lng
-        mid_address = f"Near Koyambedu Market, Chennai, Tamil Nadu 600107, India" if "Koyambedu" in start_address or "Chennai" in start_address else f"En Route Waypoint ({start_address.split(',')[0]} to {dest_address.split(',')[0]})"
+        # 1. Start Timestamp (Snapshot 1)
+        snap_1_time = trip_start_time
+
+        # 2. Mid-Trip Timestamp (Snapshot 2) - Calculate midpoint timestamp or breadcrumb time (Do NOT reuse trip_start_time)
+        snap_2_time = trip_start_time
+        if "T" in start_time_raw and "T" in end_time_raw and end_time_raw != "None":
+            try:
+                dt_s = datetime.datetime.fromisoformat(start_time_raw.replace("Z", "+00:00"))
+                dt_e = datetime.datetime.fromisoformat(end_time_raw.replace("Z", "+00:00"))
+                sec_diff = max(0, (dt_e - dt_s).total_seconds())
+                dt_m = dt_s + datetime.timedelta(seconds=sec_diff / 2.0)
+                snap_2_time = dt_m.strftime("%Y-%m-%d %I:%M %p")
+            except Exception:
+                pass
+        elif breadcrumbs and len(breadcrumbs) >= 2:
+            mid_bc = breadcrumbs[len(breadcrumbs) // 2]
+            snap_2_time = mid_bc.get("recorded_at") or trip_start_time
+
+        # Build Real Google Static Map Image URLs with real roadmap tiles, markers & polyline path
+        google_key = settings.GOOGLE_MAPS_API_KEY if hasattr(settings, "GOOGLE_MAPS_API_KEY") else os.getenv("GOOGLE_MAPS_API_KEY", "")
+
+        def make_real_map_url(lat, lng):
+            if not lat or not lng:
+                return ""
+            path_str = f"path=color:0xef4444ff|weight:5|{start_lat},{start_lng}|{lat},{lng}"
+            start_marker = f"markers=color:green|label:S|{start_lat},{start_lng}"
+            exec_marker = f"markers=color:blue|label:E|{lat},{lng}"
+            dest_marker = f"markers=color:red|label:D|{end_lat},{end_lng}" if end_lat else ""
+            markers_param = f"&{start_marker}&{exec_marker}" + (f"&{dest_marker}" if dest_marker else "")
+            
+            if google_key:
+                return f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lng}&zoom=15&size=600x400&scale=2&maptype=roadmap&{path_str}{markers_param}&key={google_key}"
+            else:
+                return f"https://static-maps.yandex.ru/1.x/?l=map&pt={lng},{lat},pm2blm&z=15&size=600,400"
 
         map_snapshots = [
             {
@@ -2860,10 +2890,11 @@ async def get_executive_history_report(
                 "badge_number": 1,
                 "title": "Trip Started",
                 "subtitle": "Trip Started / Start Location",
-                "timestamp": trip_start_time,
+                "timestamp": snap_1_time,
                 "latitude": start_lat,
                 "longitude": start_lng,
                 "address": start_address,
+                "image_url": make_real_map_url(start_lat, start_lng),
                 "speed_kmh": 0.0,
                 "status": "Trip Started",
                 "badge_color": "emerald"
@@ -2874,30 +2905,36 @@ async def get_executive_history_report(
                 "badge_number": 2,
                 "title": "Mid Trip",
                 "subtitle": "Mid-Trip / Route Progress",
-                "timestamp": trip_start_time,
+                "timestamp": snap_2_time,
                 "latitude": mid_lat,
                 "longitude": mid_lng,
                 "address": mid_address,
+                "image_url": make_real_map_url(mid_lat, mid_lng),
                 "speed_kmh": 18.5,
                 "status": "En Route Progress",
                 "badge_color": "blue"
-            },
-            {
+            }
+        ]
+
+        # Add Snapshot 3 ONLY if destination has actually been reached or trip ended!
+        dest_reached_time = dest_arrival_time if dest_arrival_time != "—" else (trip_end_time if trip_end_time != "—" else None)
+        if dest_reached_time:
+            map_snapshots.append({
                 "id": f"snap_dest_{len(reports)}",
                 "type": "DESTINATION_REACHED",
                 "badge_number": 3,
                 "title": "Destination Reached",
                 "subtitle": "Destination Reached",
-                "timestamp": dest_arrival_time if dest_arrival_time != "—" else trip_end_time,
+                "timestamp": dest_reached_time,
                 "latitude": end_lat,
                 "longitude": end_lng,
                 "address": dest_address,
+                "image_url": make_real_map_url(end_lat, end_lng),
                 "client_name": client_name,
                 "speed_kmh": 0.0,
                 "status": "Destination Reached",
                 "badge_color": "rose"
-            }
-        ]
+            })
 
         try:
             sync_and_prune_route_snapshots(sess.get('id'), s_emp_id, emp_name, map_snapshots)
