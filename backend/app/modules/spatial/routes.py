@@ -2564,21 +2564,29 @@ async def get_location_history(
             "breadcrumbs": []
         }
 
-    # Fetch ONLY the breadcrumbs recorded TODAY (since 12 AM midnight) for live tracking
+    # Fetch ONLY the breadcrumbs belonging strictly to the selected session
     breadcrumbs = []
     try:
-        if session.get("id"):
+        if session and session.get("id"):
             q_loc = sp.schema("hrms").table("tracking_locations").select(
-                "id,latitude,longitude,accuracy,speed,heading,recorded_at"
-            ).eq("tracking_session_id", session["id"])
+                "id,employee_id,tracking_session_id,latitude,longitude,accuracy,speed,heading,recorded_at"
+            ).eq("tracking_session_id", str(session["id"]))
             if not session_id:
                 q_loc = q_loc.gte("recorded_at", f"{today_str}T00:00:00")
-            loc_res = q_loc.order("recorded_at").execute()
+            loc_res = q_loc.order("recorded_at", desc=False).execute()
             raw_bc = loc_res.data or []
-            if not session_id:
-                breadcrumbs = [b for b in raw_bc if str(b.get("recorded_at") or "").startswith(today_str)]
-            else:
-                breadcrumbs = raw_bc
+            
+            # Deduplicate by location ID or timestamp key & sort strictly by recorded_at ASC
+            seen_bc_keys = set()
+            clean_bc = []
+            for b in raw_bc:
+                rec_at = str(b.get("recorded_at") or "")
+                b_key = str(b.get("id") or f"{rec_at}_{b.get('latitude')}_{b.get('longitude')}")
+                if b_key not in seen_bc_keys:
+                    seen_bc_keys.add(b_key)
+                    clean_bc.append(b)
+            
+            breadcrumbs = sorted(clean_bc, key=lambda x: str(x.get("recorded_at") or ""))
     except Exception as e:
         logger.warning(f"breadcrumbs fetch: {e}")
 
