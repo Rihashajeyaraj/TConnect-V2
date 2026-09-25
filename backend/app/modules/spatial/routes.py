@@ -2791,7 +2791,15 @@ async def get_executive_history_report(
         emp_code = str(emp.get("employee_code") or emp.get("employee_id") or "EMP001")
         emp_email = str(emp.get("email") or "")
         emp_role = str(emp.get("designation") or emp.get("role") or "Sales Executive")
-        emp_team_lead = str(emp.get("reporting_manager") or "Sales Manager")
+        
+        raw_tl = str(emp.get("reporting_manager") or emp.get("team_lead") or "").strip()
+        emp_team_lead = "Sales Manager"
+        if raw_tl:
+            tl_target = emp_map.get(raw_tl) or emp_map.get(raw_tl.lower())
+            if tl_target:
+                emp_team_lead = str(tl_target.get("name") or tl_target.get("full_name") or tl_target.get("email") or "Sales Manager")
+            elif "-" not in raw_tl and not raw_tl.isdigit() and len(raw_tl) > 2:
+                emp_team_lead = raw_tl
 
         start_time_raw = str(sess.get("start_time") or "")
         end_time_raw = str(sess.get("end_time") or "")
@@ -2813,24 +2821,26 @@ async def get_executive_history_report(
         ist_tz = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
 
         try:
-            if "T" in start_time_raw:
-                dt_s = datetime.datetime.fromisoformat(start_time_raw.replace("Z", "+00:00"))
+            if start_time_raw:
+                clean_s = start_time_raw.replace("Z", "+00:00").replace(" ", "T")
+                dt_s = datetime.datetime.fromisoformat(clean_s)
                 if dt_s.tzinfo is None:
                     dt_s = dt_s.replace(tzinfo=datetime.timezone.utc)
                 dt_s_ist = dt_s.astimezone(ist_tz)
                 trip_start_time = dt_s_ist.strftime("%I:%M:%S %p")
         except Exception:
-            trip_start_time = start_time_raw[:8] if start_time_raw else "—"
+            trip_start_time = start_time_raw if ("AM" in start_time_raw or "PM" in start_time_raw) else "—"
 
         try:
-            if "T" in end_time_raw and end_time_raw != "None":
-                dt_e = datetime.datetime.fromisoformat(end_time_raw.replace("Z", "+00:00"))
+            if end_time_raw and end_time_raw != "None":
+                clean_e = end_time_raw.replace("Z", "+00:00").replace(" ", "T")
+                dt_e = datetime.datetime.fromisoformat(clean_e)
                 if dt_e.tzinfo is None:
                     dt_e = dt_e.replace(tzinfo=datetime.timezone.utc)
                 dt_e_ist = dt_e.astimezone(ist_tz)
                 trip_end_time = dt_e_ist.strftime("%I:%M:%S %p")
         except Exception:
-            trip_end_time = end_time_raw[:8] if end_time_raw and end_time_raw != "None" else "Trip Completed"
+            trip_end_time = end_time_raw if ("AM" in end_time_raw or "PM" in end_time_raw) else "Trip Completed"
 
         start_address = _reverse_geocode_point(start_lat, start_lng)
         end_address = _reverse_geocode_point(end_lat, end_lng)

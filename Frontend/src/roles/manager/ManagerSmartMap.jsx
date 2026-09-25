@@ -4273,12 +4273,23 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                       {reportData.map((rep, idx) => {
                         const empName = rep.employee_name || 'Sales Executive'
                         const initials = empName.split(' ').map(n => n[0]).slice(0, 2).join('').toUpperCase()
-                        const teamLeadName = rep.team_lead_name || 'Team Lead'
+                        
+                        let teamLeadName = rep.team_lead_name || 'Sales Manager'
+                        if (teamLeadName && (teamLeadName.includes('-') || /^[0-9a-f]{8}-/i.test(teamLeadName))) {
+                          teamLeadName = 'Sales Manager'
+                        }
 
-                        const tripStartTime = rep.trip_start?.time || rep.trip_started_time || '—'
+                        let tripStartTime = rep.trip_start?.time || rep.trip_started_time || '—'
+                        if (tripStartTime.length <= 8 && tripStartTime.endsWith('-')) {
+                          tripStartTime = '—'
+                        }
+
+                        let tripEndTime = rep.trip_end?.time || rep.trip_ended_time || '—'
+                        if (tripEndTime.length <= 8 && tripEndTime.endsWith('-')) {
+                          tripEndTime = 'Trip Completed'
+                        }
+
                         const tripStartLoc = rep.trip_start?.address || rep.start_location || 'Start Location Not Logged'
-
-                        const tripEndTime = rep.trip_end?.time || rep.trip_ended_time || '—'
                         const tripEndLoc = rep.trip_end?.address || rep.end_location || 'End Location Not Logged'
 
                         const destClientName = rep.destination_arrival?.client_name || rep.client_name || 'Destination Site'
