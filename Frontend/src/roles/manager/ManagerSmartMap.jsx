@@ -3123,8 +3123,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         } else {
           _fetchAndRenderNearbyClients(latestLat, latestLng);
         }
-        if (crumbs.length > 0) {
-          latestTimestampRef.current = new Date(crumbs[crumbs.length - 1].recorded_at).getTime();
+        if (cleanCrumbs.length > 0) {
+          latestTimestampRef.current = new Date(cleanCrumbs[cleanCrumbs.length - 1].recorded_at).getTime();
         }
       }
 
@@ -3150,7 +3150,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           console.warn('[SmartMap] Map not ready for fitBounds, skipping.')
         } else {
           const allPts = []
-          crumbs.forEach(c => {
+          cleanCrumbs.forEach(c => {
             const la = Number(c.latitude)
             const ln = Number(c.longitude)
             if (!isNaN(la) && !isNaN(ln) && la !== 0 && ln !== 0) allPts.push([la, ln])
