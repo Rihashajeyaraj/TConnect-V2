@@ -519,17 +519,14 @@ export default function SalesLayout() {
 
     // Acquire Wake Lock if supported to prevent background sleep/tab suspension
     try {
-      if ('wakeLock' in navigator) {
+      if ('wakeLock' in navigator && document.visibilityState === 'visible') {
         navigator.wakeLock.request('screen').then(lock => {
           wakeLockRef.current = lock;
-          console.log("[GPS TRACKING] Screen Wake Lock acquired successfully.");
-        }).catch(err => {
-          console.warn("[GPS TRACKING] Wake Lock request rejected:", err);
+        }).catch(() => {
+          // Ignore background/hidden tab wakeLock rejection
         });
       }
-    } catch (e) {
-      console.warn("[GPS TRACKING] Wake Lock API error:", e);
-    }
+    } catch (_) {}
 
     // Initialize Supabase Broadcast channels & FastAPI WebSocket (Phase 2A Dual Transport)
     _initBroadcastChannels(empId, empCode, resolvedSessionId);

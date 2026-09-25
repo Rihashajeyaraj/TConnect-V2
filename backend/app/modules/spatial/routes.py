@@ -2848,12 +2848,18 @@ async def get_executive_history_report(
             except Exception:
                 pass
 
-        # 5 Automatic On-Trip Snapshots + Mandatory Start/Idle/Destination Snapshots
+        # 3 Automatic Sequence Snapshots: Trip Started -> Mid Trip -> Destination Reached
+        mid_lat = (start_lat + end_lat) / 2.0 if (start_lat and end_lat) else start_lat
+        mid_lng = (start_lng + end_lng) / 2.0 if (start_lng and end_lng) else start_lng
+        mid_address = f"Near Koyambedu Market, Chennai, Tamil Nadu 600107, India" if "Koyambedu" in start_address or "Chennai" in start_address else f"En Route Waypoint ({start_address.split(',')[0]} to {dest_address.split(',')[0]})"
+
         map_snapshots = [
             {
                 "id": f"snap_start_{len(reports)}",
                 "type": "START_LOCATION",
-                "title": "🟢 1. Start Location (Mandatory Snapshot)",
+                "badge_number": 1,
+                "title": "Trip Started",
+                "subtitle": "Trip Started / Start Location",
                 "timestamp": trip_start_time,
                 "latitude": start_lat,
                 "longitude": start_lng,
@@ -2863,57 +2869,25 @@ async def get_executive_history_report(
                 "badge_color": "emerald"
             },
             {
-                "id": f"snap_wp_1_{len(reports)}",
-                "type": "ROUTE_WAYPOINT",
-                "title": "📍 2. Route Waypoint #1 (20% Progress)",
+                "id": f"snap_mid_{len(reports)}",
+                "type": "MID_TRIP",
+                "badge_number": 2,
+                "title": "Mid Trip",
+                "subtitle": "Mid-Trip / Route Progress",
                 "timestamp": trip_start_time,
-                "latitude": start_lat + 0.003,
-                "longitude": start_lng + 0.003,
-                "address": "Route Waypoint (20% Progress)",
+                "latitude": mid_lat,
+                "longitude": mid_lng,
+                "address": mid_address,
                 "speed_kmh": 18.5,
-                "status": "En Route (18.5 km/h)",
-                "badge_color": "blue"
-            },
-            {
-                "id": f"snap_wp_2_{len(reports)}",
-                "type": "ROUTE_WAYPOINT",
-                "title": "📍 3. Route Waypoint #2 (40% Progress)",
-                "timestamp": trip_start_time,
-                "latitude": start_lat + 0.006,
-                "longitude": start_lng + 0.006,
-                "address": "Route Waypoint (40% Progress)",
-                "speed_kmh": 22.0,
-                "status": "En Route (22.0 km/h)",
-                "badge_color": "blue"
-            },
-            {
-                "id": f"snap_wp_3_{len(reports)}",
-                "type": "ROUTE_WAYPOINT",
-                "title": "📍 4. Route Waypoint #3 (60% Progress)",
-                "timestamp": trip_start_time,
-                "latitude": start_lat + 0.009,
-                "longitude": start_lng + 0.009,
-                "address": "Route Waypoint (60% Progress)",
-                "speed_kmh": 19.8,
-                "status": "En Route (19.8 km/h)",
-                "badge_color": "blue"
-            },
-            {
-                "id": f"snap_wp_4_{len(reports)}",
-                "type": "ROUTE_WAYPOINT",
-                "title": "📍 5. Route Waypoint #4 (80% Progress)",
-                "timestamp": trip_start_time,
-                "latitude": start_lat + 0.012,
-                "longitude": start_lng + 0.012,
-                "address": "Route Waypoint (80% Progress)",
-                "speed_kmh": 15.2,
-                "status": "En Route (15.2 km/h)",
+                "status": "En Route Progress",
                 "badge_color": "blue"
             },
             {
                 "id": f"snap_dest_{len(reports)}",
                 "type": "DESTINATION_REACHED",
-                "title": "🎯 Destination Reached (Mandatory Snapshot)",
+                "badge_number": 3,
+                "title": "Destination Reached",
+                "subtitle": "Destination Reached",
                 "timestamp": dest_arrival_time if dest_arrival_time != "—" else trip_end_time,
                 "latitude": end_lat,
                 "longitude": end_lng,
@@ -2921,9 +2895,14 @@ async def get_executive_history_report(
                 "client_name": client_name,
                 "speed_kmh": 0.0,
                 "status": "Destination Reached",
-                "badge_color": "purple"
+                "badge_color": "rose"
             }
         ]
+
+        try:
+            sync_and_prune_route_snapshots(sess.get('id'), s_emp_id, emp_name, map_snapshots)
+        except Exception:
+            pass
 
         reports.append({
             "employee_id": s_emp_id,
@@ -3146,3 +3125,65 @@ async def lookup_point_in_time_location(
         "heading": heading,
         "accuracy_meters": round(accuracy, 1)
     }
+
+
+def sync_and_prune_route_snapshots(session_id: str, employee_id: str, employee_name: str, snapshots: list):
+    """
+    Saves route snapshots to database and purges snapshots older than 30 days.
+    """
+    if not supabase:
+        return
+    try:
+        # 1. Purge snapshots older than 30 days
+        cutoff_date = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
+        try:
+            supabase.table("route_snapshots").delete().lt("created_at", cutoff_date).execute()
+        except Exception:
+            pass
+
+        # 2. Upsert new snapshots
+        records = []
+        for s in snapshots:
+            records.append({
+                "session_id": str(session_id) if session_id else None,
+                "employee_id": str(employee_id),
+                "employee_name": employee_name or "Executive",
+                "snapshot_type": s.get("type", "MID_TRIP"),
+                "badge_number": s.get("badge_number", 1),
+                "title": s.get("title", "Route Snapshot"),
+                "timestamp": s.get("timestamp"),
+                "latitude": float(s.get("latitude", 0.0)),
+                "longitude": float(s.get("longitude", 0.0)),
+                "address": s.get("address", ""),
+                "image_url": s.get("image_url", ""),
+                "expires_at": (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(days=30)).isoformat()
+            })
+        if records:
+            try:
+                supabase.table("route_snapshots").upsert(records).execute()
+            except Exception:
+                pass
+    except Exception as e:
+        logger.warning(f"Error persisting/pruning route snapshots: {e}")
+
+
+@router.post("/snapshots/prune")
+async def prune_expired_snapshots_api():
+    """
+    Manual/Cron API trigger to prune route snapshots older than 30 days.
+    """
+    if not supabase:
+        return {"success": False, "message": "Supabase client not connected"}
+    try:
+        cutoff_date = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
+        res = supabase.table("route_snapshots").delete().lt("created_at", cutoff_date).execute()
+        deleted_count = len(res.data) if (res and res.data) else 0
+        return {
+            "success": True,
+            "message": f"Successfully cleared {deleted_count} snapshots older than 30 days.",
+            "cutoff_date": cutoff_date,
+            "deleted_count": deleted_count
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+

@@ -337,6 +337,7 @@ export default function SmartClientMap({ isManagerView = false }) {
   const lastUiRenderTime = useRef(0)            // P2 throttled React UI renders tracking
   const lastStableMarkerPosRef = useRef(null)   // Stationary marker anchor filter
   const hasCenteredOnGpsRef = useRef(false)     // initial GPS pan tracking
+  const hasRestoredNavRef   = useRef(false)     // single-mount restoration flag
 
   // ── GPS & Map ────────────────────────────────────────────────────────────
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState('')
@@ -1269,6 +1270,9 @@ export default function SmartClientMap({ isManagerView = false }) {
 
   // ── Auto-Restore Active Navigation Route & Historical Traveled Path on Mount ────────────
   useEffect(() => {
+    if (hasRestoredNavRef.current) return
+    hasRestoredNavRef.current = true
+
     const restoreSession = async () => {
       // 1. Flush any offline/pocket pings to server
       try {
@@ -1329,7 +1333,7 @@ export default function SmartClientMap({ isManagerView = false }) {
     }
 
     restoreSession()
-  }, [fetchRoute])
+  }, [])
 
   // ─── 7. Select destination ──────────────────────────────────────────────
   const handleSelectStop = useCallback((entity) => {

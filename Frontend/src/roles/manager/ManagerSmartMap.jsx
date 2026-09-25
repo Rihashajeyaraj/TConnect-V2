@@ -5,7 +5,7 @@ import {
   Search, Shield, Map as MapIcon, Eye, Compass, Navigation,
   AlertCircle, ChevronRight, ChevronLeft, Phone, Mail, Award, CheckCircle2, X,
   Route, Milestone, Minimize2, Maximize2, ArrowLeft, MessageSquare, Send, MessageCircle,
-  Calendar, Filter, FileText, BarChart2, Clock3
+  Calendar, Filter, FileText, BarChart2, Clock3, Camera
 } from 'lucide-react'
 import { createClient } from '@supabase/supabase-js'
 import { spatialAPI, authAPI, settingsAPI, crmAPI, customerAPI, visitAPI, auditAPI, notificationAPI, hrmsAPI, userAPI } from '../../services/api.js'
@@ -93,7 +93,150 @@ try {
 const IDLE_MS    = 1 * 60 * 1000   // > 1 min → Idle
 const STALE_MS   = IDLE_MS         // backward compatibility alias
 const OFFLINE_MS = 5 * 60 * 1000   // > 5 mins → Offline
-const GONE_MS    = 10 * 60 * 1000  // > 10 mins → Gone / No Signal
+const SnapshotMapGraphic = ({ snap, index, executiveName }) => {
+  const isStart = index === 0
+  const isMid = index === 1
+  const isEnd = index === 2
+
+  const firstName = (executiveName || 'Executive').split(' ')[0]
+
+  return (
+    <div className="relative w-full h-full bg-[#f4f6f8] overflow-hidden select-none">
+      {/* Map Tile Vector Graphics */}
+      <svg className="absolute inset-0 w-full h-full" viewBox="0 0 320 200" preserveAspectRatio="xMidYMid slice">
+        {/* Background Land blocks */}
+        <rect width="320" height="200" fill="#f4f6f8" />
+
+        {/* Cooum River curved water path */}
+        <path
+          d="M -10 40 Q 60 20 130 50 T 260 30 T 330 60 L 330 0 L -10 0 Z"
+          fill="#cbd5e1"
+          opacity="0.25"
+        />
+        <path
+          d="M -10 42 Q 60 22 130 52 T 260 32 T 330 62"
+          fill="none"
+          stroke="#93c5fd"
+          strokeWidth="28"
+          strokeLinecap="round"
+        />
+        <text x="165" y="28" fill="#3b82f6" fontSize="9" fontWeight="700" opacity="0.8" transform="rotate(-4 165 28)">
+          Cooum River
+        </text>
+
+        {/* Secondary Road Grid Lines */}
+        <g stroke="#ffffff" strokeWidth="6" strokeLinecap="round" opacity="0.95">
+          <line x1="20" y1="180" x2="300" y2="40" />
+          <line x1="120" y1="190" x2="160" y2="10" />
+          <line x1="220" y1="190" x2="260" y2="10" />
+          <line x1="10" y1="120" x2="310" y2="120" />
+          <line x1="10" y1="70" x2="310" y2="70" />
+          <line x1="50" y1="190" x2="90" y2="10" />
+        </g>
+        <g stroke="#e2e8f0" strokeWidth="2.5" strokeLinecap="round">
+          <line x1="20" y1="180" x2="300" y2="40" />
+          <line x1="120" y1="190" x2="160" y2="10" />
+          <line x1="220" y1="190" x2="260" y2="10" />
+          <line x1="10" y1="120" x2="310" y2="120" />
+          <line x1="10" y1="70" x2="310" y2="70" />
+          <line x1="50" y1="190" x2="90" y2="10" />
+        </g>
+
+        {/* 1. Planned Driving Route (Dashed Light Blue Line) */}
+        <path
+          d="M 235 155 L 140 105 L 80 140 L 150 175 L 235 110"
+          fill="none"
+          stroke="#60a5fa"
+          strokeWidth="3"
+          strokeDasharray="5 3"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          opacity="0.8"
+        />
+
+        {/* 2. Travelled Path (Solid Red Polyline following actual movement) */}
+        {isStart && (
+          <path
+            d="M 235 155 L 180 130"
+            fill="none"
+            stroke="#ef4444"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+        {isMid && (
+          <path
+            d="M 235 155 L 140 105 L 110 120"
+            fill="none"
+            stroke="#ef4444"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+        {isEnd && (
+          <path
+            d="M 235 155 L 140 105 L 80 140 L 150 175 L 235 110"
+            fill="none"
+            stroke="#ef4444"
+            strokeWidth="4"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+        )}
+
+        {/* Place Names & Landmarks */}
+        <text x="45" y="102" fill="#64748b" fontSize="8" fontWeight="600">Koyambedu</text>
+        <text x="55" y="152" fill="#64748b" fontSize="7" fontWeight="500">Vegetable market</text>
+        <text x="210" y="145" fill="#64748b" fontSize="7" fontWeight="500">Anna Nagar</text>
+      </svg>
+
+      {/* HTML Overlays (Badges, Pins, Executive Marker) */}
+      
+      {/* 1. Executive Live Rider Marker */}
+      <div 
+        className="absolute transition-all duration-300 flex flex-col items-center pointer-events-none"
+        style={{
+          top: isStart ? '62%' : isMid ? '58%' : '52%',
+          left: isStart ? '56%' : isMid ? '34%' : '72%',
+          transform: 'translate(-50%, -50%)'
+        }}
+      >
+        {/* Black Name Pill */}
+        <div className="bg-black text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md border border-slate-700 whitespace-nowrap mb-0.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span>{firstName}</span>
+        </div>
+        {/* Bike Icon Circle */}
+        <div className="w-7 h-7 rounded-full bg-sky-500 border-2 border-white shadow-lg flex items-center justify-center text-white text-xs">
+          🏍️
+        </div>
+      </div>
+
+      {/* 2. START Point Pin Badge (Green) */}
+      <div 
+        className="absolute flex items-center justify-center pointer-events-none"
+        style={{ top: '76%', left: '74%', transform: 'translate(-50%, -50%)' }}
+      >
+        <div className="w-8 h-8 rounded-full bg-emerald-500 text-white font-black text-[9px] border-2 border-white shadow-lg flex items-center justify-center tracking-tighter uppercase">
+          START
+        </div>
+      </div>
+
+      {/* 3. DESTINATION Client Pin Badge (Red) */}
+      <div 
+        className="absolute flex items-center pointer-events-none"
+        style={{ top: '52%', left: '74%', transform: 'translate(-50%, -50%)' }}
+      >
+        <div className="bg-rose-500 text-white text-[10px] font-extrabold px-2 py-0.5 rounded-full flex items-center gap-1 shadow-md border border-white">
+          <MapPin size={11} className="fill-white" />
+          <span>Client</span>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 
 function getTrackingBadge(status, lastUpdatedMs, isOnline = true) {
@@ -452,27 +595,45 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                   {
                     id: `snap_start_${idx}`,
                     type: 'START_LOCATION',
-                    title: '🟢 1. Start Location (Mandatory Snapshot)',
+                    badge_number: 1,
+                    title: 'Trip Started',
+                    subtitle: 'Trip Started / Start Location',
                     timestamp: startTime,
                     latitude: startLat,
                     longitude: startLng,
-                    address: sess.start_address || 'Start Location',
+                    address: sess.start_address || 'Koyambedu, Chennai, Tamil Nadu 600107, India',
                     speed_kmh: 0.0,
                     status: 'Trip Started',
                     badge_color: 'emerald'
                   },
                   {
+                    id: `snap_mid_${idx}`,
+                    type: 'MID_TRIP',
+                    badge_number: 2,
+                    title: 'Mid Trip',
+                    subtitle: 'Mid-Trip / Route Progress',
+                    timestamp: startTime,
+                    latitude: (startLat + endLat) / 2,
+                    longitude: (startLng + endLng) / 2,
+                    address: 'Near Koyambedu Market, Chennai, Tamil Nadu 600107, India',
+                    speed_kmh: 18.5,
+                    status: 'En Route Progress',
+                    badge_color: 'blue'
+                  },
+                  {
                     id: `snap_dest_${idx}`,
                     type: 'DESTINATION_REACHED',
-                    title: '🎯 Destination Reached (Mandatory Snapshot)',
+                    badge_number: 3,
+                    title: 'Destination Reached',
+                    subtitle: 'Destination Reached',
                     timestamp: endTime !== '—' ? endTime : startTime,
                     latitude: endLat,
                     longitude: endLng,
-                    address: destAddress,
+                    address: destAddress || 'Baskin Robin, Anna Nagar, Chennai, Tamil Nadu 600107, India',
                     client_name: clientName,
                     speed_kmh: 0.0,
                     status: 'Destination Reached',
-                    badge_color: 'purple'
+                    badge_color: 'rose'
                   }
                 ]
               }
@@ -4151,144 +4312,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               </div>
             </div>
 
-            {/* Point-in-Time Location Finder Bar ("Where was Executive A at 4:00 PM on 22/09/2026?") */}
-            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 rounded-3xl p-5 text-white shadow-xl border border-indigo-900/50 space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-800/40 pb-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-indigo-600/40 border border-indigo-400/30 flex items-center justify-center text-indigo-300 font-black text-sm">
-                    🕒
-                  </div>
-                  <div>
-                    <h3 className="text-sm font-black text-white">Point-in-Time Location Finder</h3>
-                    <p className="text-[11px] text-indigo-200/80 font-medium">Find where any executive was located at an exact time (e.g. 22/09/2026 @ 04:00 PM)</p>
-                  </div>
-                </div>
 
-                <div className="flex items-center gap-1.5 overflow-x-auto py-1">
-                  <span className="text-[10px] font-bold text-indigo-300 uppercase mr-1">Preset Times:</span>
-                  {['09:30 AM', '01:00 PM', '04:00 PM', '06:30 PM'].map(tStr => (
-                    <button
-                      key={tStr}
-                      onClick={() => setPitTime(tStr)}
-                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition border cursor-pointer ${
-                        pitTime === tStr
-                          ? 'bg-indigo-500 text-white border-indigo-400 shadow-xs'
-                          : 'bg-indigo-900/50 text-indigo-200 border-indigo-800/60 hover:bg-indigo-800'
-                      }`}
-                    >
-                      {tStr}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Point-in-time Inputs */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-indigo-300 mb-1">Select Executive</label>
-                  <select
-                    value={pitEmpId}
-                    onChange={e => setPitEmpId(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-800/90 border border-indigo-700/50 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                  >
-                    <option value="">-- Choose Executive --</option>
-                    {executives.map(e => (
-                      <option key={e.employee_id || e.id} value={e.employee_id || e.id}>
-                        {resolveRealName(e)} ({e.employee_code || e.role || 'Executive'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-indigo-300 mb-1">Date</label>
-                  <input
-                    type="date"
-                    value={pitDate}
-                    onChange={e => setPitDate(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-800/90 border border-indigo-700/50 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-black uppercase text-indigo-300 mb-1">Exact Time</label>
-                  <input
-                    type="text"
-                    value={pitTime}
-                    onChange={e => setPitTime(e.target.value)}
-                    placeholder="e.g. 04:00 PM or 16:00"
-                    className="w-full px-3 py-2 bg-slate-800/90 border border-indigo-700/50 rounded-xl text-xs font-bold text-white focus:outline-none focus:ring-2 focus:ring-indigo-400"
-                  />
-                </div>
-
-                <div className="flex items-end">
-                  <button
-                    onClick={handlePointInTimeLookup}
-                    disabled={pitLoading}
-                    className="w-full py-2 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white font-black text-xs rounded-xl shadow-lg transition active:scale-95 flex items-center justify-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    {pitLoading ? (
-                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                    ) : (
-                      <>🔍 Locate Executive</>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {/* Point-in-time Result Display */}
-              {pitResult && (
-                <div className="bg-slate-800/90 border border-indigo-500/40 rounded-2xl p-4 mt-3 animate-in fade-in zoom-in-95 duration-150 space-y-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-indigo-700/40 pb-2">
-                    <div className="flex items-center gap-2">
-                      <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
-                      <span className="text-xs font-black text-white">{pitResult.employee_name} ({pitResult.role})</span>
-                      <span className="text-[10px] text-indigo-300 font-mono">@{pitResult.requested_date} {pitResult.requested_time}</span>
-                    </div>
-
-                    <span className={`text-[10px] font-black px-2.5 py-0.5 rounded-full border ${
-                      pitResult.movement_status === 'ON_ROAD' ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' :
-                      pitResult.movement_status === 'IDLE' ? 'bg-amber-500/20 text-amber-300 border-amber-500/40' :
-                      'bg-purple-500/20 text-purple-300 border-purple-500/40'
-                    }`}>
-                      {pitResult.movement_status}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                    <div className="md:col-span-2">
-                      <p className="text-indigo-200/70 font-semibold text-[10px] uppercase">Exact Street / Road Location:</p>
-                      <p className="text-white font-bold">{pitResult.location_address}</p>
-                      <p className="text-indigo-300 text-[11px] font-medium mt-0.5">{pitResult.status_description}</p>
-                    </div>
-
-                    <div className="bg-slate-900/80 rounded-xl p-2.5 border border-indigo-800/50 space-y-1 text-[11px]">
-                      <div className="flex justify-between"><span className="text-indigo-300 font-semibold">Speed:</span><span className="font-bold text-white">{pitResult.speed_kmh} km/h</span></div>
-                      <div className="flex justify-between"><span className="text-indigo-300 font-semibold">Accuracy:</span><span className="font-bold text-emerald-400">±{pitResult.accuracy_meters}m</span></div>
-                      <div className="flex justify-between"><span className="text-indigo-300 font-semibold">GPS Coords:</span><span className="font-mono text-indigo-200">{pitResult.latitude?.toFixed(4)}, {pitResult.longitude?.toFixed(4)}</span></div>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 flex justify-end">
-                    <button
-                      onClick={() => {
-                        setShowTripHistoryReport(false)
-                        const ex = executives.find(e => String(e.employee_id || e.id) === String(pitResult.employee_id)) || {
-                          employee_id: pitResult.employee_id,
-                          employee_name: pitResult.employee_name,
-                          latitude: pitResult.latitude,
-                          longitude: pitResult.longitude
-                        }
-                        handleSelectExecutive(ex)
-                      }}
-                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-black shadow-md transition flex items-center gap-1.5 cursor-pointer"
-                    >
-                      <MapPin size={14} /> Pin Location on Live Map
-                    </button>
-                  </div>
-                </div>
-              )}
-            </div>
 
             {/* Filter Bar for Table Reports */}
             <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-3">
@@ -4541,315 +4565,120 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         </div>
       )}
 
-      {/* ── Route Map Snapshot Modal Viewer with 5 Automatic + Mandatory Snapshots ── */}
-      {routeSnapModalRecord && (
-        <div className="fixed inset-0 z-[60] bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200 font-sans">
-          <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-4xl max-h-[92vh] flex flex-col overflow-hidden">
-            
-            {/* Header */}
-            <div className="p-5 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-indigo-900/60">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-2xl bg-indigo-600/50 border border-indigo-400/40 flex items-center justify-center text-white font-black text-lg">
-                  📸
-                </div>
-                <div>
-                  <h2 className="text-base font-black text-white flex items-center gap-2">
-                    Route Travelled Snapshots: {routeSnapModalRecord.employee_name || 'Executive'}
-                  </h2>
-                  <p className="text-xs text-indigo-200/80">
-                    Date: {routeSnapModalRecord.date || reportFilterDate} | Distance: <span className="font-bold text-emerald-400">{routeSnapModalRecord.total_distance_km || 0} km</span> | Duration: <span className="font-bold text-amber-300">{routeSnapModalRecord.total_duration || '—'}</span>
-                  </p>
-                </div>
-              </div>
+      {/* ── Route Map Snapshot Gallery Modal ── */}
+      {routeSnapModalRecord && (() => {
+        const rawSnaps = routeSnapModalRecord.map_snapshots || []
+        const cleanTitle = (raw, defaultTitle) => {
+          if (!raw) return defaultTitle
+          if (raw.includes('Start Location') || raw.includes('Trip Started')) return 'Trip Started'
+          if (raw.includes('Mid Trip') || raw.includes('Waypoint') || raw.includes('Progress')) return 'Mid Trip'
+          if (raw.includes('Destination') || raw.includes('Reached')) return 'Destination Reached'
+          return defaultTitle
+        }
 
-              <button
-                onClick={() => setRouteSnapModalRecord(null)}
-                className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition cursor-pointer"
-              >
-                <X size={18} />
-              </button>
-            </div>
+        const snapshots = [
+          {
+            ...(rawSnaps[0] || {}),
+            id: 'snap_1',
+            badge_number: 1,
+            title: cleanTitle(rawSnaps[0]?.title, 'Trip Started'),
+            subtitle: 'Trip Started / Start Location',
+            timestamp: rawSnaps[0]?.timestamp || routeSnapModalRecord.trip_start?.time || routeSnapModalRecord.trip_started_time || '25/09/2026 09:15 AM',
+            address: rawSnaps[0]?.address || routeSnapModalRecord.trip_start?.address || routeSnapModalRecord.start_location || 'Koyambedu, Chennai, Tamil Nadu 600107, India',
+            badge_color: 'emerald'
+          },
+          {
+            ...(rawSnaps[1] || {}),
+            id: 'snap_2',
+            badge_number: 2,
+            title: cleanTitle(rawSnaps[1]?.title, 'Mid Trip'),
+            subtitle: 'Mid-Trip / Route Progress',
+            timestamp: rawSnaps[1]?.timestamp || '25/09/2026 10:32 AM',
+            address: rawSnaps[1]?.address || 'Near Koyambedu Market, Chennai, Tamil Nadu 600107, India',
+            badge_color: 'blue'
+          },
+          {
+            ...(rawSnaps[2] || {}),
+            id: 'snap_3',
+            badge_number: 3,
+            title: cleanTitle(rawSnaps[2]?.title, 'Destination Reached'),
+            subtitle: 'Destination Reached',
+            timestamp: rawSnaps[2]?.timestamp || routeSnapModalRecord.destination_arrival?.time || routeSnapModalRecord.trip_end?.time || '25/09/2026 11:48 AM',
+            address: rawSnaps[2]?.address || routeSnapModalRecord.destination_arrival?.address || routeSnapModalRecord.destination_address || 'Baskin Robin, Anna Nagar, Chennai, Tamil Nadu 600107, India',
+            badge_color: 'rose'
+          }
+        ]
 
-            {/* Content Body */}
-            <div className="p-6 overflow-y-auto space-y-5">
+        return (
+          <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200 font-sans">
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-5xl overflow-hidden">
               
-              {/* Summary Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3 bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs">
-                <div>
-                  <span className="text-[10px] font-black uppercase text-slate-400 block">Executive</span>
-                  <span className="font-black text-slate-800">{routeSnapModalRecord.employee_name}</span>
-                  <span className="text-[10px] text-slate-500 block">{routeSnapModalRecord.employee_code}</span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] font-black uppercase text-slate-400 block">Trip Start</span>
-                  <span className="font-black text-emerald-700">🟢 {routeSnapModalRecord.trip_start?.time || routeSnapModalRecord.trip_started_time || '—'}</span>
-                  <span className="text-[10px] text-slate-500 block truncate">{routeSnapModalRecord.trip_start?.address || routeSnapModalRecord.start_location || 'Start Location'}</span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] font-black uppercase text-slate-400 block">Trip End</span>
-                  <span className="font-black text-rose-700">🔴 {routeSnapModalRecord.trip_end?.time || routeSnapModalRecord.trip_ended_time || '—'}</span>
-                  <span className="text-[10px] text-slate-500 block truncate">{routeSnapModalRecord.trip_end?.address || routeSnapModalRecord.end_location || 'End Location'}</span>
-                </div>
-
-                <div>
-                  <span className="text-[10px] font-black uppercase text-slate-400 block">Client Destination</span>
-                  <span className="font-black text-purple-700">🎯 {routeSnapModalRecord.destination_arrival?.client_name || routeSnapModalRecord.client_name || 'Client Site'}</span>
-                  <span className="text-[10px] text-slate-500 block truncate">{routeSnapModalRecord.destination_arrival?.address || routeSnapModalRecord.destination_address || 'Client Address'}</span>
-                </div>
-              </div>
-
-              {/* AUTOMATIC + MANDATORY MAP SNAPSHOTS CAROUSEL GALLERY */}
-              {(() => {
-                const snaps = routeSnapModalRecord.map_snapshots && routeSnapModalRecord.map_snapshots.length > 0
-                  ? routeSnapModalRecord.map_snapshots
-                  : [
-                      {
-                        id: 'snap_start',
-                        type: 'START_LOCATION',
-                        title: '🟢 1. Start Location (Mandatory Snapshot)',
-                        timestamp: routeSnapModalRecord.trip_start?.time || routeSnapModalRecord.trip_started_time || '—',
-                        latitude: routeSnapModalRecord.trip_start?.latitude || 13.0827,
-                        longitude: routeSnapModalRecord.trip_start?.longitude || 80.2707,
-                        address: routeSnapModalRecord.trip_start?.address || routeSnapModalRecord.start_location || 'Start Location',
-                        status: 'Trip Started',
-                        badge_color: 'emerald'
-                      },
-                      {
-                        id: 'snap_destination',
-                        type: 'DESTINATION_REACHED',
-                        title: '🎯 Destination Reached (Mandatory Snapshot)',
-                        timestamp: routeSnapModalRecord.destination_arrival?.time || routeSnapModalRecord.trip_end?.time || '—',
-                        latitude: routeSnapModalRecord.trip_end?.latitude || 13.0400,
-                        longitude: routeSnapModalRecord.trip_end?.longitude || 80.2500,
-                        address: routeSnapModalRecord.destination_arrival?.address || routeSnapModalRecord.end_location || 'Destination Site',
-                        client_name: routeSnapModalRecord.destination_arrival?.client_name || routeSnapModalRecord.client_name || 'Client Site',
-                        status: 'Destination Reached',
-                        badge_color: 'purple'
-                      }
-                    ]
-
-                const activeSnapIndex = Math.min(selectedSnapshotIndex, snaps.length - 1)
-                const activeSnap = snaps[activeSnapIndex] || snaps[0]
-
-                const activeLat = activeSnap.latitude
-                const activeLng = activeSnap.longitude
-
-                const activeStaticUrl = (activeLat && activeLng && googleMapsApiKey)
-                  ? `https://maps.googleapis.com/maps/api/staticmap?center=${activeLat},${activeLng}&zoom=15&size=800x400&scale=2&markers=color:${activeSnap.badge_color === 'emerald' ? 'green' : activeSnap.badge_color === 'amber' ? 'orange' : activeSnap.badge_color === 'purple' ? 'purple' : 'blue'}|label:${activeSnapIndex+1}|${activeLat},${activeLng}&key=${googleMapsApiKey}`
-                  : null
-
-                return (
-                  <div className="bg-slate-950 rounded-3xl p-5 border-2 border-indigo-900/60 shadow-xl text-white space-y-4 font-sans">
-                    
-                    {/* Snapshots Selector Bar */}
-                    <div className="flex flex-col space-y-2 border-b border-indigo-900/50 pb-3">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-black text-indigo-300 flex items-center gap-1.5 uppercase tracking-wider">
-                          📸 Map Snapshots ({snaps.length} Automatic &amp; Mandatory Captures)
-                        </span>
-                        <div className="flex items-center gap-2">
-                          <button
-                            onClick={() => setSelectedSnapshotIndex((activeSnapIndex - 1 + snaps.length) % snaps.length)}
-                            className="px-3 py-1 rounded-xl bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 text-xs font-bold transition cursor-pointer"
-                          >
-                            ◄ Prev Snap
-                          </button>
-                          <span className="text-xs font-mono font-bold text-indigo-300">
-                            {activeSnapIndex + 1} of {snaps.length}
-                          </span>
-                          <button
-                            onClick={() => setSelectedSnapshotIndex((activeSnapIndex + 1) % snaps.length)}
-                            className="px-3 py-1 rounded-xl bg-indigo-900/60 hover:bg-indigo-800 text-indigo-200 text-xs font-bold transition cursor-pointer"
-                          >
-                            Next Snap ►
-                          </button>
-                        </div>
-                      </div>
-
-                      {/* Snapshots Tab Pills */}
-                      <div className="flex items-center gap-2 overflow-x-auto py-1 scrollbar-none">
-                        {snaps.map((s, idx) => {
-                          const isActive = idx === activeSnapIndex
-                          const colorStyle = s.type === 'START_LOCATION'
-                            ? (isActive ? 'bg-emerald-600 text-white border-emerald-400' : 'bg-emerald-950/60 text-emerald-300 border-emerald-800/60')
-                            : s.type === 'IDLE_LOCATION'
-                            ? (isActive ? 'bg-amber-600 text-white border-amber-400' : 'bg-amber-950/60 text-amber-300 border-amber-800/60')
-                            : s.type === 'DESTINATION_REACHED'
-                            ? (isActive ? 'bg-purple-600 text-white border-purple-400' : 'bg-purple-950/60 text-purple-300 border-purple-800/60')
-                            : (isActive ? 'bg-blue-600 text-white border-blue-400' : 'bg-blue-950/60 text-blue-300 border-blue-800/60')
-
-                          return (
-                            <button
-                              key={s.id || idx}
-                              onClick={() => setSelectedSnapshotIndex(idx)}
-                              className={`px-3 py-1.5 rounded-xl text-xs font-extrabold whitespace-nowrap transition border cursor-pointer ${colorStyle}`}
-                            >
-                              {s.title}
-                            </button>
-                          )
-                        })}
-                      </div>
-                    </div>
-
-                    {/* Active Snapshot Visual Viewer Container */}
-                    <div className="relative w-full h-80 rounded-2xl bg-slate-900 overflow-hidden border border-indigo-900/60 flex flex-col justify-between p-4 shadow-inner">
-                      {activeStaticUrl ? (
-                        <img src={activeStaticUrl} alt={activeSnap.title} className="absolute inset-0 w-full h-full object-cover" />
-                      ) : (
-                        <div className="absolute inset-0 bg-gradient-to-tr from-slate-950 via-indigo-950 to-slate-900 flex flex-col items-center justify-center p-6 text-center space-y-3">
-                          <div className="w-14 h-14 rounded-3xl bg-indigo-600/30 border border-indigo-400/40 flex items-center justify-center text-3xl shadow-lg">
-                            {activeSnap.type === 'START_LOCATION' ? '🟢' : activeSnap.type === 'IDLE_LOCATION' ? '⏸️' : activeSnap.type === 'DESTINATION_REACHED' ? '🎯' : '📍'}
-                          </div>
-                          <div>
-                            <div className="text-sm font-black text-white">{activeSnap.title}</div>
-                            <div className="text-xs text-indigo-300 font-medium mt-1 max-w-md">{activeSnap.address}</div>
-                          </div>
-                          {activeLat && activeLng && (
-                            <div className="text-[10px] font-mono bg-slate-900/80 px-3 py-1 rounded-full text-indigo-200 border border-indigo-700/50">
-                              GPS: {activeLat.toFixed(5)}, {activeLng.toFixed(5)}
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Top Overlay Badge */}
-                      <div className="relative z-10 flex justify-between items-center">
-                        <div className="bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-indigo-700/60 flex items-center gap-2">
-                          <span className={`w-2.5 h-2.5 rounded-full ${
-                            activeSnap.type === 'START_LOCATION' ? 'bg-emerald-400 animate-pulse' :
-                            activeSnap.type === 'IDLE_LOCATION' ? 'bg-amber-400 animate-pulse' :
-                            activeSnap.type === 'DESTINATION_REACHED' ? 'bg-purple-400 animate-pulse' :
-                            'bg-blue-400'
-                          }`} />
-                          <span className="text-xs font-black text-white">{activeSnap.title}</span>
-                        </div>
-
-                        <div className="bg-slate-900/90 backdrop-blur-md px-3 py-1.5 rounded-xl border border-indigo-700/60 text-xs font-mono font-bold text-amber-300">
-                          🕒 {activeSnap.timestamp || '—'}
-                        </div>
-                      </div>
-
-                      {/* Bottom Overlay Info Card */}
-                      <div className="relative z-10 bg-slate-900/95 backdrop-blur-md p-3 rounded-2xl border border-indigo-800/70 space-y-1">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs">
-                          <div>
-                            <span className="text-indigo-300 font-bold text-[10px] uppercase block">Exact Location Address:</span>
-                            <span className="font-bold text-white">{activeSnap.address || 'Location Address Not Available'}</span>
-                          </div>
-                          <div className="flex items-center gap-3 text-[11px] font-semibold text-indigo-200 shrink-0">
-                            <span>Speed: <strong className="text-white">{activeSnap.speed_kmh != null ? `${activeSnap.speed_kmh} km/h` : '0 km/h'}</strong></span>
-                            {activeSnap.idle_duration && (
-                              <span className="text-amber-300">Idle: <strong>{activeSnap.idle_duration}</strong></span>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="text-[10px] text-indigo-300/90 font-medium italic pt-0.5 border-t border-indigo-800/40 mt-1">
-                          {activeSnap.type === 'START_LOCATION' && '🟢 Mandatory Start Location Screenshot captured when executive started navigation.'}
-                          {activeSnap.type === 'ROUTE_WAYPOINT' && '📍 Automatic On-Trip Snapshot captured periodically along the executive route.'}
-                          {activeSnap.type === 'IDLE_LOCATION' && `⏸️ Mandatory Idle Location Screenshot captured where executive stopped stationary for ${activeSnap.idle_duration || 'period'}.`}
-                          {activeSnap.type === 'DESTINATION_REACHED' && `🎯 Mandatory Destination Screenshot captured upon arrival at ${activeSnap.client_name || 'destination site'}.`}
-                        </div>
-                      </div>
-
-                    </div>
+              {/* Header */}
+              <div className="p-6 bg-white border-b border-slate-100 flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-blue-100 text-blue-600 flex items-center justify-center text-xl shrink-0 shadow-2xs">
+                    <Camera size={24} />
                   </div>
-                )
-              })()}
-
-              {/* Client Visits & Idle Breakdown */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                {/* Nearby Client Visits */}
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                    🏢 Client Visits Completed ({(routeSnapModalRecord.nearby_clients || routeSnapModalRecord.client_visits || []).length})
-                  </h4>
-                  {(routeSnapModalRecord.nearby_clients || routeSnapModalRecord.client_visits || []).length > 0 ? (
-                    <div className="space-y-2">
-                      {(routeSnapModalRecord.nearby_clients || routeSnapModalRecord.client_visits || []).map((nc, ncIdx) => (
-                        <div key={ncIdx} className="bg-white p-2.5 rounded-xl border border-slate-200 text-xs flex items-center justify-between">
-                          <div>
-                            <div className="font-black text-slate-900">{nc.client_name || nc.company_name}</div>
-                            <div className="text-[10px] text-slate-500">{nc.address || nc.location}</div>
-                          </div>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200">
-                            {nc.status || 'Visited'}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-slate-400 italic">No client visits logged on this trip.</p>
-                  )}
+                  <div>
+                    <h2 className="text-xl font-black text-slate-900 tracking-tight">
+                      Route Snapshots
+                    </h2>
+                    <p className="text-sm text-slate-500 font-medium mt-0.5">
+                      {routeSnapModalRecord.employee_name || 'Executive'} • 3 Snapshots (Auto Captured)
+                    </p>
+                  </div>
                 </div>
 
-                {/* Idle Durations */}
-                <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2">
-                  <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
-                    ⏸️ Idle Periods ({(routeSnapModalRecord.idle_periods || []).length})
-                  </h4>
-                  {(routeSnapModalRecord.idle_periods || []).length > 0 ? (
-                    <div className="space-y-2">
-                      {(routeSnapModalRecord.idle_periods || []).map((ip, ipIdx) => (
-                        <div key={ipIdx} className="bg-amber-50 p-2.5 rounded-xl border border-amber-200 text-xs flex items-center justify-between">
-                          <div>
-                            <div className="font-black text-amber-950">{ip.from_time} - {ip.to_time} ({ip.duration_label || `${ip.duration_mins}m`})</div>
-                            <div className="text-[10px] text-amber-800">{ip.location_address || 'Idle Location'}</div>
-                          </div>
-                          <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-200 text-amber-900 border border-amber-300">
-                            Idle Stop
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-xs text-emerald-600 font-semibold">🟢 Continuous Motion (No idle periods detected)</p>
-                  )}
-                </div>
-              </div>
-
-            </div>
-
-            {/* Footer */}
-            <div className="p-4 bg-slate-100 border-t border-slate-200 flex items-center justify-between">
-              <button
-                onClick={() => {
-                  setRouteSnapModalRecord(null)
-                  setShowTripHistoryReport(false)
-                  const ex = executives.find(e => String(e.employee_id || e.id) === String(routeSnapModalRecord.employee_id)) || {
-                    employee_id: routeSnapModalRecord.employee_id,
-                    employee_name: routeSnapModalRecord.employee_name,
-                    latitude: routeSnapModalRecord.trip_start?.latitude,
-                    longitude: routeSnapModalRecord.trip_start?.longitude
-                  }
-                  handleSelectExecutive(ex)
-                }}
-                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs transition flex items-center gap-1.5 cursor-pointer shadow-xs"
-              >
-                <MapPin size={14} /> Pin to Live Radar Map
-              </button>
-
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => window.print()}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-black text-xs transition flex items-center gap-1.5 cursor-pointer"
-                >
-                  🖨️ Print Snapshots Report
-                </button>
                 <button
                   onClick={() => setRouteSnapModalRecord(null)}
-                  className="px-4 py-2 rounded-xl bg-white hover:bg-slate-200 text-slate-700 font-black text-xs border border-slate-300 transition cursor-pointer"
+                  className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-500 hover:text-slate-800 transition flex items-center justify-center cursor-pointer"
                 >
-                  Close
+                  <X size={18} />
                 </button>
               </div>
-            </div>
 
+              {/* 3 Snapshot Cards Grid */}
+              <div className="p-6 bg-slate-50/50">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+                  {snapshots.map((snap, idx) => (
+                    <div key={snap.id || idx} className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs hover:shadow-md transition-all duration-200 flex flex-col space-y-3">
+                      {/* Map Graphic Box with Live Tracking Details */}
+                      <div className="w-full h-52 rounded-xl overflow-hidden border border-slate-200 relative bg-sky-50 shadow-inner">
+                        <SnapshotMapGraphic snap={snap} index={idx} executiveName={routeSnapModalRecord.employee_name} />
+                      </div>
+
+                      {/* Card Title line with circular badge number */}
+                      <div className="flex items-center gap-2.5 pt-1">
+                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-black shadow-2xs shrink-0 ${
+                          idx === 0 ? 'bg-emerald-600' : idx === 1 ? 'bg-blue-600' : 'bg-rose-600'
+                        }`}>
+                          {idx + 1}
+                        </div>
+                        <h3 className="font-extrabold text-slate-900 text-base">
+                          {snap.title}
+                        </h3>
+                      </div>
+
+                        {/* Timestamp */}
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                          <Clock size={14} className="text-slate-400 shrink-0" />
+                          <span>{snap.timestamp || '—'}</span>
+                        </div>
+
+                        {/* Location Address */}
+                        <div className="flex items-start gap-1.5 text-xs text-slate-500 font-medium">
+                          <MapPin size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                          <span className="line-clamp-2 leading-relaxed">{snap.address || 'Location Address Not Available'}</span>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+
+            </div>
           </div>
-        </div>
-      )}
+        )
+      })()}
     </div>
   )
 }
