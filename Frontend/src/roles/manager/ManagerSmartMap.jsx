@@ -1105,6 +1105,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const lastMovedPosRef = useRef(null)
   const animFrameRef    = useRef(null)  // requestAnimationFrame id
   const crumbsRef       = useRef([])
+  const pollTimerRef    = useRef(null)
   const processedCrumbKeysRef = useRef(new Set()) // Strict deduplication registry for GPS crumbs
   const lastRouteRecalcPosRef = useRef(null)
   const lastRouteRecalcTimeRef = useRef(0)
