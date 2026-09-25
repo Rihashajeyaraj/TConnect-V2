@@ -233,6 +233,7 @@ export default function SalesLayout() {
   const lastPushedTimeRef = useRef(0);
   const lastBroadcastPosRef = useRef(null);
   const lastBroadcastTimeRef = useRef(0);
+  const stationaryAnchorRef = useRef(null); // Stationary Anchor filter: { lat, lng, startTime, isStationary }
   const gpsRetryQueue = useRef([]);
   const wakeLockRef = useRef(null);
   const activeClientDataRef = useRef(null);
@@ -412,14 +413,51 @@ export default function SalesLayout() {
       lastBroadcastTimeRef.current = now;
     }
 
-    // 2. Client-side dedup for database persistence: high frequency (2s / 2m) when on bike/car
+    // 2. Client-side dedup & Stationary Jitter Filter for database persistence
     let shouldPersist = true;
+
+    // Rule A: Skip DB persistence if accuracy is poor (> 60m) to prevent noisy breadcrumbs
+    if (accuracy > 60) {
+      shouldPersist = false;
+    }
+
     if (lastPushedPosRef.current) {
       const dlat = lat - lastPushedPosRef.current.lat;
       const dlng = lng - lastPushedPosRef.current.lng;
-      const approxM = Math.sqrt(dlat * dlat + dlng * dlng) * 111000;
-      const elapsedSecs = (now - lastPushedTimeRef.current) / 1000;
-      if (approxM < 2 && elapsedSecs < 2) shouldPersist = false;
+      const distM = Math.sqrt(dlat * dlat + dlng * dlng) * 111000;
+      const elapsedSecs = (now - (lastPushedTimeRef.current || now)) / 1000;
+      const speedKmh = speed != null ? speed * 3.6 : null;
+
+      // Rule B: Ignore tiny movement < 8m if speed is low or null (GPS noise gate)
+      if (distM < 8 && (speedKmh == null || speedKmh < 2.0) && elapsedSecs < 10) {
+        shouldPersist = false;
+      }
+
+      // Rule C: Stationary Anchor Filter (~18m radius, confirm stationary after 30s)
+      const anchor = stationaryAnchorRef.current;
+      if (!anchor) {
+        if (distM < 18 && (speedKmh == null || speedKmh < 2.0)) {
+          stationaryAnchorRef.current = {
+            lat: lastPushedPosRef.current.lat,
+            lng: lastPushedPosRef.current.lng,
+            startTime: now,
+            isStationary: false
+          };
+        }
+      } else {
+        const distFromAnchor = Math.sqrt(Math.pow(lat - anchor.lat, 2) + Math.pow(lng - anchor.lng, 2)) * 111000;
+        if (distFromAnchor < 18 && (speedKmh == null || speedKmh < 2.0)) {
+          if (!anchor.isStationary && (now - anchor.startTime >= 30000)) {
+            anchor.isStationary = true;
+          }
+          if (anchor.isStationary) {
+            shouldPersist = false; // Ignore jitter points while stationary
+          }
+        } else if (distFromAnchor >= 20 || (speedKmh != null && speedKmh >= 2.5)) {
+          // Meaningful movement resumed! Clear stationary anchor cleanly
+          stationaryAnchorRef.current = null;
+        }
+      }
     }
 
     if (!shouldPersist) return;

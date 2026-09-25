@@ -328,16 +328,38 @@ export default function SmartClientMap({ isManagerView = false }) {
   const routeFetchTimer  = useRef(null)         // debounce timer id
   const trailPolylineRef = useRef(null)         // Traveled breadcrumb polyline
   const trailOuterPolylineRef = useRef(null)    // Dark casing road polyline for high contrast
+  const snappedPathRef   = useRef([])           // Road-matched snapped path coordinates
+  const matchBatchTimerRef = useRef(null)       // Debounce timer for OSRM road matching
   const startMarkerRef   = useRef(null)         // Green START point marker
   const trailPointsRef   = useRef([])           // Breadcrumb points array
   const lastTelemetryUpdate = useRef(0)         // throttled updates tracking
   const lastBroadcastTime   = useRef(0)         // throttled 1s broadcast tracking
   const lastUiRenderTime = useRef(0)            // P2 throttled React UI renders tracking
+  const lastStableMarkerPosRef = useRef(null)   // Stationary marker anchor filter
   const hasCenteredOnGpsRef = useRef(false)     // initial GPS pan tracking
 
   // ── GPS & Map ────────────────────────────────────────────────────────────
   const [googleMapsApiKey, setGoogleMapsApiKey] = useState('')
   const [mapLoaded,    setMapLoaded]    = useState(false)
+
+  const _triggerBatchRoadMatching = useCallback((pts) => {
+    if (!pts || pts.length < 2) return;
+    if (matchBatchTimerRef.current) clearTimeout(matchBatchTimerRef.current);
+
+    matchBatchTimerRef.current = setTimeout(async () => {
+      try {
+        const res = await spatialAPI.matchRoute(pts);
+        if (res?.success && Array.isArray(res.polyline) && res.polyline.length >= 2) {
+          snappedPathRef.current = res.polyline.map(p => ({ lat: Number(p.lat), lng: Number(p.lng) }));
+          if (trailPolylineRef.current && googleMapRef.current) {
+            trailPolylineRef.current.setPath(snappedPathRef.current);
+          }
+        }
+      } catch (err) {
+        console.warn("[SmartClientMap] Batch road matching failed, staying on filtered GPS fallback:", err);
+      }
+    }, 1500);
+  }, []);
   const [gpsStatus,    setGpsStatus]    = useState('loading') // 'loading'|'active'|'denied'|'unavailable'
   const [executivePos, setExecutivePos] = useState(DEFAULT_CENTER)
   const [gpsAccuracy, setGpsAccuracy]   = useState(null)
@@ -488,7 +510,7 @@ export default function SmartClientMap({ isManagerView = false }) {
       if (isCheckingInquiriesRef.current) return
       isCheckingInquiriesRef.current = true
       try {
-        const res = await notificationAPI.getNotifications({ silentError: true, timeout: 8000 })
+        const res = await notificationAPI.getNotifications({ silentError: true, timeout: 5000 }).catch(() => null)
         const notifs = Array.isArray(res) ? res : (res?.data || [])
         const handledKeys = getHandledInquiryKeys()
 
@@ -837,14 +859,23 @@ export default function SmartClientMap({ isManagerView = false }) {
       (pos) => {
         const { latitude, longitude, accuracy, speed, heading } = pos.coords
         const newPos = { lat: latitude, lng: longitude }
-        execPosRef.current = newPos
-        if (execMarkerRef.current) {
-          if (typeof execMarkerRef.current.animateTo === 'function') {
-            execMarkerRef.current.animateTo(newPos, 800, heading)
-          } else if (typeof execMarkerRef.current.setPosition === 'function') {
-            execMarkerRef.current.setPosition(newPos)
-          } else if (typeof execMarkerRef.current.setLatLng === 'function') {
-            execMarkerRef.current.setLatLng(newPos)
+
+        // Stationary Marker Jitter Filter: do not dance/jump the marker when sitting/standing stationary or when accuracy is poor
+        const distFromLastMarker = lastStableMarkerPosRef.current ? haversineDistance(lastStableMarkerPosRef.current.lat, lastStableMarkerPosRef.current.lng, latitude, longitude) * 1000 : 999
+        const speedKmh = speed != null ? speed * 3.6 : null
+        const isMarkerJitter = (accuracy > 60 && distFromLastMarker < 40) || (distFromLastMarker < 12 && (speedKmh == null || speedKmh < 2.0))
+
+        if (!isMarkerJitter || !lastStableMarkerPosRef.current) {
+          lastStableMarkerPosRef.current = newPos
+          execPosRef.current = newPos
+          if (execMarkerRef.current) {
+            if (typeof execMarkerRef.current.animateTo === 'function') {
+              execMarkerRef.current.animateTo(newPos, 800, heading)
+            } else if (typeof execMarkerRef.current.setPosition === 'function') {
+              execMarkerRef.current.setPosition(newPos)
+            } else if (typeof execMarkerRef.current.setLatLng === 'function') {
+              execMarkerRef.current.setLatLng(newPos)
+            }
           }
         }
 
@@ -1148,26 +1179,43 @@ export default function SmartClientMap({ isManagerView = false }) {
   const fetchRoute = useCallback(async (dest, fromPos) => {
     if (!dest?.latitude || !dest?.longitude) return
     const pos = fromPos || executivePos
-    setRouteStatus('loading')
 
-    // 1. Try Google Maps traffic-aware routing via Backend first
+    // INSTANT 0ms UI Feedback: Set immediate preliminary distance & ETA estimate so "Calculating..." never hangs
+    const distDirectKm = haversineDistance(pos.lat, pos.lng, Number(dest.latitude), Number(dest.longitude))
+    const preliminaryMins = Math.max(1, Math.ceil((distDirectKm / 22.0) * 60))
+    const preliminaryPath = [[pos.lat, pos.lng], [Number(dest.latitude), Number(dest.longitude)]]
+
+    setRoutePath(preliminaryPath)
+    setRouteDetails(prev => ({
+      distanceKm: (distDirectKm * 1.25).toFixed(1), // ~1.25 road curvature factor
+      durationMins: preliminaryMins,
+      staticDurationMins: null,
+      trafficAware: false,
+      provider: 'estimating...',
+      ...(prev || {})
+    }))
+    setRouteStatus('found')
+
+    // 1. Try Google Maps traffic-aware routing via Backend (with 4s timeout)
     try {
       const res = await spatialAPI.getRoute(
         { latitude: pos.lat, longitude: pos.lng },
         { latitude: dest.latitude, longitude: dest.longitude }
-      )
+      ).catch(() => null)
 
-      if (res && res.success && res.polyline) {
-        const path = decodePolyline(res.polyline)
-        // Force the last point of the route to match the destination coordinates exactly
-        if (path.length > 0) {
-          path[path.length - 1] = [dest.latitude, dest.longitude]
+      if (res && res.success && (res.polyline || res.distance_km)) {
+        let path = preliminaryPath
+        if (res.polyline) {
+          path = decodePolyline(res.polyline)
+          if (path.length > 0) {
+            path[path.length - 1] = [Number(dest.latitude), Number(dest.longitude)]
+          }
         }
         setRoutePath(path)
         setRouteDetails({
           distanceKm: res.distance_km,
           durationMins: res.eta_minutes,
-          staticDurationMins: res.static_eta_minutes,
+          staticDurationMins: res.static_eta_minutes || res.eta_minutes,
           trafficAware: res.traffic_aware,
           provider: res.provider || 'google',
         })
@@ -1177,55 +1225,46 @@ export default function SmartClientMap({ isManagerView = false }) {
         return path
       }
     } catch (e) {
-      console.warn('Google route service unavailable, falling back to OSRM:', e)
+      console.warn('Backend route service notice:', e)
     }
 
-    // 2. Fallback to OSRM (non-traffic road routing)
+    // 2. Fallback to OSRM (non-traffic road routing, 3s timeout)
     const coordStr = `${pos.lng},${pos.lat};${dest.longitude},${dest.latitude}`
     const url = `https://router.project-osrm.org/route/v1/driving/${coordStr}?overview=full&geometries=geojson`
 
     try {
-      const res  = await fetch(url, { signal: AbortSignal.timeout(10000) })
-      const data = await res.json()
-      if (data.code === 'Ok' && data.routes?.length > 0) {
-        const route = data.routes[0]
-        const path  = route.geometry.coordinates.map(c => [c[1], c[0]])
-        // Force endpoint coordinate alignment
-        if (path.length > 0) {
-          path[path.length - 1] = [dest.latitude, dest.longitude]
+      const res  = await fetch(url, { signal: AbortSignal.timeout(3000) }).catch(() => null)
+      if (res && res.ok) {
+        const data = await res.json()
+        if (data.code === 'Ok' && data.routes?.length > 0) {
+          const route = data.routes[0]
+          const path  = route.geometry.coordinates.map(c => [c[1], c[0]])
+          if (path.length > 0) {
+            path[path.length - 1] = [Number(dest.latitude), Number(dest.longitude)]
+          }
+          setRoutePath(path)
+          setRouteDetails({
+            distanceKm:   (route.distance / 1000).toFixed(1),
+            durationMins: Math.ceil(route.duration / 60),
+            staticDurationMins: null,
+            trafficAware: false,
+            provider: 'osrm',
+          })
+          setRouteStatus('found')
+          lastRoutePos.current = { lat: pos.lat, lng: pos.lng }
+          checkAndNotifyRouteClients(path, pos, dest.id)
+          return path
         }
-        setRoutePath(path)
-        setRouteDetails({
-          distanceKm:   (route.distance / 1000).toFixed(1),
-          durationMins: Math.ceil(route.duration / 60),
-          staticDurationMins: null,
-          trafficAware: false,
-          provider: 'osrm',
-        })
-        setRouteStatus('found')
-        lastRoutePos.current = { lat: pos.lat, lng: pos.lng }
-        checkAndNotifyRouteClients(path, pos, dest.id)
-        return path
       }
     } catch (e) {
-      console.warn('OSRM road route fallback failed:', e)
+      console.warn('OSRM road route fallback notice:', e)
     }
 
-    // 3. Fallback to Straight-line route (navigation disabled on fallback)
-    const path = [[pos.lat, pos.lng], [dest.latitude, dest.longitude]]
-    const dist = haversineDistance(pos.lat, pos.lng, dest.latitude, dest.longitude)
-    setRoutePath(path)
-    setRouteDetails({
-      distanceKm: dist.toFixed(1),
-      durationMins: Math.ceil(dist * 3),
-      staticDurationMins: null,
-      trafficAware: false,
-      provider: 'straight-line',
-    })
-    setRouteStatus('fallback')
+    // 3. Fallback to Straight-line route
+    setRouteStatus('found')
     lastRoutePos.current = { lat: pos.lat, lng: pos.lng }
-    checkAndNotifyRouteClients(path, pos, dest.id)
-    return path
+    checkAndNotifyRouteClients(preliminaryPath, pos, dest.id)
+    return preliminaryPath
   }, [executivePos, checkAndNotifyRouteClients])
 
   // ── Auto-Restore Active Navigation Route & Historical Traveled Path on Mount ────────────
@@ -1241,13 +1280,30 @@ export default function SmartClientMap({ isManagerView = false }) {
         const histRes = await spatialAPI.getLocationHistory('self')
         const histData = histRes?.data || histRes
         if (histData && histData.breadcrumbs && histData.breadcrumbs.length > 0) {
-          const loadedPts = histData.breadcrumbs.map(b => ({
+          const rawPts = histData.breadcrumbs.map(b => ({
             lat: Number(b.latitude),
-            lng: Number(b.longitude)
+            lng: Number(b.longitude),
+            accuracy: Number(b.accuracy || 10)
           })).filter(p => !isNaN(p.lat) && !isNaN(p.lng) && p.lat !== 0 && p.lng !== 0)
-          
-          if (loadedPts.length > 0) {
-            trailPointsRef.current = loadedPts
+
+          const filteredPts = []
+          if (rawPts.length > 0) {
+            filteredPts.push(rawPts[0])
+            let lastAnchor = rawPts[0]
+            for (let i = 1; i < rawPts.length; i++) {
+              const curr = rawPts[i]
+              if (curr.accuracy > 60) continue
+              const distM = haversineDistance(lastAnchor.lat, lastAnchor.lng, curr.lat, curr.lng) * 1000
+              if (distM >= 15 && distM <= 800) {
+                filteredPts.push(curr)
+                lastAnchor = curr
+              }
+            }
+          }
+
+          if (filteredPts.length > 0) {
+            trailPointsRef.current = filteredPts
+            _triggerBatchRoadMatching(filteredPts)
           }
         }
       } catch (err) {
@@ -2040,15 +2096,16 @@ export default function SmartClientMap({ isManagerView = false }) {
       distFromLastM = haversineDistance(lastPt.lat, lastPt.lng, executivePos.lat, executivePos.lng) * 1000
     }
 
-    // Filter position jumps & GPS drift noise (require 25m displacement anchoring from last vertex to eliminate stationary building scribbles)
-    const minRequiredDistM = 25
-    const isGpsReliable = !gpsAccuracy || gpsAccuracy <= 70
+    // Filter position jumps & GPS drift noise (accuracy <= 60m gate & 15m displacement anchoring)
+    const minRequiredDistM = 15
+    const isGpsReliable = gpsAccuracy != null ? gpsAccuracy <= 60 : true
 
-    const isReasonableMove = validPts.length === 0 || (
-      isGpsReliable && distFromLastM >= minRequiredDistM && distFromLastM < 500
+    const isReasonableMove = (validPts.length === 0 && isGpsReliable) || (
+      isGpsReliable && distFromLastM >= minRequiredDistM && distFromLastM < 600
     )
     if (isReasonableMove) {
       validPts.push({ lat: executivePos.lat, lng: executivePos.lng })
+      _triggerBatchRoadMatching(validPts)
     }
 
     // Render green START marker pin at initial trip starting location
@@ -2070,10 +2127,11 @@ export default function SmartClientMap({ isManagerView = false }) {
       )
     }
 
-    // Draw traveled polyline (Solid RED line matching exact physical movement points without synthetic OSRM route loops)
+    // Draw traveled polyline (Road-aligned OSRM matching with clean fallback)
     if (validPts.length > 1) {
       if (!googleMapRef.current || !window.google) return
       const gPath = validPts.map(p => ({ lat: p.lat, lng: p.lng }))
+      const displayPath = (snappedPathRef.current && snappedPathRef.current.length >= 2) ? snappedPathRef.current : gPath
 
       if (trailOuterPolylineRef.current) {
         try { trailOuterPolylineRef.current.setMap(null); } catch {}
@@ -2082,7 +2140,7 @@ export default function SmartClientMap({ isManagerView = false }) {
 
       if (!trailPolylineRef.current) {
         trailPolylineRef.current = new window.google.maps.Polyline({
-          path: gPath,
+          path: displayPath,
           geodesic: true,
           strokeColor: '#dc2626', // Solid Vibrant Red
           strokeOpacity: 0.95,
@@ -2091,7 +2149,7 @@ export default function SmartClientMap({ isManagerView = false }) {
           zIndex: 35
         })
       } else {
-        trailPolylineRef.current.setPath(gPath)
+        trailPolylineRef.current.setPath(displayPath)
         if (!trailPolylineRef.current.getMap()) {
           trailPolylineRef.current.setMap(googleMapRef.current)
         }
