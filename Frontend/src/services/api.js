@@ -524,7 +524,7 @@ export const spatialAPI = {
   getRoute: (origin, destination) =>
     request('/spatial/route', { method: 'POST', body: JSON.stringify({ origin, destination }) }),
   matchRoute: (points) =>
-    request('/spatial/match-route', { method: 'POST', body: JSON.stringify({ points }), silentError: true }),
+    request('/spatial/match-route', { method: 'POST', body: JSON.stringify({ points }) }),
   computeRouteMatrix: (origins, destinations) =>
     request('/spatial/route-matrix', { method: 'POST', body: JSON.stringify({ origins, destinations }) }),
   getTeamLocations: () =>

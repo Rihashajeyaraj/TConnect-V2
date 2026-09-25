@@ -100,12 +100,9 @@ const RealMapSnapshotCard = ({ snap, index, executiveName }) => {
 
   if (!imageUrl || imgError) {
     return (
-      <div className="relative w-full h-full bg-slate-100 flex flex-col items-center justify-center text-slate-400 p-4 select-none">
-        <MapPin size={32} className="mb-2 text-slate-300" />
-        <span className="text-xs font-bold text-slate-600">Real Map Snapshot</span>
-        {snap?.address && (
-          <span className="text-[10px] text-slate-400 text-center mt-1 line-clamp-1">{snap.address}</span>
-        )}
+      <div className="relative w-full h-full bg-slate-900 flex flex-col items-center justify-center text-slate-400 p-4 select-none">
+        <Camera size={28} className="mb-2 text-slate-500 animate-pulse" />
+        <span className="text-xs font-semibold text-slate-300">Capturing Map Screenshot...</span>
       </div>
     )
   }
@@ -479,51 +476,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                 }],
                 nearby_clients: [],
                 breadcrumbs_count: 5,
-                map_snapshots: [
-                  {
-                    id: `snap_start_${idx}`,
-                    type: 'START_LOCATION',
-                    badge_number: 1,
-                    title: 'Trip Started',
-                    subtitle: 'Trip Started / Start Location',
-                    timestamp: startTime,
-                    latitude: startLat,
-                    longitude: startLng,
-                    address: sess.start_address || 'Koyambedu, Chennai, Tamil Nadu 600107, India',
-                    speed_kmh: 0.0,
-                    status: 'Trip Started',
-                    badge_color: 'emerald'
-                  },
-                  {
-                    id: `snap_mid_${idx}`,
-                    type: 'MID_TRIP',
-                    badge_number: 2,
-                    title: 'Mid Trip',
-                    subtitle: 'Mid-Trip / Route Progress',
-                    timestamp: startTime,
-                    latitude: (startLat + endLat) / 2,
-                    longitude: (startLng + endLng) / 2,
-                    address: 'Near Koyambedu Market, Chennai, Tamil Nadu 600107, India',
-                    speed_kmh: 18.5,
-                    status: 'En Route Progress',
-                    badge_color: 'blue'
-                  },
-                  {
-                    id: `snap_dest_${idx}`,
-                    type: 'DESTINATION_REACHED',
-                    badge_number: 3,
-                    title: 'Destination Reached',
-                    subtitle: 'Destination Reached',
-                    timestamp: endTime !== '—' ? endTime : startTime,
-                    latitude: endLat,
-                    longitude: endLng,
-                    address: destAddress || 'Baskin Robin, Anna Nagar, Chennai, Tamil Nadu 600107, India',
-                    client_name: clientName,
-                    speed_kmh: 0.0,
-                    status: 'Destination Reached',
-                    badge_color: 'rose'
-                  }
-                ]
+                map_snapshots: sess.map_snapshots || []
               }
             })
           }
@@ -4479,26 +4432,14 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           return defaultTitle
         }
 
-        const snapshots = rawSnaps.length > 0 
-          ? rawSnaps.map((s, idx) => ({
-              ...s,
-              id: s.id || `snap_${idx + 1}`,
-              badge_number: s.badge_number || (idx + 1),
-              title: cleanTitle(s.title, idx === 0 ? 'Trip Started' : idx === 1 ? 'Mid Trip' : 'Destination Reached'),
-              timestamp: s.timestamp || '—',
-              address: s.address || '—'
-            }))
-          : [
-              {
-                id: 'snap_1',
-                badge_number: 1,
-                title: 'Trip Started',
-                subtitle: 'Trip Started / Start Location',
-                timestamp: routeSnapModalRecord.trip_start?.time || routeSnapModalRecord.trip_started_time || '—',
-                address: routeSnapModalRecord.trip_start?.address || routeSnapModalRecord.start_location || 'Location Address Not Available',
-                image_url: routeSnapModalRecord.trip_start?.image_url
-              }
-            ]
+        const snapshots = rawSnaps.map((s, idx) => ({
+          ...s,
+          id: s.id || `snap_${s.snapshot_type || idx + 1}`,
+          badge_number: s.badge_number || (idx + 1),
+          title: cleanTitle(s.title, idx === 0 ? 'Trip Started' : idx === 1 ? 'Mid Trip' : 'Destination Reached'),
+          timestamp: s.timestamp || '—',
+          address: s.address || '—'
+        }))
 
         return (
           <div className="fixed inset-0 z-[60] bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 sm:p-6 animate-in fade-in duration-200 font-sans">
@@ -4530,40 +4471,48 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
               {/* Snapshot Cards Grid */}
               <div className="p-6 bg-slate-50/50">
-                <div className={`grid grid-cols-1 ${snapshots.length === 1 ? 'max-w-md mx-auto' : snapshots.length === 2 ? 'md:grid-cols-2 max-w-3xl mx-auto' : 'md:grid-cols-3'} gap-5`}>
-                  {snapshots.map((snap, idx) => (
-                    <div key={snap.id || idx} className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs hover:shadow-md transition-all duration-200 flex flex-col space-y-3">
-                      {/* Real Map Image Box */}
-                      <div className="w-full h-52 rounded-xl overflow-hidden border border-slate-200 relative bg-slate-900 shadow-inner">
-                        <RealMapSnapshotCard snap={snap} index={idx} executiveName={routeSnapModalRecord.employee_name} />
-                      </div>
-
-                      {/* Card Title line with circular badge number */}
-                      <div className="flex items-center gap-2.5 pt-1">
-                        <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-black shadow-2xs shrink-0 ${
-                          idx === 0 ? 'bg-emerald-600' : idx === 1 ? 'bg-blue-600' : 'bg-rose-600'
-                        }`}>
-                          {snap.badge_number || (idx + 1)}
+                {snapshots.length === 0 ? (
+                  <div className="text-center py-12 px-4">
+                    <Camera size={40} className="mx-auto text-slate-300 mb-3" />
+                    <h3 className="text-sm font-bold text-slate-700">No Route Snapshots Captured Yet</h3>
+                    <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">Snapshots are automatically captured at Trip Start, 50% Progress, and Destination Arrival.</p>
+                  </div>
+                ) : (
+                  <div className={`grid grid-cols-1 ${snapshots.length === 1 ? 'max-w-md mx-auto' : snapshots.length === 2 ? 'md:grid-cols-2 max-w-3xl mx-auto' : 'md:grid-cols-3'} gap-5`}>
+                    {snapshots.map((snap, idx) => (
+                      <div key={`snap_${snap.id || snap.snapshot_type || 'type'}_${snap.timestamp || ''}_${idx}`} className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs hover:shadow-md transition-all duration-200 flex flex-col space-y-3">
+                        {/* Real Map Image Box */}
+                        <div className="w-full h-52 rounded-xl overflow-hidden border border-slate-200 relative bg-slate-900 shadow-inner">
+                          <RealMapSnapshotCard snap={snap} index={idx} executiveName={routeSnapModalRecord.employee_name} />
                         </div>
-                        <h3 className="font-extrabold text-slate-900 text-base">
-                          {snap.title}
-                        </h3>
-                      </div>
 
-                      {/* Timestamp */}
-                      <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
-                        <Clock size={14} className="text-slate-400 shrink-0" />
-                        <span>{snap.timestamp || '—'}</span>
-                      </div>
+                        {/* Card Title line with circular badge number */}
+                        <div className="flex items-center gap-2.5 pt-1">
+                          <div className={`w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-black shadow-2xs shrink-0 ${
+                            idx === 0 ? 'bg-emerald-600' : idx === 1 ? 'bg-blue-600' : 'bg-rose-600'
+                          }`}>
+                            {snap.badge_number || (idx + 1)}
+                          </div>
+                          <h3 className="font-extrabold text-slate-900 text-base">
+                            {snap.title}
+                          </h3>
+                        </div>
 
-                      {/* Location Address */}
-                      <div className="flex items-start gap-1.5 text-xs text-slate-500 font-medium">
-                        <MapPin size={14} className="text-slate-400 shrink-0 mt-0.5" />
-                        <span className="line-clamp-2 leading-relaxed">{snap.address || 'Location Address Not Available'}</span>
+                        {/* Timestamp */}
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+                          <Clock size={14} className="text-slate-400 shrink-0" />
+                          <span>{snap.timestamp || '—'}</span>
+                        </div>
+
+                        {/* Location Address */}
+                        <div className="flex items-start gap-1.5 text-xs text-slate-500 font-medium">
+                          <MapPin size={14} className="text-slate-400 shrink-0 mt-0.5" />
+                          <span className="line-clamp-2 leading-relaxed">{snap.address || 'Location Address Not Available'}</span>
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
             </div>

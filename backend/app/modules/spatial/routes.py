@@ -1,4 +1,5 @@
 import math
+import asyncio
 from typing import Dict, Any, List, Optional
 from fastapi import APIRouter, Query, Depends, HTTPException, Body
 from app.modules.crm.repository import CRMRepository
@@ -6,6 +7,7 @@ from app.modules.customer.repository import CustomerRepository
 from app.modules.visit.repository import VisitRepository
 from app.core.logger import logger
 from app.core.dependencies import get_current_user_payload
+from app.modules.spatial.snapshot_service import capture_and_store_snapshot, get_captured_snapshots_for_session
 
 
 router = APIRouter(prefix="/spatial", tags=["Smart Spatial Map & Geofencing"])
@@ -869,6 +871,7 @@ async def get_manager_team_locations(
 
 
 @router.post("/match-route")
+@router.post("/match-route/")
 def match_route_breadcrumbs(payload: Dict[str, Any] = Body(...)):
     """
     Snaps a sequence of GPS coordinates to the road network using OSRM Match API or OSRM Nearest snapping.
@@ -1836,7 +1839,29 @@ async def start_tracking_session(
             )
         except Exception as event_err:
             logger.warning(f"Error logging visit started event: {event_err}")
-            
+
+        # Trigger Snapshot 1: START_LOCATION in background
+        if session_id and lat is not None and lng is not None:
+            try:
+                asyncio.create_task(
+                    capture_and_store_snapshot(
+                        session_id=str(session_id),
+                        employee_id=str(emp_id),
+                        employee_name=employee_name,
+                        snapshot_type="START_LOCATION",
+                        current_lat=float(lat),
+                        current_lng=float(lng),
+                        start_lat=float(lat),
+                        start_lng=float(lng),
+                        dest_lat=float(client_lat) if client_lat is not None else None,
+                        dest_lng=float(client_lng) if client_lng is not None else None,
+                        polyline_points=[{"lat": float(lat), "lng": float(lng)}],
+                        address=client_address or ""
+                    )
+                )
+            except Exception as snap_err:
+                logger.warning(f"Error launching START_LOCATION snapshot background task: {snap_err}")
+
         return {"success": True, "session_id": session_id, "employee_id": emp_id}
     except Exception as e:
         logger.error(f"tracking session start error: {e}")
@@ -1924,12 +1949,40 @@ async def end_tracking_session(
             "VISIT_ENDED", lat, lng, None,
             {"reason": reason, "employee_name": employee_name}
         )
-        _send_manager_notif(
-            sp, manager_id, emp_id, employee_code,
-            "⚪ Navigation Stopped", f"{employee_name} has stopped navigation."
-        )
     except Exception as event_err:
         logger.warning(f"Error logging visit ended event: {event_err}")
+
+    # Trigger Snapshot 3: DESTINATION_REACHED in background when session is confirmed ended
+    if ended_session_id:
+        try:
+            sess_info = sp.schema("hrms").table("tracking_sessions").select("start_latitude,start_longitude,end_latitude,end_longitude,client_latitude,client_longitude,client_address").eq("id", ended_session_id).limit(1).execute()
+            s_data = sess_info.data[0] if sess_info.data else {}
+            
+            s_lat = float(s_data.get("start_latitude") or lat or 0.0)
+            s_lng = float(s_data.get("start_longitude") or lng or 0.0)
+            e_lat = float(lat if lat is not None else (s_data.get("end_latitude") or s_lat))
+            e_lng = float(lng if lng is not None else (s_data.get("end_longitude") or s_lng))
+            c_lat = float(s_data.get("client_latitude")) if s_data.get("client_latitude") is not None else e_lat
+            c_lng = float(s_data.get("client_longitude")) if s_data.get("client_longitude") is not None else e_lng
+            
+            asyncio.create_task(
+                capture_and_store_snapshot(
+                    session_id=str(ended_session_id),
+                    employee_id=str(emp_id),
+                    employee_name=employee_name,
+                    snapshot_type="DESTINATION_REACHED",
+                    current_lat=e_lat,
+                    current_lng=e_lng,
+                    start_lat=s_lat,
+                    start_lng=s_lng,
+                    dest_lat=c_lat,
+                    dest_lng=c_lng,
+                    polyline_points=[{"lat": s_lat, "lng": s_lng}, {"lat": e_lat, "lng": e_lng}],
+                    address=s_data.get("client_address") or ""
+                )
+            )
+        except Exception as dest_snap_err:
+            logger.warning(f"Error launching DESTINATION_REACHED snapshot background task: {dest_snap_err}")
 
     return {"success": True, "session_id": ended_session_id, "employee_id": emp_id, "status": "ended"}
 
@@ -2045,6 +2098,39 @@ async def push_live_location(
                     "total_distance": round(new_dist, 1),
                     "end_latitude": lat, "end_longitude": lng, "updated_at": now_iso,
                 }).eq("id", session_id).execute()
+                # Trigger Snapshot 2: MID_TRIP at ~50% actual travelled progress
+                try:
+                    start_lat = float(sess.get("start_latitude") or lat)
+                    start_lng = float(sess.get("start_longitude") or lng)
+                    client_lat = float(sess.get("client_latitude")) if sess.get("client_latitude") is not None else None
+                    client_lng = float(sess.get("client_longitude")) if sess.get("client_longitude") is not None else None
+
+                    if client_lat is not None and client_lng is not None:
+                        total_expected_m = haversine_distance_meters(start_lat, start_lng, client_lat, client_lng)
+                    else:
+                        total_expected_m = 3000.0
+
+                    target_mid_m = max(400.0, total_expected_m * 0.45)
+
+                    if new_dist >= target_mid_m:
+                        asyncio.create_task(
+                            capture_and_store_snapshot(
+                                session_id=str(session_id),
+                                employee_id=str(emp_id),
+                                employee_name=telemetry_data.get("employee_name") or "Sales Executive",
+                                snapshot_type="MID_TRIP",
+                                current_lat=float(lat),
+                                current_lng=float(lng),
+                                start_lat=start_lat,
+                                start_lng=start_lng,
+                                dest_lat=client_lat,
+                                dest_lng=client_lng,
+                                polyline_points=[{"lat": start_lat, "lng": start_lng}, {"lat": lat, "lng": lng}],
+                                address=""
+                            )
+                        )
+                except Exception as mid_err:
+                    logger.debug(f"MID_TRIP snapshot check notice: {mid_err}")
         except Exception as e:
             logger.debug(f"session distance update: {e}")
 
@@ -2348,88 +2434,7 @@ async def update_session_destination(
     return {"success": True, "employee_id": emp_id, "session_id": session_id, "client_name": client_name, "is_enroute_diversion": is_enroute}
 
 
-@router.post("/location/session/end")
-async def end_tracking_session(
-    payload: Dict[str, Any] = Body(...),
-    user_payload: dict = Depends(get_current_user_payload)
-):
-    """Executive ends their tracking session (logout / stop work)."""
-    import datetime
-    from app.database.supabase import get_supabase_admin_client, get_supabase_client
 
-    sp = get_supabase_admin_client() or get_supabase_client()
-    auth_uid = user_payload.get("sub") or ""
-    emp_id = _resolve_emp(sp, auth_uid)
-    session_id = payload.get("session_id")
-    lat = payload.get("latitude") or payload.get("lat")
-    lng = payload.get("longitude") or payload.get("lng")
-    now_iso = datetime.datetime.utcnow().isoformat()
-
-    upd: Dict[str, Any] = {"status": "ended", "end_time": now_iso, "updated_at": now_iso}
-    if lat is not None and lng is not None:
-        upd["end_latitude"] = float(lat)
-        upd["end_longitude"] = float(lng)
-
-    # Fetch details before ending the session to trigger VISIT_COMPLETED
-    client_name = "Client"
-    client_id = None
-    manager_id = None
-    resolved_session_id = session_id
-    try:
-        sess_query = sp.schema("hrms").table("tracking_sessions").select("id, client_name, client_id, manager_id").eq("employee_id", emp_id)
-        if session_id:
-            sess_query = sess_query.eq("id", session_id)
-        else:
-            sess_query = sess_query.eq("status", "active")
-        sess_res = sess_query.limit(1).execute()
-        if sess_res.data:
-            client_name = sess_res.data[0].get("client_name") or "Client"
-            client_id = sess_res.data[0].get("client_id")
-            manager_id = sess_res.data[0].get("manager_id")
-            resolved_session_id = sess_res.data[0]["id"]
-    except Exception as fetch_sess_err:
-        logger.warning(f"Could not load session details before end: {fetch_sess_err}")
-
-    try:
-        q = sp.schema("hrms").table("tracking_sessions").update(upd).eq("employee_id", emp_id)
-        if session_id:
-            q = q.eq("id", session_id)
-        else:
-            q = q.eq("status", "active")
-        q.execute()
-    except Exception as e:
-        logger.warning(f"session end error: {e}")
-
-    try:
-        sp.schema("hrms").table("employee_locations").update({
-            "is_online": False, "updated_at": now_iso,
-        }).eq("employee_id", emp_id).execute()
-    except Exception as e:
-        logger.debug(f"mark offline: {e}")
-
-    # Log VISIT_COMPLETED tracking event and send notification
-    if resolved_session_id:
-        try:
-            employee_name = "Sales Executive"
-            employee_code = "EMP000012"
-            emp_info = sp.schema("hrms").table("employees").select("name, employee_code").eq("employee_id", emp_id).limit(1).execute()
-            if emp_info.data:
-                employee_name = emp_info.data[0]["name"] or employee_name
-                employee_code = emp_info.data[0]["employee_code"] or employee_code
-                
-            _create_tracking_event(
-                sp, resolved_session_id, emp_id, manager_id,
-                "VISIT_COMPLETED", lat, lng, client_id,
-                {"client_name": client_name}
-            )
-            _send_manager_notif(
-                sp, manager_id, emp_id, employee_code,
-                "✅ Visit Completed", f"{employee_name} has completed the visit to {client_name}."
-            )
-        except Exception as event_err:
-            logger.warning(f"Error logging visit completed event: {event_err}")
-
-    return {"success": True, "employee_id": emp_id, "session_id": resolved_session_id}
 
 
 @router.get("/location/history/{employee_id}")
@@ -2852,7 +2857,7 @@ async def get_executive_history_report(
         snap_1_time = trip_start_time
 
         # 2. Mid-Trip Timestamp (Snapshot 2) - Calculate midpoint timestamp or breadcrumb time (Do NOT reuse trip_start_time)
-        snap_2_time = trip_start_time
+        bcs = sess.get("breadcrumbs") or sess.get("locations") or []
         if "T" in start_time_raw and "T" in end_time_raw and end_time_raw != "None":
             try:
                 dt_s = datetime.datetime.fromisoformat(start_time_raw.replace("Z", "+00:00"))
@@ -2862,84 +2867,30 @@ async def get_executive_history_report(
                 snap_2_time = dt_m.strftime("%Y-%m-%d %I:%M %p")
             except Exception:
                 pass
-        elif breadcrumbs and len(breadcrumbs) >= 2:
-            mid_bc = breadcrumbs[len(breadcrumbs) // 2]
+        elif bcs and len(bcs) >= 2:
+            mid_bc = bcs[len(bcs) // 2]
             snap_2_time = mid_bc.get("recorded_at") or trip_start_time
 
-        # Build Real Google Static Map Image URLs with real roadmap tiles, markers & polyline path
-        google_key = settings.GOOGLE_MAPS_API_KEY if hasattr(settings, "GOOGLE_MAPS_API_KEY") else os.getenv("GOOGLE_MAPS_API_KEY", "")
-
-        def make_real_map_url(lat, lng):
-            if not lat or not lng:
-                return ""
-            path_str = f"path=color:0xef4444ff|weight:5|{start_lat},{start_lng}|{lat},{lng}"
-            start_marker = f"markers=color:green|label:S|{start_lat},{start_lng}"
-            exec_marker = f"markers=color:blue|label:E|{lat},{lng}"
-            dest_marker = f"markers=color:red|label:D|{end_lat},{end_lng}" if end_lat else ""
-            markers_param = f"&{start_marker}&{exec_marker}" + (f"&{dest_marker}" if dest_marker else "")
-            
-            if google_key:
-                return f"https://maps.googleapis.com/maps/api/staticmap?center={lat},{lng}&zoom=15&size=600x400&scale=2&maptype=roadmap&{path_str}{markers_param}&key={google_key}"
-            else:
-                return f"https://static-maps.yandex.ru/1.x/?l=map&pt={lng},{lat},pm2blm&z=15&size=600,400"
-
-        map_snapshots = [
-            {
-                "id": f"snap_start_{len(reports)}",
-                "type": "START_LOCATION",
-                "badge_number": 1,
-                "title": "Trip Started",
-                "subtitle": "Trip Started / Start Location",
-                "timestamp": snap_1_time,
-                "latitude": start_lat,
-                "longitude": start_lng,
-                "address": start_address,
-                "image_url": make_real_map_url(start_lat, start_lng),
-                "speed_kmh": 0.0,
-                "status": "Trip Started",
-                "badge_color": "emerald"
-            },
-            {
-                "id": f"snap_mid_{len(reports)}",
-                "type": "MID_TRIP",
-                "badge_number": 2,
-                "title": "Mid Trip",
-                "subtitle": "Mid-Trip / Route Progress",
-                "timestamp": snap_2_time,
-                "latitude": mid_lat,
-                "longitude": mid_lng,
-                "address": mid_address,
-                "image_url": make_real_map_url(mid_lat, mid_lng),
-                "speed_kmh": 18.5,
-                "status": "En Route Progress",
-                "badge_color": "blue"
-            }
-        ]
-
-        # Add Snapshot 3 ONLY if destination has actually been reached or trip ended!
-        dest_reached_time = dest_arrival_time if dest_arrival_time != "—" else (trip_end_time if trip_end_time != "—" else None)
-        if dest_reached_time:
-            map_snapshots.append({
-                "id": f"snap_dest_{len(reports)}",
-                "type": "DESTINATION_REACHED",
-                "badge_number": 3,
-                "title": "Destination Reached",
-                "subtitle": "Destination Reached",
-                "timestamp": dest_reached_time,
-                "latitude": end_lat,
-                "longitude": end_lng,
-                "address": dest_address,
-                "image_url": make_real_map_url(end_lat, end_lng),
-                "client_name": client_name,
-                "speed_kmh": 0.0,
-                "status": "Destination Reached",
-                "badge_color": "rose"
-            })
-
-        try:
-            sync_and_prune_route_snapshots(sess.get('id'), s_emp_id, emp_name, map_snapshots)
-        except Exception:
-            pass
+        # Fetch real captured map snapshots for this session
+        map_snapshots = []
+        if sess.get('id'):
+            snaps_raw = get_captured_snapshots_for_session(str(sess.get('id')))
+            for s in snaps_raw:
+                map_snapshots.append({
+                    "id": str(s.get("id")),
+                    "type": s.get("snapshot_type"),
+                    "snapshot_type": s.get("snapshot_type"),
+                    "badge_number": s.get("badge_number", 1),
+                    "title": s.get("title") or "Route Snapshot",
+                    "subtitle": s.get("title"),
+                    "timestamp": s.get("timestamp"),
+                    "latitude": float(s.get("latitude") or 0.0),
+                    "longitude": float(s.get("longitude") or 0.0),
+                    "address": s.get("address") or "",
+                    "image_url": s.get("image_url") or "",
+                    "status": s.get("title"),
+                    "badge_color": "emerald" if s.get("snapshot_type") == "START_LOCATION" else ("blue" if s.get("snapshot_type") == "MID_TRIP" else "rose")
+                })
 
         reports.append({
             "employee_id": s_emp_id,
