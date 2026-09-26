@@ -1239,37 +1239,33 @@ function CeoDashboard() {
         })}
       </div>
 
-      {/* ── MODALS OVERLAYS (One central portal rendering) ── */}
+      {/* ── FULL PAGE DETAIL VIEW (Opens as a full page with top sticky header & close button) ── */}
       {activeModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          {/* Backdrop */}
-          <div 
-            className="absolute inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity duration-200" 
-            onClick={() => setActiveModal(null)} 
-          />
-
-          {/* Modal Card wrapper */}
-          <div className="relative w-full max-w-[96vw] lg:max-w-[1550px] max-h-[94vh] overflow-hidden rounded-3xl bg-white border border-slate-200 shadow-2xl flex flex-col animate-in fade-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className={`flex items-center justify-between border-b px-6 py-4.5 transition-colors ${
-              activeModal === 'revenue'
-                ? 'bg-gradient-to-r from-purple-100 via-purple-50 to-indigo-100 text-purple-950 border-purple-200/80'
-                : 'bg-slate-50/50 text-slate-900 border-slate-100'
-            }`}>
+        <div className="fixed inset-0 z-50 bg-[#F0F6FA] text-slate-800 flex flex-col h-screen w-screen overflow-hidden animate-in fade-in duration-200">
+          {/* Top Sticky Header */}
+          <div className="bg-[#154e77] text-white border-b border-[#154e77]/80 px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between shadow-md shrink-0">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setActiveModal(null)}
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+                title="Back to Dashboard"
+              >
+                <ChevronLeft className="size-4 text-[#f5ab27]" />
+                <span className="hidden sm:inline">Back to Dashboard</span>
+              </button>
+              <div className="h-6 w-px bg-white/20 hidden sm:block" />
               <div className="flex items-center gap-2.5">
-                <span className={`grid size-9 place-items-center rounded-xl ${
-                  activeModal === 'revenue' ? 'bg-purple-200/80 text-purple-800' : 'bg-purple-100/60 text-purple-700'
-                }`}>
-                  {activeModal === 'revenue' && <TrendingUp className="size-5" />}
-                  {activeModal === 'customers' && <Building2 className="size-5" />}
-                  {activeModal === 'employees' && <Users className="size-5" />}
-                  {activeModal === 'approvals' && <CheckCircle2 className="size-5" />}
-                  {activeModal === 'present' && <CheckCircle className="size-5 text-emerald-600" />}
-                  {activeModal === 'absent' && <XCircle className="size-5 text-rose-600" />}
-                  {activeModal === 'field_visit' && <Briefcase className="size-5 text-amber-600" />}
+                <span className="grid size-9 place-items-center rounded-xl bg-white/15 text-white shadow-2xs shrink-0">
+                  {activeModal === 'revenue' && <TrendingUp className="size-5 text-[#f5ab27]" />}
+                  {activeModal === 'customers' && <Building2 className="size-5 text-[#f5ab27]" />}
+                  {activeModal === 'employees' && <Users className="size-5 text-[#f5ab27]" />}
+                  {activeModal === 'approvals' && <CheckCircle2 className="size-5 text-[#f5ab27]" />}
+                  {activeModal === 'present' && <CheckCircle className="size-5 text-emerald-400" />}
+                  {activeModal === 'absent' && <XCircle className="size-5 text-rose-400" />}
+                  {activeModal === 'field_visit' && <Briefcase className="size-5 text-amber-400" />}
                 </span>
                 <div>
-                  <h3 className="text-base font-black tracking-tight">
+                  <h3 className="text-base sm:text-lg font-black tracking-tight text-white leading-tight">
                     {activeModal === 'revenue' && 'Financial Profit & Loss Statement'}
                     {activeModal === 'customers' && 'CRM Client Database'}
                     {activeModal === 'employees' && 'HRMS Employee Directory'}
@@ -1278,34 +1274,32 @@ function CeoDashboard() {
                     {activeModal === 'absent' && 'Absent Staff Roster'}
                     {activeModal === 'field_visit' && "Today's Active Field Visits"}
                   </h3>
-                  <p className={`text-[10px] font-bold tracking-wide uppercase mt-0.5 ${
-                    activeModal === 'revenue' ? 'text-purple-700' : 'text-slate-400'
-                  }`}>
+                  <p className="text-[10px] sm:text-[11px] font-semibold tracking-wider uppercase mt-0.5 text-slate-200">
                     {activeModal === 'revenue' && 'REAL-TIME REVENUE, REIMBURSEMENTS & INCENTIVES ANALYSIS'}
                     {activeModal === 'customers' && 'Active SLAs & Won Deals'}
                     {activeModal === 'employees' && 'Corporate Workforce List'}
-                    {activeModal === 'approvals' && 'Pending Leave approvals'}
+                    {activeModal === 'approvals' && 'Pending Leave & Expense Approvals'}
                     {activeModal === 'present' && 'ATTENDANCE LOG FOR TODAY'}
                     {activeModal === 'absent' && 'UNMARKED & ABSENT STAFF'}
                     {activeModal === 'field_visit' && 'REAL-TIME FIELD TRACKING'}
                   </p>
                 </div>
               </div>
-
-              <button
-                onClick={() => setActiveModal(null)}
-                className={`rounded-xl p-1.5 transition cursor-pointer ${
-                  activeModal === 'revenue'
-                    ? 'text-pink-100 hover:bg-white/10 hover:text-white'
-                    : 'text-slate-400 hover:bg-slate-100 hover:text-slate-950'
-                }`}
-              >
-                <X className="size-5" />
-              </button>
             </div>
 
-            {/* Modal Content Scrollable Area */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-5">
+            <button
+              onClick={() => setActiveModal(null)}
+              className="flex items-center gap-1.5 bg-white/10 hover:bg-rose-600 text-white border border-white/20 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+              aria-label="Close page view"
+              title="Close Page"
+            >
+              <X className="size-4.5" />
+              <span className="hidden sm:inline">Close Page</span>
+            </button>
+          </div>
+
+          {/* Full Page Content Scrollable Area */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1700px] mx-auto w-full">
               
               {/* 1. REVENUE FINANCIAL PROFIT & LOSS STATEMENT MODAL */}
               {activeModal === 'revenue' && (() => {
@@ -2494,8 +2488,7 @@ function CeoDashboard() {
 
             </div>
           </div>
-        </div>
-      )}
+        )}
     </div>
   )
 }
