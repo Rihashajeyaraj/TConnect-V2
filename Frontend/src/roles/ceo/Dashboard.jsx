@@ -102,7 +102,9 @@ function CeoDashboard() {
   const [employeeCustomSearch, setEmployeeCustomSearch] = useState('')
   const [employeeDeptFilter, setEmployeeDeptFilter] = useState('ALL')
   const [absentRoleFilter, setAbsentRoleFilter] = useState('ALL')
+  const [absentDeptFilter, setAbsentDeptFilter] = useState('ALL')
   const [absentSearch, setAbsentSearch] = useState('')
+  const [presentDeptFilter, setPresentDeptFilter] = useState('ALL')
 
   // Attendance & Field Visit State for Present, Absent, Field Visit cards
   const [attendanceMetrics, setAttendanceMetrics] = useState({
@@ -2466,71 +2468,126 @@ function CeoDashboard() {
               )}
 
               {/* 5. PRESENT STAFF ROSTER MODAL */}
-              {activeModal === 'present' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200/90 rounded-xl p-3.5">
-                    <div className="flex items-center gap-2">
-                      <CheckCircle className="size-4 text-emerald-600" />
-                      <span className="text-xs font-black text-emerald-950 uppercase tracking-wider">
-                        PRESENT STAFF TODAY ({attendanceMetrics.presentToday} EMPLOYEES)
+              {activeModal === 'present' && (() => {
+                const uniquePresentDepts = ['ALL', ...Array.from(new Set(
+                  attendanceMetrics.presentList
+                    .map(e => (e.department || e.dept || '').trim())
+                    .filter(d => d && d !== 'N/A')
+                )).sort()]
+
+                const presentFiltered = attendanceMetrics.presentList.filter(emp => {
+                  if (presentDeptFilter !== 'ALL') {
+                    const deptStr = (emp.department || emp.dept || '').trim()
+                    if (deptStr.toLowerCase() !== presentDeptFilter.toLowerCase()) return false
+                  }
+                  return true
+                })
+
+                return (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between bg-emerald-50 border border-emerald-200/90 rounded-xl p-3.5">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="size-4 text-emerald-600" />
+                        <span className="text-xs font-black text-emerald-950 uppercase tracking-wider">
+                          PRESENT STAFF TODAY ({attendanceMetrics.presentToday} EMPLOYEES)
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full uppercase">
+                        ON DUTY
                       </span>
                     </div>
-                    <span className="text-[10px] font-extrabold text-emerald-700 bg-emerald-100 px-2.5 py-0.5 rounded-full uppercase">
-                      ON DUTY
-                    </span>
-                  </div>
 
-                  <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                          <th className="px-4 py-3">STAFF NAME</th>
-                          <th className="px-4 py-3">ROLE / DESIGNATION</th>
-                          <th className="px-4 py-3">CLOCK-IN TIME</th>
-                          <th className="px-4 py-3 text-right">STATUS</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
-                        {attendanceMetrics.presentList.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="py-8 text-center text-slate-400 font-bold">
-                              No present staff records found for today.
-                            </td>
+                    {/* Department Filter Chips */}
+                    {uniquePresentDepts.length > 1 && (
+                      <div className="flex flex-wrap items-center gap-1.5 px-1">
+                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">Dept:</span>
+                        {uniquePresentDepts.map(dept => (
+                          <button
+                            key={dept}
+                            onClick={() => setPresentDeptFilter(dept)}
+                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer border ${
+                              presentDeptFilter === dept
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs scale-[1.02]'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {dept === 'ALL' ? `All Depts (${attendanceMetrics.presentList.length})` : `${dept} (${attendanceMetrics.presentList.filter(e => (e.department || e.dept || '').trim() === dept).length})`}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                            <th className="px-4 py-3">STAFF NAME</th>
+                            <th className="px-4 py-3">ROLE / DESIGNATION</th>
+                            <th className="px-4 py-3">DEPARTMENT</th>
+                            <th className="px-4 py-3">CLOCK-IN TIME</th>
+                            <th className="px-4 py-3 text-right">STATUS</th>
                           </tr>
-                        ) : (
-                          attendanceMetrics.presentList.map((emp, i) => (
-                            <tr key={i} className="hover:bg-slate-50/50">
-                              <td className="px-4 py-3 text-slate-900 font-black">{emp.name || emp.full_name || 'Staff Member'}</td>
-                              <td className="px-4 py-3 text-slate-600 font-semibold">{emp.role || emp.designation || 'Sales Executive'}</td>
-                              <td className="px-4 py-3 text-slate-700 font-bold">09:15 AM</td>
-                              <td className="px-4 py-3 text-right font-black text-emerald-600">
-                                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md text-[10px]">
-                                  Present
-                                </span>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium">
+                          {presentFiltered.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="py-8 text-center text-slate-400 font-bold">
+                                No present staff records found matching filter.
                               </td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                          ) : (
+                            presentFiltered.map((emp, i) => (
+                              <tr key={i} className="hover:bg-slate-50/50">
+                                <td className="px-4 py-3 text-slate-900 font-black">{emp.name || emp.full_name || 'Staff Member'}</td>
+                                <td className="px-4 py-3 text-slate-600 font-semibold">{emp.role || emp.designation || 'Sales Executive'}</td>
+                                <td className="px-4 py-3">
+                                  {(emp.department || emp.dept) ? (
+                                    <span className="inline-flex items-center rounded-md px-2 py-0.5 font-bold text-[10px] tracking-wide bg-sky-50 text-sky-700 border border-sky-200">
+                                      {emp.department || emp.dept}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 font-semibold text-[11px]">—</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-slate-700 font-bold">{emp.clockInTime || '09:15 AM'}</td>
+                                <td className="px-4 py-3 text-right font-black text-emerald-600">
+                                  <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 rounded-md text-[10px]">
+                                    Present
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
               {/* 6. ABSENT STAFF ROSTER MODAL */}
               {activeModal === 'absent' && (() => {
+                const uniqueAbsentDepts = ['ALL', ...Array.from(new Set(
+                  attendanceMetrics.absentList
+                    .map(e => (e.department || e.dept || '').trim())
+                    .filter(d => d && d !== 'N/A')
+                )).sort()]
+
                 const absentFiltered = attendanceMetrics.absentList.filter(emp => {
                   const roleLower = String(emp.role || emp.designation || '').toLowerCase()
                   const nameLower = String(emp.name || emp.full_name || '').toLowerCase()
+                  const deptStr = (emp.department || emp.dept || '').trim()
 
                   if (absentRoleFilter === 'MANAGER' && !roleLower.includes('manager')) return false
                   if (absentRoleFilter === 'TEAM LEAD' && !roleLower.includes('lead') && !roleLower.includes('tl')) return false
                   if (absentRoleFilter === 'EXECUTIVE' && !roleLower.includes('executive') && !roleLower.includes('rep')) return false
                   if (absentRoleFilter === 'ADMIN' && !roleLower.includes('admin') && !roleLower.includes('ceo') && !roleLower.includes('founder')) return false
 
+                  if (absentDeptFilter !== 'ALL' && deptStr.toLowerCase() !== absentDeptFilter.toLowerCase()) return false
+
                   if (absentSearch.trim()) {
                     const q = absentSearch.toLowerCase().trim()
-                    if (!nameLower.includes(q) && !roleLower.includes(q)) return false
+                    if (!nameLower.includes(q) && !roleLower.includes(q) && !deptStr.toLowerCase().includes(q)) return false
                   }
 
                   return true
@@ -2559,35 +2616,57 @@ function CeoDashboard() {
                     </div>
 
                     {/* Filters Row */}
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-2">
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {roleGroups.map(g => (
-                          <button
-                            key={g.key}
-                            onClick={() => setAbsentRoleFilter(g.key)}
-                            className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer border ${
-                              absentRoleFilter === g.key
-                                ? 'bg-rose-600 text-white border-rose-600 shadow-xs scale-[1.02]'
-                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            {g.label}
-                            <span className={`ml-1.5 px-1.5 py-0.5 text-[10px] rounded-full ${
-                              absentRoleFilter === g.key ? 'bg-rose-700 text-rose-100' : 'bg-slate-100 text-slate-600'
-                            }`}>{g.count}</span>
-                          </button>
-                        ))}
+                    <div className="space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {roleGroups.map(g => (
+                            <button
+                              key={g.key}
+                              onClick={() => setAbsentRoleFilter(g.key)}
+                              className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer border ${
+                                absentRoleFilter === g.key
+                                  ? 'bg-rose-600 text-white border-rose-600 shadow-xs scale-[1.02]'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              {g.label}
+                              <span className={`ml-1.5 px-1.5 py-0.5 text-[10px] rounded-full ${
+                                absentRoleFilter === g.key ? 'bg-rose-700 text-rose-100' : 'bg-slate-100 text-slate-600'
+                              }`}>{g.count}</span>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="relative flex-1 max-w-xs">
+                          <Search className="absolute left-3 top-2.5 size-3.5 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search by name, role, dept..."
+                            value={absentSearch}
+                            onChange={e => setAbsentSearch(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-rose-400"
+                          />
+                        </div>
                       </div>
-                      <div className="relative flex-1 max-w-xs">
-                        <Search className="absolute left-3 top-2.5 size-3.5 text-slate-400" />
-                        <input
-                          type="text"
-                          placeholder="Search by name or role..."
-                          value={absentSearch}
-                          onChange={e => setAbsentSearch(e.target.value)}
-                          className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-rose-400"
-                        />
-                      </div>
+
+                      {/* Department Filter Chips */}
+                      {uniqueAbsentDepts.length > 1 && (
+                        <div className="flex flex-wrap items-center gap-1.5 px-1 pt-1">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">Dept:</span>
+                          {uniqueAbsentDepts.map(dept => (
+                            <button
+                              key={dept}
+                              onClick={() => setAbsentDeptFilter(dept)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer border ${
+                                absentDeptFilter === dept
+                                  ? 'bg-rose-700 text-white border-rose-700 shadow-xs scale-[1.02]'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              {dept === 'ALL' ? `All Depts (${attendanceMetrics.absentList.length})` : `${dept} (${attendanceMetrics.absentList.filter(e => (e.department || e.dept || '').trim() === dept).length})`}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                     </div>
 
                     <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
@@ -2596,6 +2675,7 @@ function CeoDashboard() {
                           <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
                             <th className="px-4 py-3 whitespace-nowrap">STAFF NAME</th>
                             <th className="px-4 py-3 whitespace-nowrap">ROLE / DESIGNATION</th>
+                            <th className="px-4 py-3 whitespace-nowrap">DEPARTMENT</th>
                             <th className="px-4 py-3 whitespace-nowrap">ATTENDANCE STATUS</th>
                             <th className="px-4 py-3 text-right whitespace-nowrap">ACTION</th>
                           </tr>
@@ -2603,10 +2683,10 @@ function CeoDashboard() {
                         <tbody className="divide-y divide-slate-100 font-medium">
                           {absentFiltered.length === 0 ? (
                             <tr>
-                              <td colSpan={4} className="py-8 text-center text-slate-400 font-bold">
+                              <td colSpan={5} className="py-8 text-center text-slate-400 font-bold">
                                 {attendanceMetrics.absentList.length === 0
                                   ? 'All staff members are present today.'
-                                  : `No absent staff matching filter “${absentRoleFilter}${absentSearch ? ' · ' + absentSearch : ''}”`}
+                                  : `No absent staff matching filter “${absentRoleFilter}${absentDeptFilter !== 'ALL' ? ' · ' + absentDeptFilter : ''}${absentSearch ? ' · ' + absentSearch : ''}”`}
                               </td>
                             </tr>
                           ) : (
@@ -2622,6 +2702,15 @@ function CeoDashboard() {
                                   }`}>
                                     {emp.role || emp.designation || 'Staff Member'}
                                   </span>
+                                </td>
+                                <td className="px-4 py-3">
+                                  {(emp.department || emp.dept) ? (
+                                    <span className="inline-flex items-center rounded-md px-2 py-0.5 font-bold text-[10px] tracking-wide bg-sky-50 text-sky-700 border border-sky-200">
+                                      {emp.department || emp.dept}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 font-semibold text-[11px]">—</span>
+                                  )}
                                 </td>
                                 <td className="px-4 py-3 text-rose-600 font-bold">Not Clocked In</td>
                                 <td className="px-4 py-3 text-right font-black">
