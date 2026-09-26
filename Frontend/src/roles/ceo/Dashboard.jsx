@@ -1004,13 +1004,13 @@ function CeoDashboard() {
   return (
     <div className="mx-auto max-w-[1600px] space-y-6 pb-12">
       {/* Header Banner */}
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white border border-slate-200/90 rounded-2xl p-5 shadow-xs">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between bg-white border border-[#B2D4EB]/90 rounded-2xl p-4 sm:p-5 shadow-2xs">
         <div>
           <div className="flex items-center gap-2">
-            <span className="grid size-8 place-items-center rounded-lg bg-purple-100 text-purple-700">
+            <span className="grid size-8 place-items-center rounded-lg bg-[#E0EEF8] text-[#0B3C5D] border border-[#B2D4EB]">
               <Sparkles className="size-4.5" />
             </span>
-            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+            <h1 className="text-lg sm:text-xl font-black text-[#0B3C5D] tracking-tight">
               Executive Dashboard
             </h1>
           </div>
@@ -1021,7 +1021,7 @@ function CeoDashboard() {
 
         <div className="flex items-center gap-2.5 flex-wrap">
           {/* Period selector */}
-          <div className="flex items-center bg-slate-100 rounded-xl p-0.5 sm:p-1 text-[11px] font-bold border border-slate-200 flex-wrap">
+          <div className="flex items-center bg-[#F0F6FA] rounded-xl p-0.5 sm:p-1 text-[11px] font-bold border border-[#B2D4EB] flex-wrap">
             {['Today', 'This Month', 'This Quarter', 'This Year', 'Custom'].map((t) => (
               <button
                 key={t}
@@ -1038,8 +1038,8 @@ function CeoDashboard() {
                     setLedgerToDate('')
                   }
                 }}
-                className={`px-3 py-1.5 rounded-lg transition-all duration-150 active:scale-95 cursor-pointer ${
-                  timeRange === t ? 'bg-purple-200 text-purple-950 border border-purple-300/80 shadow-2xs font-extrabold' : 'text-slate-600 hover:text-purple-800 hover:bg-purple-50 font-bold'
+                className={`px-3 py-1 rounded-lg transition-all duration-150 active:scale-95 cursor-pointer ${
+                  timeRange === t ? 'bg-[#0B3C5D] text-white border border-[#0B3C5D] shadow-2xs font-extrabold' : 'text-slate-600 hover:text-[#0B3C5D] hover:bg-[#E0EEF8] font-bold'
                 }`}
               >
                 {t}
@@ -1049,12 +1049,12 @@ function CeoDashboard() {
 
           {/* Custom Date Inputs inline when Custom selected */}
           {timeRange === 'Custom' && (
-            <form onSubmit={handleApplyCustomRange} className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-slate-200/80 animate-in fade-in duration-150">
+            <form onSubmit={handleApplyCustomRange} className="flex items-center gap-2 bg-slate-50 p-1.5 rounded-xl border border-[#B2D4EB] animate-in fade-in duration-150">
               <input
                 type="date"
                 value={fromDate}
                 onChange={(e) => setFromDate(e.target.value)}
-                className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-purple-500"
+                className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#0B3C5D]"
                 required
               />
               <span className="text-[10px] font-black text-slate-400">TO</span>
@@ -1062,12 +1062,12 @@ function CeoDashboard() {
                 type="date"
                 value={toDate}
                 onChange={(e) => setToDate(e.target.value)}
-                className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-purple-500"
+                className="h-8 bg-white border border-slate-200 rounded-lg px-2 text-xs font-bold text-slate-800 focus:outline-none focus:border-[#0B3C5D]"
                 required
               />
               <button
                 type="submit"
-                className="bg-purple-200 hover:bg-purple-300 text-purple-950 border border-purple-300 text-xs font-extrabold px-3 py-1.5 rounded-lg cursor-pointer transition active:scale-95 shadow-2xs"
+                className="bg-[#0B3C5D] hover:bg-[#072B44] text-white border border-[#0B3C5D] text-xs font-extrabold px-3 py-1.5 rounded-lg cursor-pointer transition active:scale-95 shadow-2xs"
               >
                 Apply
               </button>
@@ -1076,7 +1076,7 @@ function CeoDashboard() {
 
           <button
             onClick={() => handleExport('pdf')}
-            className="flex items-center gap-1.5 rounded-xl bg-white hover:bg-purple-50 border border-purple-200 px-3 py-2 text-xs font-bold text-purple-700 transition-all duration-150 active:scale-95 cursor-pointer shadow-2xs"
+            className="flex items-center gap-1.5 rounded-xl bg-white hover:bg-[#E0EEF8] border border-[#B2D4EB] px-3 py-1.5 text-xs font-bold text-[#0B3C5D] transition-all duration-150 active:scale-95 cursor-pointer shadow-2xs"
           >
             <Download className="size-3.5" />
             Export Brief
@@ -1085,83 +1085,83 @@ function CeoDashboard() {
       </div>
 
       {/* ── INTERACTIVE KPI CARDS GRID (Compact & Sleek Card Dimensions) ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3 sm:gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-3">
         {kpiCards.map((kpi) => {
           const Icon = kpi.icon
           const isSelected = activeModal === kpi.id
 
           const cardTheme = {
             revenue: {
-              card: 'bg-emerald-50/90 border border-emerald-200 text-slate-800 shadow-2xs hover:border-emerald-400 hover:shadow-sm hover:scale-[1.015]',
-              title: 'text-emerald-800 font-black',
-              value: 'text-emerald-950 text-xl sm:text-2xl',
-              subtitle: 'text-slate-500 font-semibold',
-              icon: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
-              badge: 'bg-emerald-100 text-emerald-800 border border-emerald-300',
-              footer: 'text-emerald-700 border-slate-100 hover:text-emerald-800',
+              card: 'bg-white border border-[#B2D4EB] text-slate-800 shadow-2xs hover:border-[#0B3C5D] hover:shadow-md hover:scale-[1.01]',
+              title: 'text-[#0B3C5D] font-black',
+              value: 'text-[#0B3C5D] text-lg sm:text-xl',
+              subtitle: 'text-slate-600 font-semibold',
+              icon: 'bg-[#E0EEF8] text-[#0B3C5D] border border-[#B2D4EB]',
+              badge: 'bg-[#E0EEF8] text-[#0B3C5D] border border-[#B2D4EB]',
+              footer: 'text-[#0B3C5D] border-slate-100 hover:text-[#072B44]',
             },
             customers: {
-              card: 'bg-blue-50/90 border border-blue-200 text-slate-800 shadow-2xs hover:border-blue-400 hover:shadow-sm hover:scale-[1.015]',
-              title: 'text-blue-800 font-black',
-              value: 'text-blue-950 text-xl sm:text-2xl',
-              subtitle: 'text-slate-500 font-semibold',
-              icon: 'bg-blue-100 text-blue-700 border border-blue-200',
-              badge: 'bg-blue-100 text-blue-800 border border-blue-300',
-              footer: 'text-blue-700 border-slate-100 hover:text-blue-800',
+              card: 'bg-white border border-[#B2D4EB] text-slate-800 shadow-2xs hover:border-[#0B3C5D] hover:shadow-md hover:scale-[1.01]',
+              title: 'text-[#0B3C5D] font-black',
+              value: 'text-[#0B3C5D] text-lg sm:text-xl',
+              subtitle: 'text-slate-600 font-semibold',
+              icon: 'bg-[#E0EEF8] text-[#0B3C5D] border border-[#B2D4EB]',
+              badge: 'bg-[#E0EEF8] text-[#0B3C5D] border border-[#B2D4EB]',
+              footer: 'text-[#0B3C5D] border-slate-100 hover:text-[#072B44]',
             },
             employees: {
-              card: 'bg-purple-50/90 border border-purple-200 text-slate-800 shadow-2xs hover:border-purple-400 hover:shadow-sm hover:scale-[1.015]',
-              title: 'text-purple-800 font-black',
-              value: 'text-purple-950 text-xl sm:text-2xl',
-              subtitle: 'text-slate-500 font-semibold',
-              icon: 'bg-purple-100 text-purple-700 border border-purple-200',
-              badge: 'bg-purple-100 text-purple-800 border border-purple-300',
-              footer: 'text-purple-700 border-slate-100 hover:text-purple-800',
+              card: 'bg-white border border-[#B2D4EB] text-slate-800 shadow-2xs hover:border-[#0B3C5D] hover:shadow-md hover:scale-[1.01]',
+              title: 'text-[#0B3C5D] font-black',
+              value: 'text-[#0B3C5D] text-lg sm:text-xl',
+              subtitle: 'text-slate-600 font-semibold',
+              icon: 'bg-[#E0EEF8] text-[#0B3C5D] border border-[#B2D4EB]',
+              badge: 'bg-[#E0EEF8] text-[#0B3C5D] border border-[#B2D4EB]',
+              footer: 'text-[#0B3C5D] border-slate-100 hover:text-[#072B44]',
             },
             present: {
-              card: 'bg-white border border-emerald-200/90 text-slate-800 shadow-2xs hover:border-emerald-300 hover:shadow-sm hover:scale-[1.015]',
+              card: 'bg-white border border-[#B2D4EB] text-slate-800 shadow-2xs hover:border-[#0B3C5D] hover:shadow-md hover:scale-[1.01]',
               title: 'text-emerald-800 font-black',
-              value: 'text-emerald-950 text-lg sm:text-xl',
-              subtitle: 'text-slate-500 font-semibold',
-              icon: 'bg-emerald-100/70 text-emerald-700 border border-emerald-200',
+              value: 'text-emerald-950 text-base sm:text-lg',
+              subtitle: 'text-slate-600 font-semibold',
+              icon: 'bg-emerald-100/80 text-emerald-800 border border-emerald-300',
               badge: 'bg-emerald-100/80 text-emerald-800 border border-emerald-300',
               footer: 'text-emerald-700 border-slate-100 hover:text-emerald-800',
             },
             absent: {
-              card: 'bg-white border border-rose-200/90 text-slate-800 shadow-2xs hover:border-rose-300 hover:shadow-sm hover:scale-[1.015]',
-              title: 'text-rose-800 font-black',
-              value: 'text-rose-950 text-lg sm:text-xl',
-              subtitle: 'text-slate-500 font-semibold',
-              icon: 'bg-rose-100/70 text-rose-700 border border-rose-200',
+              card: 'bg-white border border-[#B2D4EB] text-slate-800 shadow-2xs hover:border-rose-400 hover:shadow-md hover:scale-[1.01]',
+              title: 'text-rose-700 font-black',
+              value: 'text-rose-950 text-base sm:text-lg',
+              subtitle: 'text-slate-600 font-semibold',
+              icon: 'bg-rose-100/80 text-rose-800 border border-rose-300',
               badge: 'bg-rose-100/80 text-rose-800 border border-rose-300',
               footer: 'text-rose-700 border-slate-100 hover:text-rose-800',
             },
             field_visit: {
-              card: 'bg-white border border-amber-200/90 text-slate-800 shadow-2xs hover:border-amber-300 hover:shadow-sm hover:scale-[1.015]',
+              card: 'bg-white border border-[#B2D4EB] text-slate-800 shadow-2xs hover:border-amber-400 hover:shadow-md hover:scale-[1.01]',
               title: 'text-amber-800 font-black',
-              value: 'text-amber-950 text-lg sm:text-xl',
-              subtitle: 'text-slate-500 font-semibold',
-              icon: 'bg-amber-100/70 text-amber-700 border border-amber-200',
+              value: 'text-amber-950 text-base sm:text-lg',
+              subtitle: 'text-slate-600 font-semibold',
+              icon: 'bg-amber-100/80 text-amber-800 border border-amber-300',
               badge: 'bg-amber-100/80 text-amber-800 border border-amber-300',
               footer: 'text-amber-700 border-slate-100 hover:text-amber-800',
             },
             approvals: {
-              card: 'bg-white border border-purple-200/90 text-slate-800 shadow-2xs hover:border-purple-300 hover:shadow-sm hover:scale-[1.015]',
-              title: 'text-purple-800 font-black',
-              value: 'text-purple-950 text-lg sm:text-xl',
-              subtitle: 'text-slate-500 font-semibold',
-              icon: 'bg-purple-100/70 text-purple-700 border border-purple-200',
-              badge: 'bg-purple-100/80 text-purple-800 border border-purple-300',
-              footer: 'text-purple-700 border-slate-100 hover:text-purple-800',
+              card: 'bg-white border border-[#B2D4EB] text-slate-800 shadow-2xs hover:border-[#0B3C5D] hover:shadow-md hover:scale-[1.01]',
+              title: 'text-[#0B3C5D] font-black',
+              value: 'text-[#0B3C5D] text-base sm:text-lg',
+              subtitle: 'text-slate-600 font-semibold',
+              icon: 'bg-[#E0EEF8] text-[#0B3C5D] border border-[#B2D4EB]',
+              badge: 'bg-[#E0EEF8] text-[#0B3C5D] border border-[#B2D4EB]',
+              footer: 'text-[#0B3C5D] border-slate-100 hover:text-[#072B44]',
             }
           }[kpi.id] || {
-            card: 'bg-white border border-slate-200 text-slate-800 shadow-2xs hover:shadow-sm hover:scale-[1.015]',
-            title: 'text-purple-800 font-black',
-            value: 'text-slate-900 text-lg sm:text-xl',
-            subtitle: 'text-slate-500 font-semibold',
-            icon: 'bg-purple-100 text-purple-700',
-            badge: 'bg-purple-100 text-purple-800',
-            footer: 'text-purple-700 border-slate-100 hover:text-purple-800',
+            card: 'bg-white border border-[#B2D4EB] text-slate-800 shadow-2xs hover:shadow-md hover:scale-[1.01]',
+            title: 'text-[#0B3C5D] font-black',
+            value: 'text-[#0B3C5D] text-base sm:text-lg',
+            subtitle: 'text-slate-600 font-semibold',
+            icon: 'bg-[#E0EEF8] text-[#0B3C5D]',
+            badge: 'bg-[#E0EEF8] text-[#0B3C5D]',
+            footer: 'text-[#0B3C5D] border-slate-100 hover:text-[#072B44]',
           }
 
           return (

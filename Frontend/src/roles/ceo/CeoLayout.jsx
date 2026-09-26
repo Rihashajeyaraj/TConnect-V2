@@ -321,6 +321,51 @@ function CeoLayout() {
           font-size: 2.625rem !important; /* ~42px */
         }
 
+        /* CEO Portal Navy Blue (#0B3C5D) Design Theme Enforcement */
+        .ceo-portal-content .bg-purple-100,
+        .ceo-portal-content .bg-purple-50,
+        .ceo-portal-content .bg-purple-200 {
+          background-color: #E0EEF8 !important;
+          color: #0B3C5D !important;
+        }
+
+        .ceo-portal-content .text-purple-600,
+        .ceo-portal-content .text-purple-700,
+        .ceo-portal-content .text-purple-800,
+        .ceo-portal-content .text-purple-900,
+        .ceo-portal-content .text-purple-950 {
+          color: #0B3C5D !important;
+        }
+
+        .ceo-portal-content .border-purple-200,
+        .ceo-portal-content .border-purple-300,
+        .ceo-portal-content .border-purple-400 {
+          border-color: #B2D4EB !important;
+        }
+
+        .ceo-portal-content .focus\:border-purple-500:focus {
+          border-color: #0B3C5D !important;
+        }
+
+        .ceo-portal-content .bg-purple-600,
+        .ceo-portal-content .bg-purple-700,
+        .ceo-portal-content .bg-gradient-to-r.from-purple-600,
+        .ceo-portal-content .bg-gradient-to-r.from-purple-700 {
+          background-image: none !important;
+          background-color: #0B3C5D !important;
+          color: #ffffff !important;
+        }
+
+        .ceo-portal-content .hover\:bg-purple-50:hover,
+        .ceo-portal-content .hover\:bg-purple-100:hover {
+          background-color: #E0EEF8 !important;
+          color: #0B3C5D !important;
+        }
+
+        .ceo-portal-content .hover\:from-purple-700:hover {
+          background-color: #082D46 !important;
+        }
+
         @media (max-width: 640px) {
           .ceo-portal-content {
             font-size: 0.90625rem;
@@ -478,8 +523,8 @@ function CeoLayout() {
 
         {/* CEO Sidebar */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-60 sm:w-64 bg-white text-slate-700 border-r border-[#0B3C5D]/15 shadow-xl shadow-[#0B3C5D]/5 transition-all duration-200 ease-in-out lg:translate-x-0 lg:static shrink-0 flex flex-col h-full ${
-            isSidebarCollapsed ? 'lg:w-20' : 'lg:w-64'
+          className={`fixed inset-y-0 left-0 z-40 w-72 sm:w-80 bg-white text-slate-700 border-r border-[#0B3C5D]/15 shadow-xl shadow-[#0B3C5D]/5 transition-all duration-200 ease-in-out lg:translate-x-0 lg:static shrink-0 flex flex-col h-full ${
+            isSidebarCollapsed ? 'lg:w-20' : 'lg:w-[285px]'
           } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
           {/* Mobile-only Sidebar Close Header */}
