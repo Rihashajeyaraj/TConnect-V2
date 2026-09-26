@@ -161,6 +161,7 @@ async function request(endpoint, options = {}) {
           console.error("[VISIT API] status:", response.status);
           console.error("[VISIT API] response:", JSON.stringify(data));
         }
+        if (options.silentError) return null
         return Promise.reject(data || { message: `HTTP Error ${response.status}` })
       }
 
@@ -171,11 +172,13 @@ async function request(endpoint, options = {}) {
       return data
     } catch (error) {
       clearTimeout(timeoutId)
-      if (error?.name === 'AbortError') {
+      if (options.silentError) return null
+      if (error?.name === 'AbortError' || error?.name === 'TimeoutError' || error?.isTimeout) {
         if (!options.silentError) {
           console.warn(`[API Timeout] Request to ${endpoint} timed out after ${timeoutMs}ms`)
+          return Promise.reject({ message: 'Request timed out. Please check connection and try again.', isTimeout: true })
         }
-        return Promise.reject({ message: 'Request timed out. Please check connection and try again.', isTimeout: true })
+        return null
       }
       if (error?.status === 401) return Promise.reject(error)
       return Promise.reject(error || { message: 'Network or server error' })

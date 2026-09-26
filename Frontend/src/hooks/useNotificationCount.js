@@ -64,7 +64,7 @@ export default function useNotificationCount() {
 
   const fetchUnreadCount = useCallback(async () => {
     try {
-      const res = await notificationAPI.getUnreadCount({ silentError: true, timeout: 8000 });
+      const res = await notificationAPI.getUnreadCount({ silentError: true, timeout: 8000 }).catch(() => null);
       const count = res?.data?.unread_count ?? res?.unread_count ?? (typeof res?.data === 'number' ? res.data : 0);
       updateCountState(count);
     } catch (_) {}
