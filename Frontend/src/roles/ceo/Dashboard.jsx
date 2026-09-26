@@ -104,7 +104,11 @@ function CeoDashboard() {
   const [absentRoleFilter, setAbsentRoleFilter] = useState('ALL')
   const [absentDeptFilter, setAbsentDeptFilter] = useState('ALL')
   const [absentSearch, setAbsentSearch] = useState('')
+  const [presentRoleFilter, setPresentRoleFilter] = useState('ALL')
   const [presentDeptFilter, setPresentDeptFilter] = useState('ALL')
+  const [presentSearch, setPresentSearch] = useState('')
+  const [fieldVisitDeptFilter, setFieldVisitDeptFilter] = useState('ALL')
+  const [fieldVisitSearch, setFieldVisitSearch] = useState('')
 
   // Attendance & Field Visit State for Present, Absent, Field Visit cards
   const [attendanceMetrics, setAttendanceMetrics] = useState({
@@ -2476,12 +2480,32 @@ function CeoDashboard() {
                 )).sort()]
 
                 const presentFiltered = attendanceMetrics.presentList.filter(emp => {
-                  if (presentDeptFilter !== 'ALL') {
-                    const deptStr = (emp.department || emp.dept || '').trim()
-                    if (deptStr.toLowerCase() !== presentDeptFilter.toLowerCase()) return false
+                  const roleLower = String(emp.role || emp.designation || '').toLowerCase()
+                  const nameLower = String(emp.name || emp.full_name || '').toLowerCase()
+                  const deptStr = (emp.department || emp.dept || '').trim()
+
+                  if (presentRoleFilter === 'MANAGER' && !roleLower.includes('manager')) return false
+                  if (presentRoleFilter === 'TEAM LEAD' && !roleLower.includes('lead') && !roleLower.includes('tl')) return false
+                  if (presentRoleFilter === 'EXECUTIVE' && !roleLower.includes('executive') && !roleLower.includes('rep')) return false
+                  if (presentRoleFilter === 'ADMIN' && !roleLower.includes('admin') && !roleLower.includes('ceo') && !roleLower.includes('founder')) return false
+
+                  if (presentDeptFilter !== 'ALL' && deptStr.toLowerCase() !== presentDeptFilter.toLowerCase()) return false
+
+                  if (presentSearch.trim()) {
+                    const q = presentSearch.toLowerCase().trim()
+                    if (!nameLower.includes(q) && !roleLower.includes(q) && !deptStr.toLowerCase().includes(q)) return false
                   }
+
                   return true
                 })
+
+                const roleGroups = [
+                  { key: 'ALL', label: 'All', count: attendanceMetrics.presentList.length },
+                  { key: 'MANAGER', label: 'Manager', count: attendanceMetrics.presentList.filter(e => String(e.role || '').toLowerCase().includes('manager')).length },
+                  { key: 'TEAM LEAD', label: 'Team Lead', count: attendanceMetrics.presentList.filter(e => { const r = String(e.role || '').toLowerCase(); return r.includes('lead') || r.includes('tl') }).length },
+                  { key: 'EXECUTIVE', label: 'Executive', count: attendanceMetrics.presentList.filter(e => { const r = String(e.role || '').toLowerCase(); return r.includes('executive') || r.includes('rep') }).length },
+                  { key: 'ADMIN', label: 'Admin', count: attendanceMetrics.presentList.filter(e => { const r = String(e.role || '').toLowerCase(); return r.includes('admin') || r.includes('ceo') || r.includes('founder') }).length },
+                ].filter(g => g.key === 'ALL' || g.count > 0)
 
                 return (
                   <div className="space-y-4">
@@ -2497,42 +2521,78 @@ function CeoDashboard() {
                       </span>
                     </div>
 
-                    {/* Department Filter Chips */}
-                    {uniquePresentDepts.length > 1 && (
-                      <div className="flex flex-wrap items-center gap-1.5 px-1">
-                        <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">Dept:</span>
-                        {uniquePresentDepts.map(dept => (
-                          <button
-                            key={dept}
-                            onClick={() => setPresentDeptFilter(dept)}
-                            className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer border ${
-                              presentDeptFilter === dept
-                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs scale-[1.02]'
-                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
-                            }`}
-                          >
-                            {dept === 'ALL' ? `All Depts (${attendanceMetrics.presentList.length})` : `${dept} (${attendanceMetrics.presentList.filter(e => (e.department || e.dept || '').trim() === dept).length})`}
-                          </button>
-                        ))}
+                    {/* Filters Row */}
+                    <div className="space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {roleGroups.map(g => (
+                            <button
+                              key={g.key}
+                              onClick={() => setPresentRoleFilter(g.key)}
+                              className={`px-3 py-1.5 rounded-xl text-[11px] font-black transition cursor-pointer border ${
+                                presentRoleFilter === g.key
+                                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs scale-[1.02]'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              {g.label}
+                              <span className={`ml-1.5 px-1.5 py-0.5 text-[10px] rounded-full ${
+                                presentRoleFilter === g.key ? 'bg-emerald-700 text-emerald-100' : 'bg-slate-100 text-slate-600'
+                              }`}>{g.count}</span>
+                            </button>
+                          ))}
+                        </div>
+                        <div className="relative flex-1 max-w-xs">
+                          <Search className="absolute left-3 top-2.5 size-3.5 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search by name, role, dept..."
+                            value={presentSearch}
+                            onChange={e => setPresentSearch(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-emerald-400"
+                          />
+                        </div>
                       </div>
-                    )}
+
+                      {/* Department Filter Chips */}
+                      {uniquePresentDepts.length > 1 && (
+                        <div className="flex flex-wrap items-center gap-1.5 px-1 pt-1">
+                          <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">Dept:</span>
+                          {uniquePresentDepts.map(dept => (
+                            <button
+                              key={dept}
+                              onClick={() => setPresentDeptFilter(dept)}
+                              className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer border ${
+                                presentDeptFilter === dept
+                                  ? 'bg-emerald-700 text-white border-emerald-700 shadow-xs scale-[1.02]'
+                                  : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                              }`}
+                            >
+                              {dept === 'ALL' ? `All Depts (${attendanceMetrics.presentList.length})` : `${dept} (${attendanceMetrics.presentList.filter(e => (e.department || e.dept || '').trim() === dept).length})`}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
 
                     <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
                       <table className="w-full text-left border-collapse text-xs">
                         <thead>
                           <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                            <th className="px-4 py-3">STAFF NAME</th>
-                            <th className="px-4 py-3">ROLE / DESIGNATION</th>
-                            <th className="px-4 py-3">DEPARTMENT</th>
-                            <th className="px-4 py-3">CLOCK-IN TIME</th>
-                            <th className="px-4 py-3 text-right">STATUS</th>
+                            <th className="px-4 py-3 whitespace-nowrap">STAFF NAME</th>
+                            <th className="px-4 py-3 whitespace-nowrap">ROLE / DESIGNATION</th>
+                            <th className="px-4 py-3 whitespace-nowrap">DEPARTMENT</th>
+                            <th className="px-4 py-3 whitespace-nowrap">CLOCK-IN TIME</th>
+                            <th className="px-4 py-3 text-right whitespace-nowrap">STATUS</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-medium">
                           {presentFiltered.length === 0 ? (
                             <tr>
                               <td colSpan={5} className="py-8 text-center text-slate-400 font-bold">
-                                No present staff records found matching filter.
+                                {attendanceMetrics.presentList.length === 0
+                                  ? 'No present staff records found for today.'
+                                  : `No present staff matching filter “${presentRoleFilter}${presentDeptFilter !== 'ALL' ? ' · ' + presentDeptFilter : ''}${presentSearch ? ' · ' + presentSearch : ''}”`}
                               </td>
                             </tr>
                           ) : (
@@ -2735,56 +2795,125 @@ function CeoDashboard() {
               })()}
 
               {/* 7. TODAY ON FIELD VISIT MODAL */}
-              {activeModal === 'field_visit' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between bg-amber-50 border border-amber-200/90 rounded-xl p-3.5">
-                    <div className="flex items-center gap-2">
-                      <Briefcase className="size-4 text-amber-600" />
-                      <span className="text-xs font-black text-amber-950 uppercase tracking-wider">
-                        ACTIVE FIELD VISITS TODAY ({attendanceMetrics.onFieldToday} EXECUTIVES)
+              {activeModal === 'field_visit' && (() => {
+                const uniqueFieldDepts = ['ALL', ...Array.from(new Set(
+                  attendanceMetrics.fieldVisitList
+                    .map(e => (e.department || e.dept || '').trim())
+                    .filter(d => d && d !== 'N/A')
+                )).sort()]
+
+                const fieldFiltered = attendanceMetrics.fieldVisitList.filter(v => {
+                  const execName = String(v.executive_name || v.submitted_by || v.sales_executive || '').toLowerCase()
+                  const clientStr = String(v.client_name || v.title || v.purpose || '').toLowerCase()
+                  const locStr = String(v.location || v.address || '').toLowerCase()
+                  const deptStr = (v.department || v.dept || '').trim()
+
+                  if (fieldVisitDeptFilter !== 'ALL' && deptStr.toLowerCase() !== fieldVisitDeptFilter.toLowerCase()) return false
+
+                  if (fieldVisitSearch.trim()) {
+                    const q = fieldVisitSearch.toLowerCase().trim()
+                    if (!execName.includes(q) && !clientStr.includes(q) && !locStr.includes(q) && !deptStr.toLowerCase().includes(q)) return false
+                  }
+
+                  return true
+                })
+
+                return (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between bg-amber-50 border border-amber-200/90 rounded-xl p-3.5">
+                      <div className="flex items-center gap-2">
+                        <Briefcase className="size-4 text-amber-600" />
+                        <span className="text-xs font-black text-amber-950 uppercase tracking-wider">
+                          ACTIVE FIELD VISITS TODAY ({attendanceMetrics.onFieldToday} EXECUTIVES)
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full uppercase">
+                        LIVE FIELD TRACKING
                       </span>
                     </div>
-                    <span className="text-[10px] font-extrabold text-amber-700 bg-amber-100 px-2.5 py-0.5 rounded-full uppercase">
-                      LIVE FIELD TRACKING
-                    </span>
-                  </div>
 
-                  <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
-                    <table className="w-full text-left border-collapse text-xs">
-                      <thead>
-                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
-                          <th className="px-4 py-3">EXECUTIVE NAME</th>
-                          <th className="px-4 py-3">CLIENT / PURPOSE</th>
-                          <th className="px-4 py-3">LOCATION</th>
-                          <th className="px-4 py-3 text-right">STATUS</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
-                        {attendanceMetrics.fieldVisitList.length === 0 ? (
-                          <tr>
-                            <td colSpan={4} className="py-8 text-center text-slate-400 font-bold">
-                              No active field visits or client mode check-ins logged for today.
-                            </td>
+                    {/* Filters Row */}
+                    <div className="space-y-2">
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        {uniqueFieldDepts.length > 1 && (
+                          <div className="flex flex-wrap items-center gap-1.5 px-1">
+                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider mr-1">Dept:</span>
+                            {uniqueFieldDepts.map(dept => (
+                              <button
+                                key={dept}
+                                onClick={() => setFieldVisitDeptFilter(dept)}
+                                className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer border ${
+                                  fieldVisitDeptFilter === dept
+                                    ? 'bg-amber-600 text-white border-amber-600 shadow-xs scale-[1.02]'
+                                    : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                                }`}
+                              >
+                                {dept === 'ALL' ? `All Depts (${attendanceMetrics.fieldVisitList.length})` : `${dept} (${attendanceMetrics.fieldVisitList.filter(e => (e.department || e.dept || '').trim() === dept).length})`}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+
+                        <div className="relative flex-1 max-w-xs ml-auto">
+                          <Search className="absolute left-3 top-2.5 size-3.5 text-slate-400" />
+                          <input
+                            type="text"
+                            placeholder="Search executive, client, location..."
+                            value={fieldVisitSearch}
+                            onChange={e => setFieldVisitSearch(e.target.value)}
+                            className="w-full bg-white border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 text-xs font-bold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-amber-400"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs bg-white">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead>
+                          <tr className="bg-slate-50 border-b border-slate-200 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                            <th className="px-4 py-3 whitespace-nowrap">EXECUTIVE NAME</th>
+                            <th className="px-4 py-3 whitespace-nowrap">DEPARTMENT</th>
+                            <th className="px-4 py-3 whitespace-nowrap">CLIENT / PURPOSE</th>
+                            <th className="px-4 py-3 whitespace-nowrap">LOCATION</th>
+                            <th className="px-4 py-3 text-right whitespace-nowrap">STATUS</th>
                           </tr>
-                        ) : (
-                          attendanceMetrics.fieldVisitList.map((v, i) => (
-                            <tr key={i} className="hover:bg-slate-50/50">
-                              <td className="px-4 py-3 text-slate-900 font-black">{v.executive_name || v.submitted_by || v.sales_executive || 'Sales Executive'}</td>
-                              <td className="px-4 py-3 text-slate-700 font-semibold">{v.client_name || v.title || v.purpose || 'Client Field Visit'}</td>
-                              <td className="px-4 py-3 text-slate-600 font-medium">{v.location || v.address || 'Field Location'}</td>
-                              <td className="px-4 py-3 text-right font-black text-amber-600">
-                                <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-md text-[10px]">
-                                  {v.status || 'Checked In'}
-                                </span>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100 font-medium">
+                          {fieldFiltered.length === 0 ? (
+                            <tr>
+                              <td colSpan={5} className="py-8 text-center text-slate-400 font-bold">
+                                No active field visits logged for today.
                               </td>
                             </tr>
-                          ))
-                        )}
-                      </tbody>
-                    </table>
+                          ) : (
+                            fieldFiltered.map((v, i) => (
+                              <tr key={i} className="hover:bg-slate-50/50">
+                                <td className="px-4 py-3 text-slate-900 font-black">{v.executive_name || v.submitted_by || v.sales_executive || 'Sales Executive'}</td>
+                                <td className="px-4 py-3">
+                                  {(v.department || v.dept) ? (
+                                    <span className="inline-flex items-center rounded-md px-2 py-0.5 font-bold text-[10px] tracking-wide bg-sky-50 text-sky-700 border border-sky-200">
+                                      {v.department || v.dept}
+                                    </span>
+                                  ) : (
+                                    <span className="text-slate-400 font-semibold text-[11px]">—</span>
+                                  )}
+                                </td>
+                                <td className="px-4 py-3 text-slate-700 font-semibold">{v.client_name || v.title || v.purpose || 'Client Field Visit'}</td>
+                                <td className="px-4 py-3 text-slate-600 font-medium">{v.location || v.address || 'Field Location'}</td>
+                                <td className="px-4 py-3 text-right font-black text-amber-600">
+                                  <span className="bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-md text-[10px]">
+                                    {v.status || 'Checked In'}
+                                  </span>
+                                </td>
+                              </tr>
+                            ))
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
                   </div>
-                </div>
-              )}
+                )
+              })()}
 
             </div>
           </div>
