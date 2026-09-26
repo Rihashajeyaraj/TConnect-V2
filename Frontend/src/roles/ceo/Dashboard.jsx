@@ -1084,121 +1084,133 @@ function CeoDashboard() {
         </div>
       </div>
 
-      {/* ── INTERACTIVE KPI CARDS GRID (Custom Canva Diagonal Curved Corner Shape) ── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4.5 sm:gap-5 p-1">
+      {/* ── INTERACTIVE KPI CARDS GRID (Canva Wrapped Bracket & Circular Node Connector) ── */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 sm:gap-7 p-2 pt-3">
         {kpiCards.map((kpi) => {
           const Icon = kpi.icon
           const isSelected = activeModal === kpi.id
 
           const cardTheme = {
             revenue: {
-              card: 'bg-emerald-50/90 border border-emerald-300/80 text-slate-800 shadow-xs hover:border-emerald-500 hover:shadow-md hover:scale-[1.015]',
+              card: 'bg-emerald-50/90 border border-emerald-300 text-slate-800 shadow-xs hover:border-emerald-500 hover:shadow-lg hover:-translate-y-1',
               title: 'text-emerald-800 font-black',
               value: 'text-emerald-950 text-xl sm:text-2xl',
               subtitle: 'text-slate-600 font-semibold',
-              icon: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
               badge: 'bg-emerald-100 text-emerald-800 border border-emerald-300',
-              footer: 'text-emerald-700 border-slate-100 hover:text-emerald-800',
-              accentLine: 'border-emerald-500 group-hover:scale-105',
+              footer: 'text-emerald-700 hover:text-emerald-800',
+              accentLine: 'border-emerald-500',
+              accentBg: 'bg-emerald-500',
+              nodeBg: 'bg-emerald-600',
             },
             customers: {
-              card: 'bg-purple-50/90 border border-purple-300/80 text-slate-800 shadow-xs hover:border-purple-500 hover:shadow-md hover:scale-[1.015]',
+              card: 'bg-purple-50/90 border border-purple-300 text-slate-800 shadow-xs hover:border-purple-500 hover:shadow-lg hover:-translate-y-1',
               title: 'text-purple-800 font-black',
               value: 'text-purple-950 text-xl sm:text-2xl',
               subtitle: 'text-slate-600 font-semibold',
-              icon: 'bg-purple-100 text-purple-700 border border-purple-200',
               badge: 'bg-purple-100 text-purple-800 border border-purple-300',
-              footer: 'text-purple-700 border-slate-100 hover:text-purple-800',
-              accentLine: 'border-purple-500 group-hover:scale-105',
+              footer: 'text-purple-700 hover:text-purple-800',
+              accentLine: 'border-purple-500',
+              accentBg: 'bg-purple-500',
+              nodeBg: 'bg-purple-600',
             },
             employees: {
-              card: 'bg-cyan-50/90 border border-cyan-300/80 text-slate-800 shadow-xs hover:border-cyan-500 hover:shadow-md hover:scale-[1.015]',
+              card: 'bg-cyan-50/90 border border-cyan-300 text-slate-800 shadow-xs hover:border-cyan-500 hover:shadow-lg hover:-translate-y-1',
               title: 'text-cyan-800 font-black',
               value: 'text-cyan-950 text-xl sm:text-2xl',
               subtitle: 'text-slate-600 font-semibold',
-              icon: 'bg-cyan-100 text-cyan-700 border border-cyan-200',
               badge: 'bg-cyan-100 text-cyan-800 border border-cyan-300',
-              footer: 'text-cyan-700 border-slate-100 hover:text-cyan-800',
-              accentLine: 'border-cyan-500 group-hover:scale-105',
+              footer: 'text-cyan-700 hover:text-cyan-800',
+              accentLine: 'border-cyan-500',
+              accentBg: 'bg-cyan-500',
+              nodeBg: 'bg-cyan-600',
             },
             present: {
-              card: 'bg-emerald-50/70 border border-emerald-300/80 text-slate-800 shadow-xs hover:border-emerald-500 hover:shadow-md hover:scale-[1.015]',
+              card: 'bg-emerald-50/70 border border-emerald-300 text-slate-800 shadow-xs hover:border-emerald-500 hover:shadow-lg hover:-translate-y-1',
               title: 'text-emerald-800 font-black',
               value: 'text-emerald-950 text-lg sm:text-xl',
               subtitle: 'text-slate-600 font-semibold',
-              icon: 'bg-emerald-100 text-emerald-700 border border-emerald-200',
               badge: 'bg-emerald-100 text-emerald-800 border border-emerald-300',
-              footer: 'text-emerald-700 border-slate-100 hover:text-emerald-800',
-              accentLine: 'border-emerald-500 group-hover:scale-105',
+              footer: 'text-emerald-700 hover:text-emerald-800',
+              accentLine: 'border-emerald-500',
+              accentBg: 'bg-emerald-500',
+              nodeBg: 'bg-emerald-600',
             },
             absent: {
-              card: 'bg-rose-50/90 border border-rose-300/80 text-slate-800 shadow-xs hover:border-rose-500 hover:shadow-md hover:scale-[1.015]',
+              card: 'bg-rose-50/90 border border-rose-300 text-slate-800 shadow-xs hover:border-rose-500 hover:shadow-lg hover:-translate-y-1',
               title: 'text-rose-800 font-black',
               value: 'text-rose-950 text-lg sm:text-xl',
               subtitle: 'text-slate-600 font-semibold',
-              icon: 'bg-rose-100 text-rose-700 border border-rose-200',
               badge: 'bg-rose-100 text-rose-800 border border-rose-300',
-              footer: 'text-rose-700 border-slate-100 hover:text-rose-800',
-              accentLine: 'border-rose-500 group-hover:scale-105',
+              footer: 'text-rose-700 hover:text-rose-800',
+              accentLine: 'border-rose-500',
+              accentBg: 'bg-rose-500',
+              nodeBg: 'bg-rose-600',
             },
             field_visit: {
-              card: 'bg-amber-50/90 border border-amber-300/80 text-slate-800 shadow-xs hover:border-amber-500 hover:shadow-md hover:scale-[1.015]',
+              card: 'bg-amber-50/90 border border-amber-300 text-slate-800 shadow-xs hover:border-amber-500 hover:shadow-lg hover:-translate-y-1',
               title: 'text-amber-800 font-black',
               value: 'text-amber-950 text-lg sm:text-xl',
               subtitle: 'text-slate-600 font-semibold',
-              icon: 'bg-amber-100 text-amber-700 border border-amber-200',
               badge: 'bg-amber-100 text-amber-800 border border-amber-300',
-              footer: 'text-amber-700 border-slate-100 hover:text-amber-800',
-              accentLine: 'border-amber-500 group-hover:scale-105',
+              footer: 'text-amber-700 hover:text-amber-800',
+              accentLine: 'border-amber-500',
+              accentBg: 'bg-amber-500',
+              nodeBg: 'bg-amber-600',
             },
             approvals: {
-              card: 'bg-purple-50/90 border border-purple-300/80 text-slate-800 shadow-xs hover:border-purple-500 hover:shadow-md hover:scale-[1.015]',
+              card: 'bg-purple-50/90 border border-purple-300 text-slate-800 shadow-xs hover:border-purple-500 hover:shadow-lg hover:-translate-y-1',
               title: 'text-purple-800 font-black',
               value: 'text-purple-950 text-lg sm:text-xl',
               subtitle: 'text-slate-600 font-semibold',
-              icon: 'bg-purple-100 text-purple-700 border border-purple-200',
               badge: 'bg-purple-100 text-purple-800 border border-purple-300',
-              footer: 'text-purple-700 border-slate-100 hover:text-purple-800',
-              accentLine: 'border-purple-500 group-hover:scale-105',
+              footer: 'text-purple-700 hover:text-purple-800',
+              accentLine: 'border-purple-500',
+              accentBg: 'bg-purple-500',
+              nodeBg: 'bg-purple-600',
             }
           }[kpi.id] || {
-            card: 'bg-white border border-slate-300 text-slate-800 shadow-xs hover:shadow-md hover:scale-[1.015]',
+            card: 'bg-white border border-slate-300 text-slate-800 shadow-xs hover:shadow-lg hover:-translate-y-1',
             title: 'text-slate-800 font-black',
             value: 'text-slate-900 text-lg sm:text-xl',
             subtitle: 'text-slate-500 font-semibold',
-            icon: 'bg-slate-100 text-slate-700',
             badge: 'bg-slate-100 text-slate-800',
-            footer: 'text-slate-700 border-slate-100 hover:text-slate-800',
-            accentLine: 'border-[#0b3c5d] group-hover:scale-105',
+            footer: 'text-slate-700 hover:text-slate-800',
+            accentLine: 'border-[#0b3c5d]',
+            accentBg: 'bg-[#0b3c5d]',
+            nodeBg: 'bg-[#0b3c5d]',
           }
 
           return (
             <button
               key={kpi.id}
               onClick={() => setActiveModal(kpi.id)}
-              className={`text-left rounded-tl-[30px] rounded-br-[30px] rounded-tr-xl rounded-bl-xl p-4 sm:p-4.5 transition-all duration-200 cursor-pointer relative group flex flex-col justify-between ${cardTheme.card} ${
+              className={`text-left rounded-3xl p-4 sm:p-5 transition-all duration-300 cursor-pointer relative group flex flex-col justify-between ${cardTheme.card} ${
                 isSelected ? 'ring-2 ring-[#0b3c5d] ring-offset-2' : ''
               }`}
             >
-              {/* Outer Top-Left Curved Accent Bracket Line */}
-              <span className={`absolute -top-1.5 -left-1.5 w-16 h-16 border-t-[2.5px] border-l-[2.5px] rounded-tl-[34px] pointer-events-none transition-all duration-200 ${cardTheme.accentLine}`} />
-              
-              {/* Outer Bottom-Right Curved Accent Bracket Line */}
-              <span className={`absolute -bottom-1.5 -right-1.5 w-16 h-16 border-b-[2.5px] border-r-[2.5px] rounded-br-[34px] pointer-events-none transition-all duration-200 ${cardTheme.accentLine}`} />
+              {/* Outer Wrapping Bracket Line (Top, Left & Bottom sides) */}
+              <span className={`absolute -top-2 -left-2 -bottom-2 right-10 border-t-[3px] border-l-[3px] border-b-[3px] rounded-l-[36px] rounded-tr-[18px] rounded-br-[18px] pointer-events-none transition-all duration-300 ${cardTheme.accentLine}`} />
 
-              {/* Header: Title & Icon */}
+              {/* Bottom-Right Connector Line & Circular Node Badge */}
+              <div className="absolute -bottom-3 -right-3 flex items-center group-hover:scale-110 transition-transform duration-300 z-10">
+                {/* Connector Stem Line */}
+                <span className={`w-5 h-[3px] ${cardTheme.accentBg}`} />
+                {/* Circular Badge Node with Icon */}
+                <span className={`grid size-9 sm:size-10 place-items-center rounded-full text-white font-black shadow-md border-2 border-white ${cardTheme.nodeBg}`}>
+                  <Icon className="size-4 sm:size-4.5" />
+                </span>
+              </div>
+
+              {/* Header: Title */}
               <div>
-                <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center justify-between gap-2 pr-2">
                   <span className={`text-[11px] sm:text-xs uppercase tracking-wider font-extrabold ${cardTheme.title}`}>
                     {kpi.title}
-                  </span>
-                  <span className={`grid size-7.5 sm:size-8 shrink-0 place-items-center rounded-lg transition-transform group-hover:scale-110 ${cardTheme.icon}`}>
-                    <Icon className="size-3.5 sm:size-4" />
                   </span>
                 </div>
 
                 {/* Main Metric Value */}
-                <div className="mt-2 sm:mt-2.5">
+                <div className="mt-2 sm:mt-3">
                   <p className={`font-black tracking-tight ${cardTheme.value}`}>
                     {kpi.value}
                   </p>
@@ -1206,8 +1218,8 @@ function CeoDashboard() {
               </div>
 
               {/* Subtitle & Badge Row */}
-              <div className="mt-3 pt-2.5 border-t border-current/10 space-y-2">
-                <div className="flex items-center justify-between gap-2">
+              <div className="mt-3.5 pt-2.5 border-t border-current/10 space-y-2">
+                <div className="flex items-center justify-between gap-2 pr-4">
                   <p className={`text-[11px] truncate ${cardTheme.subtitle}`}>
                     {kpi.subtitle}
                   </p>
@@ -1219,7 +1231,7 @@ function CeoDashboard() {
                 {/* Interactive Footer Action */}
                 <div className={`flex items-center justify-between text-[11px] font-bold pt-0.5 transition ${cardTheme.footer}`}>
                   <span>Inspect Details</span>
-                  <span className="text-xs transition-transform group-hover:translate-x-1.5">→</span>
+                  <span className="text-xs transition-transform group-hover:translate-x-1.5 font-black mr-4">→</span>
                 </div>
               </div>
             </button>
