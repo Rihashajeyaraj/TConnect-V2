@@ -523,14 +523,14 @@ function CeoLayout() {
 
         {/* CEO Sidebar */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-72 sm:w-80 bg-[#0b3c5d] text-slate-100 border-r border-[#0b3c5d]/80 shadow-xl transition-all duration-200 ease-in-out lg:translate-x-0 lg:static shrink-0 flex flex-col h-full ${
+          className={`fixed inset-y-0 left-0 z-40 w-72 sm:w-80 bg-[#154e77] text-slate-100 border-r border-[#154e77]/80 shadow-xl transition-all duration-200 ease-in-out lg:translate-x-0 lg:static shrink-0 flex flex-col h-full ${
             isSidebarCollapsed ? 'lg:w-20' : 'lg:w-[285px]'
           } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
           {/* Mobile-only Sidebar Close Header */}
-          <div className="lg:hidden flex items-center justify-between px-3.5 py-2.5 border-b border-white/10 bg-[#072438] text-white shrink-0">
+          <div className="lg:hidden flex items-center justify-between px-3.5 py-2.5 border-b border-white/10 bg-[#0f3d5f] text-white shrink-0">
             <div className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-lg bg-[#f5ab27] flex items-center justify-center text-[#0b3c5d] text-[9px] font-black">TC</span>
+              <span className="w-5 h-5 rounded-lg bg-[#f5ab27] flex items-center justify-center text-[#154e77] text-[9px] font-black">TC</span>
               <span className="text-[11px] font-black text-white uppercase tracking-widest">CEO Portal</span>
             </div>
             <button
@@ -564,7 +564,7 @@ function CeoLayout() {
           </div>
 
           {/* Navigation List - 9 Executive Items */}
-          <nav className="flex-1 overflow-y-auto px-2.5 sm:px-3 py-3 sm:py-4 space-y-1 sm:space-y-1.5 bg-[#0b3c5d] scrollbar-thin scrollbar-thumb-white/20">
+          <nav className="flex-1 overflow-y-auto px-2.5 sm:px-3 py-3 sm:py-4 space-y-1 sm:space-y-1.5 bg-[#154e77] scrollbar-thin scrollbar-thumb-white/20">
             {sidebarItems.map((item, index) => {
               const Icon = item.icon
               const active = isNavActive(item.path)
