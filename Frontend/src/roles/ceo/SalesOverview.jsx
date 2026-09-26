@@ -13,6 +13,7 @@ import {
   Clock,
   ArrowUpRight,
   ChevronRight,
+  ChevronLeft,
   Plus,
   RefreshCw,
   SlidersHorizontal,
@@ -1326,27 +1327,46 @@ function SalesOverview({ initialSection }) {
           : { label: 'At Risk', color: 'bg-rose-50 text-rose-800 border-rose-200' }
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-            <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 text-slate-805 text-xs">
-              
-              <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-slate-50">
-                <div>
-                  <h3 className="text-base font-black text-slate-900">
-                    Review Sales Report ({isWeekly ? 'Weekly' : 'Monthly'})
-                  </h3>
-                  <p className="text-[10px] text-slate-500 font-bold mt-0.5">
-                    Period: {rep.report_period} | Submitted by {rep.manager_name}
-                  </p>
-                </div>
+          <div className="fixed inset-0 z-50 bg-[#F0F6FA] text-slate-800 flex flex-col h-screen w-screen overflow-hidden animate-in fade-in duration-200">
+            {/* Top Sticky Header */}
+            <div className="bg-[#154e77] text-white border-b border-[#154e77]/80 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
+              <div className="flex items-center gap-3">
                 <button
                   onClick={() => setViewingCeoReport(null)}
-                  className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-650 transition cursor-pointer animate-in fade-in"
+                  className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+                  title="Back to Sales Overview"
                 >
-                  <X className="size-5" />
+                  <ChevronLeft className="size-4 text-[#f5ab27]" />
+                  <span className="hidden sm:inline">Back to Overview</span>
                 </button>
+                <div className="h-6 w-px bg-white/20 hidden sm:block" />
+                <div className="flex items-center gap-2.5">
+                  <span className="grid size-9 place-items-center rounded-xl bg-white/15 text-white font-black shadow-2xs shrink-0">
+                    <FileSpreadsheet className="size-5 text-[#f5ab27]" />
+                  </span>
+                  <div>
+                    <h3 className="text-base sm:text-lg font-black text-white leading-tight">
+                      Review Sales Report ({isWeekly ? 'Weekly' : 'Monthly'})
+                    </h3>
+                    <p className="text-[10px] sm:text-[11px] font-semibold tracking-wider uppercase mt-0.5 text-slate-200">
+                      Period: {rep.report_period} | Submitted by {rep.manager_name}
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+              <button
+                onClick={() => setViewingCeoReport(null)}
+                className="flex items-center gap-1.5 bg-white/10 hover:bg-rose-600 text-white border border-white/20 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+                title="Close Page"
+              >
+                <X className="size-4.5" />
+                <span className="hidden sm:inline">Close Page</span>
+              </button>
+            </div>
+
+            {/* Full Page Content Scrollable Area */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1700px] mx-auto w-full">
                 
                 {/* Metric Summary Cards */}
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -1494,36 +1514,50 @@ function SalesOverview({ initialSection }) {
                   Submit CEO Remarks
                 </button>
               </div>
-
             </div>
-          </div>
-        )
-      })()}
+          )
+        })()}
 
 
 
-      {/* ── DETAIL FINANCIAL PROFIT & LOSS BREAKDOWN MODAL ── */}
+      {/* ── DETAIL FINANCIAL PROFIT & LOSS BREAKDOWN FULL PAGE VIEW ── */}
       {showFinancialReportModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-7xl max-h-[93vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-gradient-to-r from-purple-700 via-purple-800 to-indigo-800 text-white">
-              <div className="flex items-center gap-2.5">
-                <span className="grid size-9 place-items-center rounded-xl bg-white/20 text-white">
-                  <TrendingUp className="size-5" />
-                </span>
-                <div>
-                  <h3 className="text-base font-black tracking-tight">Financial Profit & Loss Statement</h3>
-                  <p className="text-[10px] font-bold text-pink-100 uppercase tracking-widest mt-0.5">Real-time Revenue, Reimbursements & Incentives analysis</p>
-                </div>
-              </div>
+        <div className="fixed inset-0 z-50 bg-[#F0F6FA] text-slate-800 flex flex-col h-screen w-screen overflow-hidden animate-in fade-in duration-200">
+          {/* Top Sticky Header */}
+          <div className="bg-[#154e77] text-white border-b border-[#154e77]/80 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowFinancialReportModal(false)}
-                className="rounded-xl p-1.5 text-pink-100 hover:bg-white/10 hover:text-white transition cursor-pointer"
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+                title="Back to Overview"
               >
-                <X className="size-5" />
+                <ChevronLeft className="size-4 text-[#f5ab27]" />
+                <span className="hidden sm:inline">Back to Overview</span>
               </button>
+              <div className="h-6 w-px bg-white/20 hidden sm:block" />
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-9 place-items-center rounded-xl bg-white/15 text-white font-black shadow-2xs shrink-0">
+                  <TrendingUp className="size-5 text-[#f5ab27]" />
+                </span>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white leading-tight">Financial Profit & Loss Statement</h3>
+                  <p className="text-[10px] sm:text-[11px] font-semibold tracking-wider uppercase mt-0.5 text-slate-200">Real-time Revenue, Reimbursements & Incentives analysis</p>
+                </div>
+              </div>
             </div>
+
+            <button
+              onClick={() => setShowFinancialReportModal(false)}
+              className="flex items-center gap-1.5 bg-white/10 hover:bg-rose-600 text-white border border-white/20 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+              title="Close Page"
+            >
+              <X className="size-4.5" />
+              <span className="hidden sm:inline">Close Page</span>
+            </button>
+          </div>
+
+          {/* Full Page Content Scrollable Area */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1700px] mx-auto w-full">
 
             {/* Time period switcher & Custom range inputs */}
             <div className="p-6 pb-2 border-b border-slate-100 space-y-4">
@@ -1568,9 +1602,7 @@ function SalesOverview({ initialSection }) {
               )}
             </div>
 
-            {/* Scrollable breakdown content */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6">
-              {/* Financial Calculation Formula block */}
+            {/* Financial Calculation Formula block */}
               <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
                 {/* 1. Revenue */}
                 <div className="bg-slate-50 border border-slate-200/70 p-4.5 rounded-2xl relative">
@@ -1726,43 +1758,57 @@ function SalesOverview({ initialSection }) {
                   </div>
                 </div>
               </div>
-            </div>
 
-            {/* Modal Footer */}
-            <div className="px-6 py-4.5 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <div className="flex justify-end pt-4 pb-6">
               <button
                 onClick={() => setShowFinancialReportModal(false)}
-                className="bg-[#832D51] hover:bg-[#6c2442] text-white text-xs font-black px-5 py-2.5 rounded-xl shadow-xs transition cursor-pointer"
+                className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
               >
-                Close Statement
+                Close Full Page Statement
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── DETAIL TARGETS BREAKDOWN MODAL ── */}
+      {/* ── DETAIL TARGETS BREAKDOWN FULL PAGE VIEW ── */}
       {showTargetsModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
-          <div className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-200">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between px-6 py-4.5 border-b border-slate-100 bg-gradient-to-r from-purple-700 via-purple-800 to-indigo-800 text-white">
-              <div className="flex items-center gap-2.5">
-                <span className="grid size-9 place-items-center rounded-xl bg-white/20 text-white">
-                  <Target className="size-5" />
-                </span>
-                <div>
-                  <h3 className="text-base font-black tracking-tight">Monthly Sales Target vs Achieved</h3>
-                  <p className="text-[10px] font-bold text-pink-100 uppercase tracking-widest mt-0.5">Yearly Performance Analysis Statement</p>
-                </div>
-              </div>
+        <div className="fixed inset-0 z-50 bg-[#F0F6FA] text-slate-800 flex flex-col h-screen w-screen overflow-hidden animate-in fade-in duration-200">
+          {/* Top Sticky Header */}
+          <div className="bg-[#154e77] text-white border-b border-[#154e77]/80 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowTargetsModal(false)}
-                className="rounded-xl p-1.5 text-pink-100 hover:bg-white/10 hover:text-white transition cursor-pointer"
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+                title="Back to Overview"
               >
-                <X className="size-5" />
+                <ChevronLeft className="size-4 text-[#f5ab27]" />
+                <span className="hidden sm:inline">Back to Overview</span>
               </button>
+              <div className="h-6 w-px bg-white/20 hidden sm:block" />
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-9 place-items-center rounded-xl bg-white/15 text-white font-black shadow-2xs shrink-0">
+                  <Target className="size-5 text-[#f5ab27]" />
+                </span>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white leading-tight">Monthly Sales Target vs Achieved</h3>
+                  <p className="text-[10px] sm:text-[11px] font-semibold tracking-wider uppercase mt-0.5 text-slate-200">Yearly Performance Analysis Statement</p>
+                </div>
+              </div>
             </div>
+
+            <button
+              onClick={() => setShowTargetsModal(false)}
+              className="flex items-center gap-1.5 bg-white/10 hover:bg-rose-600 text-white border border-white/20 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+              title="Close Page"
+            >
+              <X className="size-4.5" />
+              <span className="hidden sm:inline">Close Page</span>
+            </button>
+          </div>
+
+          {/* Full Page Content Scrollable Area */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1700px] mx-auto w-full">
 
             {/* Year Selector */}
             <div className="p-6 pb-2 border-b border-slate-100 flex items-center justify-between gap-3 bg-slate-50 border-slate-200/60">
@@ -1816,13 +1862,12 @@ function SalesOverview({ initialSection }) {
               </div>
             </div>
 
-            {/* Modal Footer */}
-            <div className="px-6 py-4.5 bg-slate-50 border-t border-slate-100 flex justify-end">
+            <div className="flex justify-end pt-4 pb-6">
               <button
                 onClick={() => setShowTargetsModal(false)}
-                className="bg-[#832D51] hover:bg-[#6c2442] text-white text-xs font-black px-5 py-2.5 rounded-xl shadow-xs transition cursor-pointer"
+                className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
               >
-                Close Statement
+                Close Full Page Targets
               </button>
             </div>
           </div>

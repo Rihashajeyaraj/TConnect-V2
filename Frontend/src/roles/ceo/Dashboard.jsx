@@ -724,6 +724,18 @@ function CeoDashboard() {
             customersList: unifiedCustomersList,
             wonOpportunitiesList: wonOpps,
           },
+          employeeSummary: {
+            totalEmployees: activeUserPool.length,
+            employeesList: activeUserPool.map(e => ({
+              ...e,
+              id: e.id || e.employee_id || e.employee_code,
+              name: e.name || e.full_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || 'Staff Member',
+              email: e.email || 'N/A',
+              role: e.role || e.designation || 'Sales Executive',
+              department: e.department || e.dept || 'Sales & BD',
+              employee_id: e.employee_code || e.employee_id || e.id || 'N/A',
+            })),
+          },
         })
 
         if (d.metrics) {
@@ -774,6 +786,18 @@ function CeoDashboard() {
             totalCustomers: updatedTotalCustomers,
             customersList: unifiedCustomersList,
             wonOpportunitiesList: wonOpps,
+          },
+          employeeSummary: {
+            totalEmployees: activeUserPool.length,
+            employeesList: activeUserPool.map(e => ({
+              ...e,
+              id: e.id || e.employee_id || e.employee_code,
+              name: e.name || e.full_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || 'Staff Member',
+              email: e.email || 'N/A',
+              role: e.role || e.designation || 'Sales Executive',
+              department: e.department || e.dept || 'Sales & BD',
+              employee_id: e.employee_code || e.employee_id || e.id || 'N/A',
+            })),
           },
         })
       }
@@ -1691,7 +1715,7 @@ function CeoDashboard() {
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
-                            <tr className="bg-slate-900 text-white font-bold uppercase tracking-wider text-xs">
+                            <tr className="bg-[#154e77] text-white font-extrabold uppercase tracking-wider text-xs border-b border-[#154e77]">
                               <th className="px-4 py-3 whitespace-nowrap">DATE</th>
                               <th className="px-4 py-3 whitespace-nowrap">SALES MANAGER</th>
                               <th className="px-4 py-3 whitespace-nowrap">TEAM LEAD</th>

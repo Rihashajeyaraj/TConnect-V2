@@ -525,11 +525,12 @@ function CeoHrms({ initialTab = 'employees' }) {
         setLoading(true)
       }
       try {
-        const [empRes, leaveRes, attRes, eodRes] = await Promise.all([
+        const [empRes, leaveRes, attRes, eodRes, usersRes] = await Promise.all([
           hrmsAPI.getEmployees().catch(() => null),
           attendanceAPI.getLeaveRequests().catch(() => null),
           attendanceAPI.getLogs().catch(() => null),
           reportAPI.getEODReports ? reportAPI.getEODReports().catch(() => null) : Promise.resolve(null),
+          userAPI.getUsers ? userAPI.getUsers().catch(() => null) : Promise.resolve(null),
         ])
 
         const rawLogs = (attRes && attRes.data && Array.isArray(attRes.data)) ? attRes.data : []
@@ -562,9 +563,23 @@ function CeoHrms({ initialTab = 'employees' }) {
           return lDate === todayStr || l.is_today === true
         })
 
-        if (empRes && empRes.data && empRes.data.length > 0) {
+        const rawEmpList = Array.isArray(empRes?.data) ? empRes.data : (Array.isArray(empRes) ? empRes : [])
+        const rawUsersList = Array.isArray(usersRes?.data) ? usersRes.data : (Array.isArray(usersRes) ? usersRes : [])
+        const combinedRaw = [...rawEmpList, ...rawUsersList]
+
+        const uniqueEmpMap = new Map()
+        combinedRaw.forEach(e => {
+          if (!e) return
+          const key = (e.email || '').toLowerCase().trim() || String(e.employee_code || e.employee_id || e.id || '').toLowerCase().trim()
+          if (key && !uniqueEmpMap.has(key)) {
+            uniqueEmpMap.set(key, e)
+          }
+        })
+        const empSourcePool = Array.from(uniqueEmpMap.values())
+
+        if (empSourcePool.length > 0) {
           setEmployees(
-            empRes.data.map((e, idx) => {
+            empSourcePool.map((e, idx) => {
               const empCode = e.employee_code || e.employee_id || e.id || ''
               const empEmail = (e.email || '').toLowerCase().trim()
               const empName = (e.name || e.full_name || '').toLowerCase().trim()
@@ -588,10 +603,10 @@ function CeoHrms({ initialTab = 'employees' }) {
               return {
                 ...e,
                 id: e.id || `EMP-${100 + idx}`,
-                name: e.name || e.full_name || 'Staff Member',
+                name: e.name || e.full_name || `${e.first_name || ''} ${e.last_name || ''}`.trim() || 'Staff Member',
                 email: e.email || 'employee@tconnect.com',
-                role: e.role || (idx === 0 ? 'Admin' : idx < 3 ? 'Sales Manager' : 'Sales Executive'),
-                department: e.department || 'Sales',
+                role: e.role || e.designation || (idx === 0 ? 'Admin' : idx < 3 ? 'Sales Manager' : 'Sales Executive'),
+                department: e.department || e.dept || 'Sales & Business Development',
                 status: isAbsent ? 'Absent' : 'Present',
                 checkin: checkinTime,
                 hasCheckedIn,

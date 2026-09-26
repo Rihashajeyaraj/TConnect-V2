@@ -362,6 +362,13 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const { showToast } = useToast()
   const currentUser = useCurrentUser()
 
+  const isCeo = useMemo(() => {
+    return typeof window !== 'undefined' && (
+      window.location.pathname.startsWith('/ceo') ||
+      String(currentUser?.role || currentUser?.designation || '').toLowerCase().includes('ceo')
+    )
+  }, [currentUser])
+
   // State
   const [activeMapTab,     setActiveMapTab]      = useState('team') // 'team' | 'own'
   const [mapLoaded,        setMapLoaded]        = useState(false)
@@ -3298,10 +3305,6 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const proxStatus = getProximityStatus()
   const hb = getHeartbeatStatus()
 
-  const isCeo = useMemo(() => {
-    return String(currentUser?.role || currentUser?.designation || '').toLowerCase().includes('ceo') || window.location.pathname.startsWith('/ceo')
-  }, [currentUser?.role, currentUser?.designation])
-
   // ─── 8. Render ────────────────────────────────────────────────────────────
   // Group members (Team Leads for Manager view, Managers for CEO view)
   const teamGroups = useMemo(() => {
@@ -3683,7 +3686,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               <input
                 value={searchQuery}
                 onChange={e => setSearchQuery(e.target.value)}
-                placeholder="Search team member..."
+                placeholder={isCeo ? "Search manager..." : "Search team member..."}
                 className="w-full pl-9 pr-4 py-2.5 text-sm font-semibold bg-white border border-slate-200 rounded-xl text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent"
               />
             </div>
@@ -3694,7 +3697,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                 <div className="w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin" />
               </div>
             ) : filteredExecutives.length === 0 ? (
-              <div className="text-center py-12 text-slate-400 text-sm font-semibold">No executives found.</div>
+              <div className="text-center py-12 text-slate-400 text-sm font-semibold">No {isCeo ? 'managers' : 'executives'} found.</div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                 {filteredExecutives.map(ex => {
@@ -3745,7 +3748,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                               loadReports(reportFilterDate, targetEmpId)
                             }}
                             className="p-2.5 rounded-2xl bg-white hover:bg-indigo-50 text-indigo-600 hover:text-indigo-800 border border-slate-200 hover:border-indigo-300 transition active:scale-95 flex items-center justify-center cursor-pointer shrink-0"
-                            title="View Executive Trip History & Operational Report"
+                            title={`View ${isCeo ? 'Manager' : 'Executive'} Trip History & Operational Report`}
                           >
                             <FileText size={16} />
                           </div>
@@ -4177,7 +4180,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                 </button>
                 <div>
                   <h1 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                    <FileText className="w-5 h-5 text-indigo-600" /> Executive Trip History &amp; Operational Reports
+                    <FileText className="w-5 h-5 text-indigo-600" /> {isCeo ? 'Manager' : 'Executive'} Trip History &amp; Operational Reports
                   </h1>
                   <p className="text-xs text-slate-500 font-semibold mt-0.5">
                     Detailed record of trip starts, destinations, durations, idle periods, client check-ins/outs &amp; point-in-time lookup
@@ -4216,7 +4219,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
                 <div className="flex items-center gap-2">
                   <Filter size={14} className="text-indigo-600" />
-                  <span className="text-xs font-black text-slate-700">Executive:</span>
+                  <span className="text-xs font-black text-slate-700">{isCeo ? 'Manager:' : 'Executive:'}</span>
                   <select
                     value={reportFilterEmpId}
                     onChange={e => {
@@ -4225,10 +4228,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                     }}
                     className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-400"
                   >
-                    <option value="all">All Executives</option>
+                    <option value="all">{isCeo ? 'All Managers' : 'All Executives'}</option>
                     {executives.map(e => (
                       <option key={e.employee_id || e.id} value={e.employee_id || e.id}>
-                        {resolveRealName(e)} ({e.employee_code || e.role || 'Executive'})
+                        {resolveRealName(e)} ({e.employee_code || e.role || (isCeo ? 'Manager' : 'Executive')})
                       </option>
                     ))}
                   </select>
@@ -4251,15 +4254,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                 <FileText className="w-10 h-10 text-slate-300 mx-auto" />
                 <h3 className="text-base font-black text-slate-700">No Completed Trip Records Found for Selected Date</h3>
                 <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  Only executives who have completed a trip on this date are listed here. Try selecting another date or filter.
-                </p>
-              </div>
-            ) : reportData.length === 0 ? (
-              <div className="text-center py-16 bg-white rounded-3xl border border-slate-200 p-6 space-y-2">
-                <FileText className="w-10 h-10 text-slate-300 mx-auto" />
-                <h3 className="text-base font-black text-slate-700">No Completed Trip Records Found for Selected Date</h3>
-                <p className="text-xs text-slate-400 max-w-md mx-auto">
-                  Only executives who have completed a trip on this date are listed here. Try selecting another date or filter.
+                  Only {isCeo ? 'managers' : 'executives'} who have completed a trip on this date are listed here. Try selecting another date or filter.
                 </p>
               </div>
             ) : (
@@ -4269,7 +4264,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                   <div className="flex items-center gap-2.5">
                     <FileText className="w-5 h-5 text-indigo-400" />
                     <div>
-                      <h3 className="text-sm font-black text-white">Completed Executive Trip History &amp; Route Audit Records</h3>
+                      <h3 className="text-sm font-black text-white">Completed {isCeo ? 'Manager' : 'Executive'} Trip History &amp; Route Audit Records</h3>
                       <p className="text-[11px] text-indigo-200/80">Lists only completed trips with dynamic times, client details, idle stops, and automatic route snapshots.</p>
                     </div>
                   </div>
@@ -4283,8 +4278,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                   <table className="w-full text-left border-collapse min-w-[1100px]">
                     <thead>
                       <tr className="bg-white text-slate-400 text-[11px] font-extrabold uppercase tracking-wider border-b border-slate-100">
-                        <th className="py-4 px-4">EXEC CODE</th>
-                        <th className="py-4 px-4">EXECUTIVE &amp; TEAM LEAD</th>
+                        <th className="py-4 px-4">{isCeo ? 'MANAGER CODE' : 'EXEC CODE'}</th>
+                        <th className="py-4 px-4">{isCeo ? 'MANAGER' : 'EXECUTIVE & TEAM LEAD'}</th>
                         <th className="py-4 px-4">TRIP START LOCATION &amp; TIME</th>
                         <th className="py-4 px-4">TRIP END LOCATION &amp; TIME</th>
                         <th className="py-4 px-4">CLIENT DETAILS &amp; PRODUCT</th>

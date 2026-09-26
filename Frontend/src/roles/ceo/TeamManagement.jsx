@@ -14,6 +14,7 @@ import {
   Activity,
   Award,
   ChevronRight,
+  ChevronLeft,
   ChevronDown,
   ChevronUp,
   TrendingUp,
@@ -801,40 +802,48 @@ function TeamManagement() {
         </div>
       )}
 
-      {/* POP-UP DEPARTMENT HIERARCHY MODAL (Manager -> Team Lead -> Executives) */}
+      {/* FULL PAGE DEPARTMENT HIERARCHY VIEW (Manager -> Team Lead -> Executives) */}
       {selectedDeptModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs p-3 sm:p-6 overflow-y-auto animate-in fade-in duration-150">
-          <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden">
-            {/* Modal Header with Close Symbol (X) */}
-            <div className="flex items-center justify-between p-4 sm:p-5 border-b border-slate-100 bg-slate-50/70 shrink-0">
-              <div className="flex items-center gap-3">
-                <span className="grid size-11 place-items-center rounded-2xl bg-purple-600 text-white font-black">
-                  <Building className="size-6" />
+        <div className="fixed inset-0 z-50 bg-[#F0F6FA] text-slate-800 flex flex-col h-screen w-screen overflow-hidden animate-in fade-in duration-200">
+          {/* Top Sticky Header */}
+          <div className="bg-[#154e77] text-white border-b border-[#154e77]/80 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => setSelectedDeptModal(null)}
+                className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+                title="Back to Team Management"
+              >
+                <ChevronLeft className="size-4 text-[#f5ab27]" />
+                <span className="hidden sm:inline">Back to Overview</span>
+              </button>
+              <div className="h-6 w-px bg-white/20 hidden sm:block" />
+              <div className="flex items-center gap-2.5">
+                <span className="grid size-9 place-items-center rounded-xl bg-white/15 text-white font-black shadow-2xs shrink-0">
+                  <Building className="size-5 text-[#f5ab27]" />
                 </span>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-base sm:text-lg font-black text-slate-900">{selectedDeptModal.name} Department</h3>
-                    <span className="px-2.5 py-0.5 rounded-full bg-purple-100 text-purple-700 text-xs font-black">
-                      {selectedDeptModal.members.length} Total Staff
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-500 font-semibold mt-0.5">
-                    Hierarchy: {selectedDeptModal.managers.length} Sales Managers • {selectedDeptModal.teamLeads.length} Team Leads • {selectedDeptModal.executives.length} Sales Executives
+                  <h3 className="text-base sm:text-lg font-black text-white leading-tight">
+                    {selectedDeptModal.name} Department Hierarchy
+                  </h3>
+                  <p className="text-[10px] sm:text-[11px] font-semibold tracking-wider uppercase mt-0.5 text-slate-200">
+                    {selectedDeptModal.members.length} Total Staff ({selectedDeptModal.managers.length} Managers • {selectedDeptModal.teamLeads.length} Team Leads • {selectedDeptModal.executives.length} Executives)
                   </p>
                 </div>
               </div>
-
-              <button
-                onClick={() => setSelectedDeptModal(null)}
-                className="grid size-9 place-items-center rounded-xl bg-slate-100 text-slate-500 hover:bg-rose-50 hover:text-rose-600 transition cursor-pointer"
-                title="Close Department Modal"
-              >
-                <X className="size-5" />
-              </button>
             </div>
 
-            {/* Modal Body: Organized Hierarchy Tree (Manager -> Team Lead -> Executives) */}
-            <div className="p-4 sm:p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/30">
+            <button
+              onClick={() => setSelectedDeptModal(null)}
+              className="flex items-center gap-1.5 bg-white/10 hover:bg-rose-600 text-white border border-white/20 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+              title="Close Page"
+            >
+              <X className="size-4.5" />
+              <span className="hidden sm:inline">Close Page</span>
+            </button>
+          </div>
+
+          {/* Full Page Content Scrollable Area */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 space-y-6 max-w-[1700px] mx-auto w-full">
               {(() => {
                 const { managerTrees, unassignedTLs, unassignedExecs } = buildDepartmentHierarchyTree(selectedDeptModal)
                 const hasHierarchyContent = managerTrees.length > 0 || unassignedTLs.length > 0 || unassignedExecs.length > 0
@@ -1128,6 +1137,13 @@ function TeamManagement() {
                   </div>
                 )
               })()}
+            <div className="flex justify-end pt-4 pb-6">
+              <button
+                onClick={() => setSelectedDeptModal(null)}
+                className="px-5 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+              >
+                Close Full Page Hierarchy
+              </button>
             </div>
           </div>
         </div>

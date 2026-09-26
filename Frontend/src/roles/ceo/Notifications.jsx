@@ -843,36 +843,41 @@ function Notifications() {
         const audit = getAuditDiffForNotif(notif)
 
         return (
-          <div
-            onClick={(e) => { if (e.target === e.currentTarget) setSelectedNotifForDetails(null) }}
-            className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-slate-900/65 backdrop-blur-xs cursor-pointer overflow-y-auto"
-          >
-            <div
-              onClick={(e) => e.stopPropagation()}
-              className="bg-white border border-slate-200 shadow-2xl rounded-3xl w-full max-w-5xl max-h-[92vh] flex flex-col overflow-hidden animate-in zoom-in-95 duration-150 text-slate-800 text-xs my-auto cursor-default"
-            >
-              
-              {/* Modal Header */}
-              <div className="flex items-center justify-between px-6 sm:px-8 py-5 border-b border-slate-100 bg-[#832D51] text-white shrink-0">
-                <div className="flex items-center gap-3">
-                  <span className="grid size-11 place-items-center rounded-2xl bg-white/20 text-white shadow-xs">
-                    <ShieldCheck className="size-6" />
+          <div className="fixed inset-0 z-50 bg-[#F0F6FA] text-slate-800 flex flex-col h-screen w-screen overflow-hidden animate-in fade-in duration-200">
+            {/* Top Sticky Header */}
+            <div className="bg-[#154e77] text-white border-b border-[#154e77]/80 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setSelectedNotifForDetails(null)}
+                  className="flex items-center gap-2 bg-white/10 hover:bg-white/20 text-white border border-white/20 px-3 py-1.5 sm:px-3.5 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+                  title="Back to Notifications"
+                >
+                  <ChevronLeft className="size-4 text-[#f5ab27]" />
+                  <span className="hidden sm:inline">Back to Notifications</span>
+                </button>
+                <div className="h-6 w-px bg-white/20 hidden sm:block" />
+                <div className="flex items-center gap-2.5">
+                  <span className="grid size-9 place-items-center rounded-xl bg-white/15 text-white font-black shadow-2xs shrink-0">
+                    <ShieldCheck className="size-5 text-[#f5ab27]" />
                   </span>
                   <div>
-                    <h3 className="text-lg font-black tracking-tight">{cleanText(notif.title)}</h3>
-                    <p className="text-xs font-extrabold text-pink-100 uppercase tracking-widest mt-0.5">
+                    <h3 className="text-base sm:text-lg font-black text-white leading-tight">{cleanText(notif.title)}</h3>
+                    <p className="text-[10px] sm:text-[11px] font-semibold tracking-wider uppercase mt-0.5 text-slate-200">
                       Audit Inspection & Comparison Statement
                     </p>
                   </div>
                 </div>
-                <button
-                  onClick={() => setSelectedNotifForDetails(null)}
-                  className="rounded-full p-2 text-white/80 hover:bg-white/10 hover:text-white transition cursor-pointer"
-                  title="Close modal"
-                >
-                  <X className="size-6" />
-                </button>
               </div>
+
+              <button
+                onClick={() => setSelectedNotifForDetails(null)}
+                className="flex items-center gap-1.5 bg-white/10 hover:bg-rose-600 text-white border border-white/20 px-3 py-1.5 sm:px-4 sm:py-2 rounded-xl text-xs font-black transition cursor-pointer shadow-2xs"
+                title="Close Page"
+              >
+                <X className="size-4.5" />
+                <span className="hidden sm:inline">Close Page</span>
+              </button>
+            </div>
 
               {/* Modal Content */}
               <div className="flex-1 overflow-y-auto p-6 sm:p-8 space-y-6">
@@ -1004,9 +1009,8 @@ function Notifications() {
               </div>
 
             </div>
-          </div>
-        )
-      })()}
+          )
+        })()}
     </div>
   )
 }
