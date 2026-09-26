@@ -78,7 +78,22 @@ body {
   --admin-slate: #4A5D6E;
   --admin-navy: #1F2D3A;
   --admin-dark: #121921;
+
+  /* ── CEO PORTAL THEME (#0B3C5D Deep Ocean Blue) ── */
+  --ceo-primary: #0B3C5D;
+  --ceo-primary-dark: #082D46;
+  --ceo-soft: #E0EEF8;
+  --ceo-soft-light: #F0F6FA;
+  --ceo-border: #B2D4EB;
 }
+
+.bg-ceo-primary { background-color: #0B3C5D; }
+.bg-ceo-primary-dark { background-color: #082D46; }
+.bg-ceo-soft { background-color: #E0EEF8; }
+.bg-ceo-soft-light { background-color: #F0F6FA; }
+.text-ceo-primary { color: #0B3C5D; }
+.border-ceo-primary { border-color: #0B3C5D; }
+.border-ceo-soft { border-color: #B2D4EB; }
 
 .bg-admin-crimson { background-color: #8B2635; }
 .bg-admin-crimson-dark { background-color: #721F2B; }
