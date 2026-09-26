@@ -2902,6 +2902,58 @@ async def get_executive_history_report(
             mid_bc = bcs[len(bcs) // 2]
             snap_2_time = mid_bc.get("recorded_at") or trip_start_time
 
+        # Calculate real idle periods from session breadcrumbs (stationary >= 3 mins)
+        idle_periods = []
+        total_idle_mins = 0
+        try:
+            sess_id_str = str(sess.get("id") or "")
+            loc_query = sp.schema("hrms").table("tracking_locations").select("latitude,longitude,recorded_at,speed").order("recorded_at", desc=False)
+            if sess_id_str:
+                loc_query = loc_query.eq("tracking_session_id", sess_id_str)
+            else:
+                loc_query = loc_query.eq("employee_id", s_emp_id)
+            loc_res = loc_query.limit(200).execute()
+            loc_crumbs = loc_res.data or bcs or []
+
+            for i in range(len(loc_crumbs) - 1):
+                p1 = loc_crumbs[i]
+                p2 = loc_crumbs[i + 1]
+                lat1, lng1 = float(p1.get("latitude") or 0), float(p1.get("longitude") or 0)
+                lat2, lng2 = float(p2.get("latitude") or 0), float(p2.get("longitude") or 0)
+                t1_str = str(p1.get("recorded_at") or "")
+                t2_str = str(p2.get("recorded_at") or "")
+
+                if lat1 and lng1 and lat2 and lng2 and t1_str and t2_str and t1_str != "None" and t2_str != "None":
+                    d_m = haversine_distance_meters(lat1, lng1, lat2, lng2)
+                    if d_m < 5.0:  # Stationary gap < 5m
+                        try:
+                            clean_t1 = t1_str.replace("Z", "+00:00").replace(" ", "T")
+                            clean_t2 = t2_str.replace("Z", "+00:00").replace(" ", "T")
+                            dt1 = datetime.datetime.fromisoformat(clean_t1)
+                            dt2 = datetime.datetime.fromisoformat(clean_t2)
+                            if dt1.tzinfo is None: dt1 = dt1.replace(tzinfo=datetime.timezone.utc)
+                            if dt2.tzinfo is None: dt2 = dt2.replace(tzinfo=datetime.timezone.utc)
+                            gap_sec = max(0, (dt2 - dt1).total_seconds())
+                            if gap_sec >= 180:  # Stationary gap >= 3 minutes
+                                gap_mins = round(gap_sec / 60.0)
+                                total_idle_mins += gap_mins
+                                t1_ist = dt1.astimezone(ist_tz).strftime("%I:%M %p")
+                                t2_ist = dt2.astimezone(ist_tz).strftime("%I:%M %p")
+                                idle_loc_addr = _reverse_geocode_point(lat1, lng1)
+                                idle_periods.append({
+                                    "from_time": t1_ist,
+                                    "to_time": t2_ist,
+                                    "duration_mins": gap_mins,
+                                    "duration_label": f"{gap_mins} mins",
+                                    "location_address": idle_loc_addr,
+                                    "latitude": lat1,
+                                    "longitude": lng1
+                                })
+                        except Exception:
+                            pass
+        except Exception as idle_err:
+            logger.warning(f"Idle calculation error for session {sess.get('id')}: {idle_err}")
+
         # Fetch real captured map snapshots for this session
         map_snapshots = []
         if sess.get('id'):
@@ -3006,7 +3058,8 @@ async def get_executive_history_report(
             "total_duration": total_duration_str,
             "avg_speed_kmh": 18.5,
             "peak_speed_kmh": 28.0,
-            "idle_periods": [],
+            "idle_periods": idle_periods,
+            "total_idle_mins": total_idle_mins,
             "client_visits": [{
                 "id": f"v_{sess.get('id')[:8]}",
                 "client_name": client_name,

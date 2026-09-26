@@ -145,31 +145,23 @@ const RealMapSnapshotCard = ({ snap, index, executiveName }) => {
 
 
 function getTrackingBadge(status, lastUpdatedMs, isOnline = true) {
-  // If executive is not logged in / offline, or session is stopped/ended, return Stopped
-  if (isOnline === false || status === 'ended' || status === 'logged_out' || status === 'stopped' || status === 'offline') {
-    return { label: 'Stopped', color: '#64748b', dot: '⚪' }
+  // If executive is not logged in / logged out, or session is ended/stopped, return Offline / Logged Out
+  if (isOnline === false || status === 'ended' || status === 'logged_out' || status === 'stopped') {
+    return { label: 'Offline / Logged Out', color: '#64748b', dot: '⚪' }
   }
 
-  if (!lastUpdatedMs) {
-    return { label: 'Offline (Logged Out)', color: '#dc2626', dot: '🔴' }
-  }
+  const age = lastUpdatedMs ? Date.now() - Number(lastUpdatedMs) : 0
 
-  const age = Date.now() - Number(lastUpdatedMs)
-
-  // If last ping was > 5 minutes ago (or ping is missing), executive is idle/offline
-  if (isNaN(age) || age > 5 * 60 * 1000) {
+  if (!isNaN(age) && age > 3 * 60 * 1000) {
     const minsAgo = Math.floor(age / 60000)
-    if (isNaN(minsAgo) || minsAgo > 60 * 24) {
-      return { label: 'Offline (Logged Out)', color: '#dc2626', dot: '🔴' }
-    }
-    return { label: `Idle (${minsAgo}m paused)`, color: '#f97316', dot: '🟠' }
+    return { label: `Idle (${minsAgo}m stationary)`, color: '#f97316', dot: '🟠' }
   }
 
   if (status === 'destination_reached' || status === 'reached' || status === 'arrived') {
     return { label: 'Destination Reached', color: '#10b981', dot: '🎯' }
   }
 
-  return { label: 'Live Connection', color: '#10b981', dot: '🟢' }
+  return { label: 'Travelling / Moving', color: '#10b981', dot: '🟢' }
 }
 
 
@@ -3074,9 +3066,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         setLastPingMs(Date.now())
       }
 
-      // ─── Draw traveled polyline ONLY for valid session points ───
+      // ─── Draw traveled polyline for all valid session points ───
       const rawPath = validTrailPts.map(p => ({ lat: p.lat, lng: p.lng }))
-      if (isSessionActive && rawPath.length >= 2) {
+      if (rawPath.length >= 2) {
         try {
           let startLat = session?.start_latitude != null ? Number(session.start_latitude) : rawPath[0].lat
           let startLng = session?.start_longitude != null ? Number(session.start_longitude) : rawPath[0].lng
@@ -4296,7 +4288,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                         <th className="py-4 px-4">TRIP START LOCATION &amp; TIME</th>
                         <th className="py-4 px-4">TRIP END LOCATION &amp; TIME</th>
                         <th className="py-4 px-4">CLIENT DETAILS &amp; PRODUCT</th>
-                        <th className="py-4 px-4">REMARKS &amp; IDLE DURATION</th>
+                        <th className="py-4 px-4">IDLE TIME &amp; LOCATION</th>
                         <th className="py-4 px-4 text-center">STATUS / ACTIONS</th>
                       </tr>
                     </thead>
@@ -4332,9 +4324,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                         const idlePeriods = rep.idle_periods || []
                         const mapSnaps = rep.map_snapshots || []
 
-                        const totalIdleMins = Array.isArray(idlePeriods)
+                        const totalIdleMins = rep.total_idle_mins !== undefined ? rep.total_idle_mins : (Array.isArray(idlePeriods)
                           ? idlePeriods.reduce((acc, p) => acc + (Number(p.duration_mins) || 0), 0)
-                          : 0
+                          : 0)
 
                         return (
                           <tr key={rep.id || rep.session_id || `${rep.employee_id || 'rep'}_${idx}`} className="hover:bg-slate-50/80 transition-colors duration-150">
@@ -4415,25 +4407,35 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                               </div>
                             </td>
 
-                            {/* 6. REMARKS & IDLE DURATION */}
+                            {/* 6. IDLE TIME & LOCATION */}
                             <td className="py-4 px-4 align-top max-w-[260px]">
-                              <div className="bg-amber-50/90 border border-amber-200/80 rounded-2xl p-3 text-xs text-amber-950 font-medium space-y-1 shadow-2xs">
-                                <div className="font-bold text-amber-900 flex justify-between items-center border-b border-amber-200/60 pb-1">
-                                  <span>⏸️ Idle Duration:</span>
-                                  <span className="font-black text-amber-800">{totalIdleMins > 0 ? `${totalIdleMins} mins` : 'None'}</span>
+                              <div className="bg-amber-50/90 border border-amber-200/80 rounded-2xl p-3 text-xs text-amber-950 font-medium space-y-1.5 shadow-2xs">
+                                <div className="font-extrabold text-amber-900 flex justify-between items-center border-b border-amber-200/60 pb-1">
+                                  <span className="flex items-center gap-1">⏸️ Idle Duration:</span>
+                                  <span className="font-black text-amber-900 bg-amber-200/60 px-2 py-0.5 rounded-full text-[11px] border border-amber-300">{totalIdleMins > 0 ? `${totalIdleMins} mins` : 'None (Active)'}</span>
                                 </div>
                                 {idlePeriods.length > 0 ? (
-                                  <div className="space-y-0.5 pt-1 text-[10px] text-amber-900/90 max-h-16 overflow-y-auto pr-1">
+                                  <div className="space-y-1 pt-1 text-[10px] text-amber-900/90 max-h-24 overflow-y-auto pr-1">
                                     {idlePeriods.map((ip, i) => (
-                                      <div key={i} className="truncate">• {ip.from_time} - {ip.to_time}: {ip.location_address || 'Stationary'} ({ip.duration_label || `${ip.duration_mins}m`})</div>
+                                      <div key={i} className="bg-white/80 p-1.5 rounded-lg border border-amber-200/60 font-semibold space-y-0.5">
+                                        <div className="flex justify-between text-amber-900 font-extrabold">
+                                          <span>⏰ {ip.from_time} - {ip.to_time}</span>
+                                          <span className="text-amber-800">{ip.duration_label || `${ip.duration_mins}m`}</span>
+                                        </div>
+                                        <div className="text-[10px] text-slate-700 truncate" title={ip.location_address}>
+                                          📍 {ip.location_address || 'Stationary Location'}
+                                        </div>
+                                      </div>
                                     ))}
                                   </div>
                                 ) : (
-                                  <div className="text-[10px] text-emerald-700 font-semibold pt-0.5">🟢 Continuous Motion</div>
+                                  <div className="text-[10px] text-emerald-700 font-bold pt-0.5 flex items-center gap-1">
+                                    <span>🟢</span> <span>Continuous Motion / No Long Idle Stops</span>
+                                  </div>
                                 )}
                                 {nearbyVisits.length > 0 && (
                                   <div className="pt-1 border-t border-amber-200/60 text-[10px] font-bold text-purple-900 flex items-center gap-1">
-                                    <span>🏢 {nearbyVisits.length} Client Visits Completed</span>
+                                    <span>🏢 {nearbyVisits.length} Client Visit Site{nearbyVisits.length > 1 ? 's' : ''} Completed</span>
                                   </div>
                                 )}
                               </div>

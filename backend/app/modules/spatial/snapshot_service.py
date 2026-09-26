@@ -76,6 +76,13 @@ async def render_real_map_png(
             <script src="https://maps.googleapis.com/maps/api/js?key={gmaps_key}&libraries=geometry,places,marker,routes"></script>
         </head>
         <body>
+            <div style="position: absolute; top: 12px; left: 12px; z-index: 1000; background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(8px); border: 1.5px solid rgba(255,255,255,0.2); border-radius: 16px; padding: 10px 16px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif; box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 10px; pointer-events: none;">
+                <div style="width: 10px; height: 10px; border-radius: 50%; background: #10b981; box-shadow: 0 0 10px #10b981;"></div>
+                <div>
+                    <div style="font-size: 11px; font-weight: 900; letter-spacing: 0.5px; color: #38bdf8; text-transform: uppercase;">Manager Smart Radar Map</div>
+                    <div style="font-size: 13px; font-weight: 800; color: #f8fafc;">{executive_name} • {snapshot_type.replace('_', ' ')}</div>
+                </div>
+            </div>
             <div id="map"></div>
             <script>
                 const startPt = {{ lat: {start_lat}, lng: {start_lng} }};
