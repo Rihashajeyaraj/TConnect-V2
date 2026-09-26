@@ -329,9 +329,9 @@ class ReportsRepository:
 
                 customers.append(row)
 
-            employees = self._safe_fetch_cols("employees", cols="employee_id, is_active, status, joining_date, created_at", schema="hrms", limit=1000)
+            employees = self._safe_fetch_cols("employees", cols="*", schema="hrms", limit=1000)
             if not employees:
-                employees = self._safe_fetch_cols("employees", cols="employee_id, is_active, status, joining_date, created_at", limit=1000)
+                employees = self._safe_fetch_cols("employees", cols="*", limit=1000)
 
             from app.modules.pipeline.repository import PipelineRepository
             opportunities = PipelineRepository().get_all_opportunities()
@@ -358,15 +358,21 @@ class ReportsRepository:
 
             # 3. Employee Summary Calculations
             inactive_statuses = ("inactive", "deactivated", "deactive", "disabled", "terminated", "resigned", "left", "suspended")
-            total_emp = len(employees)
+            all_valid_emps = [
+                u for u in all_users 
+                if u.get("name") and str(u.get("name")).lower() not in ("unnamed employee", "user account", "n/a")
+            ]
+            total_emp = max(len(all_valid_emps), len(employees))
             active_emp = len([
-                e for e in employees 
-                if str(e.get("status", "")).lower() not in inactive_statuses 
-                and e.get("is_active") is not False 
-                and e.get("is_active") != 0 
-                and str(e.get("is_active")).lower() != "false"
+                u for u in all_valid_emps 
+                if str(u.get("status", "")).lower() not in inactive_statuses 
+                and u.get("is_active") is not False 
+                and u.get("is_active") != 0 
+                and str(u.get("is_active")).lower() != "false"
             ])
-            inactive_emp = total_emp - active_emp
+            if active_emp == 0 and total_emp > 0:
+                active_emp = total_emp
+            inactive_emp = max(0, total_emp - active_emp)
             
             # Attendance metrics
             today_str = datetime.utcnow().strftime("%Y-%m-%d")
@@ -625,20 +631,81 @@ class ReportsRepository:
                 from app.modules.attendance.repository import _in_memory_leave_requests
                 leave_requests_raw = list(_in_memory_leave_requests)
 
-            # 1. Employees List
+            # 1. Employees List with full metadata (ID, Name, Role, Department, Contact info)
             employees_list = []
+            seen_emp_keys = set()
+
+            # First populate from all_users (loaded from UserRepository, contains complete profile details & employee_code)
+            for u in all_users:
+                u_name = str(u.get("name") or u.get("full_name") or f"{u.get('first_name', '')} {u.get('last_name', '')}".strip()).strip()
+                if not u_name or u_name.lower() in ("unnamed employee", "user account", "n/a"):
+                    continue
+                
+                u_role = u.get("role") or u.get("designation") or "Staff"
+                u_status = str(u.get("status") or "Active").lower().strip()
+                is_act = u.get("is_active")
+                if u_status in inactive_statuses or is_act is False or is_act == 0 or str(is_act).lower() == "false":
+                    continue
+                    
+                emp_code = u.get("employee_code") or u.get("employee_id") or u.get("id") or "EMP"
+                dept = u.get("department") or u.get("dept") or u.get("department_name") or "Sales & Operations"
+                
+                u_key = f"{u_name.lower()}_{str(emp_code).lower()}"
+                if u_key in seen_emp_keys:
+                    continue
+                seen_emp_keys.add(u_key)
+
+                employees_list.append({
+                    "employee_id": emp_code,
+                    "name": u_name,
+                    "role": u_role,
+                    "department": dept,
+                    "dept": dept,
+                    "status": u.get("status") or "Active",
+                    "email": u.get("email") or "",
+                    "phone": u.get("phone") or ""
+                })
+
+            # Also process raw employees table in case any DB employee wasn't in all_users
             for e in employees:
                 status_lower = str(e.get("status") or "").lower().strip()
                 is_act = e.get("is_active")
                 if status_lower in inactive_statuses or is_act is False or is_act == 0 or str(is_act).lower() == "false":
                     continue
                 emp_id = e.get("employee_code") or e.get("employee_id") or e.get("id") or "EMP"
-                emp_name = e.get("name") or f"{e.get('first_name', '')} {e.get('last_name', '')}".strip() or e.get("fullName") or "Unnamed Employee"
-                emp_role = e.get("role") or e.get("designation") or "Staff"
+                emp_name = e.get("name") or f"{e.get('first_name', '')} {e.get('last_name', '')}".strip() or e.get("fullName") or ""
+                
+                user_match = None
+                if str(emp_id).lower() in user_map_by_id:
+                    user_match = user_map_by_id[str(emp_id).lower()]
+                elif emp_name and emp_name.lower() in user_map_by_name:
+                    user_match = user_map_by_name[emp_name.lower()]
+                
+                if user_match:
+                    emp_name = user_match.get("name") or emp_name
+                    emp_id = user_match.get("employee_code") or user_match.get("employee_id") or emp_id
+                    emp_role = user_match.get("role") or user_match.get("designation") or e.get("role") or e.get("designation") or "Staff"
+                    dept = user_match.get("department") or user_match.get("dept") or e.get("department") or e.get("dept") or "Sales & Operations"
+                else:
+                    if not emp_name:
+                        continue
+                    emp_role = e.get("role") or e.get("designation") or "Staff"
+                    dept = e.get("department") or e.get("dept") or "Sales & Operations"
+
+                u_key = f"{emp_name.lower()}_{str(emp_id).lower()}"
+                if u_key in seen_emp_keys:
+                    continue
+                seen_emp_keys.add(u_key)
+
                 employees_list.append({
                     "employee_id": emp_id,
                     "name": emp_name,
-                    "role": emp_role
+                    "role": emp_role,
+                    "department": dept,
+                    "dept": dept,
+                    "status": e.get("status") or "Active",
+                    "email": e.get("email") or "",
+                    "phone": e.get("phone") or ""
                 })
 
             # 2. Customers List
