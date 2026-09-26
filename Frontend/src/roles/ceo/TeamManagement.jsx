@@ -806,7 +806,7 @@ function TeamManagement() {
       {selectedDeptModal && (
         <div className="fixed inset-0 z-50 bg-[#F0F6FA] text-slate-800 flex flex-col h-screen w-screen overflow-hidden animate-in fade-in duration-200">
           {/* Top Sticky Header */}
-          <div className="bg-[#154e77] text-white border-b border-[#154e77]/80 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
+          <div className="bg-[#6E3838] text-white border-b border-[#542A2A] px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setSelectedDeptModal(null)}

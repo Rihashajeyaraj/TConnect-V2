@@ -1212,9 +1212,9 @@ function CeoDashboard() {
             subtitle: 'text-slate-500 font-semibold',
             badge: 'bg-slate-100 text-slate-800',
             footer: 'text-slate-700 hover:text-slate-800',
-            accentLine: 'border-[#154e77]',
-            accentBg: 'bg-[#154e77]',
-            nodeBg: 'bg-[#154e77]',
+            accentLine: 'border-[#5C2E2E]',
+            accentBg: 'bg-[#5C2E2E]',
+            nodeBg: 'bg-[#5C2E2E]',
           }
 
           return (
@@ -1222,7 +1222,7 @@ function CeoDashboard() {
               key={kpi.id}
               onClick={() => setActiveModal(kpi.id)}
               className={`text-left rounded-2xl p-3 sm:p-3.5 transition-all duration-300 cursor-pointer relative group flex flex-col justify-between ${cardTheme.card} ${
-                isSelected ? 'ring-2 ring-[#154e77] ring-offset-2' : ''
+                isSelected ? 'ring-2 ring-[#5C2E2E] ring-offset-2' : ''
               }`}
             >
               {/* Outer Wrapping Bracket Line (Top, Left & Bottom sides) */}
@@ -1280,7 +1280,7 @@ function CeoDashboard() {
       {activeModal && (
         <div className="fixed inset-0 z-50 bg-[#F0F6FA] text-slate-800 flex flex-col h-screen w-screen overflow-hidden animate-in fade-in duration-200">
           {/* Top Sticky Header */}
-          <div className="bg-[#154e77] text-white border-b border-[#154e77]/80 px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between shadow-md shrink-0">
+          <div className="bg-[#6E3838] text-white border-b border-[#542A2A] px-4 sm:px-6 py-3.5 sm:py-4 flex items-center justify-between shadow-md shrink-0">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setActiveModal(null)}
@@ -1715,7 +1715,7 @@ function CeoDashboard() {
                       <div className="overflow-x-auto">
                         <table className="w-full text-left border-collapse text-xs">
                           <thead>
-                            <tr className="bg-[#154e77] text-white font-extrabold uppercase tracking-wider text-xs border-b border-[#154e77]">
+                            <tr className="bg-[#6E3838] text-white font-extrabold uppercase tracking-wider text-xs border-b border-[#542A2A]">
                               <th className="px-4 py-3 whitespace-nowrap">DATE</th>
                               <th className="px-4 py-3 whitespace-nowrap">SALES MANAGER</th>
                               <th className="px-4 py-3 whitespace-nowrap">TEAM LEAD</th>

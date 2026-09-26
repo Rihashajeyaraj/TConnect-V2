@@ -411,14 +411,14 @@ function CeoLayout() {
       `}</style>
 
       {/* ── Top Navigation Bar (Full Width) ────────────────────────────────── */}
-      <header className="relative h-14 sm:h-16 bg-white/95 backdrop-blur-md border-b border-[#0B3C5D]/15 flex items-center justify-between px-3 sm:px-4 lg:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
+      <header className="relative h-14 sm:h-16 bg-white/95 backdrop-blur-md border-b border-[#6E3838]/20 flex items-center justify-between px-3 sm:px-4 lg:px-6 sticky top-0 z-30 shadow-xs flex-shrink-0">
         <div className="flex items-center gap-2.5 sm:gap-3">
           <button
             onClick={() => setSidebarOpen(!sidebarOpen)}
-            className="lg:hidden p-1.5 sm:p-2 rounded-lg text-slate-600 hover:bg-[#E0EEF8] cursor-pointer"
+            className="lg:hidden p-1.5 sm:p-2 rounded-lg text-slate-600 hover:bg-[#F7EEEE] cursor-pointer"
             aria-label="Toggle Navigation Sidebar"
           >
-            {sidebarOpen ? <X className="w-5 h-5 text-[#0B3C5D]" /> : <Menu className="w-5 h-5 text-[#0B3C5D]" />}
+            {sidebarOpen ? <X className="w-5 h-5 text-[#6E3838]" /> : <Menu className="w-5 h-5 text-[#6E3838]" />}
           </button>
           <Link to="/ceo" className="flex items-center gap-2">
             <TwiteConnectLogo className="w-7 h-7 sm:w-9 sm:h-9" />
@@ -427,12 +427,12 @@ function CeoLayout() {
 
         {/* Center: CEO Role Tag Badge */}
         <div className="absolute left-1/2 -translate-x-1/2 hidden sm:flex items-center justify-center pointer-events-none">
-          <div className="flex items-center gap-2 bg-[#E0EEF8] border border-[#B2D4EB] rounded-full px-3.5 sm:px-5 py-1 sm:py-1.5 shadow-2xs pointer-events-auto">
+          <div className="flex items-center gap-2 bg-[#F7EEEE] border border-[#E5C8C8] rounded-full px-3.5 sm:px-5 py-1 sm:py-1.5 shadow-2xs pointer-events-auto">
             <span className="relative flex h-2 w-2 sm:h-2.5 sm:w-2.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#0B3C5D] opacity-75"></span>
-              <span className="relative inline-flex rounded-full h-2 w-2 sm:h-2.5 sm:w-2.5 bg-[#0B3C5D]"></span>
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#6E3838] opacity-75"></span>
+              <span className="relative inline-flex rounded-full h-2 w-2 sm:h-2.5 sm:w-2.5 bg-[#6E3838]"></span>
             </span>
-            <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-[#0B3C5D]">
+            <span className="text-[11px] sm:text-xs font-black uppercase tracking-wider text-[#6E3838]">
               CEO PORTAL
             </span>
           </div>
@@ -443,7 +443,7 @@ function CeoLayout() {
           {/* Notification Bell */}
           <button
             onClick={() => navigate('/ceo/notifications')}
-            className="p-1.5 sm:p-2 rounded-xl text-[#0B3C5D] hover:bg-[#E0EEF8] relative transition cursor-pointer border border-[#B2D4EB]/80 bg-white"
+            className="p-1.5 sm:p-2 rounded-xl text-[#6E3838] hover:bg-[#F7EEEE] relative transition cursor-pointer border border-[#E5C8C8]/80 bg-white"
             title="Notifications & Messages"
           >
             <Bell size={18} />
@@ -458,30 +458,30 @@ function CeoLayout() {
           <div className="relative">
             <button
               onClick={() => setProfileDropdownOpen(!profileDropdownOpen)}
-              className="flex items-center gap-2 p-1 sm:p-1.5 rounded-xl hover:bg-[#E0EEF8] transition cursor-pointer border border-[#B2D4EB]/80 bg-white"
+              className="flex items-center gap-2 p-1 sm:p-1.5 rounded-xl hover:bg-[#F7EEEE] transition cursor-pointer border border-[#E5C8C8]/80 bg-white"
             >
-              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-[#0B3C5D] text-white flex items-center justify-center font-black text-[11px] sm:text-xs shadow-2xs shrink-0">
+              <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-full overflow-hidden bg-[#6E3838] text-white flex items-center justify-center font-black text-[11px] sm:text-xs shadow-2xs shrink-0">
                 {currentUser?.initials || 'CEO'}
               </div>
               <div className="hidden md:flex flex-col text-left">
                 <span className="font-extrabold text-[11px] sm:text-xs text-slate-800 leading-tight flex items-center gap-1">
-                  {currentUser?.name || 'Dr. Twite Executive'} <ChevronDown size={12} className="text-[#0B3C5D]" />
+                  {currentUser?.name || 'Dr. Twite Executive'} <ChevronDown size={12} className="text-[#6E3838]" />
                 </span>
-                <span className="text-[9px] sm:text-[10px] text-[#0B3C5D] font-extrabold leading-tight truncate max-w-[120px]">CEO</span>
+                <span className="text-[9px] sm:text-[10px] text-[#6E3838] font-extrabold leading-tight truncate max-w-[120px]">CEO</span>
               </div>
             </button>
 
             {profileDropdownOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setProfileDropdownOpen(false)} />
-                <div className="absolute right-0 mt-2 w-60 sm:w-64 bg-white border border-[#B2D4EB] rounded-2xl shadow-2xl z-50 p-2 overflow-hidden">
-                  <div className="flex items-center gap-2.5 p-2.5 sm:p-3 bg-[#0B3C5D] border border-[#0B3C5D] rounded-xl text-white mb-2 shadow-2xs">
-                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden bg-white text-[#0B3C5D] flex items-center justify-center text-xs sm:text-sm font-black shadow-md shrink-0">
+                <div className="absolute right-0 mt-2 w-60 sm:w-64 bg-white border border-[#E5C8C8] rounded-2xl shadow-2xl z-50 p-2 overflow-hidden">
+                  <div className="flex items-center gap-2.5 p-2.5 sm:p-3 bg-[#6E3838] border border-[#6E3838] rounded-xl text-white mb-2 shadow-2xs">
+                    <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-full overflow-hidden bg-white text-[#6E3838] flex items-center justify-center text-xs sm:text-sm font-black shadow-md shrink-0">
                       {currentUser?.initials || 'CEO'}
                     </div>
                     <div className="min-w-0">
                       <h4 className="font-extrabold text-xs sm:text-sm truncate leading-tight text-white">{currentUser?.name || 'Dr. Twite Executive'}</h4>
-                      <p className="text-[10px] sm:text-[11px] opacity-90 truncate leading-tight mt-0.5 text-sky-100">{currentUser?.email || 'ceo@twiteconnect.com'}</p>
+                      <p className="text-[10px] sm:text-[11px] opacity-90 truncate leading-tight mt-0.5 text-rose-100">{currentUser?.email || 'ceo@twiteconnect.com'}</p>
                       <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-white/20 text-[9px] font-bold tracking-wider uppercase text-white">CEO</span>
                     </div>
                   </div>
@@ -490,9 +490,9 @@ function CeoLayout() {
                     <Link
                       to="/ceo/settings"
                       onClick={() => setProfileDropdownOpen(false)}
-                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#E0EEF8] text-slate-700 hover:text-[#0B3C5D] font-bold text-xs transition"
+                      className="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-[#F7EEEE] text-slate-700 hover:text-[#6E3838] font-bold text-xs transition"
                     >
-                      <Settings size={14} className="text-[#0B3C5D]" /> Account & Security Settings
+                      <Settings size={14} className="text-[#6E3838]" /> Account & Security Settings
                     </Link>
                   </div>
 
@@ -523,14 +523,14 @@ function CeoLayout() {
 
         {/* CEO Sidebar */}
         <aside
-          className={`fixed inset-y-0 left-0 z-40 w-72 sm:w-80 bg-[#154e77] text-slate-100 border-r border-[#154e77]/80 shadow-xl transition-all duration-200 ease-in-out lg:translate-x-0 lg:static shrink-0 flex flex-col h-full ${
+          className={`fixed inset-y-0 left-0 z-40 w-72 sm:w-80 bg-[#6E3838] text-slate-100 border-r border-[#542A2A] shadow-xl transition-all duration-200 ease-in-out lg:translate-x-0 lg:static shrink-0 flex flex-col h-full ${
             isSidebarCollapsed ? 'lg:w-20' : 'lg:w-[285px]'
           } ${sidebarOpen ? 'translate-x-0' : '-translate-x-full'}`}
         >
           {/* Mobile-only Sidebar Close Header */}
-          <div className="lg:hidden flex items-center justify-between px-3.5 py-2.5 border-b border-white/10 bg-[#0f3d5f] text-white shrink-0">
+          <div className="lg:hidden flex items-center justify-between px-3.5 py-2.5 border-b border-white/10 bg-[#542A2A] text-white shrink-0">
             <div className="flex items-center gap-2">
-              <span className="w-5 h-5 rounded-lg bg-[#f5ab27] flex items-center justify-center text-[#154e77] text-[9px] font-black">TC</span>
+              <span className="w-5 h-5 rounded-lg bg-[#f5ab27] flex items-center justify-center text-[#6E3838] text-[9px] font-black">TC</span>
               <span className="text-[11px] font-black text-white uppercase tracking-widest">CEO Portal</span>
             </div>
             <button
@@ -564,7 +564,7 @@ function CeoLayout() {
           </div>
 
           {/* Navigation List - 9 Executive Items */}
-          <nav className="flex-1 overflow-y-auto px-2.5 sm:px-3 py-3 sm:py-4 space-y-1 sm:space-y-1.5 bg-[#154e77] scrollbar-thin scrollbar-thumb-white/20">
+          <nav className="flex-1 overflow-y-auto px-2.5 sm:px-3 py-3 sm:py-4 space-y-1 sm:space-y-1.5 bg-[#6E3838] scrollbar-thin scrollbar-thumb-white/20">
             {sidebarItems.map((item, index) => {
               const Icon = item.icon
               const active = isNavActive(item.path)

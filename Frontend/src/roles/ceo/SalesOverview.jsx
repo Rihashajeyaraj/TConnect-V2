@@ -1329,7 +1329,7 @@ function SalesOverview({ initialSection }) {
         return (
           <div className="fixed inset-0 z-50 bg-[#F0F6FA] text-slate-800 flex flex-col h-screen w-screen overflow-hidden animate-in fade-in duration-200">
             {/* Top Sticky Header */}
-            <div className="bg-[#154e77] text-white border-b border-[#154e77]/80 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
+            <div className="bg-[#A76E6E] text-white border-b border-[#8E5757] px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => setViewingCeoReport(null)}
@@ -1524,7 +1524,7 @@ function SalesOverview({ initialSection }) {
       {showFinancialReportModal && (
         <div className="fixed inset-0 z-50 bg-[#F0F6FA] text-slate-800 flex flex-col h-screen w-screen overflow-hidden animate-in fade-in duration-200">
           {/* Top Sticky Header */}
-          <div className="bg-[#154e77] text-white border-b border-[#154e77]/80 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
+          <div className="bg-[#A76E6E] text-white border-b border-[#8E5757] px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowFinancialReportModal(false)}
@@ -1775,7 +1775,7 @@ function SalesOverview({ initialSection }) {
       {showTargetsModal && (
         <div className="fixed inset-0 z-50 bg-[#F0F6FA] text-slate-800 flex flex-col h-screen w-screen overflow-hidden animate-in fade-in duration-200">
           {/* Top Sticky Header */}
-          <div className="bg-[#154e77] text-white border-b border-[#154e77]/80 px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
+          <div className="bg-[#A76E6E] text-white border-b border-[#8E5757] px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between shadow-md shrink-0">
             <div className="flex items-center gap-3">
               <button
                 onClick={() => setShowTargetsModal(false)}
