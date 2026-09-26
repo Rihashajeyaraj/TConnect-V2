@@ -104,7 +104,7 @@ async function request(endpoint, options = {}) {
   }
 
   const controller = new AbortController()
-  const timeoutMs = options.timeout || 30000
+  const timeoutMs = options.timeoutMs || options.timeout || 30000
   const timeoutId = setTimeout(() => controller.abort(), timeoutMs)
 
   const config = { ...options, headers, signal: controller.signal }
@@ -389,8 +389,8 @@ export const expenseAPI = {
 }
 
 export const notificationAPI = {
-  getNotifications: (options = {}) => request('/notifications', options),
-  getUnreadCount: (options = {}) => request('/notifications/unread-count', options),
+  getNotifications: (options = {}) => request('/notifications', { silentError: true, timeout: 10000, ...options }),
+  getUnreadCount: (options = {}) => request('/notifications/unread-count', { silentError: true, timeout: 8000, ...options }),
   sendNotification: (data, options = {}) => request('/notifications', { method: 'POST', body: JSON.stringify(data), ...options }),
   markRead: (id, options = {}) => request(`/notifications/${id}/${typeof id === 'string' && id.includes('/') ? '' : 'read'}`, { method: 'PATCH', ...options }),
   markAsRead: (id, options = {}) => request(`/notifications/${id}/read`, { method: 'PATCH', ...options }),
@@ -521,8 +521,8 @@ export const spatialAPI = {
     request('/spatial/geofence-check', { method: 'POST', body: JSON.stringify({ lat, lng, geofence_threshold_meters: thresholdMeters }) }),
   updateLocation: (data, options = {}) =>
     request('/spatial/update-location', { method: 'POST', body: JSON.stringify(data), silentError: true, timeout: 8000, ...options }),
-  getRoute: (origin, destination) =>
-    request('/spatial/route', { method: 'POST', body: JSON.stringify({ origin, destination }) }),
+  getRoute: (origin, destination, options = {}) =>
+    request('/spatial/route', { method: 'POST', body: JSON.stringify({ origin, destination }), silentError: true, timeout: 6000, ...options }),
   matchRoute: (points) =>
     request('/spatial/match-route', { method: 'POST', body: JSON.stringify({ points }) }),
   computeRouteMatrix: (origins, destinations) =>
@@ -554,9 +554,15 @@ export const spatialAPI = {
   getTodaySessions: (employeeId) =>
     request(`/spatial/location/sessions/today/${employeeId}`),
   /** Manager / CEO spatial & trip history audit reports for executive visits. */
-  getExecutiveHistoryReport: (params = {}) => {
-    const query = new URLSearchParams(params).toString()
-    return request(`/spatial/reports/executive-history${query ? `?${query}` : ''}`)
+  getExecutiveHistoryReport: (params = {}, options = {}) => {
+    const cleanParams = {}
+    Object.entries(params || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null && v !== 'undefined' && v !== 'null' && v !== '') {
+        cleanParams[k] = v
+      }
+    })
+    const query = new URLSearchParams(cleanParams).toString()
+    return request(`/spatial/reports/executive-history${query ? `?${query}` : ''}`, { silentError: true, timeout: 8000, ...options })
   },
   /** Point-in-Time Location Lookup ("Where was executive at X time on Y date"). */
   lookupPointInTimeLocation: (params = {}) => {
