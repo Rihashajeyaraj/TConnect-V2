@@ -90,6 +90,13 @@ function CeoDashboard() {
   const [customerWinToggle, setCustomerWinToggle] = useState(false)
   const [selectedManagerCard, setSelectedManagerCard] = useState(null)
 
+  // CRM Client Database Modal Filters (Executive, Team Lead, Date)
+  const [customerTlFilter, setCustomerTlFilter] = useState('ALL')
+  const [customerExecFilter, setCustomerExecFilter] = useState('ALL')
+  const [customerDateRange, setCustomerDateRange] = useState('ALL')
+  const [customerFromDate, setCustomerFromDate] = useState('')
+  const [customerToDate, setCustomerToDate] = useState('')
+
   // Employee Directory Modal Filter States
   const [employeeRoleFilter, setEmployeeRoleFilter] = useState('ALL')
   const [employeeCustomSearch, setEmployeeCustomSearch] = useState('')
@@ -1768,10 +1775,95 @@ function CeoDashboard() {
                   return false
                 }
 
-                // Group accounts by Sales Manager (real manager, not Team Lead)
+                // Date parsing helper
+                const parseDealDate = (dVal) => {
+                  if (!dVal) return null
+                  if (typeof dVal === 'string' && dVal.includes('/')) {
+                    const p = dVal.split('/')
+                    if (p.length === 3) {
+                      const d = parseInt(p[0], 10)
+                      const m = parseInt(p[1], 10) - 1
+                      const y = parseInt(p[2], 10)
+                      if (!isNaN(d) && !isNaN(m) && !isNaN(y)) return new Date(y, m, d)
+                    }
+                  }
+                  const dt = new Date(dVal)
+                  return isNaN(dt.getTime()) ? null : dt
+                }
+
+                // Unique Team Leads and Executives list
+                const uniqueTls = Array.from(
+                  new Set(customersList.map(c => (c.team_lead || '').trim()).filter(Boolean))
+                ).sort()
+
+                const uniqueExecs = Array.from(
+                  new Set(customersList.map(c => (c.sales_executive || '').trim()).filter(Boolean))
+                ).sort()
+
+                // Filter deal predicate function
+                const passesFilters = (cust) => {
+                  // 1. Team Lead Filter
+                  if (customerTlFilter !== 'ALL') {
+                    const tl = (cust.team_lead || '').trim()
+                    if (tl.toLowerCase() !== customerTlFilter.toLowerCase()) return false
+                  }
+                  // 2. Sales Executive Filter
+                  if (customerExecFilter !== 'ALL') {
+                    const exec = (cust.sales_executive || '').trim()
+                    if (exec.toLowerCase() !== customerExecFilter.toLowerCase()) return false
+                  }
+                  // 3. Date Range Filter
+                  if (customerDateRange !== 'ALL') {
+                    const dealDt = parseDealDate(cust.date || cust.created_at || cust.deal_date)
+                    if (!dealDt) return false
+
+                    const now = new Date()
+                    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0)
+                    const todayEnd = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999)
+
+                    if (customerDateRange === 'TODAY') {
+                      if (dealDt < todayStart || dealDt > todayEnd) return false
+                    } else if (customerDateRange === 'YESTERDAY') {
+                      const yestStart = new Date(todayStart)
+                      yestStart.setDate(yestStart.getDate() - 1)
+                      const yestEnd = new Date(todayEnd)
+                      yestEnd.setDate(yestEnd.getDate() - 1)
+                      if (dealDt < yestStart || dealDt > yestEnd) return false
+                    } else if (customerDateRange === 'THIS_WEEK') {
+                      const weekStart = new Date(todayStart)
+                      const day = weekStart.getDay()
+                      const diff = weekStart.getDate() - day + (day === 0 ? -6 : 1)
+                      weekStart.setDate(diff)
+                      if (dealDt < weekStart || dealDt > todayEnd) return false
+                    } else if (customerDateRange === 'THIS_MONTH') {
+                      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1)
+                      if (dealDt < monthStart || dealDt > todayEnd) return false
+                    } else if (customerDateRange === 'LAST_MONTH') {
+                      const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+                      const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59, 999)
+                      if (dealDt < lastMonthStart || dealDt > lastMonthEnd) return false
+                    } else if (customerDateRange === 'CUSTOM') {
+                      if (customerFromDate) {
+                        const fStart = new Date(customerFromDate)
+                        fStart.setHours(0, 0, 0, 0)
+                        if (dealDt < fStart) return false
+                      }
+                      if (customerToDate) {
+                        const tEnd = new Date(customerToDate)
+                        tEnd.setHours(23, 59, 59, 999)
+                        if (dealDt > tEnd) return false
+                      }
+                    }
+                  }
+                  return true
+                }
+
+                // Global filtered list across all managers
+                const globalFilteredList = customersList.filter(passesFilters)
+
+                // Group accounts by Sales Manager (real manager, not Team Lead) using globalFilteredList
                 const managerMap = {}
-                customersList.forEach(cust => {
-                  // Use sales_manager, but if it's a TL, fall back to a sensible default
+                globalFilteredList.forEach(cust => {
                   let mgr = (cust.sales_manager || '').trim()
                   if (!mgr || isTlName(mgr)) mgr = 'Jeeva kumar'
                   if (!managerMap[mgr]) {
@@ -1791,14 +1883,128 @@ function CeoDashboard() {
 
                 const managerCards = Object.values(managerMap)
 
-                // If a manager card is clicked, filter list for that manager
+                // Filtered list for selected manager if card clicked
                 const filteredDeals = selectedManagerCard
-                  ? customersList.filter(c => {
+                  ? globalFilteredList.filter(c => {
                       let mgr = (c.sales_manager || '').trim()
                       if (!mgr || isTlName(mgr)) mgr = 'Jeeva kumar'
                       return mgr.toLowerCase() === selectedManagerCard.toLowerCase()
                     })
-                  : customersList
+                  : globalFilteredList
+
+                const totalManagerDeals = selectedManagerCard
+                  ? customersList.filter(c => {
+                      let mgr = (c.sales_manager || '').trim()
+                      if (!mgr || isTlName(mgr)) mgr = 'Jeeva kumar'
+                      return mgr.toLowerCase() === selectedManagerCard.toLowerCase()
+                    }).length
+                  : customersList.length
+
+                const hasActiveFilters = customerTlFilter !== 'ALL' || customerExecFilter !== 'ALL' || customerDateRange !== 'ALL' || customerFromDate !== '' || customerToDate !== ''
+
+                const renderFilterBar = () => (
+                  <div className="bg-slate-50/90 border border-slate-200/80 p-3 rounded-2xl space-y-2.5 shadow-2xs">
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="flex flex-wrap items-center gap-2.5">
+                        {/* Team Lead Filter */}
+                        <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-2xs">
+                          <Users className="size-3.5 text-slate-400 shrink-0" />
+                          <span className="text-[11px] font-extrabold text-slate-600">TL:</span>
+                          <select
+                            value={customerTlFilter}
+                            onChange={(e) => setCustomerTlFilter(e.target.value)}
+                            className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer pr-1"
+                          >
+                            <option value="ALL">All Team Leads ({uniqueTls.length})</option>
+                            {uniqueTls.map(tl => (
+                              <option key={tl} value={tl}>{tl}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Sales Executive Filter */}
+                        <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-2xs">
+                          <Briefcase className="size-3.5 text-slate-400 shrink-0" />
+                          <span className="text-[11px] font-extrabold text-slate-600">Executive:</span>
+                          <select
+                            value={customerExecFilter}
+                            onChange={(e) => setCustomerExecFilter(e.target.value)}
+                            className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer pr-1 max-w-[170px] truncate"
+                          >
+                            <option value="ALL">All Executives ({uniqueExecs.length})</option>
+                            {uniqueExecs.map(exec => (
+                              <option key={exec} value={exec}>{exec}</option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Date Range Filter */}
+                        <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-3 py-1.5 rounded-xl shadow-2xs">
+                          <Calendar className="size-3.5 text-slate-400 shrink-0" />
+                          <span className="text-[11px] font-extrabold text-slate-600">Date:</span>
+                          <select
+                            value={customerDateRange}
+                            onChange={(e) => setCustomerDateRange(e.target.value)}
+                            className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer pr-1"
+                          >
+                            <option value="ALL">All Time</option>
+                            <option value="TODAY">Today</option>
+                            <option value="YESTERDAY">Yesterday</option>
+                            <option value="THIS_WEEK">This Week</option>
+                            <option value="THIS_MONTH">This Month</option>
+                            <option value="LAST_MONTH">Last Month</option>
+                            <option value="CUSTOM">Custom Range...</option>
+                          </select>
+                        </div>
+
+                        {/* Reset Button */}
+                        {hasActiveFilters && (
+                          <button
+                            onClick={() => {
+                              setCustomerTlFilter('ALL')
+                              setCustomerExecFilter('ALL')
+                              setCustomerDateRange('ALL')
+                              setCustomerFromDate('')
+                              setCustomerToDate('')
+                            }}
+                            className="flex items-center gap-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 px-3 py-1.5 rounded-xl text-xs font-bold transition cursor-pointer active:scale-95"
+                          >
+                            <X className="size-3.5" /> Reset Filters
+                          </button>
+                        )}
+                      </div>
+
+                      {/* Counter Badge */}
+                      <div className="text-[11px] font-bold text-slate-500 bg-white px-3 py-1.5 rounded-xl border border-slate-200/70 shadow-2xs">
+                        Showing <span className="font-black text-slate-900">{filteredDeals.length}</span> of {totalManagerDeals} deals
+                      </div>
+                    </div>
+
+                    {/* Custom Date Inputs */}
+                    {customerDateRange === 'CUSTOM' && (
+                      <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-200/60 text-xs font-bold text-slate-700">
+                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                          <span className="text-[11px] text-slate-500 font-bold">From:</span>
+                          <input
+                            type="date"
+                            value={customerFromDate}
+                            onChange={(e) => setCustomerFromDate(e.target.value)}
+                            className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer"
+                          />
+                        </div>
+                        <div className="flex items-center gap-2 bg-white px-3 py-1.5 rounded-xl border border-slate-200 shadow-2xs">
+                          <span className="text-[11px] text-slate-500 font-bold">To:</span>
+                          <input
+                            type="date"
+                            value={customerToDate}
+                            onChange={(e) => setCustomerToDate(e.target.value)}
+                            className="bg-transparent text-xs font-bold text-slate-900 focus:outline-none cursor-pointer"
+                          />
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )
 
                 return (
                   <div className="space-y-4">
@@ -1819,11 +2025,14 @@ function CeoDashboard() {
                           </div>
                         </div>
 
+                        {/* Filter Bar */}
+                        {renderFilterBar()}
+
                         {/* Manager Cards Grid */}
                         <div className="grid gap-3.5 sm:grid-cols-2 lg:grid-cols-3">
                           {managerCards.length === 0 ? (
                             <div className="col-span-full py-12 text-center text-slate-400 font-bold">
-                              No Sales Managers found in directory.
+                              No Sales Managers found matching selected filters.
                             </div>
                           ) : (
                             managerCards.map((m, idx) => {
@@ -1910,12 +2119,14 @@ function CeoDashboard() {
                             <div>
                               <h4 className="text-sm font-black text-slate-950">{selectedManagerCard}'s Team Deals</h4>
                               <p className="text-[10px] font-bold text-slate-500">
-                                Showing all deals & client accounts managed by {selectedManagerCard}
+                                Showing deals & client accounts managed by {selectedManagerCard}
                               </p>
                             </div>
                           </div>
-
                         </div>
+
+                        {/* Filter Bar */}
+                        {renderFilterBar()}
 
                         {/* Customer Deals Table with requested columns */}
                         <div className="border border-slate-200/80 rounded-2xl overflow-hidden shadow-2xs bg-white">
@@ -1936,7 +2147,7 @@ function CeoDashboard() {
                                 {filteredDeals.length === 0 ? (
                                   <tr>
                                     <td colSpan={7} className="py-12 text-center text-slate-400 font-bold">
-                                      No deal records found for {selectedManagerCard}.
+                                      No deal records found matching the active filters for {selectedManagerCard}.
                                     </td>
                                   </tr>
                                 ) : (
