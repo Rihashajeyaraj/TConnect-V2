@@ -1,7 +1,9 @@
 import os
 import time
+import math
 import asyncio
 import datetime
+import requests
 from typing import Dict, Any, List, Optional
 try:
     from playwright.async_api import async_playwright
@@ -20,12 +22,178 @@ _captured_snapshots_set = set()
 _session_snapshots_store: Dict[str, List[Dict[str, Any]]] = {}
 
 
+def haversine_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Calculate the great circle distance between two points in meters using Haversine formula."""
+    R = 6371000.0  # Earth radius in meters
+    phi1 = math.radians(lat1)
+    phi2 = math.radians(lat2)
+    delta_phi = math.radians(lat2 - lat1)
+    delta_lambda = math.radians(lon2 - lon1)
+
+    a = math.sin(delta_phi / 2.0) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2.0) ** 2
+    c = 2.0 * math.atan2(math.sqrt(a), math.sqrt(1.0 - a))
+    return R * c
+
+
+def is_valid_movement_point(prev_point: Optional[Dict[str, Any]], new_ping: Dict[str, Any]) -> bool:
+    """
+    Backend Single Source of Truth for movement validation.
+    Matches Frontend `isValidMovementPoint` exactly:
+    - accuracy <= 30m
+    - teleport protection (> 5000m)
+    - stationary jitter suppression (< 15m)
+    - displacement evidence (15-25m requires speed >= 2.0 km/h or is_moving)
+    - displacement >= 25m validated automatically
+    """
+    if not new_ping:
+        return False
+
+    lat = new_ping.get("latitude") if new_ping.get("latitude") is not None else new_ping.get("lat")
+    lng = new_ping.get("longitude") if new_ping.get("longitude") is not None else new_ping.get("lng")
+    if lat is None or lng is None:
+        return False
+
+    accuracy = float(new_ping.get("accuracy_m") if new_ping.get("accuracy_m") is not None else new_ping.get("accuracy") or 15.0)
+    if accuracy > 30.0:
+        return False
+
+    if not prev_point:
+        return True
+
+    prev_lat = float(prev_point.get("latitude") if prev_point.get("latitude") is not None else prev_point.get("lat") or 0)
+    prev_lng = float(prev_point.get("longitude") if prev_point.get("longitude") is not None else prev_point.get("lng") or 0)
+
+    dist_m = haversine_distance_meters(prev_lat, prev_lng, float(lat), float(lng))
+
+    if dist_m > 5000.0:  # Teleport jump
+        return False
+
+    if dist_m < 15.0:  # Stationary jitter threshold
+        return False
+
+    speed_kmh = float(new_ping.get("speed_kmh") if new_ping.get("speed_kmh") is not None else new_ping.get("speed") or 0.0)
+    is_moving = new_ping.get("is_moving") in (True, "true", "True", 1)
+
+    if 15.0 <= dist_m < 25.0:
+        if speed_kmh >= 2.0 or is_moving:
+            return True
+        return False
+
+    if dist_m >= 25.0:
+        return True
+
+    return False
+
+
+def get_validated_session_breadcrumbs(sp, session_id: str) -> tuple[List[Dict[str, float]], float]:
+    """
+    Queries tracking_locations breadcrumbs for session_id,
+    filters using `is_valid_movement_point`, calculates cumulative validated distance (in meters),
+    and returns (validated_points_list, cumulative_distance_m).
+    """
+    if not sp or not session_id:
+        return [], 0.0
+
+    try:
+        res = sp.schema("hrms").table("tracking_locations") \
+            .select("latitude, longitude, accuracy_m, speed, recorded_at, created_at") \
+            .eq("tracking_session_id", str(session_id)) \
+            .order("recorded_at", desc=False) \
+            .limit(500) \
+            .execute()
+        raw_crumbs = res.data or []
+    except Exception as e:
+        logger.warning(f"[SnapshotService] Error querying tracking_locations for session {session_id}: {e}")
+        raw_crumbs = []
+
+    validated_pts: List[Dict[str, float]] = []
+    cumulative_dist_m = 0.0
+    last_valid: Optional[Dict[str, Any]] = None
+
+    for ping in raw_crumbs:
+        lat = ping.get("latitude")
+        lng = ping.get("longitude")
+        if lat is None or lng is None:
+            continue
+
+        p_obj = {
+            "lat": float(lat),
+            "lng": float(lng),
+            "latitude": float(lat),
+            "longitude": float(lng),
+            "accuracy_m": ping.get("accuracy_m"),
+            "speed": ping.get("speed"),
+            "recorded_at": ping.get("recorded_at") or ping.get("created_at")
+        }
+
+        if is_valid_movement_point(last_valid, p_obj):
+            if last_valid:
+                l_lat = float(last_valid["lat"])
+                l_lng = float(last_valid["lng"])
+                leg = haversine_distance_meters(l_lat, l_lng, float(lat), float(lng))
+                cumulative_dist_m += leg
+
+            validated_pts.append({"lat": float(lat), "lng": float(lng)})
+            last_valid = p_obj
+
+    return validated_pts, cumulative_dist_m
+
+
+def road_align_points(pts: List[Dict[str, float]]) -> List[Dict[str, float]]:
+    """
+    Road-aligns a list of validated coordinates using Google Snap to Roads API (primary)
+    or OSRM Match API (fallback). Returns raw pts if APIs are unavailable or fail.
+    """
+    if not pts or len(pts) < 2:
+        return pts
+
+    gmaps_key = getattr(settings, "GOOGLE_MAPS_API_KEY", "")
+
+    # Primary: Google Snap to Roads API
+    if gmaps_key:
+        try:
+            path_str = "|".join([f"{p['lat']},{p['lng']}" for p in pts[:100]])
+            url = f"https://roads.googleapis.com/v1/snapToRoads?path={path_str}&interpolate=true&key={gmaps_key}"
+            resp = requests.get(url, timeout=3.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                snapped_pts = data.get("snappedPoints") or []
+                if snapped_pts:
+                    aligned = []
+                    for sp_item in snapped_pts:
+                        loc = sp_item.get("location") or {}
+                        if loc.get("latitude") is not None and loc.get("longitude") is not None:
+                            aligned.append({"lat": float(loc["latitude"]), "lng": float(loc["longitude"])})
+                    if aligned:
+                        return aligned
+        except Exception as e:
+            logger.warning(f"[SnapshotService] Google Snap to Roads notice: {e}")
+
+    # Fallback: OSRM Match API
+    try:
+        coord_str = ";".join([f"{p['lng']},{p['lat']}" for p in pts[:100]])
+        url = f"https://router.project-osrm.org/match/v1/driving/{coord_str}?overview=full&geometries=geojson"
+        resp = requests.get(url, timeout=2.5)
+        if resp.status_code == 200:
+            data = resp.json()
+            matchings = data.get("matchings") or []
+            if matchings:
+                coords = matchings[0].get("geometry", {}).get("coordinates", [])
+                if coords:
+                    return [{"lat": float(c[1]), "lng": float(c[0])} for c in coords]
+    except Exception as e:
+        logger.warning(f"[SnapshotService] OSRM match notice: {e}")
+
+    return pts
+
+
 async def render_real_map_png(
     start_lat: float, start_lng: float,
     current_lat: float, current_lng: float,
     dest_lat: Optional[float] = None, dest_lng: Optional[float] = None,
     polyline_points: Optional[List[Dict[str, float]]] = None,
-    executive_name: str = "Sales Executive"
+    executive_name: str = "Sales Executive",
+    snapshot_type: str = "ROUTE_SNAPSHOT"
 ) -> Optional[bytes]:
     """
     Renders an actual Google Maps view using Playwright headless Chromium with Google Maps tiles,
@@ -307,13 +475,23 @@ async def capture_and_store_snapshot(
     }
     badge_num, title, subtitle = badge_map[snapshot_type]
 
+    # Fetch real validated breadcrumbs for session and road-align them
+    validated_pts, cumulative_dist = get_validated_session_breadcrumbs(sp, session_id)
+    if not polyline_points or len(polyline_points) <= 2:
+        if validated_pts:
+            polyline_points = validated_pts
+
+    if polyline_points:
+        polyline_points = road_align_points(polyline_points)
+
     # Render PNG screenshot via Playwright
     png_bytes = await render_real_map_png(
         start_lat=start_lat, start_lng=start_lng,
         current_lat=current_lat, current_lng=current_lng,
         dest_lat=dest_lat, dest_lng=dest_lng,
         polyline_points=polyline_points,
-        executive_name=employee_name
+        executive_name=employee_name,
+        snapshot_type=snapshot_type
     )
 
     if not png_bytes:
@@ -376,6 +554,7 @@ async def capture_and_store_snapshot(
 
     logger.info(f"[SNAPSHOT SERVICE] Successfully created and saved snapshot {snapshot_type} for session {session_id}")
     return record
+
 
 
 def get_captured_snapshots_for_session(session_id: str) -> List[Dict[str, Any]]:

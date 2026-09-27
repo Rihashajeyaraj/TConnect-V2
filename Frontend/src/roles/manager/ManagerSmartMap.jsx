@@ -94,7 +94,7 @@ const IDLE_MS    = 1 * 60 * 1000   // > 1 min → Idle
 const STALE_MS   = IDLE_MS         // backward compatibility alias
 const OFFLINE_MS = 5 * 60 * 1000   // > 5 mins → Offline
 const GONE_MS    = OFFLINE_MS      // backward compatibility alias
-const RealMapSnapshotCard = ({ snap, index, executiveName }) => {
+const RealMapSnapshotCard = ({ snap, index, executiveName, onImageClick }) => {
   const [imgError, setImgError] = useState(false)
   const rawUrl = snap?.image_url || snap?.url || snap?.snapshot_data
 
@@ -115,28 +115,42 @@ const RealMapSnapshotCard = ({ snap, index, executiveName }) => {
   const lat = snap?.latitude ? Number(snap.latitude) : 13.0795
   const lng = snap?.longitude ? Number(snap.longitude) : 80.2261
 
-  // Static map fallback URL centered at the exact snapshot GPS coordinates
-  const fallbackOsmUrl = `https://static-maps.yandex.ru/1.x/?l=map&ll=${lng},${lat}&z=15&size=450,250&pt=${lng},${lat},pm2rdm`
-
-  const displayUrl = (!imgError && imageUrl) ? imageUrl : fallbackOsmUrl
+  const isAvailable = !imgError && imageUrl
 
   return (
-    <div className="relative w-full h-full bg-slate-900 overflow-hidden group select-none">
-      <img
-        src={displayUrl}
-        alt={snap?.title || `Snapshot ${index + 1}`}
-        className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-        onError={() => {
-          if (!imgError && imageUrl) {
-            setImgError(true)
-          }
-        }}
-      />
-      <div className="absolute top-2.5 left-2.5 bg-slate-900/80 backdrop-blur-xs text-white px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1.5 shadow-md border border-white/20">
+    <div className="relative w-full h-full bg-slate-900 overflow-hidden group select-none flex items-center justify-center">
+      {isAvailable ? (
+        <div 
+          className="relative w-full h-full cursor-pointer overflow-hidden" 
+          onClick={() => onImageClick && onImageClick({ url: imageUrl, title: snap?.title, timestamp: snap?.timestamp, address: snap?.address, lat, lng, executiveName })}
+        >
+          <img
+            src={imageUrl}
+            alt={snap?.title || `Snapshot ${index + 1}`}
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            onError={() => setImgError(true)}
+          />
+          <div className="absolute inset-0 bg-slate-950/0 group-hover:bg-slate-950/30 transition-all duration-200 flex items-center justify-center">
+            <span className="opacity-0 group-hover:opacity-100 transition-opacity bg-slate-900/90 text-white text-xs font-bold px-3 py-1.5 rounded-full border border-white/20 shadow-lg flex items-center gap-1.5">
+              <Eye size={13} /> Click to Expand
+            </span>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-col items-center justify-center p-4 text-center space-y-2">
+          <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 shadow-inner">
+            <Camera size={20} />
+          </div>
+          <p className="text-xs font-bold text-slate-300">Map Screenshot In Progress</p>
+          <p className="text-[10px] text-slate-500 max-w-[180px]">Generating high-res Playwright map capture...</p>
+        </div>
+      )}
+
+      <div className="absolute top-2.5 left-2.5 bg-slate-900/85 backdrop-blur-xs text-white px-2.5 py-1 rounded-full text-[10px] font-bold flex items-center gap-1.5 shadow-md border border-white/20 pointer-events-none">
         <span className={`w-2 h-2 rounded-full ${index === 0 ? 'bg-emerald-400' : index === 1 ? 'bg-sky-400' : 'bg-rose-500'}`}></span>
         <span>{snap?.title || `Snapshot ${index + 1}`}</span>
       </div>
-      <div className="absolute bottom-2 right-2 bg-slate-950/80 backdrop-blur-xs text-[9px] text-white/90 px-2 py-0.5 rounded-md font-mono border border-white/10">
+      <div className="absolute bottom-2 right-2 bg-slate-950/85 backdrop-blur-xs text-[9px] text-white/90 px-2 py-0.5 rounded-md font-mono border border-white/10 pointer-events-none">
         📍 {lat.toFixed(4)}°, {lng.toFixed(4)}°
       </div>
     </div>
@@ -395,6 +409,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const [reportLoading,         setReportLoading]         = useState(false)
   const [routeSnapModalRecord,  setRouteSnapModalRecord]  = useState(null)
   const [selectedSnapshotIndex, setSelectedSnapshotIndex] = useState(0)
+  const [activeLightboxSnap,    setActiveLightboxSnap]    = useState(null)
 
   const [pitEmpId,              setPitEmpId]              = useState('')
   const [pitDate,               setPitDate]               = useState(() => new Date().toISOString().split('T')[0])
@@ -4578,7 +4593,12 @@ export default function ManagerSmartMap({ hideHeader = false }) {
                       <div key={`snap_${snap.id || snap.snapshot_type || 'type'}_${snap.timestamp || ''}_${idx}`} className="bg-white rounded-2xl border border-slate-200 p-3.5 shadow-2xs hover:shadow-md transition-all duration-200 flex flex-col space-y-3">
                         {/* Real Map Image Box */}
                         <div className="w-full h-52 rounded-xl overflow-hidden border border-slate-200 relative bg-slate-900 shadow-inner">
-                          <RealMapSnapshotCard snap={snap} index={idx} executiveName={routeSnapModalRecord.employee_name} />
+                          <RealMapSnapshotCard 
+                            snap={snap} 
+                            index={idx} 
+                            executiveName={routeSnapModalRecord.employee_name} 
+                            onImageClick={(snapData) => setActiveLightboxSnap(snapData)}
+                          />
                         </div>
 
                         {/* Card Title line with circular badge number */}
@@ -4614,6 +4634,65 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           </div>
         )
       })()}
+
+      {/* ── Full-Screen Image Lightbox Modal ── */}
+      {activeLightboxSnap && (
+        <div 
+          className="fixed inset-0 z-[100] bg-slate-950/95 backdrop-blur-md flex flex-col items-center justify-center p-4 sm:p-8 animate-in fade-in duration-200 select-none font-sans"
+          onClick={() => setActiveLightboxSnap(null)}
+        >
+          <div 
+            className="relative max-w-5xl w-full max-h-[90vh] bg-slate-900 rounded-3xl border border-slate-700/80 shadow-2xl overflow-hidden flex flex-col"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header bar */}
+            <div className="p-4 px-6 bg-slate-900/90 border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-blue-500/20 text-blue-400 border border-blue-500/30 flex items-center justify-center text-sm font-black">
+                  📷
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold text-white flex items-center gap-2">
+                    <span>{activeLightboxSnap.title || 'Route Snapshot'}</span>
+                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-bold">
+                      Verified Map Capture
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-400 font-medium">
+                    {activeLightboxSnap.executiveName || 'Executive'} • {activeLightboxSnap.timestamp || '—'}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setActiveLightboxSnap(null)}
+                className="w-9 h-9 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition flex items-center justify-center cursor-pointer border border-slate-700"
+              >
+                <X size={20} />
+              </button>
+            </div>
+
+            {/* High-res Image view */}
+            <div className="flex-1 bg-slate-950 p-3 flex items-center justify-center overflow-auto min-h-[400px]">
+              <img
+                src={activeLightboxSnap.url}
+                alt={activeLightboxSnap.title || 'Route Snapshot'}
+                className="max-h-[75vh] w-auto max-w-full object-contain rounded-xl shadow-2xl border border-slate-800"
+              />
+            </div>
+
+            {/* Footer with reverse-geocoded address */}
+            <div className="p-3 px-6 bg-slate-900/90 border-t border-slate-800 text-xs text-slate-300 flex items-center justify-between">
+              <div className="flex items-center gap-2 truncate max-w-2xl">
+                <MapPin size={14} className="text-rose-400 shrink-0" />
+                <span className="truncate font-medium">{activeLightboxSnap.address || 'GPS Coordinates Recorded'}</span>
+              </div>
+              <span className="text-[11px] font-mono text-slate-400">
+                📍 {Number(activeLightboxSnap.lat || 0).toFixed(4)}°, {Number(activeLightboxSnap.lng || 0).toFixed(4)}°
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

@@ -7,7 +7,7 @@ from app.modules.customer.repository import CustomerRepository
 from app.modules.visit.repository import VisitRepository
 from app.core.logger import logger
 from app.core.dependencies import get_current_user_payload
-from app.modules.spatial.snapshot_service import capture_and_store_snapshot, get_captured_snapshots_for_session
+from app.modules.spatial.snapshot_service import capture_and_store_snapshot, get_captured_snapshots_for_session, get_validated_session_breadcrumbs
 
 
 router = APIRouter(prefix="/spatial", tags=["Smart Spatial Map & Geofencing"])
@@ -1965,6 +1965,8 @@ async def end_tracking_session(
             c_lat = float(s_data.get("client_latitude")) if s_data.get("client_latitude") is not None else e_lat
             c_lng = float(s_data.get("client_longitude")) if s_data.get("client_longitude") is not None else e_lng
             
+            validated_pts, _ = get_validated_session_breadcrumbs(sp, ended_session_id)
+
             asyncio.create_task(
                 capture_and_store_snapshot(
                     session_id=str(ended_session_id),
@@ -1977,7 +1979,7 @@ async def end_tracking_session(
                     start_lng=s_lng,
                     dest_lat=c_lat,
                     dest_lng=c_lng,
-                    polyline_points=[{"lat": s_lat, "lng": s_lng}, {"lat": e_lat, "lng": e_lng}],
+                    polyline_points=validated_pts if len(validated_pts) >= 2 else [{"lat": s_lat, "lng": s_lng}, {"lat": e_lat, "lng": e_lng}],
                     address=s_data.get("client_address") or ""
                 )
             )
@@ -2098,7 +2100,7 @@ async def push_live_location(
                     "total_distance": round(new_dist, 1),
                     "end_latitude": lat, "end_longitude": lng, "updated_at": now_iso,
                 }).eq("id", session_id).execute()
-                # Trigger Snapshot 2: MID_TRIP at ~50% actual travelled progress
+                # Trigger Snapshot 2: MID_TRIP at 50% cumulative validated travelled GPS distance
                 try:
                     start_lat = float(sess.get("start_latitude") or lat)
                     start_lng = float(sess.get("start_longitude") or lng)
@@ -2110,9 +2112,11 @@ async def push_live_location(
                     else:
                         total_expected_m = 3000.0
 
-                    target_mid_m = max(400.0, total_expected_m * 0.45)
+                    target_mid_m = max(400.0, total_expected_m * 0.50)
 
-                    if new_dist >= target_mid_m:
+                    validated_pts, cumulative_dist_m = get_validated_session_breadcrumbs(sp, session_id)
+
+                    if cumulative_dist_m >= target_mid_m or new_dist >= target_mid_m:
                         asyncio.create_task(
                             capture_and_store_snapshot(
                                 session_id=str(session_id),
@@ -2125,7 +2129,7 @@ async def push_live_location(
                                 start_lng=start_lng,
                                 dest_lat=client_lat,
                                 dest_lng=client_lng,
-                                polyline_points=[{"lat": start_lat, "lng": start_lng}, {"lat": lat, "lng": lng}],
+                                polyline_points=validated_pts if len(validated_pts) >= 2 else [{"lat": start_lat, "lng": start_lng}, {"lat": lat, "lng": lng}],
                                 address=""
                             )
                         )
@@ -2974,60 +2978,6 @@ async def get_executive_history_report(
                     "status": s.get("title"),
                     "badge_color": "emerald" if s.get("snapshot_type") == "START_LOCATION" else ("blue" if s.get("snapshot_type") == "MID_TRIP" else "rose")
                 })
-
-        # If no snapshots stored yet, auto-populate the 3 required snapshots (START_LOCATION, MID_TRIP, DESTINATION_REACHED)
-        if not map_snapshots:
-            mid_lat = round((start_lat + end_lat) / 2.0, 6)
-            mid_lng = round((start_lng + end_lng) / 2.0, 6)
-            mid_address = _reverse_geocode_point(mid_lat, mid_lng)
-
-            map_snapshots = [
-                {
-                    "id": f"{sess.get('id')}_snap_1",
-                    "type": "START_LOCATION",
-                    "snapshot_type": "START_LOCATION",
-                    "badge_number": 1,
-                    "title": "Trip Started",
-                    "subtitle": "Trip Started / Start Location",
-                    "timestamp": trip_start_time,
-                    "latitude": start_lat,
-                    "longitude": start_lng,
-                    "address": start_address,
-                    "image_url": f"/static/snapshots/snap_{sess.get('id')}_START_LOCATION.png",
-                    "status": "Trip Started",
-                    "badge_color": "emerald"
-                },
-                {
-                    "id": f"{sess.get('id')}_snap_2",
-                    "type": "MID_TRIP",
-                    "snapshot_type": "MID_TRIP",
-                    "badge_number": 2,
-                    "title": "Mid Trip",
-                    "subtitle": "Mid-Trip / Route Progress (50%)",
-                    "timestamp": snap_2_time,
-                    "latitude": mid_lat,
-                    "longitude": mid_lng,
-                    "address": mid_address,
-                    "image_url": f"/static/snapshots/snap_{sess.get('id')}_MID_TRIP.png",
-                    "status": "Mid Trip",
-                    "badge_color": "blue"
-                },
-                {
-                    "id": f"{sess.get('id')}_snap_3",
-                    "type": "DESTINATION_REACHED",
-                    "snapshot_type": "DESTINATION_REACHED",
-                    "badge_number": 3,
-                    "title": "Destination Reached",
-                    "subtitle": "Destination Reached",
-                    "timestamp": trip_end_time,
-                    "latitude": end_lat,
-                    "longitude": end_lng,
-                    "address": end_address,
-                    "image_url": f"/static/snapshots/snap_{sess.get('id')}_DESTINATION_REACHED.png",
-                    "status": "Destination Reached",
-                    "badge_color": "rose"
-                }
-            ]
 
         reports.append({
             "employee_id": s_emp_id,
