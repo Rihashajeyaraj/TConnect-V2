@@ -832,7 +832,7 @@ function AdminLayout() {
             >
               <div className="w-8 h-8 rounded-full overflow-hidden bg-slate-900 text-white flex items-center justify-center font-bold text-xs shadow-xs ring-2 ring-slate-400/20 shrink-0">
                 {profilePhoto ? (
-                  <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" />
+                  <img src={profilePhoto} alt="avatar" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
                 ) : (
                   displayInitials
                 )}
@@ -1126,7 +1126,7 @@ function AdminLayout() {
               <div className="relative shrink-0 group">
                 <div className="w-24 h-24 rounded-full overflow-hidden bg-gradient-to-br from-blue-500 to-blue-700 flex items-center justify-center text-white font-black text-3xl shadow-xl ring-4 ring-blue-400/20">
                   {profilePhoto ? (
-                    <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" />
+                    <img src={profilePhoto} alt="Profile" className="w-full h-full object-cover" onError={(e) => { e.target.style.display = 'none'; }} />
                   ) : (
                     currentUser.initials || "AD"
                   )}

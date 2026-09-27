@@ -21,6 +21,9 @@ import {
   Percent,
   X,
   Search,
+  LayoutDashboard,
+  RefreshCw,
+  Sparkles,
 } from 'lucide-react'
 import { hrmsAPI, attendanceAPI, auditAPI, adminAPI, notificationAPI, userAPI, settingsAPI } from '../../services/api.js'
 import Attendance from '../sales/Attendance.jsx'
@@ -757,26 +760,74 @@ export default function AdminDashboard() {
 
   return (
     <div className="space-y-6 font-sans text-slate-900">
-      {/* Filter Toolbar */}
-      <div className="bg-white rounded-2xl p-4 border border-slate-200 shadow-xs flex flex-col sm:flex-row items-center justify-between gap-4">
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-          {/* Date Range Selector */}
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-bold">
-            <Calendar className="w-4 h-4 text-slate-400" />
-            <span className="text-slate-500 uppercase text-[10px]">Period:</span>
-            <select
-              value={dateRange}
-              onChange={(e) => setDateRange(e.target.value)}
-              className="bg-transparent text-slate-900 focus:outline-none cursor-pointer font-bold"
-            >
-              <option value="Today">Today ({formatDate(new Date())})</option>
-              <option value="This Week">This Week</option>
-              <option value="This Month">This Month</option>
-            </select>
+      {/* Top Workspace Header Banner */}
+      <div className="bg-white border border-blue-100/90 p-4 sm:p-5 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-xs">
+        <div className="flex items-center gap-3.5">
+          <div className="p-3 bg-blue-50 text-blue-600 rounded-xl shrink-0 border border-blue-100">
+            <LayoutDashboard className="w-5 h-5" />
           </div>
-
+          <div>
+            <h1 className="text-base font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              System Admin Workspace
+              <span className="bg-blue-50 text-blue-700 border border-blue-200 text-[10px] px-2.5 py-0.5 rounded-full font-extrabold uppercase">
+                System View
+              </span>
+            </h1>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Supervise employee accounts, document approvals, security audit logs, database engine and server health.
+            </p>
+          </div>
         </div>
 
+        <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+          <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-200/80 text-emerald-700 px-3.5 py-1.5 rounded-xl text-xs font-bold shadow-3xs">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            System Status: Active
+          </div>
+        </div>
+      </div>
+
+      {/* Overview Header & Time Filter Bar */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pt-1">
+        <div>
+          <h2 className="text-xl font-black text-slate-900 tracking-tight">System Administrator Overview</h2>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Track system performance, user registrations, document approvals, and system health status.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Period selector tabs */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1.5 rounded-xl border border-slate-200/80 text-xs font-bold">
+            {['Today', 'This Week', 'This Month'].map((period) => {
+              const isActive = dateRange === period
+              return (
+                <button
+                  key={period}
+                  type="button"
+                  onClick={() => setDateRange(period)}
+                  className={`px-3.5 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer ${
+                    isActive
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-white/60'
+                  }`}
+                >
+                  {period === 'Today' ? `Today (${formatDate(new Date())})` : period}
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Refresh Button */}
+          <button
+            type="button"
+            onClick={loadAdminDashboardData}
+            className="p-2.5 rounded-xl bg-white border border-slate-200 text-slate-600 hover:text-blue-600 hover:bg-blue-50/50 hover:border-blue-200 transition cursor-pointer shadow-3xs"
+            title="Refresh Live Data"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin text-blue-600' : ''}`} />
+          </button>
+        </div>
       </div>
 
       {/* SECTION 1: System Admin Controls KPIs */}
@@ -785,127 +836,158 @@ export default function AdminDashboard() {
           {/* Total Registered Users */}
           <div
             onClick={() => setShowTotalUsersPage(true)}
-            className="relative overflow-hidden bg-gradient-to-br from-[#D4ECFC] via-blue-50/50 to-white border border-[#64B5F6]/40 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer select-none group"
+            className="relative overflow-hidden bg-blue-50/60 hover:bg-blue-50 border border-blue-200/80 hover:border-blue-300 p-4.5 rounded-2xl shadow-3xs hover:shadow-md transition-all duration-200 cursor-pointer select-none group flex flex-col justify-between"
           >
-            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-[#0B2545] to-[#225F9F] opacity-80 group-hover:opacity-100 transition" />
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-550">Total Users</span>
-              <div className="w-9 h-9 rounded-xl bg-[#D4ECFC]/30 text-[#0B2545] flex items-center justify-center group-hover:scale-110 transition duration-300 border border-[#64B5F6]/20">
-                <Users className="w-5 h-5" />
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-blue-700">TOTAL USERS</span>
+                <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition duration-200">
+                  <Users className="w-4 h-4" />
+                </div>
               </div>
+              <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : kpiData.total_users.value}</h3>
             </div>
-            <h3 className="text-2xl font-black text-[#0B2545] mt-2">{loading ? '...' : kpiData.total_users.value}</h3>
-            <span className="text-[11px] text-slate-500 font-bold">{kpiData.total_users.label}</span>
+            <div className="mt-3 pt-2 border-t border-blue-100/80 flex items-center justify-between text-[11px] font-bold text-blue-600">
+              <span>{kpiData.total_users.label}</span>
+              <span className="text-[10px] underline group-hover:translate-x-0.5 transition">Click to View ↗</span>
+            </div>
           </div>
 
           {/* Document Approvals Card */}
           <div
             onClick={() => setShowApprovalsPage(true)}
-            className="relative overflow-hidden bg-gradient-to-br from-[#1E88E5]/15 via-blue-50/30 to-white border border-[#1E88E5]/30 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer select-none group"
+            className="relative overflow-hidden bg-purple-50/60 hover:bg-purple-50 border border-purple-200/80 hover:border-purple-300 p-4.5 rounded-2xl shadow-3xs hover:shadow-md transition-all duration-200 cursor-pointer select-none group flex flex-col justify-between"
           >
-            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-[#1E88E5] to-[#64B5F6] opacity-80 group-hover:opacity-100 transition" />
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-550">Document Approvals</span>
-              <div className="w-9 h-9 rounded-xl bg-[#1E88E5]/10 text-blue-900 flex items-center justify-center group-hover:scale-110 transition duration-300 border border-[#1E88E5]/25">
-                <FileCheck className="w-5 h-5" />
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-purple-700">DOCUMENT APPROVALS</span>
+                <div className="w-8 h-8 rounded-xl bg-purple-100 text-purple-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition duration-200">
+                  <FileCheck className="w-4 h-4" />
+                </div>
               </div>
+              <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : pendingDocs.length}</h3>
             </div>
-            <h3 className="text-2xl font-black text-[#0B2545] mt-2">{loading ? '...' : pendingDocs.length}</h3>
-            <span className={`text-[11px] font-bold flex items-center gap-1 ${pendingDocs.length > 0 ? 'text-amber-600 font-extrabold' : 'text-emerald-600 font-extrabold'}`}>
-              {pendingDocs.length > 0 ? '⚠️ Action Required' : '✓ All Approved'}
-            </span>
+            <div className="mt-3 pt-2 border-t border-purple-100/80 flex items-center justify-between text-[11px] font-bold">
+              <span className={pendingDocs.length > 0 ? 'text-amber-600 font-extrabold' : 'text-emerald-600 font-extrabold'}>
+                {pendingDocs.length > 0 ? '⚠️ Action Required' : '✓ All Approved'}
+              </span>
+              <span className="text-[10px] text-purple-600 underline group-hover:translate-x-0.5 transition">Click to View ↗</span>
+            </div>
           </div>
 
           {/* Security Audits total */}
           <div
             onClick={() => setShowSecurityAuditsPage(true)}
-            className="relative overflow-hidden bg-gradient-to-br from-[#225F9F]/15 via-slate-50/30 to-white border border-[#225F9F]/30 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 cursor-pointer select-none group"
+            className="relative overflow-hidden bg-emerald-50/60 hover:bg-emerald-50 border border-emerald-200/80 hover:border-emerald-300 p-4.5 rounded-2xl shadow-3xs hover:shadow-md transition-all duration-200 cursor-pointer select-none group flex flex-col justify-between"
           >
-            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-[#64B5F6] to-[#D4ECFC] opacity-80 group-hover:opacity-100 transition" />
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-550">Security Audits</span>
-              <div className="w-9 h-9 rounded-xl bg-[#225F9F]/10 text-[#225F9F] flex items-center justify-center group-hover:scale-110 transition duration-300 border border-[#225F9F]/20">
-                <Terminal className="w-5 h-5" />
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-emerald-700">SECURITY AUDITS</span>
+                <div className="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition duration-200">
+                  <Terminal className="w-4 h-4" />
+                </div>
               </div>
+              <h3 className="text-2xl font-black text-slate-900 mt-2">{loading ? '...' : kpiData.security_audits.value}</h3>
             </div>
-            <h3 className="text-2xl font-black text-[#0B2545] mt-2">{loading ? '...' : kpiData.security_audits.value}</h3>
-            <span className="text-[11px] text-slate-500 font-bold">{kpiData.security_audits.label}</span>
+            <div className="mt-3 pt-2 border-t border-emerald-100/80 flex items-center justify-between text-[11px] font-bold text-emerald-600">
+              <span>{kpiData.security_audits.label}</span>
+              <span className="text-[10px] underline group-hover:translate-x-0.5 transition">Click to View ↗</span>
+            </div>
           </div>
 
           {/* DB Status */}
-          <div className="relative overflow-hidden bg-gradient-to-br from-[#0B2545]/10 via-[#225F9F]/5 to-white border border-[#225F9F]/25 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] transition-all duration-200 group">
-            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-[#0B2545] to-[#1E88E5] opacity-80 group-hover:opacity-100 transition" />
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-550">Database Engine</span>
-              <div className="w-9 h-9 rounded-xl bg-[#0B2545]/5 text-[#0B2545] flex items-center justify-center group-hover:scale-110 transition duration-300 border border-[#0B2545]/15">
-                <Database className="w-5 h-5" />
+          <div className="relative overflow-hidden bg-amber-50/60 hover:bg-amber-50 border border-amber-200/80 hover:border-amber-300 p-4.5 rounded-2xl shadow-3xs hover:shadow-md transition-all duration-200 group flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-amber-700">DATABASE ENGINE</span>
+                <div className="w-8 h-8 rounded-xl bg-amber-100 text-amber-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition duration-200">
+                  <Database className="w-4 h-4" />
+                </div>
               </div>
+              <h3 className={`text-xl font-black mt-2 ${kpiData.database_engine.status === 'Active' ? 'text-emerald-600' : 'text-rose-600'}`}>
+                {loading ? '...' : kpiData.database_engine.status}
+              </h3>
             </div>
-            <h3 className={`text-xl font-black mt-2 ${kpiData.database_engine.status === 'Active' ? 'text-emerald-600' : 'text-rose-600'}`}>
-              {loading ? '...' : kpiData.database_engine.status}
-            </h3>
-            <span className="text-[11px] text-slate-500 font-bold">{kpiData.database_engine.label}</span>
+            <div className="mt-3 pt-2 border-t border-amber-100/80 flex items-center justify-between text-[11px] font-bold text-amber-700">
+              <span>{kpiData.database_engine.label}</span>
+            </div>
           </div>
 
           {/* System Load status */}
-          <div className="relative overflow-hidden bg-gradient-to-br from-[#64B5F6]/20 via-[#D4ECFC]/20 to-white border border-[#64B5F6]/30 p-4.5 rounded-2xl shadow-xs hover:shadow-md hover:scale-[1.02] transition-all duration-200 group">
-            <div className="absolute top-0 inset-x-0 h-[3px] bg-gradient-to-r from-[#225F9F] to-[#64B5F6] opacity-80 group-hover:opacity-100 transition" />
-            <div className="flex items-center justify-between">
-              <span className="text-[10px] font-extrabold uppercase tracking-wider text-slate-550">Server Health</span>
-              <div className="w-9 h-9 rounded-xl bg-[#64B5F6]/15 text-[#0B2545] flex items-center justify-center group-hover:scale-110 transition duration-300 border border-[#64B5F6]/20">
-                <Server className="w-5 h-5" />
+          <div className="relative overflow-hidden bg-sky-50/60 hover:bg-sky-50 border border-sky-200/80 hover:border-sky-300 p-4.5 rounded-2xl shadow-3xs hover:shadow-md transition-all duration-200 group flex flex-col justify-between">
+            <div>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-extrabold uppercase tracking-wider text-sky-700">SERVER HEALTH</span>
+                <div className="w-8 h-8 rounded-xl bg-sky-100 text-sky-600 flex items-center justify-center shrink-0 group-hover:scale-110 transition duration-200">
+                  <Server className="w-4 h-4" />
+                </div>
               </div>
+              <h3 className="text-xl font-black mt-2 text-slate-900">
+                {loading ? '...' : `${kpiData.server_health.uptime}% Uptime`}
+              </h3>
             </div>
-            <h3 className="text-xl font-black mt-2 text-[#0B2545]">
-              {loading ? '...' : `${kpiData.server_health.uptime}% Uptime`}
-            </h3>
-            <span className="text-[11px] text-slate-500 font-bold">{kpiData.server_health.status}</span>
+            <div className="mt-3 pt-2 border-t border-sky-100/80 flex items-center justify-between text-[11px] font-bold text-sky-700">
+              <span>{kpiData.server_health.status}</span>
+            </div>
           </div>
         </div>
       )}
 
-      {/* SECTION 1.5: Quick Actions Panel */}
-      <div className="bg-white border border-slate-200/80 p-4 rounded-2xl shadow-xs space-y-3">
-        <h3 className="font-extrabold text-slate-800 text-xs flex items-center gap-1.5 uppercase tracking-wider">
-          Quick Actions
-        </h3>
+      {/* Quick Actions Panel */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-1.5">
+          <Sparkles className="w-4 h-4 text-amber-500" />
+          <h3 className="font-extrabold text-slate-600 text-[11px] uppercase tracking-wider">
+            Quick Actions
+          </h3>
+        </div>
 
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
           {[
             {
               title: "Attendance",
+              subtitle: "Live biometric & field check-ins",
               icon: Clock,
               onClick: () => setShowAttendanceModal(true),
-              color: "text-slate-800 bg-slate-50/80 hover:bg-blue-50 hover:border-blue-200 border-slate-200/90",
-              iconColor: "text-blue-600 bg-blue-100/70"
+              bgColor: "bg-blue-50/70 hover:bg-blue-100/70 border-blue-200/80",
+              iconBg: "bg-blue-100 text-blue-600",
+              titleColor: "text-blue-900"
             },
             {
               title: "Create Employee",
+              subtitle: "Onboard new staff & set access",
               icon: UserPlus,
               onClick: () => setShowCreateEmpModal(true),
-              color: "text-slate-800 bg-slate-50/80 hover:bg-emerald-50 hover:border-emerald-200 border-slate-200/90",
-              iconColor: "text-emerald-600 bg-emerald-100/70"
+              bgColor: "bg-emerald-50/70 hover:bg-emerald-100/70 border-emerald-200/80",
+              iconBg: "bg-emerald-100 text-emerald-600",
+              titleColor: "text-emerald-900"
             },
             {
               title: "Edit Employee",
+              subtitle: "Update details, salary & status",
               icon: Users,
               onClick: () => { setShowEditEmpModal(true); setSelectedEditEmpId(''); },
-              color: "text-slate-800 bg-slate-50/80 hover:bg-indigo-50 hover:border-indigo-200 border-slate-200/90",
-              iconColor: "text-indigo-600 bg-indigo-100/70"
+              bgColor: "bg-amber-50/70 hover:bg-amber-100/70 border-amber-200/80",
+              iconBg: "bg-amber-100 text-amber-600",
+              titleColor: "text-amber-900"
             },
             {
               title: "Add Incentive",
+              subtitle: "Configure revenue incentives",
               icon: Percent,
               onClick: () => setShowIncentiveModal(true),
-              color: "text-slate-800 bg-slate-50/80 hover:bg-amber-50 hover:border-amber-200 border-slate-200/90",
-              iconColor: "text-amber-600 bg-amber-100/70"
+              bgColor: "bg-purple-50/70 hover:bg-purple-100/70 border-purple-200/80",
+              iconBg: "bg-purple-100 text-purple-600",
+              titleColor: "text-purple-900"
             },
             {
               title: "Security Roles",
+              subtitle: "Manage permissions & rules",
               icon: ShieldCheck,
               onClick: () => { setShowRolesModal(true); setSelectedRoleForPermissions(null); },
-              color: "text-slate-800 bg-slate-50/80 hover:bg-purple-50 hover:border-purple-200 border-slate-200/90",
-              iconColor: "text-purple-600 bg-purple-100/70"
+              bgColor: "bg-indigo-50/70 hover:bg-indigo-100/70 border-indigo-200/80",
+              iconBg: "bg-indigo-100 text-indigo-600",
+              titleColor: "text-indigo-900"
             },
           ].map((action) => {
             const IconComp = action.icon
@@ -914,12 +996,17 @@ export default function AdminDashboard() {
                 key={action.title}
                 type="button"
                 onClick={action.onClick}
-                className={`flex items-center gap-2.5 p-3 rounded-xl border ${action.color} text-xs font-bold transition-all duration-200 cursor-pointer shadow-3xs hover:shadow-xs select-none`}
+                className={`p-4 rounded-2xl border ${action.bgColor} text-left transition-all duration-200 cursor-pointer shadow-3xs hover:shadow-xs select-none flex flex-col justify-between group`}
               >
-                <div className={`p-1.5 rounded-lg ${action.iconColor} shrink-0`}>
-                  <IconComp className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-3">
+                  <div className={`p-2.5 rounded-xl ${action.iconBg} shrink-0 group-hover:scale-110 transition duration-200`}>
+                    <IconComp className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <h4 className={`font-black text-xs ${action.titleColor} truncate`}>{action.title}</h4>
+                    <p className="text-[11px] text-slate-500 font-medium leading-tight mt-0.5 truncate">{action.subtitle}</p>
+                  </div>
                 </div>
-                <span>{action.title}</span>
               </button>
             )
           })}

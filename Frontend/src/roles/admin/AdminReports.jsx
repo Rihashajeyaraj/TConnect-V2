@@ -439,7 +439,7 @@ function AdminReports() {
                     <div className="divide-y divide-slate-100 border border-slate-100 rounded-xl overflow-hidden text-xs font-bold">
                       <div className="p-3.5 flex justify-between bg-slate-50/50">
                         <span className="text-slate-500">Database Connection Host</span>
-                        <span className="font-mono font-bold text-slate-800">db.cljifufjjwrdgethvfvl.supabase.co</span>
+                        <span className="font-mono font-bold text-slate-800">Supabase Realtime Engine</span>
                       </div>
                       <div className="p-3.5 flex justify-between">
                         <span className="text-slate-500">PostgREST Service Layer</span>

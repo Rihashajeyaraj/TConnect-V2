@@ -57,12 +57,17 @@ def _save_local_settings_file():
 _load_local_settings_file()
 
 
+_rls_policies_configured = False
+
 class SettingsRepository:
     def __init__(self):
         self.client = get_supabase_admin_client() or get_supabase_client()
         self.helper = get_schema_helper()
         _load_local_settings_file()
-        self._setup_rls_policies()
+        global _rls_policies_configured
+        if not _rls_policies_configured:
+            self._setup_rls_policies()
+            _rls_policies_configured = True
 
 
     def _setup_rls_policies(self):

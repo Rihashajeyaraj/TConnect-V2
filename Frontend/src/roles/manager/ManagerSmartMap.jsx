@@ -1093,7 +1093,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
   // Tracking-layer refs (one set per selected executive)
   const trackRouteRef   = useRef(null)  // Polyline breadcrumb route
-  const trailPointsRef  = useRef([])    // In-memory array of all breadcrumb points for trail
+  const trailPointsRef  = useRef([])    // In-memory array of all raw breadcrumb points for trail
+  const travelledRoutePointsRef = useRef([]) // Independent array of confirmed movement points for red polyline
+  const lastConfirmedRoutePointRef = useRef(null) // Anchor point for displacement validation
   const startMarkerRef  = useRef(null)  // green start pin
   const liveMarkerRef   = useRef(null)  // animated live position
   const endMarkerRef    = useRef(null)  // grey end pin
@@ -2417,10 +2419,82 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       </div>
   `
 
+  /**
+   * Pure Movement Validator for Travelled Route Polyline.
+   * Evaluates candidate GPS telemetry against the last confirmed route point.
+   * Rejects stationary GPS drift, satellite jitter, non-chronological pings, and excessive jumps.
+   */
+  const isValidMovementPoint = useCallback((crumb, lastConfirmedPt) => {
+    if (!crumb) return { valid: false, reason: 'Null GPS crumb' };
+
+    const lat = Number(crumb.latitude != null ? crumb.latitude : crumb.lat);
+    const lng = Number(crumb.longitude != null ? crumb.longitude : crumb.lng);
+    if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) {
+      return { valid: false, reason: 'Invalid or zero coordinates' };
+    }
+
+    const accuracy = Number(crumb.accuracy || 10);
+    if (accuracy > 30) {
+      return { valid: false, reason: `GPS accuracy low (${accuracy}m > 30m limit)` };
+    }
+
+    const recAtStr = crumb.recorded_at || crumb.timestamp || '';
+    const crumbTime = new Date(recAtStr || Date.now()).getTime();
+
+    // 1. First point of tracking session
+    if (!lastConfirmedPt) {
+      return {
+        valid: true,
+        reason: 'First valid point of tracking session',
+        point: { lat, lng, timestamp: crumbTime }
+      };
+    }
+
+    // 2. Non-chronological timestamp check
+    if (crumbTime && lastConfirmedPt.timestamp && crumbTime < lastConfirmedPt.timestamp) {
+      return { valid: false, reason: `Non-chronological timestamp (${recAtStr})` };
+    }
+
+    const distM = haversineDistance(lastConfirmedPt.lat, lastConfirmedPt.lng, lat, lng) * 1000;
+    const timeDiffSec = (crumbTime && lastConfirmedPt.timestamp) ? Math.max(0, (crumbTime - lastConfirmedPt.timestamp) / 1000) : 0;
+    const calcSpeedKmh = timeDiffSec > 0 ? (distM / 1000) / (timeDiffSec / 3600) : 0;
+    const repSpeedKmh = crumb.speed != null ? Number(crumb.speed) * 3.6 : null;
+
+    // 3. Jump Protection
+    if (distM > 1000) {
+      return { valid: false, reason: `Impossible GPS jump > 1000m (${distM.toFixed(1)}m)` };
+    }
+    if (timeDiffSec > 0 && calcSpeedKmh > 150) {
+      return { valid: false, reason: `Excessive calculated speed > 150 km/h (${calcSpeedKmh.toFixed(1)} km/h)` };
+    }
+
+    // 4. Stationary GPS Jitter Threshold
+    // Ignore small movements (< 15m) around the same location
+    if (distM < 15) {
+      return { valid: false, reason: `Stationary GPS drift < 15m (${distM.toFixed(1)}m)` };
+    }
+
+    // 5. Movement Evidence Confirmation:
+    // - Substantial displacement (>= 25m) OR
+    // - Displacement >= 15m WITH speed/movement evidence (reported speed >= 2.0 km/h OR calc speed >= 2.0 km/h OR is_moving == true)
+    const hasSpeedOrMovingEvidence = (repSpeedKmh != null && repSpeedKmh >= 2.0) || calcSpeedKmh >= 2.0 || crumb.is_moving === true;
+    const isConfirmedDisplacement = distM >= 25 || (distM >= 15 && hasSpeedOrMovingEvidence);
+
+    if (!isConfirmedDisplacement) {
+      return { valid: false, reason: `Insufficient movement evidence (dist:${distM.toFixed(1)}m, speed:${calcSpeedKmh.toFixed(1)}km/h)` };
+    }
+
+    return {
+      valid: true,
+      reason: `Confirmed movement (dist:${distM.toFixed(1)}m, speed:${calcSpeedKmh.toFixed(1)}km/h)`,
+      point: { lat, lng, timestamp: crumbTime }
+    };
+  }, []);
+
   const _applyNewCrumb = useCallback((crumb) => {
     if (!googleMapRef.current || !window.google || !crumb) return
-    const lat = Number(crumb.latitude)
-    const lng = Number(crumb.longitude)
+    const lat = Number(crumb.latitude != null ? crumb.latitude : crumb.lat)
+    const lng = Number(crumb.longitude != null ? crumb.longitude : crumb.lng)
     if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return
 
     const recAtStr = crumb.recorded_at || crumb.timestamp || ''
@@ -2438,7 +2512,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       const crumbEmpId = String(crumb.employee_id || crumb.employee_code || crumb.id || '').toLowerCase().trim()
       const execIds = [currentExec.employee_id, currentExec.employee_code, currentExec.id, currentExec.email].filter(Boolean).map(s => String(s).toLowerCase().trim())
       if (crumbEmpId && !execIds.includes(crumbEmpId)) {
-        console.log(`[ROUTE DIAGNOSTIC] Emp:${crumbEmpId} | Sess:${crumb.tracking_session_id || 'N/A'} | Loc:${crumb.id || 'N/A'} | Time:${recAtStr} | Lat:${lat} | Lng:${lng} | Dist:0m | Speed:0km/h | Status:REJECTED (Employee ID mismatch)`)
+        console.log(`[ROUTE DIAGNOSTIC] Emp:${crumbEmpId} | Sess:${crumb.tracking_session_id || 'N/A'} | Loc:${crumb.id || 'N/A'} | Time:${recAtStr} | Lat:${lat} | Lng:${lng} | Status:REJECTED (Employee ID mismatch)`)
         return
       }
     }
@@ -2447,121 +2521,121 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     const currentSess = trackSessionRef.current
     if (currentSess && currentSess.id && crumb.tracking_session_id) {
       if (String(crumb.tracking_session_id) !== String(currentSess.id)) {
-        console.log(`[ROUTE DIAGNOSTIC] Emp:${crumb.employee_id || 'N/A'} | Sess:${crumb.tracking_session_id} | Loc:${crumb.id || 'N/A'} | Time:${recAtStr} | Lat:${lat} | Lng:${lng} | Dist:0m | Speed:0km/h | Status:REJECTED (Session ID mismatch)`)
+        console.log(`[ROUTE DIAGNOSTIC] Emp:${crumb.employee_id || 'N/A'} | Sess:${crumb.tracking_session_id} | Loc:${crumb.id || 'N/A'} | Time:${recAtStr} | Lat:${lat} | Lng:${lng} | Status:REJECTED (Session ID mismatch)`)
         return
       }
     }
 
     const crumbTime = new Date(recAtStr || Date.now()).getTime()
     const accuracy = Number(crumb.accuracy || 10)
-    const pts = trailPointsRef.current
-    const lastPt = pts.length > 0 ? pts[pts.length - 1] : null
+    const now = Date.now()
 
-    let distM = 0
-    let timeDiffSec = 0
-    let speedKmh = 0
-    let status = 'ACCEPTED'
-    let reason = 'Valid live point'
+    // ─── PIPELINE A: BIKE MARKER POSITION UPDATES (Independent) ───
+    if (accuracy <= 35) {
+      setLastPingMs(now)
+      lastMovedTimeRef.current = now
+      setLatestExecPos({ lat, lng })
 
-    if (lastPt) {
-      distM = haversineDistance(lastPt.lat, lastPt.lng, lat, lng) * 1000
-      const lastTime = lastPt.timestamp || 0
-      if (crumbTime && lastTime) {
-        timeDiffSec = Math.max(0, (crumbTime - lastTime) / 1000)
-        if (timeDiffSec > 0) {
-          speedKmh = (distM / 1000) / (timeDiffSec / 3600)
+      const targetEmpId = crumb.employee_id || crumb.employee_code || selectedExecutiveRef.current?.employee_id || selectedExecutiveRef.current?.id;
+      if (targetEmpId) {
+        setSelectedExecutive(prev => {
+          if (!prev) return prev;
+          const match = String(prev.employee_id || prev.id) === String(targetEmpId) || String(prev.employee_code) === String(targetEmpId);
+          if (match) {
+            return {
+              ...prev,
+              latitude: lat,
+              longitude: lng,
+              is_online: true,
+              last_seen_at: crumb.recorded_at || new Date().toISOString()
+            }
+          }
+          return prev;
+        });
+
+        setExecutives(prev => prev.map(ex => {
+          const match = String(ex.employee_id || ex.id) === String(targetEmpId) || String(ex.employee_code) === String(targetEmpId);
+          if (match) {
+            return {
+              ...ex,
+              latitude: lat,
+              longitude: lng,
+              is_online: true,
+              last_seen_at: crumb.recorded_at || new Date().toISOString()
+            }
+          }
+          return ex;
+        }));
+      }
+
+      // Animate live bike marker smoothly
+      try {
+        const distFromLastMoved = lastMovedPosRef.current ? haversineDistance(lastMovedPosRef.current.lat, lastMovedPosRef.current.lng, lat, lng) * 1000 : 999;
+        const speedKmh = crumb.speed != null ? Number(crumb.speed) * 3.6 : null;
+        const isMarkerJitter = (accuracy > 60 && distFromLastMoved < 40) || (distFromLastMoved < 10 && (speedKmh == null || speedKmh < 2.0));
+
+        if (!isMarkerJitter || !liveMarkerRef.current) {
+          lastMovedPosRef.current = { lat, lng };
+          const latlng = new window.google.maps.LatLng(lat, lng)
+          if (liveMarkerRef.current) {
+            _animateMarker(liveMarkerRef.current, lat, lng)
+          } else {
+            let initialHeading = 0
+            if (crumbsRef.current.length > 1) {
+              const lastIndex = crumbsRef.current.length - 1
+              const prev = crumbsRef.current[lastIndex - 1]
+              initialHeading = getBearing(Number(prev.latitude || prev.lat), Number(prev.longitude || prev.lng), lat, lng)
+            }
+            liveMarkerRef.current = createMapMarker(
+              latlng,
+              googleMapRef.current,
+              _buildLiveIcon('#8b5cf6', initialHeading, resolveRealName(selectedExecutiveRef.current)),
+              () => {
+                showInfoWindow(latlng, _buildLivePopupContent(selectedExecutiveRef.current, trackSessionRef.current, destClientRef.current))
+              },
+              'center'
+            )
+          }
         }
+      } catch (markerErr) {
+        console.warn("Failed to animate live marker:", markerErr)
       }
     }
 
-    if (accuracy > 35) {
-      status = 'REJECTED'
-      reason = `GPS Accuracy low (${accuracy}m > 35m limit)`
-    } else if (lastPt && crumbTime && lastPt.timestamp && crumbTime < lastPt.timestamp) {
-      status = 'REJECTED'
-      reason = `Non-chronological timestamp (${recAtStr} < previous point)`
-    } else if (lastPt && distM < 5) {
-      status = 'REJECTED'
-      reason = `Stationary GPS drift < 5m (${distM.toFixed(1)}m)`
-    } else if (lastPt && distM > 1000) {
-      status = 'REJECTED'
-      reason = `Impossible GPS jump > 1000m (${distM.toFixed(1)}m)`
-    } else if (lastPt && timeDiffSec > 0 && speedKmh > 150) {
-      status = 'REJECTED'
-      reason = `Excessive speed > 150 km/h (${speedKmh.toFixed(1)} km/h)`
-    }
+    // ─── PIPELINE B: TRAVELLED ROUTE POLYLINE UPDATES (Strictly Independent) ───
+    const valResult = isValidMovementPoint(crumb, lastConfirmedRoutePointRef.current);
+    console.log(`[ROUTE DIAGNOSTIC] Emp:${crumb.employee_id || 'N/A'} | Sess:${crumb.tracking_session_id || 'N/A'} | Loc:${crumb.id || 'N/A'} | Time:${recAtStr} | Lat:${lat} | Lng:${lng} | Status:${valResult.valid ? 'ACCEPTED' : 'FREEZE'} (${valResult.reason})`);
 
-    // Diagnostic Logging
-    console.log(`[ROUTE DIAGNOSTIC] Emp:${crumb.employee_id || 'N/A'} | Sess:${crumb.tracking_session_id || 'N/A'} | Loc:${crumb.id || 'N/A'} | Time:${recAtStr} | Lat:${lat} | Lng:${lng} | Dist:${distM.toFixed(1)}m | Speed:${speedKmh.toFixed(1)}km/h | Status:${status} (${reason})`)
+    if (valResult.valid && valResult.point) {
+      lastConfirmedRoutePointRef.current = valResult.point;
+      travelledRoutePointsRef.current.push(valResult.point);
 
-    if (status === 'REJECTED') {
-      return
-    }
+      if (crumbTime && !isNaN(crumbTime)) {
+        latestTimestampRef.current = Math.max(latestTimestampRef.current, crumbTime);
+      }
 
-    // Accept valid point into polyline path
-    const newPt = { lat, lng, timestamp: crumbTime }
-    pts.push(newPt)
-
-    if (crumbTime && !isNaN(crumbTime)) {
-      latestTimestampRef.current = Math.max(latestTimestampRef.current, crumbTime)
-    }
-
-    const now = Date.now()
-    setLastPingMs(now)
-    lastMovedTimeRef.current = now
-    setLatestExecPos({ lat, lng })
-
-    // Instantly sync executive status in state & sidebar
-    const targetEmpId = crumb.employee_id || crumb.employee_code || selectedExecutiveRef.current?.employee_id || selectedExecutiveRef.current?.id;
-    if (targetEmpId) {
-      setSelectedExecutive(prev => {
-        if (!prev) return prev;
-        const match = String(prev.employee_id || prev.id) === String(targetEmpId) || String(prev.employee_code) === String(targetEmpId);
-        if (match) {
-          return {
-            ...prev,
-            latitude: lat,
-            longitude: lng,
-            is_online: true,
-            last_seen_at: crumb.recorded_at || new Date().toISOString()
+      // Render raw validated polyline immediately
+      const rawPath = travelledRoutePointsRef.current.map(p => ({ lat: p.lat, lng: p.lng }));
+      if (rawPath.length >= 2) {
+        if (trackRouteRef.current) {
+          trackRouteRef.current.setPath(rawPath);
+          if (!trackRouteRef.current.getMap()) {
+            trackRouteRef.current.setMap(googleMapRef.current);
           }
+        } else {
+          trackRouteRef.current = new window.google.maps.Polyline({
+            path: rawPath,
+            geodesic: true,
+            strokeColor: '#dc2626',
+            strokeOpacity: 0.95,
+            strokeWeight: 5,
+            map: googleMapRef.current,
+            zIndex: 25
+          });
         }
-        return prev;
-      });
 
-      setExecutives(prev => prev.map(ex => {
-        const match = String(ex.employee_id || ex.id) === String(targetEmpId) || String(ex.employee_code) === String(targetEmpId);
-        if (match) {
-          return {
-            ...ex,
-            latitude: lat,
-            longitude: lng,
-            is_online: true,
-            last_seen_at: crumb.recorded_at || new Date().toISOString()
-          }
-        }
-        return ex;
-      }));
-    }
-
-    // Render polyline path strictly for valid points
-    const rawPath = pts.map(p => ({ lat: p.lat, lng: p.lng }))
-    if (rawPath.length >= 2) {
-      if (trackRouteRef.current) {
-        trackRouteRef.current.setPath(rawPath);
-        if (!trackRouteRef.current.getMap()) {
-          trackRouteRef.current.setMap(googleMapRef.current);
-        }
-      } else {
-        trackRouteRef.current = new window.google.maps.Polyline({
-          path: rawPath,
-          geodesic: true,
-          strokeColor: '#dc2626',
-          strokeOpacity: 0.95,
-          strokeWeight: 5,
-          map: googleMapRef.current,
-          zIndex: 25
-        });
+        // Trigger Google Routes / OSRM Road Alignment on validated movement points
+        _triggerBatchRoadMatching(travelledRoutePointsRef.current);
       }
     }
 
@@ -2861,6 +2935,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       destMarkerRef.current = null
     }
     trailPointsRef.current = []
+    travelledRoutePointsRef.current = []
+    lastConfirmedRoutePointRef.current = null
+    snappedPathRef.current = []
     crumbsRef.current = []
     setTrackBreadcrumbs([])
     setTrackSession(null)
@@ -2911,60 +2988,25 @@ export default function ManagerSmartMap({ hideHeader = false }) {
 
       // Run strict polyline segment validator & emit diagnostic logging
       const validTrailPts = []
+      let lastConfirmed = null
       for (const crumb of cleanCrumbs) {
-        const lat = Number(crumb.latitude)
-        const lng = Number(crumb.longitude)
+        const valResult = isValidMovementPoint(crumb, lastConfirmed)
         const recAtStr = crumb.recorded_at || crumb.timestamp || ''
-        const crumbTime = new Date(recAtStr || Date.now()).getTime()
-        const accuracy = Number(crumb.accuracy || 10)
-        const lastPt = validTrailPts.length > 0 ? validTrailPts[validTrailPts.length - 1] : null
+        console.log(`[ROUTE DIAGNOSTIC] Emp:${crumb.employee_id || targetEmpId} | Sess:${crumb.tracking_session_id || targetSessId || 'N/A'} | Loc:${crumb.id || 'N/A'} | Time:${recAtStr} | Lat:${crumb.latitude} | Lng:${crumb.longitude} | Status:${valResult.valid ? 'ACCEPTED' : 'FREEZE'} (${valResult.reason})`)
 
-        let distM = 0
-        let timeDiffSec = 0
-        let speedKmh = 0
-        let logStatus = 'ACCEPTED'
-        let reason = 'Valid historical point'
-
-        if (lastPt) {
-          distM = haversineDistance(lastPt.lat, lastPt.lng, lat, lng) * 1000
-          const lastTime = lastPt.timestamp || 0
-          if (crumbTime && lastTime) {
-            timeDiffSec = Math.max(0, (crumbTime - lastTime) / 1000)
-            if (timeDiffSec > 0) {
-              speedKmh = (distM / 1000) / (timeDiffSec / 3600)
-            }
-          }
-        }
-
-        if (accuracy > 35) {
-          logStatus = 'REJECTED'
-          reason = `Accuracy low (${accuracy}m > 35m limit)`
-        } else if (lastPt && crumbTime && lastPt.timestamp && crumbTime < lastPt.timestamp) {
-          logStatus = 'REJECTED'
-          reason = `Non-chronological timestamp (${recAtStr} < previous point)`
-        } else if (lastPt && distM < 5) {
-          logStatus = 'REJECTED'
-          reason = `Stationary GPS drift < 5m (${distM.toFixed(1)}m)`
-        } else if (lastPt && distM > 1000) {
-          logStatus = 'REJECTED'
-          reason = `Impossible GPS jump > 1000m (${distM.toFixed(1)}m)`
-        } else if (lastPt && timeDiffSec > 0 && speedKmh > 150) {
-          logStatus = 'REJECTED'
-          reason = `Excessive speed > 150 km/h (${speedKmh.toFixed(1)} km/h)`
-        }
-
-        console.log(`[ROUTE DIAGNOSTIC] Emp:${crumb.employee_id || targetEmpId} | Sess:${crumb.tracking_session_id || targetSessId || 'N/A'} | Loc:${crumb.id || 'N/A'} | Time:${recAtStr} | Lat:${lat} | Lng:${lng} | Dist:${distM.toFixed(1)}m | Speed:${speedKmh.toFixed(1)}km/h | Status:${logStatus} (${reason})`)
-
-        if (logStatus === 'ACCEPTED') {
-          const crumbKey = String(crumb.id || `${recAtStr}_${lat}_${lng}`)
+        if (valResult.valid && valResult.point) {
+          const crumbKey = String(crumb.id || `${recAtStr}_${crumb.latitude}_${crumb.longitude}`)
           processedCrumbKeysRef.current.add(crumbKey)
-          validTrailPts.push({ lat, lng, timestamp: crumbTime })
+          validTrailPts.push(valResult.point)
+          lastConfirmed = valResult.point
         }
       }
 
       crumbsRef.current = cleanCrumbs
       setTrackBreadcrumbs(cleanCrumbs)
       trailPointsRef.current = validTrailPts
+      travelledRoutePointsRef.current = validTrailPts
+      lastConfirmedRoutePointRef.current = lastConfirmed
 
       const isLoggedOut = Boolean(ex && (ex.is_online === false || ex.check_out_time || status === 'ended' || status === 'stopped' || status === 'logged_out' || status === 'offline'));
 
@@ -3081,7 +3123,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       }
 
       // ─── Draw traveled polyline for all valid session points ───
-      const rawPath = validTrailPts.map(p => ({ lat: p.lat, lng: p.lng }))
+      const rawPath = travelledRoutePointsRef.current.map(p => ({ lat: p.lat, lng: p.lng }))
       if (rawPath.length >= 2) {
         try {
           let startLat = session?.start_latitude != null ? Number(session.start_latitude) : rawPath[0].lat
@@ -3121,6 +3163,9 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               zIndex: 25
             });
           }
+
+          // Trigger Google Routes / OSRM Road Alignment on validated movement points
+          _triggerBatchRoadMatching(travelledRoutePointsRef.current);
         } catch (trailErr) {
           console.error("[SmartMap] Error rendering traveled trail:", trailErr)
         }
