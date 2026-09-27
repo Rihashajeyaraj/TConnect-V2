@@ -1,3 +1,4 @@
+import anyio
 from fastapi import APIRouter, Depends, status
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
@@ -19,7 +20,7 @@ async def list_expenses(
     service: ExpenseService = Depends(get_service)
 ):
     """Retrieve expense claims filtered by authenticated user."""
-    expenses = service.list_expenses(user_payload)
+    expenses = await anyio.to_thread.run_sync(service.list_expenses, user_payload)
     return StandardResponse.success_response(
         data=expenses,
         message="Expenses list retrieved successfully"
@@ -33,7 +34,7 @@ async def list_manager_pending_expenses(
     service: ExpenseService = Depends(get_service)
 ):
     """Retrieve pending team expense requests for logged-in Sales Manager."""
-    data = service.get_manager_pending_expenses(user_payload)
+    data = await anyio.to_thread.run_sync(service.get_manager_pending_expenses, user_payload)
     return StandardResponse.success_response(
         data=data,
         message="Manager team pending expenses retrieved successfully"
@@ -67,7 +68,7 @@ async def list_manager_expenses(
         "page": page,
         "limit": limit,
     }
-    data = service.get_manager_expenses(user_payload, params)
+    data = await anyio.to_thread.run_sync(service.get_manager_expenses, user_payload, params)
     return StandardResponse.success_response(
         data=data,
         message="Manager team expenses retrieved successfully"

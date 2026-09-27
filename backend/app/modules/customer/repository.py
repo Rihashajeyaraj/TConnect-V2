@@ -8,7 +8,7 @@ from app.core.logger import logger
 _in_memory_customers: List[Dict[str, Any]] = []
 _CUSTOMERS_CACHE: Optional[List[Dict[str, Any]]] = None
 _CUSTOMERS_CACHE_TIMESTAMP: float = 0.0
-_CUSTOMERS_CACHE_TTL: float = 30.0
+_CUSTOMERS_CACHE_TTL: float = 300.0
 
 
 def _clear_customers_cache():
@@ -648,11 +648,13 @@ class CustomerRepository:
             try:
                 res = self.supabase.schema("crm").table("customers").update(payload).or_(f"id.eq.{cust_id},customer_id.eq.{cust_id}").execute()
                 if res.data and len(res.data) > 0:
+                    _clear_customers_cache()
                     return res.data[0]
             except Exception:
                 try:
                     res = self.supabase.table("customers").update(payload).or_(f"id.eq.{cust_id},customer_id.eq.{cust_id}").execute()
                     if res.data and len(res.data) > 0:
+                        _clear_customers_cache()
                         return res.data[0]
                 except Exception as e:
                     logger.warning(f"Customer update attempt failed: {e}")
@@ -660,10 +662,13 @@ class CustomerRepository:
         for cust in _in_memory_customers:
             if str(cust.get("id")) == str(cust_id) or str(cust.get("customer_id")) == str(cust_id):
                 cust.update(updates)
+                _clear_customers_cache()
                 return cust
+        _clear_customers_cache()
         return updates
 
     def delete_customer(self, cust_id: str) -> bool:
+        _clear_customers_cache()
         deleted = False
         # 1. Try deleting from crm.customers
         try:

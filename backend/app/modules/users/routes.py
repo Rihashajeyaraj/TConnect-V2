@@ -1,3 +1,4 @@
+import anyio
 from fastapi import APIRouter, Depends, status, HTTPException
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
@@ -31,7 +32,7 @@ async def get_all_users(
     service: UserService = Depends(get_service)
 ):
     """Retrieve system employee user accounts scoped to the authenticated user's role and team."""
-    all_users = service.get_users()
+    all_users = await anyio.to_thread.run_sync(service.get_users)
     allowed = get_allowed_user_identifiers(user_payload)
     if allowed is not None:
         scoped_users = [u for u in all_users if is_record_accessible(u, allowed)]
@@ -50,7 +51,7 @@ async def get_manager_executive_hierarchy(
     service: UserService = Depends(get_service)
 ):
     """Retrieve full Manager -> Assigned Executives mapping and hierarchy."""
-    data = service.get_manager_executive_hierarchy()
+    data = await anyio.to_thread.run_sync(service.get_manager_executive_hierarchy)
     return StandardResponse.success_response(
         data=data,
         message="Manager and executive hierarchy retrieved successfully"

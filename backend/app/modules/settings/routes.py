@@ -1,3 +1,4 @@
+import anyio
 from fastapi import APIRouter, Depends
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
@@ -42,7 +43,7 @@ async def get_products(
     service: SettingsService = Depends(get_service)
 ):
     """Get organization products (accessible to all logged-in users)."""
-    products = service.get_products()
+    products = await anyio.to_thread.run_sync(service.get_products)
     return StandardResponse.success_response(
         data={"products": products},
         message="Products retrieved successfully"
@@ -55,7 +56,7 @@ async def get_settings(
     service: SettingsService = Depends(get_service)
 ):
     """Get system settings configuration."""
-    settings_data = service.get_settings()
+    settings_data = await anyio.to_thread.run_sync(service.get_settings)
     return StandardResponse.success_response(
         data=settings_data,
         message="Business settings retrieved successfully"

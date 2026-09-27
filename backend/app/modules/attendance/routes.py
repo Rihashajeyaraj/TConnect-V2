@@ -1,3 +1,4 @@
+import anyio
 from fastapi import APIRouter, Depends, Query, status, HTTPException
 from app.schemas.response import StandardResponse
 from app.core.dependencies import get_current_user_payload
@@ -396,7 +397,7 @@ async def get_attendance_logs(
     service: AttendanceService = Depends(get_service)
 ):
     """Retrieve attendance logs filtered by authenticated user."""
-    logs = service.list_logs(user_payload)
+    logs = await anyio.to_thread.run_sync(service.list_logs, user_payload)
     return StandardResponse.success_response(
         data=logs,
         message="Attendance logs retrieved successfully"

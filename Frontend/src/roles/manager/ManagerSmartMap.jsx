@@ -1078,8 +1078,15 @@ export default function ManagerSmartMap({ hideHeader = false }) {
       isSubscribed = false;
       if (managerWsReconnectTimerRef.current) clearTimeout(managerWsReconnectTimerRef.current);
       if (managerWsRef.current) {
-        try { managerWsRef.current.close(); } catch {}
+        const wsToClose = managerWsRef.current;
         managerWsRef.current = null;
+        try {
+          if (wsToClose.readyState === WebSocket.CONNECTING) {
+            wsToClose.onopen = () => { try { wsToClose.close(); } catch {} };
+          } else if (wsToClose.readyState === WebSocket.OPEN) {
+            wsToClose.close();
+          }
+        } catch {}
       }
     };
   }, []);
