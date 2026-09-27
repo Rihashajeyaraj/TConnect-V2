@@ -1,7 +1,7 @@
 // ── TwiteConnect Service Worker ───────────────────────────────────────────────
 // v4 — Web Push background badge support (iPhone + Android)
 // -----------------------------------------------------------------------------
-const CACHE_NAME = 'twiteconnect-v4'
+const CACHE_NAME = 'twiteconnect-v5'
 const BADGE_CACHE = 'tc-badge-v1'   // Stores latest unread count across push events
 
 const ASSETS_TO_CACHE = [
@@ -173,10 +173,22 @@ self.addEventListener('push', (event) => {
 
   event.waitUntil(
     (async () => {
-      // 1. Show the notification card FIRST (Android notification shade + iOS lock-screen)
-      //    badge MUST be a PNG — SVG is not supported on Android
-      try {
-        await self.registration.showNotification(title, {
+      const tasks = []
+
+      // 1. Update OS app-icon badge IMMEDIATELY in parallel
+      //    Must be initiated concurrently so iOS 16.4+ WebPush PWA badge updates
+      //    instantly before the SW lifecycle is suspended by WebKit.
+      if (hasCount) {
+        tasks.push(
+          updateOsBadge(unread).catch((err) => {
+            console.warn('[SW] badge update failed', err)
+          })
+        )
+      }
+
+      // 2. Show the notification card (Android notification shade + iOS lock-screen)
+      tasks.push(
+        self.registration.showNotification(title, {
           body,
           icon:     '/pwa-192x192.png',
           badge:    '/pwa-192x192.png',   // ← PNG required; SVG silently breaks Android badge
@@ -187,21 +199,14 @@ self.addEventListener('push', (event) => {
             url,
             unread_count: hasCount ? unread : null
           }
+        }).then(() => {
+          console.log('[SW] showNotification success')
+        }).catch((err) => {
+          console.error('[SW] showNotification failed', err)
         })
-        console.log('[SW] showNotification success')
-      } catch (err) {
-        console.error('[SW] showNotification failed', err)
-      }
+      )
 
-      // 2. Update OS app-icon badge independently (works on iOS 16.4+ PWA, Android Chrome 81+)
-      if (hasCount) {
-        try {
-          await updateOsBadge(unread)
-          console.log('[SW] badge update success')
-        } catch (err) {
-          console.warn('[SW] badge update failed', err)
-        }
-      }
+      await Promise.allSettled(tasks)
     })()
   )
 })
