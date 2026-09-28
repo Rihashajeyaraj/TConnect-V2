@@ -21,11 +21,44 @@ class SalesTargetService:
                 data["manager_email"] = str(user_payload.get("email") or "")
         return self.repository.create_target(data)
 
-    def update_target(self, target_id: str, updates: SalesTargetUpdate) -> Dict[str, Any]:
+    def update_target(self, target_id: str, updates: SalesTargetUpdate, context: Any = None) -> Dict[str, Any]:
+        if context:
+            self._enforce_target_scope(target_id, context)
         return self.repository.update_target(target_id, updates.dict(exclude_unset=True))
 
-    def delete_target(self, target_id: str) -> bool:
+    def delete_target(self, target_id: str, context: Any = None) -> bool:
+        if context:
+            self._enforce_target_scope(target_id, context)
         return self.repository.delete_target(target_id)
+
+    def _enforce_target_scope(self, target_id: str, context: Any) -> None:
+        target = self.repository.get_target_by_id(target_id)
+        if not target:
+            scope = context.get_scope("sales.targets.manage")
+            if scope != "ORG":
+                from app.exceptions.base import ForbiddenException
+                raise ForbiddenException("Access denied: Target not found or outside scope.")
+            return
+
+        target_owner_id = str(target.get("executive_id") or target.get("manager_id") or target.get("executive_code") or "")
+        team_ids = []
+        for k in ["manager_id", "executive_id", "executive_code"]:
+            val = target.get(k)
+            if val:
+                team_ids.append(str(val))
+
+        try:
+            from app.modules.users.repository import UserRepository
+            user_repo = UserRepository()
+            assigned = user_repo.get_assigned_executives_for_manager(context.employee_id) or user_repo.get_assigned_executives_for_manager(context.user_id) or []
+            for ex in assigned:
+                for k in ["id", "user_id", "employee_id", "employee_code"]:
+                    if ex.get(k):
+                        team_ids.append(str(ex[k]))
+        except Exception:
+            pass
+
+        context.enforce_scope("sales.targets.manage", target_owner_id, team_member_ids=team_ids)
 
     def get_team_revenue_breakdown(
         self,

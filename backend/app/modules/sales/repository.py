@@ -62,6 +62,20 @@ class SalesTargetRepository:
 
         return fetched
 
+    def get_target_by_id(self, target_id: str) -> Optional[Dict[str, Any]]:
+        for schema_attempt in ["sales", "public"]:
+            try:
+                if schema_attempt == "sales":
+                    res = self.supabase.schema("sales").table("sales_target").select("*").eq("id", target_id).execute()
+                else:
+                    res = self.supabase.table("sales_target").select("*").eq("id", target_id).execute()
+
+                if res.data and len(res.data) > 0:
+                    return dict(res.data[0])
+            except Exception as e:
+                logger.debug(f"get_target_by_id notice in {schema_attempt}: {e}")
+        return None
+
     def create_target(self, data: Dict[str, Any]) -> Dict[str, Any]:
         target_uuid = str(uuid.uuid4())
         now_iso = datetime.utcnow().isoformat()

@@ -6,7 +6,8 @@ from app.modules.crm.repository import CRMRepository
 from app.modules.customer.repository import CustomerRepository
 from app.modules.visit.repository import VisitRepository
 from app.core.logger import logger
-from app.core.dependencies import get_current_user_payload
+from app.core.dependencies import get_current_user_payload, RequirePermissions, UserContext
+from app.exceptions.base import ForbiddenException
 from app.modules.spatial.snapshot_service import capture_and_store_snapshot, get_captured_snapshots_for_session, get_validated_session_breadcrumbs
 
 
@@ -3248,15 +3249,24 @@ def sync_and_prune_route_snapshots(session_id: str, employee_id: str, employee_n
 
 
 @router.post("/snapshots/prune")
-async def prune_expired_snapshots_api():
+async def prune_expired_snapshots_api(
+    context: UserContext = Depends(RequirePermissions("system.settings.edit"))
+):
     """
     Manual/Cron API trigger to prune route snapshots older than 30 days.
+    Requires system.settings.edit capability with ORG scope.
     """
-    if not supabase:
+    if context.get_scope("system.settings.edit") != "ORG":
+        raise ForbiddenException("Access denied: Snapshot pruning requires ORG scope for 'system.settings.edit'.")
+
+    import datetime
+    from app.database.supabase import get_supabase_client, get_supabase_admin_client
+    sp = get_supabase_admin_client() or get_supabase_client()
+    if not sp:
         return {"success": False, "message": "Supabase client not connected"}
     try:
         cutoff_date = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(days=30)).isoformat()
-        res = supabase.table("route_snapshots").delete().lt("created_at", cutoff_date).execute()
+        res = sp.table("route_snapshots").delete().lt("created_at", cutoff_date).execute()
         deleted_count = len(res.data) if (res and res.data) else 0
         return {
             "success": True,

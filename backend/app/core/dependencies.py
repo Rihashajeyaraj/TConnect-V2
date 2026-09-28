@@ -27,7 +27,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "reports.view": True, "reports.export": True, "system.reports.view": True, "system.reports.export": True,
             "system.audit.view": True, "system.audit.export": True,
             "admin.users.view": True, "admin.users.create": True, "admin.users.edit": True, "admin.users.disable": True, "admin.permissions.manage": True,
-            "system.settings.view": True, "system.settings.edit": True
+            "system.settings.view": True, "system.settings.edit": True,
+            "sales.targets.view": True, "sales.targets.manage": True
         },
         "scopes": {
             "crm.leads.view": "ORG", "crm.leads.edit": "ORG", "crm.leads.delete": "ORG",
@@ -36,7 +37,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "hrms.attendance.view_all": "ORG", "hrms.leaves.approve_all": "ORG",
             "expenses.view": "ORG", "expenses.create": "ORG", "expenses.edit": "ORG", "expenses.approve": "ORG",
             "finance.expenses.view": "ORG", "finance.expenses.view_team": "ORG", "finance.expenses.approve": "ORG",
-            "reports.view": "ORG", "reports.export": "ORG", "system.reports.view": "ORG", "system.reports.export": "ORG"
+            "reports.view": "ORG", "reports.export": "ORG", "system.reports.view": "ORG", "system.reports.export": "ORG",
+            "sales.targets.view": "ORG", "sales.targets.manage": "ORG"
         }
     },
     "Super Admin": {
@@ -53,7 +55,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "reports.view": True, "reports.export": True, "system.reports.view": True, "system.reports.export": True,
             "system.audit.view": True, "system.audit.export": True,
             "admin.users.view": True, "admin.users.create": True, "admin.users.edit": True, "admin.users.disable": True, "admin.permissions.manage": True,
-            "system.settings.view": True, "system.settings.edit": True
+            "system.settings.view": True, "system.settings.edit": True,
+            "sales.targets.view": True, "sales.targets.manage": True
         },
         "scopes": {
             "crm.leads.view": "ORG", "crm.leads.edit": "ORG", "crm.leads.delete": "ORG",
@@ -62,7 +65,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "hrms.attendance.view_all": "ORG", "hrms.leaves.approve_all": "ORG",
             "expenses.view": "ORG", "expenses.create": "ORG", "expenses.edit": "ORG", "expenses.approve": "ORG",
             "finance.expenses.view": "ORG", "finance.expenses.view_team": "ORG", "finance.expenses.approve": "ORG",
-            "reports.view": "ORG", "reports.export": "ORG", "system.reports.view": "ORG", "system.reports.export": "ORG"
+            "reports.view": "ORG", "reports.export": "ORG", "system.reports.view": "ORG", "system.reports.export": "ORG",
+            "sales.targets.view": "ORG", "sales.targets.manage": "ORG"
         }
     },
     "Admin": {
@@ -79,7 +83,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "reports.view": True, "reports.export": True, "system.reports.view": True, "system.reports.export": True,
             "system.audit.view": True, "system.audit.export": True,
             "admin.users.view": True, "admin.users.create": True, "admin.users.edit": True, "admin.users.disable": True, "admin.permissions.manage": True,
-            "system.settings.view": True, "system.settings.edit": True
+            "system.settings.view": True, "system.settings.edit": True,
+            "sales.targets.view": True, "sales.targets.manage": True
         },
         "scopes": {
             "crm.leads.view": "ORG", "crm.leads.edit": "ORG", "crm.leads.delete": "ORG",
@@ -88,7 +93,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "hrms.attendance.view_all": "ORG", "hrms.leaves.approve_all": "ORG",
             "expenses.view": "ORG", "expenses.create": "ORG", "expenses.edit": "ORG", "expenses.approve": "ORG",
             "finance.expenses.view": "ORG", "finance.expenses.view_team": "ORG", "finance.expenses.approve": "ORG",
-            "reports.view": "ORG", "reports.export": "ORG", "system.reports.view": "ORG", "system.reports.export": "ORG"
+            "reports.view": "ORG", "reports.export": "ORG", "system.reports.view": "ORG", "system.reports.export": "ORG",
+            "sales.targets.view": "ORG", "sales.targets.manage": "ORG"
         }
     },
     "Sales Manager": {
@@ -105,7 +111,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "reports.view": True, "reports.export": True, "system.reports.view": True, "system.reports.export": True,
             "system.audit.view": False, "system.audit.export": False,
             "admin.users.view": False, "admin.users.create": False, "admin.users.edit": False, "admin.users.disable": False, "admin.permissions.manage": False,
-            "system.settings.view": True, "system.settings.edit": False
+            "system.settings.view": True, "system.settings.edit": False,
+            "sales.targets.view": True, "sales.targets.manage": True
         },
         "scopes": {
             "crm.leads.view": "TEAM", "crm.leads.edit": "TEAM", "crm.leads.delete": "TEAM",
@@ -114,7 +121,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "hrms.attendance.view_team": "TEAM", "hrms.leaves.approve_team": "TEAM",
             "expenses.view": "TEAM", "expenses.create": "TEAM", "expenses.edit": "TEAM", "expenses.approve": "TEAM",
             "finance.expenses.view": "TEAM", "finance.expenses.view_team": "TEAM", "finance.expenses.approve": "TEAM",
-            "reports.view": "TEAM", "reports.export": "TEAM", "system.reports.view": "TEAM", "system.reports.export": "TEAM"
+            "reports.view": "TEAM", "reports.export": "TEAM", "system.reports.view": "TEAM", "system.reports.export": "TEAM",
+            "sales.targets.view": "TEAM", "sales.targets.manage": "TEAM"
         }
     },
     "Team Lead": {
@@ -131,7 +139,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "reports.view": True, "reports.export": False, "system.reports.view": True, "system.reports.export": False,
             "system.audit.view": False, "system.audit.export": False,
             "admin.users.view": False, "admin.users.create": False, "admin.users.edit": False, "admin.users.disable": False, "admin.permissions.manage": False,
-            "system.settings.view": False, "system.settings.edit": False
+            "system.settings.view": False, "system.settings.edit": False,
+            "sales.targets.view": True, "sales.targets.manage": False
         },
         "scopes": {
             "crm.leads.view": "TEAM", "crm.leads.edit": "TEAM",
@@ -140,7 +149,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "hrms.attendance.view_team": "TEAM", "hrms.leaves.approve_team": "TEAM",
             "expenses.view": "TEAM", "expenses.create": "TEAM", "expenses.edit": "TEAM", "expenses.approve": "TEAM",
             "finance.expenses.view": "TEAM", "finance.expenses.view_team": "TEAM", "finance.expenses.approve": "TEAM",
-            "reports.view": "TEAM", "reports.export": "OWN", "system.reports.view": "TEAM", "system.reports.export": "OWN"
+            "reports.view": "TEAM", "reports.export": "OWN", "system.reports.view": "TEAM", "system.reports.export": "OWN",
+            "sales.targets.view": "TEAM", "sales.targets.manage": "TEAM"
         }
     },
     "Sales Executive": {
@@ -157,7 +167,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "reports.view": True, "reports.export": False, "system.reports.view": True, "system.reports.export": False,
             "system.audit.view": False, "system.audit.export": False,
             "admin.users.view": False, "admin.users.create": False, "admin.users.edit": False, "admin.users.disable": False, "admin.permissions.manage": False,
-            "system.settings.view": False, "system.settings.edit": False
+            "system.settings.view": False, "system.settings.edit": False,
+            "sales.targets.view": True, "sales.targets.manage": False
         },
         "scopes": {
             "crm.leads.view": "OWN", "crm.leads.create": "OWN", "crm.leads.edit": "OWN",
@@ -166,7 +177,8 @@ SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
             "hrms.attendance.view_own": "OWN", "hrms.leaves.apply": "OWN",
             "expenses.view": "OWN", "expenses.create": "OWN", "expenses.edit": "OWN", "expenses.approve": "OWN",
             "finance.expenses.view": "OWN", "finance.expenses.view_own": "OWN",
-            "reports.view": "OWN", "reports.export": "OWN", "system.reports.view": "OWN", "system.reports.export": "OWN"
+            "reports.view": "OWN", "reports.export": "OWN", "system.reports.view": "OWN", "system.reports.export": "OWN",
+            "sales.targets.view": "OWN", "sales.targets.manage": "OWN"
         }
     }
 }

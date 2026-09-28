@@ -4,6 +4,8 @@ from typing import Dict, Any, Optional
 import time
 from app.schemas.response import StandardResponse
 from app.database.supabase import get_supabase_client
+from app.core.dependencies import RequirePermissions, UserContext
+from app.exceptions.base import ForbiddenException
 
 router = APIRouter(prefix="/db-test", tags=["Database Storage Test"])
 
@@ -18,11 +20,20 @@ _in_memory_db = []
 
 
 @router.post("/store", response_model=StandardResponse)
-async def store_test_data(record: TestRecord):
+async def store_test_data(
+    record: TestRecord,
+    context: UserContext = Depends(RequirePermissions("system.settings.edit"))
+):
     """
     Store a test record in the Supabase database.
-    Tests real DB write capability and reports exact storage status.
+    Requires system.settings.edit capability with ORG scope.
     """
+    if not context.has_permission("system.settings.edit"):
+        raise ForbiddenException("Permission denied: Missing required capability 'system.settings.edit'.")
+
+    if context.get_scope("system.settings.edit") != "ORG":
+        raise ForbiddenException("Access denied: DB testing requires ORG scope for 'system.settings.edit'.")
+
     item = {
         "title": record.title,
         "description": record.description,
@@ -58,10 +69,19 @@ async def store_test_data(record: TestRecord):
 
 
 @router.get("/records", response_model=StandardResponse)
-async def get_test_data():
+async def get_test_data(
+    context: UserContext = Depends(RequirePermissions("system.settings.edit"))
+):
     """
     Fetch all stored records from Supabase database to verify read capability.
+    Requires system.settings.edit capability with ORG scope.
     """
+    if not context.has_permission("system.settings.edit"):
+        raise ForbiddenException("Permission denied: Missing required capability 'system.settings.edit'.")
+
+    if context.get_scope("system.settings.edit") != "ORG":
+        raise ForbiddenException("Access denied: DB testing requires ORG scope for 'system.settings.edit'.")
+
     try:
         supabase = get_supabase_client()
         res = supabase.table("test_records").select("*").execute()

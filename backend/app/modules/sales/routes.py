@@ -2,7 +2,8 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import List, Dict, Any, Optional
 from app.modules.sales.service import SalesTargetService
 from app.modules.sales.schemas import SalesTargetCreate, SalesTargetUpdate, SalesTargetResponse
-from app.core.dependencies import get_current_user_payload
+from app.core.dependencies import get_current_user_payload, RequirePermissions, UserContext
+from app.exceptions.base import ForbiddenException
 from app.core.logger import logger
 
 router = APIRouter(prefix="", tags=["Sales Management"])
@@ -29,20 +30,43 @@ def create_target(
 
 
 @router.put("/targets/{target_id}", response_model=Dict[str, Any])
-def update_target(target_id: str, updates: SalesTargetUpdate):
+def update_target(
+    target_id: str,
+    updates: SalesTargetUpdate,
+    context: UserContext = Depends(RequirePermissions("sales.targets.manage"))
+):
     """Update an existing sales target."""
+    if not context.has_permission("sales.targets.manage"):
+        raise ForbiddenException("Permission denied: Missing required capability 'sales.targets.manage'.")
     try:
-        return service.update_target(target_id, updates)
+        return service.update_target(target_id, updates, context=context)
+    except ForbiddenException:
+        raise
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error updating sales target: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.delete("/targets/{target_id}")
-def delete_target(target_id: str):
+def delete_target(
+    target_id: str,
+    context: UserContext = Depends(RequirePermissions("sales.targets.manage"))
+):
     """Delete a sales target."""
-    service.delete_target(target_id)
-    return {"status": "success", "message": f"Target {target_id} deleted successfully"}
+    if not context.has_permission("sales.targets.manage"):
+        raise ForbiddenException("Permission denied: Missing required capability 'sales.targets.manage'.")
+    try:
+        service.delete_target(target_id, context=context)
+        return {"status": "success", "message": f"Target {target_id} deleted successfully"}
+    except ForbiddenException:
+        raise
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting sales target: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get("/revenue-breakdown", response_model=Dict[str, Any])
