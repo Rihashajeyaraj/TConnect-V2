@@ -938,7 +938,7 @@ def match_route_breadcrumbs(payload: Dict[str, Any] = Body(...)):
     # 2. Try OSRM Map Matching Service with gaps=ignore & tidy=true
     try:
         match_url = f"http://router.project-osrm.org/match/v1/driving/{coords_str}?overview=full&geometries=geojson&gaps=ignore&tidy=true"
-        r = requests.get(match_url, timeout=4)
+        r = requests.get(match_url, timeout=2.5)
         if r.status_code == 200:
             res_data = r.json()
             if res_data.get("code") == "Ok":
@@ -955,28 +955,7 @@ def match_route_breadcrumbs(payload: Dict[str, Any] = Body(...)):
     except Exception as match_err:
         logger.warning(f"OSRM match service notice: {match_err}")
 
-    # 3. Fallback: Snap individual sampled waypoints to nearest road edge using OSRM Nearest API
-    # (DO NOT use route/v1/driving as it invents fake detour loops on streets the executive never visited!)
-    snapped_nearest = []
-    try:
-        for pt in sampled:
-            near_url = f"http://router.project-osrm.org/nearest/v1/driving/{pt['lng']:.6f},{pt['lat']:.6f}?number=1"
-            nr = requests.get(near_url, timeout=1.5)
-            if nr.status_code == 200:
-                n_data = nr.json()
-                waypoints = n_data.get("waypoints") or []
-                if waypoints and waypoints[0].get("location"):
-                    loc = waypoints[0]["location"]
-                    snapped_nearest.append({"lat": round(loc[1], 6), "lng": round(loc[0], 6)})
-                else:
-                    snapped_nearest.append(pt)
-            else:
-                snapped_nearest.append(pt)
-        if snapped_nearest and len(snapped_nearest) >= 2:
-            return {"success": True, "polyline": snapped_nearest, "provider": "osrm_nearest"}
-    except Exception as near_err:
-        logger.warning(f"OSRM nearest fallback notice: {near_err}")
-
+    # 3. Fast fallback: Return pre-filtered, jitter-cleaned GPS breadcrumbs immediately (< 5ms)
     return {"success": True, "polyline": filtered_pts, "provider": "filtered_raw"}
 
 
@@ -2332,7 +2311,7 @@ async def get_today_executive_sessions(
     sessions = []
 
     try:
-        sess_res = sp.schema("hrms").table("tracking_sessions").select("*").or_(or_conds).gte("start_time", f"{today_str}T00:00:00").order("start_time", asc=True).execute()
+        sess_res = sp.schema("hrms").table("tracking_sessions").select("*").or_(or_conds).gte("start_time", today_str).order("start_time", asc=True).execute()
         sessions = sess_res.data or []
     except Exception as e:
         logger.warning(f"Failed to query today's sessions: {e}")
@@ -2581,7 +2560,7 @@ async def get_location_history(
                 "id,employee_id,tracking_session_id,latitude,longitude,accuracy,speed,heading,recorded_at"
             ).eq("tracking_session_id", str(session["id"]))
             if not session_id:
-                q_loc = q_loc.gte("recorded_at", f"{today_str}T00:00:00")
+                q_loc = q_loc.gte("recorded_at", today_str)
             loc_res = q_loc.order("recorded_at", desc=False).execute()
             raw_bc = loc_res.data or []
             
@@ -2757,7 +2736,12 @@ async def get_executive_history_report(
     try:
         sess_query = sp.schema("hrms").table("tracking_sessions").select("*")
         if target_date:
-            sess_query = sess_query.gte("start_time", f"{target_date}T00:00:00").lte("start_time", f"{target_date}T23:59:59")
+            try:
+                dt_target = datetime.datetime.strptime(target_date, "%Y-%m-%d").date()
+                next_day_str = (dt_target + datetime.timedelta(days=1)).isoformat()
+                sess_query = sess_query.gte("start_time", target_date).lt("start_time", next_day_str)
+            except Exception:
+                sess_query = sess_query.gte("start_time", target_date)
         sess_res = sess_query.order("start_time", desc=True).limit(100).execute()
         raw_sessions = sess_res.data or []
     except Exception as err:
@@ -3104,7 +3088,7 @@ async def lookup_point_in_time_location(
         if emp_code:
             query_or += f",employee_id.eq.{emp_code}"
             
-        bc_res = sp.schema("hrms").table("tracking_locations").select("*").or_(query_or).gte("recorded_at", f"{date}T00:00:00").lte("recorded_at", f"{date}T23:59:59").execute()
+        bc_res = sp.schema("hrms").table("tracking_locations").select("*").or_(query_or).gte("recorded_at", date).execute()
         bcs = bc_res.data or []
         for bc in bcs:
             rec_t = str(bc.get("recorded_at") or "")

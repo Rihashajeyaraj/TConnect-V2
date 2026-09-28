@@ -438,7 +438,14 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         try {
           let query = supabase.schema('hrms').from('tracking_sessions').select('*').order('start_time', { ascending: false }).limit(100)
           if (d && d !== 'all') {
-            query = query.gte('start_time', `${d}T00:00:00`).lte('start_time', `${d}T23:59:59`)
+            try {
+              const dtParts = d.split('-').map(Number);
+              const nextDayObj = new Date(dtParts[0], dtParts[1] - 1, dtParts[2] + 1);
+              const nextDayStr = nextDayObj.toISOString().substring(0, 10);
+              query = query.gte('start_time', d).lt('start_time', nextDayStr);
+            } catch (_) {
+              query = query.gte('start_time', d);
+            }
           }
           let { data: supaSessions } = await query
 
