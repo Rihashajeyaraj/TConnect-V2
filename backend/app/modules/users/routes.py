@@ -1,13 +1,19 @@
+from typing import Dict, Any, Optional, List
 import anyio
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, status, HTTPException
 from app.schemas.response import StandardResponse
-from app.core.dependencies import get_current_user_payload
+from app.core.dependencies import (
+    get_current_user_payload, RequirePermissions, UserContext,
+    get_employee_permission_map, set_employee_permissions,
+    set_employee_single_permission, reset_employee_permissions_to_default,
+    invalidate_employee_permission_cache
+)
 from app.core.scoping import get_allowed_user_identifiers, is_record_accessible, normalize_user_role
 from app.modules.users.schemas import UserCreate, UserUpdate, UserResponse, AssignManagerRequest
 from app.modules.users.service import UserService
 from app.modules.auth.schemas import ApproveResetRequest
 from app.modules.auth.service import AuthService
-from app.modules.settings.permissions import CanManageSettings
 from app.exceptions.base import ForbiddenException
 from app.modules.audit.service import create_audit_log
 from app.core.logger import logger
@@ -15,27 +21,30 @@ from app.core.logger import logger
 router = APIRouter(prefix="/users", tags=["User Account Management"])
 
 
-
 def get_service() -> UserService:
     return UserService()
-
-
-def _require_admin_or_superadmin(user_payload: dict):
-    role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
-    if role not in ("admin", "super_admin", "ceo"):
-        raise ForbiddenException("Only Admin or Super Admin/CEO can assign Sales Executives to a Sales Manager.")
 
 
 @router.get("", response_model=StandardResponse)
 async def get_all_users(
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("admin.users.view")),
     service: UserService = Depends(get_service)
 ):
-    """Retrieve system employee user accounts scoped to the authenticated user's role and team."""
+    """Retrieve system employee user accounts scoped to the authenticated user's permissions and data scope."""
     all_users = await anyio.to_thread.run_sync(service.get_users)
-    allowed = get_allowed_user_identifiers(user_payload)
-    if allowed is not None:
-        scoped_users = [u for u in all_users if is_record_accessible(u, allowed)]
+    scope = context.get_scope("admin.users.view")
+    if scope == "OWN":
+        scoped_users = [
+            u for u in all_users 
+            if str(u.get("id") or u.get("employee_id") or u.get("employee_code") or "") in (context.employee_id, context.user_id)
+        ]
+    elif scope == "TEAM":
+        allowed = get_allowed_user_identifiers(user_payload)
+        if allowed is not None:
+            scoped_users = [u for u in all_users if is_record_accessible(u, allowed)]
+        else:
+            scoped_users = all_users
     else:
         scoped_users = all_users
 
@@ -48,6 +57,7 @@ async def get_all_users(
 @router.get("/hierarchy", response_model=StandardResponse)
 async def get_manager_executive_hierarchy(
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("admin.users.view")),
     service: UserService = Depends(get_service)
 ):
     """Retrieve full Manager -> Assigned Executives mapping and hierarchy."""
@@ -62,11 +72,10 @@ async def get_manager_executive_hierarchy(
 async def assign_sales_executives(
     data: AssignManagerRequest,
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("admin.users.edit")),
     service: UserService = Depends(get_service)
 ):
-    """Assign one or more Sales Executives to a Sales Manager (Admin / Super Admin / CEO only)."""
-    _require_admin_or_superadmin(user_payload)
-    
+    """Assign one or more Sales Executives to a Sales Manager (requires admin.users.edit permission)."""
     # Fetch existing executives to compare managers before change
     executives_before = {}
     try:
@@ -107,20 +116,19 @@ async def assign_sales_executives(
 async def get_assigned_executives(
     manager_id: str,
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("admin.users.view")),
     service: UserService = Depends(get_service)
 ):
-    """Get all Sales Executives assigned to a specific Sales Manager (Manager team isolation enforced)."""
-    caller_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
+    """Get all Sales Executives assigned to a specific Sales Manager."""
+    scope = context.get_scope("admin.users.view")
+    if scope == "OWN":
+        raise ForbiddenException("Employees with OWN scope are not authorized to view manager team records.")
+
     caller_id = str(user_payload.get("sub") or user_payload.get("user_id") or "").strip()
     caller_email = str(user_payload.get("email") or "").lower().strip()
     caller_code = str(user_payload.get("employee_code") or user_payload.get("employee_id") or "").strip()
 
-    # Sales Executives cannot inspect team assignments
-    if caller_role == "sales_executive":
-        raise ForbiddenException("Sales Executives are not authorized to view team management records.")
-
-    # Sales Managers can ONLY view their own team
-    if caller_role == "sales_manager":
+    if scope == "TEAM":
         m_clean = str(manager_id).lower().strip()
         is_own_team = (
             m_clean in (caller_id.lower(), caller_email, caller_code.lower())
@@ -141,7 +149,7 @@ async def get_assigned_executives(
 async def create_user(
     data: UserCreate,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageSettings),
+    context: UserContext = Depends(RequirePermissions("admin.users.create")),
     service: UserService = Depends(get_service)
 ):
     """Create a new employee user portal account."""
@@ -164,7 +172,7 @@ async def update_user(
     user_id: str,
     data: UserUpdate,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageSettings),
+    context: UserContext = Depends(RequirePermissions("admin.users.edit")),
     service: UserService = Depends(get_service)
 ):
     """Update employee user account credentials and details."""
@@ -196,7 +204,7 @@ async def update_user(
 async def delete_user(
     user_id: str,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageSettings),
+    context: UserContext = Depends(RequirePermissions("admin.users.disable")),
     service: UserService = Depends(get_service)
 ):
     """Delete employee user account."""
@@ -212,7 +220,7 @@ async def delete_user(
     )
 
 
-# ── Password Reset Request Routes (Admin Only) ──────────────────────────────
+# ── Password Reset Request Routes (Permission Protected) ───────────────────
 
 def get_auth_service() -> AuthService:
     return AuthService()
@@ -221,10 +229,10 @@ def get_auth_service() -> AuthService:
 @router.get("/password-reset-requests", response_model=StandardResponse)
 async def list_password_reset_requests(
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageSettings),
+    context: UserContext = Depends(RequirePermissions("admin.users.view")),
     service: AuthService = Depends(get_auth_service),
 ):
-    """Admin: List all pending employee password reset requests."""
+    """List all pending employee password reset requests."""
     requests = service.get_all_reset_requests()
     return StandardResponse.success_response(
         data=requests,
@@ -237,10 +245,10 @@ async def approve_password_reset(
     email: str,
     payload: ApproveResetRequest,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageSettings),
+    context: UserContext = Depends(RequirePermissions("admin.users.edit")),
     service: AuthService = Depends(get_auth_service),
 ):
-    """Admin: Approve a password reset request — sets new password in Supabase and notifies employee."""
+    """Approve a password reset request — sets new password in Supabase and notifies employee."""
     result = service.approve_reset_request(email, payload.new_password, user_payload)
     return StandardResponse.success_response(
         data=result,
@@ -252,13 +260,161 @@ async def approve_password_reset(
 async def reject_password_reset(
     email: str,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageSettings),
+    context: UserContext = Depends(RequirePermissions("admin.users.edit")),
     service: AuthService = Depends(get_auth_service),
 ):
-    """Admin: Reject a password reset request."""
+    """Reject a password reset request."""
     result = service.reject_reset_request(email, user_payload)
     return StandardResponse.success_response(
         data=result,
         message=result.get("message", "Password reset request rejected.")
     )
 
+
+# ── Employee Permission Management Endpoints ─────────────────────────────────
+
+class UpdateUserPermissionsPayload(BaseModel):
+    permissions: Optional[Dict[str, bool]] = None
+    scopes: Optional[Dict[str, str]] = None
+    single_permission_key: Optional[str] = None
+    is_granted: Optional[bool] = None
+    data_scope: Optional[str] = None
+
+
+@router.get("/{user_id}/permissions", response_model=StandardResponse)
+async def get_user_permissions(
+    user_id: str,
+    user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("admin.permissions.manage")),
+):
+    """Get customized employee permissions map."""
+    current_emp_code = str(
+        user_payload.get("employee_code") or user_payload.get("employee_id") or ""
+    ).strip()
+    current_user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "").strip()
+    
+    is_self = (user_id == current_emp_code or user_id == current_user_id or user_id.lower() == "self")
+    target_id = (context.employee_id or context.user_id) if is_self else user_id
+
+    perm_map = get_employee_permission_map(target_id)
+    return StandardResponse.success_response(
+        data=perm_map,
+        message=f"Permissions for user {target_id} retrieved successfully"
+    )
+
+
+@router.put("/{user_id}/permissions", response_model=StandardResponse)
+async def update_user_permissions(
+    user_id: str,
+    payload: UpdateUserPermissionsPayload,
+    user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("admin.permissions.manage")),
+):
+    """Update employee permissions or individual permission key/scope."""
+    current_emp_code = str(
+        user_payload.get("employee_code") or user_payload.get("employee_id") or ""
+    ).strip()
+    current_user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "").strip()
+    
+    # 1. Employee cannot modify own permissions (self-modification forbidden)
+    is_self = (
+        user_id == current_emp_code
+        or user_id == current_user_id
+        or user_id == context.employee_id
+        or user_id == context.user_id
+        or user_id.lower() == "self"
+    )
+    if is_self:
+        raise ForbiddenException("Employees are strictly forbidden from modifying their own permissions.")
+
+    # 2. Check ORG scope escalation: if trying to grant ORG scope, caller must have ORG scope for admin.permissions.manage
+    if payload.scopes:
+        for pkey, scope_val in payload.scopes.items():
+            if str(scope_val).upper() == "ORG" and context.get_scope("admin.permissions.manage") != "ORG":
+                raise ForbiddenException(f"Cannot grant ORG scope for '{pkey}' without holding ORG scope.")
+    if payload.data_scope and str(payload.data_scope).upper() == "ORG":
+        if context.get_scope("admin.permissions.manage") != "ORG":
+            raise ForbiddenException("Cannot grant ORG scope without holding ORG scope.")
+
+    # 3. Perform update
+    if payload.single_permission_key is not None:
+        updated = set_employee_single_permission(
+            employee_id=user_id,
+            permission_key=payload.single_permission_key,
+            is_granted=payload.is_granted if payload.is_granted is not None else True,
+            data_scope=payload.data_scope or "OWN",
+            auth_user_id=current_user_id
+        )
+    else:
+        updated = set_employee_permissions(
+            employee_id=user_id,
+            permissions=payload.permissions or {},
+            scopes=payload.scopes or {},
+            auth_user_id=current_user_id
+        )
+
+    # Invalidate cache
+    invalidate_employee_permission_cache(user_id)
+
+    create_audit_log(
+        "EMPLOYEE_PERMISSIONS_UPDATED", "organization.employee_permissions", user_payload,
+        entity_id=user_id, module="User Management",
+        description=f"Permissions updated for employee {user_id}",
+        new_value={"permissions": payload.permissions, "scopes": payload.scopes}
+    )
+
+    return StandardResponse.success_response(
+        data=updated,
+        message=f"Permissions for user {user_id} updated successfully"
+    )
+
+
+@router.post("/{user_id}/permissions/reset", response_model=StandardResponse)
+async def reset_user_permissions(
+    user_id: str,
+    payload: Optional[Dict[str, Any]] = None,
+    user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("admin.permissions.manage")),
+):
+    """Reset employee permissions to designation default template."""
+    current_emp_code = str(
+        user_payload.get("employee_code") or user_payload.get("employee_id") or ""
+    ).strip()
+    current_user_id = str(user_payload.get("sub") or user_payload.get("user_id") or "").strip()
+
+    is_self = (
+        user_id == current_emp_code
+        or user_id == current_user_id
+        or user_id == context.employee_id
+        or user_id == context.user_id
+        or user_id.lower() == "self"
+    )
+    if is_self:
+        raise ForbiddenException("Employees are strictly forbidden from resetting their own permissions.")
+
+    designation = (payload or {}).get("designation", "")
+    if not designation:
+        try:
+            from app.modules.hrms.repository import HRMSRepository
+            emp = HRMSRepository().get_employee_by_id(user_id)
+            if emp:
+                designation = emp.get("designation") or emp.get("role") or ""
+        except Exception:
+            pass
+
+    reset_map = reset_employee_permissions_to_default(
+        employee_id=user_id,
+        designation=designation or "Sales Executive",
+        auth_user_id=current_user_id
+    )
+
+    create_audit_log(
+        "EMPLOYEE_PERMISSIONS_RESET", "organization.employee_permissions", user_payload,
+        entity_id=user_id, module="User Management",
+        description=f"Permissions reset to designation defaults for employee {user_id}",
+    )
+
+    return StandardResponse.success_response(
+        data=reset_map,
+        message=f"Permissions for user {user_id} reset to designation defaults successfully"
+    )

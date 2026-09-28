@@ -5,7 +5,7 @@ from typing import Dict, Any
 from fastapi import APIRouter, Depends, Query
 
 from app.schemas.response import StandardResponse
-from app.core.dependencies import get_current_user_payload
+from app.core.dependencies import get_current_user_payload, RequirePermissions, UserContext
 from app.core.scoping import normalize_user_role
 from app.exceptions.base import ForbiddenException
 from app.modules.users.repository import UserRepository
@@ -14,18 +14,11 @@ from app.database.supabase import check_db_health, get_supabase_admin_client, ge
 router = APIRouter(prefix="/admin", tags=["Admin Operations"])
 
 
-def check_admin_access(user_payload: dict = Depends(get_current_user_payload)) -> None:
-    """Dependency to enforce that only users with system admin roles can call admin APIs."""
-    role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
-    if role not in ("super_admin", "admin", "ceo"):
-        raise ForbiddenException("Access to Admin Dashboard statistics is restricted to system administrators.")
-
-
 @router.get("/dashboard/kpis", response_model=StandardResponse)
 async def get_admin_dashboard_kpis(
     period: str = Query("all", description="Dashboard date filter period: today, week, month, all"),
     user_payload: dict = Depends(get_current_user_payload),
-    _access: None = Depends(check_admin_access)
+    context: UserContext = Depends(RequirePermissions("admin.users.view"))
 ):
     """Retrieve dynamic system operations KPIs for the Admin Dashboard."""
     # 1. Fetch Users and Admin counts via fast direct DB select

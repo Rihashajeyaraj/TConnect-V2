@@ -2,11 +2,11 @@ import time
 import logging
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, File
 from app.schemas.response import StandardResponse
-from app.core.dependencies import get_current_user_payload
+from app.core.dependencies import get_current_user_payload, RequirePermissions, UserContext
 from app.core.scoping import get_allowed_user_identifiers, is_record_accessible, normalize_user_role
+from app.exceptions.base import ForbiddenException
 from app.modules.hrms.schemas import EmployeeCreate, EmployeeUpdate, EmployeeResponse, EmployeeAvatarPayload
 from app.modules.hrms.service import HRMSService
-from app.modules.hrms.permissions import CanViewEmployees, CanManageEmployees
 from app.modules.audit.service import create_audit_log
 from app.database.supabase import get_supabase_admin_client, get_supabase_client
 from app.core.config import settings
@@ -90,14 +90,20 @@ def _best_self_identifier(user_payload: dict) -> str:
 @router.get("/employees", response_model=StandardResponse)
 async def list_employees(
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanViewEmployees),
+    context: UserContext = Depends(RequirePermissions("hrms.employees.view")),
     service: HRMSService = Depends(get_service)
 ):
-    """List employees in the organization, scoped by role and team hierarchy."""
+    """List employees in the organization, scoped by permissions and data scope."""
     all_employees = service.list_employees()
-    allowed = get_allowed_user_identifiers(user_payload)
-    if allowed is not None:
-        scoped_employees = [e for e in all_employees if is_record_accessible(e, allowed)]
+    scope = context.get_scope("hrms.employees.view")
+    if scope == "OWN":
+        scoped_employees = [e for e in all_employees if str(e.get("employee_id") or e.get("id") or e.get("employee_code") or "") in (context.employee_id, context.user_id)]
+    elif scope == "TEAM":
+        allowed = get_allowed_user_identifiers(user_payload)
+        if allowed is not None:
+            scoped_employees = [e for e in all_employees if is_record_accessible(e, allowed)]
+        else:
+            scoped_employees = all_employees
     else:
         scoped_employees = all_employees
 
@@ -111,7 +117,7 @@ async def list_employees(
 async def create_employee(
     data: EmployeeCreate,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageEmployees),
+    context: UserContext = Depends(RequirePermissions("hrms.employees.create")),
     service: HRMSService = Depends(get_service)
 ):
     """Create a new employee profile."""
@@ -133,10 +139,10 @@ async def create_employee(
 async def get_employee(
     emp_id: str,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanViewEmployees),
+    context: UserContext = Depends(RequirePermissions("hrms.employees.view")),
     service: HRMSService = Depends(get_service)
 ):
-    """Get employee details by ID with role-scoped access control."""
+    """Get employee details by ID with permission-scoped access control."""
     current_emp_code = str(
         user_payload.get("employee_code")
         or user_payload.get("employee_id")
@@ -152,15 +158,14 @@ async def get_employee(
         or ""
     ).strip()
 
-    if emp_id == current_emp_code or emp_id.lower() == "self" or emp_id == current_user_id:
+    is_self = (emp_id == current_emp_code or emp_id.lower() == "self" or emp_id == current_user_id)
+    if is_self:
         emp_id = _resolve_and_link_self(user_payload, service)
 
-    allowed = get_allowed_user_identifiers(user_payload)
     emp = service.get_employee(emp_id)
-    if allowed is not None and emp:
-        if not is_record_accessible(emp, allowed):
-            from app.exceptions.base import ForbiddenException
-            raise ForbiddenException("You do not have permission to view this employee profile.")
+    if not is_self and emp:
+        target_emp_id = str(emp.get("employee_id") or emp.get("id") or emp.get("employee_code") or emp_id)
+        context.enforce_scope("hrms.employees.view", target_emp_id)
 
     return StandardResponse.success_response(
         data=emp,
@@ -173,6 +178,7 @@ async def update_employee(
     emp_id: str,
     data: EmployeeUpdate,
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("hrms.employees.edit")),
     service: HRMSService = Depends(get_service)
 ):
     """Update employee profile with change-diff audit logging."""
@@ -190,7 +196,6 @@ async def update_employee(
         or user_payload.get("user_metadata", {}).get("sub")
         or ""
     ).strip()
-    user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
 
     is_self = (
         emp_id == current_emp_code
@@ -200,12 +205,11 @@ async def update_employee(
     if is_self:
         emp_id = _resolve_and_link_self(user_payload, service)
 
-    # ── Permission guard ────────────────────────────────────────────────────
+    # ── Permission & Scope guard ──────────────────────────────────────────────
     if not is_self:
-        if user_role not in ("admin", "super_admin", "ceo"):
-            raise HTTPException(status_code=403, detail="Not authorized to manage other employees' profiles")
-    elif user_role not in ("admin", "super_admin", "ceo"):
-        # Regular / manager employee editing self — strip company-controlled fields
+        context.enforce_scope("hrms.employees.edit", emp_id)
+    elif not context.has_permission("hrms.employees.status") and not context.has_permission("admin.users.manage"):
+        # Non-admin employee editing self — strip company-controlled fields
         unset_fields = data.model_dump(exclude_unset=True)
         admin_fields = {
             "department", "designation", "role", "is_active", "status",
@@ -319,6 +323,7 @@ async def upload_employee_avatar(
     emp_id: str,
     payload: EmployeeAvatarPayload,
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("hrms.employees.edit")),
     service: HRMSService = Depends(get_service)
 ):
     """Upload profile photo to Supabase Storage and update hrms.employees.profile_photo in DB."""
@@ -336,7 +341,6 @@ async def upload_employee_avatar(
         or user_payload.get("user_metadata", {}).get("sub")
         or ""
     ).strip()
-    user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
 
     is_self = (
         emp_id == current_emp_code
@@ -345,9 +349,8 @@ async def upload_employee_avatar(
     )
     if is_self:
         emp_id = _resolve_and_link_self(user_payload, service)
-
-    if not is_self and user_role not in ("admin", "super_admin", "ceo"):
-        raise HTTPException(status_code=403, detail="Not authorized to update photo for other employees")
+    else:
+        context.enforce_scope("hrms.employees.edit", emp_id)
 
     import base64
     raw_b64 = payload.image_base64
@@ -453,10 +456,11 @@ async def upload_employee_avatar(
 async def delete_employee(
     emp_id: str,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageEmployees),
+    context: UserContext = Depends(RequirePermissions("hrms.employees.status")),
     service: HRMSService = Depends(get_service)
 ):
-    """Delete employee profile."""
+    """Delete employee profile protected by hrms.employees.status."""
+    context.enforce_scope("hrms.employees.status", emp_id)
     existing = None
     try:
         existing = service.get_employee(emp_id)
@@ -484,18 +488,18 @@ async def delete_employee(
     )
 
 
-# ── Salary Management Endpoints (Admin and CEO Only) ──────────────────────────
+# ── Salary Management Endpoints ───────────────────────────────────────────────
 from app.modules.hrms.schemas import SalaryUpdate
 
 @router.get("/salaries", response_model=StandardResponse)
 async def list_salaries(
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("hrms.employees.view")),
     service: HRMSService = Depends(get_service)
 ):
-    """List all employee salaries (Admin and CEO only)."""
-    user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
-    if user_role not in ("admin", "super_admin", "ceo"):
-        raise HTTPException(status_code=403, detail="Not authorized to access salary data")
+    """List all employee salaries (requires ORG scope for hrms.employees.view)."""
+    if context.get_scope("hrms.employees.view") != "ORG":
+        raise ForbiddenException("Access denied: Salary list requires ORG scope for 'hrms.employees.view'.")
     
     salaries = service.repo.get_salaries()
     return StandardResponse.success_response(
@@ -507,12 +511,11 @@ async def list_salaries(
 async def get_salary(
     emp_id: str,
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("hrms.employees.view")),
     service: HRMSService = Depends(get_service)
 ):
-    """Get employee salary details (Admin and CEO only)."""
-    user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
-    if user_role not in ("admin", "super_admin", "ceo"):
-        raise HTTPException(status_code=403, detail="Not authorized to access salary data")
+    """Get employee salary details protected by hrms.employees.view capability and scope."""
+    context.enforce_scope("hrms.employees.view", emp_id)
     
     salary = service.repo.get_salary_by_employee_id(emp_id)
     if not salary:
@@ -528,12 +531,11 @@ async def update_salary(
     emp_id: str,
     data: SalaryUpdate,
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("hrms.employees.edit")),
     service: HRMSService = Depends(get_service)
 ):
-    """Update employee salary details (Admin and CEO only)."""
-    user_role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role"))
-    if user_role not in ("admin", "super_admin", "ceo"):
-        raise HTTPException(status_code=403, detail="Not authorized to access salary data")
+    """Update employee salary details protected by hrms.employees.edit capability and scope."""
+    context.enforce_scope("hrms.employees.edit", emp_id)
     
     try:
         updated = service.repo.update_salary(emp_id, data.monthly_salary)

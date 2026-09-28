@@ -1,7 +1,7 @@
 import anyio
 from fastapi import APIRouter, Depends, HTTPException, status
 from app.schemas.response import StandardResponse
-from app.core.dependencies import get_current_user_payload
+from app.core.dependencies import get_current_user_payload, RequirePermissions, UserContext
 from app.modules.customer.schemas import (
     CustomerCreate,
     CustomerUpdate,
@@ -9,8 +9,8 @@ from app.modules.customer.schemas import (
     ConversionRequest,
 )
 from app.modules.customer.service import CustomerService
-from app.modules.customer.permissions import CanViewCustomers, CanManageCustomers
 from app.modules.audit.service import create_audit_log
+from app.exceptions.base import ForbiddenException
 
 router = APIRouter(prefix="/customer", tags=["Customer Management"])
 
@@ -27,7 +27,7 @@ async def list_customers(
     page: int | None = None,
     limit: int | None = None,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanViewCustomers),
+    context: UserContext = Depends(RequirePermissions("crm.customers.view")),
     service: CustomerService = Depends(get_service),
 ):
     """List all customer accounts scoped to the authenticated user."""
@@ -42,11 +42,15 @@ async def list_customers(
 async def get_customer(
     cust_id: str,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanViewCustomers),
+    context: UserContext = Depends(RequirePermissions("crm.customers.view")),
     service: CustomerService = Depends(get_service),
 ):
     """Get customer details by ID."""
     cust = service.get_customer(cust_id)
+    if cust:
+        target_id = str(cust.get("assigned_to_id") or cust.get("employee_code") or cust.get("employee_id") or cust.get("created_by") or "")
+        if target_id:
+            context.enforce_scope("crm.customers.view", target_id)
     return StandardResponse.success_response(
         data=cust,
         message="Customer details retrieved successfully",
@@ -59,16 +63,10 @@ async def get_customer(
 async def create_customer(
     data: CustomerCreate,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageCustomers),
+    context: UserContext = Depends(RequirePermissions("crm.customers.create")),
     service: CustomerService = Depends(get_service),
 ):
-    """
-    Direct Add Customer.
-    lead_id is OPTIONAL — pass it only when the customer is known to
-    come from an existing lead. If omitted, a standalone customer is
-    created without generating a fake lead.
-    Duplicate prevention is still applied (email / phone / company+person).
-    """
+    """Direct Add Customer protected by crm.customers.create."""
     try:
         result = service.create_customer(data)
         create_audit_log(
@@ -100,18 +98,10 @@ async def convert_lead_to_customer(
     lead_id: str,
     data: ConversionRequest = ConversionRequest(),
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageCustomers),
+    context: UserContext = Depends(RequirePermissions("crm.customers.convert")),
     service: CustomerService = Depends(get_service),
 ):
-    """
-    Lead -> Customer conversion.
-    1. Validates lead UUID.
-    2. Checks for existing customer by lead_id (no duplicates).
-    3. Creates customer in crm.customers if not found.
-    4. Marks crm.leads status = 'Converted to Customer'.
-    5. Preserves lead history (does not delete).
-    Returns: { customer, created, source, match_reason }
-    """
+    """Lead -> Customer conversion protected by crm.customers.convert capability."""
     extra = data.model_dump(exclude_none=True)
     try:
         result = service.convert_lead_to_customer(lead_id, extra, user_payload)
@@ -142,20 +132,10 @@ async def convert_followup_to_customer(
     followup_id: str,
     data: ConversionRequest = ConversionRequest(),
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageCustomers),
+    context: UserContext = Depends(RequirePermissions("crm.customers.convert")),
     service: CustomerService = Depends(get_service),
 ):
-    """
-    Follow-up -> Customer conversion.
-    1. Resolves follow-up record and linked lead (if any).
-    2. Checks for existing customer (duplicate prevention).
-    3. Creates customer in crm.customers if needed.
-    4. Updates follow-up: status=Converted, customer_id=actual customer UUID.
-    5. Updates linked lead status if present.
-    6. Follow-up is preserved in history (not deleted).
-    7. Follow-up will no longer appear in active follow-up lists.
-    Returns: { customer, created, source, match_reason }
-    """
+    """Follow-up -> Customer conversion protected by crm.customers.convert capability."""
     extra = data.model_dump(exclude_none=True)
     try:
         result = service.convert_followup_to_customer(followup_id, extra, user_payload)
@@ -190,19 +170,10 @@ async def convert_visit_to_customer(
     visit_id: str,
     data: ConversionRequest = ConversionRequest(),
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageCustomers),
+    context: UserContext = Depends(RequirePermissions("crm.customers.convert")),
     service: CustomerService = Depends(get_service),
 ):
-    """
-    Visit -> Customer conversion.
-    1. Resolves visit record; extracts lead_id if available.
-    2. Checks for existing customer (duplicate prevention).
-    3. Creates customer in crm.customers if needed.
-    4. Links customer_id to visit record.
-    5. Updates linked lead status if present.
-    6. Visit history preserved (not deleted).
-    Returns: { customer, created, source, match_reason }
-    """
+    """Visit -> Customer conversion protected by crm.customers.convert capability."""
     extra = data.model_dump(exclude_none=True)
     try:
         result = service.convert_visit_to_customer(visit_id, extra, user_payload)
@@ -234,14 +205,19 @@ async def update_customer(
     cust_id: str,
     data: CustomerUpdate,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageCustomers),
+    context: UserContext = Depends(RequirePermissions("crm.customers.edit")),
     service: CustomerService = Depends(get_service),
 ):
-    """Update customer contact details."""
-    # Fetch existing customer to compare assignments
+    """Update customer contact details protected by crm.customers.edit capability."""
     try:
         existing_cust = service.get_customer(cust_id)
-        prev_assigned = existing_cust.get("assigned_to") or existing_cust.get("assigned_to_email")
+        if existing_cust:
+            target_id = str(existing_cust.get("assigned_to_id") or existing_cust.get("employee_code") or existing_cust.get("employee_id") or existing_cust.get("created_by") or "")
+            if target_id:
+                context.enforce_scope("crm.customers.edit", target_id)
+        prev_assigned = existing_cust.get("assigned_to") or existing_cust.get("assigned_to_email") if existing_cust else None
+    except ForbiddenException:
+        raise
     except Exception:
         existing_cust = None
         prev_assigned = None
@@ -279,10 +255,16 @@ async def update_customer(
 async def delete_customer(
     cust_id: str,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageCustomers),
+    context: UserContext = Depends(RequirePermissions("crm.customers.delete")),
     service: CustomerService = Depends(get_service),
 ):
-    """Delete a customer account record from crm.customers."""
+    """Delete a customer account record from crm.customers protected by crm.customers.delete."""
+    existing_cust = service.get_customer(cust_id)
+    if existing_cust:
+        target_id = str(existing_cust.get("assigned_to_id") or existing_cust.get("employee_code") or existing_cust.get("employee_id") or existing_cust.get("created_by") or "")
+        if target_id:
+            context.enforce_scope("crm.customers.delete", target_id)
+
     service.delete_customer(cust_id)
     create_audit_log(
         "CUSTOMER_DELETED", "crm.customers", user_payload,
@@ -294,44 +276,39 @@ async def delete_customer(
         message="Customer deleted successfully",
     )
 
+
 from pydantic import BaseModel
 from typing import List, Optional
 
 class BulkReassignCustomersPayload(BaseModel):
     customer_ids: List[str]
     new_employee_id: str
-    reassignment_reason: Optional[str] = "CEO Bulk Reassignment"
+    reassignment_reason: Optional[str] = "Bulk Reassignment"
+
 
 @router.post("/customers/reassign", response_model=StandardResponse)
 async def reassign_customers(
     payload: BulkReassignCustomersPayload,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanManageCustomers),
+    context: UserContext = Depends(RequirePermissions("crm.customers.edit")),
     service: CustomerService = Depends(get_service)
 ):
-    from app.core.scoping import normalize_user_role
-    role = normalize_user_role(user_payload.get("role") or user_payload.get("user_metadata", {}).get("role") or "")
-    if role not in ("admin", "super_admin"):
-        from fastapi import HTTPException
-        raise HTTPException(status_code=403, detail="Only Admin can perform bulk reassignment.")
-
+    """Bulk reassign customers protected by crm.customers.edit capability."""
     try:
         success_count, updated_customers = service.bulk_reassign_customers(
             customer_ids=payload.customer_ids,
             new_employee_id=payload.new_employee_id,
-            reassigned_by=user_payload.get("name") or user_payload.get("email") or "Admin",
+            reassigned_by=user_payload.get("name") or user_payload.get("email") or "User",
             reason=payload.reassignment_reason
         )
         if success_count == 0:
-            from fastapi import HTTPException
             raise HTTPException(status_code=500, detail="No customers were updated in the database. Check the customer IDs and try again.")
 
-        from app.modules.audit.service import create_audit_log
         create_audit_log(
             "CLIENT_REASSIGNED",
             "crm.customers",
             user_payload,
-            description=f"Admin reassigned {success_count} client(s) to employee '{payload.new_employee_id}'. Reason: {payload.reassignment_reason or 'Admin Reassignment'}",
+            description=f"User reassigned {success_count} client(s) to employee '{payload.new_employee_id}'. Reason: {payload.reassignment_reason or 'Reassignment'}",
             new_value={"new_employee_id": payload.new_employee_id, "customer_ids": payload.customer_ids}
         )
 
@@ -339,7 +316,8 @@ async def reassign_customers(
             data={"reassigned_count": success_count, "updated_customers": updated_customers},
             message=f"Successfully reassigned {success_count} customers."
         )
+    except HTTPException:
+        raise
     except Exception as e:
-        from fastapi import HTTPException
-        # Propagate actual exception details cleanly with CORS headers
         raise HTTPException(status_code=500, detail=f"Database or service error: {str(e)}")
+

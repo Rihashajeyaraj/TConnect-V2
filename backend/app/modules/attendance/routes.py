@@ -1,10 +1,10 @@
 import anyio
 from fastapi import APIRouter, Depends, Query, status, HTTPException
 from app.schemas.response import StandardResponse
-from app.core.dependencies import get_current_user_payload
+from app.core.dependencies import get_current_user_payload, RequirePermissions, UserContext
+from app.exceptions.base import ForbiddenException
 from app.modules.attendance.schemas import ClockInRequest, ClockOutRequest, EnrollmentRequest
 from app.modules.attendance.service import AttendanceService
-from app.modules.attendance.permissions import CanViewAttendance, CanRecordAttendance
 from app.modules.audit.service import create_audit_log
 from app.core.logger import logger
 
@@ -96,6 +96,7 @@ async def get_enrollment_status(
     employee_id: str = Query(None),
     email: str = Query(""),
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("hrms.attendance.view_own")),
     service: AttendanceService = Depends(get_service)
 ):
     """Retrieve one-time biometric/facial enrollment status for employee."""
@@ -111,12 +112,11 @@ async def get_enrollment_status(
 async def enroll_employee(
     data: EnrollmentRequest,
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("hrms.attendance.mark")),
     service: AttendanceService = Depends(get_service)
 ):
     """Save one-time facial/biometric enrollment data."""
-    from app.core.scoping import normalize_user_role
-    norm_role = normalize_user_role(user_payload.get("role") or "")
-    is_privileged = norm_role in ("admin", "super_admin", "ceo", "system_admin")
+    is_privileged = context.has_permission("hrms.employees.edit") or context.has_permission("hrms.attendance.approve")
     
     if not is_privileged or not data.employee_id:
         data.employee_id = str(user_payload.get("employee_code") or user_payload.get("sub") or "EMP000012")
@@ -393,7 +393,7 @@ async def generate_challenge(
 @router.get("", response_model=StandardResponse)
 async def get_attendance_logs(
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanViewAttendance),
+    context: UserContext = Depends(RequirePermissions("hrms.attendance.view_own")),
     service: AttendanceService = Depends(get_service)
 ):
     """Retrieve attendance logs filtered by authenticated user."""
@@ -408,7 +408,7 @@ async def get_attendance_logs(
 async def clock_in(
     data: ClockInRequest,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanRecordAttendance),
+    context: UserContext = Depends(RequirePermissions("hrms.attendance.mark")),
     service: AttendanceService = Depends(get_service)
 ):
     """Record clock-in with GPS location for the authenticated user."""
@@ -497,7 +497,7 @@ async def clock_in(
 async def clock_out(
     data: ClockOutRequest,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanRecordAttendance),
+    context: UserContext = Depends(RequirePermissions("hrms.attendance.mark")),
     service: AttendanceService = Depends(get_service)
 ):
     """Record clock-out with GPS location for the authenticated user."""
@@ -564,9 +564,10 @@ async def clock_out(
 async def submit_leave_request(
     data: dict,
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("hrms.leaves.apply")),
     service: AttendanceService = Depends(get_service)
 ):
-    """Submit Leave / Permission request by Sales Executive."""
+    """Submit Leave / Permission request protected by hrms.leaves.apply capability."""
     user_name = str(user_payload.get("name") or user_payload.get("full_name") or "")
     user_email = str(user_payload.get("email") or "").lower().strip()
     user_code = str(user_payload.get("employee_code") or user_payload.get("employee_id") or "")
@@ -596,9 +597,10 @@ async def submit_leave_request(
 @router.get("/leave", response_model=StandardResponse)
 async def get_leave_requests(
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("hrms.leaves.view")),
     service: AttendanceService = Depends(get_service)
 ):
-    """Get Leave & Permission requests scoped by user or team manager."""
+    """Get Leave & Permission requests protected by hrms.leaves.view capability."""
     requests = service.get_leave_requests(user_payload)
     return StandardResponse.success_response(
         data=requests,
@@ -611,9 +613,18 @@ async def update_leave_status(
     request_id: str,
     data: dict,
     user_payload: dict = Depends(get_current_user_payload),
+    context: UserContext = Depends(RequirePermissions("hrms.leaves.approve_team")),
     service: AttendanceService = Depends(get_service)
 ):
-    """Approve or Reject Leave / Permission request by Sales Manager / Admin / CEO."""
+    """Approve or Reject Leave / Permission request protected by hrms.leaves.approve_team capability and scope."""
+    all_leaves = service.get_leave_requests(user_payload)
+    target_leave = next((l for l in all_leaves if str(l.get("id")) == str(request_id) or str(l.get("leave_id")) == str(request_id) or str(l.get("leave_request_id")) == str(request_id)), None)
+    
+    if target_leave:
+        target_emp_id = str(target_leave.get("employee_code") or target_leave.get("employee_id") or target_leave.get("executive_email") or "")
+        if target_emp_id and not context.has_permission("hrms.leaves.approve_all"):
+            context.enforce_scope("hrms.leaves.approve_team", target_emp_id)
+
     new_status = data.get("status") or "Approved"
     comment = data.get("comment") or data.get("manager_comment") or ""
     try:

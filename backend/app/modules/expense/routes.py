@@ -1,10 +1,10 @@
 import anyio
 from fastapi import APIRouter, Depends, status
 from app.schemas.response import StandardResponse
-from app.core.dependencies import get_current_user_payload
+from app.core.dependencies import get_current_user_payload, RequirePermissions, UserContext
 from app.modules.expense.schemas import ExpenseCreate, ExpenseApproval, ExpenseResponse
 from app.modules.expense.service import ExpenseService
-from app.modules.expense.permissions import CanViewExpenses, CanApproveExpenses
+from app.exceptions.base import ForbiddenException
 
 router = APIRouter(prefix="/expenses", tags=["Expense Management"])
 
@@ -16,13 +16,23 @@ def get_service() -> ExpenseService:
 @router.get("", response_model=StandardResponse)
 async def list_expenses(
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanViewExpenses),
+    context: UserContext = Depends(RequirePermissions("expenses.view")),
     service: ExpenseService = Depends(get_service)
 ):
-    """Retrieve expense claims filtered by authenticated user."""
-    expenses = await anyio.to_thread.run_sync(service.list_expenses, user_payload)
+    """Retrieve expense claims filtered by authenticated user and data scope."""
+    all_expenses = await anyio.to_thread.run_sync(service.list_expenses, user_payload)
+    scope = context.get_scope("expenses.view")
+    
+    if scope == "OWN":
+        scoped = [
+            e for e in all_expenses
+            if str(e.get("employee_id") or e.get("user_id") or e.get("employee_code") or e.get("email") or "") in (context.employee_id, context.user_id, context.email)
+        ]
+    else:
+        scoped = all_expenses
+
     return StandardResponse.success_response(
-        data=expenses,
+        data=scoped,
         message="Expenses list retrieved successfully"
     )
 
@@ -30,10 +40,10 @@ async def list_expenses(
 @router.get("/manager/pending", response_model=StandardResponse)
 async def list_manager_pending_expenses(
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanViewExpenses),
+    context: UserContext = Depends(RequirePermissions("expenses.approve")),
     service: ExpenseService = Depends(get_service)
 ):
-    """Retrieve pending team expense requests for logged-in Sales Manager."""
+    """Retrieve pending team expense requests for authorized manager."""
     data = await anyio.to_thread.run_sync(service.get_manager_pending_expenses, user_payload)
     return StandardResponse.success_response(
         data=data,
@@ -53,10 +63,10 @@ async def list_manager_expenses(
     page: int = 1,
     limit: int = 50,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanViewExpenses),
+    context: UserContext = Depends(RequirePermissions("expenses.view")),
     service: ExpenseService = Depends(get_service)
 ):
-    """Retrieve team expense requests & summary metrics for logged-in Sales Manager."""
+    """Retrieve team expense requests & summary metrics for logged-in user."""
     params = {
         "manager_id": manager_id,
         "sales_executive_id": sales_executive_id,
@@ -79,7 +89,7 @@ async def list_manager_expenses(
 async def create_expense(
     data: ExpenseCreate,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanViewExpenses),
+    context: UserContext = Depends(RequirePermissions("expenses.create")),
     service: ExpenseService = Depends(get_service)
 ):
     """Submit a new expense claim."""
@@ -95,10 +105,16 @@ async def approve_or_reject_expense(
     exp_id: str,
     approval: ExpenseApproval,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanApproveExpenses),
+    context: UserContext = Depends(RequirePermissions("expenses.approve")),
     service: ExpenseService = Depends(get_service)
 ):
     """Approve or reject an expense claim with authorization check."""
+    exp_record = service.repo.get_expense_by_id(exp_id)
+    if exp_record:
+        target_emp_id = str(exp_record.get("employee_id") or exp_record.get("user_id") or exp_record.get("employee_code") or "")
+        if target_emp_id:
+            context.enforce_scope("expenses.approve", target_emp_id)
+
     exp = service.update_expense_status(exp_id, approval, user_payload)
     return StandardResponse.success_response(
         data=exp,
@@ -111,10 +127,16 @@ async def approve_expense_patch(
     exp_id: str,
     data: dict = None,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanApproveExpenses),
+    context: UserContext = Depends(RequirePermissions("expenses.approve")),
     service: ExpenseService = Depends(get_service)
 ):
     """Approve an expense claim with authorization check."""
+    exp_record = service.repo.get_expense_by_id(exp_id)
+    if exp_record:
+        target_emp_id = str(exp_record.get("employee_id") or exp_record.get("user_id") or exp_record.get("employee_code") or "")
+        if target_emp_id:
+            context.enforce_scope("expenses.approve", target_emp_id)
+
     remarks = (data or {}).get("remarks") or (data or {}).get("manager_remarks") or "Approved by Sales Manager."
     exp = service.change_status(exp_id, "APPROVED", remarks, user_payload)
     return StandardResponse.success_response(
@@ -128,10 +150,16 @@ async def reject_expense_patch(
     exp_id: str,
     data: dict = None,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanApproveExpenses),
+    context: UserContext = Depends(RequirePermissions("expenses.approve")),
     service: ExpenseService = Depends(get_service)
 ):
     """Reject an expense claim with authorization check."""
+    exp_record = service.repo.get_expense_by_id(exp_id)
+    if exp_record:
+        target_emp_id = str(exp_record.get("employee_id") or exp_record.get("user_id") or exp_record.get("employee_code") or "")
+        if target_emp_id:
+            context.enforce_scope("expenses.approve", target_emp_id)
+
     remarks = (data or {}).get("remarks") or (data or {}).get("manager_remarks") or (data or {}).get("reason") or "Rejected by Sales Manager."
     exp = service.change_status(exp_id, "REJECTED", remarks, user_payload)
     return StandardResponse.success_response(
@@ -145,10 +173,16 @@ async def return_expense_patch(
     exp_id: str,
     data: dict = None,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanApproveExpenses),
+    context: UserContext = Depends(RequirePermissions("expenses.approve")),
     service: ExpenseService = Depends(get_service)
 ):
     """Return an expense claim for correction with authorization check."""
+    exp_record = service.repo.get_expense_by_id(exp_id)
+    if exp_record:
+        target_emp_id = str(exp_record.get("employee_id") or exp_record.get("user_id") or exp_record.get("employee_code") or "")
+        if target_emp_id:
+            context.enforce_scope("expenses.approve", target_emp_id)
+
     remarks = (data or {}).get("remarks") or (data or {}).get("manager_remarks") or "Returned for correction."
     exp = service.change_status(exp_id, "RETURNED", remarks, user_payload)
     return StandardResponse.success_response(
@@ -162,7 +196,7 @@ async def forward_expense_patch(
     exp_id: str,
     data: dict = None,
     user_payload: dict = Depends(get_current_user_payload),
-    rbac: None = Depends(CanViewExpenses),
+    context: UserContext = Depends(RequirePermissions("expenses.approve")),
     service: ExpenseService = Depends(get_service)
 ):
     """Forward an expense claim to Manager (used by Team Lead)."""
@@ -172,4 +206,3 @@ async def forward_expense_patch(
         data=exp,
         message="Expense claim forwarded to Manager successfully"
     )
-

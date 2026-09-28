@@ -1,17 +1,6 @@
-from app.core.dependencies import RequireRoles
-from app.core.constants import RoleEnum
+from app.core.dependencies import RequirePermissions
 
-CanViewExpenses = RequireRoles([
-    RoleEnum.SUPER_ADMIN,
-    RoleEnum.CEO_FOUNDER,
-    RoleEnum.SALES_MANAGER,
-    RoleEnum.TEAM_LEAD,
-    RoleEnum.SALES_EXECUTIVE
-])
-
-CanApproveExpenses = RequireRoles([
-    RoleEnum.SUPER_ADMIN,
-    RoleEnum.CEO_FOUNDER,
-    RoleEnum.SALES_MANAGER,
-    RoleEnum.TEAM_LEAD
-])
+CanViewExpenses = RequirePermissions("expenses.view")
+CanCreateExpenses = RequirePermissions("expenses.create")
+CanEditExpenses = RequirePermissions("expenses.edit")
+CanApproveExpenses = RequirePermissions("expenses.approve")

@@ -1,9 +1,4 @@
-from app.core.dependencies import RequireRoles
-from app.core.constants import RoleEnum
+from app.core.dependencies import RequirePermissions
 
-CanManageSettings = RequireRoles([
-    RoleEnum.SUPER_ADMIN,
-    RoleEnum.CEO_FOUNDER,
-    "Admin",
-    "System Admin",
-])
+CanManageSettings = RequirePermissions("system.settings.edit")
+CanViewSettings = RequirePermissions("system.settings.view")

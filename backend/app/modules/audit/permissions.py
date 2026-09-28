@@ -1,13 +1,4 @@
-from app.core.dependencies import RequireRoles
-from app.core.constants import RoleEnum
+from app.core.dependencies import RequirePermissions
 
-CanViewAuditLogs = RequireRoles([
-    RoleEnum.SUPER_ADMIN,
-    RoleEnum.CEO_FOUNDER,
-    RoleEnum.SALES_MANAGER,
-    RoleEnum.SALES_EXECUTIVE,
-    "Admin",
-    "System Admin",
-    "Manager",
-    "CEO"
-])
+CanViewAuditLogs = RequirePermissions("system.audit.view")
+CanExportAuditLogs = RequirePermissions("system.audit.export")
