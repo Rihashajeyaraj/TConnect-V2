@@ -319,7 +319,7 @@ export const customerAPI = {
 }
 
 export const hrmsAPI = {
-  getEmployees: () => request('/hrms/employees'),
+  getEmployees: (options = {}) => request('/hrms/employees', { _bypassCache: true, ...options }),
   createEmployee: (data) => request('/hrms/employees', { method: 'POST', body: JSON.stringify(data) }),
   getEmployeeById: (id) => request(`/hrms/employees/${id}`),
   getEmployee: (id) => request(`/hrms/employees/${id}`),

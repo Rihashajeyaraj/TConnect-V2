@@ -535,6 +535,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     }
   }, [reportFilterDate, reportFilterEmpId, showToast])
 
+  useEffect(() => {
+    loadReports(reportFilterDate, reportFilterEmpId)
+  }, [loadReports])
+
   const handlePointInTimeLookup = async () => {
     if (!pitEmpId) {
       showToast("Please select an executive for point-in-time lookup", "warning")
