@@ -1856,7 +1856,8 @@ async def start_tracking_session(
                         dest_lat=float(client_lat) if client_lat is not None else None,
                         dest_lng=float(client_lng) if client_lng is not None else None,
                         polyline_points=[{"lat": float(lat), "lng": float(lng)}],
-                        address=client_address or ""
+                        address=client_address or "",
+                        custom_title="Trip Started"
                     )
                 )
             except Exception as snap_err:
@@ -1966,6 +1967,8 @@ async def end_tracking_session(
             c_lng = float(s_data.get("client_longitude")) if s_data.get("client_longitude") is not None else e_lng
             
             validated_pts, _ = get_validated_session_breadcrumbs(sp, ended_session_id)
+            
+            final_title = "Destination Reached" if reason in ("destination_reached", "client_arrival") else ("Trip Ended - Offline" if reason == "offline_timeout" else "Trip Ended")
 
             asyncio.create_task(
                 capture_and_store_snapshot(
@@ -1980,7 +1983,8 @@ async def end_tracking_session(
                     dest_lat=c_lat,
                     dest_lng=c_lng,
                     polyline_points=validated_pts if len(validated_pts) >= 2 else [{"lat": s_lat, "lng": s_lng}, {"lat": e_lat, "lng": e_lng}],
-                    address=s_data.get("client_address") or ""
+                    address=s_data.get("client_address") or "",
+                    custom_title=final_title
                 )
             )
         except Exception as dest_snap_err:
@@ -3261,5 +3265,89 @@ async def prune_expired_snapshots_api():
             "deleted_count": deleted_count
         }
     except Exception as e:
+        logger.warning(f"Error pruning route snapshots: {e}")
         return {"success": False, "error": str(e)}
+
+
+@router.get("/snapshots/{session_id}")
+@router.get("/location/session/{session_id}/snapshots")
+async def get_session_snapshots(
+    session_id: str,
+    user_payload: dict = Depends(get_current_user_payload)
+):
+    """Retrieve all captured route snapshots for a tracking session (active or completed)."""
+    snaps = get_captured_snapshots_for_session(session_id)
+    return {
+        "success": True,
+        "session_id": session_id,
+        "count": len(snaps),
+        "snapshots": snaps
+    }
+
+
+def check_and_process_offline_sessions(sp=None) -> List[str]:
+    """
+    Checks for active tracking sessions with no location updates for > 15 minutes (900 seconds).
+    Captures final snapshot ('Trip Ended - Offline') using last confirmed validated route and ends session.
+    Does NOT trigger on single missed packet.
+    """
+    import datetime
+    from app.database.supabase import get_supabase_admin_client, get_supabase_client
+    
+    if not sp:
+        sp = get_supabase_admin_client() or get_supabase_client()
+    if not sp:
+        return []
+
+    cutoff_iso = (datetime.datetime.utcnow() - datetime.timedelta(seconds=900)).isoformat()
+    processed_sessions = []
+
+    try:
+        res = sp.schema("hrms").table("tracking_sessions").select("*").eq("status", "active").lt("updated_at", cutoff_iso).limit(50).execute()
+        stale_sessions = res.data or []
+        for sess in stale_sessions:
+            sess_id = str(sess.get("id"))
+            emp_id = str(sess.get("employee_id"))
+            now_iso = datetime.datetime.utcnow().isoformat()
+
+            sp.schema("hrms").table("tracking_sessions").update({
+                "status": "ended",
+                "end_time": sess.get("updated_at") or now_iso,
+                "updated_at": now_iso
+            }).eq("id", sess_id).execute()
+
+            _active_sessions_cache.pop(sess_id, None)
+            _active_sessions_cache.pop(emp_id, None)
+
+            s_lat = float(sess.get("start_latitude") or 0.0)
+            s_lng = float(sess.get("start_longitude") or 0.0)
+            e_lat = float(sess.get("end_latitude") or s_lat)
+            e_lng = float(sess.get("end_longitude") or s_lng)
+            c_lat = float(sess.get("client_latitude")) if sess.get("client_latitude") is not None else e_lat
+            c_lng = float(sess.get("client_longitude")) if sess.get("client_longitude") is not None else e_lng
+
+            validated_pts, _ = get_validated_session_breadcrumbs(sp, sess_id)
+
+            asyncio.create_task(
+                capture_and_store_snapshot(
+                    session_id=sess_id,
+                    employee_id=emp_id,
+                    employee_name="Sales Executive",
+                    snapshot_type="DESTINATION_REACHED",
+                    current_lat=e_lat,
+                    current_lng=e_lng,
+                    start_lat=s_lat,
+                    start_lng=s_lng,
+                    dest_lat=c_lat,
+                    dest_lng=c_lng,
+                    polyline_points=validated_pts if len(validated_pts) >= 2 else [{"lat": s_lat, "lng": s_lng}, {"lat": e_lat, "lng": e_lng}],
+                    address=sess.get("client_address") or "",
+                    custom_title="Trip Ended - Offline"
+                )
+            )
+            processed_sessions.append(sess_id)
+    except Exception as e:
+        logger.warning(f"Error processing offline sessions: {e}")
+
+    return processed_sessions
 
