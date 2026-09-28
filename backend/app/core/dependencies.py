@@ -617,6 +617,10 @@ async def get_user_context(payload: dict = Depends(get_current_user_payload)) ->
     if not perm_map.get("permissions") and sub_id and sub_id != emp_id:
         perm_map = get_employee_permission_map(sub_id, designation)
 
+    # Auto-seed default designation permissions if unseeded for active authenticated user
+    if not perm_map.get("permissions") and designation:
+        perm_map = seed_employee_default_permissions(emp_id or sub_id, designation, auth_user_id=sub_id)
+
     # Alias cache for both employee_code and user UUID
     if perm_map:
         if emp_id:
