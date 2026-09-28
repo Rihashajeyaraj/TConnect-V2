@@ -12,7 +12,35 @@
 
 import { getApiBaseUrl } from './apiConfig.js'
 
-const VAPID_PUBLIC_KEY = import.meta.env.VITE_VAPID_PUBLIC_KEY || null
+let _cachedVapidPublicKey = import.meta.env.VITE_VAPID_PUBLIC_KEY || null
+
+/**
+ * Retrieve VAPID Public Key:
+ * Primary source: VITE_VAPID_PUBLIC_KEY (built-in Vite environment variable)
+ * Fallback source: Backend GET /api/v1/notification/vapid-public-key
+ */
+export async function getVapidPublicKey() {
+  if (_cachedVapidPublicKey && typeof _cachedVapidPublicKey === 'string' && _cachedVapidPublicKey.trim() !== '') {
+    return _cachedVapidPublicKey.trim()
+  }
+
+  try {
+    const res = await fetch(`${getApiBaseUrl()}/notification/vapid-public-key`)
+    if (res.ok) {
+      const json = await res.json()
+      const keyFromBackend = json?.data?.vapid_public_key || json?.vapid_public_key
+      if (keyFromBackend && typeof keyFromBackend === 'string' && keyFromBackend.trim() !== '') {
+        _cachedVapidPublicKey = keyFromBackend.trim()
+        console.info('[WebPush] VAPID public key retrieved via backend API fallback.')
+        return _cachedVapidPublicKey
+      }
+    }
+  } catch (err) {
+    console.warn('[WebPush] Failed to fetch VAPID public key from backend API fallback:', err)
+  }
+
+  return null
+}
 
 // ── Internal state ────────────────────────────────────────────────────────────
 let _subscriptionRegistered = false   // prevent duplicate registrations per session
@@ -63,8 +91,9 @@ export async function registerPushSubscription(authToken) {
     console.info('[WebPush] PushManager not supported on this browser/platform.')
     return
   }
-  if (!VAPID_PUBLIC_KEY) {
-    console.warn('[WebPush] VITE_VAPID_PUBLIC_KEY not set — skipping push registration.')
+  const vapidPublicKey = await getVapidPublicKey()
+  if (!vapidPublicKey) {
+    console.warn('[WebPush] VAPID public key unavailable (VITE_VAPID_PUBLIC_KEY and backend fallback empty) — skipping push registration.')
     return
   }
   if (Notification.permission !== 'granted') {
@@ -84,7 +113,7 @@ export async function registerPushSubscription(authToken) {
       console.info('[WebPush] Creating new PushManager subscription with VAPID key...')
       subscription = await reg.pushManager.subscribe({
         userVisibleOnly:      true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY),
+        applicationServerKey: urlBase64ToUint8Array(vapidPublicKey),
       })
       console.info('[WebPush] New PushManager subscription created successfully.')
     }
@@ -187,8 +216,9 @@ export async function subscribeToWebPush(publicVapidKey = null) {
   try {
     const reg = await navigator.serviceWorker.ready
     let subscription = await reg.pushManager.getSubscription()
-    if (!subscription && publicVapidKey) {
-      const convertedVapidKey = urlBase64ToUint8Array(publicVapidKey)
+    const targetKey = publicVapidKey || await getVapidPublicKey()
+    if (!subscription && targetKey) {
+      const convertedVapidKey = urlBase64ToUint8Array(targetKey)
       subscription = await reg.pushManager.subscribe({
         userVisibleOnly: true,
         applicationServerKey: convertedVapidKey,

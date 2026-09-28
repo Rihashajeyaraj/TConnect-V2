@@ -1,13 +1,25 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import path from 'path'
 
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  resolve: {
-    dedupe: ['react', 'react-dom', 'react-router-dom'],
-  },
+export default defineConfig(({ mode }) => {
+  const envFrontend = loadEnv(mode, __dirname, '')
+  const envRoot = loadEnv(mode, path.resolve(__dirname, '..'), '')
+  const vapidPublicKey =
+    process.env.VITE_VAPID_PUBLIC_KEY ||
+    envFrontend.VITE_VAPID_PUBLIC_KEY ||
+    envRoot.VITE_VAPID_PUBLIC_KEY ||
+    'BHZO9kxLBwLucjYylHpu3PcckvqzrJ758EsHSALpJXzwvlUzxn3UcOx0xb9XKnVZQyt7sdlrv98FTKexRCJeNUY'
+
+  return {
+    define: {
+      'import.meta.env.VITE_VAPID_PUBLIC_KEY': JSON.stringify(vapidPublicKey),
+    },
+    plugins: [react(), tailwindcss()],
+    resolve: {
+      dedupe: ['react', 'react-dom', 'react-router-dom'],
+    },
   build: {
     target: 'esnext',
     cssCodeSplit: true,
@@ -58,4 +70,6 @@ export default defineConfig({
       },
     },
   },
+  }
 })
+

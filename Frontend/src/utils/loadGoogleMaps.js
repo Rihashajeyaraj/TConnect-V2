@@ -88,7 +88,7 @@ export function loadGoogleMaps(apiKey) {
 
       const script = document.createElement('script');
       // Request libraries for geometry, places, advanced markers, and routing
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=geometry,places,marker,routes&v=weekly&callback=${callbackName}`;
+      script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=geometry,places,marker,routes&v=weekly&loading=async&callback=${callbackName}`;
       script.async = true;
       script.defer = true;
       script.onerror = (err) => {
