@@ -101,7 +101,7 @@ async def get_enrollment_status(
 ):
     """Retrieve one-time biometric/facial enrollment status for employee."""
     emp = employee_id or user_payload.get("employee_code") or user_payload.get("sub") or "EMP000012"
-    result = service.get_enrollment_status(emp, email or user_payload.get("email") or "")
+    result = await anyio.to_thread.run_sync(service.get_enrollment_status, emp, email or user_payload.get("email") or "")
     return StandardResponse.success_response(
         data=result,
         message="Enrollment status retrieved successfully"
@@ -601,7 +601,7 @@ async def get_leave_requests(
     service: AttendanceService = Depends(get_service)
 ):
     """Get Leave & Permission requests protected by hrms.leaves.view capability."""
-    requests = service.get_leave_requests(user_payload)
+    requests = await anyio.to_thread.run_sync(service.get_leave_requests, user_payload)
     return StandardResponse.success_response(
         data=requests,
         message="Leave & Permission requests retrieved successfully"
@@ -617,7 +617,7 @@ async def update_leave_status(
     service: AttendanceService = Depends(get_service)
 ):
     """Approve or Reject Leave / Permission request protected by hrms.leaves.approve_team capability and scope."""
-    all_leaves = service.get_leave_requests(user_payload)
+    all_leaves = await anyio.to_thread.run_sync(service.get_leave_requests, user_payload)
     target_leave = next((l for l in all_leaves if str(l.get("id")) == str(request_id) or str(l.get("leave_id")) == str(request_id) or str(l.get("leave_request_id")) == str(request_id)), None)
     
     if target_leave:
@@ -628,7 +628,7 @@ async def update_leave_status(
     new_status = data.get("status") or "Approved"
     comment = data.get("comment") or data.get("manager_comment") or ""
     try:
-        result = service.update_leave_status(request_id, new_status, comment, user_payload)
+        result = await anyio.to_thread.run_sync(service.update_leave_status, request_id, new_status, comment, user_payload)
     except Exception as e:
         raise HTTPException(status_code=400 if "not found" not in str(e).lower() else 404, detail=str(e))
 

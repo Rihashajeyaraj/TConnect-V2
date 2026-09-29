@@ -65,7 +65,7 @@ async def list_team_leads(
         "limit": limit,
         "sort": sort,
     }
-    team_data = service.get_team_leads(user_payload, params)
+    team_data = await anyio.to_thread.run_sync(service.get_team_leads, user_payload, params)
     return StandardResponse.success_response(
         data=team_data,
         message="Team lead reports retrieved successfully"

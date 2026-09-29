@@ -513,6 +513,10 @@ async def get_manager_team_locations(
     Retrieve authenticated Sales Manager's or Team Lead's assigned executives and their latest live location details.
     Determines the caller from token/JWT and returns ALL assigned executives (including nested executives under Team Leads for Managers).
     """
+    return await asyncio.to_thread(_get_manager_team_locations_impl, user_payload)
+
+
+def _get_manager_team_locations_impl(user_payload: dict):
     from app.database.supabase import get_supabase_admin_client, get_supabase_client
     from app.core.scoping import normalize_user_role, get_allowed_user_identifiers
     from datetime import datetime, timezone
@@ -2603,19 +2607,75 @@ async def get_location_history(
     }
 
 
-_reverse_geocode_cache = {}
+_geocode_cache: Dict[tuple, str] = {}
 
-def _reverse_geocode_point(lat, lng):
+def _reverse_geocode_point(lat, lng, allow_remote: bool = True):
     if not lat or not lng or (abs(float(lat)) < 0.001 and abs(float(lng)) < 0.001):
         return "Location Not Recorded"
-    cache_key = f"{round(float(lat), 4)},{round(float(lng), 4)}"
-    if cache_key in _reverse_geocode_cache:
-        return _reverse_geocode_cache[cache_key]
-    
-    fallback_addr = f"GPS ({float(lat):.4f}° N, {float(lng):.4f}° E)"
-    _reverse_geocode_cache[cache_key] = fallback_addr
-    return fallback_addr
 
+    try:
+        lat_key = round(float(lat), 4)
+        lng_key = round(float(lng), 4)
+        cache_key = (lat_key, lng_key)
+        if cache_key in _geocode_cache:
+            return _geocode_cache[cache_key]
+    except Exception:
+        cache_key = None
+
+    default_str = f"GPS ({float(lat):.4f}° N, {float(lng):.4f}° E)"
+
+    # Fast match against LANDMARK_COORDS presets
+    try:
+        f_lat, f_lng = float(lat), float(lng)
+        for l_key, l_coords in LANDMARK_COORDS.items():
+            if abs(f_lat - l_coords[0]) < 0.005 and abs(f_lng - l_coords[1]) < 0.005:
+                res_addr = f"{l_key.title()} Hub, Chennai"
+                if cache_key:
+                    _geocode_cache[cache_key] = res_addr
+                return res_addr
+    except Exception:
+        pass
+
+    if not allow_remote:
+        if cache_key:
+            _geocode_cache[cache_key] = default_str
+        return default_str
+
+    import urllib.request
+    import json
+    from app.core.config import settings
+
+    api_key = getattr(settings, "GOOGLE_MAPS_API_KEY", None)
+    if api_key and "AIza" in api_key:
+        try:
+            url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lng}&key={api_key}"
+            req = urllib.request.Request(url, headers={"User-Agent": "TwiteConnect/1.0"})
+            with urllib.request.urlopen(req, timeout=0.8) as resp:
+                g_data = json.loads(resp.read().decode())
+                if g_data.get("status") == "OK" and g_data.get("results"):
+                    addr = g_data["results"][0].get("formatted_address")
+                    if cache_key:
+                        _geocode_cache[cache_key] = addr
+                    return addr
+        except Exception:
+            pass
+
+    try:
+        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json"
+        req = urllib.request.Request(url, headers={"User-Agent": "TwiteConnectApp/1.0"})
+        with urllib.request.urlopen(req, timeout=0.8) as resp:
+            osm_data = json.loads(resp.read().decode())
+            if osm_data.get("display_name"):
+                addr = osm_data["display_name"]
+                if cache_key:
+                    _geocode_cache[cache_key] = addr
+                return addr
+    except Exception:
+        pass
+
+    if cache_key:
+        _geocode_cache[cache_key] = default_str
+    return default_str
 
 
 @router.get("/reports/executive-history")
@@ -2631,6 +2691,10 @@ async def get_executive_history_report(
     Queries origin trip records from database (hrms.tracking_sessions, hrms.tracking_locations, crm.field_visits).
     If no trip records match for a specific requested date, fallbacks to fetching all previous completed trip history from DB.
     """
+    return await asyncio.to_thread(_get_executive_history_report_impl, employee_id, date, from_date, to_date, user_payload)
+
+
+def _get_executive_history_report_impl(employee_id, date, from_date, to_date, user_payload):
     import datetime
     from app.database.supabase import get_supabase_admin_client, get_supabase_client
     from app.core.scoping import normalize_user_role, get_allowed_user_identifiers
@@ -2741,6 +2805,52 @@ async def get_executive_history_report(
         except Exception:
             pass
 
+    # Batch fetch session breadcrumb locations and snapshots for all sessions in parallel (eliminates sequential N+1 DB roundtrips)
+    sess_ids = [str(s.get("id")) for s in raw_sessions if s.get("id")]
+    crumbs_by_session = {}
+    snaps_by_session = {}
+    if sess_ids:
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _fetch_crumbs():
+            try:
+                res = sp.schema("hrms").table("tracking_locations") \
+                    .select("tracking_session_id, latitude, longitude, recorded_at, speed") \
+                    .in_("tracking_session_id", sess_ids) \
+                    .order("recorded_at", desc=False) \
+                    .execute()
+                return res.data or []
+            except Exception as e:
+                logger.debug(f"Batch crumbs query notice: {e}")
+                return []
+
+        def _fetch_snaps():
+            try:
+                res = sp.schema("hrms").table("route_snapshots") \
+                    .select("*") \
+                    .in_("session_id", sess_ids) \
+                    .execute()
+                return res.data or []
+            except Exception as e:
+                logger.debug(f"Batch snapshots query notice: {e}")
+                return []
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            f_crumbs = pool.submit(_fetch_crumbs)
+            f_snaps = pool.submit(_fetch_snaps)
+            crumbs_data = f_crumbs.result()
+            snaps_data = f_snaps.result()
+
+        for cr in crumbs_data:
+            sid = str(cr.get("tracking_session_id") or "")
+            if sid:
+                crumbs_by_session.setdefault(sid, []).append(cr)
+
+        for sn in snaps_data:
+            sid = str(sn.get("session_id") or "")
+            if sid:
+                snaps_by_session.setdefault(sid, []).append(sn)
+
     # Build report entries from origin database tracking sessions
     reports = []
     seen_session_keys = set()
@@ -2829,8 +2939,9 @@ async def get_executive_history_report(
         except Exception:
             trip_end_time = end_time_raw if ("AM" in end_time_raw or "PM" in end_time_raw) else "Trip Completed"
 
-        start_address = _reverse_geocode_point(start_lat, start_lng)
-        end_address = _reverse_geocode_point(end_lat, end_lng)
+        allow_remote_geocode = (len(raw_sessions) <= 5)
+        start_address = sess.get("start_address") or _reverse_geocode_point(start_lat, start_lng, allow_remote=allow_remote_geocode)
+        end_address = sess.get("end_address") or _reverse_geocode_point(end_lat, end_lng, allow_remote=allow_remote_geocode)
 
         client_name = str(sess.get("client_name") or sess.get("company_name") or "Client Visit Site")
         dest_address = str(sess.get("client_address") or end_address)
@@ -2886,13 +2997,7 @@ async def get_executive_history_report(
         total_idle_mins = 0
         try:
             sess_id_str = str(sess.get("id") or "")
-            loc_query = sp.schema("hrms").table("tracking_locations").select("latitude,longitude,recorded_at,speed").order("recorded_at", desc=False)
-            if sess_id_str:
-                loc_query = loc_query.eq("tracking_session_id", sess_id_str)
-            else:
-                loc_query = loc_query.eq("employee_id", s_emp_id)
-            loc_res = loc_query.limit(200).execute()
-            loc_crumbs = loc_res.data or bcs or []
+            loc_crumbs = crumbs_by_session.get(sess_id_str) or bcs or []
 
             for i in range(len(loc_crumbs) - 1):
                 p1 = loc_crumbs[i]
@@ -2918,7 +3023,7 @@ async def get_executive_history_report(
                                 total_idle_mins += gap_mins
                                 t1_ist = dt1.astimezone(ist_tz).strftime("%I:%M %p")
                                 t2_ist = dt2.astimezone(ist_tz).strftime("%I:%M %p")
-                                idle_loc_addr = _reverse_geocode_point(lat1, lng1)
+                                idle_loc_addr = _reverse_geocode_point(lat1, lng1, allow_remote=False)
                                 idle_periods.append({
                                     "from_time": t1_ist,
                                     "to_time": t2_ist,
@@ -2936,7 +3041,7 @@ async def get_executive_history_report(
         # Fetch real captured map snapshots for this session
         map_snapshots = []
         if sess.get('id'):
-            snaps_raw = get_captured_snapshots_for_session(str(sess.get('id')))
+            snaps_raw = snaps_by_session.get(str(sess.get('id'))) or []
             for s in snaps_raw:
                 map_snapshots.append({
                     "id": str(s.get("id")),

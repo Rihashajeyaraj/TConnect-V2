@@ -93,7 +93,7 @@ async def submit_eod_report(
     if user_code:
         data["employee_code"] = user_code
 
-    result = service.submit_eod_report(data, user_payload)
+    result = await anyio.to_thread.run_sync(service.submit_eod_report, data, user_payload)
     return StandardResponse.success_response(
         data=result,
         message="Daily EOD work report submitted successfully"
@@ -140,7 +140,7 @@ async def acknowledge_eod_report(
         raise ForbiddenException("Acknowledging EOD reports requires TEAM or ORG scope for 'reports.view'.")
 
     comment = (data or {}).get("comment") or (data or {}).get("managerComment") or "Acknowledged"
-    result = service.acknowledge_eod_report(report_id, comment, user_payload)
+    result = await anyio.to_thread.run_sync(service.acknowledge_eod_report, report_id, comment, user_payload)
     return StandardResponse.success_response(
         data=result,
         message="EOD report acknowledged successfully"

@@ -439,9 +439,12 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           let query = supabase.schema('hrms').from('tracking_sessions').select('*').order('start_time', { ascending: false }).limit(100)
           if (d && d !== 'all') {
             try {
-              const dtParts = d.split('-').map(Number);
-              const nextDayObj = new Date(dtParts[0], dtParts[1] - 1, dtParts[2] + 1);
-              const nextDayStr = nextDayObj.toISOString().substring(0, 10);
+              const [yr, mo, dy] = d.split('-').map(Number);
+              const nextDayObj = new Date(yr, mo - 1, dy + 1);
+              const nextYr = nextDayObj.getFullYear();
+              const nextMo = String(nextDayObj.getMonth() + 1).padStart(2, '0');
+              const nextDy = String(nextDayObj.getDate()).padStart(2, '0');
+              const nextDayStr = `${nextYr}-${nextMo}-${nextDy}`;
               query = query.gte('start_time', d).lt('start_time', nextDayStr);
             } catch (_) {
               query = query.gte('start_time', d);

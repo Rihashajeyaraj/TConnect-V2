@@ -62,7 +62,7 @@ async def list_team_audit_visits(
         "limit": limit,
         "sort": sort,
     }
-    audit_data = service.get_team_audit_visits(user_payload, params)
+    audit_data = await anyio.to_thread.run_sync(service.get_team_audit_visits, user_payload, params)
     return StandardResponse.success_response(
         data=audit_data,
         message="Team field visit audit retrieved successfully"

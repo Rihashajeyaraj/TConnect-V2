@@ -149,10 +149,10 @@ export default function ManagerDashboard(props) {
         setLoading(true)
       }
       const [empRes, leadsRes, custRes, visitsRes, targetsRes, attRes] = await Promise.allSettled([
-        hrmsAPI.getEmployees(),
-        crmAPI.getLeads(),
-        customerAPI.getCustomers(),
-        visitAPI.getVisits(),
+        hrmsAPI.getEmployees({ page: 1, limit: 50 }, { bypassCache: true }),
+        crmAPI.getLeads({ page: 1, limit: 50 }),
+        customerAPI.getCustomers({ page: 1, limit: 50 }),
+        visitAPI.getVisits({ page: 1, limit: 50 }),
         salesAPI.getTargets(),
         attendanceAPI.getLiveAttendance ? attendanceAPI.getLiveAttendance() : Promise.resolve([]),
       ])

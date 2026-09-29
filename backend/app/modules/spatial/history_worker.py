@@ -134,21 +134,21 @@ class HistoryPersistenceWorker:
         try:
             sp_client = get_supabase_client()
             if sp_client:
-                # 1. Insert breadcrumb batch into hrms.tracking_locations
-                res = sp_client.schema("hrms").table("tracking_locations").insert(pg_records).execute()
-                
-                # 2. Upsert latest employee positions into hrms.employee_locations
-                for emp_id, latest in emp_latest_map.items():
-                    try:
-                        sp_client.schema("hrms").table("employee_locations").upsert({
-                            "employee_id": emp_id,
-                            "latitude": latest["latitude"],
-                            "longitude": latest["longitude"],
-                            "updated_at": latest["recorded_at"],
-                            "is_online": True
-                        }, on_conflict="employee_id").execute()
-                    except Exception:
-                        pass
+                def _do_db_flush():
+                    sp_client.schema("hrms").table("tracking_locations").insert(pg_records).execute()
+                    for emp_id, latest in emp_latest_map.items():
+                        try:
+                            sp_client.schema("hrms").table("employee_locations").upsert({
+                                "employee_id": emp_id,
+                                "latitude": latest["latitude"],
+                                "longitude": latest["longitude"],
+                                "updated_at": latest["recorded_at"],
+                                "is_online": True
+                            }, on_conflict="employee_id").execute()
+                        except Exception:
+                            pass
+
+                await asyncio.to_thread(_do_db_flush)
 
                 t_dur_ms = round((time.time() - t_start) * 1000, 2)
                 metrics.total_events_persisted += len(pg_records)

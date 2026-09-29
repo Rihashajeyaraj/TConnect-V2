@@ -568,12 +568,14 @@ async def capture_and_store_snapshot(
 
 
 
+_empty_session_snapshots_set = set()
+
 def get_captured_snapshots_for_session(session_id: str) -> List[Dict[str, Any]]:
     """
     Returns captured PNG map snapshots for a session from memory cache or database.
     Guarantees max 3 snapshots: START_LOCATION, MID_TRIP, DESTINATION_REACHED.
     """
-    if not session_id:
+    if not session_id or str(session_id) in _empty_session_snapshots_set:
         return []
 
     # 1. Check in-memory store first
@@ -590,13 +592,12 @@ def get_captured_snapshots_for_session(session_id: str) -> List[Dict[str, Any]]:
                 if res and res.data:
                     return res.data
             except Exception:
-                res = sp.schema("hrms").table("route_snapshots").select("*").eq("session_id", str(session_id)).order("badge_number", desc=False).execute()
-                if res and res.data:
-                    return res.data
+                pass
     except Exception as e:
         err_msg = str(e)
         if "PGRST205" not in err_msg and "schema cache" not in err_msg:
             logger.warning(f"[SNAPSHOT SERVICE] Error querying route_snapshots: {e}")
 
+    _empty_session_snapshots_set.add(str(session_id))
     return []
 

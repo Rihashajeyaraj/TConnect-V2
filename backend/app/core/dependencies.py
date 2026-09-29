@@ -1,3 +1,4 @@
+import asyncio
 from typing import Optional, List, Dict, Any, Set
 from fastapi import Depends
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
@@ -253,9 +254,11 @@ def get_employee_permission_map(employee_id: str, designation: str = "") -> Dict
     if not emp_id_str:
         return {"permissions": {}, "scopes": {}}
 
-    # 1. Check in-memory store first
+    # 1. Check in-memory store first (only if valid non-empty permissions)
     if emp_id_str in _in_memory_employee_permissions:
-        return _in_memory_employee_permissions[emp_id_str]
+        cached = _in_memory_employee_permissions[emp_id_str]
+        if cached and cached.get("permissions"):
+            return cached
 
     # 2. Query database table organization.employee_permissions using service role admin client or client
     try:
@@ -277,8 +280,10 @@ def get_employee_permission_map(employee_id: str, designation: str = "") -> Dict
     except Exception as err:
         logger.warning(f"Could not load employee permissions from DB for {emp_id_str}: {err}")
 
-    # 3. FAIL-CLOSED: No runtime fallback to designation defaults for authorization!
-    # Cache negative result in memory to prevent repeated blocking DB calls on every request
+    # 3. Auto-seed default designation permissions if unseeded in DB
+    if designation:
+        return seed_employee_default_permissions(emp_id_str, designation)
+
     result = {"permissions": {}, "scopes": {}}
     _in_memory_employee_permissions[emp_id_str] = result
     return result
@@ -524,7 +529,7 @@ async def get_current_user_payload(
     
     token = credentials.credentials
     try:
-        payload = verify_supabase_jwt(token)
+        payload = await asyncio.to_thread(verify_supabase_jwt, token)
         return payload
     except Exception as e:
         raise UnauthorizedException(f"Invalid or expired JWT authentication token: {str(e)}")
@@ -615,13 +620,13 @@ async def get_user_context(payload: dict = Depends(get_current_user_payload)) ->
     if emp_id and sub_id and emp_id != sub_id:
         register_employee_id_alias(emp_id, sub_id)
 
-    perm_map = get_employee_permission_map(emp_id, designation)
+    perm_map = await asyncio.to_thread(get_employee_permission_map, emp_id, designation)
     if not perm_map.get("permissions") and sub_id and sub_id != emp_id:
-        perm_map = get_employee_permission_map(sub_id, designation)
+        perm_map = await asyncio.to_thread(get_employee_permission_map, sub_id, designation)
 
     # Auto-seed default designation permissions if unseeded for active authenticated user
     if not perm_map.get("permissions") and designation:
-        perm_map = seed_employee_default_permissions(emp_id or sub_id, designation, auth_user_id=sub_id)
+        perm_map = await asyncio.to_thread(seed_employee_default_permissions, emp_id or sub_id, designation, auth_user_id=sub_id)
 
     # Alias cache for both employee_code and user UUID
     if perm_map:

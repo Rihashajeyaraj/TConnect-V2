@@ -313,9 +313,9 @@ export default function Dashboard() {
     try {
       // Fetch live data from backend APIs in parallel for instant display
       const [leadsRes, customersRes, visitsRes, followupsRes, expensesRes] = await Promise.allSettled([
-        crmAPI.getLeads(),
-        customerAPI.getCustomers(),
-        visitAPI.getVisits(),
+        crmAPI.getLeads({ page: 1, limit: 50 }),
+        customerAPI.getCustomers({ page: 1, limit: 50 }),
+        visitAPI.getVisits({ page: 1, limit: 50 }),
         crmAPI.getFollowups(),
         expenseAPI.getExpenses(),
       ]);

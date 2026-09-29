@@ -1,4 +1,5 @@
 import time
+import asyncio
 import logging
 from fastapi import APIRouter, Depends, status, HTTPException, UploadFile, File
 from app.schemas.response import StandardResponse
@@ -94,7 +95,7 @@ async def list_employees(
     service: HRMSService = Depends(get_service)
 ):
     """List employees in the organization, scoped by permissions and data scope."""
-    all_employees = service.list_employees()
+    all_employees = await asyncio.to_thread(service.list_employees)
     scope = context.get_scope("hrms.employees.view")
     if scope == "OWN":
         scoped_employees = [e for e in all_employees if str(e.get("employee_id") or e.get("id") or e.get("employee_code") or "") in (context.employee_id, context.user_id)]
@@ -160,9 +161,9 @@ async def get_employee(
 
     is_self = (emp_id == current_emp_code or emp_id.lower() == "self" or emp_id == current_user_id)
     if is_self:
-        emp_id = _resolve_and_link_self(user_payload, service)
+        emp_id = await asyncio.to_thread(_resolve_and_link_self, user_payload, service)
 
-    emp = service.get_employee(emp_id)
+    emp = await asyncio.to_thread(service.get_employee, emp_id)
     if not is_self and emp:
         target_emp_id = str(emp.get("employee_id") or emp.get("id") or emp.get("employee_code") or emp_id)
         context.enforce_scope("hrms.employees.view", target_emp_id)

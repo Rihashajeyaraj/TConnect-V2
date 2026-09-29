@@ -74,10 +74,12 @@ async function handleSilentRefresh() {
 async function request(endpoint, options = {}) {
   const method = (options.method || 'GET').toUpperCase()
 
+  const shouldBypassCache = options.bypassCache || options._bypassCache
+
   // Invalidate cache on mutations (POST, PUT, PATCH, DELETE)
   if (method !== 'GET') {
     invalidateApiCache()
-  } else if (!options.bypassCache && !options._isRetry && apiCache.has(endpoint)) {
+  } else if (!shouldBypassCache && !options._isRetry && apiCache.has(endpoint)) {
     const cached = apiCache.get(endpoint)
     if (cached && (Date.now() - cached.timestamp < CACHE_TTL_MS)) {
       // Background revalidate if cache is >5s old for zero-latency page transitions
@@ -91,7 +93,7 @@ async function request(endpoint, options = {}) {
   }
 
   // For GET requests, reuse identical in-flight promises to deduplicate parallel calls
-  if (method === 'GET' && !options.bypassCache && inFlightRequests.has(endpoint) && !options._isRetry) {
+  if (method === 'GET' && inFlightRequests.has(endpoint) && !options._isRetry) {
     return inFlightRequests.get(endpoint)
   }
 
@@ -213,7 +215,17 @@ export const authAPI = {
 }
 
 export const crmAPI = {
-  getLeads: (opts = {}) => request('/crm/leads', opts),
+  getLeads: (params = {}, opts = {}) => {
+    let endpoint = '/crm/leads'
+    let options = opts
+    if (params && typeof params === 'object' && !params.method && !params.headers && !params.signal) {
+      const query = new URLSearchParams(params).toString()
+      if (query) endpoint += `?${query}`
+    } else if (params) {
+      options = params
+    }
+    return request(endpoint, options)
+  },
   getTeamLeads: (params = {}, opts = {}) => {
     const query = new URLSearchParams(params).toString()
     return request(`/crm/team-leads${query ? `?${query}` : ''}`, opts)
@@ -269,7 +281,17 @@ export const crmAPI = {
 }
 
 export const customerAPI = {
-  getCustomers: (opts = {}) => request('/customer/customers', opts),
+  getCustomers: (params = {}, opts = {}) => {
+    let endpoint = '/customer/customers'
+    let options = opts
+    if (params && typeof params === 'object' && !params.method && !params.headers && !params.signal) {
+      const query = new URLSearchParams(params).toString()
+      if (query) endpoint += `?${query}`
+    } else if (params) {
+      options = params
+    }
+    return request(endpoint, options)
+  },
   getCustomerById: (id, opts = {}) => request(`/customer/customers/${id}`, opts),
 
   /**
@@ -319,7 +341,17 @@ export const customerAPI = {
 }
 
 export const hrmsAPI = {
-  getEmployees: (options = {}) => request('/hrms/employees', { _bypassCache: true, ...options }),
+  getEmployees: (params = {}, options = {}) => {
+    let endpoint = '/hrms/employees'
+    let opts = options
+    if (params && typeof params === 'object' && !params.method && !params.headers && !params.signal) {
+      const query = new URLSearchParams(params).toString()
+      if (query) endpoint += `?${query}`
+    } else if (params) {
+      opts = params
+    }
+    return request(endpoint, { bypassCache: true, _bypassCache: true, ...opts })
+  },
   createEmployee: (data) => request('/hrms/employees', { method: 'POST', body: JSON.stringify(data) }),
   getEmployeeById: (id) => request(`/hrms/employees/${id}`),
   getEmployee: (id) => request(`/hrms/employees/${id}`),
@@ -360,7 +392,17 @@ export const attendanceAPI = {
 }
 
 export const visitAPI = {
-  getVisits: () => request('/visits'),
+  getVisits: (params = {}, opts = {}) => {
+    let endpoint = '/visits'
+    let options = opts
+    if (params && typeof params === 'object' && !params.method && !params.headers && !params.signal) {
+      const query = new URLSearchParams(params).toString()
+      if (query) endpoint += `?${query}`
+    } else if (params) {
+      options = params
+    }
+    return request(endpoint, options)
+  },
   getTeamAudit: (params = {}) => {
     const query = new URLSearchParams(params).toString()
     return request(`/visits/team-audit${query ? `?${query}` : ''}`)
@@ -565,7 +607,7 @@ export const spatialAPI = {
       }
     })
     const query = new URLSearchParams(cleanParams).toString()
-    return request(`/spatial/reports/executive-history${query ? `?${query}` : ''}`, { silentError: true, timeout: 8000, ...options })
+    return request(`/spatial/reports/executive-history${query ? `?${query}` : ''}`, { timeout: 20000, ...options })
   },
   /** Point-in-Time Location Lookup ("Where was executive at X time on Y date"). */
   lookupPointInTimeLocation: (params = {}) => {
