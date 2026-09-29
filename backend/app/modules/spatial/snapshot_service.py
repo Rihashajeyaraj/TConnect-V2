@@ -594,6 +594,9 @@ def get_captured_snapshots_for_session(session_id: str) -> List[Dict[str, Any]]:
                 if res and res.data:
                     return res.data
     except Exception as e:
-        logger.warning(f"[SNAPSHOT SERVICE] Error querying route_snapshots: {e}")
+        err_msg = str(e)
+        if "PGRST205" not in err_msg and "schema cache" not in err_msg:
+            logger.warning(f"[SNAPSHOT SERVICE] Error querying route_snapshots: {e}")
 
     return []
+

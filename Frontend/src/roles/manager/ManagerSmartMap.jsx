@@ -834,11 +834,36 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   const fetchData = useCallback(async (isSilent = false) => {
     if (!isSilent) setLoading(true)
     try {
-      const res = await spatialAPI.getTeamLocations({ silentError: true, timeoutMs: 10000 }).catch(() => null)
+      const res = await spatialAPI.getTeamLocations({ silentError: true, timeoutMs: 15000 }).catch(() => null)
       const payload = res?.data || res || {}
       let list = Array.isArray(payload?.executives) ? [...payload.executives] : []
 
       const isCeo = String(currentUser?.role || currentUser?.designation || '').toLowerCase().includes('ceo') || window.location.pathname.startsWith('/ceo')
+
+      if (!isCeo && list.length === 0) {
+        try {
+          const empRes = await hrmsAPI.getEmployees().catch(() => null)
+          const allEmps = Array.isArray(empRes?.data) ? empRes.data : (Array.isArray(empRes) ? empRes : [])
+          if (allEmps.length > 0) {
+            list = allEmps.filter(e => {
+              const r = String(e.role || e.designation || '').toLowerCase()
+              return r.includes('executive') || r.includes('lead') || r.includes('sales')
+            }).map(e => ({
+              ...e,
+              employee_id: e.employee_id || e.id,
+              employee_name: e.name || e.full_name || 'Sales Executive',
+              name: e.name || e.full_name || 'Sales Executive',
+              role: e.role || e.designation || 'Sales Executive',
+              designation: e.designation || e.role || 'Sales Executive',
+              is_online: Boolean(e.is_online),
+              latitude: Number(e.latitude) || 13.0795,
+              longitude: Number(e.longitude) || 80.2261
+            }))
+          }
+        } catch (fErr) {
+          console.warn('HRMS fallback team locations notice:', fErr)
+        }
+      }
 
       if (isCeo) {
         // CEO Portal: Track ONLY Managers (Sales Managers, Regional Managers, etc. — Exclude Team Leads & Executives)
@@ -910,6 +935,11 @@ export default function ManagerSmartMap({ hideHeader = false }) {
             role: e.role || 'Sales Manager'
           }))
         }
+      }
+
+      // Keep previous list if current call unexpectedly returned empty array
+      if (list.length === 0 && executivesRef.current.length > 0) {
+        list = executivesRef.current
       }
 
       setExecutives(list)
@@ -1443,10 +1473,11 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     async function loadCandidates() {
       try {
         const [leadsRes, custsRes, visitsRes] = await Promise.allSettled([
-          crmAPI.getLeads({ silentError: true, timeoutMs: 8000 }),
-          customerAPI.getCustomers({ silentError: true, timeoutMs: 8000 }),
-          visitAPI.getVisits({ silentError: true, timeoutMs: 8000 }),
+          crmAPI.getLeads({ silentError: true, timeoutMs: 15000 }),
+          customerAPI.getCustomers({ silentError: true, timeoutMs: 15000 }),
+          visitAPI.getVisits({ silentError: true, timeoutMs: 15000 }),
         ])
+
         const safeArray = (res) => {
           if (res.status !== 'fulfilled') return []
           return Array.isArray(res.value) ? res.value : (res.value?.data || [])
@@ -2159,9 +2190,10 @@ export default function ManagerSmartMap({ hideHeader = false }) {
     if (!candidates || candidates.length === 0) {
       try {
         const [lRes, cRes] = await Promise.allSettled([
-          crmAPI.getLeads({ silentError: true, timeoutMs: 8000 }),
-          customerAPI.getCustomers({ silentError: true, timeoutMs: 8000 })
+          crmAPI.getLeads({ silentError: true, timeoutMs: 15000 }),
+          customerAPI.getCustomers({ silentError: true, timeoutMs: 15000 })
         ]);
+
         const safeArray = (r) => (r.status === 'fulfilled' ? (Array.isArray(r.value) ? r.value : (r.value?.data || [])) : []);
         const toNorm = (item, category, idx) => {
           const lat = item.latitude != null ? Number(item.latitude) : null;

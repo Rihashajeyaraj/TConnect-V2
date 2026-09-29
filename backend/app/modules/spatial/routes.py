@@ -2603,33 +2603,19 @@ async def get_location_history(
     }
 
 
+_reverse_geocode_cache = {}
+
 def _reverse_geocode_point(lat, lng):
     if not lat or not lng or (abs(float(lat)) < 0.001 and abs(float(lng)) < 0.001):
         return "Location Not Recorded"
-    import urllib.request
-    import json
-    from app.core.config import settings
-    api_key = getattr(settings, "GOOGLE_MAPS_API_KEY", None)
-    if api_key and "AIza" in api_key:
-        try:
-            url = f"https://maps.googleapis.com/maps/api/geocode/json?latlng={lat},{lng}&key={api_key}"
-            req = urllib.request.Request(url, headers={"User-Agent": "TwiteConnect/1.0"})
-            with urllib.request.urlopen(req, timeout=2.5) as resp:
-                g_data = json.loads(resp.read().decode())
-                if g_data.get("status") == "OK" and g_data.get("results"):
-                    return g_data["results"][0].get("formatted_address")
-        except Exception:
-            pass
-    try:
-        url = f"https://nominatim.openstreetmap.org/reverse?lat={lat}&lon={lng}&format=json"
-        req = urllib.request.Request(url, headers={"User-Agent": "TwiteConnectApp/1.0"})
-        with urllib.request.urlopen(req, timeout=2.5) as resp:
-            osm_data = json.loads(resp.read().decode())
-            if osm_data.get("display_name"):
-                return osm_data["display_name"]
-    except Exception:
-        pass
-    return f"GPS ({float(lat):.4f}° N, {float(lng):.4f}° E)"
+    cache_key = f"{round(float(lat), 4)},{round(float(lng), 4)}"
+    if cache_key in _reverse_geocode_cache:
+        return _reverse_geocode_cache[cache_key]
+    
+    fallback_addr = f"GPS ({float(lat):.4f}° N, {float(lng):.4f}° E)"
+    _reverse_geocode_cache[cache_key] = fallback_addr
+    return fallback_addr
+
 
 
 @router.get("/reports/executive-history")
