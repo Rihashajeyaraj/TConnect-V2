@@ -2217,6 +2217,18 @@ export default function SmartClientMap({ isManagerView = false }) {
           strokeColor: '#dc2626', // Solid Vibrant Red
           strokeOpacity: 0.95,
           strokeWeight: 5,
+          icons: typeof window !== 'undefined' && window.google?.maps?.SymbolPath?.FORWARD_CLOSED_ARROW ? [{
+            icon: {
+              path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+              scale: 3,
+              fillColor: '#ffffff',
+              fillOpacity: 1.0,
+              strokeColor: '#991b1b',
+              strokeWeight: 1.5,
+            },
+            offset: '30px',
+            repeat: '100px'
+          }] : [],
           map: googleMapRef.current,
           zIndex: 35
         })

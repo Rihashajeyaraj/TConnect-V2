@@ -21,6 +21,49 @@ os.makedirs(STATIC_SNAPSHOTS_DIR, exist_ok=True)
 _captured_snapshots_set = set()
 _session_snapshots_store: Dict[str, List[Dict[str, Any]]] = {}
 
+# Strong reference registry for active background snapshot tasks to prevent Python GC garbage collection
+_background_snapshot_tasks = set()
+
+
+def is_snapshot_captured(session_id: str, snapshot_type: str) -> bool:
+    """Checks if a snapshot type has already been captured for a session in memory cache."""
+    if not session_id or not snapshot_type:
+        return False
+    cache_key = f"{session_id}_{snapshot_type}"
+    return cache_key in _captured_snapshots_set
+
+
+def create_background_snapshot_task(coro, session_id: str = "unknown", snapshot_type: str = "UNKNOWN"):
+    """
+    Creates an asyncio background task with a strong reference in _background_snapshot_tasks.
+    Logs success or failure upon completion and discards the task reference when finished.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if not loop:
+        logger.warning(f"[SNAPSHOT TASK] No active event loop found to dispatch snapshot {snapshot_type} for session {session_id}")
+        return None
+
+    task = loop.create_task(coro)
+    _background_snapshot_tasks.add(task)
+
+    def _done_callback(t: asyncio.Task):
+        _background_snapshot_tasks.discard(t)
+        try:
+            exc = t.exception()
+            if exc:
+                logger.error(f"[SNAPSHOT TASK ERROR] Session {session_id} • Type {snapshot_type} failed: {exc}")
+            else:
+                logger.info(f"[SNAPSHOT TASK SUCCESS] Session {session_id} • Type {snapshot_type} completed.")
+        except Exception as cb_err:
+            logger.warning(f"[SNAPSHOT TASK CALLBACK ERROR] {cb_err}")
+
+    task.add_done_callback(_done_callback)
+    return task
+
 
 def haversine_distance_meters(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     """Calculate the great circle distance between two points in meters using Haversine formula."""

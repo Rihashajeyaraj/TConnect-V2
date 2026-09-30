@@ -2469,7 +2469,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
   `
 
   const _buildEndIcon = () => `
-      <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #475569; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(71,85,105,0.4); color: #fff; font-family: sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">
+      <div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #dc2626; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(220,38,38,0.4); color: #fff; font-family: sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">
         END
       </div>
   `
@@ -2479,6 +2479,28 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></svg>
       </div>
   `
+
+  /**
+   * Helper to return high-contrast direction arrow icons along Polyline paths.
+   * Renders forward arrows along chronological GPS points (START -> LIVE/END).
+   */
+  const getDirectionIcons = useCallback(() => {
+    if (typeof window !== 'undefined' && window.google?.maps?.SymbolPath?.FORWARD_CLOSED_ARROW) {
+      return [{
+        icon: {
+          path: window.google.maps.SymbolPath.FORWARD_CLOSED_ARROW,
+          scale: 3,
+          fillColor: '#ffffff',
+          fillOpacity: 1.0,
+          strokeColor: '#991b1b',
+          strokeWeight: 1.5,
+        },
+        offset: '30px',
+        repeat: '100px'
+      }]
+    }
+    return []
+  }, [])
 
   /**
    * Pure Movement Validator for Travelled Route Polyline.
@@ -2690,6 +2712,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
             strokeColor: '#dc2626',
             strokeOpacity: 0.95,
             strokeWeight: 5,
+            icons: getDirectionIcons(),
             map: googleMapRef.current,
             zIndex: 25
           });
@@ -3142,6 +3165,17 @@ export default function ManagerSmartMap({ hideHeader = false }) {
           },
           'center'
         )
+        if (!endMarkerRef.current) {
+          endMarkerRef.current = createMapMarker(
+            latlng,
+            map,
+            _buildEndIcon(),
+            () => {
+              showInfoWindow(latlng, `<div style="font-family:sans-serif;font-size:12px;padding:4px;color:#1e293b;"><strong>🔴 Trip Completed (END)</strong><br/>Time: ${session?.end_time ? new Date(session.end_time).toLocaleTimeString() : 'Trip Completed'}</div>`)
+            },
+            'center'
+          )
+        }
       } else if (cleanCrumbs.length > 0) {
         const last = cleanCrumbs[cleanCrumbs.length - 1]
         latestLat = Number(last.latitude)
@@ -3220,6 +3254,7 @@ export default function ManagerSmartMap({ hideHeader = false }) {
               strokeOpacity: 0.95,
               strokeWeight: 5,
               geodesic: true,
+              icons: getDirectionIcons(),
               map: map,
               zIndex: 25
             });

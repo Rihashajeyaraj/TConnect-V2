@@ -8,7 +8,13 @@ from app.modules.visit.repository import VisitRepository
 from app.core.logger import logger
 from app.core.dependencies import get_current_user_payload, RequirePermissions, UserContext
 from app.exceptions.base import ForbiddenException
-from app.modules.spatial.snapshot_service import capture_and_store_snapshot, get_captured_snapshots_for_session, get_validated_session_breadcrumbs
+from app.modules.spatial.snapshot_service import (
+    capture_and_store_snapshot,
+    get_captured_snapshots_for_session,
+    get_validated_session_breadcrumbs,
+    create_background_snapshot_task,
+    is_snapshot_captured
+)
 
 
 router = APIRouter(prefix="/spatial", tags=["Smart Spatial Map & Geofencing"])
@@ -1824,10 +1830,10 @@ async def start_tracking_session(
         except Exception as event_err:
             logger.warning(f"Error logging visit started event: {event_err}")
 
-        # Trigger Snapshot 1: START_LOCATION in background
+        # Trigger Snapshot 1: START_LOCATION in background with strong task reference
         if session_id and lat is not None and lng is not None:
             try:
-                asyncio.create_task(
+                create_background_snapshot_task(
                     capture_and_store_snapshot(
                         session_id=str(session_id),
                         employee_id=str(emp_id),
@@ -1842,7 +1848,9 @@ async def start_tracking_session(
                         polyline_points=[{"lat": float(lat), "lng": float(lng)}],
                         address=client_address or "",
                         custom_title="Trip Started"
-                    )
+                    ),
+                    session_id=str(session_id),
+                    snapshot_type="START_LOCATION"
                 )
             except Exception as snap_err:
                 logger.warning(f"Error launching START_LOCATION snapshot background task: {snap_err}")
@@ -1954,7 +1962,7 @@ async def end_tracking_session(
             
             final_title = "Destination Reached" if reason in ("destination_reached", "client_arrival") else ("Trip Ended - Offline" if reason == "offline_timeout" else "Trip Ended")
 
-            asyncio.create_task(
+            create_background_snapshot_task(
                 capture_and_store_snapshot(
                     session_id=str(ended_session_id),
                     employee_id=str(emp_id),
@@ -1969,7 +1977,9 @@ async def end_tracking_session(
                     polyline_points=validated_pts if len(validated_pts) >= 2 else [{"lat": s_lat, "lng": s_lng}, {"lat": e_lat, "lng": e_lng}],
                     address=s_data.get("client_address") or "",
                     custom_title=final_title
-                )
+                ),
+                session_id=str(ended_session_id),
+                snapshot_type="DESTINATION_REACHED"
             )
         except Exception as dest_snap_err:
             logger.warning(f"Error launching DESTINATION_REACHED snapshot background task: {dest_snap_err}")
@@ -2088,6 +2098,35 @@ async def push_live_location(
                     "total_distance": round(new_dist, 1),
                     "end_latitude": lat, "end_longitude": lng, "updated_at": now_iso,
                 }).eq("id", session_id).execute()
+                # Location-push fallback: Trigger Snapshot 1 START_LOCATION if missing for active session
+                try:
+                    if not is_snapshot_captured(str(session_id), "START_LOCATION"):
+                        start_lat_val = float(sess.get("start_latitude") or lat)
+                        start_lng_val = float(sess.get("start_longitude") or lng)
+                        client_lat_val = float(sess.get("client_latitude")) if sess.get("client_latitude") is not None else None
+                        client_lng_val = float(sess.get("client_longitude")) if sess.get("client_longitude") is not None else None
+                        create_background_snapshot_task(
+                            capture_and_store_snapshot(
+                                session_id=str(session_id),
+                                employee_id=str(emp_id),
+                                employee_name=telemetry_data.get("employee_name") or "Sales Executive",
+                                snapshot_type="START_LOCATION",
+                                current_lat=start_lat_val,
+                                current_lng=start_lng_val,
+                                start_lat=start_lat_val,
+                                start_lng=start_lng_val,
+                                dest_lat=client_lat_val,
+                                dest_lng=client_lng_val,
+                                polyline_points=[{"lat": start_lat_val, "lng": start_lng_val}],
+                                address=sess.get("client_address") or "",
+                                custom_title="Trip Started"
+                            ),
+                            session_id=str(session_id),
+                            snapshot_type="START_LOCATION"
+                        )
+                except Exception as start_fallback_err:
+                    logger.debug(f"START_LOCATION snapshot fallback check notice: {start_fallback_err}")
+
                 # Trigger Snapshot 2: MID_TRIP at 50% cumulative validated travelled GPS distance
                 try:
                     start_lat = float(sess.get("start_latitude") or lat)
@@ -2105,7 +2144,7 @@ async def push_live_location(
                     validated_pts, cumulative_dist_m = get_validated_session_breadcrumbs(sp, session_id)
 
                     if cumulative_dist_m >= target_mid_m or new_dist >= target_mid_m:
-                        asyncio.create_task(
+                        create_background_snapshot_task(
                             capture_and_store_snapshot(
                                 session_id=str(session_id),
                                 employee_id=str(emp_id),
@@ -2119,7 +2158,9 @@ async def push_live_location(
                                 dest_lng=client_lng,
                                 polyline_points=validated_pts if len(validated_pts) >= 2 else [{"lat": start_lat, "lng": start_lng}, {"lat": lat, "lng": lng}],
                                 address=""
-                            )
+                            ),
+                            session_id=str(session_id),
+                            snapshot_type="MID_TRIP"
                         )
                 except Exception as mid_err:
                     logger.debug(f"MID_TRIP snapshot check notice: {mid_err}")
@@ -3413,7 +3454,7 @@ def check_and_process_offline_sessions(sp=None) -> List[str]:
 
             validated_pts, _ = get_validated_session_breadcrumbs(sp, sess_id)
 
-            asyncio.create_task(
+            create_background_snapshot_task(
                 capture_and_store_snapshot(
                     session_id=sess_id,
                     employee_id=emp_id,
@@ -3428,7 +3469,9 @@ def check_and_process_offline_sessions(sp=None) -> List[str]:
                     polyline_points=validated_pts if len(validated_pts) >= 2 else [{"lat": s_lat, "lng": s_lng}, {"lat": e_lat, "lng": e_lng}],
                     address=sess.get("client_address") or "",
                     custom_title="Trip Ended - Offline"
-                )
+                ),
+                session_id=sess_id,
+                snapshot_type="DESTINATION_REACHED"
             )
             processed_sessions.append(sess_id)
     except Exception as e:
