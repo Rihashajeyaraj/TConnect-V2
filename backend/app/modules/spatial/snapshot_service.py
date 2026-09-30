@@ -205,7 +205,7 @@ async def render_real_map_png(
     snapshot_type: str = "ROUTE_SNAPSHOT"
 ) -> Optional[bytes]:
     """
-    Renders an actual Google Maps view using Playwright headless Chromium with Google Maps tiles,
+    Renders an actual map view using Playwright headless Chromium with OpenStreetMap/Leaflet tiles,
     Start Pin, Executive Bike Marker with Name Pill, Destination Pin, and Red Traveled Polyline.
     Returns PNG image bytes if size check passes (> 20KB), else None.
     """
@@ -214,30 +214,33 @@ async def render_real_map_png(
             logger.warning("[SnapshotService] async_playwright unavailable, skipping map PNG render.")
             return None
 
-        # Format polyline points for Google Maps JS
+        # Format polyline points
         pts_js = []
         if polyline_points:
             for p in polyline_points:
                 try:
                     lat_val = float(p.get("lat") if p.get("lat") is not None else p.get("latitude"))
                     lng_val = float(p.get("lng") if p.get("lng") is not None else p.get("longitude"))
-                    pts_js.append({"lat": lat_val, "lng": lng_val})
+                    pts_js.append([lat_val, lng_val])
                 except Exception:
                     pass
         if not pts_js:
-            pts_js = [{"lat": start_lat, "lng": start_lng}, {"lat": current_lat, "lng": current_lng}]
+            pts_js = [[start_lat, start_lng], [current_lat, current_lng]]
 
         dest_lat_val = dest_lat if dest_lat is not None else current_lat
         dest_lng_val = dest_lng if dest_lng is not None else current_lng
         has_dest = "true" if dest_lat is not None else "false"
 
-        gmaps_key = getattr(settings, "GOOGLE_MAPS_API_KEY", "")
+        short_name = executive_name.split(' ')[0] if executive_name else 'Executive'
+        formatted_snap_type = snapshot_type.replace('_', ' ')
 
         html_template = f"""
         <!DOCTYPE html>
         <html>
         <head>
             <meta charset="utf-8"/>
+            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+            <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
             <style>
                 html, body, #map {{ height: 100%; margin: 0; padding: 0; background: #0f172a; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }}
                 @keyframes scootyRadarPulse {{
@@ -249,132 +252,88 @@ async def render_real_map_png(
                     0%, 100% {{ opacity: 1; transform: scale(1); }}
                     50% {{ opacity: 0.3; transform: scale(0.8); }}
                 }}
+                .leaflet-container {{ background: #0f172a !important; }}
             </style>
-            <script src="https://maps.googleapis.com/maps/api/js?key={gmaps_key}&libraries=geometry,places,marker,routes"></script>
         </head>
         <body>
             <div style="position: absolute; top: 12px; left: 12px; z-index: 1000; background: rgba(15, 23, 42, 0.92); backdrop-filter: blur(8px); border: 1.5px solid rgba(255,255,255,0.2); border-radius: 16px; padding: 10px 16px; color: #fff; font-family: ui-sans-serif, system-ui, sans-serif; box-shadow: 0 10px 25px rgba(0,0,0,0.5); display: flex; align-items: center; gap: 10px; pointer-events: none;">
                 <div style="width: 10px; height: 10px; border-radius: 50%; background: #10b981; box-shadow: 0 0 10px #10b981;"></div>
                 <div>
                     <div style="font-size: 11px; font-weight: 900; letter-spacing: 0.5px; color: #38bdf8; text-transform: uppercase;">Manager Smart Radar Map</div>
-                    <div style="font-size: 13px; font-weight: 800; color: #f8fafc;">{executive_name} • {snapshot_type.replace('_', ' ')}</div>
+                    <div style="font-size: 13px; font-weight: 800; color: #f8fafc;">{executive_name} • {formatted_snap_type}</div>
                 </div>
             </div>
             <div id="map"></div>
             <script>
-                const startPt = {{ lat: {start_lat}, lng: {start_lng} }};
-                const execPt = {{ lat: {current_lat}, lng: {current_lng} }};
-                const destPt = {{ lat: {dest_lat_val}, lng: {dest_lng_val} }};
+                const startPt = [{start_lat}, {start_lng}];
+                const execPt = [{current_lat}, {current_lng}];
+                const destPt = [{dest_lat_val}, {dest_lng_val}];
                 const pathPts = {pts_js};
 
-                const map = new google.maps.Map(document.getElementById('map'), {{
-                    center: execPt,
-                    zoom: 15,
-                    mapTypeId: 'roadmap',
-                    disableDefaultUI: true,
-                    gestureHandling: 'none',
-                    styles: [
-                        {{ featureType: "poi", elementType: "labels", stylers: [{{ visibility: "off" }}] }}
-                    ]
-                }});
+                const map = L.map('map', {{ zoomControl: false, attributionControl: false }}).setView(execPt, 15);
+
+                const tileLayer = L.tileLayer('https://{{s}}.tile.openstreetmap.org/{{z}}/{{x}}/{{y}}.png', {{
+                    maxZoom: 19,
+                    subdomains: ['a', 'b', 'c']
+                }}).addTo(map);
 
                 // Red Polyline for traveled route
-                const polyline = new google.maps.Polyline({{
-                    path: pathPts,
-                    geodesic: true,
-                    strokeColor: '#dc2626',
-                    strokeWeight: 5,
-                    strokeOpacity: 0.95,
-                    map: map
-                }});
-
-                // Fit bounds
-                const bounds = new google.maps.LatLngBounds();
-                bounds.extend(startPt);
-                bounds.extend(execPt);
-                if ({has_dest}) bounds.extend(destPt);
-                pathPts.forEach(pt => bounds.extend(pt));
-                map.fitBounds(bounds, 60);
-
-                // OverlayView for custom HTML markers
-                class HTMLMapMarker extends google.maps.OverlayView {{
-                    constructor(latlng, html, anchor = 'center') {{
-                        super();
-                        this.latlng = latlng;
-                        this.html = html;
-                        this.anchor = anchor;
-                        this.div = null;
-                        this.setMap(map);
-                    }}
-                    onAdd() {{
-                        const div = document.createElement('div');
-                        div.style.position = 'absolute';
-                        div.innerHTML = this.html;
-                        this.div = div;
-                        const panes = this.getPanes();
-                        panes.overlayImage.appendChild(div);
-                    }}
-                    draw() {{
-                        if (!this.div) return;
-                        const projection = this.getProjection();
-                        if (!projection) return;
-                        const point = projection.fromLatLngToDivPixel(this.latlng);
-                        if (point) {{
-                            const width = this.div.offsetWidth || 32;
-                            const height = this.div.offsetHeight || 32;
-                            this.div.style.left = (point.x - width / 2) + 'px';
-                            if (this.anchor === 'bottom') {{
-                                this.div.style.top = (point.y - height) + 'px';
-                            }} else {{
-                                this.div.style.top = (point.y - height / 2) + 'px';
-                            }}
-                        }}
-                    }}
-                    onRemove() {{
-                        if (this.div && this.div.parentNode) {{
-                            this.div.parentNode.removeChild(this.div);
-                            this.div = null;
-                        }}
-                    }}
+                if (pathPts.length >= 2) {{
+                    L.polyline(pathPts, {{
+                        color: '#dc2626',
+                        weight: 5,
+                        opacity: 0.95
+                    }}).addTo(map);
                 }}
 
+                // Fit bounds with padding
+                const boundsPoints = [startPt, execPt];
+                if ({has_dest}) boundsPoints.push(destPt);
+                pathPts.forEach(pt => boundsPoints.push(pt));
+                map.fitBounds(boundsPoints, {{ padding: [60, 60] }});
+
                 // 1. START Marker
-                new HTMLMapMarker(
-                    startPt,
-                    `<div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #10b981; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(16,185,129,0.4); color: #fff; font-family: sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">START</div>`,
-                    'center'
-                );
+                const startIcon = L.divIcon({{
+                    className: 'custom-start-marker',
+                    html: `<div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #10b981; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(16,185,129,0.4); color: #fff; font-family: sans-serif; font-size: 8px; font-weight: 900; letter-spacing: 0.5px;">START</div>`,
+                    iconSize: [34, 34],
+                    iconAnchor: [17, 17]
+                }});
+                L.marker(startPt, {{ icon: startIcon }}).addTo(map);
 
                 // 2. Executive Bike Marker
-                const execName = "{executive_name}";
-                const shortName = execName ? execName.split(' ')[0] : 'Executive';
-                new HTMLMapMarker(
-                    execPt,
-                    `<div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; user-select: none;">
+                const execIcon = L.divIcon({{
+                    className: 'custom-exec-marker',
+                    html: `<div style="position: relative; display: flex; flex-direction: column; align-items: center; justify-content: center; user-select: none;">
                         <div style="background: rgba(15, 23, 42, 0.92); border: 1.5px solid #10b981; border-radius: 20px; padding: 2px 8px; color: #f8fafc; font-family: ui-sans-serif, system-ui, sans-serif; font-size: 10px; font-weight: 800; white-space: nowrap; box-shadow: 0 4px 12px rgba(0,0,0,0.4); margin-bottom: 2px; display: flex; align-items: center; gap: 4px; z-index: 10;">
                           <span style="width: 6px; height: 6px; border-radius: 50%; background: #10b981; animation: liveBlink 1.2s infinite ease-in-out;"></span>
-                          <span>${{shortName}}</span>
+                          <span>{short_name}</span>
                         </div>
                         <div style="width: 50px; height: 50px; display: flex; align-items: center; justify-content: center; position: relative;">
                           <div style="position: absolute; width: 44px; height: 44px; border-radius: 50%; background: rgba(16,185,129,0.2); border: 1.5px solid rgba(16,185,129,0.5); animation: scootyRadarPulse 2s infinite cubic-bezier(0.2, 0.8, 0.2, 1); z-index: 1;"></div>
                           <div style="width: 38px; height: 38px; border-radius: 50%; background: #2563eb; border: 2.5px solid white; box-shadow: 0 4px 12px rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; font-size: 18px; z-index: 5;">🏍️</div>
                         </div>
                     </div>`,
-                    'center'
-                );
+                    iconSize: [80, 80],
+                    iconAnchor: [40, 40]
+                }});
+                L.marker(execPt, {{ icon: execIcon }}).addTo(map);
 
                 // 3. Destination Marker
                 if ({has_dest}) {{
-                    new HTMLMapMarker(
-                        destPt,
-                        `<div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #dc2626; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(220,38,38,0.4); color: #fff; font-family: sans-serif; font-size: 14px; font-weight: 900;">🎯</div>`,
-                        'bottom'
-                    );
+                    const destIcon = L.divIcon({{
+                        className: 'custom-dest-marker',
+                        html: `<div style="display: flex; align-items: center; justify-content: center; width: 34px; height: 34px; border-radius: 50%; background: #dc2626; border: 2.5px solid #fff; box-shadow: 0 4px 10px rgba(220,38,38,0.4); color: #fff; font-family: sans-serif; font-size: 14px; font-weight: 900;">🎯</div>`,
+                        iconSize: [34, 34],
+                        iconAnchor: [17, 34]
+                    }});
+                    L.marker(destPt, {{ icon: destIcon }}).addTo(map);
                 }}
 
-                google.maps.event.addListenerOnce(map, 'idle', () => {{
-                    setTimeout(() => {{ window.__map_rendered = true; }}, 1500);
+                tileLayer.on('load', () => {{
+                    setTimeout(() => {{ window.__map_rendered = true; }}, 500);
                 }});
+                setTimeout(() => {{ window.__map_rendered = true; }}, 2000);
             </script>
         </body>
         </html>
