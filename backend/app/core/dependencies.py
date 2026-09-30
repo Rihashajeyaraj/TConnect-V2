@@ -13,177 +13,60 @@ security_scheme = HTTPBearer(auto_error=False)
 
 # ── System Designation Default Templates ─────────────────────────────────────
 
-SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
-    "CEO / Founder": {
-        "permissions": {
-            "crm.leads.view": True, "crm.leads.create": True, "crm.leads.edit": True, "crm.leads.delete": True, "crm.leads.assign": True, "crm.leads.export": True,
-            "crm.customers.view": True, "crm.customers.create": True, "crm.customers.edit": True, "crm.customers.delete": True, "crm.customers.convert": True,
-            "visit.visits.view": True, "visit.visits.create": True, "visit.visits.edit": True, "visit.visits.cancel": True, "visit.visits.snapshots": True,
-            "spatial.map.view": True, "spatial.map.view_team": True, "spatial.map.view_all": True,
-            "hrms.employees.view": True, "hrms.employees.create": True, "hrms.employees.edit": True, "hrms.employees.status": True, "hrms.employees.reporting": True,
-            "hrms.attendance.mark": True, "hrms.attendance.view_own": True, "hrms.attendance.view_team": True, "hrms.attendance.view_all": True, "hrms.attendance.approve": True,
-            "hrms.leaves.view": True, "hrms.leaves.apply": True, "hrms.leaves.cancel": True, "hrms.leaves.approve_team": True, "hrms.leaves.approve_all": True,
-            "expenses.view": True, "expenses.create": True, "expenses.edit": True, "expenses.approve": True,
-            "finance.expenses.view": True, "finance.expenses.view_own": True, "finance.expenses.create": True, "finance.expenses.edit": True, "finance.expenses.edit_own": True, "finance.expenses.view_team": True, "finance.expenses.approve": True,
-            "reports.view": True, "reports.export": True, "system.reports.view": True, "system.reports.export": True,
-            "system.audit.view": True, "system.audit.export": True,
-            "admin.users.view": True, "admin.users.create": True, "admin.users.edit": True, "admin.users.disable": True, "admin.permissions.manage": True,
-            "system.settings.view": True, "system.settings.edit": True,
-            "sales.targets.view": True, "sales.targets.manage": True
-        },
-        "scopes": {
-            "crm.leads.view": "ORG", "crm.leads.edit": "ORG", "crm.leads.delete": "ORG",
-            "crm.customers.view": "ORG", "crm.customers.edit": "ORG", "crm.customers.delete": "ORG",
-            "visit.visits.view": "ORG", "spatial.map.view": "ORG",
-            "hrms.attendance.view_all": "ORG", "hrms.leaves.approve_all": "ORG",
-            "expenses.view": "ORG", "expenses.create": "ORG", "expenses.edit": "ORG", "expenses.approve": "ORG",
-            "finance.expenses.view": "ORG", "finance.expenses.view_team": "ORG", "finance.expenses.approve": "ORG",
-            "reports.view": "ORG", "reports.export": "ORG", "system.reports.view": "ORG", "system.reports.export": "ORG",
-            "sales.targets.view": "ORG", "sales.targets.manage": "ORG"
-        }
+FULL_ACCESS_DEFAULT_TEMPLATE: Dict[str, Any] = {
+    "permissions": {
+        "crm.leads.view": True, "crm.leads.create": True, "crm.leads.edit": True, "crm.leads.delete": True, "crm.leads.assign": True, "crm.leads.export": True, "crm.leads.history": True,
+        "crm.customers.view": True, "crm.customers.create": True, "crm.customers.edit": True, "crm.customers.delete": True, "crm.customers.convert": True,
+        "visit.visits.view": True, "visit.visits.create": True, "visit.visits.edit": True, "visit.visits.cancel": True, "visit.visits.snapshots": True, "visit.visits.history": True,
+        "spatial.map.view": True, "spatial.map.view_team": True, "spatial.map.view_all": True, "system.smart_map.view": True, "system.smart_map.nearby": True, "system.smart_map.assigned": True, "system.smart_map.team": True,
+        "hrms.employees.view": True, "hrms.employees.create": True, "hrms.employees.edit": True, "hrms.employees.status": True, "hrms.employees.reporting": True, "hrms.employees.profile_view": True, "hrms.employees.own_profile_edit": True, "hrms.employees.profile_edit": True, "hrms.holidays.manage": True,
+        "hrms.attendance.mark": True, "hrms.attendance.view_own": True, "hrms.attendance.view_team": True, "hrms.attendance.view_all": True, "hrms.attendance.approve": True, "hrms.attendance.edit": True,
+        "hrms.leaves.view": True, "hrms.leaves.apply": True, "hrms.leaves.cancel": True, "hrms.leaves.approve_team": True, "hrms.leaves.approve_all": True, "hrms.leaves.view_own": True, "hrms.leaves.view_team": True,
+        "expenses.view": True, "expenses.create": True, "expenses.edit": True, "expenses.approve": True, "expenses.return": True,
+        "finance.expenses.view": True, "finance.expenses.view_own": True, "finance.expenses.create": True, "finance.expenses.edit": True, "finance.expenses.edit_own": True, "finance.expenses.view_team": True, "finance.expenses.approve": True, "finance.expenses.reports": True,
+        "reports.view": True, "reports.export": True, "system.reports.view": True, "system.reports.export": True, "system.reports.view_own": True, "system.reports.view_team": True, "system.reports.view_company": True,
+        "system.audit.view": True, "system.audit.export": True, "system.audit.manage": True,
+        "admin.users.view": True, "admin.users.create": True, "admin.users.edit": True, "admin.users.disable": True, "admin.permissions.manage": True,
+        "organization.users.view": True, "organization.users.create": True, "organization.users.edit": True, "organization.users.disable": True, "organization.users.assign_roles": True, "organization.users.assign_manager": True,
+        "organization.company.profile_view": True, "organization.company.profile_edit": True, "organization.company.branches": True, "organization.company.departments": True, "organization.company.designations": True, "organization.company.products": True,
+        "system.settings.view": True, "system.settings.edit": True,
+        "sales.targets.view": True, "sales.targets.manage": True, "sales.activities.view": True, "sales.activities.log": True,
+        "todo.tasks.view": True, "todo.tasks.manage": True,
+        "finance.commission.view": True, "finance.commission.manage": True,
+        "organization.handbook.view": True, "organization.handbook.manage": True,
+        "system.notifications.view": True, "system.notifications.send": True, "system.notifications.manage": True
     },
-    "Super Admin": {
-        "permissions": {
-            "crm.leads.view": True, "crm.leads.create": True, "crm.leads.edit": True, "crm.leads.delete": True, "crm.leads.assign": True, "crm.leads.export": True,
-            "crm.customers.view": True, "crm.customers.create": True, "crm.customers.edit": True, "crm.customers.delete": True, "crm.customers.convert": True,
-            "visit.visits.view": True, "visit.visits.create": True, "visit.visits.edit": True, "visit.visits.cancel": True, "visit.visits.snapshots": True,
-            "spatial.map.view": True, "spatial.map.view_team": True, "spatial.map.view_all": True,
-            "hrms.employees.view": True, "hrms.employees.create": True, "hrms.employees.edit": True, "hrms.employees.status": True, "hrms.employees.reporting": True,
-            "hrms.attendance.mark": True, "hrms.attendance.view_own": True, "hrms.attendance.view_team": True, "hrms.attendance.view_all": True, "hrms.attendance.approve": True,
-            "hrms.leaves.view": True, "hrms.leaves.apply": True, "hrms.leaves.cancel": True, "hrms.leaves.approve_team": True, "hrms.leaves.approve_all": True,
-            "expenses.view": True, "expenses.create": True, "expenses.edit": True, "expenses.approve": True,
-            "finance.expenses.view": True, "finance.expenses.view_own": True, "finance.expenses.create": True, "finance.expenses.edit": True, "finance.expenses.edit_own": True, "finance.expenses.view_team": True, "finance.expenses.approve": True,
-            "reports.view": True, "reports.export": True, "system.reports.view": True, "system.reports.export": True,
-            "system.audit.view": True, "system.audit.export": True,
-            "admin.users.view": True, "admin.users.create": True, "admin.users.edit": True, "admin.users.disable": True, "admin.permissions.manage": True,
-            "system.settings.view": True, "system.settings.edit": True,
-            "sales.targets.view": True, "sales.targets.manage": True
-        },
-        "scopes": {
-            "crm.leads.view": "ORG", "crm.leads.edit": "ORG", "crm.leads.delete": "ORG",
-            "crm.customers.view": "ORG", "crm.customers.edit": "ORG", "crm.customers.delete": "ORG",
-            "visit.visits.view": "ORG", "spatial.map.view": "ORG",
-            "hrms.attendance.view_all": "ORG", "hrms.leaves.approve_all": "ORG",
-            "expenses.view": "ORG", "expenses.create": "ORG", "expenses.edit": "ORG", "expenses.approve": "ORG",
-            "finance.expenses.view": "ORG", "finance.expenses.view_team": "ORG", "finance.expenses.approve": "ORG",
-            "reports.view": "ORG", "reports.export": "ORG", "system.reports.view": "ORG", "system.reports.export": "ORG",
-            "sales.targets.view": "ORG", "sales.targets.manage": "ORG"
-        }
-    },
-    "Admin": {
-        "permissions": {
-            "crm.leads.view": True, "crm.leads.create": True, "crm.leads.edit": True, "crm.leads.delete": True, "crm.leads.assign": True, "crm.leads.export": True,
-            "crm.customers.view": True, "crm.customers.create": True, "crm.customers.edit": True, "crm.customers.delete": True, "crm.customers.convert": True,
-            "visit.visits.view": True, "visit.visits.create": True, "visit.visits.edit": True, "visit.visits.cancel": True, "visit.visits.snapshots": True,
-            "spatial.map.view": True, "spatial.map.view_team": True, "spatial.map.view_all": True,
-            "hrms.employees.view": True, "hrms.employees.create": True, "hrms.employees.edit": True, "hrms.employees.status": True, "hrms.employees.reporting": True,
-            "hrms.attendance.mark": True, "hrms.attendance.view_own": True, "hrms.attendance.view_team": True, "hrms.attendance.view_all": True, "hrms.attendance.approve": True,
-            "hrms.leaves.view": True, "hrms.leaves.apply": True, "hrms.leaves.cancel": True, "hrms.leaves.approve_team": True, "hrms.leaves.approve_all": True,
-            "expenses.view": True, "expenses.create": True, "expenses.edit": True, "expenses.approve": True,
-            "finance.expenses.view": True, "finance.expenses.view_own": True, "finance.expenses.create": True, "finance.expenses.edit": True, "finance.expenses.edit_own": True, "finance.expenses.view_team": True, "finance.expenses.approve": True,
-            "reports.view": True, "reports.export": True, "system.reports.view": True, "system.reports.export": True,
-            "system.audit.view": True, "system.audit.export": True,
-            "admin.users.view": True, "admin.users.create": True, "admin.users.edit": True, "admin.users.disable": True, "admin.permissions.manage": True,
-            "system.settings.view": True, "system.settings.edit": True,
-            "sales.targets.view": True, "sales.targets.manage": True
-        },
-        "scopes": {
-            "crm.leads.view": "ORG", "crm.leads.edit": "ORG", "crm.leads.delete": "ORG",
-            "crm.customers.view": "ORG", "crm.customers.edit": "ORG", "crm.customers.delete": "ORG",
-            "visit.visits.view": "ORG", "spatial.map.view": "ORG",
-            "hrms.attendance.view_all": "ORG", "hrms.leaves.approve_all": "ORG",
-            "expenses.view": "ORG", "expenses.create": "ORG", "expenses.edit": "ORG", "expenses.approve": "ORG",
-            "finance.expenses.view": "ORG", "finance.expenses.view_team": "ORG", "finance.expenses.approve": "ORG",
-            "reports.view": "ORG", "reports.export": "ORG", "system.reports.view": "ORG", "system.reports.export": "ORG",
-            "sales.targets.view": "ORG", "sales.targets.manage": "ORG"
-        }
-    },
-    "Sales Manager": {
-        "permissions": {
-            "crm.leads.view": True, "crm.leads.create": True, "crm.leads.edit": True, "crm.leads.delete": True, "crm.leads.assign": True, "crm.leads.export": True,
-            "crm.customers.view": True, "crm.customers.create": True, "crm.customers.edit": True, "crm.customers.delete": False, "crm.customers.convert": True,
-            "visit.visits.view": True, "visit.visits.create": True, "visit.visits.edit": True, "visit.visits.cancel": True, "visit.visits.snapshots": True,
-            "spatial.map.view": True, "spatial.map.view_team": True, "spatial.map.view_all": False,
-            "hrms.employees.view": True, "hrms.employees.create": False, "hrms.employees.edit": False, "hrms.employees.status": False, "hrms.employees.reporting": False,
-            "hrms.attendance.mark": True, "hrms.attendance.view_own": True, "hrms.attendance.view_team": True, "hrms.attendance.view_all": False, "hrms.attendance.approve": True,
-            "hrms.leaves.view": True, "hrms.leaves.apply": True, "hrms.leaves.cancel": True, "hrms.leaves.approve_team": True, "hrms.leaves.approve_all": False,
-            "expenses.view": True, "expenses.create": True, "expenses.edit": True, "expenses.approve": True,
-            "finance.expenses.view": True, "finance.expenses.view_own": True, "finance.expenses.create": True, "finance.expenses.edit": True, "finance.expenses.edit_own": True, "finance.expenses.view_team": True, "finance.expenses.approve": True,
-            "reports.view": True, "reports.export": True, "system.reports.view": True, "system.reports.export": True,
-            "system.audit.view": False, "system.audit.export": False,
-            "admin.users.view": False, "admin.users.create": False, "admin.users.edit": False, "admin.users.disable": False, "admin.permissions.manage": False,
-            "system.settings.view": True, "system.settings.edit": False,
-            "sales.targets.view": True, "sales.targets.manage": True
-        },
-        "scopes": {
-            "crm.leads.view": "TEAM", "crm.leads.edit": "TEAM", "crm.leads.delete": "TEAM",
-            "crm.customers.view": "TEAM", "crm.customers.edit": "TEAM",
-            "visit.visits.view": "TEAM", "spatial.map.view": "TEAM",
-            "hrms.employees.view": "TEAM",
-            "hrms.attendance.view_team": "TEAM", "hrms.leaves.approve_team": "TEAM",
-            "expenses.view": "TEAM", "expenses.create": "TEAM", "expenses.edit": "TEAM", "expenses.approve": "TEAM",
-            "finance.expenses.view": "TEAM", "finance.expenses.view_team": "TEAM", "finance.expenses.approve": "TEAM",
-            "reports.view": "TEAM", "reports.export": "TEAM", "system.reports.view": "TEAM", "system.reports.export": "TEAM",
-            "sales.targets.view": "TEAM", "sales.targets.manage": "TEAM"
-        }
-    },
-    "Team Lead": {
-        "permissions": {
-            "crm.leads.view": True, "crm.leads.create": True, "crm.leads.edit": True, "crm.leads.delete": False, "crm.leads.assign": True, "crm.leads.export": True,
-            "crm.customers.view": True, "crm.customers.create": True, "crm.customers.edit": False, "crm.customers.delete": False, "crm.customers.convert": False,
-            "visit.visits.view": True, "visit.visits.create": True, "visit.visits.edit": True, "visit.visits.cancel": False, "visit.visits.snapshots": True,
-            "spatial.map.view": True, "spatial.map.view_team": True, "spatial.map.view_all": False,
-            "hrms.employees.view": True, "hrms.employees.create": False, "hrms.employees.edit": False, "hrms.employees.status": False, "hrms.employees.reporting": False,
-            "hrms.attendance.mark": True, "hrms.attendance.view_own": True, "hrms.attendance.view_team": True, "hrms.attendance.view_all": False, "hrms.attendance.approve": True,
-            "hrms.leaves.view": True, "hrms.leaves.apply": True, "hrms.leaves.cancel": True, "hrms.leaves.approve_team": True, "hrms.leaves.approve_all": False,
-            "expenses.view": True, "expenses.create": True, "expenses.edit": True, "expenses.approve": True,
-            "finance.expenses.view": True, "finance.expenses.view_own": True, "finance.expenses.create": True, "finance.expenses.edit": True, "finance.expenses.edit_own": True, "finance.expenses.view_team": True, "finance.expenses.approve": True,
-            "reports.view": True, "reports.export": False, "system.reports.view": True, "system.reports.export": False,
-            "system.audit.view": False, "system.audit.export": False,
-            "admin.users.view": False, "admin.users.create": False, "admin.users.edit": False, "admin.users.disable": False, "admin.permissions.manage": False,
-            "system.settings.view": False, "system.settings.edit": False,
-            "sales.targets.view": True, "sales.targets.manage": False
-        },
-        "scopes": {
-            "crm.leads.view": "TEAM", "crm.leads.edit": "TEAM",
-            "crm.customers.view": "TEAM",
-            "visit.visits.view": "TEAM", "spatial.map.view": "TEAM",
-            "hrms.employees.view": "TEAM",
-            "hrms.attendance.view_team": "TEAM", "hrms.leaves.approve_team": "TEAM",
-            "expenses.view": "TEAM", "expenses.create": "TEAM", "expenses.edit": "TEAM", "expenses.approve": "TEAM",
-            "finance.expenses.view": "TEAM", "finance.expenses.view_team": "TEAM", "finance.expenses.approve": "TEAM",
-            "reports.view": "TEAM", "reports.export": "OWN", "system.reports.view": "TEAM", "system.reports.export": "OWN",
-            "sales.targets.view": "TEAM", "sales.targets.manage": "TEAM"
-        }
-    },
-    "Sales Executive": {
-        "permissions": {
-            "crm.leads.view": True, "crm.leads.create": True, "crm.leads.edit": False, "crm.leads.delete": False, "crm.leads.assign": False, "crm.leads.export": False,
-            "crm.customers.view": True, "crm.customers.create": False, "crm.customers.edit": False, "crm.customers.delete": False, "crm.customers.convert": False,
-            "visit.visits.view": True, "visit.visits.create": True, "visit.visits.edit": False, "visit.visits.cancel": False, "visit.visits.snapshots": True,
-            "spatial.map.view": True, "spatial.map.view_team": False, "spatial.map.view_all": False,
-            "hrms.employees.view": False, "hrms.employees.create": False, "hrms.employees.edit": False, "hrms.employees.status": False, "hrms.employees.reporting": False,
-            "hrms.attendance.mark": True, "hrms.attendance.view_own": True, "hrms.attendance.view_team": False, "hrms.attendance.view_all": False, "hrms.attendance.approve": False,
-            "hrms.leaves.view": True, "hrms.leaves.apply": True, "hrms.leaves.cancel": True, "hrms.leaves.approve_team": False, "hrms.leaves.approve_all": False,
-            "expenses.view": True, "expenses.create": True, "expenses.edit": True, "expenses.approve": False,
-            "finance.expenses.view": True, "finance.expenses.view_own": True, "finance.expenses.create": True, "finance.expenses.edit": True, "finance.expenses.edit_own": True, "finance.expenses.view_team": False, "finance.expenses.approve": False,
-            "reports.view": True, "reports.export": False, "system.reports.view": True, "system.reports.export": False,
-            "system.audit.view": False, "system.audit.export": False,
-            "admin.users.view": False, "admin.users.create": False, "admin.users.edit": False, "admin.users.disable": False, "admin.permissions.manage": False,
-            "system.settings.view": False, "system.settings.edit": False,
-            "sales.targets.view": True, "sales.targets.manage": False
-        },
-        "scopes": {
-            "crm.leads.view": "OWN", "crm.leads.create": "OWN", "crm.leads.edit": "OWN",
-            "crm.customers.view": "OWN",
-            "visit.visits.view": "OWN", "spatial.map.view": "OWN",
-            "hrms.attendance.view_own": "OWN", "hrms.leaves.apply": "OWN",
-            "expenses.view": "OWN", "expenses.create": "OWN", "expenses.edit": "OWN", "expenses.approve": "OWN",
-            "finance.expenses.view": "OWN", "finance.expenses.view_own": "OWN",
-            "reports.view": "OWN", "reports.export": "OWN", "system.reports.view": "OWN", "system.reports.export": "OWN",
-            "sales.targets.view": "OWN", "sales.targets.manage": "OWN"
-        }
+    "scopes": {
+        "crm.leads.view": "ORG", "crm.leads.create": "ORG", "crm.leads.edit": "ORG", "crm.leads.delete": "ORG", "crm.leads.assign": "ORG", "crm.leads.export": "ORG", "crm.leads.history": "ORG",
+        "crm.customers.view": "ORG", "crm.customers.create": "ORG", "crm.customers.edit": "ORG", "crm.customers.delete": "ORG", "crm.customers.convert": "ORG",
+        "visit.visits.view": "ORG", "visit.visits.create": "ORG", "visit.visits.edit": "ORG", "visit.visits.cancel": "ORG", "visit.visits.snapshots": "ORG", "visit.visits.history": "ORG",
+        "spatial.map.view": "ORG", "spatial.map.view_team": "ORG", "spatial.map.view_all": "ORG", "system.smart_map.view": "ORG", "system.smart_map.nearby": "ORG", "system.smart_map.assigned": "ORG", "system.smart_map.team": "ORG",
+        "hrms.employees.view": "ORG", "hrms.employees.create": "ORG", "hrms.employees.edit": "ORG", "hrms.employees.status": "ORG", "hrms.employees.reporting": "ORG", "hrms.employees.profile_view": "ORG", "hrms.employees.own_profile_edit": "ORG", "hrms.employees.profile_edit": "ORG", "hrms.holidays.manage": "ORG",
+        "hrms.attendance.mark": "ORG", "hrms.attendance.view_own": "ORG", "hrms.attendance.view_team": "ORG", "hrms.attendance.view_all": "ORG", "hrms.attendance.approve": "ORG", "hrms.attendance.edit": "ORG",
+        "hrms.leaves.view": "ORG", "hrms.leaves.apply": "ORG", "hrms.leaves.cancel": "ORG", "hrms.leaves.approve_team": "ORG", "hrms.leaves.approve_all": "ORG", "hrms.leaves.view_own": "ORG", "hrms.leaves.view_team": "ORG",
+        "expenses.view": "ORG", "expenses.create": "ORG", "expenses.edit": "ORG", "expenses.approve": "ORG", "expenses.return": "ORG",
+        "finance.expenses.view": "ORG", "finance.expenses.view_own": "ORG", "finance.expenses.create": "ORG", "finance.expenses.edit": "ORG", "finance.expenses.edit_own": "ORG", "finance.expenses.view_team": "ORG", "finance.expenses.approve": "ORG", "finance.expenses.reports": "ORG",
+        "reports.view": "ORG", "reports.export": "ORG", "system.reports.view": "ORG", "system.reports.export": "ORG", "system.reports.view_own": "ORG", "system.reports.view_team": "ORG", "system.reports.view_company": "ORG",
+        "system.audit.view": "ORG", "system.audit.export": "ORG", "system.audit.manage": "ORG",
+        "admin.users.view": "ORG", "admin.users.create": "ORG", "admin.users.edit": "ORG", "admin.users.disable": "ORG", "admin.permissions.manage": "ORG",
+        "organization.users.view": "ORG", "organization.users.create": "ORG", "organization.users.edit": "ORG", "organization.users.disable": "ORG", "organization.users.assign_roles": "ORG", "organization.users.assign_manager": "ORG",
+        "organization.company.profile_view": "ORG", "organization.company.profile_edit": "ORG", "organization.company.branches": "ORG", "organization.company.departments": "ORG", "organization.company.designations": "ORG", "organization.company.products": "ORG",
+        "system.settings.view": "ORG", "system.settings.edit": "ORG",
+        "sales.targets.view": "ORG", "sales.targets.manage": "ORG", "sales.activities.view": "ORG", "sales.activities.log": "ORG",
+        "todo.tasks.view": "ORG", "todo.tasks.manage": "ORG",
+        "finance.commission.view": "ORG", "finance.commission.manage": "ORG",
+        "organization.handbook.view": "ORG", "organization.handbook.manage": "ORG",
+        "system.notifications.view": "ORG", "system.notifications.send": "ORG", "system.notifications.manage": "ORG"
     }
+}
+
+SYSTEM_DESIGNATION_DEFAULTS: Dict[str, Dict[str, Any]] = {
+    "CEO / Founder": FULL_ACCESS_DEFAULT_TEMPLATE,
+    "Super Admin": FULL_ACCESS_DEFAULT_TEMPLATE,
+    "Admin": FULL_ACCESS_DEFAULT_TEMPLATE,
+    "Sales Manager": FULL_ACCESS_DEFAULT_TEMPLATE,
+    "Team Lead": FULL_ACCESS_DEFAULT_TEMPLATE,
+    "Sales Executive": FULL_ACCESS_DEFAULT_TEMPLATE,
 }
 
 # In-memory custom permissions overrides store (keyed by employee_id or auth_user_id)
@@ -227,19 +110,11 @@ def invalidate_employee_permission_cache(employee_id: str, auth_user_id: Optiona
 def get_designation_default_template(designation: str = "") -> Dict[str, Any]:
     """
     Retrieve default designation permission template for initial seeding or admin display.
-    Designation defaults MUST NEVER grant authorization directly at runtime when employee_permissions is missing.
+    Default permission template provides full access (all 70 canonical permissions enabled with ORG scope).
     """
-    template_key = "Sales Executive"
-    desig_clean = str(designation or "").strip()
-    for key in SYSTEM_DESIGNATION_DEFAULTS.keys():
-        if key.lower() in desig_clean.lower() or desig_clean.lower() in key.lower():
-            template_key = key
-            break
-
-    template = SYSTEM_DESIGNATION_DEFAULTS.get(template_key, SYSTEM_DESIGNATION_DEFAULTS["Sales Executive"])
     return {
-        "permissions": dict(template["permissions"]),
-        "scopes": dict(template["scopes"])
+        "permissions": dict(FULL_ACCESS_DEFAULT_TEMPLATE["permissions"]),
+        "scopes": dict(FULL_ACCESS_DEFAULT_TEMPLATE["scopes"])
     }
 
 
@@ -248,7 +123,7 @@ def get_employee_permission_map(employee_id: str, designation: str = "") -> Dict
     Fetch employee permissions and scope map for a specific employee_id.
     Authoritative identity: employee_id.
     ONLY source of truth: organization.employee_permissions DB records or in-memory custom store.
-    FAIL-CLOSED: If employee_permissions cannot be loaded or record is missing, returns empty map {"permissions": {}, "scopes": {}}.
+    If employee has no explicit Admin customization (is_customized=True), inherits default FULL ACCESS template.
     """
     emp_id_str = str(employee_id or "").strip()
     if not emp_id_str:
@@ -260,20 +135,37 @@ def get_employee_permission_map(employee_id: str, designation: str = "") -> Dict
         if cached and cached.get("permissions"):
             return cached
 
+    defaults = get_designation_default_template(designation)
+
     # 2. Query database table organization.employee_permissions using service role admin client or client
     try:
         supabase = get_supabase_admin_client() or get_supabase_client()
         if supabase:
             res = supabase.schema("organization").table("employee_permissions").select("*").eq("employee_id", emp_id_str).execute()
             if res and getattr(res, "data", None) and len(res.data) > 0:
-                perms: Dict[str, bool] = {}
-                scopes: Dict[str, str] = {}
+                # Check if employee has any explicit custom override rows (is_customized == True)
+                has_customizations = any(bool(row.get("is_customized")) for row in res.data)
+                
+                if not has_customizations:
+                    # Employee has no explicit admin customizations -> inherit FULL ACCESS DEFAULT TEMPLATE
+                    result = {
+                        "permissions": dict(defaults["permissions"]),
+                        "scopes": dict(defaults["scopes"])
+                    }
+                    _in_memory_employee_permissions[emp_id_str] = result
+                    return result
+
+                # Employee HAS custom overrides -> map explicit rows
+                perms: Dict[str, bool] = dict(defaults["permissions"])
+                scopes: Dict[str, str] = dict(defaults["scopes"])
+                
                 for row in res.data:
                     p_key = row["permission_key"]
-                    perms[p_key] = bool(row["is_granted"])
-                    if row.get("data_scope"):
-                        scopes[p_key] = str(row["data_scope"])
-                
+                    if bool(row.get("is_customized")):
+                        perms[p_key] = bool(row["is_granted"])
+                        if row.get("data_scope"):
+                            scopes[p_key] = str(row["data_scope"])
+
                 result = {"permissions": perms, "scopes": scopes}
                 _in_memory_employee_permissions[emp_id_str] = result
                 return result
@@ -281,12 +173,8 @@ def get_employee_permission_map(employee_id: str, designation: str = "") -> Dict
         logger.warning(f"Could not load employee permissions from DB for {emp_id_str}: {err}")
 
     # 3. Auto-seed default designation permissions if unseeded in DB
-    if designation:
-        return seed_employee_default_permissions(emp_id_str, designation)
+    return seed_employee_default_permissions(emp_id_str, designation)
 
-    result = {"permissions": {}, "scopes": {}}
-    _in_memory_employee_permissions[emp_id_str] = result
-    return result
 
 
 def seed_employee_default_permissions(employee_id: str, designation: str, auth_user_id: Optional[str] = None) -> Dict[str, Any]:

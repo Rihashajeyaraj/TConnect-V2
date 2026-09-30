@@ -64,6 +64,14 @@ export default function ManagerNotifications() {
     fetchNotifications()
   }, [currentUser?.email])
 
+  useEffect(() => {
+    const handleNotifUpdate = () => {
+      fetchNotifications()
+    }
+    window.addEventListener('tc_notifications_updated', handleNotifUpdate)
+    return () => window.removeEventListener('tc_notifications_updated', handleNotifUpdate)
+  }, [])
+
   const markAllRead = async () => {
     setList((prev) => prev.map((n) => ({ ...n, read: true, is_read: true })))
     showToast('All notifications marked as read!', 'success')

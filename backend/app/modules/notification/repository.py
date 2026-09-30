@@ -102,7 +102,12 @@ class NotificationRepository:
             return {}
         row = dict(n)
         row["id"] = str(row.get("id") or row.get("notification_id") or uuid.uuid4())
-        row["message"] = row.get("description") or row.get("message") or ""
+        msg_val = str(row.get("description") or row.get("message") or row.get("body") or row.get("text") or row.get("notes") or "")
+        title_val = str(row.get("title") or row.get("subject") or "System Notification")
+        row["title"] = title_val
+        row["message"] = msg_val
+        row["description"] = msg_val
+        row["body"] = msg_val
         row["type"] = row.get("category") or row.get("type") or "INFO"
         row["notification_type"] = row.get("category") or row.get("type") or "INFO"
 
@@ -284,8 +289,15 @@ class NotificationRepository:
         now_iso = datetime.utcnow().isoformat() + "Z"
 
         recip_role = str(data.get("recipient_role") or data.get("recipientRole") or "all")
-        title_str = str(data.get("title") or "System Notification")
-        msg_str = str(data.get("message") or "")
+        title_str = str(data.get("title") or data.get("subject") or "System Notification").strip()
+        msg_str = str(
+            data.get("message") or
+            data.get("description") or
+            data.get("body") or
+            data.get("text") or
+            data.get("notes") or
+            ""
+        ).strip()
         type_str = str(data.get("type") or data.get("notification_type") or data.get("category") or "INFO")
         is_read_val = bool(data.get("is_read") or data.get("read") or False)
 
@@ -436,11 +448,17 @@ class NotificationRepository:
                 logger.info(f"[PUSH] unread_count = {fresh_unread}")
 
                 push_payload = {
-                    "type":         "new_notification",
-                    "title":        title_str,
-                    "body":         msg_str,
-                    "unread_count": fresh_unread,
-                    "url":          target_url,
+                    "id":                notif_id,
+                    "notification_id":   notif_id,
+                    "type":              type_str,
+                    "notification_type": type_str,
+                    "category":          type_str,
+                    "title":             title_str,
+                    "body":              msg_str,
+                    "message":           msg_str,
+                    "description":       msg_str,
+                    "unread_count":      fresh_unread,
+                    "url":               target_url,
                 }
 
                 subs = self.get_push_subscriptions_for_user(

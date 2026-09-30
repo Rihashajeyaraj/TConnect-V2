@@ -2,6 +2,8 @@ import { useState, useEffect, useRef } from 'react'
 import { Link, NavLink, useLocation, Outlet, useNavigate } from 'react-router-dom'
 import useNotificationCount from '../../hooks/useNotificationCount.js'
 import { useToast } from '../../common/ToastContext.jsx'
+import { usePermissions } from '../../context/PermissionContext.jsx'
+import { filterNavigationItems } from '../../config/navigationPermissions.js'
 import ImageCropperModal from '../../common/ImageCropperModal.jsx'
 import PhotoLightboxModal from '../../common/PhotoLightboxModal.jsx'
 import TwiteConnectLogo from '../../common/TwiteConnectLogo.jsx'
@@ -636,6 +638,9 @@ function AdminLayout() {
     });
   };
 
+  const { hasPermission } = usePermissions()
+  const visibleSidebarItems = filterNavigationItems(sidebarItems, hasPermission)
+
   return (
     <div className="h-screen overflow-hidden bg-[#F7F9FC] text-slate-900 flex flex-col font-sans admin-portal-root">
       <style>{`
@@ -945,7 +950,7 @@ function AdminLayout() {
           </div>
 
           <div className="flex-1 p-3 space-y-1 overflow-y-auto">
-            {sidebarItems.map((item, index) => {
+            {visibleSidebarItems.map((item, index) => {
               const Icon = item.icon
               const isActive = location.pathname.replace(/\/$/, '') === item.path.replace(/\/$/, '') || (item.path === '/admin' && (location.pathname === '/admin' || location.pathname === '/admin/'))
               return (

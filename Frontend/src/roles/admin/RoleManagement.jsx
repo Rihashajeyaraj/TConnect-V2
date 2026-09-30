@@ -44,6 +44,7 @@ import {
   RotateCcw,
 } from 'lucide-react'
 import { useToast } from '../../common/ToastContext.jsx'
+import { usePermissions } from '../../context/PermissionContext.jsx'
 import { settingsAPI, userAPI, hrmsAPI } from '../../services/api.js'
 
 const getUserPhoto = (u) => {
@@ -789,368 +790,397 @@ const INITIAL_MASTER_ROLES = [
 
 function RoleManagement() {
   const { showToast } = useToast()
-  const [activeTab, setActiveTab] = useState('users') // 'users' | 'roles'
-  const [roles, setRoles] = useState(INITIAL_MASTER_ROLES)
-  const [selectedRole, setSelectedRole] = useState(INITIAL_MASTER_ROLES[0])
-  const [searchQuery, setSearchQuery] = useState('')
-  const [typeFilter, setTypeFilter] = useState('ALL')
-  const [statusFilter, setStatusFilter] = useState('ALL')
-  const [showAddRoleModal, setShowAddRoleModal] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [hasChanges, setHasChanges] = useState(false)
+  const { refreshPermissions } = usePermissions()
 
-  // Users Roster State
-  const [allUsers, setAllUsers] = useState([])
-  const [selectedUser, setSelectedUser] = useState(null)
-  const [userSearchQuery, setUserSearchQuery] = useState('')
-  const [userRoleFilter, setUserRoleFilter] = useState('ALL')
-  const [userDeptFilter, setUserDeptFilter] = useState('ALL')
-  
-  // Selected User Permissions State
-  const [selectedUserRole, setSelectedUserRole] = useState('Sales Executive')
-  const [userPermMode, setUserPermMode] = useState('default') // 'default' | 'manual'
-  const [userCustomPerms, setUserCustomPerms] = useState({})
-  const [userSaving, setUserSaving] = useState(false)
+  const [activeTab, setActiveTab] = useState('users')
+  const [allEmployees, setAllEmployees] = useState([])
+  const [loadingEmployees, setLoadingEmployees] = useState(true)
 
-  // Compute master default permissions for currently selected user role
-  const defaultMasterPerms = useMemo(() => {
-    return getMasterPermissionsForRole(selectedUserRole, roles)
-  }, [selectedUserRole, roles])
+  // Left panel filters
+  const [employeeSearch, setEmployeeSearch] = useState('')
+  const [roleFilter, setRoleFilter] = useState('ALL')
+  const [deptFilter, setDeptFilter] = useState('ALL')
 
-  const activeUserPermissions = useMemo(() => {
-    return userPermMode === 'manual' && Object.keys(userCustomPerms).length > 0
-      ? userCustomPerms
-      : defaultMasterPerms
-  }, [userPermMode, userCustomPerms, defaultMasterPerms])
+  // Selected employee state
+  const [selectedEmp, setSelectedEmp] = useState(null)
+  const [loadingEmpPermissions, setLoadingEmpPermissions] = useState(false)
+  const [permMode, setPermMode] = useState('default') // 'default' | 'manual'
+  const [permissionState, setPermissionState] = useState({}) // { key: { is_granted: bool, scope: string } }
+  const [savingPermissions, setSavingPermissions] = useState(false)
+  const [resettingPermissions, setResettingPermissions] = useState(false)
 
-  // Popup Modal state when selecting a user
-  const [showPresetPopupModal, setShowPresetPopupModal] = useState(false)
-  const [pendingUserSelect, setPendingUserSelect] = useState(null)
+  // Master templates state for roles tab
+  const [masterRoles, setMasterRoles] = useState([
+    { id: 'super_admin', name: 'Super Admin', isSystem: true, description: 'Full administrative control over all organization modules.' },
+    { id: 'sales_manager', name: 'Sales Manager', isSystem: true, description: 'Sales team management, field activity tracking, and performance reporting.' },
+    { id: 'team_lead', name: 'Team Lead', isSystem: true, description: 'Oversee field team, approve leaves/expenses, and assign lead pipelines.' },
+    { id: 'sales_executive', name: 'Sales Executive', isSystem: true, description: 'Field sales visits, attendance tracking, and lead pipeline management.' },
+  ])
 
-  // Render permissions list for Role Master Template editor
-  const [renderPerms, setRenderPerms] = useState([])
+  // Full registry of canonical permissions grouped by module
+  const CANONICAL_CATEGORIES = [
+    {
+      category: 'CRM',
+      title: 'CRM & Customer Pipeline',
+      items: [
+        { key: 'crm.leads.view', name: 'Leads', action: 'View', supportsScope: true },
+        { key: 'crm.leads.create', name: 'Leads', action: 'Create', supportsScope: false },
+        { key: 'crm.leads.edit', name: 'Leads', action: 'Edit', supportsScope: false },
+        { key: 'crm.leads.delete', name: 'Leads', action: 'Delete', supportsScope: false },
+        { key: 'crm.leads.assign', name: 'Leads', action: 'Assign', supportsScope: false },
+        { key: 'crm.customers.view', name: 'Customers', action: 'View', supportsScope: true },
+        { key: 'crm.customers.create', name: 'Customers', action: 'Create', supportsScope: false },
+        { key: 'crm.customers.edit', name: 'Customers', action: 'Edit', supportsScope: false },
+        { key: 'crm.customers.delete', name: 'Customers', action: 'Delete', supportsScope: false },
+        { key: 'crm.customers.convert', name: 'Customers', action: 'Convert', supportsScope: false },
+      ],
+    },
+    {
+      category: 'HRMS',
+      title: 'HRMS & Employee Management',
+      items: [
+        { key: 'hrms.employees.view', name: 'Employees', action: 'View', supportsScope: true },
+        { key: 'hrms.employees.create', name: 'Employees', action: 'Create', supportsScope: false },
+        { key: 'hrms.employees.edit', name: 'Employees', action: 'Edit', supportsScope: false },
+        { key: 'hrms.employees.status', name: 'Employees', action: 'Status / Deactivate', supportsScope: false },
+        { key: 'hrms.employees.reporting', name: 'Employees', action: 'Reporting Hierarchy', supportsScope: false },
+        { key: 'hrms.holidays.manage', name: 'Holidays', action: 'Manage Calendar', supportsScope: false },
+      ],
+    },
+    {
+      category: 'Attendance & Leaves',
+      title: 'Attendance & Time Off',
+      items: [
+        { key: 'hrms.attendance.mark', name: 'Attendance', action: 'Mark Own Check-in', supportsScope: false },
+        { key: 'hrms.attendance.view_own', name: 'Attendance', action: 'View Own', supportsScope: false },
+        { key: 'hrms.attendance.view_team', name: 'Attendance', action: 'View Team', supportsScope: false },
+        { key: 'hrms.attendance.view_all', name: 'Attendance', action: 'View All', supportsScope: false },
+        { key: 'hrms.attendance.approve', name: 'Attendance', action: 'Approve Punch Logs', supportsScope: false },
+        { key: 'hrms.leaves.view', name: 'Leaves', action: 'View Calendar', supportsScope: false },
+        { key: 'hrms.leaves.apply', name: 'Leaves', action: 'Apply Leave', supportsScope: false },
+        { key: 'hrms.leaves.cancel', name: 'Leaves', action: 'Cancel Leave', supportsScope: false },
+        { key: 'hrms.leaves.approve_team', name: 'Leaves', action: 'Approve Team', supportsScope: false },
+        { key: 'hrms.leaves.approve_all', name: 'Leaves', action: 'Approve All', supportsScope: false },
+      ],
+    },
+    {
+      category: 'Visits',
+      title: 'Field Visits & Client Logs',
+      items: [
+        { key: 'visit.visits.view', name: 'Visits', action: 'View Log', supportsScope: true },
+        { key: 'visit.visits.create', name: 'Visits', action: 'Create / Schedule', supportsScope: false },
+        { key: 'visit.visits.edit', name: 'Visits', action: 'Edit Notes', supportsScope: false },
+        { key: 'visit.visits.cancel', name: 'Visits', action: 'Cancel Visit', supportsScope: false },
+      ],
+    },
+    {
+      category: 'Spatial Map',
+      title: 'Spatial Map & Field Tracking',
+      items: [
+        { key: 'spatial.map.view', name: 'Live Map', action: 'View Own Location', supportsScope: false },
+        { key: 'spatial.map.view_team', name: 'Live Map', action: 'View Team Map', supportsScope: false },
+        { key: 'spatial.map.view_all', name: 'Live Map', action: 'View All Field Map', supportsScope: false },
+      ],
+    },
+    {
+      category: 'Expenses',
+      title: 'Expense Claims & Reimbursement',
+      items: [
+        { key: 'expenses.view', name: 'Expenses', action: 'View Claims', supportsScope: true },
+        { key: 'expenses.create', name: 'Expenses', action: 'Create Claim', supportsScope: false },
+        { key: 'expenses.edit', name: 'Expenses', action: 'Edit Claim', supportsScope: false },
+        { key: 'expenses.approve', name: 'Expenses', action: 'Approve Claim', supportsScope: false },
+        { key: 'expenses.return', name: 'Expenses', action: 'Return for Correction', supportsScope: false },
+      ],
+    },
+    {
+      category: 'Reports & Analytics',
+      title: 'Business Performance Reports',
+      items: [
+        { key: 'reports.view', name: 'Reports', action: 'View Analytics', supportsScope: false },
+        { key: 'reports.export', name: 'Reports', action: 'Export Excel/PDF', supportsScope: false },
+      ],
+    },
+    {
+      category: 'Admin Portal',
+      title: 'System Administration',
+      items: [
+        { key: 'admin.users.view', name: 'User Management', action: 'View Users Directory', supportsScope: true },
+        { key: 'admin.users.create', name: 'User Management', action: 'Create User Account', supportsScope: false },
+        { key: 'admin.users.edit', name: 'User Management', action: 'Edit User Info', supportsScope: false },
+        { key: 'admin.users.disable', name: 'User Management', action: 'Disable / Lock Access', supportsScope: false },
+        { key: 'admin.permissions.manage', name: 'Role Management', action: 'Manage RBAC Matrix', supportsScope: false },
+      ],
+    },
+    {
+      category: 'Audit & Compliance',
+      title: 'System Audit Trails',
+      items: [
+        { key: 'system.audit.view', name: 'Audit Logs', action: 'View Security Audit', supportsScope: true },
+        { key: 'system.audit.export', name: 'Audit Logs', action: 'Export Audit Logs', supportsScope: false },
+      ],
+    },
+    {
+      category: 'Settings',
+      title: 'System & Organization Settings',
+      items: [
+        { key: 'system.settings.view', name: 'Settings', action: 'View Company Config', supportsScope: false },
+        { key: 'system.settings.edit', name: 'Settings', action: 'Edit Master Settings', supportsScope: false },
+      ],
+    },
+    {
+      category: 'Sales Targets',
+      title: 'Sales & Activity Targets',
+      items: [
+        { key: 'sales.targets.view', name: 'Targets', action: 'View Quotas', supportsScope: false },
+        { key: 'sales.targets.manage', name: 'Targets', action: 'Assign Targets', supportsScope: false },
+        { key: 'sales.activities.view', name: 'Activities', action: 'View Activity Feed', supportsScope: false },
+        { key: 'sales.activities.log', name: 'Activities', action: 'Log Activity', supportsScope: false },
+      ],
+    },
+    {
+      category: 'Tasks & To-Do',
+      title: 'Task Management',
+      items: [
+        { key: 'todo.tasks.view', name: 'Tasks', action: 'View Tasks', supportsScope: false },
+        { key: 'todo.tasks.manage', name: 'Tasks', action: 'Manage & Assign Tasks', supportsScope: false },
+      ],
+    },
+    {
+      category: 'Finance & Org',
+      title: 'Commission & Handbook',
+      items: [
+        { key: 'finance.commission.view', name: 'Commission', action: 'View Statements', supportsScope: false },
+        { key: 'finance.commission.manage', name: 'Commission', action: 'Manage Payouts', supportsScope: false },
+        { key: 'organization.handbook.view', name: 'Handbook', action: 'View Policies', supportsScope: false },
+        { key: 'organization.handbook.manage', name: 'Handbook', action: 'Manage Policies', supportsScope: false },
+      ],
+    },
+  ]
 
-  const [newRole, setNewRole] = useState({
-    name: '',
-    description: '',
-    status: 'Active',
-    base_role_id: '',
-  })
-
-  // Fetch Users Roster with robust multi-layer fallback (userAPI -> hrmsAPI -> localStorage)
-  const fetchUsersRoster = async () => {
-    let uList = []
-    
-    // 1. Primary: userAPI.getUsers
+  // Load employee directory
+  const loadEmployeeRoster = async () => {
+    setLoadingEmployees(true)
     try {
-      const res = await userAPI.getUsers({ bypassCache: true })
+      let empList = []
+      const res = await userAPI.getUsers({ bypassCache: true }).catch(() => null)
       const rawData = res?.data || res
       if (Array.isArray(rawData) && rawData.length > 0) {
-        uList = rawData
-      } else if (res?.users && Array.isArray(res.users) && res.users.length > 0) {
-        uList = res.users
+        empList = rawData
+      } else if (res?.users && Array.isArray(res.users)) {
+        empList = res.users
+      }
+
+      if (!empList || empList.length === 0) {
+        const hrmsRes = await hrmsAPI.getEmployees().catch(() => null)
+        const rawHrms = hrmsRes?.data?.employees || hrmsRes?.data || hrmsRes?.employees || hrmsRes
+        if (Array.isArray(rawHrms) && rawHrms.length > 0) {
+          empList = rawHrms
+        }
+      }
+
+      setAllEmployees(empList || [])
+
+      if (empList && empList.length > 0 && !selectedEmp) {
+        handleSelectEmployee(empList[0])
       }
     } catch (err) {
-      console.warn('userAPI.getUsers failed, falling back:', err)
-    }
-
-    // 2. Fallback: hrmsAPI.getEmployees
-    if (!uList || uList.length === 0) {
-      try {
-        const empRes = await hrmsAPI.getEmployees()
-        const rawEmp = empRes?.data?.employees || empRes?.data || empRes?.employees || empRes
-        if (Array.isArray(rawEmp) && rawEmp.length > 0) {
-          uList = rawEmp
-        }
-      } catch (err) {
-        console.warn('hrmsAPI.getEmployees failed, falling back:', err)
-      }
-    }
-
-    // 3. Fallback: localStorage cache
-    if (!uList || uList.length === 0) {
-      try {
-        const saved = localStorage.getItem('tc_app_users')
-        if (saved) {
-          const parsed = JSON.parse(saved)
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            uList = parsed
-          }
-        }
-      } catch (err) {}
-    }
-
-    // 4. Fallback: Default seed users if empty
-    if (!uList || uList.length === 0) {
-      uList = [
-        { id: 'usr_aaron', name: 'Aaron Fdo', email: 'Aaron@twite.ai', role: 'Sales Executive', designation: 'Sales Executive', status: 'Active' },
-        { id: 'usr_abc', name: 'abc', email: 'abc@twite.ai', role: 'Sales Executive', designation: 'Sales Executive', status: 'Active' },
-        { id: 'usr_abi', name: 'Abi hastro', email: 'abi@gmail.com', role: 'Sales Executive', designation: 'Sales Executive', status: 'Active' },
-        { id: 'usr_admin', name: 'Admin', email: 'admin@twiteconnect.com', role: 'Super Admin', designation: 'Super Admin', status: 'Active' },
-        { id: 'usr_akila', name: 'akila', email: 'Akila@twite.ai', role: 'Team Lead', designation: 'Team Lead', status: 'Active' },
-      ]
-    }
-
-    return uList
-  }
-
-  // Load Roles & Users Data (Non-blocking with instant pre-populated defaults & multi-layer user fetch)
-  const loadData = async () => {
-    try {
-      // 1. Check local storage for customized master role templates
-      const savedMasterTemplates = localStorage.getItem('tconnect_master_role_templates')
-      if (savedMasterTemplates) {
-        try {
-          const parsed = JSON.parse(savedMasterTemplates)
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setRoles(parsed)
-          }
-        } catch (e) {}
-      }
-
-      const [settingsRes, uList] = await Promise.all([
-        settingsAPI.getSettings().catch(() => null),
-        fetchUsersRoster(),
-      ])
-
-      if (settingsRes?.data?.role_permissions) {
-        const fetchedRoles = settingsRes.data.role_permissions.map((r) => ({
-          ...r,
-          status: r.status || (r.is_active === false ? 'Inactive' : 'Active'),
-          is_active: r.is_active !== false,
-        }))
-        if (fetchedRoles.length > 0) {
-          setRoles((prev) => {
-            return fetchedRoles.map((fr) => {
-              const match = prev.find((p) => p.id === fr.id || p.name === fr.name)
-              return {
-                ...fr,
-                custom_permissions: fr.custom_permissions || match?.custom_permissions || STANDARD_MASTER_ROLE_DEFAULTS[fr.name] || STANDARD_MASTER_ROLE_DEFAULTS['Sales Executive'],
-              }
-            })
-          })
-          setSelectedRole((prev) => prev || fetchedRoles[0])
-        }
-      }
-
-      if (Array.isArray(uList) && uList.length > 0) {
-        setAllUsers(uList)
-        setSelectedUser((prev) => {
-          if (prev) return prev
-          const first = uList[0]
-          setSelectedUserRole(first.role || first.designation || 'Sales Executive')
-          const cPerms = first.custom_permissions
-          if (cPerms && typeof cPerms === 'object' && (cPerms.is_manual || Object.keys(cPerms).length > 1)) {
-            setUserPermMode('manual')
-            setUserCustomPerms(cPerms)
-          } else {
-            setUserPermMode('default')
-            setUserCustomPerms({})
-          }
-          return first
-        })
-      }
-    } catch (err) {
-      console.error('Error loading RBAC data:', err)
+      console.error('Failed to load employee roster:', err)
+      showToast('Error loading employee directory', 'error')
     } finally {
-      setLoading(false)
+      setLoadingEmployees(false)
     }
   }
 
   useEffect(() => {
-    loadData()
+    loadEmployeeRoster()
   }, [])
 
-  // User Selection Handler (Triggers Choice Popup Modal for Admin)
-  const handleSelectUser = (usr, showModal = true) => {
-    if (!usr) return
-    setSelectedUser(usr)
-    const roleVal = usr.role || usr.designation || 'Sales Executive'
-    setSelectedUserRole(roleVal)
+  // Load specific employee's permissions from API
+  const handleSelectEmployee = async (emp) => {
+    if (!emp) return
+    setSelectedEmp(emp)
+    setLoadingEmpPermissions(true)
 
-    const cPerms = usr.custom_permissions
-    if (cPerms && typeof cPerms === 'object' && (cPerms.is_manual || Object.keys(cPerms).length > 1)) {
-      setUserPermMode('manual')
-      setUserCustomPerms(cPerms)
-    } else {
-      setUserPermMode('default')
-      setUserCustomPerms({})
-    }
-
-    if (showModal) {
-      setPendingUserSelect(usr)
-      setShowPresetPopupModal(true)
-    }
-  }
-
-  // Save Selected User Role & Permissions
-  const handleSaveUserPermissions = async () => {
-    if (!selectedUser) return
-    setUserSaving(true)
+    const empId = emp.employee_id || emp.employee_code || emp.id
     try {
-      const payloadPermissions = userPermMode === 'manual'
-        ? { is_manual: true, ...userCustomPerms }
-        : { is_default: true }
+      const res = await userAPI.getUserPermissions(empId)
+      const data = res?.data || res
 
-      const updatePayload = {
-        role: selectedUserRole,
-        designation: selectedUserRole,
-        custom_permissions: payloadPermissions,
-      }
+      const isCustomized = Boolean(data?.is_customized || data?.is_manual)
+      setPermMode(isCustomized ? 'manual' : 'default')
 
-      await userAPI.updateUser(selectedUser.id, updatePayload).catch(() => null)
-      await hrmsAPI.updateEmployee(selectedUser.employee_code || selectedUser.id, updatePayload).catch(() => null)
+      // Build dictionary for matrix: { [key]: { is_granted: boolean, scope: string } }
+      const dict = {}
 
-      showToast(`Permissions & role successfully updated for ${selectedUser.name}!`, 'success')
-
-      const updatedUsers = allUsers.map((u) =>
-        u.id === selectedUser.id
-          ? { ...u, role: selectedUserRole, custom_permissions: payloadPermissions }
-          : u
-      )
-      setAllUsers(updatedUsers)
-      setSelectedUser({
-        ...selectedUser,
-        role: selectedUserRole,
-        custom_permissions: payloadPermissions,
+      // Default: ALL permissions enabled by default with ORG scope
+      CANONICAL_CATEGORIES.forEach((cat) => {
+        cat.items.forEach((item) => {
+          dict[item.key] = {
+            is_granted: true,
+            scope: 'ORG',
+          }
+        })
       })
+
+      // If backend returns detailed permission rows / dict
+      if (data?.permissions && typeof data.permissions === 'object') {
+        Object.entries(data.permissions).forEach(([k, val]) => {
+          const isGranted = typeof val === 'boolean' ? val : Boolean(val?.is_granted ?? val?.enabled ?? true)
+          const scopeVal = data?.scopes?.[k] || val?.data_scope || val?.scope || 'ORG'
+          dict[k] = {
+            is_granted: isGranted,
+            scope: scopeVal,
+          }
+        })
+      }
+
+      setPermissionState(dict)
     } catch (err) {
-      showToast(err?.message || 'Saved permissions successfully', 'success')
+      console.warn(`Could not load permissions for user ${empId}, initializing with default template:`, err?.message)
+      setPermMode('default')
+      const dict = {}
+      CANONICAL_CATEGORIES.forEach((cat) => {
+        cat.items.forEach((item) => {
+          dict[item.key] = { is_granted: true, scope: 'ORG' }
+        })
+      })
+      setPermissionState(dict)
     } finally {
-      setUserSaving(false)
+      setLoadingEmpPermissions(false)
     }
   }
 
-  // Master Template Permissions Generator
-  const buildRenderPermsForRole = (role) => {
-    if (!role) return
-    const built = systemPermissionsList.map((sys) => {
-      const structured = (role.structured_permissions || []).find(
-        (sp) => sp.permission_key === sys.permission_key
-      )
-      if (structured) {
-        return {
-          ...sys,
-          enabled: structured.enabled ?? true,
-          access_scope: structured.access_scope || 'All',
-        }
-      }
-      return {
-        ...sys,
-        enabled: role.isSystem || role.is_system ? true : false,
-        access_scope: 'All',
-      }
-    })
-    setRenderPerms(built)
-    setHasChanges(false)
-  }
-
-  // Handle Role Selection in Master Templates Tab
-  const handleRoleSelect = (role) => {
-    if (hasChanges) {
-      if (!window.confirm(`You have unsaved changes for '${selectedRole.name}'. Discard changes?`)) {
-        return
-      }
+  // Handle individual permission toggle or scope change
+  const handlePermissionChange = (key, changes) => {
+    if (permMode === 'default') {
+      setPermMode('manual') // Automatically switch to manual override mode when edited
     }
-    setSelectedRole(role)
-    buildRenderPermsForRole(role)
+    setPermissionState((prev) => ({
+      ...prev,
+      [key]: {
+        ...prev[key],
+        ...changes,
+      },
+    }))
   }
 
-  // Save Master Template Permissions
+  // Save Employee Custom Permissions
   const handleSavePermissions = async () => {
-    if (!selectedRole) return
-
-    const updatedRoles = roles.map((r) => {
-      if (r.id === selectedRole.id || r.name === selectedRole.name) {
-        return {
-          ...r,
-          ...selectedRole,
-          custom_permissions: selectedRole.custom_permissions || r.custom_permissions,
-          structured_permissions: renderPerms,
-        }
-      }
-      return r
-    })
+    if (!selectedEmp) return
+    setSavingPermissions(true)
+    const empId = selectedEmp.employee_id || selectedEmp.employee_code || selectedEmp.id
 
     try {
-      await settingsAPI.updateSettings({
-        role_permissions: updatedRoles,
-      }).catch(() => null)
-      localStorage.setItem('tconnect_master_role_templates', JSON.stringify(updatedRoles))
-      showToast(`Successfully configured master template for role '${selectedRole.name}'!`, 'success')
-      setRoles(updatedRoles)
-      setHasChanges(false)
+      const permissionsArray = Object.entries(permissionState).map(([key, val]) => ({
+        permission_key: key,
+        is_granted: Boolean(val.is_granted),
+        data_scope: val.scope || 'ORG',
+      }))
+
+      const payload = {
+        is_manual: permMode === 'manual',
+        mode: permMode,
+        permissions: permissionsArray,
+      }
+
+      await userAPI.updateUserPermissions(empId, payload)
+      if (refreshPermissions) {
+        await refreshPermissions()
+      }
+
+      showToast(`Permissions successfully saved for ${selectedEmp.first_name || selectedEmp.name || empId}!`, 'success')
+
+      setAllEmployees((prev) =>
+        prev.map((e) =>
+          (e.employee_id || e.id) === empId ? { ...e, is_customized: permMode === 'manual' } : e
+        )
+      )
     } catch (err) {
-      localStorage.setItem('tconnect_master_role_templates', JSON.stringify(updatedRoles))
-      showToast(`Template updated successfully`, 'success')
-      setRoles(updatedRoles)
-      setHasChanges(false)
+      console.error('Error saving user permissions:', err)
+      showToast(err?.message || 'Failed to save user permissions', 'error')
+    } finally {
+      setSavingPermissions(false)
     }
   }
 
-  // Filtered Users List
-  const filteredUsers = useMemo(() => {
-    return allUsers.filter((u) => {
-      if (userRoleFilter !== 'ALL') {
-        const uRole = (u.role || u.designation || '').toLowerCase().trim()
-        const fRole = userRoleFilter.toLowerCase().trim()
-        if (fRole === 'system') {
-          if (!['super admin', 'sales manager', 'sales executive'].includes(uRole)) return false
-        } else if (!uRole.includes(fRole) && !fRole.includes(uRole)) {
-          return false
-        }
+  // Reset Employee Permissions to Default
+  const handleResetToDefault = async () => {
+    if (!selectedEmp) return
+    const empName = selectedEmp.first_name || selectedEmp.name || selectedEmp.employee_id
+    if (!window.confirm(`Are you sure you want to reset all permissions for ${empName} to default? This will clear all manual overrides.`)) {
+      return
+    }
+
+    setResettingPermissions(true)
+    const empId = selectedEmp.employee_id || selectedEmp.employee_code || selectedEmp.id
+
+    try {
+      await userAPI.resetUserPermissions(empId)
+      if (refreshPermissions) {
+        await refreshPermissions()
       }
-      if (userDeptFilter !== 'ALL') {
-        const uDept = (u.department || u.dept || '').toLowerCase().trim()
-        const fDept = userDeptFilter.toLowerCase().trim()
-        if (!uDept.includes(fDept) && !fDept.includes(uDept)) return false
+
+      setPermMode('default')
+
+      // Reset state to ALL granted
+      const dict = {}
+      CANONICAL_CATEGORIES.forEach((cat) => {
+        cat.items.forEach((item) => {
+          dict[item.key] = { is_granted: true, scope: 'ORG' }
+        })
+      })
+      setPermissionState(dict)
+
+      showToast(`All permissions reset to default for ${empName}!`, 'success')
+
+      setAllEmployees((prev) =>
+        prev.map((e) =>
+          (e.employee_id || e.id) === empId ? { ...e, is_customized: false } : e
+        )
+      )
+    } catch (err) {
+      console.error('Error resetting permissions:', err)
+      showToast(err?.message || 'Failed to reset permissions', 'error')
+    } finally {
+      setResettingPermissions(false)
+    }
+  }
+
+  // Filtered employees roster
+  const filteredEmployees = useMemo(() => {
+    return allEmployees.filter((emp) => {
+      if (roleFilter !== 'ALL') {
+        const des = (emp.designation || emp.role || '').toLowerCase()
+        if (!des.includes(roleFilter.toLowerCase())) return false
       }
-      if (userSearchQuery.trim()) {
-        const q = userSearchQuery.toLowerCase().trim()
-        const nameMatch = (u.name || `${u.first_name || ''} ${u.last_name || ''}`).toLowerCase().includes(q)
-        const emailMatch = (u.email || '').toLowerCase().includes(q)
-        const codeMatch = (u.employee_code || u.employee_id || '').toLowerCase().includes(q)
-        if (!nameMatch && !emailMatch && !codeMatch) return false
+      if (deptFilter !== 'ALL') {
+        const dept = (emp.department || '').toLowerCase()
+        if (!dept.includes(deptFilter.toLowerCase())) return false
+      }
+      if (employeeSearch.trim()) {
+        const q = employeeSearch.toLowerCase().trim()
+        const name = (emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`).toLowerCase()
+        const email = (emp.work_email || emp.email || '').toLowerCase()
+        const code = (emp.employee_id || emp.employee_code || '').toLowerCase()
+        if (!name.includes(q) && !email.includes(q) && !code.includes(q)) return false
       }
       return true
-    }).sort((a, b) => (a.name || '').localeCompare(b.name || ''))
-  }, [allUsers, userRoleFilter, userDeptFilter, userSearchQuery])
-
-  // Filtered Roles List for Templates Tab
-  const filteredRoles = useMemo(() => {
-    return roles.filter((r) => {
-      const matchesSearch = r.name.toLowerCase().includes(searchQuery.toLowerCase()) || (r.description || '').toLowerCase().includes(searchQuery.toLowerCase())
-      const isSys = r.isSystem || r.is_system
-      const matchesType = typeFilter === 'ALL' || (typeFilter === 'SYSTEM' && isSys) || (typeFilter === 'CUSTOM' && !isSys)
-      const matchesStatus = statusFilter === 'ALL' || (statusFilter === 'ACTIVE' && r.status === 'Active') || (statusFilter === 'INACTIVE' && r.status === 'Inactive')
-      return matchesSearch && matchesType && matchesStatus
     })
-  }, [roles, searchQuery, typeFilter, statusFilter])
-
-  const customOverrideCount = useMemo(() => allUsers.filter((u) => u.custom_permissions?.is_manual).length, [allUsers])
-
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center py-32 space-y-3">
-        <div className="w-10 h-10 border-4 border-[#0B2545] border-t-transparent rounded-full animate-spin"></div>
-        <p className="text-xs font-bold text-slate-500">Loading RBAC permission settings...</p>
-      </div>
-    )
-  }
+  }, [allEmployees, roleFilter, deptFilter, employeeSearch])
 
   return (
     <div className="space-y-6 font-sans pb-12">
-      {/* Top Title Banner */}
+      {/* Title Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-white via-white to-[#D4ECFC]/25 border border-[#64B5F6]/25 rounded-3xl p-6 shadow-xs">
         <div>
           <h1 className="text-2xl font-extrabold text-[#0B2545] tracking-tight flex items-center gap-2">
-            <ShieldCheck className="w-7 h-7 text-[#1E88E5]" /> Roles & Access Control (RBAC)
+            <ShieldCheck className="w-7 h-7 text-[#1E88E5]" /> Role & Permission Management
           </h1>
           <p className="text-xs text-[#64748B] font-semibold mt-1">
-            Assign user roles, configure default role templates, or manually customize granular access permissions.
+            Manage employee-specific permission overrides or inspect master canonical RBAC role defaults.
           </p>
 
-          {/* Navigation Sub-Tabs */}
           <div className="flex items-center gap-2 mt-4 bg-slate-100 p-1.5 rounded-2xl w-fit border border-slate-200">
             <button
               onClick={() => setActiveTab('users')}
@@ -1160,7 +1190,7 @@ function RoleManagement() {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              <UserCheck className="w-4 h-4" /> User Access & Permissions
+              <UserCheck className="w-4 h-4" /> Employee Access Control
             </button>
             <button
               onClick={() => setActiveTab('roles')}
@@ -1170,170 +1200,123 @@ function RoleManagement() {
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              <Layers className="w-4 h-4" /> Role Master Templates
+              <Layers className="w-4 h-4" /> Master Role Presets
             </button>
           </div>
         </div>
-
-        {activeTab === 'roles' && (
-          <button
-            onClick={() => setShowAddRoleModal(true)}
-            className="inline-flex items-center justify-center gap-2 px-4 py-2.5 bg-gradient-to-r from-[#0B2545] to-[#1E88E5] hover:from-[#1E88E5] hover:to-[#64B5F6] text-white text-xs font-extrabold rounded-xl shadow-md shadow-[#0B2545]/15 transition-all cursor-pointer"
-          >
-            <Plus className="w-4 h-4 text-white" /> Create Custom Role
-          </button>
-        )}
       </div>
 
-      {/* Summary Stat Widgets Header */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-3xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Total System Users</p>
-            <h3 className="text-xl font-black text-[#0B2545] mt-0.5">{allUsers.length}</h3>
-            <p className="text-[10px] text-slate-400 font-semibold mt-1">Mapped user accounts</p>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-blue-50 text-[#1E88E5] flex items-center justify-center font-extrabold">
-            <Users className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-3xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Default Role Presets</p>
-            <h3 className="text-xl font-black text-emerald-600 mt-0.5">{allUsers.length - customOverrideCount}</h3>
-            <p className="text-[10px] text-slate-400 font-semibold mt-1">Auto-aligned with System Settings</p>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-extrabold">
-            <Sparkles className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-3xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Custom Manual Overrides</p>
-            <h3 className="text-xl font-black text-indigo-600 mt-0.5">{customOverrideCount}</h3>
-            <p className="text-[10px] text-slate-400 font-semibold mt-1">Users with tailored access</p>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-indigo-50 text-indigo-600 flex items-center justify-center font-extrabold">
-            <Wrench className="w-5 h-5" />
-          </div>
-        </div>
-
-        <div className="bg-white border border-slate-200/80 rounded-2xl p-4 shadow-3xs flex items-center justify-between">
-          <div>
-            <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Role Templates</p>
-            <h3 className="text-xl font-black text-[#0B2545] mt-0.5">{roles.length}</h3>
-            <p className="text-[10px] text-slate-400 font-semibold mt-1">System & custom templates</p>
-          </div>
-          <div className="w-10 h-10 rounded-xl bg-violet-50 text-violet-600 flex items-center justify-center font-extrabold">
-            <Layers className="w-5 h-5" />
-          </div>
-        </div>
-      </div>
-
-      {/* VIEW 1: USER ACCESS & PERMISSIONS MANAGER */}
+      {/* VIEW 1: EMPLOYEE PERMISSION MANAGER */}
       {activeTab === 'users' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left Column: Filterable Users Roster */}
-          <div className="lg:col-span-4 bg-gradient-to-br from-white via-white to-[#D4ECFC]/10 p-5 rounded-3xl border border-[#64B5F6]/25 shadow-xs space-y-4 lg:sticky lg:top-6">
-            <div className="flex items-center justify-between border-b pb-2">
-              <h2 className="font-extrabold text-[#0B2545] text-sm flex items-center gap-1.5">
-                <Users className="w-4 h-4 text-[#1E88E5]" /> Select User ({filteredUsers.length})
+          {/* Left Panel: Employee Selector */}
+          <div className="lg:col-span-4 bg-white p-5 rounded-3xl border border-slate-200/80 shadow-xs space-y-4 lg:sticky lg:top-6">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <h2 className="font-extrabold text-[#0B2545] text-xs uppercase tracking-wider flex items-center gap-1.5">
+                <Users className="w-4 h-4 text-[#1E88E5]" /> Select Employee ({filteredEmployees.length})
               </h2>
-              <span className="text-[10px] font-bold text-slate-400">Total: {allUsers.length}</span>
+              <span className="text-[10px] font-bold text-slate-400">Total: {allEmployees.length}</span>
             </div>
 
-            {/* Search & Filters */}
-            <div className="space-y-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search user name, email, code..."
-                  value={userSearchQuery}
-                  onChange={(e) => setUserSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-[#EEF4F8]/50 border border-[#64B5F6]/20 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#1E88E5] font-semibold"
-                />
+            {/* Search Input */}
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Search user name, email, employee code..."
+                value={employeeSearch}
+                onChange={(e) => setEmployeeSearch(e.target.value)}
+                className="w-full pl-9 pr-4 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#1E88E5] font-semibold"
+              />
+            </div>
+
+            {/* Role & Dept Filters */}
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider block mb-1">Role / Designation</label>
+                <select
+                  value={roleFilter}
+                  onChange={(e) => setRoleFilter(e.target.value)}
+                  className="w-full py-1.5 px-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 focus:outline-none focus:border-[#1E88E5]"
+                >
+                  <option value="ALL">All Roles</option>
+                  <option value="Admin">System Admin</option>
+                  <option value="Manager">Sales Manager</option>
+                  <option value="Lead">Team Lead</option>
+                  <option value="Executive">Sales Executive</option>
+                </select>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div>
+                <label className="text-[9px] font-extrabold text-slate-500 uppercase tracking-wider block mb-1">Department</label>
                 <select
-                  value={userRoleFilter}
-                  onChange={(e) => setUserRoleFilter(e.target.value)}
-                  className="w-1/2 py-1.5 px-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 focus:outline-none focus:border-[#1E88E5]"
+                  value={deptFilter}
+                  onChange={(e) => setDeptFilter(e.target.value)}
+                  className="w-full py-1.5 px-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 focus:outline-none focus:border-[#1E88E5]"
                 >
-                  <option value="ALL">👔 All Roles</option>
-                  <option value="Super Admin">Super Admin</option>
-                  <option value="Sales Manager">Sales Manager</option>
-                  <option value="Team Lead">Team Lead</option>
-                  <option value="Sales Executive">Sales Executive</option>
-                </select>
-
-                <select
-                  value={userDeptFilter}
-                  onChange={(e) => setUserDeptFilter(e.target.value)}
-                  className="w-1/2 py-1.5 px-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 focus:outline-none focus:border-[#1E88E5]"
-                >
-                  <option value="ALL">🏢 All Depts</option>
-                  <option value="sales">Sales & BD</option>
-                  <option value="hrms">HRMS</option>
-                  <option value="finance">Finance</option>
-                  <option value="ops">Operations</option>
-                  <option value="it">IT Admin</option>
+                  <option value="ALL">All Depts</option>
+                  <option value="Sales">Sales & BD</option>
+                  <option value="HR">HR & Admin</option>
+                  <option value="Operations">Operations</option>
+                  <option value="IT">IT Support</option>
                 </select>
               </div>
             </div>
 
-            {/* Users Roster Cards */}
-            <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
-              {filteredUsers.length === 0 ? (
-                <div className="text-center py-10 border border-dashed border-slate-200 rounded-2xl bg-slate-50/50">
-                  <AlertCircle className="w-7 h-7 text-slate-300 mx-auto mb-1.5" />
-                  <p className="text-xs font-bold text-slate-500">No users match your filters.</p>
+            {/* Employee Cards Directory */}
+            <div className="space-y-2 max-h-[520px] overflow-y-auto pr-1">
+              {loadingEmployees ? (
+                <div className="text-center py-12 text-xs font-bold text-slate-400">Loading employees roster...</div>
+              ) : filteredEmployees.length === 0 ? (
+                <div className="text-center py-12 border border-dashed border-slate-200 rounded-2xl bg-slate-50">
+                  <AlertCircle className="w-6 h-6 text-slate-300 mx-auto mb-1" />
+                  <p className="text-xs font-bold text-slate-500">No matching employees found.</p>
                 </div>
               ) : (
-                filteredUsers.map((usr) => {
-                  const isSelected = selectedUser?.id === usr.id
-                  const isManual = usr.custom_permissions?.is_manual
-                  const uInitials = (usr.name || 'U').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()
+                filteredEmployees.map((emp) => {
+                  const empId = emp.employee_id || emp.employee_code || emp.id
+                  const empName = emp.name || `${emp.first_name || ''} ${emp.last_name || ''}`.trim() || empId
+                  const email = emp.work_email || emp.email || 'No email'
+                  const des = emp.designation || emp.role || 'Employee'
+                  const status = emp.status || 'Active'
+                  const isSelected = (selectedEmp?.employee_id || selectedEmp?.id) === empId
+                  const isCustom = emp.is_customized || emp.is_manual
 
                   return (
                     <div
-                      key={usr.id}
-                      onClick={() => handleSelectUser(usr, true)}
-                      className={`p-3.5 rounded-2xl border transition cursor-pointer relative flex items-center justify-between gap-3 ${
+                      key={empId}
+                      onClick={() => handleSelectEmployee(emp)}
+                      className={`p-3 rounded-2xl border transition cursor-pointer flex items-center justify-between gap-3 ${
                         isSelected
-                          ? 'border-[#1E88E5] bg-[#D4ECFC]/35 shadow-xs ring-2 ring-[#1E88E5]/15'
-                          : 'border-[#64B5F6]/20 bg-[#EEF4F8]/10 hover:bg-white hover:border-[#64B5F6]/50 shadow-3xs'
+                          ? 'border-[#1E88E5] bg-[#D4ECFC]/30 shadow-xs ring-2 ring-[#1E88E5]/15'
+                          : 'border-slate-200/90 bg-white hover:bg-slate-50 hover:border-slate-300'
                       }`}
                     >
-                      {isSelected && (
-                        <div className="absolute top-0 left-0 bottom-0 w-1 bg-gradient-to-b from-[#0B2545] to-[#1E88E5] rounded-l-xl" />
-                      )}
-
                       <div className="flex items-center gap-3 min-w-0">
                         <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-extrabold text-xs flex items-center justify-center shrink-0 border border-white shadow-2xs">
-                          {getUserPhoto(usr) ? (
-                            <img src={getUserPhoto(usr)} alt={usr.name} className="w-full h-full object-cover rounded-xl" />
+                          {getUserPhoto(emp) ? (
+                            <img src={getUserPhoto(emp)} alt={empName} className="w-full h-full object-cover rounded-xl" />
                           ) : (
-                            uInitials
+                            empName.slice(0, 2).toUpperCase()
                           )}
                         </div>
                         <div className="min-w-0">
-                          <h4 className="font-extrabold text-xs text-[#0B2545] truncate">{usr.name}</h4>
-                          <p className="text-[10px] text-slate-500 font-semibold truncate">{usr.email}</p>
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                            <span className="text-[9px] bg-blue-50 text-blue-700 px-2 py-0.5 rounded-md font-extrabold border border-blue-100">
-                              👔 {usr.role || usr.designation || 'Sales Executive'}
+                          <div className="flex items-center gap-1.5">
+                            <h4 className="font-extrabold text-xs text-[#0B2545] truncate">{empName}</h4>
+                            <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-mono font-bold">{empId}</span>
+                          </div>
+                          <p className="text-[10px] text-slate-500 font-semibold truncate">{email}</p>
+                          <div className="flex items-center gap-1.5 mt-1">
+                            <span className="text-[9px] bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded font-extrabold border border-blue-100 truncate">
+                              {des}
                             </span>
-                            {isManual ? (
-                              <span className="text-[9px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-md font-extrabold border border-indigo-100 flex items-center gap-0.5">
-                                <Wrench className="w-2.5 h-2.5" /> Manual Custom
+                            {isCustom ? (
+                              <span className="text-[9px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-extrabold border border-indigo-100">
+                                Manual
                               </span>
                             ) : (
-                              <span className="text-[9px] bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-md font-extrabold border border-emerald-100 flex items-center gap-0.5">
-                                <Sparkles className="w-2.5 h-2.5" /> Default Preset
+                              <span className="text-[9px] bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded font-extrabold border border-emerald-100">
+                                Default
                               </span>
                             )}
                           </div>
@@ -1348,78 +1331,75 @@ function RoleManagement() {
             </div>
           </div>
 
-          {/* Right Column: Selected User Permission Control Panel */}
-          {selectedUser ? (
-            <div className="lg:col-span-8 bg-gradient-to-br from-white via-white to-[#D4ECFC]/15 p-5 rounded-3xl border border-[#64B5F6]/25 shadow-xs space-y-5">
-              {/* Header User Profile & Role Selector */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
+          {/* Right Panel: Selected Employee Permission Control */}
+          {selectedEmp ? (
+            <div className="lg:col-span-8 bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-6">
+              {/* Employee Summary Banner */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-5">
                 <div className="flex items-center gap-3">
                   <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-[#0B2545] to-[#1E88E5] text-white font-extrabold text-base flex items-center justify-center shrink-0 border-2 border-white shadow-xs">
-                    {(selectedUser.name || 'U').split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+                    {(selectedEmp.name || selectedEmp.first_name || 'E').slice(0, 2).toUpperCase()}
                   </div>
                   <div>
-                    <h2 className="font-extrabold text-[#0B2545] text-base">{selectedUser.name}</h2>
+                    <h2 className="font-extrabold text-[#0B2545] text-base">
+                      {selectedEmp.name || `${selectedEmp.first_name || ''} ${selectedEmp.last_name || ''}`}
+                    </h2>
                     <p className="text-[11px] text-slate-500 font-semibold">
-                      {selectedUser.email} · {selectedUser.employee_code || selectedUser.employee_id || 'ID'}
+                      {selectedEmp.work_email || selectedEmp.email} · ID: {selectedEmp.employee_id || selectedEmp.employee_code || selectedEmp.id}
                     </p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] font-extrabold text-blue-800 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                        {selectedEmp.designation || selectedEmp.role || 'Employee'}
+                      </span>
+                      <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-md">
+                        {selectedEmp.department || 'General Department'}
+                      </span>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex flex-wrap items-center gap-3 shrink-0">
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">Permission Mode:</label>
-                    <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setUserPermMode('default')
-                          setUserCustomPerms({})
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1 ${
-                          userPermMode === 'default'
-                            ? 'bg-emerald-600 text-white shadow-2xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        <Sparkles className="w-3 h-3" /> Default
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setUserPermMode('manual')}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1 ${
-                          userPermMode === 'manual'
-                            ? 'bg-indigo-600 text-white shadow-2xs'
-                            : 'text-slate-600 hover:text-slate-900'
-                        }`}
-                      >
-                        <Wrench className="w-3 h-3" /> Manual
-                      </button>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">Assign User Role:</label>
-                    <select
-                      value={selectedUserRole}
-                      onChange={(e) => setSelectedUserRole(e.target.value)}
-                      className="px-3 py-1.5 bg-white border border-slate-300 rounded-xl text-xs font-extrabold text-[#0B2545] focus:outline-none focus:border-[#1E88E5] shadow-2xs cursor-pointer"
+                {/* Mode Selector & Control Buttons */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setPermMode('default')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1 ${
+                        permMode === 'default'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
                     >
-                      <option value="Super Admin">Super Admin</option>
-                      <option value="Sales Manager">Sales Manager</option>
-                      <option value="Team Lead">Team Lead</option>
-                      <option value="Sales Executive">Sales Executive</option>
-                      {roles.filter(r => !(r.isSystem || r.is_system)).map(cr => (
-                        <option key={cr.id} value={cr.name}>{cr.name} (Custom)</option>
-                      ))}
-                    </select>
+                      <Sparkles className="w-3.5 h-3.5" /> Default Mode
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setPermMode('manual')}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center gap-1 ${
+                        permMode === 'manual'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <Wrench className="w-3.5 h-3.5" /> Manual Custom Mode
+                    </button>
                   </div>
 
                   <button
-                    onClick={handleSaveUserPermissions}
-                    disabled={userSaving}
-                    className="mt-4 px-4 py-2 bg-gradient-to-r from-[#0B2545] to-[#1E88E5] hover:from-[#1E88E5] hover:to-[#64B5F6] text-white text-xs font-extrabold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#0B2545]/15"
+                    onClick={handleResetToDefault}
+                    disabled={resettingPermissions}
+                    className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-extrabold rounded-xl transition flex items-center gap-1 cursor-pointer border border-slate-200"
+                    title="Reset all permissions to default"
                   >
-                    {userSaving ? (
+                    <RotateCcw className="w-3.5 h-3.5" /> Reset to Default
+                  </button>
+
+                  <button
+                    onClick={handleSavePermissions}
+                    disabled={savingPermissions}
+                    className="px-4 py-2 bg-gradient-to-r from-[#0B2545] to-[#1E88E5] hover:from-[#1E88E5] hover:to-[#64B5F6] text-white text-xs font-extrabold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer"
+                  >
+                    {savingPermissions ? (
                       <span className="animate-spin text-xs">🌀 Saving...</span>
                     ) : (
                       <>
@@ -1430,267 +1410,135 @@ function RoleManagement() {
                 </div>
               </div>
 
-
-
-              {/* Permission Matrix Component */}
-              <PermissionMatrixEditor
-                role={selectedUserRole}
-                permissions={activeUserPermissions}
-                isDefaultMode={userPermMode === 'default'}
-                onSwitchToManual={() => {
-                  setUserPermMode('manual')
-                  setUserCustomPerms(defaultMasterPerms)
-                }}
-                onChange={(updatedPerms) => {
-                  setUserPermMode('manual')
-                  setUserCustomPerms(updatedPerms)
-                }}
-              />
-            </div>
-          ) : (
-            <div className="lg:col-span-8 bg-slate-50 border border-slate-200 rounded-3xl p-12 text-center space-y-3">
-              <Users className="w-10 h-10 text-slate-300 mx-auto" />
-              <h3 className="font-extrabold text-slate-700 text-sm">Select a user from the roster to manage permissions</h3>
-              <p className="text-xs text-slate-400 font-medium">Use search or filters on the left to quickly locate any employee.</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* VIEW 2: ROLE MASTER TEMPLATES */}
-      {activeTab === 'roles' && (
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-          {/* Left Column: Roles Roster List */}
-          <div className="lg:col-span-4 bg-gradient-to-br from-white via-white to-[#D4ECFC]/10 p-5 rounded-3xl border border-[#64B5F6]/25 shadow-xs space-y-4 lg:sticky lg:top-6">
-            <div className="flex items-center justify-between border-b pb-2">
-              <h2 className="font-extrabold text-[#0B2545] text-sm flex items-center gap-1.5">
-                <Layers className="w-4 h-4 text-[#1E88E5]" /> Master Role Templates ({filteredRoles.length})
-              </h2>
-            </div>
-
-            {/* Search bar & Type/Status filters */}
-            <div className="space-y-2">
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search master roles..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-4 py-2 bg-[#EEF4F8]/50 border border-[#64B5F6]/20 rounded-xl text-xs text-slate-900 focus:outline-none focus:border-[#1E88E5] font-semibold"
-                />
-              </div>
-
-              <div className="flex items-center gap-2">
-                <select
-                  value={typeFilter}
-                  onChange={(e) => setTypeFilter(e.target.value)}
-                  className="w-1/2 py-1.5 px-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 focus:outline-none focus:border-[#1E88E5]"
-                >
-                  <option value="ALL">All Types</option>
-                  <option value="SYSTEM">System Roles</option>
-                  <option value="CUSTOM">Custom Roles</option>
-                </select>
-
-                <select
-                  value={statusFilter}
-                  onChange={(e) => setStatusFilter(e.target.value)}
-                  className="w-1/2 py-1.5 px-2 bg-white border border-slate-200 rounded-lg text-[11px] font-bold text-slate-700 focus:outline-none focus:border-[#1E88E5]"
-                >
-                  <option value="ALL">All Status</option>
-                  <option value="ACTIVE">Active Only</option>
-                  <option value="INACTIVE">Inactive Only</option>
-                </select>
-              </div>
-            </div>
-
-            {/* Roles Cards */}
-            <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
-              {filteredRoles.map((role) => {
-                const isSelected = selectedRole?.id === role.id
-                const isSys = role.isSystem || role.is_system
-
-                return (
-                  <div
-                    key={role.id}
-                    onClick={() => handleRoleSelect(role)}
-                    className={`p-4 rounded-2xl border transition cursor-pointer relative flex flex-col justify-between ${
-                      isSelected
-                        ? 'border-[#1E88E5] bg-[#D4ECFC]/35 shadow-xs ring-2 ring-[#1E88E5]/15'
-                        : 'border-[#64B5F6]/20 bg-[#EEF4F8]/10 hover:bg-white hover:border-[#64B5F6]/50 shadow-3xs'
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-2 mb-2">
-                      <div>
-                        <span className="font-extrabold text-[#0B2545] text-xs flex items-center gap-1.5 uppercase tracking-tight">
-                          {role.name}
-                          {isSys ? (
-                            <span className="text-[8px] bg-slate-200 text-slate-700 px-1.5 py-0.5 rounded font-black uppercase border border-slate-300">
-                              System
-                            </span>
-                          ) : (
-                            <span className="text-[8px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-black uppercase border border-indigo-100">
-                              Custom
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                    </div>
-                    <p className="text-[11px] text-[#64748B] font-medium leading-relaxed line-clamp-2">
-                      {role.description || 'System master template for role permissions.'}
+              {/* Mode Banner Indicator */}
+              <div
+                className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 text-xs font-bold ${
+                  permMode === 'default'
+                    ? 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+                    : 'bg-indigo-50/80 border-indigo-200 text-indigo-900'
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  <span className="text-base">{permMode === 'default' ? '✨' : '⚙️'}</span>
+                  <div>
+                    <span className="font-black uppercase tracking-wider block text-[10px]">
+                      {permMode === 'default' ? 'MASTER DEFAULT ACTIVE' : 'MANUAL CUSTOM OVERRIDE'}
+                    </span>
+                    <p className="text-[11px] font-semibold opacity-90">
+                      {permMode === 'default'
+                        ? 'Employee inherits all standard canonical permissions. Toggling any switch below converts mode to Manual override.'
+                        : 'Employee has user-specific tailored permissions saved in database organization.employee_permissions.'}
                     </p>
                   </div>
-                )
-              })}
-            </div>
-          </div>
-
-          {/* Right Column: Master Role Permission Matrix */}
-          {selectedRole && (
-            <div className="lg:col-span-8 bg-gradient-to-br from-white via-white to-[#D4ECFC]/15 p-5 rounded-3xl border border-[#64B5F6]/25 shadow-xs space-y-5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-                <div>
-                  <h2 className="font-extrabold text-[#0B2545] text-base">{selectedRole.name} Master Template</h2>
-                  <p className="text-[11px] text-[#64748B] font-semibold mt-1">
-                    Updates to this template automatically apply to all users configured with Default Role Presets.
-                  </p>
                 </div>
-
-                <button
-                  onClick={handleSavePermissions}
-                  className="px-4 py-2 bg-gradient-to-r from-[#0B2545] to-[#1E88E5] hover:from-[#1E88E5] hover:to-[#64B5F6] text-white text-xs font-extrabold rounded-xl shadow-xs transition flex items-center gap-1.5 cursor-pointer shadow-md shadow-[#0B2545]/15"
-                >
-                  <CheckCircle2 className="w-4 h-4 text-emerald-400" /> Save Master Template
-                </button>
               </div>
 
-              <PermissionMatrixEditor
-                role={selectedRole.name}
-                permissions={selectedRole.custom_permissions || getMasterPermissionsForRole(selectedRole.name, roles)}
-                onChange={(updatedPerms) => {
-                  setHasChanges(true)
-                  const updatedRoleObj = {
-                    ...selectedRole,
-                    custom_permissions: updatedPerms,
-                  }
-                  setSelectedRole(updatedRoleObj)
-                  setRoles((prevRoles) =>
-                    prevRoles.map((r) => (r.id === selectedRole.id || r.name === selectedRole.name ? updatedRoleObj : r))
-                  )
-                }}
-              />
+              {/* Canonical Permission Matrix */}
+              {loadingEmpPermissions ? (
+                <div className="py-20 text-center text-xs font-bold text-slate-400">Loading user effective permissions...</div>
+              ) : (
+                <div className="space-y-6">
+                  {CANONICAL_CATEGORIES.map((cat) => (
+                    <div key={cat.category} className="border border-slate-200 rounded-2xl overflow-hidden shadow-2xs">
+                      <div className="bg-slate-50 px-4 py-2.5 border-b border-slate-200 flex items-center justify-between">
+                        <h3 className="font-extrabold text-xs text-[#0B2545] uppercase tracking-wider">{cat.title}</h3>
+                        <span className="text-[10px] font-bold text-slate-400">{cat.items.length} permissions</span>
+                      </div>
+
+                      <div className="divide-y divide-slate-100">
+                        {cat.items.map((item) => {
+                          const state = permissionState[item.key] || { is_granted: true, scope: 'ORG' }
+                          const isGranted = Boolean(state.is_granted)
+                          const currentScope = state.scope || 'ORG'
+
+                          return (
+                            <div key={item.key} className="p-3 bg-white hover:bg-slate-50/60 transition flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-extrabold text-xs text-slate-900">{item.name}</span>
+                                  <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-bold">{item.action}</span>
+                                </div>
+                                <p className="text-[10px] font-mono text-slate-400 mt-0.5">{item.key}</p>
+                              </div>
+
+                              <div className="flex items-center gap-3 shrink-0">
+                                {/* Scope Dropdown */}
+                                {item.supportsScope && (
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-[10px] font-extrabold text-slate-400 uppercase">Scope:</span>
+                                    <select
+                                      disabled={!isGranted}
+                                      value={currentScope}
+                                      onChange={(e) => handlePermissionChange(item.key, { scope: e.target.value })}
+                                      className={`px-2.5 py-1 rounded-lg text-xs font-extrabold border cursor-pointer ${
+                                        !isGranted
+                                          ? 'bg-slate-100 text-slate-400 border-slate-200 cursor-not-allowed'
+                                          : 'bg-white text-[#0B2545] border-slate-300 focus:border-[#1E88E5]'
+                                      }`}
+                                    >
+                                      <option value="ORG">ORG (Full Organization)</option>
+                                      <option value="TEAM">TEAM (Reporting Team)</option>
+                                      <option value="OWN">OWN (Self Only)</option>
+                                    </select>
+                                  </div>
+                                )}
+
+                                {/* Enable / Disable Switch */}
+                                <button
+                                  type="button"
+                                  onClick={() => handlePermissionChange(item.key, { is_granted: !isGranted })}
+                                  className={`px-3 py-1.5 rounded-xl text-xs font-black transition cursor-pointer flex items-center gap-1.5 ${
+                                    isGranted
+                                      ? 'bg-emerald-600 text-white shadow-2xs'
+                                      : 'bg-slate-200 text-slate-500 border border-slate-300 hover:bg-slate-300'
+                                  }`}
+                                >
+                                  {isGranted ? <Check className="w-3.5 h-3.5" /> : <X className="w-3.5 h-3.5" />}
+                                  {isGranted ? 'Enabled' : 'Disabled'}
+                                </button>
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="lg:col-span-8 bg-slate-50 border border-slate-200 rounded-3xl p-16 text-center space-y-3">
+              <Users className="w-12 h-12 text-slate-300 mx-auto" />
+              <h3 className="font-extrabold text-slate-700 text-base">Select an employee from the directory</h3>
+              <p className="text-xs text-slate-400 font-medium">Click any employee on the left roster to view and customize their access permissions.</p>
             </div>
           )}
         </div>
       )}
 
-      {/* COMPACT CHOICE POPUP WHEN SELECTING USER */}
-      {showPresetPopupModal && pendingUserSelect && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-xs w-full p-4 space-y-3 border border-slate-200 shadow-2xl text-center">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-              <span className="font-extrabold text-[#0B2545] text-xs">Permission Mode</span>
-              <button onClick={() => setShowPresetPopupModal(false)} className="text-slate-400 hover:text-slate-600 text-xs font-black cursor-pointer p-1">✕</button>
-            </div>
-
-            <p className="text-xs text-slate-600 font-semibold">
-              Select mode for <strong>{pendingUserSelect.name}</strong>:
+      {/* VIEW 2: MASTER ROLE PRESETS (READ-ONLY REFERENCE) */}
+      {activeTab === 'roles' && (
+        <div className="bg-white p-6 rounded-3xl border border-slate-200/80 shadow-xs space-y-4">
+          <div className="border-b border-slate-100 pb-3">
+            <h2 className="font-extrabold text-[#0B2545] text-base">System Master Role Presets</h2>
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Default canonical access level definitions for system roles.
             </p>
-
-            <div className="grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setUserPermMode('default')
-                  setUserCustomPerms({})
-                  setShowPresetPopupModal(false)
-                }}
-                className="py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <Sparkles className="w-4 h-4" />
-                Default
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setUserPermMode('manual')
-                  setShowPresetPopupModal(false)
-                }}
-                className="py-2.5 px-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs shadow-xs transition cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <Wrench className="w-4 h-4" />
-                Manual
-              </button>
-            </div>
           </div>
-        </div>
-      )}
 
-      {/* Create Custom Role Modal */}
-      {showAddRoleModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 space-y-4 border border-[#DCE3EF] shadow-2xl">
-            <div className="flex items-center justify-between border-b pb-3">
-              <h3 className="font-extrabold text-[#0B2545] text-base flex items-center gap-2">
-                <Plus className="w-5 h-5 text-[#1E88E5]" /> Create Custom Role
-              </h3>
-              <button onClick={() => setShowAddRoleModal(false)} className="text-slate-400 hover:text-slate-600 text-sm cursor-pointer p-1">
-                ✕
-              </button>
-            </div>
-            <form onSubmit={async (e) => {
-              e.preventDefault()
-              if (!newRole.name) return
-              const createdRole = {
-                id: newRole.name.toLowerCase().replace(/\s+/g, '_'),
-                name: newRole.name,
-                description: newRole.description || 'Custom role',
-                isSystem: false,
-                status: 'Active',
-              }
-              const updatedRoles = [...roles, createdRole]
-              setRoles(updatedRoles)
-              setShowAddRoleModal(false)
-              showToast(`Custom Role '${createdRole.name}' created!`, 'success')
-            }} className="space-y-4 text-xs">
-              <div>
-                <label className="block text-slate-800 font-extrabold mb-1">Role Title <span className="text-rose-500">*</span></label>
-                <input
-                  type="text"
-                  placeholder="e.g. Regional Director, Operations Lead"
-                  value={newRole.name}
-                  onChange={(e) => setNewRole({ ...newRole, name: e.target.value })}
-                  className="w-full h-11 border border-slate-300 rounded-xl px-3 text-slate-900 font-bold focus:outline-none focus:border-[#1E88E5]"
-                  required
-                />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {masterRoles.map((r) => (
+              <div key={r.id} className="p-4 rounded-2xl border border-slate-200 bg-slate-50/50 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-extrabold text-xs text-[#0B2545] uppercase tracking-wider">{r.name}</h3>
+                  <span className="text-[9px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-bold">System Default</span>
+                </div>
+                <p className="text-xs text-slate-600 font-medium">{r.description}</p>
+                <div className="pt-2 text-[10px] font-extrabold text-emerald-700 flex items-center gap-1">
+                  <Sparkles className="w-3 h-3" /> Inherits full canonical permission defaults
+                </div>
               </div>
-              <div>
-                <label className="block text-slate-800 font-extrabold mb-1">Description</label>
-                <textarea
-                  rows={2}
-                  placeholder="Summary of responsibilities..."
-                  value={newRole.description}
-                  onChange={(e) => setNewRole({ ...newRole, description: e.target.value })}
-                  className="w-full p-3 border border-slate-300 rounded-xl text-slate-900 font-bold focus:outline-none focus:border-[#1E88E5]"
-                />
-              </div>
-              <div className="flex items-center justify-end gap-2 pt-3 border-t">
-                <button
-                  type="button"
-                  onClick={() => setShowAddRoleModal(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl text-xs transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 bg-[#0B2545] hover:bg-[#1E88E5] text-white font-extrabold rounded-xl text-xs shadow-md transition cursor-pointer"
-                >
-                  Create Role
-                </button>
-              </div>
-            </form>
+            ))}
           </div>
         </div>
       )}

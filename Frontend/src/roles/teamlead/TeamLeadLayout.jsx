@@ -3,6 +3,8 @@ import { Link, NavLink, useLocation, Outlet, useNavigate } from 'react-router-do
 import { useToast } from '../../common/ToastContext.jsx'
 import ImageCropperModal from '../../common/ImageCropperModal.jsx'
 import PhotoLightboxModal from '../../common/PhotoLightboxModal.jsx'
+import { usePermissions } from '../../context/PermissionContext.jsx'
+import { filterNavigationItems } from '../../config/navigationPermissions.js'
 import {
   LayoutDashboard,
   Users,
@@ -505,6 +507,9 @@ export default function TeamLeadLayout() {
     });
   };
 
+  const { hasPermission } = usePermissions()
+  const visibleSidebarItems = filterNavigationItems(sidebarItems, hasPermission)
+
   return (
     <div className="h-screen overflow-hidden bg-[#FAF7F2] text-slate-800 flex flex-col font-sans relative antialiased">
 
@@ -723,7 +728,7 @@ export default function TeamLeadLayout() {
             )}
 
             <nav className="space-y-1 flex-1">
-              {sidebarItems.map((item, index) => {
+              {visibleSidebarItems.map((item, index) => {
                 const Icon = item.icon
                 const isActive = location.pathname === item.path || (item.path === '/team-lead/dashboard' && (location.pathname === '/team-lead' || location.pathname === '/team-lead/'))
                 

@@ -494,9 +494,10 @@ export const userAPI = {
     method: 'POST',
     body: JSON.stringify({ new_password: newPassword }),
   }),
-  rejectPasswordReset: (email) => request(`/users/password-reset-requests/${encodeURIComponent(email)}/reject`, {
-    method: 'POST',
-  }),
+  // Employee Permission Management (Admin & Employee RBAC)
+  getUserPermissions: (userId, options = {}) => request(`/users/${userId}/permissions`, options),
+  updateUserPermissions: (userId, data, options = {}) => request(`/users/${userId}/permissions`, { method: 'PUT', body: JSON.stringify(data), ...options }),
+  resetUserPermissions: (userId, data = {}, options = {}) => request(`/users/${userId}/permissions/reset`, { method: 'POST', body: JSON.stringify(data), ...options }),
 }
 
 

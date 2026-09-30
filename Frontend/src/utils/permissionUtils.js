@@ -1,6 +1,11 @@
 /**
  * TWiTE Connect Dynamic RBAC Authorization Utility
  * Provides dynamic, data-driven permission checks for components, views, and navigation menus.
+ * 
+ * STRICT COMPLIANCE:
+ * - Authorization is based strictly on the employee's effective permission map.
+ * - NO hard-coded CEO, Admin, Manager, or designation bypasses.
+ * - Fails closed when missing permissions.
  */
 
 import authSession from './authSession.js'
@@ -17,44 +22,27 @@ export function hasPermission(permissionKey, userPayload = null) {
   const user = userPayload || authSession.getStoredUser()
   if (!user) return false
 
-  // System Admin & CEO roles bypass all permission restrictions
-  const roleNorm = authSession.normalizeRole(user)
-  if (roleNorm === 'admin' || roleNorm === 'ceo') {
-    return true
+  // Check structured permissions stored in user payload
+  const userPermissions = user.permissions || user.effective_permissions || user.structured_permissions
+
+  // 1. Dictionary permissions check: { "crm.leads.view": true }
+  if (userPermissions && typeof userPermissions === 'object' && !Array.isArray(userPermissions)) {
+    if (userPermissions[permissionKey] !== undefined) {
+      return Boolean(userPermissions[permissionKey])
+    }
   }
 
-  // Check structured permissions stored in user payload or local role permissions cache
-  const userPermissions = user.permissions || user.structured_permissions || []
-
-  // Structured permission array check
+  // 2. Structured permission array check: [{ permission_key: 'crm.leads.view', is_granted: true }]
   if (Array.isArray(userPermissions)) {
     const match = userPermissions.find(
-      (p) => p.permission_key === permissionKey || p.key === permissionKey
+      (p) => (p.permission_key === permissionKey || p.key === permissionKey)
     )
     if (match) {
-      return Boolean(match.enabled ?? true)
+      return Boolean(match.is_granted ?? match.enabled ?? true)
     }
   }
 
-  // Fallback role-level heuristics for legacy sessions
-  const keyLower = permissionKey.toLowerCase()
-  if (roleNorm === 'manager' || roleNorm === 'team_lead') {
-    if (keyLower.includes('delete') && (keyLower.includes('users') || keyLower.includes('company'))) {
-      return false
-    }
-    return true
-  }
-
-  if (roleNorm === 'sales') {
-    if (keyLower.includes('own') || keyLower.includes('mark') || keyLower.includes('view')) {
-      return true
-    }
-    if (keyLower.includes('delete') || keyLower.includes('manage') || keyLower.includes('admin')) {
-      return false
-    }
-    return true
-  }
-
+  // Fail closed if permission key is not found in employee permission set
   return false
 }
 
@@ -70,34 +58,47 @@ export function hasAnyPermission(permissionKeys = [], userPayload = null) {
 }
 
 /**
- * Retrieves the data access scope for a specific permission ('Own', 'Assigned', 'Team', 'Company', 'All').
+ * Checks if a user has ALL of the specified permissions enabled.
+ * @param {Array<string>} permissionKeys
+ * @param {Object} [userPayload]
+ * @returns {boolean}
+ */
+export function hasAllPermissions(permissionKeys = [], userPayload = null) {
+  if (!permissionKeys || permissionKeys.length === 0) return true
+  return permissionKeys.every((key) => hasPermission(key, userPayload))
+}
+
+/**
+ * Retrieves the data access scope for a specific permission ('OWN', 'TEAM', 'ORG').
  * @param {string} permissionKey
  * @param {Object} [userPayload]
  * @returns {string}
  */
 export function getAccessScope(permissionKey, userPayload = null) {
   const user = userPayload || authSession.getStoredUser()
-  if (!user) return 'Own'
+  if (!user) return 'OWN'
 
-  const roleNorm = authSession.normalizeRole(user)
-  if (roleNorm === 'admin' || roleNorm === 'ceo') return 'All'
-  if (roleNorm === 'manager' || roleNorm === 'team_lead') return 'Team'
+  const userScopes = user.scopes || user.scope_map
+  if (userScopes && typeof userScopes === 'object' && userScopes[permissionKey]) {
+    return String(userScopes[permissionKey]).toUpperCase()
+  }
 
-  const userPermissions = user.permissions || user.structured_permissions || []
+  const userPermissions = user.permissions || user.effective_permissions || user.structured_permissions
   if (Array.isArray(userPermissions)) {
     const match = userPermissions.find(
-      (p) => p.permission_key === permissionKey || p.key === permissionKey
+      (p) => (p.permission_key === permissionKey || p.key === permissionKey)
     )
-    if (match && match.access_scope) {
-      return match.access_scope
+    if (match && (match.data_scope || match.scope || match.access_scope)) {
+      return String(match.data_scope || match.scope || match.access_scope).toUpperCase()
     }
   }
 
-  return 'Own'
+  return 'OWN'
 }
 
 export default {
   hasPermission,
   hasAnyPermission,
+  hasAllPermissions,
   getAccessScope,
 }

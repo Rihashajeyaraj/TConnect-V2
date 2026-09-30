@@ -6,6 +6,7 @@ import ChangePassword from './common/ChangePassword.jsx'
 import Signup from './common/Signup.jsx'
 import ProtectedRoute from './common/ProtectedRoute.jsx'
 import { ToastProvider } from './common/ToastContext.jsx'
+import { PermissionProvider } from './context/PermissionContext.jsx'
 import PwaInstallPrompt from './common/PwaInstallPrompt.jsx'
 
 // ── Global Error Boundary Component (Prevents Blank White Loading Screens) ──
@@ -162,6 +163,8 @@ const SALES_ROLES = [
   'admin', 'Admin', 'ceo',
 ]
 
+import PermissionGuard from './components/common/PermissionGuard.jsx'
+
 // Sleek fallback loading screen
 const PageLoader = () => (
   <div className="flex h-screen w-full items-center justify-center bg-slate-950 text-white font-sans">
@@ -176,8 +179,9 @@ function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
-        <BrowserRouter>
-          <Suspense fallback={<PageLoader />}>
+        <PermissionProvider>
+          <BrowserRouter>
+            <Suspense fallback={<PageLoader />}>
             <Routes>
 
               {/* ── Public Auth Routes ─────────────────────────── */}
@@ -222,17 +226,17 @@ function App() {
               <Route element={<ProtectedRoute allowedRoles={['admin', 'Admin']} />}>
                 <Route path="/admin" element={<AdminLayout />}>
                   <Route index element={<AdminDashboard />} />
-                  <Route path="company" element={<CompanyOverview />} />
-                  <Route path="users" element={<UserManagement />} />
-                  <Route path="customers" element={<CeoCustomers />} />
-                  <Route path="roles" element={<RoleManagement />} />
-                  <Route path="hrms" element={<HRMS />} />
+                  <Route path="company" element={<PermissionGuard permission="system.settings.view"><CompanyOverview /></PermissionGuard>} />
+                  <Route path="users" element={<PermissionGuard permission="admin.users.view"><UserManagement /></PermissionGuard>} />
+                  <Route path="customers" element={<PermissionGuard permission="crm.customers.view"><CeoCustomers /></PermissionGuard>} />
+                  <Route path="roles" element={<PermissionGuard permission="admin.permissions.manage"><RoleManagement /></PermissionGuard>} />
+                  <Route path="hrms" element={<PermissionGuard permission="hrms.employees.view"><HRMS /></PermissionGuard>} />
                   <Route path="attendance" element={<Navigate to="/admin/hrms?tab=attendance" replace />} />
                   <Route path="organization" element={<Navigate to="/admin/company" replace />} />
-                  <Route path="reports" element={<AdminReports />} />
-                  <Route path="audit" element={<Navigate to="/admin/reports?tab=security" replace />} />
+                  <Route path="reports" element={<PermissionGuard permission="reports.view"><AdminReports /></PermissionGuard>} />
+                  <Route path="audit" element={<PermissionGuard permission="system.audit.view"><Navigate to="/admin/reports?tab=security" replace /></PermissionGuard>} />
                   <Route path="notifications" element={<Notifications />} />
-                  <Route path="settings" element={<AdminSettings />} />
+                  <Route path="settings" element={<PermissionGuard permission="system.settings.view"><AdminSettings /></PermissionGuard>} />
                 </Route>
               </Route>
 
@@ -241,21 +245,21 @@ function App() {
                 <Route path="/manager" element={<ManagerLayout />}>
                   <Route index element={<ManagerDashboard />} />
                   <Route path="dashboard" element={<ManagerDashboard />} />
-                  <Route path="map" element={<ManagerSmartMap />} />
+                  <Route path="map" element={<PermissionGuard permissions={['spatial.map.view_team', 'spatial.map.view_all', 'spatial.map.view']}><ManagerSmartMap /></PermissionGuard>} />
                   <Route path="team" element={<ManagerTeam />} />
-                  <Route path="leads" element={<ManagerLeads />} />
-                  <Route path="customers" element={<ManagerCustomers />} />
-                  <Route path="visits" element={<ManagerVisits />} />
-                  <Route path="attendance" element={<Attendance />} />
-                  <Route path="followups" element={<ManagerFollowups />} />
-                  <Route path="opportunities" element={<ManagerOpportunities />} />
-                  <Route path="expenses" element={<ManagerExpenses />} />
-                  <Route path="reports" element={<ManagerReports />} />
+                  <Route path="leads" element={<PermissionGuard permission="crm.leads.view"><ManagerLeads /></PermissionGuard>} />
+                  <Route path="customers" element={<PermissionGuard permission="crm.customers.view"><ManagerCustomers /></PermissionGuard>} />
+                  <Route path="visits" element={<PermissionGuard permission="visit.visits.view"><ManagerVisits /></PermissionGuard>} />
+                  <Route path="attendance" element={<PermissionGuard permissions={['hrms.attendance.view_team', 'hrms.attendance.view_all', 'hrms.attendance.view_own']}><Attendance /></PermissionGuard>} />
+                  <Route path="followups" element={<PermissionGuard permission="crm.leads.view"><ManagerFollowups /></PermissionGuard>} />
+                  <Route path="opportunities" element={<PermissionGuard permission="crm.leads.view"><ManagerOpportunities /></PermissionGuard>} />
+                  <Route path="expenses" element={<PermissionGuard permission="expenses.view"><ManagerExpenses /></PermissionGuard>} />
+                  <Route path="reports" element={<PermissionGuard permission="reports.view"><ManagerReports /></PermissionGuard>} />
                   <Route path="notifications" element={<ManagerNotifications />} />
                   <Route path="leaderboard" element={<ManagerLeaderboard />} />
                   <Route path="calendar" element={<ManagerCalendar />} />
-                  <Route path="hrms" element={<ManagerHrms />} />
-                  <Route path="settings" element={<ManagerSettings />} />
+                  <Route path="hrms" element={<PermissionGuard permission="hrms.employees.view"><ManagerHrms /></PermissionGuard>} />
+                  <Route path="settings" element={<PermissionGuard permission="system.settings.view"><ManagerSettings /></PermissionGuard>} />
                 </Route>
               </Route>
 
@@ -266,17 +270,17 @@ function App() {
                 <Route path="/team-lead" element={<TeamLeadLayout />}>
                   <Route index element={<TeamLeadDashboard />} />
                   <Route path="dashboard" element={<TeamLeadDashboard />} />
-                  <Route path="map" element={<TeamLeadSmartMap />} />
-                  <Route path="attendance" element={<TeamLeadAttendance />} />
-                  <Route path="visits" element={<TeamLeadVisits />} />
-                  <Route path="leads" element={<TeamLeadLeads />} />
-                  <Route path="customers" element={<TeamLeadCustomers />} />
-                  <Route path="expenses" element={<TeamLeadExpenses />} />
+                  <Route path="map" element={<PermissionGuard permissions={['spatial.map.view_team', 'spatial.map.view_all', 'spatial.map.view']}><TeamLeadSmartMap /></PermissionGuard>} />
+                  <Route path="attendance" element={<PermissionGuard permissions={['hrms.attendance.view_team', 'hrms.attendance.view_own']}><TeamLeadAttendance /></PermissionGuard>} />
+                  <Route path="visits" element={<PermissionGuard permission="visit.visits.view"><TeamLeadVisits /></PermissionGuard>} />
+                  <Route path="leads" element={<PermissionGuard permission="crm.leads.view"><TeamLeadLeads /></PermissionGuard>} />
+                  <Route path="customers" element={<PermissionGuard permission="crm.customers.view"><TeamLeadCustomers /></PermissionGuard>} />
+                  <Route path="expenses" element={<PermissionGuard permission="expenses.view"><TeamLeadExpenses /></PermissionGuard>} />
                   <Route path="team" element={<ManagerTeam />} />
-                  <Route path="reports" element={<ManagerReports />} />
-                  <Route path="hrms" element={<TeamLeadHrms />} />
+                  <Route path="reports" element={<PermissionGuard permission="reports.view"><ManagerReports /></PermissionGuard>} />
+                  <Route path="hrms" element={<PermissionGuard permission="hrms.employees.view"><TeamLeadHrms /></PermissionGuard>} />
                   <Route path="notifications" element={<ManagerNotifications />} />
-                  <Route path="settings" element={<ManagerSettings />} />
+                  <Route path="settings" element={<PermissionGuard permission="system.settings.view"><ManagerSettings /></PermissionGuard>} />
                 </Route>
               </Route>
 
@@ -285,26 +289,26 @@ function App() {
                 <Route path="/sales" element={<SalesLayout />}>
                   <Route index element={<Dashboard />} />
                   <Route path="dashboard" element={<Dashboard />} />
-                  <Route path="map" element={<SmartClientMap />} />
-                  <Route path="attendance" element={<Attendance />} />
-                  <Route path="customers" element={<Customers />} />
-                  <Route path="client-log" element={<ClientLog />} />
-                  <Route path="visits" element={<ClientLog />} />
-                  <Route path="leads" element={<Leads />} />
-                  <Route path="followups" element={<ClientLog />} />
-                  <Route path="opportunities" element={<ClientLog />} />
-                  <Route path="expenses" element={<Expenses />} />
+                  <Route path="map" element={<PermissionGuard permission="spatial.map.view"><SmartClientMap /></PermissionGuard>} />
+                  <Route path="attendance" element={<PermissionGuard permissions={['hrms.attendance.view_own', 'hrms.attendance.view_team']}><Attendance /></PermissionGuard>} />
+                  <Route path="customers" element={<PermissionGuard permission="crm.customers.view"><Customers /></PermissionGuard>} />
+                  <Route path="client-log" element={<PermissionGuard permission="visit.visits.view"><ClientLog /></PermissionGuard>} />
+                  <Route path="visits" element={<PermissionGuard permission="visit.visits.view"><ClientLog /></PermissionGuard>} />
+                  <Route path="leads" element={<PermissionGuard permission="crm.leads.view"><Leads /></PermissionGuard>} />
+                  <Route path="followups" element={<PermissionGuard permission="crm.leads.view"><ClientLog /></PermissionGuard>} />
+                  <Route path="opportunities" element={<PermissionGuard permission="crm.leads.view"><ClientLog /></PermissionGuard>} />
+                  <Route path="expenses" element={<PermissionGuard permission="expenses.view"><Expenses /></PermissionGuard>} />
                   <Route path="notifications" element={<Notifications />} />
-                  <Route path="hrms" element={<HRMS />} />
+                  <Route path="hrms" element={<PermissionGuard permission="hrms.employees.view"><HRMS /></PermissionGuard>} />
                   <Route path="todo" element={<Todo />} />
 
                   {/* Team Management pages directly under /sales */}
                   <Route path="team" element={<ManagerTeam />} />
-                  <Route path="team-map" element={<ManagerSmartMap />} />
-                  <Route path="team-attendance" element={<ManagerAttendance />} />
-                  <Route path="team-visits" element={<ManagerVisits />} />
-                  <Route path="team-expenses" element={<ManagerExpenses />} />
-                  <Route path="team-reports" element={<ManagerReports />} />
+                  <Route path="team-map" element={<PermissionGuard permissions={['spatial.map.view_team', 'spatial.map.view_all']}><ManagerSmartMap /></PermissionGuard>} />
+                  <Route path="team-attendance" element={<PermissionGuard permissions={['hrms.attendance.view_team', 'hrms.attendance.view_all']}><ManagerAttendance /></PermissionGuard>} />
+                  <Route path="team-visits" element={<PermissionGuard permission="visit.visits.view"><ManagerVisits /></PermissionGuard>} />
+                  <Route path="team-expenses" element={<PermissionGuard permission="expenses.view"><ManagerExpenses /></PermissionGuard>} />
+                  <Route path="team-reports" element={<PermissionGuard permission="reports.view"><ManagerReports /></PermissionGuard>} />
                 </Route>
               </Route>
 
@@ -315,7 +319,8 @@ function App() {
           </Suspense>
           <PwaInstallPrompt />
         </BrowserRouter>
-      </ToastProvider>
+      </PermissionProvider>
+    </ToastProvider>
     </ErrorBoundary>
   )
 }

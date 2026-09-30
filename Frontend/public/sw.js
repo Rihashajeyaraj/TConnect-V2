@@ -160,7 +160,7 @@ self.addEventListener('push', (event) => {
   }
 
   const title    = data.title || 'TwiteConnect'
-  const body     = data.body  || data.message || 'You have a new notification'
+  const body     = data.body  || data.message || data.description || data.text || 'You have a new notification'
   const url      = data.url   || '/notifications'
   // Use server-provided unread_count — never +1 yourself
   const unread   = Number(data.unread_count)

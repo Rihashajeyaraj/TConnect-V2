@@ -4,6 +4,8 @@ import { useToast } from '../../common/ToastContext.jsx'
 import ImageCropperModal from '../../common/ImageCropperModal.jsx'
 import PhotoLightboxModal from '../../common/PhotoLightboxModal.jsx'
 import NotificationPermissionBanner from '../../common/NotificationPermissionBanner.jsx'
+import { usePermissions } from '../../context/PermissionContext.jsx'
+import { filterNavigationItems } from '../../config/navigationPermissions.js'
 import {
   LayoutDashboard,
   Users,
@@ -632,6 +634,9 @@ export default function ManagerLayout() {
     });
   };
 
+  const { hasPermission } = usePermissions()
+  const visibleSidebarItems = filterNavigationItems(sidebarItems, hasPermission)
+
   return (
     <div className="h-screen overflow-hidden bg-slate-50 text-slate-900 flex flex-col font-sans relative">
       <NotificationPermissionBanner />
@@ -841,7 +846,7 @@ export default function ManagerLayout() {
           </div>
 
           <div className="flex-1 p-3 space-y-1.5 overflow-y-auto pt-3">
-            {sidebarItems.map((item, index) => {
+            {visibleSidebarItems.map((item, index) => {
               const Icon = item.icon
               const isActive = location.pathname === item.path
               return (

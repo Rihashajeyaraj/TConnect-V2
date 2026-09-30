@@ -3,6 +3,8 @@ import { getApiBaseUrl } from "../../utils/apiConfig.js";
 import ImageCropperModal from "../../common/ImageCropperModal.jsx";
 import NotificationPermissionBanner from "../../common/NotificationPermissionBanner.jsx";
 import useNotificationCount from "../../hooks/useNotificationCount.js";
+import { usePermissions } from "../../context/PermissionContext.jsx";
+import { filterNavigationItems } from "../../config/navigationPermissions.js";
 import { NavLink, Outlet, useNavigate, Link, useLocation } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -1150,6 +1152,9 @@ export default function SalesLayout() {
     });
   };
 
+  const { hasPermission } = usePermissions()
+  const visibleSidebarItems = filterNavigationItems(sidebarItems, hasPermission)
+
   return (
     <div className="h-screen overflow-hidden bg-slate-50 text-slate-900 flex flex-col font-sans relative">
       <NotificationPermissionBanner />
@@ -1337,7 +1342,7 @@ export default function SalesLayout() {
           </div>
 
           <div className="flex-1 overflow-y-auto py-3 px-2 space-y-1">
-            {sidebarItems.map((m, index) => (
+            {visibleSidebarItems.map((m, index) => (
               <div
                 key={m.path}
                 draggable={isCustomizing && !isSidebarMinimized}

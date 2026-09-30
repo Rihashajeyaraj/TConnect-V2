@@ -204,6 +204,14 @@ export default function Notifications() {
   }, [currentUser?.email]);
 
   useEffect(() => {
+    const handleNotifUpdate = (e) => {
+      loadNotifications();
+    };
+    window.addEventListener("tc_notifications_updated", handleNotifUpdate);
+    return () => window.removeEventListener("tc_notifications_updated", handleNotifUpdate);
+  }, []);
+
+  useEffect(() => {
     if (activeMainTab === "chat") {
       messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }

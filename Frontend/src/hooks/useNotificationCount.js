@@ -220,10 +220,13 @@ export default function useNotificationCount() {
               // Also show a system notification card while the app is open
               triggerSystemNotification({
                 title: newNotif.title || 'TwiteConnect Notification',
-                body:  newNotif.message || newNotif.body || 'You have a new update in TwiteConnect.',
+                body:  newNotif.description || newNotif.message || newNotif.body || 'You have a new update in TwiteConnect.',
                 url:   newNotif.url || newNotif.link || '/notifications',
               });
             });
+
+            // Dispatch event to sync notification list across UI in real-time
+            window.dispatchEvent(new CustomEvent('tc_notifications_updated', { detail: newNotif }));
           }
         })
         .on('postgres_changes', {

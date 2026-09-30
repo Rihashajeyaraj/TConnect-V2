@@ -3,6 +3,8 @@ import { Link, useLocation, Outlet, useNavigate } from 'react-router-dom'
 import { useToast } from '../../common/ToastContext.jsx'
 import TwiteConnectLogo from '../../common/TwiteConnectLogo.jsx'
 import useNotificationCount from '../../hooks/useNotificationCount.js'
+import { usePermissions } from '../../context/PermissionContext.jsx'
+import { filterNavigationItems } from '../../config/navigationPermissions.js'
 import {
   LayoutDashboard,
   TrendingUp,
@@ -265,6 +267,9 @@ function CeoLayout() {
     { id: 2, title: 'Enterprise Deal Review', time: '02:00 PM - 03:00 PM', rep: 'Sales Team' },
     { id: 3, title: 'HR & Approvals Clearance', time: '04:30 PM - 05:00 PM', rep: 'Operations' },
   ]
+
+  const { hasPermission } = usePermissions()
+  const visibleSidebarItems = filterNavigationItems(sidebarItems, hasPermission)
 
   return (
     <div className="h-screen overflow-hidden bg-[#F0F6FA] text-slate-800 flex flex-col font-sans antialiased relative">
@@ -565,7 +570,7 @@ function CeoLayout() {
 
           {/* Navigation List - 9 Executive Items */}
           <nav className="flex-1 overflow-y-auto px-2.5 sm:px-3 py-3 sm:py-4 space-y-1 sm:space-y-1.5 bg-[#6E3838] scrollbar-thin scrollbar-thumb-white/20">
-            {sidebarItems.map((item, index) => {
+            {visibleSidebarItems.map((item, index) => {
               const Icon = item.icon
               const active = isNavActive(item.path)
               return (
