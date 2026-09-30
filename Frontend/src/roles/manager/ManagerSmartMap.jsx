@@ -804,6 +804,8 @@ export default function ManagerSmartMap({ hideHeader = false }) {
         recipient_email: targetEmail,
         employee_id: empCode,
         sender_name: mgrName,
+        sender_email: currentUser?.email || '',
+        sender_id: currentUser?.id || currentUser?.sub || '',
         sender_role: currentUser?.role || currentUser?.designation || 'Sales Manager',
       })
       showToast(`Inquiry sent to ${resolveRealName(ex)}`, 'success')

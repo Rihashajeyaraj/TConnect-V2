@@ -686,10 +686,15 @@ export default function SmartClientMap({ isManagerView = false }) {
     const myEmail = currentUser?.email || getStoredUser()?.email || ''
     const myCode = currentUser?.employee_code || currentUser?.employee_id || getStoredUser()?.employee_code || 'EMP000012'
 
-    // Target the specific manager who sent the inquiry
-    const targetEmail = currentInquiry?.sender_email || currentInquiry?.email || ''
-    const targetId = currentInquiry?.sender_id || currentInquiry?.employee_id || ''
+    // Target the specific manager who sent the inquiry (never fall back to executive's own email)
+    let targetEmail = currentInquiry?.sender_email || ''
+    let targetId = currentInquiry?.sender_id || ''
     const targetName = currentInquiry?.sender_name || 'Reporting Manager'
+
+    // Prevent Executive's own email from ever being selected as reply recipient
+    if (targetEmail && myEmail && targetEmail.toLowerCase() === myEmail.toLowerCase()) {
+      targetEmail = ''
+    }
 
     try {
       await notificationAPI.sendNotification({

@@ -299,6 +299,36 @@ class NotificationRepository:
             recip_email = data.get("recipient_email") or data.get("employee_email")
             recip_id = data.get("recipient_id") or data.get("employee_id") or data.get("user_id") or data.get("recipient_user_id")
 
+        sender_email = str(data.get("sender_email") or "").strip().lower()
+        sender_code = str(data.get("employee_id") or data.get("sender_id") or "").strip()
+
+        # Narrow Safety Fallback ONLY for Executive Reply Notifications (LOCATION_INQUIRY_REPLY / REPLY):
+        is_reply_notif = "REPLY" in type_str.upper() or "INQUIRY_REPLY" in type_str.upper()
+        if is_reply_notif:
+            recip_email_str = str(recip_email or "").strip().lower()
+            # If recipient_email is missing OR matches sender's own email, resolve reporting_manager from HRMS
+            if not recip_email_str or (sender_email and recip_email_str == sender_email):
+                logger.info(f"[REPLY ROUTING SAFETY] Recipient email '{recip_email}' is missing or equals sender '{sender_email}'. Resolving reporting_manager...")
+                try:
+                    sender_emp = None
+                    if sender_email:
+                        res_s = self.supabase.schema("hrms").table("employees").select("employee_id, reporting_manager").eq("email", sender_email).limit(1).execute()
+                        sender_emp = res_s.data[0] if res_s.data else None
+                    if not sender_emp and sender_code:
+                        res_s = self.supabase.schema("hrms").table("employees").select("employee_id, reporting_manager").or_(f"employee_code.eq.{sender_code},employee_id.eq.{sender_code}").limit(1).execute()
+                        sender_emp = res_s.data[0] if res_s.data else None
+
+                    if sender_emp and sender_emp.get("reporting_manager"):
+                        mgr_id = str(sender_emp["reporting_manager"]).strip()
+                        res_m = self.supabase.schema("hrms").table("employees").select("user_id, employee_id, email, employee_code").or_(f"employee_id.eq.{mgr_id},user_id.eq.{mgr_id}").limit(1).execute()
+                        if res_m.data:
+                            mgr_rec = res_m.data[0]
+                            recip_email = mgr_rec.get("email") or recip_email
+                            recip_id = mgr_rec.get("user_id") or mgr_rec.get("employee_id") or recip_id
+                            logger.info(f"[REPLY ROUTING SUCCESS] Resolved reporting manager: {recip_email}")
+                except Exception as route_err:
+                    logger.warning(f"[REPLY ROUTING WARNING] Error resolving reporting_manager fallback: {route_err}")
+
         recip_user_id = None
         if recip_id and len(str(recip_id)) == 36 and "-" in str(recip_id):
             recip_user_id = str(recip_id)
