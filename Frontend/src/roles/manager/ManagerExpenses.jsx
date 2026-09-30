@@ -469,6 +469,7 @@ export default function ManagerExpenses() {
       if (actionType === 'APPROVE') {
         const tlNotif = {
           recipientRole: 'Team Lead',
+          recipientEmail: selectedExpenseModal.team_lead_email || selectedExpenseModal.reporting_manager_email || "",
           title: `Reimbursement Approved`,
           message: `Sales Manager approved ${execName}'s reimbursement of ${selectedExpenseModal.amount}`,
           type: 'Expense',
@@ -526,6 +527,7 @@ export default function ManagerExpenses() {
       if (actionType === 'APPROVE') {
         const tlNotif = {
           recipientRole: 'Team Lead',
+          recipientEmail: expense.team_lead_email || expense.reporting_manager_email || "",
           title: `Reimbursement Approved`,
           message: `Sales Manager approved ${execName}'s reimbursement of ${expense.amount}`,
           type: 'Expense',

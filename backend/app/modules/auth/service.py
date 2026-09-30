@@ -569,11 +569,23 @@ class AuthService:
             "request_count": new_count,
         }
 
-        # Notify all admins via in-app notification
+        # Notify admins via notification
         try:
             from app.modules.notification.repository import NotificationRepository
+            admin_email = ""
+            admin_user_id = ""
+            try:
+                admin_res = self.repo.supabase.schema("hrms").table("employees").select("email, user_id, employee_id").or_("role.ilike.%admin%,designation.ilike.%admin%").eq("is_active", True).limit(1).execute()
+                if admin_res.data:
+                    admin_email = admin_res.data[0].get("email") or ""
+                    admin_user_id = admin_res.data[0].get("user_id") or admin_res.data[0].get("employee_id") or ""
+            except Exception:
+                pass
+
             NotificationRepository().create_notification({
                 "recipient_role": "super admin",
+                "recipient_email": admin_email,
+                "recipient_id": admin_user_id,
                 "title": "🔑 Password Reset Request",
                 "message": f"{emp_name} ({email}) has requested a password reset. Please review in User Management → Password Requests.",
                 "type": "WARNING",

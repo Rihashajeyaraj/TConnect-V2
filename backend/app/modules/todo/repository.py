@@ -115,9 +115,21 @@ class TodoRepository:
         try:
             from app.modules.notification.repository import NotificationRepository
             from app.modules.notification.helpers import build_notification_url
+            recip_id = str(data.get("user_id") or data.get("employee_id") or "").strip()
+            recip_email = str(data.get("recipient_email") or data.get("user_email") or "").strip()
+
+            if not recip_email and recip_id:
+                try:
+                    emp_res = self.supabase.schema("hrms").table("employees").select("email").or_(f"employee_id.eq.{recip_id},user_id.eq.{recip_id}").limit(1).execute()
+                    if emp_res.data:
+                        recip_email = emp_res.data[0].get("email") or ""
+                except Exception:
+                    pass
+
             notif_url = build_notification_url("TASK_ASSIGNED", todo_id, role="sales")
             NotificationRepository().create_notification({
-                "recipient_id": str(data.get("user_id") or data.get("employee_id") or ""),
+                "recipient_id": recip_id,
+                "recipient_email": recip_email,
                 "recipient_role": "sales",
                 "title": "New Task Assigned",
                 "message": f"Task '{data.get('title', 'Todo Item')}' has been created.",

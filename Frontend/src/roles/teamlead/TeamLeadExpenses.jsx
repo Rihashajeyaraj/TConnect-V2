@@ -161,6 +161,7 @@ export default function TeamLeadExpenses() {
       // Dispatch notification to Manager
       notificationAPI.sendNotification({
         recipientRole: 'Sales Manager',
+        recipientEmail: item.reporting_manager_email || item.manager_email || item.managerEmail || "",
         title: `Expense Claim Forwarded by Team Lead`,
         message: `Team Lead forwarded ${item.employeeName}'s reimbursement request of ${item.amount} for manager approval.`,
         type: 'Expense',

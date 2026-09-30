@@ -141,9 +141,23 @@ async def change_password(
     # Notify admin that employee changed their password
     try:
         from app.modules.notification.repository import NotificationRepository
+        from app.database.supabase import get_supabase_admin_client
+        sp = get_supabase_admin_client()
+        admin_email = ""
+        admin_user_id = ""
+        try:
+            admin_res = sp.schema("hrms").table("employees").select("email, user_id, employee_id").or_("role.ilike.%admin%,designation.ilike.%admin%").eq("is_active", True).limit(1).execute()
+            if admin_res.data:
+                admin_email = admin_res.data[0].get("email") or ""
+                admin_user_id = admin_res.data[0].get("user_id") or admin_res.data[0].get("employee_id") or ""
+        except Exception:
+            pass
+
         emp_name = str(user_payload.get("user_metadata", {}).get("full_name") or email.split("@")[0].title())
         NotificationRepository().create_notification({
             "recipient_role": "super admin",
+            "recipient_email": admin_email,
+            "recipient_id": admin_user_id,
             "title": "✅ Password Changed",
             "message": f"{emp_name} ({email}) has successfully changed their password.",
             "type": "INFO",

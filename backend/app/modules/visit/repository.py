@@ -336,8 +336,18 @@ class VisitRepository:
             from app.modules.notification.helpers import build_notification_url
             v_id = str(v_data.get("id") or v_data.get("visit_id") or "")
             cust_name = str(v_data.get("client_name") or v_data.get("customer_name") or v_data.get("company_name") or "Customer")
-            se_email = str(v_data.get("assigned_to_email") or v_data.get("employee_email") or "")
-            emp_id = str(v_data.get("employee_id") or v_data.get("employee_name") or "")
+            se_email = str(v_data.get("assigned_to_email") or v_data.get("employee_email") or "").strip()
+            
+            raw_emp_id = str(v_data.get("employee_id") or v_data.get("user_id") or "").strip()
+            emp_id = raw_emp_id if ("-" in raw_emp_id or (raw_emp_id.isalnum() and " " not in raw_emp_id)) else ""
+
+            if not se_email and emp_id:
+                try:
+                    emp_res = self.supabase.schema("hrms").table("employees").select("email").or_(f"employee_id.eq.{emp_id},user_id.eq.{emp_id}").limit(1).execute()
+                    if emp_res.data:
+                        se_email = emp_res.data[0].get("email") or ""
+                except Exception:
+                    pass
 
             if event_type == "VISIT_SCHEDULED":
                 title = "Visit Scheduled"

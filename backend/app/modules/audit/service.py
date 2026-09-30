@@ -85,11 +85,25 @@ def _trigger_ceo_admin_alert_notification(
                 return
 
         from app.modules.notification.repository import NotificationRepository
+        from app.database.supabase import get_supabase_admin_client
+
+        ceo_email = ""
+        ceo_user_id = ""
+        try:
+            sp = get_supabase_admin_client()
+            ceo_res = sp.schema("hrms").table("employees").select("email, user_id, employee_id").or_("designation.ilike.%ceo%,role.ilike.%ceo%").eq("is_active", True).limit(1).execute()
+            if ceo_res.data:
+                ceo_email = ceo_res.data[0].get("email") or ""
+                ceo_user_id = ceo_res.data[0].get("user_id") or ceo_res.data[0].get("employee_id") or ""
+        except Exception as ceo_err:
+            logger.debug(f"CEO query notice: {ceo_err}")
 
         notif_msg = description or f"Admin {actor_name} modified employee data."
 
         NotificationRepository().create_notification({
             "recipient_role": "CEO",
+            "recipient_email": ceo_email,
+            "recipient_id": ceo_user_id,
             "title": title,
             "message": notif_msg,
             "type": "WARNING",

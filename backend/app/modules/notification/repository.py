@@ -256,8 +256,8 @@ class NotificationRepository:
             if not has_any_target:
                 role_match = (
                     r_role in ["all", "", "everyone"] or
-                    r_role == user_role or
-                    (r_role in user_role or user_role in r_role) or
+                    (user_role and r_role == user_role) or
+                    (user_role and (r_role in user_role or user_role in r_role)) or
                     ("executive" in r_role and "executive" in user_role) or
                     (("manager" in r_role or "lead" in r_role) and ("manager" in user_role or "lead" in user_role or "tl" in user_role))
                 )
@@ -431,6 +431,7 @@ class NotificationRepository:
                 fresh_unread = self.get_unread_count(push_user_id or "", {
                     "email": push_user_email,
                     "sub": push_user_id,
+                    "role": recip_role,
                 })
                 logger.info(f"[PUSH] unread_count = {fresh_unread}")
 

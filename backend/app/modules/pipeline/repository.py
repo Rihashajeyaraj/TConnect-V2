@@ -174,9 +174,22 @@ class PipelineRepository:
                 notif_title = "Pipeline Stage Updated"
                 msg = f"Opportunity '{title_str}' moved to '{stage_str}' stage."
 
+            raw_rep_id = str(opp_data.get("generated_by_employee_id") or opp_data.get("assigned_to_id") or opp_data.get("user_id") or "").strip()
+            recip_id = raw_rep_id if ("-" in raw_rep_id or (raw_rep_id.isalnum() and " " not in raw_rep_id)) else ""
+            recip_email = str(opp_data.get("assigned_to_email") or opp_data.get("email") or "").strip()
+
+            if not recip_email and recip_id:
+                try:
+                    emp_res = self.supabase.schema("hrms").table("employees").select("email").or_(f"employee_id.eq.{recip_id},user_id.eq.{recip_id}").limit(1).execute()
+                    if emp_res.data:
+                        recip_email = emp_res.data[0].get("email") or ""
+                except Exception:
+                    pass
+
             notif_url = build_notification_url(event_type, opp_id, role="sales")
             NotificationRepository().create_notification({
-                "recipient_id": opp_data.get("generated_by_employee_id") or rep_str,
+                "recipient_id": recip_id,
+                "recipient_email": recip_email,
                 "recipient_role": "sales",
                 "title": notif_title,
                 "message": msg,

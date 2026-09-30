@@ -24,6 +24,7 @@ import { FaceLivenessEngine, LIVENESS_CHALLENGES } from "./FaceLivenessEngine.js
 import { loadGoogleMaps } from "../../utils/loadGoogleMaps.js";
 import { filterUserItems } from "../../utils/userScope.js";
 import { extractCoordsFromUrlOrString } from "./SmartClientMap.jsx";
+import authSession from "../../utils/authSession.js";
 
 // Helper: Calculate work hours
 export const calculateWorkHours = (loginTime, logoutTime) => {
@@ -751,13 +752,21 @@ export default function Attendance(props) {
         window.dispatchEvent(new CustomEvent("tc:attendance-sync"));
       } catch { /* non-critical */ }
 
-      // Send notification to Manager
+      // Send notification to Reporting Manager
+      const storedUser = authSession.getStoredUser() || {};
+      const mgrEmail = storedUser.reporting_manager_email || storedUser.manager_email || "";
+      const mgrId = storedUser.reporting_manager_id || storedUser.reporting_manager || "";
+
       notificationAPI.sendNotification({
         title: "🟢 Executive Online",
         message: `${matchedEmployeeName || userName} is now online and checked in (${workMode === "client" ? `Client Visit to ${selectedClient?.title || 'client'}` : 'Office Mode'}).`,
         category: "ATTENDANCE",
         type: "ATTENDANCE",
-        recipient_role: "manager"
+        recipient_role: "manager",
+        recipient_email: mgrEmail,
+        recipient_id: mgrId,
+        sender_email: storedUser.email || "",
+        sender_id: storedUser.id || storedUser.sub || ""
       }).catch(() => null);
       loadAttendanceLogs();
       window.dispatchEvent(new CustomEvent("tc:attendance-marked"));
@@ -817,13 +826,21 @@ export default function Attendance(props) {
     localStorage.removeItem('tc_tracking_session');
     setTrackingStatus('idle');
 
-    // Send notification to Manager
+    // Send notification to Reporting Manager
+    const storedUser = authSession.getStoredUser() || {};
+    const mgrEmail = storedUser.reporting_manager_email || storedUser.manager_email || "";
+    const mgrId = storedUser.reporting_manager_id || storedUser.reporting_manager || "";
+
     notificationAPI.sendNotification({
       title: "⬛ Executive Ended Session",
       message: `${userName} has ended their tracking session and checked out.`,
       category: "TRACKING",
       type: "TRACKING",
-      recipient_role: "manager"
+      recipient_role: "manager",
+      recipient_email: mgrEmail,
+      recipient_id: mgrId,
+      sender_email: storedUser.email || "",
+      sender_id: storedUser.id || storedUser.sub || ""
     }).catch(() => null);
 
     // Trigger cleanup in parent wrapper (SalesLayout.jsx)
